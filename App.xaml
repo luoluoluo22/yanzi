@@ -3,6 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:OpenQuickHost">
     <Application.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
         <!-- Premium Dark Theme Colors -->
         <Color x:Key="ColorBG">#FF161616</Color>
         <Color x:Key="ColorBorder">#FF2A2A2A</Color>

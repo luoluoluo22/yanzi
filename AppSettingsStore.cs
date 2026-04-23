@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace OpenQuickHost;
@@ -41,7 +43,15 @@ public static class AppSettingsStore
 
 public sealed record AppSettings
 {
-    public bool RefreshCloudOnStartup { get; init; } = true;
+    public bool LaunchAtStartup { get; set; } = false;
 
-    public bool CloseToTray { get; init; } = true;
+    public bool RefreshCloudOnStartup { get; set; } = true;
+
+    public bool CloseToTray { get; set; } = true;
+
+    public List<string?> QuickPanelSlots { get; set; } = Enumerable.Repeat<string?>(null, 28).ToList();
+
+    public string QuickPanelTrigger { get; set; } = "MiddleButtonLongPress";
+
+    public List<string> FavoriteExtensionIds { get; set; } = new();
 }

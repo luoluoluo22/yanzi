@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media.Imaging;
@@ -26,12 +25,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _settings = AppSettingsStore.Load();
         NavigationItems =
         [
-            new SettingsNavigationItem("general", "G", "General", "#FF3B82F6"),
-            new SettingsNavigationItem("sync", "S", "Sync", "#FF22C55E"),
-            new SettingsNavigationItem("extensions", "E", "Extensions", "#FFF97316"),
-            new SettingsNavigationItem("about", "A", "About", "#FF8B5CF6")
+            new SettingsNavigationItem("general", "M12,15.5A3.5,3.5 0 1,1 12,8.5A3.5,3.5 0 1,1 12,15.5M19.4,15L21.7,13.5L19.9,8.9L17.3,10L15.7,8.6L16.1,5.8L11.2,5.8L10.8,8.6L9.2,10L6.6,8.9L4.7,13.5L7,15L7,17L4.7,18.5L6.6,23.1L9.2,22L10.8,23.4L11.2,26.2L16.1,26.2L16.5,23.4L18.1,22L20.7,23.1L22.6,18.5L20.3,17Z", "常规", "#FF3B82F6"),
+            new SettingsNavigationItem("sync", "M12,6V9L16,5L12,1V4A8,8 0 0,0 4,12C4,13.43 4.37,14.77 5.03,15.94L6.47,14.5C6.17,13.73 6,12.89 6,12A6,6 0 0,1 12,6M18.97,8.06L17.53,9.5C17.83,10.27 18,11.11 18,12A6,6 0 0,1 12,18V15L8,19L12,23V20A8,8 0 0,0 20,12C20,10.57 19.63,9.23 18.97,8.06Z", "同步", "#FF22C55E"),
+            new SettingsNavigationItem("extensions", "M20.5,11H19V7C19,5.89 18.11,5 17,5H13V3.5A1.5,1.5 0 0,0 11.5,2A1.5,1.5 0 0,0 10,3.5V5H6C4.89,5 4,5.89 4,7V11H2.5A1.5,1.5 0 0,0 1,12.5A1.5,1.5 0 0,0 2.5,14H4V18C4,19.11 4.89,20 6,20H10V21.5A1.5,1.5 0 0,0 11.5,23A1.5,1.5 0 0,0 13,21.5V20H17C18.11,20 19,19.11 19,18V14H20.5A1.5,1.5 0 0,0 22,12.5A1.5,1.5 0 0,0 20.5,11Z", "扩展", "#FFF97316"),
+            new SettingsNavigationItem("quickpanel", "M4,4H20V20H4V4M6,6V18H18V6H6M8,8H10V10H8V8M14,8H16V10H14V8M8,14H10V16H8V14M14,14H16V16H14V14Z", "快捷面板", "#FFEC4899"),
+            new SettingsNavigationItem("about", "M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z", "关于", "#FF8B5CF6")
         ];
         _selectedNavigation = NavigationItems.First();
+        LaunchAtStartup = _settings.LaunchAtStartup;
         RefreshCloudOnStartup = _settings.RefreshCloudOnStartup;
         CloseToTray = _settings.CloseToTray;
         BaseUrl = _mainWindow.SyncBaseUrl;
@@ -81,17 +82,26 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool LaunchAtStartup
+    {
+        get => _settings.LaunchAtStartup;
+        set
+        {
+            if (value == _settings.LaunchAtStartup)
+            {
+                return;
+            }
+
+            _settings = _settings with { LaunchAtStartup = value };
+            OnPropertyChanged();
+        }
+    }
+
     private void LoadLogoImage()
     {
-        string logoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logo.png");
-        if (!File.Exists(logoPath))
-        {
-            return;
-        }
-
         try
         {
-            AboutLogoImage.Source = new BitmapImage(new Uri(logoPath, UriKind.Absolute));
+            AboutLogoImage.Source = new BitmapImage(new Uri("pack://application:,,,/logo.png", UriKind.Absolute));
         }
         catch
         {
@@ -187,6 +197,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         "general" => "控制燕子(Swallow)的基础行为，包括启动同步和托盘停驻策略。",
         "sync" => "管理云账号状态、同步入口和当前服务端连接信息。",
         "extensions" => "查看本地扩展目录和当前机器已发现的扩展数量。",
+        "quickpanel" => "控制悬浮网格的操作面板，包括触发逻辑和槽位预设。",
         "about" => "查看当前版本与这套设置窗口的结构定位。",
         _ => "燕子设置"
     };
@@ -197,9 +208,26 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public bool IsExtensionsSelected => SelectedNavigation?.Key == "extensions";
 
+    public bool IsQuickPanelSelected => SelectedNavigation?.Key == "quickpanel";
+
     public bool IsAboutSelected => SelectedNavigation?.Key == "about";
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public void NavigateTo(string? sectionKey)
+    {
+        if (string.IsNullOrWhiteSpace(sectionKey))
+        {
+            return;
+        }
+
+        var target = NavigationItems.FirstOrDefault(item =>
+            item.Key.Equals(sectionKey, StringComparison.OrdinalIgnoreCase));
+        if (target != null)
+        {
+            SelectedNavigation = target;
+        }
+    }
 
     private void SettingsWindow_Loaded(object sender, RoutedEventArgs e)
     {
@@ -210,6 +238,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void SettingsWindow_Activated(object? sender, EventArgs e)
     {
         _settings = AppSettingsStore.Load();
+        OnPropertyChanged(nameof(LaunchAtStartup));
         OnPropertyChanged(nameof(RefreshCloudOnStartup));
         OnPropertyChanged(nameof(CloseToTray));
         RefreshAccountSummary();
@@ -220,6 +249,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
+        StartupRegistrationService.Apply(_settings.LaunchAtStartup);
     }
 
     private void AccountButton_Click(object sender, RoutedEventArgs e)

@@ -7,8 +7,10 @@ using OpenQuickHost.Sync;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Windows.Controls;
+using System.Text.Json;
 
 namespace OpenQuickHost;
 
@@ -16,24 +18,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private const int HotKeyId = 0x5301;
     private const uint ModControl = 0x0002;
+    private const uint ModAlt = 0x0001;
     private const uint ModShift = 0x0004;
+    private const uint ModWin = 0x0008;
+    private const uint ModNoRepeat = 0x4000;
     private const int WmHotKey = 0x0312;
 
     private readonly List<CommandItem> _allCommands;
     private readonly CloudSyncClient? _cloudSyncClient;
     private readonly SyncOptions _syncOptions;
     private readonly Dictionary<string, CommandItem> _localExtensionIndex;
+    private readonly Dictionary<int, CommandItem> _registeredExtensionHotkeys = new();
     private CommandItem? _selectedCommand;
     private CommandItem? _lastActionableCommand;
+    private HostedPluginSession? _activeHostedView;
     private string _activeQueryArgument = string.Empty;
+    private string _hostedViewInput = string.Empty;
+    private string _hostedViewOutput = string.Empty;
+    private string _hostedViewStatus = "准备就绪。";
     private string _lastRunMessage = "准备就绪。输入关键字后按 Enter 运行。";
     private string _syncStatus = "云同步未初始化。";
     private HwndSource? _source;
     private bool _authPromptActive;
+    private int _nextExtensionHotkeyId = 0x5400;
+    private QuickPanelWindow? _quickPanel;
 
     public MainWindow()
     {
         InitializeComponent();
+        ApplyWindowIcon();
         HostAssets.EnsureCreated();
         _syncOptions = SyncConfigLoader.Load();
         LocalExtensionCatalog.EnsureSampleExtension();
@@ -55,6 +68,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SourceInitialized += MainWindow_SourceInitialized;
         Closing += MainWindow_Closing;
         StateChanged += MainWindow_StateChanged;
+
+        Closing += (s, e) => InputHookService.Stop();
+
+        _quickPanel = new QuickPanelWindow(this);
+    }
+
+    private void ApplyWindowIcon()
+    {
+        try
+        {
+            Icon = BitmapFrame.Create(new Uri("pack://application:,,,/logo.png", UriKind.Absolute));
+        }
+        catch
+        {
+            // Ignore icon failures so the launcher can still start.
+        }
     }
 
     public ObservableCollection<CommandItem> FilteredCommands { get; }
@@ -101,10 +130,73 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string VisibleCountText => $"{FilteredCommands.Count} 条结果";
 
     public string FooterHint => SelectedCommand == null
-        ? "Up / Down 切换   Esc 收起"
+        ? "Up / Down 切换   Enter 执行   Ctrl+K 动作   Esc 收起"
         : SelectedCommand.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
-            ? $"{SelectedCommand.Title}   ·   {_activeQueryArgument}"
-            : $"{SelectedCommand.Title}   ·   {SelectedCommand.Category}";
+            ? $"{SelectedCommand.Title}   ·   {_activeQueryArgument}   ·   Ctrl+K 动作"
+            : $"{SelectedCommand.Title}   ·   {SelectedCommand.Category}   ·   Ctrl+K 动作";
+
+    public bool IsHostedViewOpen => _activeHostedView != null;
+
+    public string HostedViewTitle => _activeHostedView?.Definition.Title ?? "插件视图";
+
+    public string HostedViewSubtitle => _activeHostedView?.Definition.Description ?? "插件正在当前窗口中运行。";
+
+    public string HostedViewCommandLabel => _activeHostedView == null
+        ? "未激活"
+        : $"{_activeHostedView.Command.Title} · {_activeHostedView.Command.ExtensionId}";
+
+    public string HostedViewInputLabel => _activeHostedView?.Definition.InputLabel ?? "输入";
+
+    public string HostedViewOutputLabel => _activeHostedView?.Definition.OutputLabel ?? "输出";
+
+    public string HostedViewInputPlaceholder => _activeHostedView?.Definition.InputPlaceholder ?? "输入内容后开始执行。";
+
+    public string HostedViewActionButtonText => _activeHostedView?.Definition.ActionButtonText ?? "执行";
+
+    public string HostedViewInput
+    {
+        get => _hostedViewInput;
+        set
+        {
+            if (value == _hostedViewInput)
+            {
+                return;
+            }
+
+            _hostedViewInput = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string HostedViewOutput
+    {
+        get => _hostedViewOutput;
+        set
+        {
+            if (value == _hostedViewOutput)
+            {
+                return;
+            }
+
+            _hostedViewOutput = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string HostedViewStatus
+    {
+        get => _hostedViewStatus;
+        set
+        {
+            if (value == _hostedViewStatus)
+            {
+                return;
+            }
+
+            _hostedViewStatus = value;
+            OnPropertyChanged();
+        }
+    }
 
     public CommandItem? EffectiveSelectedCommand =>
         SelectedCommand == null
@@ -143,9 +235,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (_cloudSyncClient == null)
         {
+            InputHookService.Start(() => _quickPanel?.ShowAtMouse());
             return;
         }
 
+        InputHookService.Start(() => _quickPanel?.ShowAtMouse());
         if (!AppSettingsStore.Load().RefreshCloudOnStartup)
         {
             return;
@@ -220,6 +314,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RunSelectedCommand();
     }
 
+    private void CloseHostedViewButton_Click(object sender, RoutedEventArgs e)
+    {
+        CloseHostedView();
+    }
+
+    private async void HostedViewRunButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshHostedViewOutputAsync();
+    }
+
+    private void HostedViewInputBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_activeHostedView == null)
+        {
+            return;
+        }
+
+        if (UsesScriptHostedView(_activeHostedView.Definition))
+        {
+            HostedViewStatus = "脚本视图已更新输入，点击右下角按钮执行。";
+            return;
+        }
+
+        RefreshHostedViewOutput();
+    }
+
     private async void CreateDesktopShortcutMenuItem_Click(object sender, RoutedEventArgs e)
     {
         await CreateDesktopShortcutAsync();
@@ -233,6 +353,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void EditExtensionMenuItem_Click(object sender, RoutedEventArgs e)
     {
         await EditSelectedExtensionAsync();
+    }
+
+    private async void SetCommandShortcutMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        await SetSelectedExtensionShortcutAsync();
     }
 
     private async void DeleteExtensionMenuItem_Click(object sender, RoutedEventArgs e)
@@ -291,33 +416,111 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (e.Key == Key.Escape)
         {
+            if (IsHostedViewOpen)
+            {
+                CloseHostedView();
+                e.Handled = true;
+                return;
+            }
+
+            if (FooterQuickMenuPopup.IsOpen)
+            {
+                FooterQuickMenuPopup.IsOpen = false;
+                return;
+            }
+
             HideToTray();
             return;
         }
 
         if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control)
         {
-            SearchBox.Focus();
-            SearchBox.SelectAll();
+            OpenCommandActionsMenu();
             e.Handled = true;
         }
     }
 
-    private void CommandList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    private void FooterQuickMenuButton_Click(object sender, RoutedEventArgs e)
+    {
+        FooterQuickMenuPopup.IsOpen = !FooterQuickMenuPopup.IsOpen;
+    }
+
+    private async void QuickMenuAddExtension_Click(object sender, RoutedEventArgs e)
+    {
+        FooterQuickMenuPopup.IsOpen = false;
+        await AddJsonExtensionAsync();
+    }
+
+    private void QuickMenuOpenSettings_Click(object sender, RoutedEventArgs e)
+    {
+        FooterQuickMenuPopup.IsOpen = false;
+        if (System.Windows.Application.Current is App app)
+        {
+            app.OpenSettingsWindow("general");
+            LastRunMessage = "已打开设置。";
+        }
+    }
+
+    private async void QuickMenuRefreshCloud_Click(object sender, RoutedEventArgs e)
+    {
+        FooterQuickMenuPopup.IsOpen = false;
+        await RefreshCloudStateAsync();
+    }
+
+    private void QuickMenuOpenDocs_Click(object sender, RoutedEventArgs e)
+    {
+        FooterQuickMenuPopup.IsOpen = false;
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = HostAssets.DocsReadmePath,
+                UseShellExecute = true
+            });
+            LastRunMessage = "已打开帮助文档。";
+        }
+        catch (Exception ex)
+        {
+            SyncStatus = $"打开文档失败：{FormatExceptionMessage(ex)}";
+        }
+    }
+
+    private void QuickMenuOpenAbout_Click(object sender, RoutedEventArgs e)
+    {
+        FooterQuickMenuPopup.IsOpen = false;
+        if (System.Windows.Application.Current is App app)
+        {
+            app.OpenSettingsWindow("about");
+            LastRunMessage = "已打开关于页面。";
+        }
+    }
+
+    private void CommandList_ContextMenuOpening(object sender, System.Windows.Controls.ContextMenuEventArgs? e)
+    {
+        if (!UpdateCommandContextMenuState() && e != null)
+        {
+            e.Handled = true;
+        }
+    }
+
+    private bool UpdateCommandContextMenuState()
     {
         var current = SelectedCommand;
         var actionable = current != null && !IsInternalCommand(current) ? current : _lastActionableCommand;
         var resolved = actionable == null ? null : ResolveRunnableCommand(actionable);
 
-        CreateDesktopShortcutMenuItem.IsEnabled = resolved?.OpenTarget is { Length: > 0 } && !IsInternalCommand(resolved);
-        var canManageLocalExtension = resolved?.Source == CommandSource.LocalExtension;
+        if (resolved == null)
+        {
+            return false;
+        }
+
+        CreateDesktopShortcutMenuItem.IsEnabled = resolved.OpenTarget is { Length: > 0 } && !IsInternalCommand(resolved);
+        var canManageLocalExtension = resolved.Source == CommandSource.LocalExtension;
+        SetCommandShortcutMenuItem.IsEnabled = canManageLocalExtension;
         RenameCommandMenuItem.IsEnabled = canManageLocalExtension;
         EditExtensionMenuItem.IsEnabled = canManageLocalExtension;
         DeleteExtensionMenuItem.IsEnabled = canManageLocalExtension;
-        if (current == null && resolved == null)
-        {
-            e.Handled = true;
-        }
+        return true;
     }
 
     private void ApplyFilter(string? query)
@@ -382,7 +585,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CommandList.ScrollIntoView(SelectedCommand);
     }
 
-    private void RunSelectedCommand()
+    private async void RunSelectedCommand()
     {
         if (SelectedCommand == null)
         {
@@ -390,9 +593,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var runnable = ResolveRunnableCommand(SelectedCommand);
+        await ExecuteCommandAsync(ResolveRunnableCommand(SelectedCommand));
+    }
+
+    private async Task ExecuteCommandAsync(CommandItem runnable, string? explicitInput = null, string launchSource = "launcher")
+    {
+        if (runnable.HostedView != null)
+        {
+            OpenHostedView(runnable);
+            return;
+        }
+
         if (HandleInternalCommand(runnable))
         {
+            return;
+        }
+
+        if (ScriptExtensionRunner.CanExecute(runnable))
+        {
+            await ExecuteScriptCommandAsync(runnable, explicitInput ?? BuildScriptInput(runnable, SearchBox.Text), launchSource);
             return;
         }
 
@@ -422,7 +641,141 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HostAssets.AppendLog($"Command has no executable target: {runnable.Title}");
         LastRunMessage = runnable.Source == CommandSource.Cloud
             ? $"云端记录已存在，但当前机器没有安装对应扩展：{runnable.ExtensionId}。先下载扩展包或放入本地扩展目录。"
-            : $"已模拟执行：{runnable.Title}。下一步可以把它接到插件执行器。";
+            : $"当前命令没有 openTarget，也没有脚本入口：{runnable.Title}";
+    }
+
+    private void OpenHostedView(CommandItem command)
+    {
+        if (command.HostedView == null)
+        {
+            return;
+        }
+
+        _activeHostedView = new HostedPluginSession(command, command.HostedView);
+        HostedViewInput = string.Empty;
+        HostedViewOutput = command.HostedView.EmptyState ?? "等待插件输出。";
+        HostedViewStatus = $"已进入 {command.Title}。输入内容后可直接在当前窗口完成操作。";
+        OnPropertyChanged(nameof(IsHostedViewOpen));
+        OnPropertyChanged(nameof(HostedViewTitle));
+        OnPropertyChanged(nameof(HostedViewSubtitle));
+        OnPropertyChanged(nameof(HostedViewCommandLabel));
+        OnPropertyChanged(nameof(HostedViewInputLabel));
+        OnPropertyChanged(nameof(HostedViewOutputLabel));
+        OnPropertyChanged(nameof(HostedViewInputPlaceholder));
+        OnPropertyChanged(nameof(HostedViewActionButtonText));
+        LastRunMessage = $"已打开插件视图：{command.Title}";
+        Dispatcher.BeginInvoke(() => HostedViewInputBox.Focus());
+    }
+
+    private void CloseHostedView()
+    {
+        if (_activeHostedView == null)
+        {
+            return;
+        }
+
+        var title = _activeHostedView.Command.Title;
+        _activeHostedView = null;
+        HostedViewInput = string.Empty;
+        HostedViewOutput = string.Empty;
+        HostedViewStatus = "已关闭插件视图。";
+        OnPropertyChanged(nameof(IsHostedViewOpen));
+        OnPropertyChanged(nameof(HostedViewTitle));
+        OnPropertyChanged(nameof(HostedViewSubtitle));
+        OnPropertyChanged(nameof(HostedViewCommandLabel));
+        OnPropertyChanged(nameof(HostedViewInputLabel));
+        OnPropertyChanged(nameof(HostedViewOutputLabel));
+        OnPropertyChanged(nameof(HostedViewInputPlaceholder));
+        OnPropertyChanged(nameof(HostedViewActionButtonText));
+        LastRunMessage = $"已返回命令列表：{title}";
+        SearchBox.Focus();
+    }
+
+    private void RefreshHostedViewOutput()
+    {
+        if (_activeHostedView == null)
+        {
+            return;
+        }
+
+        var input = HostedViewInput.Trim();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            HostedViewOutput = _activeHostedView.Definition.EmptyState ?? "等待插件输出。";
+            HostedViewStatus = "输入内容后即可执行插件动作。";
+            return;
+        }
+
+        HostedViewOutput = ExecuteHostedView(_activeHostedView.Definition, input);
+        HostedViewStatus = $"已更新 {_activeHostedView.Command.Title} 输出。";
+    }
+
+    private async Task RefreshHostedViewOutputAsync()
+    {
+        if (_activeHostedView == null)
+        {
+            return;
+        }
+
+        if (!UsesScriptHostedView(_activeHostedView.Definition))
+        {
+            RefreshHostedViewOutput();
+            return;
+        }
+
+        var input = HostedViewInput.Trim();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            HostedViewOutput = _activeHostedView.Definition.EmptyState ?? "等待插件输出。";
+            HostedViewStatus = "输入内容后即可执行插件动作。";
+            return;
+        }
+
+        if (!ScriptExtensionRunner.CanExecute(_activeHostedView.Command))
+        {
+            HostedViewOutput = "当前宿主视图声明为脚本模式，但扩展没有有效的脚本入口。";
+            HostedViewStatus = "脚本入口缺失。";
+            return;
+        }
+
+        HostedViewStatus = $"正在执行 {_activeHostedView.Command.Title} 脚本...";
+        var result = await ScriptExtensionRunner.ExecuteAsync(_activeHostedView.Command, input, "hosted-view");
+        HostedViewOutput = result.Success
+            ? string.IsNullOrWhiteSpace(result.Output) ? "脚本执行完成，但没有返回输出。" : result.Output
+            : $"脚本执行失败{Environment.NewLine}{Environment.NewLine}{result.Error}";
+        HostedViewStatus = result.Success
+            ? $"已更新 {_activeHostedView.Command.Title} 输出。"
+            : $"脚本执行失败：{result.Error}";
+    }
+
+    private static string ExecuteHostedView(HostedPluginViewDefinition definition, string input)
+    {
+        return definition.ActionType switch
+        {
+            "template" when !string.IsNullOrWhiteSpace(definition.OutputTemplate)
+                => definition.OutputTemplate.Replace("{input}", input, StringComparison.Ordinal),
+            "uppercase" => input.ToUpperInvariant(),
+            "reverse" => new string(input.Reverse().ToArray()),
+            "mock-translate" => BuildMockTranslation(input),
+            _ when !string.IsNullOrWhiteSpace(definition.OutputTemplate)
+                => definition.OutputTemplate.Replace("{input}", input, StringComparison.Ordinal),
+            _ => input
+        };
+    }
+
+    private static bool UsesScriptHostedView(HostedPluginViewDefinition definition)
+    {
+        return string.Equals(definition.ActionType, "script", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildMockTranslation(string input)
+    {
+        var trimmed = input.Trim();
+        return
+            $"[译文预览]{Environment.NewLine}{Environment.NewLine}" +
+            $"EN: {trimmed}{Environment.NewLine}{Environment.NewLine}" +
+            $"说明：当前是宿主内置的示例翻译输出，用来验证“双栏插件界面”协议。" +
+            $"{Environment.NewLine}后续你可以把这个 actionType 替换成真正的翻译服务或脚本执行器。";
     }
 
     private async Task RefreshCloudStateAsync()
@@ -441,7 +794,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             var me = await _cloudSyncClient.GetMeAsync();
-            var health = await _cloudSyncClient.GetHealthAsync();
             var cloudExtensions = await _cloudSyncClient.GetExtensionsAsync();
             var userExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
             MergeCloudCommands(cloudExtensions, userExtensions);
@@ -453,7 +805,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 MergeCloudCommands(cloudExtensions, userExtensions);
             }
 
-            SyncStatus = $"已登录 {me?.Username ?? _cloudSyncClient.CurrentUserLabel}，服务时间 {health?.Now ?? "unknown"}";
+            SyncStatus = $"已登录 {me?.Username ?? _cloudSyncClient.CurrentUserLabel}";
             LastRunMessage = autoSyncedCount > 0
                 ? $"已刷新云端扩展：{cloudExtensions.Count} 个，并自动同步了 {autoSyncedCount} 个本地扩展。"
                 : $"已刷新云端扩展：{cloudExtensions.Count} 个，全局用户扩展：{userExtensions.Count} 条。";
@@ -912,6 +1264,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             x.ExtensionId.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase));
         _allCommands.Add(command);
         _localExtensionIndex[command.ExtensionId] = command;
+        RefreshExtensionHotkeys();
     }
 
     private void RemoveLocalExtensionCommand(string extensionId)
@@ -920,6 +1273,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             x.Source == CommandSource.LocalExtension &&
             x.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
         _localExtensionIndex.Remove(extensionId);
+        RefreshExtensionHotkeys();
     }
 
     private CommandItem? ShowJsonExtensionEditorAsync(string initialJson, bool isEditMode)
@@ -977,6 +1331,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : command;
     }
 
+    public CommandItem? OpenAddExtensionForSlot()
+    {
+        var templateJson = LocalExtensionCatalog.CreateTemplateJson();
+        return ShowJsonExtensionEditorAsync(templateJson, false);
+    }
+
     public void ShowPanel()
     {
         ShowInTaskbar = true;
@@ -1025,7 +1385,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _source.AddHook(WndProc);
-        RegisterHotKey(_source.Handle, HotKeyId, ModControl | ModShift, (uint)KeyInterop.VirtualKeyFromKey(Key.Space));
+        RegisterHotKey(_source.Handle, HotKeyId, ModControl | ModShift | ModNoRepeat, (uint)KeyInterop.VirtualKeyFromKey(Key.Space));
+        RefreshExtensionHotkeys();
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -1034,6 +1395,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (_source != null)
             {
+                UnregisterExtensionHotkeys();
                 UnregisterHotKey(_source.Handle, HotKeyId);
                 _source.RemoveHook(WndProc);
             }
@@ -1060,6 +1422,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
+    }
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WmHotKey && wParam.ToInt32() == HotKeyId)
@@ -1067,8 +1437,145 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             TogglePanelVisibility();
             handled = true;
         }
+        else if (msg == WmHotKey && _registeredExtensionHotkeys.TryGetValue(wParam.ToInt32(), out var command))
+        {
+            ExecuteCommandFromGlobalHotkey(command);
+            handled = true;
+        }
 
         return IntPtr.Zero;
+    }
+
+    private void ExecuteCommandFromGlobalHotkey(CommandItem command)
+    {
+        var runnable = ResolveRunnableCommand(command);
+        if (runnable.HasHostedView || string.Equals(runnable.HotkeyBehavior, "show-view", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowPanel();
+        }
+
+        _ = ExecuteCommandAsync(runnable, string.Empty, "hotkey");
+    }
+
+    private void RefreshExtensionHotkeys()
+    {
+        if (_source == null)
+        {
+            return;
+        }
+
+        UnregisterExtensionHotkeys();
+        _nextExtensionHotkeyId = 0x5400;
+
+        foreach (var command in _localExtensionIndex.Values
+                     .Where(static x => !string.IsNullOrWhiteSpace(x.GlobalShortcut))
+                     .OrderBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!TryParseHotkey(command.GlobalShortcut!, out var modifiers, out var key))
+            {
+                HostAssets.AppendLog($"Invalid global shortcut skipped: {command.Title} -> {command.GlobalShortcut}");
+                continue;
+            }
+
+            if (command.SupportsQueryArgument && !command.HasHostedView)
+            {
+                HostAssets.AppendLog($"Query shortcut skipped without hosted view: {command.Title} -> {command.GlobalShortcut}");
+                continue;
+            }
+
+            var id = _nextExtensionHotkeyId++;
+            var success = RegisterHotKey(
+                _source.Handle,
+                id,
+                modifiers | ModNoRepeat,
+                (uint)KeyInterop.VirtualKeyFromKey(key));
+            if (!success)
+            {
+                HostAssets.AppendLog($"Failed to register global shortcut: {command.Title} -> {command.GlobalShortcut}");
+                continue;
+            }
+
+            _registeredExtensionHotkeys[id] = command;
+        }
+    }
+
+    private void UnregisterExtensionHotkeys()
+    {
+        if (_source == null)
+        {
+            _registeredExtensionHotkeys.Clear();
+            return;
+        }
+
+        foreach (var hotkey in _registeredExtensionHotkeys.Keys.ToArray())
+        {
+            UnregisterHotKey(_source.Handle, hotkey);
+        }
+
+        _registeredExtensionHotkeys.Clear();
+    }
+
+    private static bool TryParseHotkey(string shortcut, out uint modifiers, out Key key)
+    {
+        modifiers = 0;
+        key = Key.None;
+        if (string.IsNullOrWhiteSpace(shortcut))
+        {
+            return false;
+        }
+
+        var segments = shortcut
+            .Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length < 2)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < segments.Length; index++)
+        {
+            var segment = segments[index];
+            var isLast = index == segments.Length - 1;
+            if (!isLast)
+            {
+                switch (segment.ToLowerInvariant())
+                {
+                    case "ctrl":
+                    case "control":
+                        modifiers |= ModControl;
+                        continue;
+                    case "alt":
+                        modifiers |= ModAlt;
+                        continue;
+                    case "shift":
+                        modifiers |= ModShift;
+                        continue;
+                    case "win":
+                    case "windows":
+                        modifiers |= ModWin;
+                        continue;
+                    default:
+                        return false;
+                }
+            }
+
+            try
+            {
+                key = segment.ToLowerInvariant() switch
+                {
+                    "space" => Key.Space,
+                    "enter" => Key.Enter,
+                    "tab" => Key.Tab,
+                    "esc" or "escape" => Key.Escape,
+                    _ => (Key)new KeyConverter().ConvertFromInvariantString(segment)!
+                };
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return modifiers != 0 && key != Key.None;
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -1124,9 +1631,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public void RefreshAppSettings()
     {
-        SyncStatus = AppSettingsStore.Load().RefreshCloudOnStartup
-            ? SyncStatus
-            : "设置已保存。启动时自动同步已关闭。";
+        var settings = AppSettingsStore.Load();
+        SyncStatus = settings.LaunchAtStartup
+            ? "设置已保存。开机启动已启用。"
+            : settings.RefreshCloudOnStartup
+                ? "设置已保存。"
+                : "设置已保存。启动后自动刷新云状态已关闭。";
+    }
+
+    private void OpenCommandActionsMenu()
+    {
+        CommandList.Focus();
+        if (!UpdateCommandContextMenuState() || CommandList.ContextMenu == null || !CommandList.ContextMenu.HasItems)
+        {
+            return;
+        }
+
+        CommandList.ContextMenu.PlacementTarget = CommandList;
+        CommandList.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        CommandList.ContextMenu.IsOpen = true;
+    }
+
+    public void OpenSettingsWindow(string? sectionKey = null)
+    {
+        var settingsWindow = new SettingsWindow(this);
+        if (sectionKey != null) settingsWindow.NavigateTo(sectionKey);
+        settingsWindow.Show();
     }
 
     private async Task CreateDesktopShortcutAsync()
@@ -1204,6 +1734,92 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             SyncStatus = $"重命名失败：{FormatExceptionMessage(ex)}";
+        }
+    }
+
+    private void AddToQuickPanelMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var sourceCommand = SelectedCommand != null && !IsInternalCommand(SelectedCommand)
+            ? SelectedCommand
+            : _lastActionableCommand;
+        
+        if (sourceCommand == null) return;
+        var command = ResolveRunnableCommand(sourceCommand);
+
+        var settings = AppSettingsStore.Load();
+        var slots = settings.QuickPanelSlots.ToList();
+        
+        // Find first empty slot
+        var index = slots.FindIndex(string.IsNullOrEmpty);
+        if (index >= 0)
+        {
+            slots[index] = command.ExtensionId;
+            AppSettingsStore.Save(settings with { QuickPanelSlots = slots });
+            LastRunMessage = $"已添加到快捷面板第 {index + 1} 个槽位：{command.Title}";
+        }
+        else
+        {
+            SyncStatus = "快捷面板已满（28 个槽位），请先在面板中移除旧扩展。";
+        }
+    }
+
+    private async Task SetSelectedExtensionShortcutAsync()
+    {
+        var sourceCommand = SelectedCommand != null && !IsInternalCommand(SelectedCommand)
+            ? SelectedCommand
+            : _lastActionableCommand;
+        if (sourceCommand == null)
+        {
+            SyncStatus = "没有可设置快捷键的扩展。";
+            return;
+        }
+
+        var extension = ResolveRunnableCommand(sourceCommand);
+        if (extension.Source != CommandSource.LocalExtension)
+        {
+            SyncStatus = "当前选中项不是本地扩展，不能直接设置快捷键。";
+            return;
+        }
+
+        var dialog = new SimpleTextInputWindow(
+            "设置快捷键",
+            "输入全局快捷键，例如 Ctrl+Alt+T。留空后确认可清除当前快捷键。",
+            extension.GlobalShortcut ?? string.Empty,
+            allowEmpty: true)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(dialog.ValueText) &&
+                !TryParseHotkey(dialog.ValueText, out _, out _))
+            {
+                SyncStatus = "快捷键格式无效。示例：Ctrl+Alt+T";
+                return;
+            }
+
+            var updated = LocalExtensionCatalog.SetGlobalShortcut(extension.ExtensionId, dialog.ValueText);
+            UpsertLocalExtensionCommand(updated);
+            ApplyFilter(SearchBox.Text);
+            SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(updated.ExtensionId, StringComparison.OrdinalIgnoreCase));
+            CommandList.SelectedItem = SelectedCommand;
+            LastRunMessage = string.IsNullOrWhiteSpace(updated.GlobalShortcut)
+                ? $"已清除快捷键：{updated.Title}"
+                : $"已设置快捷键：{updated.Title} -> {updated.GlobalShortcut}";
+
+            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
+            {
+                await SyncCommandToCloudAsync(updated);
+            }
+        }
+        catch (Exception ex)
+        {
+            SyncStatus = $"设置快捷键失败：{FormatExceptionMessage(ex)}";
         }
     }
 
@@ -1317,9 +1933,72 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         return command.OpenTarget;
     }
+
+    private static string BuildScriptInput(CommandItem command, string? rawInput)
+    {
+        if (command.SupportsQueryArgument)
+        {
+            var argument = ExtractQueryArgument(command, rawInput ?? string.Empty);
+            if (!string.IsNullOrWhiteSpace(argument))
+            {
+                return argument;
+            }
+        }
+
+        return (rawInput ?? string.Empty).Trim();
+    }
+
+    private async Task ExecuteScriptCommandAsync(CommandItem runnable, string? input, string launchSource)
+    {
+        SyncStatus = $"正在执行脚本：{runnable.Title}";
+        var result = await ScriptExtensionRunner.ExecuteAsync(runnable, input, launchSource);
+        if (result.Success)
+        {
+            HostAssets.AppendRecent(runnable.Title);
+            HostAssets.AppendLog($"Executed script extension: {runnable.Title} -> {runnable.EntryPoint}");
+            var summary = string.IsNullOrWhiteSpace(result.Output)
+                ? "脚本执行完成。"
+                : result.Output.ReplaceLineEndings(" ").Trim();
+            if (summary.Length > 180)
+            {
+                summary = summary[..180] + "...";
+            }
+
+            LastRunMessage = $"已执行脚本：{runnable.Title} -> {summary}";
+            SyncStatus = "脚本执行完成。";
+            return;
+        }
+
+        HostAssets.AppendLog($"Script extension failed: {runnable.Title} -> {result.Error}");
+        LastRunMessage = $"脚本执行失败：{runnable.Title}";
+        SyncStatus = $"脚本执行失败：{result.Error}";
+    }
+
+    // --- Quick Panel Support ---
+
+    public List<CommandItem> GetAllCommands() => _allCommands.ToList();
+
+    public void ExecuteCommandExternally(CommandItem command)
+    {
+        _ = ExecuteCommandAsync(ResolveRunnableCommand(command), string.Empty, "quick-panel");
+    }
 }
 
 public readonly record struct CommandMatch(bool IsMatch, int Priority);
+
+public sealed record HostedPluginViewDefinition(
+    string Type,
+    string? Title,
+    string? Description,
+    string? InputLabel,
+    string? InputPlaceholder,
+    string? OutputLabel,
+    string? ActionButtonText,
+    string? ActionType,
+    string? OutputTemplate,
+    string? EmptyState);
+
+public sealed record HostedPluginSession(CommandItem Command, HostedPluginViewDefinition Definition);
 
 public sealed class CommandItem : INotifyPropertyChanged
 {
@@ -1336,7 +2015,13 @@ public sealed class CommandItem : INotifyPropertyChanged
         string? declaredVersion = null,
         string? extensionDirectoryPath = null,
         IEnumerable<string>? queryPrefixes = null,
-        string? queryTargetTemplate = null)
+        string? queryTargetTemplate = null,
+        HostedPluginViewDefinition? hostedView = null,
+        string? globalShortcut = null,
+        string? hotkeyBehavior = null,
+        string? runtime = null,
+        string? entryPoint = null,
+        IEnumerable<string>? permissions = null)
     {
         Glyph = glyph;
         Title = title;
@@ -1353,9 +2038,32 @@ public sealed class CommandItem : INotifyPropertyChanged
         ExtensionDirectoryPath = extensionDirectoryPath;
         QueryPrefixes = queryPrefixes?.ToArray() ?? [];
         QueryTargetTemplate = queryTargetTemplate;
+        HostedView = hostedView;
+        GlobalShortcut = globalShortcut;
+        HotkeyBehavior = hotkeyBehavior;
+        Runtime = runtime;
+        EntryPoint = entryPoint;
+        Permissions = permissions?.ToArray() ?? [];
     }
 
     public string Glyph { get; }
+
+    public ImageSource? IconSource
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Glyph)) return null;
+            if (Glyph.StartsWith("http") || Glyph.Contains(":\\") || Glyph.StartsWith("/"))
+            {
+                try
+                {
+                    return new BitmapImage(new Uri(Glyph, Glyph.StartsWith("http") ? UriKind.Absolute : UriKind.RelativeOrAbsolute));
+                }
+                catch { }
+            }
+            return null;
+        }
+    }
 
     public string Title { get; }
 
@@ -1381,7 +2089,27 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public string? QueryTargetTemplate { get; }
 
+    public HostedPluginViewDefinition? HostedView { get; }
+
+    public string? GlobalShortcut { get; }
+
+    public string? HotkeyBehavior { get; }
+
+    public string? Runtime { get; }
+
+    public string? EntryPoint { get; }
+
+    public IReadOnlyList<string> Permissions { get; }
+
     public bool SupportsQueryArgument => QueryPrefixes.Count > 0 && !string.IsNullOrWhiteSpace(QueryTargetTemplate);
+
+    public bool HasHostedView => HostedView != null;
+
+    public bool HasScriptEntry => !string.IsNullOrWhiteSpace(Runtime) && !string.IsNullOrWhiteSpace(EntryPoint);
+
+    public bool HasGlobalShortcut => !string.IsNullOrWhiteSpace(GlobalShortcut);
+
+    public string ShortcutLabel => GlobalShortcut ?? string.Empty;
 
     public string? CloudVersion { get; private set; }
 
@@ -1395,7 +2123,13 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public string VersionLabel => string.IsNullOrWhiteSpace(CloudVersion) ? SourceLabel : $"v{CloudVersion}";
 
-    public string ItemKindLabel => Source == CommandSource.Cloud ? "云端" : Category;
+    public string ItemKindLabel => Source == CommandSource.Cloud
+        ? "云端"
+        : HasHostedView
+            ? "插件界面"
+            : HasScriptEntry
+                ? "脚本"
+                : Category;
 
     public string CloudSummary =>
         ExistsInCloud

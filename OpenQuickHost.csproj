@@ -10,9 +10,11 @@
     <AssemblyName>Yanzi</AssemblyName>
     <Product>Yanzi</Product>
     <Title>Yanzi</Title>
+    <ApplicationIcon>yanzi.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="yanzi.ico" />
     <Resource Include="logo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

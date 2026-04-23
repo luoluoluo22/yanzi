@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Windows;
 using OpenQuickHost.Sync;
 using Forms = System.Windows.Forms;
 using WpfApplication = System.Windows.Application;
@@ -18,6 +19,7 @@ public partial class App : WpfApplication
     {
         base.OnStartup(e);
         SyncConfigLoader.EnsureExampleFile();
+        StartupRegistrationService.Apply(AppSettingsStore.Load().LaunchAtStartup);
 
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
@@ -60,24 +62,24 @@ public partial class App : WpfApplication
             ContextMenuStrip = menu
         };
 
-        string logoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logo.png");
-        notifyIcon.Icon = TryCreateNotifyIcon(logoPath) ?? SystemIcons.Application;
+        notifyIcon.Icon = TryCreateNotifyIcon() ?? SystemIcons.Application;
         notifyIcon.Visible = true;
 
         notifyIcon.DoubleClick += (_, _) => window.TogglePanelVisibility();
         return notifyIcon;
     }
 
-    private static Icon? TryCreateNotifyIcon(string logoPath)
+    private static Icon? TryCreateNotifyIcon()
     {
-        if (!File.Exists(logoPath))
-        {
-            return null;
-        }
-
         try
         {
-            using var bitmap = new Bitmap(logoPath);
+            var resource = WpfApplication.GetResourceStream(new Uri("logo.png", UriKind.Relative));
+            if (resource == null)
+            {
+                return null;
+            }
+
+            using var bitmap = new Bitmap(resource.Stream);
             IntPtr handle = bitmap.GetHicon();
 
             try
@@ -98,7 +100,7 @@ public partial class App : WpfApplication
 
     private static App? CurrentApp => Current as App;
 
-    public void OpenSettingsWindow()
+    public void OpenSettingsWindow(string? sectionKey = null)
     {
         if (MainWindow is not MainWindow mainWindow)
         {
@@ -121,6 +123,7 @@ public partial class App : WpfApplication
             _settingsWindow.WindowState = System.Windows.WindowState.Normal;
         }
 
+        _settingsWindow.NavigateTo(sectionKey);
         _settingsWindow.Activate();
         _settingsWindow.Focus();
     }

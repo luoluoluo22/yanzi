@@ -28,6 +28,36 @@
         <SolidColorBrush x:Key="WindowBackgroundBrush" Color="{StaticResource WindowBackground}" />
         <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}" />
         <SolidColorBrush x:Key="SecondaryTextBrush" Color="{StaticResource SecondaryText}" />
+
+        <Style x:Key="QuickMenuButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#1AFFFFFF" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#10FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#25FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         
         <!-- Animations -->
         <Storyboard x:Key="FadeIn">
@@ -39,7 +69,8 @@
             CornerRadius="16"
             Background="#E61C1C1C"
             BorderBrush="#FF333333"
-            BorderThickness="1">
+            BorderThickness="1"
+            MouseLeftButtonDown="Window_MouseLeftButtonDown">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" Direction="270" ShadowDepth="2" Opacity="0.5"/>
         </Border.Effect>
@@ -47,7 +78,6 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" /> <!-- Search -->
-                <RowDefinition Height="Auto" /> <!-- Banner -->
                 <RowDefinition Height="*" />    <!-- List -->
                 <RowDefinition Height="Auto" /> <!-- Footer -->
             </Grid.RowDefinitions>
@@ -126,35 +156,8 @@
             <!-- Separator -->
             <Rectangle Grid.Row="0" Height="1" Fill="#FF2A2A2A" VerticalAlignment="Bottom" Margin="0,5,0,0"/>
 
-            <!-- 2. "What's New" Banner -->
-            <Border Grid.Row="1" 
-                    Margin="20,10,20,5" 
-                    Padding="12,10" 
-                    CornerRadius="8" 
-                    Background="#FF252525"
-                    BorderBrush="#FF333333"
-                    BorderThickness="1">
-                <Grid>
-                    <StackPanel Orientation="Horizontal">
-                        <Border Width="24" Height="24" CornerRadius="6" Background="#FFEF4444" Margin="0,0,12,0">
-                            <TextBlock Text="::" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White" FontWeight="Bold"/>
-                        </Border>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="See what's new" Foreground="White" FontSize="14" FontWeight="SemiBold"/>
-                            <TextBlock Text="v0.55.0.0" Foreground="#FF888888" FontSize="11" Margin="0,2,0,0"/>
-                        </StackPanel>
-                    </StackPanel>
-                    <TextBlock Text="Changelog" 
-                               HorizontalAlignment="Right" 
-                               VerticalAlignment="Center" 
-                               Foreground="#FF888888" 
-                               FontSize="13" 
-                               Cursor="Hand"/>
-                </Grid>
-            </Border>
-
-            <!-- 3. List Content -->
-            <Grid Grid.Row="2" Margin="10,5,10,5">
+            <!-- 2. List Content -->
+            <Grid Grid.Row="1" Margin="10,5,10,5">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -185,6 +188,9 @@
                                       Header="添加桌面快捷方式"
                                       Click="CreateDesktopShortcutMenuItem_Click" />
                             <Separator />
+                            <MenuItem x:Name="SetCommandShortcutMenuItem"
+                                      Header="设置快捷键"
+                                      Click="SetCommandShortcutMenuItem_Click" />
                             <MenuItem x:Name="RenameCommandMenuItem"
                                       Header="重命名"
                                       Click="RenameCommandMenuItem_Click" />
@@ -194,6 +200,10 @@
                             <MenuItem x:Name="DeleteExtensionMenuItem"
                                       Header="删除"
                                       Click="DeleteExtensionMenuItem_Click" />
+                            <Separator />
+                            <MenuItem x:Name="AddToQuickPanelMenuItem"
+                                      Header="添加到快捷面板"
+                                      Click="AddToQuickPanelMenuItem_Click" />
                         </ContextMenu>
                     </ListBox.ContextMenu>
 
@@ -270,24 +280,230 @@
                                 </StackPanel>
 
                                 <!-- Action Label -->
-                                <TextBlock Grid.Column="2" 
-                                           Text="{Binding ItemKindLabel}" 
-                                           Foreground="#FF666666" 
-                                           FontSize="12" 
-                                           VerticalAlignment="Center" 
-                                           Margin="0,0,5,0"/>
+                                <StackPanel Grid.Column="2"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center"
+                                            Margin="8,0,5,0">
+                                    <Border Background="#FF282828"
+                                            BorderBrush="#FF3A3A3A"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="8,4"
+                                            Margin="0,0,8,0"
+                                            Visibility="{Binding HasGlobalShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <TextBlock Text="{Binding ShortcutLabel}"
+                                                   Foreground="#FFACACAC"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold" />
+                                    </Border>
+                                    <TextBlock Text="{Binding ItemKindLabel}" 
+                                               Foreground="#FF666666" 
+                                               FontSize="12" 
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
             </Grid>
 
-            <!-- 4. Footer -->
-            <Border Grid.Row="3" Background="#FF161616" CornerRadius="0,0,16,16" Padding="20,10">
+            <Border Grid.Row="1"
+                    Margin="16,10,16,8"
+                    Padding="18"
+                    Background="#F11B1B1B"
+                    BorderBrush="#FF323232"
+                    BorderThickness="1"
+                    CornerRadius="14"
+                    Panel.ZIndex="20"
+                    Visibility="{Binding IsHostedViewOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <Button Grid.Column="0"
+                                Width="34"
+                                Height="34"
+                                Background="#FF262626"
+                                BorderBrush="#FF363636"
+                                BorderThickness="1"
+                                Foreground="White"
+                                FontSize="14"
+                                Click="CloseHostedViewButton_Click">
+                            <TextBlock Text="←"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                        </Button>
+
+                        <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding HostedViewTitle}"
+                                       Foreground="White"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding HostedViewSubtitle}"
+                                       Foreground="#FF8A8A8A"
+                                       FontSize="12"
+                                       Margin="0,3,0,0" />
+                        </StackPanel>
+
+                        <Border Grid.Column="2"
+                                Background="#FF262626"
+                                BorderBrush="#FF363636"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="10,5"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="{Binding HostedViewCommandLabel}"
+                                       Foreground="#FFB6B6B6"
+                                       FontSize="11" />
+                        </Border>
+                    </Grid>
+
+                    <Grid Grid.Row="1" Margin="0,18,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="14" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                Background="#FF202020"
+                                BorderBrush="#FF2E2E2E"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="14">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Text="{Binding HostedViewInputLabel}"
+                                           Foreground="White"
+                                           FontSize="13"
+                                           FontWeight="SemiBold" />
+
+                                <Grid Grid.Row="1" Margin="0,10,0,0">
+                                    <TextBox x:Name="HostedViewInputBox"
+                                             Text="{Binding HostedViewInput, UpdateSourceTrigger=PropertyChanged}"
+                                             AcceptsReturn="True"
+                                             VerticalScrollBarVisibility="Auto"
+                                             TextWrapping="Wrap"
+                                             Background="#FF171717"
+                                             BorderBrush="#FF2E2E2E"
+                                             BorderThickness="1"
+                                             Foreground="White"
+                                             CaretBrush="#FF3B82F6"
+                                             Padding="12"
+                                             FontSize="14"
+                                             TextChanged="HostedViewInputBox_TextChanged" />
+
+                                    <TextBlock IsHitTestVisible="False"
+                                               Margin="14,12,14,0"
+                                               VerticalAlignment="Top"
+                                               Foreground="#FF555555"
+                                               Text="{Binding HostedViewInputPlaceholder}"
+                                               TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Text, ElementName=HostedViewInputBox}" Value="">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="2"
+                                Background="#FF202020"
+                                BorderBrush="#FF2E2E2E"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="14">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Text="{Binding HostedViewOutputLabel}"
+                                           Foreground="White"
+                                           FontSize="13"
+                                           FontWeight="SemiBold" />
+
+                                <Border Grid.Row="1"
+                                        Margin="0,10,0,0"
+                                        Background="#FF171717"
+                                        BorderBrush="#FF2E2E2E"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="12">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <TextBlock Text="{Binding HostedViewOutput}"
+                                                   Foreground="#FFE5E5E5"
+                                                   FontSize="14"
+                                                   TextWrapping="Wrap" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <Grid Grid.Row="2" Margin="0,16,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Text="{Binding HostedViewStatus}"
+                                   Foreground="#FF818181"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Margin="2,0,14,0" />
+
+                        <Button Grid.Column="1"
+                                Content="{Binding HostedViewActionButtonText}"
+                                Background="#FF2563EB"
+                                Foreground="White"
+                                BorderThickness="0"
+                                Padding="18,10"
+                                FontSize="13"
+                                FontWeight="SemiBold"
+                                Click="HostedViewRunButton_Click" />
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- 3. Footer -->
+            <Border Grid.Row="2" Background="#FF161616" CornerRadius="0,0,16,16" Padding="20,10">
                 <Grid>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="≡" Foreground="#FF666666" FontSize="16" Margin="0,0,15,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding SyncStatus}" Foreground="#FF666666" FontSize="12" VerticalAlignment="Center"/>
+                        <Button x:Name="FooterQuickMenuButton"
+                                Width="32"
+                                Height="32"
+                                Margin="0,0,12,0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Click="FooterQuickMenuButton_Click"
+                                Style="{StaticResource QuickMenuButtonStyle}">
+                            <Path Data="M3,6H21V8H3V6ZM3,11H21V13H3V11ZM3,16H21V18H3V16Z" 
+                                  Fill="#FF888888" Height="14" Width="14" Stretch="Uniform" HorizontalAlignment="Center"/>
+                        </Button>
+                        <TextBlock Text="{Binding FooterHint}" Foreground="#FF666666" FontSize="12" VerticalAlignment="Center"/>
                     </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -301,6 +517,123 @@
                             </Border>
                         </StackPanel>
                     </StackPanel>
+
+                    <Popup x:Name="FooterQuickMenuPopup"
+                           Placement="Top"
+                           PlacementTarget="{Binding ElementName=FooterQuickMenuButton}"
+                           AllowsTransparency="True"
+                           PopupAnimation="Fade"
+                           StaysOpen="False">
+                        <Border Width="280"
+                                Margin="0,0,0,16"
+                                Background="#F21A1A1A"
+                                BorderBrush="#25FFFFFF"
+                                BorderThickness="1"
+                                CornerRadius="14">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="25" Direction="270" ShadowDepth="4" Opacity="0.5"/>
+                            </Border.Effect>
+                            <StackPanel Margin="10">
+                                <!-- Header Section -->
+                                <StackPanel Margin="10,6,10,12">
+                                    <TextBlock Text="快捷操作"
+                                               Foreground="White"
+                                               FontSize="15"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="快速执行常用动作，无需搜索。"
+                                               Foreground="#99FFFFFF"
+                                               FontSize="11"
+                                               Margin="0,4,0,0"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <Separator Background="#12FFFFFF" Margin="6,0,6,8"/>
+
+                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                        Click="QuickMenuAddExtension_Click">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="42" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Path Data="M5,12 H19 M12,5 V19" 
+                                              Stroke="White" StrokeThickness="1.5" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.9"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="添加扩展" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="新建单文件 JSON 扩展" Foreground="#70FFFFFF" FontSize="11" Margin="0,1,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+
+                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                        Click="QuickMenuOpenSettings_Click">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="42" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Path Data="M12,15C13.6569,15 15,13.6569 15,12C15,10.3431 13.6569,9 12,9C10.3431,9 9,10.3431 9,12C9,13.6569 10.3431,15 12,15Z M19.4,15L21.7,13.5C22.1,13.2 22.2,12.7 21.9,12.3L19.9,8.9C19.7,8.5 19.2,8.4 18.8,8.5L16.2,9.6C15.7,9.2 15.1,8.9 14.5,8.7L14.1,5.9C14.1,5.4 13.7,5.1 13.2,5.1L9.2,5.1C8.7,5.1 8.3,5.5 8.3,5.9L7.9,8.7C7.3,8.9 6.7,9.2 6.2,9.6L3.6,8.5C3.2,8.4 2.7,8.5 2.5,8.9L0.5,12.3C0.2,12.7 0.3,13.2 0.7,13.5L3,15C3,15.3 3,15.7 3,16C3,16.3 3,16.7 3,17L0.7,18.5C0.3,18.8 0.2,19.3 0.5,19.7L2.5,23.1C2.7,23.5 3.2,23.6 3.6,23.5L6.2,22.4C6.7,22.8 7.3,23.1 7.9,23.3L8.3,26.1C8.3,26.6 8.7,26.9 9.2,26.9L13.2,26.9C13.7,26.9 14.1,26.5 14.1,26.1L14.5,23.3C15.1,23.1 15.7,22.8 16.2,22.4L18.8,23.5C19.2,23.6 19.7,23.5 19.9,23.1L21.9,19.7C22.2,19.3 22.1,18.8 21.7,18.5L19.4,17C19.4,16.7 19.4,16.3 19.4,16C19.4,15.7 19.4,15.3 19.4,15Z" 
+                                              Fill="#D0FFFFFF" Height="18" Width="18" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="设置" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="进入设置页调整同步与偏好" Foreground="#70FFFFFF" FontSize="11" Margin="0,1,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+
+                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                        Click="QuickMenuRefreshCloud_Click">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="42" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Path Data="M21,12C21,16.97 16.97,21 12,21C7.03,21 3,16.97 3,12C3,7.03 7.03,3 12,3C14.76,3 17.22,4.25 18.86,6.21 M21,3V8H16" 
+                                              Stroke="White" StrokeThickness="1.5" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.9"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="刷新云端" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="重新同步扩展与当前用户状态" Foreground="#70FFFFFF" FontSize="11" Margin="0,1,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+
+                                <Rectangle Height="1" Fill="#15FFFFFF" Margin="6,10" />
+
+                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                        Click="QuickMenuOpenDocs_Click">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="42" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Path Data="M4,4 L20,4 L20,20 L4,20 Z M4,9 L20,9 M9,4 L9,20" 
+                                              Stroke="#CCFFFFFF" StrokeThickness="1.2" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="帮助文档" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="打开本地说明与扩展文档" Foreground="#70FFFFFF" FontSize="11" Margin="0,1,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+
+                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                        Click="QuickMenuOpenAbout_Click">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="42" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <!-- Stylized Swallow Bird Icon -->
+                                        <Path Data="M12,2L4.5,20.29L5.21,21L12,18L18.79,21L19.5,20.29L12,2Z" 
+                                              Fill="#60A5FA" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="关于燕子" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="查看版本与产品说明" Foreground="#70FFFFFF" FontSize="11" Margin="0,1,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                 </Grid>
             </Border>
         </Grid>

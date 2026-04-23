@@ -4,9 +4,12 @@ namespace OpenQuickHost;
 
 public partial class SimpleTextInputWindow : Window
 {
-    public SimpleTextInputWindow(string title, string description, string initialValue)
+    private readonly bool _allowEmpty;
+
+    public SimpleTextInputWindow(string title, string description, string initialValue, bool allowEmpty = false)
     {
         InitializeComponent();
+        _allowEmpty = allowEmpty;
         Title = title;
         TitleText.Text = title;
         DescriptionText.Text = description;
@@ -22,13 +25,14 @@ public partial class SimpleTextInputWindow : Window
 
     private void OkButton_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(ValueText))
+        if (!_allowEmpty && string.IsNullOrWhiteSpace(ValueText))
         {
             ErrorText.Text = "内容不能为空。";
             ErrorText.Visibility = Visibility.Visible;
             return;
         }
 
+        ErrorText.Visibility = Visibility.Collapsed;
         DialogResult = true;
     }
 

@@ -489,3 +489,110 @@ pre {
   
   h1 { font-size: 3rem; }
 }
+.actions-demo {
+  display: flex;
+  justify-content: center;
+  padding: 4rem 0;
+}
+
+.quick-menu {
+  width: 100%;
+  max-width: 440px;
+  background: var(--panel);
+  backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6);
+  padding: 1.5rem;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.quick-menu:hover {
+  transform: translateY(-8px);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.menu-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.menu-header strong {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 850;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.02em;
+}
+
+.menu-header span {
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.menu-item {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.menu-item:active {
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.98);
+}
+
+.menu-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: all 0.3s ease;
+}
+
+.menu-item:hover .menu-icon {
+  color: var(--accent);
+  filter: drop-shadow(0 0 8px var(--accent-glow));
+}
+
+.bird-icon {
+  color: var(--accent) !important;
+}
+
+.menu-info strong {
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.menu-info span {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  display: block;
+}
+
+@media (max-width: 480px) {
+  .quick-menu {
+    padding: 1rem;
+  }
+}

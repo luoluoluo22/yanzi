@@ -175,7 +175,29 @@ public sealed class CloudSyncClient
                 version = command.DeclaredVersion,
                 category = command.Category,
                 description = command.Subtitle,
-                keywords = command.Keywords
+                keywords = command.Keywords,
+                queryPrefixes = command.QueryPrefixes,
+                queryTargetTemplate = command.QueryTargetTemplate,
+                globalShortcut = command.GlobalShortcut,
+                hotkeyBehavior = command.HotkeyBehavior,
+                runtime = command.Runtime,
+                entry = command.EntryPoint,
+                permissions = command.Permissions,
+                hostedView = command.HostedView == null
+                    ? null
+                    : new
+                    {
+                        type = command.HostedView.Type,
+                        title = command.HostedView.Title,
+                        description = command.HostedView.Description,
+                        inputLabel = command.HostedView.InputLabel,
+                        inputPlaceholder = command.HostedView.InputPlaceholder,
+                        outputLabel = command.HostedView.OutputLabel,
+                        actionButtonText = command.HostedView.ActionButtonText,
+                        actionType = command.HostedView.ActionType,
+                        outputTemplate = command.HostedView.OutputTemplate,
+                        emptyState = command.HostedView.EmptyState
+                    }
             }
         });
 
