@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>扩展规范</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main style="padding-top:48px">
+    <section class="section" style="padding-top:0">
+      <p class="eyebrow">Documentation</p>
+      <h1 style="font-size:3rem;max-width:none">扩展规范</h1>
+      <div class="code-card" style="margin-top:24px">
+<pre><code>{
+  "id": "google-search",
+  "name": "谷歌",
+  "version": "0.1.0",
+  "category": "搜索",
+  "keywords": ["谷歌", "guge", "google", "gg"],
+  "openTarget": "https://www.google.com",
+  "queryPrefixes": ["谷歌", "guge", "google", "gg"],
+  "queryTargetTemplate": "https://www.google.com/search?q={query}"
+}</code></pre>
+      </div>
+      <div class="card" style="margin-top:24px">
+        <p class="section-text" style="margin-top:0">当前最低要求是独立目录中的 `manifest.json`。简单命令可使用 `openTarget`，参数化命令建议支持 `queryPrefixes` 与 `queryTargetTemplate`。</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

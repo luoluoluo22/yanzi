@@ -1,0 +1,152 @@
+<Window x:Class="OpenQuickHost.LoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="登录燕子云同步"
+        Width="420"
+        SizeToContent="Height"
+        MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Style="{StaticResource DialogWindow}">
+    <Border Margin="15"
+            CornerRadius="12"
+            Background="#FF161616"
+            BorderBrush="#FF2A2A2A"
+            BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="15" Direction="270" ShadowDepth="2" Opacity="0.5" />
+        </Border.Effect>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Margin="25">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel>
+                    <TextBlock x:Name="HeaderText"
+                               Text="登录燕子云同步"
+                               Style="{StaticResource TitleText}" />
+                    <TextBlock x:Name="DescriptionText"
+                               Margin="0,8,0,0"
+                               Text="登录后可在多设备之间同步扩展和设置。"
+                               Style="{StaticResource DescriptionText}" />
+                </StackPanel>
+
+                <Grid Grid.Row="1" Margin="0,18,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="SignInModeButton"
+                            Grid.Column="0"
+                            Content="登录"
+                            Style="{StaticResource SecondaryBtn}"
+                            Margin="0,0,6,0"
+                            Click="SignInModeButton_Click" />
+                    <Button x:Name="RegisterModeButton"
+                            Grid.Column="1"
+                            Content="注册"
+                            Style="{StaticResource SecondaryBtn}"
+                            Margin="6,0,0,0"
+                            Click="RegisterModeButton_Click" />
+                </Grid>
+
+                <StackPanel Grid.Row="2" Margin="0,18,0,0">
+                    <TextBlock Text="用户名"
+                               Foreground="#FFB8B8B8"
+                               FontSize="12"
+                               Margin="2,0,0,6"
+                               FontWeight="SemiBold" />
+                    <TextBox x:Name="UsernameBox"
+                             Height="40"
+                             Padding="12,10" />
+                </StackPanel>
+
+                <StackPanel x:Name="EmailPanel" Grid.Row="3" Margin="0,14,0,0">
+                    <TextBlock Text="邮箱"
+                               Foreground="#FFB8B8B8"
+                               FontSize="12"
+                               Margin="2,0,0,6"
+                               FontWeight="SemiBold" />
+                    <TextBox x:Name="EmailBox"
+                             Height="40"
+                             Padding="12,10" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="4" Margin="0,14,0,0">
+                    <TextBlock Text="密码"
+                               Foreground="#FFB8B8B8"
+                               FontSize="12"
+                               Margin="2,0,0,6"
+                               FontWeight="SemiBold" />
+                    <PasswordBox x:Name="PasswordBox"
+                                 Height="40"
+                                 Padding="12,10" />
+                </StackPanel>
+
+                <Grid x:Name="CodePanel" Grid.Row="5" Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="邮箱验证码"
+                                   Foreground="#FFB8B8B8"
+                                   FontSize="12"
+                                   Margin="2,0,0,6"
+                                   FontWeight="SemiBold" />
+                        <TextBox x:Name="CodeBox"
+                                 Height="40"
+                                 Padding="12,10" />
+                    </StackPanel>
+                    <Button x:Name="SendCodeButton"
+                            Grid.Column="1"
+                            Margin="10,26,0,0"
+                            MinWidth="98"
+                            Content="发送验证码"
+                            Style="{StaticResource SecondaryBtn}"
+                            Click="SendCodeButton_Click" />
+                </Grid>
+
+                <StackPanel Grid.Row="6" Margin="0,16,0,0">
+                    <CheckBox x:Name="RememberCheckBox"
+                              IsChecked="True"
+                              Foreground="#FFB8B8B8"
+                              Content="记住登录信息（本机加密保存）"
+                              FontSize="12" />
+                    <TextBlock x:Name="StatusText"
+                               Margin="0,10,0,0"
+                               Foreground="#FFEF4444"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed" />
+                </StackPanel>
+
+                <Grid Grid.Row="7" Margin="0,24,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0"
+                            Content="取消"
+                            Style="{StaticResource SecondaryBtn}"
+                            Margin="0,0,6,0"
+                            Click="CancelButton_Click" />
+                    <Button x:Name="ConfirmButton"
+                            Grid.Column="1"
+                            Content="登录"
+                            Style="{StaticResource PrimaryBtn}"
+                            Margin="6,0,0,0"
+                            Click="ConfirmButton_Click" />
+                </Grid>
+            </Grid>
+        </ScrollViewer>
+    </Border>
+</Window>

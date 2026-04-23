@@ -1,0 +1,81 @@
+<Window x:Class="OpenQuickHost.AddJsonExtensionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="JSON 扩展编辑器"
+        Width="720"
+        Height="640"
+        WindowStartupLocation="CenterOwner"
+        Style="{StaticResource DialogWindow}">
+    <Border Margin="15"
+            CornerRadius="12"
+            Background="#FF161616"
+            BorderBrush="#FF2A2A2A"
+            BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="15" Direction="270" ShadowDepth="2" Opacity="0.5"/>
+        </Border.Effect>
+        <Grid Margin="25">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock x:Name="TitleText"
+                       Text="Add Single-file JSON Extension"
+                       Style="{StaticResource TitleText}" />
+            
+            <TextBlock Grid.Row="1"
+                       Margin="0,8,0,0"
+                       Text="Define the extension manifest in JSON format. It will be saved locally and synced to the cloud automatically."
+                       Style="{StaticResource DescriptionText}" />
+
+            <TextBox Grid.Row="2"
+                     x:Name="JsonEditor"
+                     Margin="0,20,0,0"
+                     Padding="15"
+                     AcceptsReturn="True"
+                     AcceptsTab="True"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     TextWrapping="NoWrap"
+                     FontFamily="Consolas"
+                     FontSize="13"
+                     Background="#FF1E1E1E"
+                     BorderBrush="#FF2A2A2A"
+                     BorderThickness="1"
+                     Foreground="#FFD4D4D4" />
+
+            <Grid Grid.Row="3" Margin="0,20,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock x:Name="ErrorText"
+                           Grid.Column="0"
+                           VerticalAlignment="Center"
+                           Foreground="#FFEF4444"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Visibility="Collapsed" />
+                
+                <Button Grid.Column="1"
+                        Content="Cancel"
+                        Style="{StaticResource SecondaryBtn}"
+                        Width="100"
+                        Margin="0,0,10,0"
+                        Click="CancelButton_Click" />
+                
+                <Button x:Name="SaveButton"
+                        Grid.Column="2"
+                        Content="Save Extension"
+                        Style="{StaticResource PrimaryBtn}"
+                        Width="140"
+                        Click="SaveButton_Click" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

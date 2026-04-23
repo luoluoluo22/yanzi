@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>桌面启动器</title>
+  <meta name="description" content="一个支持云同步、单文件 JSON 扩展和参数化命令的桌面启动器。">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="site-header">
+    <div class="brand">Launcher</div>
+    <nav>
+      <a href="#features">能力</a>
+      <a href="#extensions">扩展规范</a>
+      <a href="#download">下载</a>
+      <a href="/docs/extension-spec.html">文档</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Desktop Launcher</p>
+        <h1>呼出即用，扩展优先，支持云同步。</h1>
+        <p class="hero-text">
+          这是一个面向效率场景的桌面启动器。它支持本地命令、单文件 JSON 扩展、Cloudflare 云同步，以及“缩略词 + 参数”的执行方式。
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="/downloads/OpenQuickHost-windows-x64.zip">下载 Windows 版</a>
+          <a class="button secondary" href="/docs/getting-started.html">查看使用说明</a>
+        </div>
+        <div class="hero-meta">
+          <span>Windows</span>
+          <span>Cloudflare Sync</span>
+          <span>JSON Extensions</span>
+        </div>
+      </div>
+      <div class="hero-panel">
+        <div class="launcher-mock">
+          <div class="search-row">
+            <span class="search-icon">⌕</span>
+            <span class="search-text">谷歌 今天的新闻</span>
+          </div>
+          <div class="list">
+            <div class="item active">
+              <div class="icon google">谷</div>
+              <div class="meta">
+                <strong>谷歌</strong>
+                <span>搜索 · 输入“谷歌 关键词”后直接搜索</span>
+              </div>
+              <div class="side">命令</div>
+            </div>
+            <div class="item">
+              <div class="icon green">加</div>
+              <div class="meta">
+                <strong>添加扩展</strong>
+                <span>命令 · 新增单文件 JSON 扩展</span>
+              </div>
+              <div class="side">命令</div>
+            </div>
+            <div class="item">
+              <div class="icon blue">设</div>
+              <div class="meta">
+                <strong>设置</strong>
+                <span>命令 · 账户、同步、扩展管理</span>
+              </div>
+              <div class="side">命令</div>
+            </div>
+          </div>
+          <div class="status-row">
+            <span>谷歌 · 今天的新闻</span>
+            <span>Enter 运行</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="section">
+      <div class="section-head">
+        <p class="eyebrow">能力</p>
+        <h2>简单命令和复杂扩展，都走同一套入口。</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="card">
+          <h3>启动器体验</h3>
+          <p>全局热键呼出、键盘切换、回车执行、右键更多操作。</p>
+        </article>
+        <article class="card">
+          <h3>单文件扩展</h3>
+          <p>普通用户只写一个 JSON 文件，就能增加自己的命令。</p>
+        </article>
+        <article class="card">
+          <h3>参数化命令</h3>
+          <p>支持“前缀 + 参数”，例如 `谷歌 今天的新闻`。</p>
+        </article>
+        <article class="card">
+          <h3>Cloudflare 云同步</h3>
+          <p>扩展元数据、用户安装记录和扩展包都可跨设备同步。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="extensions" class="section split">
+      <div>
+        <p class="eyebrow">扩展规范</p>
+        <h2>先从单文件 JSON 开始。</h2>
+        <p class="section-text">
+          当前版本先支持一个扩展目录内的 `manifest.json`。简单指令直接用 JSON 即可，后续再扩展到压缩包和复杂项目结构。
+        </p>
+        <div class="code-card">
+<pre><code>{
+  "id": "google-search",
+  "name": "谷歌",
+  "version": "0.1.0",
+  "category": "搜索",
+  "keywords": ["谷歌", "guge", "google", "gg"],
+  "queryPrefixes": ["谷歌", "guge", "google", "gg"],
+  "queryTargetTemplate": "https://www.google.com/search?q={query}"
+}</code></pre>
+        </div>
+      </div>
+      <div class="doc-links">
+        <a class="doc-link" href="/docs/extension-spec.html">
+          <strong>扩展规范</strong>
+          <span>字段说明、目录结构、参数化命令约定</span>
+        </a>
+        <a class="doc-link" href="/docs/getting-started.html">
+          <strong>使用说明</strong>
+          <span>安装、启动、添加扩展、云同步</span>
+        </a>
+        <a class="doc-link" href="/docs/product-overview.html">
+          <strong>产品说明</strong>
+          <span>产品定位、设计原则和后续方向</span>
+        </a>
+      </div>
+    </section>
+
+    <section id="download" class="section download-section">
+      <p class="eyebrow">下载</p>
+      <h2>先提供 Windows 版本。</h2>
+      <p class="section-text">
+        当前下载包为框架依赖发布版本，解压后即可运行。
+      </p>
+      <div class="download-panel">
+        <div>
+          <strong>OpenQuickHost Windows x64</strong>
+          <span>包含启动器主程序、同步配置模板和本地扩展目录支持。</span>
+        </div>
+        <a class="button primary" href="/downloads/OpenQuickHost-windows-x64.zip">立即下载</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
