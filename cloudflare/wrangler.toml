@@ -2,9 +2,6 @@ name = "openquickhost-sync"
 main = "src/index.js"
 compatibility_date = "2026-04-23"
 
-[vars]
-ALLOW_DEV_VERIFICATION_CODES = "true"
-
 [[d1_databases]]
 binding = "DB"
 database_name = "openquickhost-sync-db"

@@ -188,12 +188,11 @@ async function handleRequest(request, env) {
       .bind(email, username, codeHash, salt, expiresAt, now, now)
       .run();
 
-    const previewCode = await sendVerificationEmail(env, email, username, code);
+    await sendVerificationEmail(env, email, username, code);
     return json({
       ok: true,
       email,
-      expiresInSeconds: VERIFICATION_CODE_TTL_MINUTES * 60,
-      previewCode
+      expiresInSeconds: VERIFICATION_CODE_TTL_MINUTES * 60
     });
   }
 
@@ -604,10 +603,6 @@ function validatePassword(value) {
 
 async function sendVerificationEmail(env, email, username, code) {
   if (!env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) {
-    if (env.ALLOW_DEV_VERIFICATION_CODES === "true") {
-      return code;
-    }
-
     throw new HttpError(503, "email_provider_not_configured", "Email provider is not configured");
   }
 
@@ -639,8 +634,6 @@ async function sendVerificationEmail(env, email, username, code) {
     const body = await response.text();
     throw new HttpError(502, "email_delivery_failed", `Verification email failed: ${body}`);
   }
-
-  return null;
 }
 
 async function ensureUser(env, userId) {
