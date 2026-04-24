@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Windows;
 using OpenQuickHost.Sync;
 
@@ -7,18 +8,22 @@ public partial class LoginWindow : Window
 {
     public Func<string, string, Task<SendCodeResponse>>? SendRegistrationCodeAsync { private get; set; }
 
+    public Func<string, Task<SendCodeResponse>>? SendPasswordResetCodeAsync { private get; set; }
+
     public Func<string, string, string, string, Task>? RegisterAsyncHandler { private get; set; }
 
-    public LoginWindow(string? username = null)
+    public Func<string, string, string, Task>? ResetPasswordAsyncHandler { private get; set; }
+
+    public LoginWindow(string? email = null)
     {
         InitializeComponent();
-        UsernameBox.Text = username ?? string.Empty;
-        UpdateMode();
+        PrimaryInputBox.Text = email ?? string.Empty;
+        UpdateMode(AuthDialogMode.SignIn);
         Loaded += (_, _) =>
         {
-            if (string.IsNullOrWhiteSpace(UsernameBox.Text))
+            if (string.IsNullOrWhiteSpace(PrimaryInputBox.Text))
             {
-                UsernameBox.Focus();
+                PrimaryInputBox.Focus();
             }
             else
             {
@@ -27,7 +32,9 @@ public partial class LoginWindow : Window
         };
     }
 
-    public string Username => UsernameBox.Text.Trim();
+    public string LoginEmail => PrimaryInputBox.Text.Trim();
+
+    public string Username => PrimaryInputBox.Text.Trim();
 
     public string Email => EmailBox.Text.Trim();
 
@@ -37,7 +44,11 @@ public partial class LoginWindow : Window
 
     public bool RememberCredential => RememberCheckBox.IsChecked != false;
 
-    public bool IsRegisterMode { get; private set; }
+    public bool IsRegisterMode => Mode == AuthDialogMode.Register;
+
+    public bool IsResetPasswordMode => Mode == AuthDialogMode.ResetPassword;
+
+    private AuthDialogMode Mode { get; set; }
 
     public void ShowError(string message)
     {
@@ -55,65 +66,53 @@ public partial class LoginWindow : Window
 
     private void SignInModeButton_Click(object sender, RoutedEventArgs e)
     {
-        IsRegisterMode = false;
-        UpdateMode();
+        UpdateMode(AuthDialogMode.SignIn);
     }
 
     private void RegisterModeButton_Click(object sender, RoutedEventArgs e)
     {
-        IsRegisterMode = true;
-        UpdateMode();
+        UpdateMode(AuthDialogMode.Register);
+    }
+
+    private void ForgotPasswordButton_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateMode(AuthDialogMode.ResetPassword);
     }
 
     private async void SendCodeButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!IsRegisterMode)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(Username))
-        {
-            ShowError("请先输入用户名。");
-            return;
-        }
-
-        if (Username.Length < 3)
-        {
-            ShowError("用户名至少 3 位，只能使用字母、数字、下划线或短横线。");
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(Email))
-        {
-            ShowError("请先输入邮箱。");
-            return;
-        }
-
-        if (!System.Text.RegularExpressions.Regex.IsMatch(Email, @"^[^\s@]+@[^\s@]+\.[^\s@]+$"))
-        {
-            ShowError("邮箱格式不正确。");
-            return;
-        }
-
-        if (SendRegistrationCodeAsync == null)
-        {
-            ShowError("当前客户端未配置发送验证码能力。");
-            return;
-        }
-
         try
         {
             SendCodeButton.IsEnabled = false;
-            var result = await SendRegistrationCodeAsync(Email, Username);
-            if (!string.IsNullOrWhiteSpace(result.PreviewCode))
+
+            if (Mode == AuthDialogMode.Register)
             {
-                CodeBox.Text = result.PreviewCode;
-                ShowInfo("验证码已生成，当前为开发模式，已自动填入。");
+                ValidateUsername(Username);
+                ValidateEmail(Email, emptyMessage: "请先输入邮箱。");
+
+                if (SendRegistrationCodeAsync == null)
+                {
+                    ShowError("当前客户端未配置发送验证码能力。");
+                    return;
+                }
+
+                var result = await SendRegistrationCodeAsync(Email, Username);
+                PopulateVerificationCode(result, "注册");
+                return;
             }
-            else
+
+            if (Mode == AuthDialogMode.ResetPassword)
             {
-                ShowInfo("验证码已发送，请查收邮箱。");
+                ValidateEmail(LoginEmail, emptyMessage: "请先输入注册邮箱。");
+
+                if (SendPasswordResetCodeAsync == null)
+                {
+                    ShowError("当前客户端未配置找回密码能力。");
+                    return;
+                }
+
+                var result = await SendPasswordResetCodeAsync(LoginEmail);
+                PopulateVerificationCode(result, "重置密码");
             }
         }
         catch (Exception ex)
@@ -128,61 +127,67 @@ public partial class LoginWindow : Window
 
     private async void ConfirmButton_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(Username))
+        try
         {
-            ShowError("请输入用户名。");
-            return;
-        }
+            ConfirmButton.IsEnabled = false;
 
-        if (string.IsNullOrWhiteSpace(Password))
-        {
-            ShowError("请输入密码。");
-            return;
-        }
-
-        if (Password.Length < 8)
-        {
-            ShowError("密码至少 8 位。");
-            return;
-        }
-
-        if (IsRegisterMode)
-        {
-            if (string.IsNullOrWhiteSpace(Email))
+            if (Mode == AuthDialogMode.SignIn)
             {
-                ShowError("请输入邮箱。");
+                ValidateEmail(LoginEmail, emptyMessage: "请输入邮箱。");
+                ValidatePassword(Password);
+                DialogResult = true;
                 return;
             }
+
+            if (Mode == AuthDialogMode.Register)
+            {
+                ValidateUsername(Username);
+                ValidateEmail(Email, emptyMessage: "请输入邮箱。");
+                ValidatePassword(Password);
+
+                if (string.IsNullOrWhiteSpace(VerificationCode))
+                {
+                    ShowError("请输入邮箱验证码。");
+                    return;
+                }
+
+                if (RegisterAsyncHandler == null)
+                {
+                    ShowError("当前客户端未配置注册能力。");
+                    return;
+                }
+
+                await RegisterAsyncHandler(Email, Username, Password, VerificationCode);
+                DialogResult = true;
+                return;
+            }
+
+            ValidateEmail(LoginEmail, emptyMessage: "请输入注册邮箱。");
+            ValidatePassword(Password);
 
             if (string.IsNullOrWhiteSpace(VerificationCode))
             {
-                ShowError("请输入邮箱验证码。");
+                ShowError("请输入重置验证码。");
                 return;
             }
 
-            if (RegisterAsyncHandler == null)
+            if (ResetPasswordAsyncHandler == null)
             {
-                ShowError("当前客户端未配置注册能力。");
+                ShowError("当前客户端未配置找回密码能力。");
                 return;
             }
 
-            try
-            {
-                ConfirmButton.IsEnabled = false;
-                await RegisterAsyncHandler(Email, Username, Password, VerificationCode);
-            }
-            catch (Exception ex)
-            {
-                ShowError(ex.Message);
-                return;
-            }
-            finally
-            {
-                ConfirmButton.IsEnabled = true;
-            }
+            await ResetPasswordAsyncHandler(LoginEmail, Password, VerificationCode);
+            DialogResult = true;
         }
-
-        DialogResult = true;
+        catch (Exception ex)
+        {
+            ShowError(ex.Message);
+        }
+        finally
+        {
+            ConfirmButton.IsEnabled = true;
+        }
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
@@ -190,17 +195,102 @@ public partial class LoginWindow : Window
         DialogResult = false;
     }
 
-    private void UpdateMode()
+    private void UpdateMode(AuthDialogMode mode)
     {
-        HeaderText.Text = IsRegisterMode ? "注册燕子账号" : "登录燕子云同步";
-        DescriptionText.Text = IsRegisterMode
-            ? "使用邮箱验证码完成注册，用户名会校验唯一性。"
-            : "登录后可在多设备之间同步扩展和设置。";
-        EmailPanel.Visibility = IsRegisterMode ? Visibility.Visible : Visibility.Collapsed;
-        CodePanel.Visibility = IsRegisterMode ? Visibility.Visible : Visibility.Collapsed;
-        ConfirmButton.Content = IsRegisterMode ? "注册并登录" : "登录";
+        Mode = mode;
+        HeaderText.Text = mode switch
+        {
+            AuthDialogMode.Register => "注册燕子账号",
+            AuthDialogMode.ResetPassword => "找回燕子账号密码",
+            _ => "登录燕子云同步"
+        };
+        DescriptionText.Text = mode switch
+        {
+            AuthDialogMode.Register => "使用邮箱验证码完成注册，用户名会校验唯一性。",
+            AuthDialogMode.ResetPassword => "使用注册邮箱接收验证码，重置成功后会自动登录。",
+            _ => "使用邮箱和密码登录后，可在多设备之间同步扩展和设置。"
+        };
+        PrimaryFieldLabel.Text = mode == AuthDialogMode.Register ? "用户名" : "邮箱";
+        EmailPanel.Visibility = mode == AuthDialogMode.Register ? Visibility.Visible : Visibility.Collapsed;
+        CodePanel.Visibility = mode == AuthDialogMode.SignIn ? Visibility.Collapsed : Visibility.Visible;
+        ForgotPasswordButton.Visibility = mode == AuthDialogMode.SignIn ? Visibility.Visible : Visibility.Collapsed;
+        RememberCheckBox.Visibility = Visibility.Visible;
+        ConfirmButton.Content = mode switch
+        {
+            AuthDialogMode.Register => "注册并登录",
+            AuthDialogMode.ResetPassword => "重置并登录",
+            _ => "登录"
+        };
+        SendCodeButton.Content = mode == AuthDialogMode.Register ? "发送验证码" : "发送重置码";
         StatusText.Visibility = Visibility.Collapsed;
-        SignInModeButton.Opacity = IsRegisterMode ? 0.7 : 1;
-        RegisterModeButton.Opacity = IsRegisterMode ? 1 : 0.7;
+        SignInModeButton.Opacity = mode == AuthDialogMode.SignIn ? 1 : 0.7;
+        RegisterModeButton.Opacity = mode == AuthDialogMode.Register ? 1 : 0.7;
+
+        if (mode == AuthDialogMode.Register)
+        {
+            EmailBox.Focus();
+        }
+        else
+        {
+            PrimaryInputBox.Focus();
+        }
+    }
+
+    private void PopulateVerificationCode(SendCodeResponse result, string purpose)
+    {
+        if (!string.IsNullOrWhiteSpace(result.PreviewCode))
+        {
+            CodeBox.Text = result.PreviewCode;
+            ShowInfo($"{purpose}验证码已生成，当前为开发模式，已自动填入。");
+            return;
+        }
+
+        ShowInfo($"{purpose}验证码已发送，请查收邮箱。");
+    }
+
+    private void ValidateUsername(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            throw new InvalidOperationException("请输入用户名。");
+        }
+
+        if (username.Length < 3 || !Regex.IsMatch(username, "^[a-zA-Z0-9_-]{3,32}$"))
+        {
+            throw new InvalidOperationException("用户名至少 3 位，只能使用字母、数字、下划线或短横线。");
+        }
+    }
+
+    private void ValidateEmail(string email, string emptyMessage)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new InvalidOperationException(emptyMessage);
+        }
+
+        if (!Regex.IsMatch(email, @"^[^\s@]+@[^\s@]+\.[^\s@]+$"))
+        {
+            throw new InvalidOperationException("邮箱格式不正确。");
+        }
+    }
+
+    private void ValidatePassword(string password)
+    {
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("请输入密码。");
+        }
+
+        if (password.Length < 8)
+        {
+            throw new InvalidOperationException("密码至少 8 位。");
+        }
+    }
+
+    private enum AuthDialogMode
+    {
+        SignIn,
+        Register,
+        ResetPassword
     }
 }

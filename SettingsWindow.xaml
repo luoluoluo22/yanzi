@@ -384,6 +384,42 @@
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
+
+                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16" Margin="0,16,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="个人扩展同步（坚果云 / WebDAV）" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="官方云负责账号和扩展分享；用户自己的扩展目录同步走坚果云或其他 WebDAV。" Foreground="#FF8E8E8E" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"/>
+
+                                    <Grid Margin="0,16,0,0">
+                                        <TextBlock Text="启用个人同步" Foreground="White" FontSize="13" VerticalAlignment="Center"/>
+                                        <CheckBox HorizontalAlignment="Right" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableWebDavSync, Mode=TwoWay}" Click="SaveWebDavSettingsButton_Click"/>
+                                    </Grid>
+                                    <Rectangle Height="1" Fill="#FF2A2A2A" Margin="0,12"/>
+
+                                    <TextBlock Text="WebDAV 服务地址" Foreground="#FFB8B8B8" FontSize="12" />
+                                    <TextBox Text="{Binding WebDavServerUrl, Mode=TwoWay}" Margin="0,6,0,0"/>
+
+                                    <TextBlock Text="同步根目录" Foreground="#FFB8B8B8" FontSize="12" Margin="0,14,0,0" />
+                                    <TextBox Text="{Binding WebDavRootPath, Mode=TwoWay}" Margin="0,6,0,0"/>
+
+                                    <TextBlock Text="用户名" Foreground="#FFB8B8B8" FontSize="12" Margin="0,14,0,0" />
+                                    <TextBox Text="{Binding WebDavUsername, Mode=TwoWay}" Margin="0,6,0,0"/>
+
+                                    <Grid Margin="0,16,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding WebDavStatusText}" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0,0,0">
+                                            <Button Content="保存配置" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="SaveWebDavSettingsButton_Click"/>
+                                            <Button Content="设置密码" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="SetWebDavCredentialButton_Click"/>
+                                            <Button Content="测试连接" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="TestWebDavButton_Click"/>
+                                            <Button Content="立即同步" Style="{StaticResource PrimaryBtn}" Click="SyncWebDavButton_Click"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <!-- About View -->
@@ -425,13 +461,35 @@
                             <Grid Margin="0,5">
                                 <StackPanel>
                                     <TextBlock Text="面板触发方式" Foreground="White" FontSize="13"/>
-                                    <TextBlock Text="当前仅支持：鼠标中键长按 (500ms)" Foreground="#FF666666" FontSize="11" Margin="0,4,0,0"/>
+                                    <TextBlock Text="{Binding QuickPanelTriggerSummary}" Foreground="#FF666666" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <Border Background="#FF2D2D2D" CornerRadius="4" Padding="10,4" HorizontalAlignment="Right">
-                                    <TextBlock Text="中键长按 ▾" Foreground="White" FontSize="12"/>
-                                </Border>
+                                <Button Content="保存" Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Right" Padding="14,5" Click="SaveQuickPanelTrigger_Click"/>
                             </Grid>
                             <Rectangle Height="1" Fill="#FF222222" Margin="0,12"/>
+
+                            <TextBlock Text="鼠标方式" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,10"/>
+                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="15">
+                                <StackPanel>
+                                    <CheckBox Content="按下中键" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerMiddleButtonDown, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                    <CheckBox Content="按下 X1 键" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerX1ButtonDown, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                    <CheckBox Content="按下 X2 键" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerX2ButtonDown, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                    <CheckBox Content="Ctrl+中键单击" Foreground="#FF666666" FontSize="13" Margin="0,0,0,8" IsEnabled="False"/>
+                                    <CheckBox Content="Ctrl+左键单击" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerCtrlLeftClick, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                    <CheckBox Content="Ctrl+右键单击" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerCtrlRightClick, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                    <CheckBox Content="长按中键" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerMiddleButtonLongPress, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                    <CheckBox Content="长按右键" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerRightButtonLongPress, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                    <CheckBox Content="按右键移动" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerRightButtonDrag, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                    <CheckBox Content="画圈（暂未启用，避免误触）" Foreground="#FF666666" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerCircleGesture, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                    <CheckBox Content="滚轮左右（需要鼠标支持）" Foreground="#FFE5E5E5" FontSize="13" IsChecked="{Binding TriggerHorizontalWheel, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+
+                                    <Border BorderBrush="#FF333333" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,14,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="鼠标弹出选项" Foreground="#FFB8B8B8" FontSize="12" Margin="0,0,0,8"/>
+                                            <CheckBox Content="在按钮上松开后执行动作" Foreground="#FFE5E5E5" FontSize="13" IsChecked="{Binding ExecuteOnButtonRelease, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
 
                             <TextBlock Text="配置指南" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,20,0,10"/>
                             <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="15">
@@ -439,7 +497,7 @@
                                     <TextBlock Text="1. 在主界面搜索您需要的扩展。" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8"/>
                                     <TextBlock Text="2. 在搜索结果上点击右键，选择“添加到快捷面板”。" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8"/>
                                     <TextBlock Text="3. 面板将自动占用第一个可用槽位（共 28 个）。" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8"/>
-                                    <TextBlock Text="4. 使用鼠标中键在任意位置长按即可触发面板弹出。" Foreground="#FFE5E5E5" FontSize="13"/>
+                                    <TextBlock Text="4. 长按或拖动触发时，如果启用“松开后执行”，移动到扩展上松开即可自动运行。" Foreground="#FFE5E5E5" FontSize="13"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -456,6 +514,82 @@
                                         <Button Content="打开扩展目录" Style="{StaticResource PrimaryBtn}" Margin="0,0,10,0" Click="OpenExtensionsFolderButton_Click"/>
                                         <Button Content="刷新扩展统计" Style="{StaticResource SecondaryBtn}" Click="RefreshExtensionStatsButton_Click"/>
                                     </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16" Margin="0,16,0,0">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Text="{Binding ExtensionSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                                 Height="34"
+                                                 Padding="12,8"
+                                                 VerticalContentAlignment="Center"
+                                                 ToolTip="按名称、ID、分类搜索扩展" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding ExtensionSearchSummary}"
+                                                   Foreground="#FF8E8E8E"
+                                                   FontSize="12"
+                                                   Margin="12,0,0,0"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <Border Background="#FF181818" CornerRadius="6" BorderBrush="#FF262626" BorderThickness="1">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+
+                                            <Grid Margin="14,12,14,10">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="2.3*" />
+                                                    <ColumnDefinition Width="1.1*" />
+                                                    <ColumnDefinition Width="0.8*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="扩展" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="1" Text="分类" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="2" Text="版本" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="3" Text="操作" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                            </Grid>
+
+                                            <ItemsControl Grid.Row="1" ItemsSource="{Binding ExtensionItems}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border BorderBrush="#FF252525" BorderThickness="0,1,0,0" Padding="14,12">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="2.3*" />
+                                                                    <ColumnDefinition Width="1.1*" />
+                                                                    <ColumnDefinition Width="0.8*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+
+                                                                <StackPanel>
+                                                                    <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                                                    <TextBlock Text="{Binding ExtensionId}" Foreground="#FF8E8E8E" FontSize="11" Margin="0,4,0,0"/>
+                                                                    <TextBlock Text="{Binding DirectoryPath}" Foreground="#FF666666" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                                                </StackPanel>
+
+                                                                <TextBlock Grid.Column="1" Text="{Binding Category}" Foreground="#FFE5E5E5" FontSize="12" VerticalAlignment="Center"/>
+                                                                <TextBlock Grid.Column="2" Text="{Binding Version}" Foreground="#FFE5E5E5" FontSize="12" VerticalAlignment="Center"/>
+
+                                                                <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
+                                                                    <Button Content="打开目录" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="OpenExtensionDirectoryButton_Click"/>
+                                                                    <Button Content="编辑" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="EditExtensionButton_Click"/>
+                                                                    <Button Content="删除" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="DeleteExtensionButton_Click"/>
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
                             </Border>
                         </StackPanel>

@@ -135,7 +135,7 @@ async function handleRequest(request, env) {
       ).bind(email)
     ]);
 
-    return json(await buildAuthResponse(env, { userId, username }));
+    return json(await buildAuthResponse(env, { userId, username, email }));
   }
 
   if (url.pathname === "/v1/auth/send-code" && request.method === "POST") {
@@ -198,20 +198,21 @@ async function handleRequest(request, env) {
 
   if (url.pathname === "/v1/auth/login" && request.method === "POST") {
     const payload = await readJson(request);
-    const username = normalizeUsername(payload.username);
+    const email = normalizeEmail(payload.email || payload.username);
     const password = validatePassword(payload.password);
 
     const user = await env.DB.prepare(
       `select
         user_id,
         username,
+        email,
         password_hash,
         password_salt,
         password_iterations
       from auth_users
-      where username = ?`
+      where email = ?`
     )
-      .bind(username)
+      .bind(email)
       .first();
 
     if (!user) {
@@ -225,18 +226,145 @@ async function handleRequest(request, env) {
     );
 
     if (passwordHash !== user.password_hash) {
-      throw new HttpError(401, "invalid_credentials", "Invalid username or password");
+      throw new HttpError(401, "invalid_credentials", "Invalid email or password");
     }
 
     await touchUser(env, user.user_id);
-    return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username }));
+    return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
+  }
+
+  if (url.pathname === "/v1/auth/send-reset-code" && request.method === "POST") {
+    const payload = await readJson(request);
+    const email = normalizeEmail(payload.email);
+    const user = await env.DB.prepare(
+      `select
+        user_id,
+        username,
+        email
+      from auth_users
+      where email = ?`
+    )
+      .bind(email)
+      .first();
+
+    if (!user) {
+      throw new HttpError(404, "email_not_found", "Email does not exist");
+    }
+
+    const code = generateVerificationCode();
+    const salt = randomHex(8);
+    const codeHash = await hashVerificationCode(email, code, salt);
+    const now = isoNow();
+    const expiresAt = new Date(Date.now() + VERIFICATION_CODE_TTL_MINUTES * 60 * 1000).toISOString();
+
+    await env.DB.prepare(
+      `insert into auth_password_resets (
+        email,
+        user_id,
+        code_hash,
+        code_salt,
+        expires_at,
+        created_at,
+        updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?)
+      on conflict(email) do update set
+        user_id = excluded.user_id,
+        code_hash = excluded.code_hash,
+        code_salt = excluded.code_salt,
+        expires_at = excluded.expires_at,
+        updated_at = excluded.updated_at`
+    )
+      .bind(email, user.user_id, codeHash, salt, expiresAt, now, now)
+      .run();
+
+    await sendPasswordResetEmail(env, email, user.username, code);
+    return json({
+      ok: true,
+      email,
+      expiresInSeconds: VERIFICATION_CODE_TTL_MINUTES * 60
+    });
+  }
+
+  if (url.pathname === "/v1/auth/reset-password" && request.method === "POST") {
+    const payload = await readJson(request);
+    const email = normalizeEmail(payload.email);
+    const password = validatePassword(payload.password);
+    const code = normalizeVerificationCode(payload.code);
+
+    const reset = await env.DB.prepare(
+      `select
+        email,
+        user_id,
+        code_hash,
+        code_salt,
+        expires_at
+      from auth_password_resets
+      where email = ?`
+    )
+      .bind(email)
+      .first();
+
+    if (!reset) {
+      throw new HttpError(400, "reset_required", "Password reset verification is required");
+    }
+
+    if (Date.parse(String(reset.expires_at)) <= Date.now()) {
+      throw new HttpError(400, "verification_expired", "Verification code expired");
+    }
+
+    const codeHash = await hashVerificationCode(email, code, reset.code_salt);
+    if (codeHash !== reset.code_hash) {
+      throw new HttpError(400, "invalid_verification_code", "Invalid verification code");
+    }
+
+    const user = await env.DB.prepare(
+      `select
+        user_id,
+        username,
+        email
+      from auth_users
+      where user_id = ? and email = ?`
+    )
+      .bind(reset.user_id, email)
+      .first();
+
+    if (!user) {
+      throw new HttpError(404, "user_not_found", "User does not exist");
+    }
+
+    const passwordSalt = randomHex(16);
+    const passwordHash = await hashPassword(password, passwordSalt, PASSWORD_ITERATIONS);
+    const now = isoNow();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `update auth_users
+         set password_hash = ?,
+             password_salt = ?,
+             password_iterations = ?,
+             updated_at = ?
+         where user_id = ?`
+      ).bind(passwordHash, passwordSalt, PASSWORD_ITERATIONS, now, user.user_id),
+      env.DB.prepare(
+        `delete from auth_password_resets
+         where email = ?`
+      ).bind(email),
+      env.DB.prepare(
+        `update users
+         set updated_at = ?
+         where user_id = ?`
+      ).bind(now, user.user_id)
+    ]);
+
+    return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
   }
 
   if (url.pathname === "/v1/auth/me" && request.method === "GET") {
     const auth = await requireAuth(request, env);
     return json({
       userId: auth.userId,
-      username: auth.username
+      username: auth.username,
+      email: auth.email
     });
   }
 
@@ -473,7 +601,8 @@ async function buildAuthResponse(env, user) {
     accessToken,
     expiresAt,
     userId: user.userId,
-    username: user.username
+    username: user.username,
+    email: user.email ?? null
   };
 }
 
@@ -492,7 +621,8 @@ async function requireAuth(request, env) {
 
   return {
     userId: String(payload.sub),
-    username: String(payload.username)
+    username: String(payload.username),
+    email: payload.email ? String(payload.email) : null
   };
 }
 
@@ -602,11 +732,11 @@ function validatePassword(value) {
 }
 
 async function sendVerificationEmail(env, email, username, code) {
-  if (!env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) {
-    throw new HttpError(503, "email_provider_not_configured", "Email provider is not configured");
-  }
-
-  const html = `
+  return sendAuthEmail(
+    env,
+    email,
+    "燕子注册验证码",
+    `
     <div style="font-family:Arial,sans-serif;padding:24px;color:#111827">
       <h2 style="margin:0 0 16px">燕子注册验证码</h2>
       <p style="margin:0 0 12px">你好，${escapeHtml(username)}：</p>
@@ -614,7 +744,31 @@ async function sendVerificationEmail(env, email, username, code) {
       <p style="font-size:28px;font-weight:700;letter-spacing:6px;margin:0 0 16px">${code}</p>
       <p style="margin:0;color:#6b7280">验证码 ${VERIFICATION_CODE_TTL_MINUTES} 分钟内有效。</p>
     </div>
-  `;
+  `
+  );
+}
+
+async function sendPasswordResetEmail(env, email, username, code) {
+  return sendAuthEmail(
+    env,
+    email,
+    "燕子密码重置验证码",
+    `
+    <div style="font-family:Arial,sans-serif;padding:24px;color:#111827">
+      <h2 style="margin:0 0 16px">燕子密码重置验证码</h2>
+      <p style="margin:0 0 12px">你好，${escapeHtml(username)}：</p>
+      <p style="margin:0 0 12px">你正在重置燕子账号密码，验证码是：</p>
+      <p style="font-size:28px;font-weight:700;letter-spacing:6px;margin:0 0 16px">${code}</p>
+      <p style="margin:0;color:#6b7280">验证码 ${VERIFICATION_CODE_TTL_MINUTES} 分钟内有效。</p>
+    </div>
+  `
+  );
+}
+
+async function sendAuthEmail(env, email, subject, html) {
+  if (!env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) {
+    throw new HttpError(503, "email_provider_not_configured", "Email provider is not configured");
+  }
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -625,7 +779,7 @@ async function sendVerificationEmail(env, email, username, code) {
     body: JSON.stringify({
       from: env.RESEND_FROM_EMAIL,
       to: [email],
-      subject: "燕子注册验证码",
+      subject,
       html
     })
   });

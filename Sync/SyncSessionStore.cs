@@ -56,5 +56,6 @@ public sealed class SyncSession
     public string UserId { get; init; } = string.Empty;
 
     public string Username { get; init; } = string.Empty;
-}
 
+    public string? Email { get; init; }
+}

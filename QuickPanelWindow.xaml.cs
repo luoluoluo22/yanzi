@@ -10,6 +10,7 @@ using System.Windows.Controls;
 using System.Linq;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using System.Text;
 
 namespace OpenQuickHost;
 
@@ -19,12 +20,21 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private AppSettings _settings;
     private readonly List<SlotViewModel> _allSlots = new();
     private bool _isPinned;
+    private SlotViewModel? _hoveredSlot;
+    private bool _isExecutingSlot;
+    private IntPtr _previousForegroundWindow;
+    private readonly DispatcherTimer _releaseTargetTimer;
 
     public QuickPanelWindow(MainWindow mainWindow)
     {
         InitializeComponent();
         _mainWindow = mainWindow;
         _settings = AppSettingsStore.Load();
+        _releaseTargetTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(40)
+        };
+        _releaseTargetTimer.Tick += (_, _) => PollReleaseTarget();
         
         LoadSlots();
         DataContext = this;
@@ -147,8 +157,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             if (vm.Command != null)
             {
-                _mainWindow.ExecuteCommandExternally(vm.Command);
-                Hide();
+                _ = ExecuteSlotCommandAsync(vm, "quick-panel-click");
             }
             else
             {
@@ -160,6 +169,111 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                     SaveSlots();
                 }
             }
+        }
+    }
+
+    private void SlotButton_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: SlotViewModel vm } && vm.Command != null)
+        {
+            SetReleaseTarget(vm);
+        }
+    }
+
+    private void SlotButton_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: SlotViewModel vm } && ReferenceEquals(_hoveredSlot, vm))
+        {
+            ClearReleaseTarget();
+        }
+    }
+
+    private void SlotButton_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: SlotViewModel vm } && vm.Command != null)
+        {
+            SetReleaseTarget(vm);
+        }
+    }
+
+    public void ExecuteHoveredSlotFromHoldRelease()
+    {
+        if (!IsVisible)
+        {
+            HostAssets.AppendLog("Quick panel hold release: panel is not visible.");
+            return;
+        }
+
+        var slot = _hoveredSlot ?? ResolveSlotUnderCursor();
+        if (slot?.Command == null)
+        {
+            HostAssets.AppendLog("Quick panel hold release: no occupied slot under cursor.");
+            return;
+        }
+
+        HostAssets.AppendLog($"Quick panel hold release: executing slot {slot.Index}, extension={slot.Command.ExtensionId}.");
+        _ = ExecuteSlotCommandAsync(slot, "quick-panel-hold-release");
+    }
+
+    private void SetReleaseTarget(SlotViewModel? slot)
+    {
+        if (ReferenceEquals(_hoveredSlot, slot))
+        {
+            return;
+        }
+
+        if (_hoveredSlot != null)
+        {
+            _hoveredSlot.IsReleaseTarget = false;
+        }
+
+        _hoveredSlot = slot;
+        if (_hoveredSlot != null)
+        {
+            _hoveredSlot.IsReleaseTarget = true;
+        }
+    }
+
+    private void ClearReleaseTarget()
+    {
+        if (_hoveredSlot != null)
+        {
+            _hoveredSlot.IsReleaseTarget = false;
+        }
+
+        _hoveredSlot = null;
+    }
+
+    private async Task ExecuteSlotCommandAsync(SlotViewModel vm, string launchSource)
+    {
+        if (_isExecutingSlot || vm.Command == null)
+        {
+            return;
+        }
+
+        _isExecutingSlot = true;
+        try
+        {
+            var command = vm.Command;
+            HostAssets.AppendLog($"Quick panel execute: source={launchSource}, slot={vm.Index}, extension={command.ExtensionId}.");
+            _releaseTargetTimer.Stop();
+            Hide();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (_previousForegroundWindow != IntPtr.Zero)
+            {
+                var restored = NativeMethods.SetForegroundWindow(_previousForegroundWindow);
+                HostAssets.AppendLog($"Quick panel execute: restored previous foreground={restored}, {DescribeWindow(_previousForegroundWindow)}.");
+            }
+
+            await Task.Delay(120);
+            var input = await SelectionCaptureService.CaptureSelectedInputAsync();
+            HostAssets.AppendLog($"Quick panel execute: captured input length={input.Length}.");
+            _mainWindow.ExecuteCommandExternally(command, input, launchSource);
+        }
+        finally
+        {
+            _isExecutingSlot = false;
+            ClearReleaseTarget();
         }
     }
 
@@ -220,11 +334,13 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        _releaseTargetTimer.Stop();
         Hide();
     }
 
     public void ShowAtMouse()
     {
+        _previousForegroundWindow = NativeMethods.GetForegroundWindow();
         var point = NativeMethods.GetCursorPosition();
         Left = point.X - Width / 2;
         Top = point.Y - Height / 2;
@@ -237,8 +353,10 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (Top + Height > screen.Bounds.Bottom) Top = screen.Bounds.Bottom - Height;
 
         HubSearchBox.Text = string.Empty; // Reset search on show
+        _hoveredSlot = null;
         LoadSlots(); // Refresh
         Show();
+        _releaseTargetTimer.Start();
         Activate();
         Focus();
         NativeMethods.SetForegroundWindow(new WindowInteropHelper(this).Handle);
@@ -252,6 +370,89 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }, DispatcherPriority.ApplicationIdle);
     }
 
+    private void PollReleaseTarget()
+    {
+        if (!IsVisible)
+        {
+            _releaseTargetTimer.Stop();
+            ClearReleaseTarget();
+            return;
+        }
+
+        _ = ResolveSlotUnderCursor(occupiedOnly: true, updateTarget: true);
+    }
+
+    private SlotViewModel? ResolveSlotUnderCursor(bool occupiedOnly = false, bool updateTarget = true)
+    {
+        var point = NativeMethods.GetCursorPosition();
+        var localPoint = PointFromScreen(point);
+        var hit = InputHitTest(localPoint) as DependencyObject;
+        while (hit != null)
+        {
+            if (hit is FrameworkElement { Tag: SlotViewModel taggedSlot })
+            {
+                if (occupiedOnly && taggedSlot.Command == null)
+                {
+                    if (updateTarget)
+                    {
+                        ClearReleaseTarget();
+                    }
+
+                    return null;
+                }
+
+                if (updateTarget)
+                {
+                    SetReleaseTarget(taggedSlot);
+                }
+
+                return taggedSlot;
+            }
+
+            if (hit is FrameworkElement { DataContext: SlotViewModel contextSlot })
+            {
+                if (occupiedOnly && contextSlot.Command == null)
+                {
+                    if (updateTarget)
+                    {
+                        ClearReleaseTarget();
+                    }
+
+                    return null;
+                }
+
+                if (updateTarget)
+                {
+                    SetReleaseTarget(contextSlot);
+                }
+
+                return contextSlot;
+            }
+
+            hit = VisualTreeHelper.GetParent(hit);
+        }
+
+        if (updateTarget)
+        {
+            ClearReleaseTarget();
+        }
+
+        return null;
+    }
+
+    private static string DescribeWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return "hwnd=0x0";
+        }
+
+        var titleBuilder = new StringBuilder(256);
+        _ = NativeMethods.GetWindowText(hwnd, titleBuilder, titleBuilder.Capacity);
+        _ = NativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
+        return $"hwnd=0x{hwnd.ToInt64():X}, pid={processId}, title=\"{titleBuilder}\"";
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) => 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
@@ -262,6 +463,7 @@ public class SlotViewModel : INotifyPropertyChanged
     public int Index { get; }
     private CommandItem? _command;
     private bool _isFavorite;
+    private bool _isReleaseTarget;
 
     public CommandItem? Command => _command;
 
@@ -292,6 +494,21 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(FavoriteLabel));
     }
 
+    public bool IsReleaseTarget
+    {
+        get => _isReleaseTarget;
+        set
+        {
+            if (value == _isReleaseTarget)
+            {
+                return;
+            }
+
+            _isReleaseTarget = value;
+            OnPropertyChanged();
+        }
+    }
+
     public bool IsEmpty => _command == null;
     public bool IsOccupied => _command != null;
     public bool IsFavorite => _isFavorite;
@@ -313,6 +530,15 @@ internal static class NativeMethods
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct POINT

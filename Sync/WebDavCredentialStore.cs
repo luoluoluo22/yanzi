@@ -1,17 +1,15 @@
 using System.IO;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace OpenQuickHost.Sync;
 
-public static class SecureCredentialStore
+public static class WebDavCredentialStore
 {
     public static string CredentialPath =>
-        Path.Combine(AppContext.BaseDirectory, "synccredentials.dat");
+        Path.Combine(AppContext.BaseDirectory, "webdavcredentials.dat");
 
-    public static SavedCredential? Load()
+    public static SavedWebDavCredential? Load()
     {
         if (!File.Exists(CredentialPath))
         {
@@ -22,7 +20,7 @@ public static class SecureCredentialStore
         {
             var protectedBytes = File.ReadAllBytes(CredentialPath);
             var bytes = ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser);
-            return JsonSerializer.Deserialize<SavedCredential>(bytes, JsonOptions);
+            return JsonSerializer.Deserialize<SavedWebDavCredential>(bytes, JsonOptions);
         }
         catch
         {
@@ -30,7 +28,7 @@ public static class SecureCredentialStore
         }
     }
 
-    public static void Save(SavedCredential credential)
+    public static void Save(SavedWebDavCredential credential)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(credential, JsonOptions);
         var protectedBytes = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
@@ -47,22 +45,13 @@ public static class SecureCredentialStore
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 }
 
-public sealed class SavedCredential
+public sealed class SavedWebDavCredential
 {
-    public string Email { get; init; } = string.Empty;
-
-    [JsonPropertyName("username")]
-    public string LegacyUsername { get; init; } = string.Empty;
+    public string Username { get; init; } = string.Empty;
 
     public string Password { get; init; } = string.Empty;
-
-    public string LoginEmail =>
-        !string.IsNullOrWhiteSpace(Email)
-            ? Email
-            : LegacyUsername;
 }

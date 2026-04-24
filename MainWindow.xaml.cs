@@ -28,6 +28,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly List<CommandItem> _allCommands;
     private readonly CloudSyncClient? _cloudSyncClient;
     private readonly SyncOptions _syncOptions;
+    private AppSettings _appSettings;
     private readonly Dictionary<string, CommandItem> _localExtensionIndex;
     private readonly Dictionary<int, CommandItem> _registeredExtensionHotkeys = new();
     private CommandItem? _selectedCommand;
@@ -51,6 +52,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ApplyWindowIcon();
         HostAssets.EnsureCreated();
         _syncOptions = SyncConfigLoader.Load();
+        _appSettings = AppSettingsStore.Load();
         LocalExtensionCatalog.EnsureSampleExtension();
         if (_syncOptions.IsConfigured)
         {
@@ -243,11 +245,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (_cloudSyncClient == null)
         {
-            InputHookService.Start(() => _quickPanel?.ShowAtMouse());
+            InputHookService.Start(
+                () => _quickPanel?.ShowAtMouse(),
+                () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease());
             return;
         }
 
-        InputHookService.Start(() => _quickPanel?.ShowAtMouse());
+        InputHookService.Start(
+            () => _quickPanel?.ShowAtMouse(),
+            () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease());
         if (!AppSettingsStore.Load().RefreshCloudOnStartup)
         {
             return;
@@ -664,9 +670,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task ExecuteCommandAsync(CommandItem runnable, string? explicitInput = null, string launchSource = "launcher")
     {
+        var hasExternalInput = !string.IsNullOrWhiteSpace(explicitInput);
         if (runnable.HostedView != null)
         {
-            OpenHostedView(runnable);
+            if (!string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowPanel();
+            }
+
+            OpenHostedView(runnable, explicitInput);
+            if (hasExternalInput && UsesScriptHostedView(runnable.HostedView))
+            {
+                await RefreshHostedViewOutputAsync();
+            }
+
             return;
         }
 
@@ -681,7 +698,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var executionTarget = BuildExecutionTarget(runnable, SearchBox.Text);
+        var executionTarget = BuildExecutionTarget(runnable, explicitInput ?? SearchBox.Text, allowRawQuery: hasExternalInput);
         if (executionTarget is { Length: > 0 })
         {
             try
@@ -704,13 +721,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
+        if (runnable.SupportsQueryArgument && !string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenQueryCommandInLauncher(runnable);
+            return;
+        }
+
         HostAssets.AppendLog($"Command has no executable target: {runnable.Title}");
         LastRunMessage = runnable.Source == CommandSource.Cloud
             ? $"云端记录已存在，但当前机器没有安装对应扩展：{runnable.ExtensionId}。先下载扩展包或放入本地扩展目录。"
             : $"当前命令没有 openTarget，也没有脚本入口：{runnable.Title}";
     }
 
-    private void OpenHostedView(CommandItem command)
+    private void OpenQueryCommandInLauncher(CommandItem command)
+    {
+        ShowPanel();
+        var prefix = command.QueryPrefixes.FirstOrDefault() ?? command.Title;
+        SearchBox.Text = $"{prefix} ";
+        SearchBox.CaretIndex = SearchBox.Text.Length;
+        SearchBox.Focus();
+        LastRunMessage = $"已打开搜索输入：{command.Title}";
+        HostAssets.AppendLog($"Opened query command in launcher: {command.Title}");
+    }
+
+    private void OpenHostedView(CommandItem command, string? initialInput = null)
     {
         if (command.HostedView == null)
         {
@@ -718,9 +752,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _activeHostedView = new HostedPluginSession(command, command.HostedView);
-        HostedViewInput = string.Empty;
+        HostedViewInput = (initialInput ?? string.Empty).Trim();
         HostedViewOutput = command.HostedView.EmptyState ?? "等待插件输出。";
-        HostedViewStatus = $"已进入 {command.Title}。输入内容后可直接在当前窗口完成操作。";
+        HostedViewStatus = string.IsNullOrWhiteSpace(HostedViewInput)
+            ? $"已进入 {command.Title}。输入内容后可直接在当前窗口完成操作。"
+            : $"已进入 {command.Title}，并填入外部选中内容。";
         OnPropertyChanged(nameof(IsHostedViewOpen));
         OnPropertyChanged(nameof(HostedViewTitle));
         OnPropertyChanged(nameof(HostedViewSubtitle));
@@ -848,6 +884,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_cloudSyncClient == null)
         {
+            await SyncPersonalWebDavAsync(showDisabledMessage: true);
             return;
         }
 
@@ -875,6 +912,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             LastRunMessage = autoSyncedCount > 0
                 ? $"已刷新云端扩展：{cloudExtensions.Count} 个，并自动同步了 {autoSyncedCount} 个本地扩展。"
                 : $"已刷新云端扩展：{cloudExtensions.Count} 个，全局用户扩展：{userExtensions.Count} 条。";
+            await SyncPersonalWebDavAsync(showDisabledMessage: false);
             OnPropertyChanged(nameof(SyncSummaryText));
         }
         catch (Exception ex)
@@ -992,6 +1030,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             LastRunMessage = $"已添加本地 JSON 扩展：{command.Title}";
+            await SyncPersonalWebDavAsync(showDisabledMessage: false);
             if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
             {
                 await SyncCommandToCloudAsync(command);
@@ -1033,6 +1072,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             LastRunMessage = $"已更新本地 JSON 扩展：{updated.Title}";
+            await SyncPersonalWebDavAsync(showDisabledMessage: false);
             if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
             {
                 await SyncCommandToCloudAsync(updated);
@@ -1089,6 +1129,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             LastRunMessage = $"已删除本地扩展：{deletable.Title}";
             SyncStatus = $"已删除扩展：{deletable.Title}";
+            await SyncPersonalWebDavAsync(showDisabledMessage: false);
         }
         catch (Exception ex)
         {
@@ -1170,9 +1211,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             ShowPanel();
             var saved = SecureCredentialStore.Load();
-            var dialog = new LoginWindow(saved?.Username);
+            var dialog = new LoginWindow(saved?.LoginEmail);
             dialog.SendRegistrationCodeAsync = (email, username) => _cloudSyncClient.SendRegistrationCodeAsync(email, username);
+            dialog.SendPasswordResetCodeAsync = (email) => _cloudSyncClient.SendPasswordResetCodeAsync(email);
             dialog.RegisterAsyncHandler = (email, username, password, code) => _cloudSyncClient.RegisterAsync(email, username, password, code);
+            dialog.ResetPasswordAsyncHandler = (email, password, code) => _cloudSyncClient.ResetPasswordAsync(email, password, code);
             if (IsVisible)
             {
                 dialog.Owner = this;
@@ -1189,7 +1232,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return false;
             }
 
-            _cloudSyncClient.SetCredential(dialog.Username, dialog.Password, dialog.RememberCredential);
+            _cloudSyncClient.SetCredential(dialog.LoginEmail, dialog.Password, dialog.RememberCredential);
             return true;
         }
         finally
@@ -1363,7 +1406,50 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SyncStatus = "已通过外部 Agent API 刷新本地扩展。";
     }
 
+    private void ReloadLocalExtensionsFromWebDav()
+    {
+        _allCommands.RemoveAll(x => x.Source == CommandSource.LocalExtension);
+        _localExtensionIndex.Clear();
+        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        {
+            UpsertLocalExtensionCommand(command);
+        }
+
+        ApplyFilter(SearchBox.Text);
+    }
+
+    private async Task SyncPersonalWebDavAsync(bool showDisabledMessage)
+    {
+        var settings = AppSettingsStore.Load();
+        if (!settings.EnableWebDavSync)
+        {
+            if (showDisabledMessage)
+            {
+                SyncStatus = "未启用个人 WebDAV 扩展同步。";
+            }
+
+            return;
+        }
+
+        try
+        {
+            var service = new WebDavSyncService(settings);
+            var result = await service.SyncExtensionsAsync();
+            ReloadLocalExtensionsFromWebDav();
+            LastRunMessage = $"个人扩展同步完成：上传 {result.UploadedCount} 个，拉取 {result.PulledCount} 个。";
+        }
+        catch (Exception ex)
+        {
+            SyncStatus = $"个人扩展同步失败：{FormatExceptionMessage(ex)}";
+        }
+    }
+
     private CommandItem? ShowJsonExtensionEditorAsync(string initialJson, bool isEditMode)
+    {
+        return ShowJsonExtensionEditorForOwner(initialJson, isEditMode, this);
+    }
+
+    private CommandItem? ShowJsonExtensionEditorForOwner(string initialJson, bool isEditMode, Window? owner)
     {
         var currentJson = initialJson;
 
@@ -1371,7 +1457,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var dialog = new AddJsonExtensionWindow(currentJson, isEditMode)
             {
-                Owner = this
+                Owner = owner
             };
             var result = dialog.ShowDialog();
             if (result != true)
@@ -1393,7 +1479,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 currentJson = dialog.JsonContent;
                 var retryDialog = new AddJsonExtensionWindow(currentJson, isEditMode)
                 {
-                    Owner = this
+                    Owner = owner
                 };
                 retryDialog.ShowError(ex.Message);
                 if (retryDialog.ShowDialog() != true)
@@ -1775,6 +1861,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public void RefreshAppSettings()
     {
         var settings = AppSettingsStore.Load();
+        _appSettings = settings;
+        InputHookService.ReloadSettings();
         RefreshLauncherHotkeyRegistration();
         SyncStatus = settings.LaunchAtStartup
             ? "设置已保存。开机启动已启用。"
@@ -1784,6 +1872,69 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public string GetLauncherHotkey() => AppSettingsStore.Load().LauncherHotkey;
+
+    public AppSettings GetCurrentAppSettings() => AppSettingsStore.Load();
+
+    public void SaveWebDavSettings(bool enabled, string serverUrl, string rootPath, string username)
+    {
+        var settings = AppSettingsStore.Load();
+        settings.EnableWebDavSync = enabled;
+        settings.WebDavServerUrl = serverUrl.Trim();
+        settings.WebDavRootPath = string.IsNullOrWhiteSpace(rootPath) ? "/yanzi" : rootPath.Trim();
+        settings.WebDavUsername = username.Trim();
+        AppSettingsStore.Save(settings);
+        _appSettings = settings;
+    }
+
+    public void SaveWebDavCredential(string username, string password)
+    {
+        WebDavCredentialStore.Save(new SavedWebDavCredential
+        {
+            Username = username.Trim(),
+            Password = password
+        });
+
+        var settings = AppSettingsStore.Load();
+        settings.WebDavUsername = username.Trim();
+        AppSettingsStore.Save(settings);
+        _appSettings = settings;
+    }
+
+    public bool HasWebDavCredential()
+    {
+        var credential = WebDavCredentialStore.Load();
+        return !string.IsNullOrWhiteSpace(credential?.Username) &&
+               !string.IsNullOrWhiteSpace(credential?.Password);
+    }
+
+    public async Task<(bool ok, string message)> ProbeWebDavAsync()
+    {
+        try
+        {
+            var service = new WebDavSyncService(AppSettingsStore.Load());
+            await service.ProbeAsync();
+            return (true, $"WebDAV 连接正常：{service.SyncRootDisplay}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"WebDAV 测试失败：{FormatExceptionMessage(ex)}");
+        }
+    }
+
+    public async Task<(bool ok, string message)> SyncWebDavNowAsync()
+    {
+        try
+        {
+            var service = new WebDavSyncService(AppSettingsStore.Load());
+            var result = await service.SyncExtensionsAsync();
+            ReloadLocalExtensionsFromWebDav();
+            return (true, $"个人扩展同步完成：上传 {result.UploadedCount} 个，拉取 {result.PulledCount} 个。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"个人扩展同步失败：{FormatExceptionMessage(ex)}");
+        }
+    }
 
     public bool TryUpdateLauncherHotkey(string shortcut, out string message)
     {
@@ -1817,6 +1968,81 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return _localExtensionIndex.Values
             .OrderBy(static x => x.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    public async Task<(bool ok, string message)> EditExtensionFromSettingsAsync(string extensionId, Window? owner = null)
+    {
+        try
+        {
+            if (!_localExtensionIndex.TryGetValue(extensionId, out var editable))
+            {
+                return (false, "没有找到对应扩展。");
+            }
+
+            var manifestJson = LocalExtensionCatalog.LoadManifestJson(editable.ExtensionId);
+            var updated = ShowJsonExtensionEditorForOwner(manifestJson, isEditMode: true, owner);
+            if (updated == null)
+            {
+                return (false, string.Empty);
+            }
+
+            LastRunMessage = $"已更新本地 JSON 扩展：{updated.Title}";
+            await SyncPersonalWebDavAsync(showDisabledMessage: false);
+            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
+            {
+                await SyncCommandToCloudAsync(updated);
+                await RefreshCloudStateAsync();
+            }
+
+            return (true, $"已更新扩展：{updated.Title}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"编辑失败：{FormatExceptionMessage(ex)}");
+        }
+    }
+
+    public async Task<(bool ok, string message)> DeleteExtensionFromSettingsAsync(string extensionId, Window? owner = null)
+    {
+        try
+        {
+            if (!_localExtensionIndex.TryGetValue(extensionId, out var deletable))
+            {
+                return (false, "没有找到对应扩展。");
+            }
+
+            var confirm = System.Windows.MessageBox.Show(
+                owner ?? this,
+                $"确认删除扩展“{deletable.Title}”吗？\n这会删除本地扩展目录，并卸载当前用户的云端安装记录。",
+                "删除扩展",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes)
+            {
+                return (false, string.Empty);
+            }
+
+            LocalExtensionCatalog.DeleteExtension(deletable.ExtensionId);
+            RemoveLocalExtensionCommand(deletable.ExtensionId);
+            ApplyFilter(SearchBox.Text);
+            SelectedCommand = FilteredCommands.FirstOrDefault();
+            CommandList.SelectedItem = SelectedCommand;
+
+            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
+            {
+                await _cloudSyncClient.RemoveUserExtensionAsync(deletable.ExtensionId);
+                await RefreshCloudStateAsync();
+            }
+
+            LastRunMessage = $"已删除本地扩展：{deletable.Title}";
+            SyncStatus = $"已删除扩展：{deletable.Title}";
+            await SyncPersonalWebDavAsync(showDisabledMessage: false);
+            return (true, $"已删除扩展：{deletable.Title}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"删除失败：{FormatExceptionMessage(ex)}");
+        }
     }
 
     public async Task<(bool ok, string message)> UpdateExtensionShortcutFromSettingsAsync(string extensionId, string? shortcut)
@@ -2101,7 +2327,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return new CommandMatch(false, 0);
     }
 
-    private static string ExtractQueryArgument(CommandItem command, string rawInput)
+    private static string ExtractQueryArgument(CommandItem command, string rawInput, bool allowRawQuery = false)
     {
         if (!command.SupportsQueryArgument || string.IsNullOrWhiteSpace(rawInput))
         {
@@ -2127,14 +2353,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
+        if (allowRawQuery)
+        {
+            return input;
+        }
+
         return string.Empty;
     }
 
-    private static string? BuildExecutionTarget(CommandItem command, string? rawInput)
+    private static string? BuildExecutionTarget(CommandItem command, string? rawInput, bool allowRawQuery = false)
     {
         if (command.SupportsQueryArgument)
         {
-            var argument = ExtractQueryArgument(command, rawInput ?? string.Empty);
+            var argument = ExtractQueryArgument(command, rawInput ?? string.Empty, allowRawQuery);
             if (!string.IsNullOrWhiteSpace(argument))
             {
                 return command.QueryTargetTemplate!.Replace("{query}", Uri.EscapeDataString(argument), StringComparison.Ordinal);
@@ -2203,9 +2434,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public List<CommandItem> GetAllCommands() => _allCommands.ToList();
 
-    public void ExecuteCommandExternally(CommandItem command)
+    public void ExecuteCommandExternally(CommandItem command, string? explicitInput = null, string launchSource = "quick-panel")
     {
-        _ = ExecuteCommandAsync(ResolveRunnableCommand(command), string.Empty, "quick-panel");
+        _ = ExecuteCommandAsync(ResolveRunnableCommand(command), explicitInput ?? string.Empty, launchSource);
     }
 }
 

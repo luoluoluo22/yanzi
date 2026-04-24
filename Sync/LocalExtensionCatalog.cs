@@ -18,6 +18,7 @@ public static class LocalExtensionCatalog
         EnsureForegroundWindowScriptExtension();
         EnsureInlineClipboardExtension();
         EnsureInlineTimestampExtension();
+        EnsureSelectionContextExtension();
     }
 
     public static IReadOnlyList<CommandItem> LoadCommands()
@@ -367,6 +368,87 @@ if ([string]::IsNullOrWhiteSpace($InputText)) {
                 EntryMode = existing.EntryMode ?? manifest.EntryMode,
                 Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
                 HostedView = existing.HostedView ?? manifest.HostedView,
+                Script = existing.Script ?? manifest.Script
+            });
+    }
+
+    private static void EnsureSelectionContextExtension()
+    {
+        var extensionDirectory = Path.Combine(CatalogRootPath, "selection-context-demo");
+        Directory.CreateDirectory(extensionDirectory);
+
+        var manifest = new LocalExtensionManifest
+        {
+            Id = "selection-context-demo",
+            Name = "选中内容示例",
+            Version = "0.1.0",
+            Category = "脚本",
+            Description = "示例：优先读取宿主传入的 InputText，没有时回退到剪贴板文本或文件列表。",
+            Keywords = ["selection", "context", "clipboard", "选中", "右键", "面板"],
+            Runtime = "powershell",
+            EntryMode = "inline",
+            Permissions = ["clipboard.read"],
+            Script = new LocalExtensionInlineScriptManifest
+            {
+                Source =
+"""
+param(
+    [string]$InputText = "",
+    [string]$ContextPath = ""
+)
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+
+$source = "HostInput"
+$normalized = $InputText
+$fileList = @()
+
+if ([string]::IsNullOrWhiteSpace($normalized)) {
+    if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) {
+        $fileList = [System.Windows.Forms.Clipboard]::GetFileDropList()
+        $normalized = ($fileList | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+        $source = "ClipboardFileDropList"
+    }
+    elseif ([System.Windows.Forms.Clipboard]::ContainsText()) {
+        $normalized = [System.Windows.Forms.Clipboard]::GetText()
+        $source = "ClipboardText"
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($normalized)) {
+    Write-Output "没有检测到宿主输入，也没有检测到剪贴板里的文本/文件。"
+    Write-Output ""
+    Write-Output "后续如果宿主在长按面板前自动抓取选中内容，这个扩展会直接收到 InputText。"
+    exit 0
+}
+
+Write-Output "来源: $source"
+Write-Output ""
+
+if ($fileList.Count -gt 0) {
+    Write-Output "识别为文件选择，共 $($fileList.Count) 个："
+    Write-Output ""
+    foreach ($file in $fileList) {
+        Write-Output $file
+    }
+    exit 0
+}
+
+$trimmed = $normalized.Trim()
+Write-Output "识别为文本输入："
+Write-Output ""
+Write-Output $trimmed
+"""
+            }
+        };
+
+        EnsureSampleManifest(Path.Combine(extensionDirectory, "manifest.json"), manifest, existing =>
+            existing with
+            {
+                Runtime = existing.Runtime ?? manifest.Runtime,
+                EntryMode = existing.EntryMode ?? manifest.EntryMode,
+                Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
                 Script = existing.Script ?? manifest.Script
             });
     }

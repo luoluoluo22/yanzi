@@ -199,7 +199,13 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Button Style="{StaticResource SlotButtonStyle}" Margin="2" Click="SlotButton_Click" Tag="{Binding}">
+                                    <Button Style="{StaticResource SlotButtonStyle}"
+                                            Margin="2"
+                                            Click="SlotButton_Click"
+                                            MouseEnter="SlotButton_MouseEnter"
+                                            MouseLeave="SlotButton_MouseLeave"
+                                            MouseMove="SlotButton_MouseMove"
+                                            Tag="{Binding}">
                                         <Button.ContextMenu>
                                             <ContextMenu>
                                                 <MenuItem Header="{Binding FavoriteLabel}" Click="ToggleFavorite_Click" CommandParameter="{Binding}"
@@ -224,9 +230,27 @@
                                                 <Border.Style>
                                                     <Style TargetType="Border">
                                                         <Setter Property="Background" Value="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}"/>
+                                                        <Setter Property="BorderBrush" Value="Transparent"/>
+                                                        <Setter Property="BorderThickness" Value="0"/>
+                                                        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                                                        <Setter Property="RenderTransform">
+                                                            <Setter.Value>
+                                                                <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                                            </Setter.Value>
+                                                        </Setter>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
                                                                 <Setter Property="Background" Value="#FF3B82F6"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
+                                                                <Setter Property="Background" Value="#FF2563EB"/>
+                                                                <Setter Property="BorderBrush" Value="#FFFFFFFF"/>
+                                                                <Setter Property="BorderThickness" Value="2"/>
+                                                                <Setter Property="RenderTransform">
+                                                                    <Setter.Value>
+                                                                        <ScaleTransform ScaleX="1.08" ScaleY="1.08"/>
+                                                                    </Setter.Value>
+                                                                </Setter>
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>

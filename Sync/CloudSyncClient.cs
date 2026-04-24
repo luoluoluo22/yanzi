@@ -9,6 +9,7 @@ namespace OpenQuickHost.Sync;
 public sealed class CloudSyncClient
 {
     private readonly HttpClient _httpClient;
+    private readonly HttpClient _directHttpClient;
     private readonly SyncOptions _options;
     private SyncSession? _session;
     private SavedCredential? _credential;
@@ -16,11 +17,8 @@ public sealed class CloudSyncClient
     public CloudSyncClient(SyncOptions options)
     {
         _options = options;
-        _httpClient = new HttpClient
-        {
-            BaseAddress = new Uri(options.BaseUrl, UriKind.Absolute),
-            Timeout = TimeSpan.FromSeconds(15)
-        };
+        _httpClient = CreateHttpClient(options.BaseUrl, useProxy: true);
+        _directHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false);
         _session = SyncSessionStore.Load();
         _credential = SecureCredentialStore.Load();
     }
@@ -28,17 +26,17 @@ public sealed class CloudSyncClient
     public string CurrentUserLabel =>
         _session != null
             ? $"{_session.Username} ({_session.UserId})"
-            : !string.IsNullOrWhiteSpace(_credential?.Username)
-                ? _credential!.Username
+            : !string.IsNullOrWhiteSpace(_credential?.LoginEmail)
+                ? _credential!.LoginEmail
                 : "未登录";
 
-    public bool HasCredential => !string.IsNullOrWhiteSpace(_credential?.Username) && !string.IsNullOrWhiteSpace(_credential?.Password);
+    public bool HasCredential => !string.IsNullOrWhiteSpace(_credential?.LoginEmail) && !string.IsNullOrWhiteSpace(_credential?.Password);
 
-    public void SetCredential(string username, string password, bool remember)
+    public void SetCredential(string email, string password, bool remember)
     {
         _credential = new SavedCredential
         {
-            Username = username.Trim(),
+            Email = email.Trim(),
             Password = password
         };
 
@@ -73,7 +71,7 @@ public sealed class CloudSyncClient
             throw new InvalidOperationException("缺少登录凭据，请先登录。");
         }
 
-        _session = await LoginAsync(_credential!.Username, _credential.Password, cancellationToken);
+        _session = await LoginAsync(_credential!.LoginEmail, _credential.Password, cancellationToken);
         SyncSessionStore.Save(_session);
     }
 
@@ -108,11 +106,11 @@ public sealed class CloudSyncClient
         return _session;
     }
 
-    public async Task<SyncSession> LoginAsync(string username, string password, CancellationToken cancellationToken = default)
+    public async Task<SyncSession> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         var payload = new
         {
-            username = username.Trim(),
+            email = email.Trim(),
             password
         };
 
@@ -120,7 +118,7 @@ public sealed class CloudSyncClient
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
         {
             ClearSession();
-            throw new InvalidOperationException("用户名或密码错误。");
+            throw new InvalidOperationException("邮箱或密码错误。");
         }
 
         await EnsureSuccessAsync(response, cancellationToken);
@@ -129,9 +127,38 @@ public sealed class CloudSyncClient
         return _session;
     }
 
+    public async Task<SendCodeResponse> SendPasswordResetCodeAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            email = email.Trim()
+        };
+
+        using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/send-reset-code", payload, includeAuth: false, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<SendCodeResponse>(response, cancellationToken)
+            ?? throw new InvalidOperationException("重置验证码响应为空。");
+    }
+
+    public async Task<SyncSession> ResetPasswordAsync(string email, string password, string code, CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            email = email.Trim(),
+            password,
+            code = code.Trim()
+        };
+
+        using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/reset-password", payload, includeAuth: false, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        _session = await ReadSessionAsync(response, cancellationToken);
+        SyncSessionStore.Save(_session);
+        return _session;
+    }
+
     public async Task<HealthResponse?> GetHealthAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await _httpClient.GetAsync("/health", cancellationToken);
+        using var response = await SendAsyncWithFallback(HttpMethod.Get, "/health", includeAuth: false, cancellationToken: cancellationToken);
         response.EnsureSuccessStatusCode();
         return await ReadAsync<HealthResponse>(response, cancellationToken);
     }
@@ -140,14 +167,14 @@ public sealed class CloudSyncClient
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         using var request = CreateRequest(HttpMethod.Get, "/v1/auth/me", includeAuth: true);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await ReadAsync<AuthMeResponse>(response, cancellationToken);
     }
 
     public async Task<IReadOnlyList<CloudExtensionRecord>> GetExtensionsAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await _httpClient.GetAsync("/v1/extensions", cancellationToken);
+        using var response = await SendAsyncWithFallback(HttpMethod.Get, "/v1/extensions", includeAuth: false, cancellationToken: cancellationToken);
         response.EnsureSuccessStatusCode();
         var payload = await ReadAsync<ExtensionListResponse>(response, cancellationToken);
         return payload?.Items ?? [];
@@ -157,7 +184,7 @@ public sealed class CloudSyncClient
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         using var request = CreateRequest(HttpMethod.Get, "/v1/me/extensions", includeAuth: true);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         var payload = await ReadAsync<UserExtensionListResponse>(response, cancellationToken);
         return payload?.Items ?? [];
@@ -209,7 +236,7 @@ public sealed class CloudSyncClient
         });
 
         using var request = CreateJsonRequest(HttpMethod.Put, $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}", body, includeAuth: true);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -232,7 +259,7 @@ public sealed class CloudSyncClient
             $"/v1/me/extensions/{Uri.EscapeDataString(command.ExtensionId)}",
             body,
             includeAuth: true);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -243,7 +270,7 @@ public sealed class CloudSyncClient
             HttpMethod.Delete,
             $"/v1/me/extensions/{Uri.EscapeDataString(extensionId)}",
             includeAuth: true);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -256,15 +283,17 @@ public sealed class CloudSyncClient
             includeAuth: true);
         request.Content = new ByteArrayContent(packageBytes);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
     public async Task<byte[]> DownloadExtensionArchiveAsync(string extensionId, CancellationToken cancellationToken = default)
     {
-        using var response = await _httpClient.GetAsync(
+        using var response = await SendAsyncWithFallback(
+            HttpMethod.Get,
             $"/v1/extensions/{Uri.EscapeDataString(extensionId)}/archive",
-            cancellationToken);
+            includeAuth: false,
+            cancellationToken: cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
     }
@@ -308,6 +337,8 @@ public sealed class CloudSyncClient
     private HttpRequestMessage CreateRequest(HttpMethod method, string path, bool includeAuth)
     {
         var request = new HttpRequestMessage(method, path);
+        request.Version = HttpVersion.Version11;
+        request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         if (includeAuth && HasValidSession())
         {
@@ -320,7 +351,78 @@ public sealed class CloudSyncClient
     private async Task<HttpResponseMessage> SendJsonAsync(HttpMethod method, string path, object body, bool includeAuth, CancellationToken cancellationToken)
     {
         var request = CreateJsonRequest(method, path, JsonSerializer.Serialize(body), includeAuth);
-        return await _httpClient.SendAsync(request, cancellationToken);
+        return await SendAsyncWithFallback(request, cancellationToken);
+    }
+
+    private Task<HttpResponseMessage> SendAsyncWithFallback(HttpMethod method, string path, bool includeAuth, CancellationToken cancellationToken)
+    {
+        var request = CreateRequest(method, path, includeAuth);
+        return SendAsyncWithFallback(request, cancellationToken);
+    }
+
+    private async Task<HttpResponseMessage> SendAsyncWithFallback(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _httpClient.SendAsync(CloneRequest(request), cancellationToken);
+        }
+        catch (HttpRequestException ex) when (ShouldRetryWithoutProxy(ex))
+        {
+            return await _directHttpClient.SendAsync(CloneRequest(request), cancellationToken);
+        }
+    }
+
+    private static HttpClient CreateHttpClient(string baseUrl, bool useProxy)
+    {
+        var handler = new HttpClientHandler
+        {
+            UseProxy = useProxy
+        };
+
+        return new HttpClient(handler)
+        {
+            BaseAddress = new Uri(baseUrl, UriKind.Absolute),
+            Timeout = TimeSpan.FromSeconds(15),
+            DefaultRequestVersion = HttpVersion.Version11,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
+        };
+    }
+
+    private static bool ShouldRetryWithoutProxy(HttpRequestException ex)
+    {
+        var message = ex.ToString();
+        return message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("unexpected EOF", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("0 bytes from the transport stream", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static HttpRequestMessage CloneRequest(HttpRequestMessage request)
+    {
+        var clone = new HttpRequestMessage(request.Method, request.RequestUri)
+        {
+            Version = request.Version,
+            VersionPolicy = request.VersionPolicy
+        };
+
+        foreach (var header in request.Headers)
+        {
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        if (request.Content == null)
+        {
+            return clone;
+        }
+
+        var bytes = request.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+        var content = new ByteArrayContent(bytes);
+        foreach (var header in request.Content.Headers)
+        {
+            content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        clone.Content = content;
+        return clone;
     }
 
     private static async Task<SyncSession> ReadSessionAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -332,7 +434,8 @@ public sealed class CloudSyncClient
             AccessToken = auth.AccessToken,
             ExpiresAt = auth.ExpiresAt,
             UserId = auth.UserId,
-            Username = auth.Username
+            Username = auth.Username,
+            Email = auth.Email
         };
     }
 

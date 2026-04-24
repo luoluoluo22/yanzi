@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,14 +19,20 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _accountSubtitle = "点击左上角账户卡片登录或切换账号。";
     private string _accountInitial = "燕";
     private string _localExtensionSummary = "正在统计...";
+    private string _extensionSearchText = string.Empty;
     private string _launcherHotkey = "Ctrl+Shift+Space";
     private string _syncStatusText = "同步服务状态未知。";
+    private string _webDavServerUrl = "https://dav.jianguoyun.com/dav/";
+    private string _webDavRootPath = "/yanzi";
+    private string _webDavUsername = string.Empty;
+    private string _webDavStatusText = "未启用个人扩展同步。";
 
     public SettingsWindow(MainWindow mainWindow)
     {
         InitializeComponent();
         _mainWindow = mainWindow;
         _settings = AppSettingsStore.Load();
+        _settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
         NavigationItems =
         [
             new SettingsNavigationItem("general", "M12,15.5A3.5,3.5 0 1,1 12,8.5A3.5,3.5 0 1,1 12,15.5M19.4,15L21.7,13.5L19.9,8.9L17.3,10L15.7,8.6L16.1,5.8L11.2,5.8L10.8,8.6L9.2,10L6.6,8.9L4.7,13.5L7,15L7,17L4.7,18.5L6.6,23.1L9.2,22L10.8,23.4L11.2,26.2L16.1,26.2L16.5,23.4L18.1,22L20.7,23.1L22.6,18.5L20.3,17Z", "常规", "#FF3B82F6"),
@@ -40,10 +47,15 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshCloudOnStartup = _settings.RefreshCloudOnStartup;
         CloseToTray = _settings.CloseToTray;
         LauncherHotkey = _settings.LauncherHotkey;
+        EnableWebDavSync = _settings.EnableWebDavSync;
+        WebDavServerUrl = string.IsNullOrWhiteSpace(_settings.WebDavServerUrl) ? "https://dav.jianguoyun.com/dav/" : _settings.WebDavServerUrl;
+        WebDavRootPath = _settings.WebDavRootPath;
+        WebDavUsername = _settings.WebDavUsername;
         BaseUrl = _mainWindow.SyncBaseUrl;
         ExtensionsRootPath = LocalExtensionCatalog.CatalogRootPath;
         AppVersionText = $"燕子 · {GetType().Assembly.GetName().Version}";
         ShortcutItems = new ObservableCollection<SettingsShortcutItem>();
+        ExtensionItems = new ObservableCollection<SettingsExtensionItem>();
         DataContext = this;
         Loaded += SettingsWindow_Loaded;
         Activated += SettingsWindow_Activated;
@@ -53,6 +65,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public ObservableCollection<SettingsNavigationItem> NavigationItems { get; }
 
     public ObservableCollection<SettingsShortcutItem> ShortcutItems { get; }
+
+    public ObservableCollection<SettingsExtensionItem> ExtensionItems { get; }
 
     public SettingsNavigationItem? SelectedNavigation
     {
@@ -72,6 +86,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsSyncSelected));
             OnPropertyChanged(nameof(IsExtensionsSelected));
             OnPropertyChanged(nameof(IsShortcutsSelected));
+            OnPropertyChanged(nameof(IsQuickPanelSelected));
             OnPropertyChanged(nameof(IsAboutSelected));
         }
     }
@@ -214,6 +229,81 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool EnableWebDavSync
+    {
+        get => _settings.EnableWebDavSync;
+        set
+        {
+            if (value == _settings.EnableWebDavSync)
+            {
+                return;
+            }
+
+            _settings = _settings with { EnableWebDavSync = value };
+            OnPropertyChanged();
+        }
+    }
+
+    public string WebDavServerUrl
+    {
+        get => _webDavServerUrl;
+        set
+        {
+            if (value == _webDavServerUrl)
+            {
+                return;
+            }
+
+            _webDavServerUrl = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string WebDavRootPath
+    {
+        get => _webDavRootPath;
+        set
+        {
+            if (value == _webDavRootPath)
+            {
+                return;
+            }
+
+            _webDavRootPath = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string WebDavUsername
+    {
+        get => _webDavUsername;
+        set
+        {
+            if (value == _webDavUsername)
+            {
+                return;
+            }
+
+            _webDavUsername = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string WebDavStatusText
+    {
+        get => _webDavStatusText;
+        private set
+        {
+            if (value == _webDavStatusText)
+            {
+                return;
+            }
+
+            _webDavStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string LocalExtensionSummary
     {
         get => _localExtensionSummary;
@@ -226,6 +316,113 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             _localExtensionSummary = value;
             OnPropertyChanged();
+        }
+    }
+
+    public string ExtensionSearchText
+    {
+        get => _extensionSearchText;
+        set
+        {
+            if (value == _extensionSearchText)
+            {
+                return;
+            }
+
+            _extensionSearchText = value;
+            OnPropertyChanged();
+            RefreshExtensionItems();
+        }
+    }
+
+    public string ExtensionSearchSummary =>
+        ExtensionItems.Count == 0
+            ? "无匹配项"
+            : $"显示 {ExtensionItems.Count} 项";
+
+    public bool TriggerMiddleButtonDown
+    {
+        get => _settings.QuickPanelMouseTriggers.MiddleButtonDown;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.MiddleButtonDown = value);
+    }
+
+    public bool TriggerX1ButtonDown
+    {
+        get => _settings.QuickPanelMouseTriggers.X1ButtonDown;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.X1ButtonDown = value);
+    }
+
+    public bool TriggerX2ButtonDown
+    {
+        get => _settings.QuickPanelMouseTriggers.X2ButtonDown;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.X2ButtonDown = value);
+    }
+
+    public bool TriggerCtrlLeftClick
+    {
+        get => _settings.QuickPanelMouseTriggers.CtrlLeftClick;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.CtrlLeftClick = value);
+    }
+
+    public bool TriggerCtrlRightClick
+    {
+        get => _settings.QuickPanelMouseTriggers.CtrlRightClick;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.CtrlRightClick = value);
+    }
+
+    public bool TriggerMiddleButtonLongPress
+    {
+        get => _settings.QuickPanelMouseTriggers.MiddleButtonLongPress;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.MiddleButtonLongPress = value);
+    }
+
+    public bool TriggerRightButtonLongPress
+    {
+        get => _settings.QuickPanelMouseTriggers.RightButtonLongPress;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.RightButtonLongPress = value);
+    }
+
+    public bool TriggerRightButtonDrag
+    {
+        get => _settings.QuickPanelMouseTriggers.RightButtonDrag;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.RightButtonDrag = value);
+    }
+
+    public bool TriggerHorizontalWheel
+    {
+        get => _settings.QuickPanelMouseTriggers.HorizontalWheel;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.HorizontalWheel = value);
+    }
+
+    public bool TriggerCircleGesture
+    {
+        get => _settings.QuickPanelMouseTriggers.CircleGesture;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.CircleGesture = value);
+    }
+
+    public bool ExecuteOnButtonRelease
+    {
+        get => _settings.QuickPanelMouseTriggers.ExecuteOnButtonRelease;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.ExecuteOnButtonRelease = value);
+    }
+
+    public string QuickPanelTriggerSummary
+    {
+        get
+        {
+            var labels = new List<string>();
+            var trigger = _settings.QuickPanelMouseTriggers;
+            if (trigger.MiddleButtonDown) labels.Add("按下中键");
+            if (trigger.X1ButtonDown) labels.Add("按下 X1 键");
+            if (trigger.X2ButtonDown) labels.Add("按下 X2 键");
+            if (trigger.CtrlLeftClick) labels.Add("Ctrl+左键单击");
+            if (trigger.CtrlRightClick) labels.Add("Ctrl+右键单击");
+            if (trigger.MiddleButtonLongPress) labels.Add("长按中键");
+            if (trigger.RightButtonLongPress) labels.Add("长按右键");
+            if (trigger.RightButtonDrag) labels.Add("按右键移动");
+            if (trigger.HorizontalWheel) labels.Add("滚轮左右");
+            if (trigger.CircleGesture) labels.Add("画圈");
+            return labels.Count == 0 ? "未启用鼠标触发，默认回退为长按中键。" : string.Join("、", labels);
         }
     }
 
@@ -275,7 +472,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         RefreshAccountSummary();
         RefreshExtensionSummary();
+        RefreshExtensionItems();
         RefreshShortcutItems();
+        RefreshQuickPanelTriggerBindings();
         SyncStatusText = $"当前同步服务：{BaseUrl}";
     }
 
@@ -286,9 +485,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(RefreshCloudOnStartup));
         OnPropertyChanged(nameof(CloseToTray));
         LauncherHotkey = _settings.LauncherHotkey;
+        RefreshQuickPanelTriggerBindings();
+        EnableWebDavSync = _settings.EnableWebDavSync;
+        WebDavServerUrl = string.IsNullOrWhiteSpace(_settings.WebDavServerUrl) ? "https://dav.jianguoyun.com/dav/" : _settings.WebDavServerUrl;
+        WebDavRootPath = _settings.WebDavRootPath;
+        WebDavUsername = _settings.WebDavUsername;
         RefreshAccountSummary();
         RefreshExtensionSummary();
+        RefreshExtensionItems();
         RefreshShortcutItems();
+        RefreshWebDavSummary();
     }
 
     private void SaveSettingsToggle_Click(object sender, RoutedEventArgs e)
@@ -296,6 +502,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
         StartupRegistrationService.Apply(_settings.LaunchAtStartup);
+    }
+
+    private void SaveQuickPanelTrigger_Click(object sender, RoutedEventArgs e)
+    {
+        SaveQuickPanelTriggerSettings();
     }
 
     private void AccountButton_Click(object sender, RoutedEventArgs e)
@@ -337,6 +548,64 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         await RefreshCloudAsync();
     }
 
+    private void SaveWebDavSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        _mainWindow.SaveWebDavSettings(EnableWebDavSync, WebDavServerUrl, WebDavRootPath, WebDavUsername);
+        _settings = AppSettingsStore.Load();
+        RefreshWebDavSummary();
+        SyncStatusText = "WebDAV 配置已保存。";
+    }
+
+    private void SetWebDavCredentialButton_Click(object sender, RoutedEventArgs e)
+    {
+        var username = WebDavUsername.Trim();
+        var requireUsername = string.IsNullOrWhiteSpace(username);
+        if (requireUsername)
+        {
+            System.Windows.MessageBox.Show(this, "请先在上一层填写坚果云用户名，再设置应用密码。", "缺少用户名", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dialog = new WebDavCredentialWindow(username, requireUsername: false)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        WebDavUsername = dialog.Username;
+        _mainWindow.SaveWebDavCredential(dialog.Username, dialog.Password);
+        RefreshWebDavSummary();
+        SyncStatusText = "WebDAV 凭据已保存。";
+    }
+
+    private async void TestWebDavButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveWebDavSettingsButton_Click(sender, e);
+        var result = await _mainWindow.ProbeWebDavAsync();
+        WebDavStatusText = result.message;
+        if (!result.ok)
+        {
+            System.Windows.MessageBox.Show(this, result.message, "WebDAV 测试失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void SyncWebDavButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveWebDavSettingsButton_Click(sender, e);
+        var result = await _mainWindow.SyncWebDavNowAsync();
+        WebDavStatusText = result.message;
+        RefreshExtensionSummary();
+        RefreshExtensionItems();
+        RefreshShortcutItems();
+        if (!result.ok)
+        {
+            System.Windows.MessageBox.Show(this, result.message, "WebDAV 同步失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void OpenExtensionsFolderButton_Click(object sender, RoutedEventArgs e)
     {
         Process.Start(new ProcessStartInfo
@@ -349,7 +618,95 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void RefreshExtensionStatsButton_Click(object sender, RoutedEventArgs e)
     {
         RefreshExtensionSummary();
+        RefreshExtensionItems();
         RefreshShortcutItems();
+    }
+
+    private void OpenExtensionDirectoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SettingsExtensionItem item })
+        {
+            return;
+        }
+
+        if (!Directory.Exists(item.DirectoryPath))
+        {
+            System.Windows.MessageBox.Show(this, "扩展目录不存在。", "打开目录失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            RefreshExtensionSummary();
+            RefreshExtensionItems();
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = item.DirectoryPath,
+            UseShellExecute = true
+        });
+    }
+
+    private async void EditExtensionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SettingsExtensionItem item })
+        {
+            return;
+        }
+
+        var result = await _mainWindow.EditExtensionFromSettingsAsync(item.ExtensionId, this);
+        if (!string.IsNullOrWhiteSpace(result.message))
+        {
+            SyncStatusText = result.message;
+        }
+
+        if (!result.ok)
+        {
+            if (!string.IsNullOrWhiteSpace(result.message))
+            {
+                System.Windows.MessageBox.Show(this, result.message, "编辑扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
+            return;
+        }
+
+        RefreshExtensionSummary();
+        RefreshExtensionItems();
+        RefreshShortcutItems();
+    }
+
+    private async void DeleteExtensionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SettingsExtensionItem item })
+        {
+            return;
+        }
+
+        var result = await _mainWindow.DeleteExtensionFromSettingsAsync(item.ExtensionId, this);
+        if (!string.IsNullOrWhiteSpace(result.message))
+        {
+            SyncStatusText = result.message;
+        }
+
+        if (!result.ok)
+        {
+            if (!string.IsNullOrWhiteSpace(result.message))
+            {
+                System.Windows.MessageBox.Show(this, result.message, "删除扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
+            return;
+        }
+
+        RefreshExtensionSummary();
+        RefreshExtensionItems();
+        RefreshShortcutItems();
+    }
+
+    private void RefreshWebDavSummary()
+    {
+        WebDavStatusText = !EnableWebDavSync
+            ? "未启用个人扩展同步。"
+            : _mainWindow.HasWebDavCredential()
+                ? $"已配置：{WebDavServerUrl} {WebDavRootPath}"
+                : "已启用，但还未设置 WebDAV 密码。";
     }
 
     private void EditLauncherHotkeyButton_Click(object sender, RoutedEventArgs e)
@@ -480,11 +837,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(credential?.Username))
+        if (!string.IsNullOrWhiteSpace(credential?.LoginEmail))
         {
-            AccountTitle = credential.Username;
+            AccountTitle = credential.LoginEmail;
             AccountSubtitle = "本机已保存登录信息，下一次同步时会自动登录。";
-            AccountInitial = credential.Username[..1].ToUpperInvariant();
+            AccountInitial = credential.LoginEmail[..1].ToUpperInvariant();
             return;
         }
 
@@ -497,6 +854,35 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         var count = LocalExtensionCatalog.LoadCommands().Count;
         LocalExtensionSummary = $"当前机器已发现 {count} 个本地扩展。";
+        OnPropertyChanged(nameof(ExtensionSearchSummary));
+    }
+
+    private void RefreshExtensionItems()
+    {
+        ExtensionItems.Clear();
+
+        var keyword = ExtensionSearchText.Trim();
+        var items = _mainWindow.GetLocalExtensionsForSettings()
+            .Where(command =>
+                string.IsNullOrWhiteSpace(keyword) ||
+                command.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                command.ExtensionId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                command.Category.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                (command.ExtensionDirectoryPath?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false))
+            .Select(command => new SettingsExtensionItem(
+                command.ExtensionId,
+                command.Title,
+                command.Category,
+                command.DeclaredVersion,
+                command.ExtensionDirectoryPath ?? string.Empty))
+            .ToList();
+
+        foreach (var item in items)
+        {
+            ExtensionItems.Add(item);
+        }
+
+        OnPropertyChanged(nameof(ExtensionSearchSummary));
     }
 
     private void RefreshShortcutItems()
@@ -510,6 +896,45 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 command.Category,
                 command.GlobalShortcut));
         }
+    }
+
+    private void UpdateQuickPanelMouseTrigger(bool value, Action<QuickPanelMouseTriggerSettings> update)
+    {
+        _settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
+        update(_settings.QuickPanelMouseTriggers);
+        OnPropertyChanged();
+        OnPropertyChanged(nameof(QuickPanelTriggerSummary));
+    }
+
+    private void SaveQuickPanelTriggerSettings()
+    {
+        if (_settings.QuickPanelMouseTriggers.CircleGesture)
+        {
+            _settings.QuickPanelMouseTriggers.CircleGesture = false;
+            OnPropertyChanged(nameof(TriggerCircleGesture));
+            System.Windows.MessageBox.Show(this, "画圈手势需要轨迹识别，暂未启用，避免误触。", "暂未支持", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        AppSettingsStore.Save(_settings);
+        _mainWindow.RefreshAppSettings();
+        SyncStatusText = $"快捷面板鼠标触发已保存：{QuickPanelTriggerSummary}";
+    }
+
+    private void RefreshQuickPanelTriggerBindings()
+    {
+        _settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
+        OnPropertyChanged(nameof(TriggerMiddleButtonDown));
+        OnPropertyChanged(nameof(TriggerX1ButtonDown));
+        OnPropertyChanged(nameof(TriggerX2ButtonDown));
+        OnPropertyChanged(nameof(TriggerCtrlLeftClick));
+        OnPropertyChanged(nameof(TriggerCtrlRightClick));
+        OnPropertyChanged(nameof(TriggerMiddleButtonLongPress));
+        OnPropertyChanged(nameof(TriggerRightButtonLongPress));
+        OnPropertyChanged(nameof(TriggerRightButtonDrag));
+        OnPropertyChanged(nameof(TriggerHorizontalWheel));
+        OnPropertyChanged(nameof(TriggerCircleGesture));
+        OnPropertyChanged(nameof(ExecuteOnButtonRelease));
+        OnPropertyChanged(nameof(QuickPanelTriggerSummary));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -528,3 +953,10 @@ public sealed record SettingsShortcutItem(string ExtensionId, string Title, stri
 
     public bool HasShortcut => !string.IsNullOrWhiteSpace(Shortcut);
 }
+
+public sealed record SettingsExtensionItem(
+    string ExtensionId,
+    string Title,
+    string Category,
+    string Version,
+    string DirectoryPath);

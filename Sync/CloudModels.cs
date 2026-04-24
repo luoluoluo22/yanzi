@@ -18,6 +18,8 @@ public sealed class AuthResponse
     public string UserId { get; init; } = string.Empty;
 
     public string Username { get; init; } = string.Empty;
+
+    public string? Email { get; init; }
 }
 
 public sealed class SendCodeResponse
@@ -36,6 +38,8 @@ public sealed class AuthMeResponse
     public string UserId { get; init; } = string.Empty;
 
     public string Username { get; init; } = string.Empty;
+
+    public string? Email { get; init; }
 }
 
 public sealed class ExtensionListResponse

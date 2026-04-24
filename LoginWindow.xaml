@@ -59,12 +59,13 @@
                 </Grid>
 
                 <StackPanel Grid.Row="2" Margin="0,18,0,0">
-                    <TextBlock Text="用户名"
+                    <TextBlock x:Name="PrimaryFieldLabel"
+                               Text="邮箱"
                                Foreground="#FFB8B8B8"
                                FontSize="12"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
-                    <TextBox x:Name="UsernameBox"
+                    <TextBox x:Name="PrimaryInputBox"
                              Height="40"
                              Padding="12,10" />
                 </StackPanel>
@@ -121,6 +122,12 @@
                               Foreground="#FFB8B8B8"
                               Content="记住登录信息（本机加密保存）"
                               FontSize="12" />
+                    <Button x:Name="ForgotPasswordButton"
+                            Margin="0,10,0,0"
+                            HorizontalAlignment="Left"
+                            Content="找回密码"
+                            Style="{StaticResource SecondaryBtn}"
+                            Click="ForgotPasswordButton_Click" />
                     <TextBlock x:Name="StatusText"
                                Margin="0,10,0,0"
                                Foreground="#FFEF4444"
