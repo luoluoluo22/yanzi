@@ -5,6 +5,13 @@
 - 单文件 JSON 扩展
 - 目录脚本扩展
 
+脚本扩展又分两种入口模式：
+
+- `entryMode: inline`
+  轻量扩展，脚本直接写在 `manifest.json` 的 `script.source`
+- `entry`
+  目录脚本入口，适合复杂项目或压缩包分发
+
 每个扩展存放在独立目录下，最小结构如下：
 
 ```text
@@ -34,6 +41,33 @@ Extensions/
 当前第一版脚本运行时支持：
 
 - `powershell`
+
+### 单 JSON 内联脚本
+
+这是轻量脚本扩展的推荐方式。
+
+示例：
+
+```json
+{
+  "id": "inline-clipboard",
+  "name": "内联读取剪贴板",
+  "version": "0.1.0",
+  "category": "脚本",
+  "description": "单 JSON 内联 PowerShell 示例：读取当前剪贴板文本。",
+  "keywords": ["clipboard", "剪贴板", "inline", "powershell"],
+  "runtime": "powershell",
+  "entryMode": "inline",
+  "permissions": ["clipboard.read"],
+  "script": {
+    "source": "param([string]$InputText = \"\", [string]$ContextPath = \"\")\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n$text = Get-Clipboard -Raw\nif ([string]::IsNullOrWhiteSpace($text)) { Write-Output \"当前剪贴板为空。\" } else { Write-Output $text.Trim() }"
+  }
+}
+```
+
+### 目录脚本入口
+
+复杂脚本、带资源文件的项目、压缩包扩展，继续使用目录脚本入口。
 
 目录结构示例：
 
@@ -242,6 +276,37 @@ Extensions/
 - 脚本入口文件，相对于扩展目录
 - 例如：`main.ps1`
 
+### `entryMode`
+
+- 类型：`string`
+- 选填
+- 当前支持：
+  - `inline`
+- 当 `entryMode = inline` 时，宿主会忽略 `entry`，改为执行 `script.source`
+
+### `script`
+
+- 类型：`object`
+- 选填
+- 当前用于单 JSON 内联脚本
+
+当前支持字段：
+
+- `source`
+  PowerShell 脚本源码
+
+推荐组合：
+
+```json
+{
+  "runtime": "powershell",
+  "entryMode": "inline",
+  "script": {
+    "source": "..."
+  }
+}
+```
+
 ### `permissions`
 
 - 类型：`string[]`
@@ -304,6 +369,58 @@ Extensions/
 1. 写入本地扩展目录
 2. 加载到命令列表
 3. 在已登录状态下自动同步到云端
+
+## 开发与调试
+
+为了让 AI 编写扩展后的调试链路更直接，当前 JSON 扩展编辑器已经提供：
+
+- `测试执行`
+  在不关闭编辑窗口的情况下执行当前草稿
+- `查看日志`
+  打开当前日志文件
+- `从 JSON 解析`
+  把 AI 返回内容提取成可保存的 manifest
+- `从表单生成`
+  把左侧字段重新生成 JSON
+
+### 测试执行规则
+
+- 如果当前草稿是单 JSON 内联脚本：
+  - 会按 `runtime + entryMode + script.source` 直接执行
+  - `测试输入` 会作为 `InputText` 传给脚本
+- 如果当前草稿是普通 `openTarget` 扩展：
+  - 会直接触发对应目标
+- 如果当前草稿是目录脚本扩展：
+  - 需要对应扩展目录里已经存在脚本入口文件
+
+### 脚本调试建议
+
+PowerShell 扩展建议遵守：
+
+- `param(...)` 必须放在文件第一段
+- 显式设置：
+  - `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
+- 成功结果写到 `stdout`
+- 错误写到 `stderr` 或直接 `throw`
+
+### 日志位置
+
+运行日志：
+
+- `logs/host.log`
+
+开发调试日志：
+
+- `logs/dev-debug.log`
+
+其中 `dev-debug.log` 只会在开发机目录 `F:\Desktop\kaifa\OpenQuickHost` 存在时写入，正式用户不会生成这份日志。
+
+当前会写开发日志的链路包括：
+
+- JSON 解析
+- 保存扩展
+- 复制提示词
+- 编辑器内测试执行
 
 云端当前存储：
 

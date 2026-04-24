@@ -47,6 +47,12 @@ Content-Type: application/json
 }
 ```
 
+The manifest may contain inline PowerShell script fields such as:
+
+- `runtime`
+- `entryMode`
+- `script.source`
+
 ## Replace Extension
 
 ```http

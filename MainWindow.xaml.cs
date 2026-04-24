@@ -41,6 +41,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _syncStatus = "云同步未初始化。";
     private HwndSource? _source;
     private bool _authPromptActive;
+    private bool _isPinned;
     private int _nextExtensionHotkeyId = 0x5400;
     private QuickPanelWindow? _quickPanel;
 
@@ -137,6 +138,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : $"{SelectedCommand.Title}   ·   {SelectedCommand.Category}   ·   Ctrl+K 动作";
 
     public bool IsHostedViewOpen => _activeHostedView != null;
+
+    public System.Windows.Media.Brush PinButtonBrush => _isPinned
+        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFF59E0B")!
+        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF777777")!;
+
+    public string PinButtonTooltip => _isPinned ? "已固定，失去焦点时不自动关闭" : "点击固定，失去焦点时不自动关闭";
 
     public string HostedViewTitle => _activeHostedView?.Definition.Title ?? "插件视图";
 
@@ -444,6 +451,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void FooterQuickMenuButton_Click(object sender, RoutedEventArgs e)
     {
         FooterQuickMenuPopup.IsOpen = !FooterQuickMenuPopup.IsOpen;
+    }
+
+    private async void FooterAddExtensionButton_Click(object sender, RoutedEventArgs e)
+    {
+        FooterQuickMenuPopup.IsOpen = false;
+        await AddJsonExtensionAsync();
     }
 
     private async void QuickMenuAddExtension_Click(object sender, RoutedEventArgs e)
@@ -968,19 +981,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task AddJsonExtensionAsync()
     {
-        var command = ShowJsonExtensionEditorAsync(
-            LocalExtensionCatalog.CreateTemplateJson(),
-            isEditMode: false);
-        if (command == null)
+        try
         {
-            return;
-        }
+            var command = ShowJsonExtensionEditorAsync(
+                LocalExtensionCatalog.CreateTemplateJson(),
+                isEditMode: false);
+            if (command == null)
+            {
+                return;
+            }
 
-        LastRunMessage = $"已添加本地 JSON 扩展：{command.Title}";
-        if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
+            LastRunMessage = $"已添加本地 JSON 扩展：{command.Title}";
+            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
+            {
+                await SyncCommandToCloudAsync(command);
+                await RefreshCloudStateAsync();
+            }
+        }
+        catch (Exception ex)
         {
-            await SyncCommandToCloudAsync(command);
-            await RefreshCloudStateAsync();
+            HostAssets.AppendDevLog($"AddJsonExtensionAsync failed: {ex}");
+            SyncStatus = $"添加扩展失败：{FormatExceptionMessage(ex)}";
         }
     }
 
@@ -1424,6 +1445,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SearchBox.SelectAll();
     }
 
+    private void PinAutoHideButton_Click(object sender, RoutedEventArgs e)
+    {
+        _isPinned = !_isPinned;
+        OnPropertyChanged(nameof(PinButtonBrush));
+        OnPropertyChanged(nameof(PinButtonTooltip));
+        LastRunMessage = _isPinned ? "已固定窗口，失去焦点不会自动关闭。" : "已取消固定，失去焦点将自动关闭。";
+    }
+
     public void HideToTray()
     {
         ShowInTaskbar = false;
@@ -1486,6 +1515,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             HideToTray();
         }
+    }
+
+    private void Window_Deactivated(object? sender, EventArgs e)
+    {
+        if (_isPinned || !IsVisible)
+        {
+            return;
+        }
+
+        if (OwnedWindows.OfType<Window>().Any(static window => window.IsVisible))
+        {
+            return;
+        }
+
+        if (FooterQuickMenuPopup.IsOpen || CommandList.ContextMenu?.IsOpen == true)
+        {
+            return;
+        }
+
+        HideToTray();
     }
 
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -2197,7 +2246,9 @@ public sealed class CommandItem : INotifyPropertyChanged
         string? hotkeyBehavior = null,
         string? runtime = null,
         string? entryPoint = null,
-        IEnumerable<string>? permissions = null)
+        IEnumerable<string>? permissions = null,
+        string? entryMode = null,
+        string? inlineScriptSource = null)
     {
         Glyph = glyph;
         Title = title;
@@ -2220,6 +2271,8 @@ public sealed class CommandItem : INotifyPropertyChanged
         Runtime = runtime;
         EntryPoint = entryPoint;
         Permissions = permissions?.ToArray() ?? [];
+        EntryMode = entryMode;
+        InlineScriptSource = inlineScriptSource;
     }
 
     public string Glyph { get; }
@@ -2276,6 +2329,10 @@ public sealed class CommandItem : INotifyPropertyChanged
     public string? EntryPoint { get; }
 
     public IReadOnlyList<string> Permissions { get; }
+
+    public string? EntryMode { get; }
+
+    public string? InlineScriptSource { get; }
 
     public bool SupportsQueryArgument => QueryPrefixes.Count > 0 && !string.IsNullOrWhiteSpace(QueryTargetTemplate);
 

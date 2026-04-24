@@ -181,8 +181,15 @@ public sealed class CloudSyncClient
                 globalShortcut = command.GlobalShortcut,
                 hotkeyBehavior = command.HotkeyBehavior,
                 runtime = command.Runtime,
+                entryMode = command.EntryMode,
                 entry = command.EntryPoint,
                 permissions = command.Permissions,
+                script = string.IsNullOrWhiteSpace(command.InlineScriptSource)
+                    ? null
+                    : new
+                    {
+                        source = command.InlineScriptSource
+                    },
                 hostedView = command.HostedView == null
                     ? null
                     : new

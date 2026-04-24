@@ -8,6 +8,8 @@ using System.Windows.Media;
 using System.Windows.Input;
 using System.Windows.Controls;
 using System.Linq;
+using System.Windows.Interop;
+using System.Windows.Threading;
 
 namespace OpenQuickHost;
 
@@ -16,6 +18,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private readonly MainWindow _mainWindow;
     private AppSettings _settings;
     private readonly List<SlotViewModel> _allSlots = new();
+    private bool _isPinned;
 
     public QuickPanelWindow(MainWindow mainWindow)
     {
@@ -33,6 +36,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     }
 
     public ObservableCollection<SlotViewModel> Slots { get; } = new();
+
+    public System.Windows.Media.Brush PinButtonBrush => _isPinned
+        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFF59E0B")!
+        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+
+    public string PinButtonTooltip => _isPinned ? "已固定，失去焦点时不自动关闭" : "点击固定，失去焦点时不自动关闭";
 
     private bool _isShowingFavorites = false;
     public bool IsShowingFavorites
@@ -125,6 +134,13 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         _mainWindow.OpenSettingsWindow("quickpanel");
     }
 
+    private void PinAutoHideButton_Click(object sender, RoutedEventArgs e)
+    {
+        _isPinned = !_isPinned;
+        OnPropertyChanged(nameof(PinButtonBrush));
+        OnPropertyChanged(nameof(PinButtonTooltip));
+    }
+
     private void SlotButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement element && element.Tag is SlotViewModel vm)
@@ -199,6 +215,11 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void Window_Deactivated(object sender, EventArgs e)
     {
+        if (_isPinned)
+        {
+            return;
+        }
+
         Hide();
     }
 
@@ -219,6 +240,16 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         LoadSlots(); // Refresh
         Show();
         Activate();
+        Focus();
+        NativeMethods.SetForegroundWindow(new WindowInteropHelper(this).Handle);
+        Dispatcher.BeginInvoke(() =>
+        {
+            Activate();
+            Focus();
+            HubSearchBox.Focus();
+            Keyboard.Focus(HubSearchBox);
+            HubSearchBox.SelectAll();
+        }, DispatcherPriority.ApplicationIdle);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -278,6 +309,10 @@ internal static class NativeMethods
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct POINT

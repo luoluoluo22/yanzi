@@ -4,6 +4,11 @@ Current supported runtime:
 
 - `powershell`
 
+Entry modes:
+
+- `entry`: use a script file such as `main.ps1`
+- `entryMode = inline`: put the PowerShell source directly in `manifest.json` under `script.source`
+
 Basic pattern:
 
 ```powershell

@@ -4,6 +4,8 @@ namespace OpenQuickHost;
 
 public static class HostAssets
 {
+    private const string DevWorkspacePath = @"F:\Desktop\kaifa\OpenQuickHost";
+
     public static string RootPath => AppDomain.CurrentDomain.BaseDirectory;
 
     public static string ExtensionsPath => Path.Combine(RootPath, "Extensions");
@@ -17,6 +19,8 @@ public static class HostAssets
     public static string LogsPath => Path.Combine(RootPath, "logs");
 
     public static string HostLogPath => Path.Combine(LogsPath, "host.log");
+
+    public static string DevDebugLogPath => Path.Combine(LogsPath, "dev-debug.log");
 
     public static string RecentCommandsPath => Path.Combine(RootPath, "recent-commands.txt");
 
@@ -76,6 +80,19 @@ public static class HostAssets
         EnsureCreated();
         File.AppendAllText(
             HostLogPath,
+            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}");
+    }
+
+    public static void AppendDevLog(string message)
+    {
+        if (!Directory.Exists(DevWorkspacePath))
+        {
+            return;
+        }
+
+        EnsureCreated();
+        File.AppendAllText(
+            DevDebugLogPath,
             $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}");
     }
 

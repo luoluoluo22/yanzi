@@ -48,6 +48,21 @@ Script extension example:
 }
 ```
 
+Inline single-file script example:
+
+```json
+{
+  "id": "inline-clipboard",
+  "name": "读取剪贴板（内联）",
+  "runtime": "powershell",
+  "entryMode": "inline",
+  "permissions": ["clipboard.read"],
+  "script": {
+    "source": "param([string]$InputText = \"\", [string]$ContextPath = \"\")\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n$text = Get-Clipboard -Raw\nif ([string]::IsNullOrWhiteSpace($text)) { Write-Output \"当前剪贴板为空。\" } else { Write-Output $text.Trim() }"
+  }
+}
+```
+
 Hosted script example:
 
 ```json

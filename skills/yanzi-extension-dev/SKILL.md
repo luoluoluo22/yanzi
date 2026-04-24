@@ -16,6 +16,12 @@ Two extension shapes are supported:
 1. JSON extension
 2. Script extension
 
+For lightweight script extensions inside a single `manifest.json`, prefer:
+
+- `runtime = powershell`
+- `entryMode = inline`
+- `script.source`
+
 Minimum layout:
 
 ```text
@@ -55,7 +61,9 @@ JSON action fields:
 Script fields:
 
 - `runtime`
+- `entryMode`
 - `entry`
+- `script.source`
 - `permissions`
 
 Hosted view fields:
@@ -137,3 +145,4 @@ Read [references/local-agent-api.md](references/local-agent-api.md) for request 
 - Prefer editing extension folders through the local API when you are acting as an external agent.
 - When working inside the Yanzi codebase, update both the runtime behavior and the bundled skill docs if behavior changes.
 - For script extensions, keep PowerShell files ASCII unless non-ASCII output is required; when Chinese text is required, ensure the file is written with BOM-compatible UTF-8 handling.
+- When debugging inline scripts, prefer using the editor test flow first, then inspect `logs/host.log` and `logs/dev-debug.log` on the development machine.

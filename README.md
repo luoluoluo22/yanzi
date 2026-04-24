@@ -33,4 +33,5 @@ bin\Debug\net9.0-windows\OpenQuickHost.exe
 
 - [产品说明](docs/product-overview.md)
 - [扩展规范](docs/extension-spec.md)
+- [Agent Skill 规范](docs/agent-skill-spec.md)
 - [使用说明](docs/getting-started.md)

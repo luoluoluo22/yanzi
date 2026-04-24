@@ -15,6 +15,7 @@
         ResizeMode="CanResizeWithGrip"
         Background="Transparent"
         AllowsTransparency="True"
+        Deactivated="Window_Deactivated"
         KeyDown="Window_KeyDown">
     
     <Window.Resources>
@@ -129,8 +130,22 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-                <!-- Right Side Tags Removed -->
-                <StackPanel Grid.Column="2" Visibility="Collapsed" />
+                <Button Grid.Column="2"
+                        Width="32"
+                        Height="32"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ToolTip="{Binding PinButtonTooltip}"
+                        Click="PinAutoHideButton_Click"
+                        Style="{StaticResource QuickMenuButtonStyle}">
+                    <Path Data="M14,3L21,10L18,11L15,18L13,18L13,12L8,17L7,16L12,11L6,11L6,9L13,8L14,3Z"
+                          Fill="{Binding PinButtonBrush}"
+                          Height="14"
+                          Width="14"
+                          Stretch="Uniform"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"/>
+                </Button>
             </Grid>
 
             <!-- Separator -->
@@ -496,6 +511,23 @@
             <Border Grid.Row="2" Background="#FF161616" CornerRadius="0,0,16,16" Padding="20,10">
                 <Grid>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="FooterAddExtensionButton"
+                                Width="32"
+                                Height="32"
+                                Margin="0,0,10,0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                ToolTip="添加扩展"
+                                Click="FooterAddExtensionButton_Click"
+                                Style="{StaticResource QuickMenuButtonStyle}">
+                            <Path Data="M5,12 H19 M12,5 V19"
+                                  Stroke="#FFE5E7EB"
+                                  StrokeThickness="1.6"
+                                  Height="14"
+                                  Width="14"
+                                  Stretch="Uniform"
+                                  HorizontalAlignment="Center"/>
+                        </Button>
                         <Button x:Name="FooterQuickMenuButton"
                                 Width="32"
                                 Height="32"

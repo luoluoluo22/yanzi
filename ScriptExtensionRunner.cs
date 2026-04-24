@@ -9,9 +9,17 @@ public static class ScriptExtensionRunner
 {
     public static bool CanExecute(CommandItem command)
     {
-        return !string.IsNullOrWhiteSpace(command.Runtime) &&
-               !string.IsNullOrWhiteSpace(command.EntryPoint) &&
-               !string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath);
+        if (string.IsNullOrWhiteSpace(command.Runtime) || string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath))
+        {
+            return false;
+        }
+
+        if (string.Equals(command.EntryMode, "inline", StringComparison.OrdinalIgnoreCase))
+        {
+            return !string.IsNullOrWhiteSpace(command.InlineScriptSource);
+        }
+
+        return !string.IsNullOrWhiteSpace(command.EntryPoint);
     }
 
     public static async Task<ScriptExecutionResult> ExecuteAsync(
@@ -25,20 +33,55 @@ public static class ScriptExtensionRunner
             return new ScriptExecutionResult(false, string.Empty, "扩展没有可执行脚本入口。", -1);
         }
 
-        var entryPath = Path.Combine(command.ExtensionDirectoryPath!, command.EntryPoint!);
+        var isInline = string.Equals(command.EntryMode, "inline", StringComparison.OrdinalIgnoreCase);
+        var entryPath = isInline
+            ? await MaterializeInlineScriptAsync(command, cancellationToken)
+            : Path.Combine(command.ExtensionDirectoryPath!, command.EntryPoint!);
         if (!File.Exists(entryPath))
         {
             return new ScriptExecutionResult(false, string.Empty, $"没有找到脚本入口：{entryPath}", -1);
         }
 
-        switch (command.Runtime?.ToLowerInvariant())
+        try
         {
-            case "powershell":
-            case "ps1":
-                return await ExecutePowerShellAsync(command, entryPath, inputText, launchSource, cancellationToken);
-            default:
-                return new ScriptExecutionResult(false, string.Empty, $"当前还不支持脚本运行时：{command.Runtime}", -1);
+            switch (command.Runtime?.ToLowerInvariant())
+            {
+                case "powershell":
+                case "ps1":
+                    return await ExecutePowerShellAsync(command, entryPath, inputText, launchSource, cancellationToken);
+                default:
+                    return new ScriptExecutionResult(false, string.Empty, $"当前还不支持脚本运行时：{command.Runtime}", -1);
+            }
         }
+        finally
+        {
+            if (isInline)
+            {
+                TryDeleteTempScript(entryPath);
+            }
+        }
+    }
+
+    private static async Task<string> MaterializeInlineScriptAsync(CommandItem command, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath))
+        {
+            throw new InvalidOperationException("内联脚本缺少扩展目录。");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.InlineScriptSource))
+        {
+            throw new InvalidOperationException("内联脚本缺少 script.source。");
+        }
+
+        Directory.CreateDirectory(command.ExtensionDirectoryPath);
+        var tempScriptPath = Path.Combine(command.ExtensionDirectoryPath, $".yanzi-inline-{Guid.NewGuid():N}.ps1");
+        await File.WriteAllTextAsync(
+            tempScriptPath,
+            command.InlineScriptSource,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: true),
+            cancellationToken);
+        return tempScriptPath;
     }
 
     private static async Task<ScriptExecutionResult> ExecutePowerShellAsync(
@@ -121,6 +164,21 @@ public static class ScriptExtensionRunner
     private static string Quote(string value)
     {
         return "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+    }
+
+    private static void TryDeleteTempScript(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Ignore temp cleanup failures.
+        }
     }
 
     private sealed record ScriptExecutionContext(

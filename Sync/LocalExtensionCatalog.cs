@@ -16,6 +16,8 @@ public static class LocalExtensionCatalog
         EnsureSampleTranslateExtension();
         EnsureClipboardScriptExtension();
         EnsureForegroundWindowScriptExtension();
+        EnsureInlineClipboardExtension();
+        EnsureInlineTimestampExtension();
     }
 
     public static IReadOnlyList<CommandItem> LoadCommands()
@@ -38,7 +40,7 @@ public static class LocalExtensionCatalog
                 }
 
                 commands.Add(new CommandItem(
-                    glyph: string.IsNullOrWhiteSpace(manifest.Runtime) ? "E" : "S",
+                    glyph: string.IsNullOrWhiteSpace(manifest.Runtime) && manifest.Script == null ? "E" : "S",
                     title: manifest.Name,
                     subtitle: manifest.Description ?? $"来自本地扩展目录：{Path.GetDirectoryName(manifestPath)}",
                     category: manifest.Category ?? "扩展",
@@ -54,7 +56,9 @@ public static class LocalExtensionCatalog
                     hotkeyBehavior: manifest.HotkeyBehavior,
                     runtime: manifest.Runtime,
                     entryPoint: manifest.Entry,
-                    permissions: manifest.Permissions ?? []));
+                    permissions: manifest.Permissions ?? [],
+                    entryMode: manifest.EntryMode,
+                    inlineScriptSource: manifest.Script?.Source));
             }
             catch
             {
@@ -259,6 +263,114 @@ Write-Output ("进程 ID: " + $processId)
 """);
     }
 
+    private static void EnsureInlineClipboardExtension()
+    {
+        var extensionDirectory = Path.Combine(CatalogRootPath, "inline-clipboard");
+        Directory.CreateDirectory(extensionDirectory);
+
+        var manifest = new LocalExtensionManifest
+        {
+            Id = "inline-clipboard",
+            Name = "内联读取剪贴板",
+            Version = "0.1.0",
+            Category = "脚本",
+            Description = "单 JSON 内联 PowerShell 示例：读取当前剪贴板文本。",
+            Keywords = ["clipboard", "剪贴板", "inline", "powershell", "json"],
+            GlobalShortcut = "Ctrl+Alt+Shift+C",
+            Runtime = "powershell",
+            EntryMode = "inline",
+            Permissions = ["clipboard.read"],
+            Script = new LocalExtensionInlineScriptManifest
+            {
+                Source =
+"""
+param(
+    [string]$InputText = "",
+    [string]$ContextPath = ""
+)
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+$text = Get-Clipboard -Raw
+if ([string]::IsNullOrWhiteSpace($text)) {
+    Write-Output "当前剪贴板为空。"
+} else {
+    Write-Output $text.Trim()
+}
+"""
+            }
+        };
+        EnsureSampleManifest(Path.Combine(extensionDirectory, "manifest.json"), manifest, existing =>
+            existing with
+            {
+                GlobalShortcut = string.IsNullOrWhiteSpace(existing.GlobalShortcut) ? manifest.GlobalShortcut : existing.GlobalShortcut,
+                Runtime = existing.Runtime ?? manifest.Runtime,
+                EntryMode = existing.EntryMode ?? manifest.EntryMode,
+                Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
+                Script = existing.Script ?? manifest.Script
+            });
+    }
+
+    private static void EnsureInlineTimestampExtension()
+    {
+        var extensionDirectory = Path.Combine(CatalogRootPath, "inline-timestamp");
+        Directory.CreateDirectory(extensionDirectory);
+
+        var manifest = new LocalExtensionManifest
+        {
+            Id = "inline-timestamp",
+            Name = "内联时间戳",
+            Version = "0.1.0",
+            Category = "脚本",
+            Description = "单 JSON 内联 PowerShell 示例：返回当前时间和输入内容。",
+            Keywords = ["time", "timestamp", "时间戳", "inline", "powershell"],
+            Runtime = "powershell",
+            EntryMode = "inline",
+            Permissions = ["clipboard.read"],
+            HostedView = new LocalExtensionHostedViewManifest
+            {
+                Type = "split-workbench",
+                Title = "内联时间戳",
+                Description = "左侧输入任意文本，右侧显示时间戳和输入内容。",
+                InputLabel = "输入",
+                InputPlaceholder = "输入任意内容...",
+                OutputLabel = "结果",
+                ActionButtonText = "执行脚本",
+                ActionType = "script",
+                EmptyState = "脚本输出会显示在这里。"
+            },
+            Script = new LocalExtensionInlineScriptManifest
+            {
+                Source =
+"""
+param(
+    [string]$InputText = "",
+    [string]$ContextPath = ""
+)
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+$now = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+if ([string]::IsNullOrWhiteSpace($InputText)) {
+    Write-Output "当前时间: $now"
+} else {
+    Write-Output "当前时间: $now"
+    Write-Output "输入内容: $InputText"
+}
+"""
+            }
+        };
+        EnsureSampleManifest(Path.Combine(extensionDirectory, "manifest.json"), manifest, existing =>
+            existing with
+            {
+                Runtime = existing.Runtime ?? manifest.Runtime,
+                EntryMode = existing.EntryMode ?? manifest.EntryMode,
+                Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
+                HostedView = existing.HostedView ?? manifest.HostedView,
+                Script = existing.Script ?? manifest.Script
+            });
+    }
+
     public static CommandItem SaveJsonExtension(string json)
     {
         Directory.CreateDirectory(CatalogRootPath);
@@ -273,7 +385,7 @@ Write-Output ("进程 ID: " + $processId)
             JsonSerializer.Serialize(manifest, JsonOptions));
 
         return new CommandItem(
-            glyph: string.IsNullOrWhiteSpace(manifest.Runtime) ? "J" : "S",
+            glyph: string.IsNullOrWhiteSpace(manifest.Runtime) && manifest.Script == null ? "J" : "S",
             title: manifest.Name,
             subtitle: manifest.Description ?? $"来自本地扩展目录：{extensionDirectory}",
             category: manifest.Category ?? "扩展",
@@ -289,7 +401,9 @@ Write-Output ("进程 ID: " + $processId)
             hotkeyBehavior: manifest.HotkeyBehavior,
             runtime: manifest.Runtime,
             entryPoint: manifest.Entry,
-            permissions: manifest.Permissions ?? []);
+            permissions: manifest.Permissions ?? [],
+            entryMode: manifest.EntryMode,
+            inlineScriptSource: manifest.Script?.Source);
     }
 
     public static string LoadManifestJson(string extensionId)
@@ -346,8 +460,10 @@ Write-Output ("进程 ID: " + $processId)
             GlobalShortcut = manifest.GlobalShortcut,
             HotkeyBehavior = manifest.HotkeyBehavior,
             Runtime = manifest.Runtime,
+            EntryMode = manifest.EntryMode,
             Entry = manifest.Entry,
-            Permissions = manifest.Permissions
+            Permissions = manifest.Permissions,
+            Script = manifest.Script
         };
 
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(renamed, JsonOptions));
@@ -404,6 +520,19 @@ Write-Output ("进程 ID: " + $processId)
         if (string.IsNullOrWhiteSpace(manifest.Name))
         {
             throw new InvalidOperationException("扩展必须包含 name。");
+        }
+
+        if (string.Equals(manifest.EntryMode, "inline", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.Equals(manifest.Runtime, "powershell", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("当前内联脚本只支持 runtime = powershell。");
+            }
+
+            if (string.IsNullOrWhiteSpace(manifest.Script?.Source))
+            {
+                throw new InvalidOperationException("entryMode = inline 时必须提供 script.source。");
+            }
         }
 
         return manifest;
@@ -504,9 +633,18 @@ public sealed record LocalExtensionManifest
 
     public string? Runtime { get; init; }
 
+    public string? EntryMode { get; init; }
+
     public string? Entry { get; init; }
 
     public string[]? Permissions { get; init; }
+
+    public LocalExtensionInlineScriptManifest? Script { get; init; }
+}
+
+public sealed class LocalExtensionInlineScriptManifest
+{
+    public string? Source { get; init; }
 }
 
 public sealed class LocalExtensionHostedViewManifest
