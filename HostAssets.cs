@@ -10,6 +10,8 @@ public static class HostAssets
 
     public static string DocsPath => Path.Combine(RootPath, "docs");
 
+    public static string SkillsPath => Path.Combine(RootPath, "skills");
+
     public static string DocsReadmePath => Path.Combine(DocsPath, "README.txt");
 
     public static string LogsPath => Path.Combine(RootPath, "logs");
@@ -28,6 +30,7 @@ public static class HostAssets
         Directory.CreateDirectory(ExtensionsPath);
         Directory.CreateDirectory(DocsPath);
         Directory.CreateDirectory(LogsPath);
+        Directory.CreateDirectory(SkillsPath);
 
         EnsureFile(
             DocsReadmePath,

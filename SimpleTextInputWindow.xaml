@@ -1,7 +1,7 @@
 <Window x:Class="OpenQuickHost.SimpleTextInputWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Input"
+        Title="输入"
         Width="420"
         Height="240"
         WindowStartupLocation="CenterOwner"
@@ -22,7 +22,7 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <TextBlock x:Name="TitleText" Text="Input" Style="{StaticResource TitleText}" />
+            <TextBlock x:Name="TitleText" Text="输入" Style="{StaticResource TitleText}" />
             
             <TextBlock x:Name="DescriptionText"
                        Grid.Row="1"
@@ -50,13 +50,13 @@
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
                 <Button Grid.Column="1"
-                        Content="Cancel"
+                        Content="取消"
                         Style="{StaticResource SecondaryBtn}"
                         Width="90"
                         Margin="0,0,10,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
-                        Content="Confirm"
+                        Content="确认"
                         Style="{StaticResource PrimaryBtn}"
                         Width="90"
                         Click="OkButton_Click" />

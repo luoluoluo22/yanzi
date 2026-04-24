@@ -15,6 +15,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 {
     private readonly MainWindow _mainWindow;
     private AppSettings _settings;
+    private readonly List<SlotViewModel> _allSlots = new();
 
     public QuickPanelWindow(MainWindow mainWindow)
     {
@@ -77,6 +78,33 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 Slots.Add(new SlotViewModel(i, command, isFav));
             }
         }
+
+        // Cache all slots for searching
+        _allSlots.Clear();
+        _allSlots.AddRange(Slots);
+    }
+
+    private void HubSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var query = HubSearchBox.Text.Trim().ToLower();
+        if (string.IsNullOrEmpty(query))
+        {
+            // Restore all slots
+            if (Slots.Count != _allSlots.Count)
+            {
+                Slots.Clear();
+                foreach (var s in _allSlots) Slots.Add(s);
+            }
+            return;
+        }
+
+        // Filter and update
+        var filtered = _allSlots
+            .Where(s => s.IsOccupied && s.Title.ToLower().Contains(query))
+            .ToList();
+
+        Slots.Clear();
+        foreach (var s in filtered) Slots.Add(s);
     }
 
     private void SaveSlots()
@@ -187,6 +215,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (Left + Width > screen.Bounds.Right) Left = screen.Bounds.Right - Width;
         if (Top + Height > screen.Bounds.Bottom) Top = screen.Bounds.Bottom - Height;
 
+        HubSearchBox.Text = string.Empty; // Reset search on show
         LoadSlots(); // Refresh
         Show();
         Activate();

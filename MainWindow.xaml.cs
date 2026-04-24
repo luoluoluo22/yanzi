@@ -11,6 +11,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Windows.Controls;
 using System.Text.Json;
+using Forms = System.Windows.Forms;
 
 namespace OpenQuickHost;
 
@@ -451,6 +452,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await AddJsonExtensionAsync();
     }
 
+    private void QuickMenuInstallSkill_Click(object sender, RoutedEventArgs e)
+    {
+        FooterQuickMenuPopup.IsOpen = false;
+        ExportSkillsToFolder();
+    }
+
     private void QuickMenuOpenSettings_Click(object sender, RoutedEventArgs e)
     {
         FooterQuickMenuPopup.IsOpen = false;
@@ -492,6 +499,52 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             app.OpenSettingsWindow("about");
             LastRunMessage = "已打开关于页面。";
+        }
+    }
+
+    private void ExportSkillsToFolder()
+    {
+        var optionsDialog = new SkillExportOptionsWindow
+        {
+            Owner = this
+        };
+        if (optionsDialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        string? destinationRoot = null;
+        if (optionsDialog.SelectedScope == SkillExportScope.Project)
+        {
+            using var dialog = new Forms.FolderBrowserDialog
+            {
+                Description = "选择项目根目录",
+                UseDescriptionForTitle = true,
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)
+            };
+
+            if (dialog.ShowDialog() != Forms.DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+            {
+                return;
+            }
+
+            destinationRoot = dialog.SelectedPath;
+        }
+
+        try
+        {
+            var previewPath = SkillInstallerService.GetExportPath(destinationRoot, optionsDialog.SelectedTarget, optionsDialog.SelectedScope);
+            var result = SkillInstallerService.ExportSkills(
+                HostAssets.SkillsPath,
+                destinationRoot,
+                optionsDialog.SelectedTarget,
+                optionsDialog.SelectedScope);
+            LastRunMessage = $"已导出 {result.SkillCount} 个 Skill 到 {result.Target} {result.Scope}";
+            SyncStatus = $"已导出到 {previewPath}（相对路径：{result.RelativePath}）";
+        }
+        catch (Exception ex)
+        {
+            SyncStatus = $"导出 Skill 失败：{FormatExceptionMessage(ex)}";
         }
     }
 
@@ -1276,6 +1329,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshExtensionHotkeys();
     }
 
+    public void ReloadLocalExtensionsFromExternal()
+    {
+        _allCommands.RemoveAll(x => x.Source == CommandSource.LocalExtension);
+        _localExtensionIndex.Clear();
+        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        {
+            UpsertLocalExtensionCommand(command);
+        }
+
+        ApplyFilter(SearchBox.Text);
+        SyncStatus = "已通过外部 Agent API 刷新本地扩展。";
+    }
+
     private CommandItem? ShowJsonExtensionEditorAsync(string initialJson, bool isEditMode)
     {
         var currentJson = initialJson;
@@ -1385,7 +1451,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _source.AddHook(WndProc);
-        RegisterHotKey(_source.Handle, HotKeyId, ModControl | ModShift | ModNoRepeat, (uint)KeyInterop.VirtualKeyFromKey(Key.Space));
+        RefreshLauncherHotkeyRegistration();
         RefreshExtensionHotkeys();
     }
 
@@ -1578,6 +1644,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return modifiers != 0 && key != Key.None;
     }
 
+    private bool RefreshLauncherHotkeyRegistration()
+    {
+        if (_source == null)
+        {
+            return false;
+        }
+
+        UnregisterHotKey(_source.Handle, HotKeyId);
+        var shortcut = AppSettingsStore.Load().LauncherHotkey;
+        if (!TryParseHotkey(shortcut, out var modifiers, out var key))
+        {
+            HostAssets.AppendLog($"Invalid launcher hotkey skipped: {shortcut}");
+            return false;
+        }
+
+        var success = RegisterHotKey(
+            _source.Handle,
+            HotKeyId,
+            modifiers | ModNoRepeat,
+            (uint)KeyInterop.VirtualKeyFromKey(key));
+        if (!success)
+        {
+            HostAssets.AppendLog($"Failed to register launcher hotkey: {shortcut}");
+        }
+
+        return success;
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
@@ -1632,11 +1726,78 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public void RefreshAppSettings()
     {
         var settings = AppSettingsStore.Load();
+        RefreshLauncherHotkeyRegistration();
         SyncStatus = settings.LaunchAtStartup
             ? "设置已保存。开机启动已启用。"
             : settings.RefreshCloudOnStartup
                 ? "设置已保存。"
                 : "设置已保存。启动后自动刷新云状态已关闭。";
+    }
+
+    public string GetLauncherHotkey() => AppSettingsStore.Load().LauncherHotkey;
+
+    public bool TryUpdateLauncherHotkey(string shortcut, out string message)
+    {
+        message = string.Empty;
+        if (string.IsNullOrWhiteSpace(shortcut) || !TryParseHotkey(shortcut, out _, out _))
+        {
+            message = "快捷键格式无效。示例：Ctrl+Shift+Space";
+            return false;
+        }
+
+        var settings = AppSettingsStore.Load();
+        var previous = settings.LauncherHotkey;
+        settings.LauncherHotkey = shortcut.Trim();
+        AppSettingsStore.Save(settings);
+
+        if (!RefreshLauncherHotkeyRegistration())
+        {
+            settings.LauncherHotkey = previous;
+            AppSettingsStore.Save(settings);
+            RefreshLauncherHotkeyRegistration();
+            message = "主程序快捷键注册失败，可能与系统或其他程序冲突。";
+            return false;
+        }
+
+        message = $"主程序快捷键已更新为 {settings.LauncherHotkey}";
+        return true;
+    }
+
+    public IReadOnlyList<CommandItem> GetLocalExtensionsForSettings()
+    {
+        return _localExtensionIndex.Values
+            .OrderBy(static x => x.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public async Task<(bool ok, string message)> UpdateExtensionShortcutFromSettingsAsync(string extensionId, string? shortcut)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(shortcut) &&
+                !TryParseHotkey(shortcut, out _, out _))
+            {
+                return (false, "快捷键格式无效。示例：Ctrl+Alt+T");
+            }
+
+            var updated = LocalExtensionCatalog.SetGlobalShortcut(extensionId, shortcut);
+            UpsertLocalExtensionCommand(updated);
+            ApplyFilter(SearchBox.Text);
+
+            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
+            {
+                await SyncCommandToCloudAsync(updated);
+            }
+
+            var message = string.IsNullOrWhiteSpace(updated.GlobalShortcut)
+                ? $"已清除快捷键：{updated.Title}"
+                : $"已设置快捷键：{updated.Title} -> {updated.GlobalShortcut}";
+            return (true, message);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"设置快捷键失败：{FormatExceptionMessage(ex)}");
+        }
     }
 
     private void OpenCommandActionsMenu()
@@ -1781,9 +1942,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var dialog = new SimpleTextInputWindow(
+        var dialog = new HotkeyCaptureWindow(
             "设置快捷键",
-            "输入全局快捷键，例如 Ctrl+Alt+T。留空后确认可清除当前快捷键。",
+            "窗口激活后，直接按一次新的组合键即可完成录制。需要清除时可点“清空”。",
             extension.GlobalShortcut ?? string.Empty,
             allowEmpty: true)
         {
@@ -1796,14 +1957,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            if (!string.IsNullOrWhiteSpace(dialog.ValueText) &&
-                !TryParseHotkey(dialog.ValueText, out _, out _))
+            if (!string.IsNullOrWhiteSpace(dialog.ShortcutText) &&
+                !TryParseHotkey(dialog.ShortcutText, out _, out _))
             {
                 SyncStatus = "快捷键格式无效。示例：Ctrl+Alt+T";
                 return;
             }
 
-            var updated = LocalExtensionCatalog.SetGlobalShortcut(extension.ExtensionId, dialog.ValueText);
+            var updated = LocalExtensionCatalog.SetGlobalShortcut(extension.ExtensionId, dialog.ShortcutText);
             UpsertLocalExtensionCommand(updated);
             ApplyFilter(SearchBox.Text);
             SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(updated.ExtensionId, StringComparison.OrdinalIgnoreCase));
@@ -1966,12 +2127,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             LastRunMessage = $"已执行脚本：{runnable.Title} -> {summary}";
             SyncStatus = "脚本执行完成。";
+            ShowScriptResultDialog(runnable.Title, result.Output, false);
             return;
         }
 
         HostAssets.AppendLog($"Script extension failed: {runnable.Title} -> {result.Error}");
         LastRunMessage = $"脚本执行失败：{runnable.Title}";
         SyncStatus = $"脚本执行失败：{result.Error}";
+        ShowScriptResultDialog(runnable.Title, result.Error, true);
+    }
+
+    private void ShowScriptResultDialog(string title, string content, bool isError)
+    {
+        var message = string.IsNullOrWhiteSpace(content)
+            ? "脚本执行完成，但没有返回输出。"
+            : content.Trim();
+        System.Windows.MessageBox.Show(
+            this,
+            message,
+            isError ? $"{title} 执行失败" : $"{title} 返回结果",
+            MessageBoxButton.OK,
+            isError ? MessageBoxImage.Error : MessageBoxImage.Information);
     }
 
     // --- Quick Panel Support ---

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 
@@ -11,10 +12,10 @@ public static class LocalExtensionCatalog
     public static void EnsureSampleExtension()
     {
         Directory.CreateDirectory(CatalogRootPath);
-        // EnsureSampleNotesExtension();
-        // EnsureSampleTranslateExtension();
-        // EnsureClipboardScriptExtension();
-        // EnsureForegroundWindowScriptExtension();
+        EnsureSampleNotesExtension();
+        EnsureSampleTranslateExtension();
+        EnsureClipboardScriptExtension();
+        EnsureForegroundWindowScriptExtension();
     }
 
     public static IReadOnlyList<CommandItem> LoadCommands()
@@ -130,13 +131,15 @@ public static class LocalExtensionCatalog
                 Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
                 HostedView = existing.HostedView ?? manifest.HostedView
             });
-        File.WriteAllText(
+        WritePowerShellScript(
             Path.Combine(extensionDirectory, "main.ps1"),
             """
 param(
     [string]$InputText = "",
     [string]$ContextPath = ""
 )
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 if ([string]::IsNullOrWhiteSpace($InputText)) {
     Write-Output "请输入要翻译的文本。"
@@ -176,13 +179,15 @@ Write-Output "说明：这是示例脚本输出。后续可以替换为真实翻
                 Entry = existing.Entry ?? manifest.Entry,
                 Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions
             });
-        File.WriteAllText(
+        WritePowerShellScript(
             Path.Combine(extensionDirectory, "main.ps1"),
             """
 param(
     [string]$InputText = "",
     [string]$ContextPath = ""
 )
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 Add-Type -AssemblyName PresentationCore
 $text = Get-Clipboard -Raw
@@ -220,13 +225,15 @@ if ([string]::IsNullOrWhiteSpace($text)) {
                 Entry = existing.Entry ?? manifest.Entry,
                 Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions
             });
-        File.WriteAllText(
+        WritePowerShellScript(
             Path.Combine(extensionDirectory, "main.ps1"),
             """
 param(
     [string]$InputText = "",
     [string]$ContextPath = ""
 )
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 Add-Type @"
 using System;
@@ -457,6 +464,11 @@ Write-Output ("进程 ID: " + $processId)
         {
             File.WriteAllText(manifestPath, JsonSerializer.Serialize(defaultManifest, JsonOptions));
         }
+    }
+
+    private static void WritePowerShellScript(string path, string content)
+    {
+        File.WriteAllText(path, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

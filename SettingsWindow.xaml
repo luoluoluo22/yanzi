@@ -344,26 +344,46 @@
                                 <TextBlock Text="主程序全局快捷键" Foreground="White" FontSize="13" VerticalAlignment="Center"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <Border Background="#FF2D2D2D" CornerRadius="4" Padding="8,4" Margin="0,0,8,0">
-                                        <TextBlock Text="Alt+Space" Foreground="White" FontSize="12"/>
+                                        <TextBlock Text="{Binding LauncherHotkey}" Foreground="White" FontSize="12"/>
                                     </Border>
-                                    <Button Content="↻" Style="{StaticResource NavButtonStyle}" Width="24" Height="24"/>
+                                    <Button Content="修改" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="EditLauncherHotkeyButton_Click"/>
+                                    <Button Content="重置" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="ResetLauncherHotkeyButton_Click"/>
                                 </StackPanel>
-                            </Grid>
-
-                            <TextBlock Text="外观" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,30,0,15"/>
-                            
-                            <Grid Margin="0,5">
-                                <TextBlock Text="跟随系统主题" Foreground="White" FontSize="13" VerticalAlignment="Center"/>
-                                <CheckBox HorizontalAlignment="Right" Style="{StaticResource RaycastSwitchStyle}" IsChecked="True"/>
                             </Grid>
                             <Rectangle Height="1" Fill="#FF222222" Margin="0,12"/>
 
-                            <Grid Margin="0,5">
-                                <TextBlock Text="深色主题" Foreground="White" FontSize="13" VerticalAlignment="Center"/>
-                                <Border Background="#FF2D2D2D" CornerRadius="4" Padding="10,4" HorizontalAlignment="Right">
-                                    <TextBlock Text="燕子深色 ▾" Foreground="White" FontSize="12"/>
-                                </Border>
-                            </Grid>
+                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="14" Margin="0,18,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="说明" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="主程序快捷键修改后会立即重新注册。若注册失败，通常是被系统或其他软件占用了同一组合键。" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Sync View -->
+                        <StackPanel Visibility="{Binding IsSyncSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="同步" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
+                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,10">
+                                        <TextBlock Text="当前账号" Foreground="White" FontSize="13"/>
+                                        <TextBlock Text="{Binding AccountTitle}" Foreground="#FF8E8E8E" HorizontalAlignment="Right" FontSize="12"/>
+                                    </Grid>
+                                    <Rectangle Height="1" Fill="#FF2A2A2A" Margin="0,0,0,10"/>
+                                    <Grid Margin="0,0,0,10">
+                                        <TextBlock Text="服务端" Foreground="White" FontSize="13"/>
+                                        <TextBlock Text="{Binding BaseUrl}" Foreground="#FF8E8E8E" HorizontalAlignment="Right" FontSize="12"/>
+                                    </Grid>
+                                    <Rectangle Height="1" Fill="#FF2A2A2A" Margin="0,0,0,10"/>
+                                    <TextBlock Text="{Binding SyncStatusText}" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                        <Button Content="登录或切换账号" Style="{StaticResource PrimaryBtn}" Margin="0,0,10,0" Click="SignInButton_Click"/>
+                                        <Button Content="退出登录" Style="{StaticResource SecondaryBtn}" Margin="0,0,10,0" Click="SignOutButton_Click"/>
+                                        <Button Content="刷新云状态" Style="{StaticResource SecondaryBtn}" Click="RefreshSyncStatusButton_Click"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <!-- About View -->
@@ -424,42 +444,67 @@
                             </Border>
                         </StackPanel>
 
-                        <!-- Extensions/Shortcuts View -->
+                        <!-- Extensions View -->
                         <StackPanel Visibility="{Binding IsExtensionsSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <Grid Margin="0,0,0,15">
-                                <TextBlock Text="扩展管理" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                            </Grid>
-                            
-                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1">
+                            <TextBlock Text="扩展管理" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
+                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16">
                                 <StackPanel>
-                                    <Grid Margin="15,10">
+                                    <TextBlock Text="{Binding LocalExtensionSummary}" Foreground="White" FontSize="13"/>
+                                    <TextBlock Text="{Binding ExtensionsRootPath}" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                        <Button Content="打开扩展目录" Style="{StaticResource PrimaryBtn}" Margin="0,0,10,0" Click="OpenExtensionsFolderButton_Click"/>
+                                        <Button Content="刷新扩展统计" Style="{StaticResource SecondaryBtn}" Click="RefreshExtensionStatsButton_Click"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Shortcuts View -->
+                        <StackPanel Visibility="{Binding IsShortcutsSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="快捷键" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
+                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="名称" Foreground="#FF666666" FontSize="11" Opacity="0.8"/>
-                                        <TextBlock Grid.Column="2" Text="别名" Foreground="#FF666666" FontSize="11" Margin="0,0,60,0" Opacity="0.8"/>
-                                        <TextBlock Grid.Column="3" Text="热键" Foreground="#FF666666" FontSize="11" Opacity="0.8"/>
+                                        <StackPanel>
+                                            <TextBlock Text="主程序快捷键" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                            <TextBlock Text="用于呼出或隐藏启动器。" Foreground="#FF8E8E8E" FontSize="12" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <Border Grid.Column="1" Background="#FF2D2D2D" CornerRadius="4" Padding="8,4" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding LauncherHotkey}" Foreground="White" FontSize="12"/>
+                                        </Border>
                                     </Grid>
-                                    <Rectangle Height="1" Fill="#FF2A2A2A" />
-                                    
-                                    <!-- Sample Row -->
-                                    <Grid Margin="15,10">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="30" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Border Width="20" Height="20" CornerRadius="4" Background="#FF3B82F6"/>
-                                        <TextBlock Grid.Column="1" Text="Local Storage Management" Foreground="White" FontSize="13" VerticalAlignment="Center" Margin="5,0,0,0"/>
-                                        <TextBlock Grid.Column="2" Text="Add Alias" Foreground="#FF555555" FontSize="12" VerticalAlignment="Center" Margin="0,0,40,0"/>
-                                        <TextBlock Grid.Column="3" Text="Record Hotkey" Foreground="#FF555555" FontSize="12" VerticalAlignment="Center" Margin="0,0,20,0"/>
-                                        <CheckBox Grid.Column="4" IsChecked="True" VerticalAlignment="Center"/>
-                                    </Grid>
+                                    <Rectangle Height="1" Fill="#FF2A2A2A" Margin="0,0,0,12"/>
+                                    <ItemsControl ItemsSource="{Binding ShortcutItems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="#FF2A2A2A" BorderThickness="0,0,0,1" Padding="0,12">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                                            <TextBlock Text="{Binding Category}" Foreground="#FF8E8E8E" FontSize="12" Margin="0,4,0,0"/>
+                                                        </StackPanel>
+                                                        <Border Grid.Column="1" Background="#FF2D2D2D" CornerRadius="4" Padding="8,4" VerticalAlignment="Center" Margin="12,0,8,0">
+                                                            <TextBlock Text="{Binding ShortcutLabel}" Foreground="White" FontSize="12"/>
+                                                        </Border>
+                                                        <Button Grid.Column="2" Content="编辑" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="EditShortcutButton_Click"/>
+                                                        <Button Grid.Column="3" Content="清除" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="ClearShortcutButton_Click" IsEnabled="{Binding HasShortcut}"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
