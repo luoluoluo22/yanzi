@@ -1,6 +1,6 @@
 ---
 name: yanzi-extension-dev
-description: Build, inspect, edit, and install Yanzi extensions. Use when an agent needs to create or modify `manifest.json`, author PowerShell script extensions, call Yanzi's local extension HTTP API, or troubleshoot extension loading and execution.
+description: Build, inspect, edit, and install Yanzi extensions. Use when an agent needs to create or modify `manifest.json`, author C# or PowerShell extensions, call Yanzi's local extension HTTP API, or troubleshoot extension loading and execution.
 ---
 
 # Yanzi Extension Development
@@ -14,11 +14,12 @@ Yanzi stores runtime extensions under the app's `Extensions/` directory. Each ex
 Two extension shapes are supported:
 
 1. JSON extension
-2. Script extension
+2. C# or PowerShell action extension
+3. Hosted view extension
 
-For lightweight script extensions inside a single `manifest.json`, prefer:
+For lightweight action extensions inside a single `manifest.json`, prefer:
 
-- `runtime = powershell`
+- `runtime = csharp`
 - `entryMode = inline`
 - `script.source`
 
@@ -82,9 +83,36 @@ Read [references/manifest.md](references/manifest.md) when editing manifests.
 
 ## Script Execution
 
-Current script runtime:
+Current script runtimes:
 
+- `csharp`
 - `powershell`
+
+C# is the preferred runtime for new action extensions. PowerShell remains useful for Windows automation.
+
+Inline C# example:
+
+```json
+{
+  "id": "csharp-echo",
+  "name": "C# 输入回显",
+  "runtime": "csharp",
+  "entryMode": "inline",
+  "permissions": ["context.read"],
+  "script": {
+    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText);\\n    }\\n}"
+  }
+}
+```
+
+C# entry contract:
+
+```csharp
+public static class YanziAction
+{
+    public static Task<string> RunAsync(YanziActionContext context)
+}
+```
 
 Entry file example:
 
@@ -144,5 +172,6 @@ Read [references/local-agent-api.md](references/local-agent-api.md) for request 
 
 - Prefer editing extension folders through the local API when you are acting as an external agent.
 - When working inside the Yanzi codebase, update both the runtime behavior and the bundled skill docs if behavior changes.
-- For script extensions, keep PowerShell files ASCII unless non-ASCII output is required; when Chinese text is required, ensure the file is written with BOM-compatible UTF-8 handling.
+- Prefer C# inline actions for new extensions unless the task is specifically Windows shell automation.
+- For PowerShell extensions, keep files ASCII unless non-ASCII output is required; when Chinese text is required, ensure the file is written with BOM-compatible UTF-8 handling.
 - When debugging inline scripts, prefer using the editor test flow first, then inspect `logs/host.log` and `logs/dev-debug.log` on the development machine.

@@ -15,7 +15,7 @@
 | 扩展格式 | 标准 JSON，人类可读 | 私有格式 |
 | AI 辅助编写扩展 | 内置提示词工具，一键生成 | 不支持 |
 | 云同步方案 | 用户自持 Cloudflare Worker | 官方服务器，无法自控 |
-| 本地脚本运行时 | PowerShell，可扩展 | 内置沙盒 |
+| 本地脚本运行时 | C# / PowerShell，可扩展 | 内置沙盒 |
 | 二次开发 | 完整 .NET WPF 源码 | 不可修改 |
 | 数据主权 | 全部存储在本地 / 你的云账户 | 存储在第三方服务器 |
 
@@ -26,7 +26,7 @@
 - **全局热键呼出** — 默认 `Ctrl+Shift+Space`，在任何界面弹出命令面板
 - **命令搜索** — 中文、拼音缩写、英文关键词均可命中
 - **参数化命令** — 输入 `谷歌 今天的新闻` 即可执行带参数的搜索模板
-- **脚本扩展** — 内联 PowerShell 脚本或目录脚本入口，支持测试执行与日志查看
+- **脚本扩展** — 内联 C# 动作、PowerShell 脚本或目录脚本入口，支持测试执行与日志查看
 - **宿主视图 (Hosted View)** — 扩展可在启动器内开启双栏工作区，不需要弹出新窗口
 - **扩展快捷键** — 每个扩展可注册独立全局快捷键，直接触发动作
 - **云同步** — 基于 Cloudflare Worker，扩展元数据与包文件跨设备同步
@@ -98,7 +98,24 @@
 
 重启启动器或手动刷新后即可命中。
 
-**方法三：内联 PowerShell 脚本**
+**方法三：内联 C# 动作**
+
+```json
+{
+  "id": "csharp-echo",
+  "name": "C# 输入回显",
+  "version": "0.1.0",
+  "category": "C#",
+  "keywords": ["csharp", "dotnet"],
+  "runtime": "csharp",
+  "entryMode": "inline",
+  "script": {
+    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到输入\\\" : context.InputText.Trim());\\n    }\\n}"
+  }
+}
+```
+
+**方法四：内联 PowerShell 脚本**
 
 ```json
 {
@@ -222,7 +239,7 @@ OpenQuickHost/
 ├── SettingsWindow.xaml / .cs  设置窗口
 ├── QuickPanelWindow.xaml / .cs 快速浮动面板
 ├── AddJsonExtensionWindow.*   扩展编辑器（含 AI 提示词工具）
-├── ScriptExtensionRunner.cs   PowerShell 脚本运行时
+├── ScriptExtensionRunner.cs   C# / PowerShell 扩展运行时
 ├── LocalAgentApiServer.cs     本地 Agent API 服务器
 ├── Sync/                      云同步、扩展读取、会话与凭据存储
 ├── cloudflare/                Cloudflare Worker 后端源码
@@ -239,6 +256,7 @@ OpenQuickHost/
 | 文档 | 说明 |
 |:--|:--|
 | [产品说明](docs/product-overview.md) | 设计原则与产品定位 |
+| [扩展编写指南](docs/extension-authoring-guide.md) | 面向用户和 AI 的扩展写作示例 |
 | [扩展规范](docs/extension-spec.md) | manifest.json 完整字段说明 |
 | [Agent Skill 规范](docs/agent-skill-spec.md) | 为 AI 工具导出 Skill 的格式规范 |
 | [使用说明](docs/getting-started.md) | 快速上手指南 |

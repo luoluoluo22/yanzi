@@ -1,15 +1,40 @@
 # Script Extensions
 
-Current supported runtime:
+Current supported runtimes:
 
+- `csharp`
 - `powershell`
 
 Entry modes:
 
 - `entry`: use a script file such as `main.ps1`
-- `entryMode = inline`: put the PowerShell source directly in `manifest.json` under `script.source`
+- `entryMode = inline`: put C# or PowerShell source directly in `manifest.json` under `script.source`
 
-Basic pattern:
+Prefer C# for new action extensions.
+
+C# inline pattern:
+
+```csharp
+using OpenQuickHost.CSharpRuntime;
+
+public static class YanziAction
+{
+    public static Task<string> RunAsync(YanziActionContext context)
+    {
+        return Task.FromResult(context.InputText);
+    }
+}
+```
+
+Available context fields:
+
+- `InputText`
+- `ExtensionDirectory`
+- `LaunchSource`
+- `Now`
+- `Permissions`
+
+PowerShell basic pattern:
 
 ```powershell
 param(

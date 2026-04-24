@@ -36,7 +36,7 @@ Query command example:
 }
 ```
 
-Script extension example:
+PowerShell file script example:
 
 ```json
 {
@@ -45,6 +45,21 @@ Script extension example:
   "runtime": "powershell",
   "entry": "main.ps1",
   "permissions": ["clipboard.read"]
+}
+```
+
+Inline C# action example:
+
+```json
+{
+  "id": "csharp-echo",
+  "name": "C# 输入回显",
+  "runtime": "csharp",
+  "entryMode": "inline",
+  "permissions": ["context.read"],
+  "script": {
+    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText);\\n    }\\n}"
+  }
 }
 ```
 
@@ -63,21 +78,24 @@ Inline single-file script example:
 }
 ```
 
-Hosted script example:
+Hosted C# action example:
 
 ```json
 {
-  "id": "sample-translate",
-  "name": "双栏翻译",
-  "runtime": "powershell",
-  "entry": "main.ps1",
+  "id": "sample-text-workbench",
+  "name": "文本处理台",
+  "runtime": "csharp",
+  "entryMode": "inline",
   "hostedView": {
     "type": "split-workbench",
-    "title": "双栏翻译",
+    "title": "文本处理台",
     "actionType": "script",
-    "inputLabel": "原文",
-    "outputLabel": "译文",
-    "actionButtonText": "开始翻译"
+    "inputLabel": "输入",
+    "outputLabel": "结果",
+    "actionButtonText": "执行"
+  },
+  "script": {
+    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText.ToUpperInvariant());\\n    }\\n}"
   }
 }
 ```

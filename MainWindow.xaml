@@ -267,15 +267,29 @@
                                 <Border Width="32"
                                         Height="32"
                                         CornerRadius="8"
+                                        ClipToBounds="True"
                                         Background="{Binding AccentBrush}"
                                         VerticalAlignment="Center"
                                         Margin="0,0,12,0">
-                                    <TextBlock Text="{Binding Glyph}"
+                                    <Grid>
+                                        <Image Source="{Binding IconSource}"
+                                               Margin="1"
+                                               Stretch="UniformToFill"
+                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <Viewbox Margin="6"
+                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform" />
+                                            </Canvas>
+                                        </Viewbox>
+                                        <TextBlock Text="{Binding DisplayGlyph}"
                                                FontSize="14"
                                                Foreground="White"
                                                HorizontalAlignment="Center"
                                                VerticalAlignment="Center"
-                                               FontWeight="Bold" />
+                                               FontWeight="Bold"
+                                               Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    </Grid>
                                 </Border>
 
                                 <!-- Text Area -->

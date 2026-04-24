@@ -1,14 +1,18 @@
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.IO;
+using System.Security.Cryptography;
 using System.Text;
-using System.Xml.Linq;
+using System.Text.Json;
 
 namespace OpenQuickHost.Sync;
 
 public sealed class WebDavSyncService
 {
+    private const string RemoteIndexPath = "index.json";
     private readonly AppSettings _settings;
     private readonly SavedWebDavCredential? _credential;
     private readonly HttpClient _httpClient;
@@ -47,7 +51,7 @@ public sealed class WebDavSyncService
     {
         EnsureConfigured();
         await EnsureCollectionTreeAsync(cancellationToken, NormalizeRootPath(_settings.WebDavRootPath).Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries));
-        await EnsureCollectionAsync("extensions", cancellationToken);
+        await EnsureCollectionAsync("packages", cancellationToken);
     }
 
     public async Task<WebDavSyncResult> SyncExtensionsAsync(CancellationToken cancellationToken = default)
@@ -55,37 +59,291 @@ public sealed class WebDavSyncService
         EnsureConfigured();
         await ProbeAsync(cancellationToken);
 
-        var pulled = 0;
+        var remoteIndex = await LoadRemoteIndexAsync(cancellationToken);
+        var localState = LoadLocalIndex();
+        var snapshot = BuildLocalSnapshot(localState);
+        var remoteMap = remoteIndex.Items.ToDictionary(item => item.ExtensionId, StringComparer.OrdinalIgnoreCase);
+        var localMap = snapshot.Items.ToDictionary(item => item.ExtensionId, StringComparer.OrdinalIgnoreCase);
+        var mergedMap = new Dictionary<string, WebDavSyncEntry>(StringComparer.OrdinalIgnoreCase);
         var uploaded = 0;
-        var remoteExtensionIds = await ListChildCollectionsAsync("extensions", cancellationToken);
-        foreach (var remoteExtensionId in remoteExtensionIds)
-        {
-            var localDirectory = Path.Combine(HostAssets.ExtensionsPath, remoteExtensionId);
-            if (Directory.Exists(localDirectory))
-            {
-                continue;
-            }
+        var pulled = 0;
+        var remoteIndexChanged = false;
 
-            await DownloadExtensionAsync(remoteExtensionId, localDirectory, cancellationToken);
-            pulled++;
-        }
-
-        if (Directory.Exists(HostAssets.ExtensionsPath))
+        foreach (var extensionId in remoteMap.Keys.Union(localMap.Keys, StringComparer.OrdinalIgnoreCase))
         {
-            foreach (var localDirectory in Directory.EnumerateDirectories(HostAssets.ExtensionsPath))
+            localMap.TryGetValue(extensionId, out var localEntry);
+            remoteMap.TryGetValue(extensionId, out var remoteEntry);
+
+            if (localEntry == null)
             {
-                var extensionId = Path.GetFileName(localDirectory);
-                if (string.IsNullOrWhiteSpace(extensionId))
+                if (remoteEntry == null)
                 {
                     continue;
                 }
 
-                await UploadExtensionAsync(extensionId, localDirectory, cancellationToken);
-                uploaded++;
+                if (await ApplyRemoteEntryAsync(remoteEntry, cancellationToken))
+                {
+                    pulled++;
+                }
+
+                mergedMap[extensionId] = remoteEntry;
+                continue;
+            }
+
+            if (remoteEntry == null)
+            {
+                if (!localEntry.Deleted)
+                {
+                    await UploadPackageIfNeededAsync(localEntry, snapshot.PackageBytesByExtensionId, cancellationToken);
+                    uploaded++;
+                }
+
+                mergedMap[extensionId] = localEntry;
+                remoteIndexChanged = true;
+                continue;
+            }
+
+            var winner = CompareEntries(localEntry, remoteEntry) >= 0 ? localEntry : remoteEntry;
+            var loser = ReferenceEquals(winner, localEntry) ? remoteEntry : localEntry;
+
+            if (ReferenceEquals(winner, localEntry))
+            {
+                if (!winner.Deleted &&
+                    !string.Equals(remoteEntry.PackageHash, winner.PackageHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    await UploadPackageIfNeededAsync(winner, snapshot.PackageBytesByExtensionId, cancellationToken);
+                    uploaded++;
+                }
+                else if (winner.Deleted != loser.Deleted ||
+                         !string.Equals(winner.UpdatedAtUtc, loser.UpdatedAtUtc, StringComparison.Ordinal))
+                {
+                    remoteIndexChanged = true;
+                }
+            }
+            else
+            {
+                if (await ApplyRemoteEntryAsync(winner, cancellationToken))
+                {
+                    pulled++;
+                }
+            }
+
+            if (!EntriesEquivalent(winner, remoteEntry))
+            {
+                remoteIndexChanged = true;
+            }
+
+            mergedMap[extensionId] = winner;
+        }
+
+        var mergedIndex = new WebDavSyncIndex
+        {
+            Items = mergedMap.Values
+                .OrderBy(item => item.ExtensionId, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+        };
+
+        if (remoteIndexChanged || !IndexesEquivalent(remoteIndex, mergedIndex))
+        {
+            await SaveRemoteIndexAsync(mergedIndex, cancellationToken);
+        }
+
+        SaveLocalIndex(mergedIndex);
+        return new WebDavSyncResult(uploaded, pulled, SyncRootDisplay);
+    }
+
+    private static WebDavSyncIndex LoadLocalIndex()
+    {
+        try
+        {
+            if (!File.Exists(HostAssets.WebDavSyncStatePath))
+            {
+                return new WebDavSyncIndex();
+            }
+
+            var json = File.ReadAllText(HostAssets.WebDavSyncStatePath);
+            return JsonSerializer.Deserialize<WebDavSyncIndex>(json, JsonOptions) ?? new WebDavSyncIndex();
+        }
+        catch
+        {
+            return new WebDavSyncIndex();
+        }
+    }
+
+    private static void SaveLocalIndex(WebDavSyncIndex index)
+    {
+        var json = JsonSerializer.Serialize(index, JsonOptions);
+        File.WriteAllText(HostAssets.WebDavSyncStatePath, json);
+    }
+
+    private LocalSnapshot BuildLocalSnapshot(WebDavSyncIndex localState)
+    {
+        var stateMap = localState.Items.ToDictionary(item => item.ExtensionId, StringComparer.OrdinalIgnoreCase);
+        var items = new List<WebDavSyncEntry>();
+        var packageBytesByExtensionId = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        var existingIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        {
+            if (string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
+                !Directory.Exists(command.ExtensionDirectoryPath))
+            {
+                continue;
+            }
+
+            var packageBytes = ExtensionPackageService.BuildPackage(command, command.DeclaredVersion);
+            var packageHash = ComputeSha256(packageBytes);
+            existingIds.Add(command.ExtensionId);
+            stateMap.TryGetValue(command.ExtensionId, out var previous);
+            var updatedAtUtc = previous == null
+                ? GetDirectoryLastWriteUtc(command.ExtensionDirectoryPath).ToString("O")
+                : !previous.Deleted && string.Equals(previous.PackageHash, packageHash, StringComparison.OrdinalIgnoreCase)
+                    ? previous.UpdatedAtUtc
+                    : DateTimeOffset.UtcNow.ToString("O");
+            var packagePath = BuildRemotePackagePath(command.ExtensionId, packageHash);
+            var entry = new WebDavSyncEntry
+            {
+                ExtensionId = command.ExtensionId,
+                Version = command.DeclaredVersion,
+                PackageHash = packageHash,
+                PackagePath = packagePath,
+                UpdatedAtUtc = updatedAtUtc,
+                Deleted = false
+            };
+            items.Add(entry);
+            if (previous == null ||
+                previous.Deleted ||
+                !string.Equals(previous.PackageHash, packageHash, StringComparison.OrdinalIgnoreCase))
+            {
+                packageBytesByExtensionId[command.ExtensionId] = packageBytes;
             }
         }
 
-        return new WebDavSyncResult(uploaded, pulled, SyncRootDisplay);
+        foreach (var stateEntry in stateMap.Values)
+        {
+            if (existingIds.Contains(stateEntry.ExtensionId))
+            {
+                continue;
+            }
+
+            items.Add(new WebDavSyncEntry
+            {
+                ExtensionId = stateEntry.ExtensionId,
+                Version = stateEntry.Version,
+                PackageHash = stateEntry.PackageHash,
+                PackagePath = stateEntry.PackagePath,
+                UpdatedAtUtc = stateEntry.Deleted ? stateEntry.UpdatedAtUtc : DateTimeOffset.UtcNow.ToString("O"),
+                Deleted = true
+            });
+        }
+
+        return new LocalSnapshot(items, packageBytesByExtensionId);
+    }
+
+    private async Task<WebDavSyncIndex> LoadRemoteIndexAsync(CancellationToken cancellationToken)
+    {
+        var bytes = await TryGetBytesAsync(RemoteIndexPath, cancellationToken);
+        if (bytes == null || bytes.Length == 0)
+        {
+            return new WebDavSyncIndex();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<WebDavSyncIndex>(bytes, JsonOptions) ?? new WebDavSyncIndex();
+        }
+        catch
+        {
+            return new WebDavSyncIndex();
+        }
+    }
+
+    private async Task SaveRemoteIndexAsync(WebDavSyncIndex index, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(index, JsonOptions);
+        using var request = CreateRequest(HttpMethod.Put, RemoteIndexPath);
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            await ThrowWebDavFailureAsync(request, response, cancellationToken);
+        }
+    }
+
+    private async Task UploadPackageIfNeededAsync(
+        WebDavSyncEntry entry,
+        IReadOnlyDictionary<string, byte[]> packageBytesByExtensionId,
+        CancellationToken cancellationToken)
+    {
+        if (!packageBytesByExtensionId.TryGetValue(entry.ExtensionId, out var bytes))
+        {
+            return;
+        }
+
+        await EnsureCollectionAsync($"packages/{entry.ExtensionId}", cancellationToken);
+        using var request = CreateRequest(HttpMethod.Put, entry.PackagePath);
+        request.Content = new ByteArrayContent(bytes);
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            await ThrowWebDavFailureAsync(request, response, cancellationToken);
+        }
+    }
+
+    private async Task<bool> ApplyRemoteEntryAsync(WebDavSyncEntry entry, CancellationToken cancellationToken)
+    {
+        var localDirectory = Path.Combine(HostAssets.ExtensionsPath, entry.ExtensionId);
+        if (entry.Deleted)
+        {
+            if (Directory.Exists(localDirectory))
+            {
+                Directory.Delete(localDirectory, recursive: true);
+                return true;
+            }
+
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(entry.PackagePath))
+        {
+            return false;
+        }
+
+        var packageBytes = await GetBytesAsync(entry.PackagePath, cancellationToken);
+        var targetDirectory = Path.Combine(HostAssets.ExtensionsPath, entry.ExtensionId);
+        await ReplaceDirectoryFromPackageAsync(targetDirectory, packageBytes, cancellationToken);
+        return true;
+    }
+
+    private static async Task ReplaceDirectoryFromPackageAsync(string targetDirectory, byte[] packageBytes, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(HostAssets.ExtensionsPath);
+        var tempDirectory = Path.Combine(HostAssets.ExtensionsPath, $".yanzi-sync-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDirectory);
+
+        try
+        {
+            await using var stream = new MemoryStream(packageBytes, writable: false);
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
+            {
+                archive.ExtractToDirectory(tempDirectory, overwriteFiles: true);
+            }
+
+            if (Directory.Exists(targetDirectory))
+            {
+                Directory.Delete(targetDirectory, recursive: true);
+            }
+
+            Directory.Move(tempDirectory, targetDirectory);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                Directory.Delete(tempDirectory, recursive: true);
+            }
+        }
     }
 
     private void EnsureConfigured()
@@ -94,137 +352,6 @@ public sealed class WebDavSyncService
         {
             throw new InvalidOperationException("WebDAV 未完整配置，请先填写地址、用户名并设置密码。");
         }
-    }
-
-    private async Task UploadExtensionAsync(string extensionId, string localDirectory, CancellationToken cancellationToken)
-    {
-        await EnsureCollectionAsync($"extensions/{extensionId}", cancellationToken);
-        foreach (var directory in Directory.EnumerateDirectories(localDirectory, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(localDirectory, directory).Replace('\\', '/');
-            await EnsureCollectionAsync($"extensions/{extensionId}/{relative}", cancellationToken);
-        }
-
-        foreach (var filePath in Directory.EnumerateFiles(localDirectory, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(localDirectory, filePath).Replace('\\', '/');
-            var remotePath = $"extensions/{extensionId}/{relative}";
-            using var request = CreateRequest(HttpMethod.Put, remotePath);
-            request.Content = new ByteArrayContent(await File.ReadAllBytesAsync(filePath, cancellationToken));
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
-        }
-    }
-
-    private async Task DownloadExtensionAsync(string extensionId, string localDirectory, CancellationToken cancellationToken)
-    {
-        var remoteEntries = await ListDescendantsAsync($"extensions/{extensionId}", cancellationToken);
-        Directory.CreateDirectory(localDirectory);
-        foreach (var entry in remoteEntries.Where(static x => x.IsCollection))
-        {
-            if (string.IsNullOrWhiteSpace(entry.RelativePath))
-            {
-                continue;
-            }
-
-            Directory.CreateDirectory(Path.Combine(localDirectory, entry.RelativePath.Replace('/', Path.DirectorySeparatorChar)));
-        }
-
-        foreach (var entry in remoteEntries.Where(static x => !x.IsCollection))
-        {
-            var localPath = Path.Combine(localDirectory, entry.RelativePath.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
-            var bytes = await _httpClient.GetByteArrayAsync(BuildRelativeUri($"extensions/{extensionId}/{entry.RelativePath}"), cancellationToken);
-            await File.WriteAllBytesAsync(localPath, bytes, cancellationToken);
-        }
-    }
-
-    private async Task<List<string>> ListChildCollectionsAsync(string relativePath, CancellationToken cancellationToken)
-    {
-        var entries = await ListAsync(relativePath, depth: 1, cancellationToken);
-        return entries
-            .Where(static x => x.IsCollection && !string.IsNullOrWhiteSpace(x.Name))
-            .Select(static x => x.Name!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    private async Task<List<WebDavEntry>> ListDescendantsAsync(string relativePath, CancellationToken cancellationToken)
-    {
-        return (await ListAsync(relativePath, depth: "infinity", cancellationToken))
-            .Where(static x => !string.IsNullOrWhiteSpace(x.RelativePath))
-            .ToList();
-    }
-
-    private async Task<List<WebDavEntry>> ListAsync(string relativePath, object depth, CancellationToken cancellationToken)
-    {
-        using var request = CreateRequest(new HttpMethod("PROPFIND"), relativePath);
-        request.Headers.Add("Depth", depth.ToString());
-        request.Content = new StringContent(
-            """
-<?xml version="1.0" encoding="utf-8" ?>
-<propfind xmlns="DAV:">
-  <prop>
-    <displayname />
-    <resourcetype />
-  </prop>
-</propfind>
-""",
-            Encoding.UTF8,
-            "application/xml");
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        if (response.StatusCode != HttpStatusCode.MultiStatus && response.StatusCode != HttpStatusCode.OK)
-        {
-            response.EnsureSuccessStatusCode();
-        }
-
-        var xml = await response.Content.ReadAsStringAsync(cancellationToken);
-        return ParseEntries(xml, relativePath);
-    }
-
-    private List<WebDavEntry> ParseEntries(string xml, string requestedPath)
-    {
-        var document = XDocument.Parse(xml);
-        var baseRelative = NormalizeRelativePath(requestedPath);
-        var absoluteRootPrefix = new Uri(_httpClient.BaseAddress!, BuildRelativeUri(string.Empty)).AbsolutePath.TrimEnd('/') + "/";
-        var items = new List<WebDavEntry>();
-        foreach (var response in document.Descendants().Where(x => x.Name.LocalName == "response"))
-        {
-            var hrefValue = response.Descendants().FirstOrDefault(x => x.Name.LocalName == "href")?.Value;
-            if (string.IsNullOrWhiteSpace(hrefValue))
-            {
-                continue;
-            }
-
-            var absolute = Uri.TryCreate(hrefValue, UriKind.Absolute, out var absoluteUri)
-                ? absoluteUri
-                : new Uri(_httpClient.BaseAddress!, hrefValue);
-            var absolutePath = Uri.UnescapeDataString(absolute.AbsolutePath);
-            var relativeAbsolute = absolutePath.StartsWith(absoluteRootPrefix, StringComparison.OrdinalIgnoreCase)
-                ? absolutePath[absoluteRootPrefix.Length..]
-                : absolutePath.Trim('/');
-            if (string.Equals(relativeAbsolute.Trim('/'), baseRelative.Trim('/'), StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!relativeAbsolute.StartsWith(baseRelative.Trim('/'), StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var relativePath = relativeAbsolute[baseRelative.Trim('/').Length..].Trim('/');
-            if (string.IsNullOrWhiteSpace(relativePath))
-            {
-                continue;
-            }
-
-            var isCollection = response.Descendants().Any(x => x.Name.LocalName == "collection");
-            items.Add(new WebDavEntry(relativePath, Path.GetFileName(relativePath.TrimEnd('/')), isCollection));
-        }
-
-        return items;
     }
 
     private async Task EnsureCollectionTreeAsync(CancellationToken cancellationToken, params string[] segments)
@@ -257,7 +384,7 @@ public sealed class WebDavSyncService
             throw new InvalidOperationException($"WebDAV 目录不可用：{relativePath}，服务器返回 {(int)response.StatusCode} {response.ReasonPhrase}。");
         }
 
-        response.EnsureSuccessStatusCode();
+        await ThrowWebDavFailureAsync(request, response, cancellationToken);
     }
 
     private async Task<bool> CollectionExistsAsync(string relativePath, CancellationToken cancellationToken)
@@ -284,6 +411,143 @@ public sealed class WebDavSyncService
     private HttpRequestMessage CreateRequest(HttpMethod method, string relativePath)
     {
         return new HttpRequestMessage(method, BuildRelativeUri(relativePath));
+    }
+
+    private async Task<byte[]?> TryGetBytesAsync(string relativePath, CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(HttpMethod.Get, relativePath);
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            await ThrowWebDavFailureAsync(request, response, cancellationToken);
+        }
+
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    private async Task<byte[]> GetBytesAsync(string relativePath, CancellationToken cancellationToken)
+    {
+        var bytes = await TryGetBytesAsync(relativePath, cancellationToken);
+        if (bytes == null)
+        {
+            throw new FileNotFoundException($"WebDAV 文件不存在：{relativePath}", relativePath);
+        }
+
+        return bytes;
+    }
+
+    private static int CompareEntries(WebDavSyncEntry left, WebDavSyncEntry right)
+    {
+        var leftUpdated = ParseTimestamp(left.UpdatedAtUtc);
+        var rightUpdated = ParseTimestamp(right.UpdatedAtUtc);
+        var compare = leftUpdated.CompareTo(rightUpdated);
+        if (compare != 0)
+        {
+            return compare;
+        }
+
+        if (left.Deleted != right.Deleted)
+        {
+            return left.Deleted ? 1 : -1;
+        }
+
+        return string.Compare(left.PackageHash, right.PackageHash, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool EntriesEquivalent(WebDavSyncEntry left, WebDavSyncEntry right)
+    {
+        return left.ExtensionId.Equals(right.ExtensionId, StringComparison.OrdinalIgnoreCase) &&
+               left.Version.Equals(right.Version, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(left.PackageHash, right.PackageHash, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(left.PackagePath, right.PackagePath, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(left.UpdatedAtUtc, right.UpdatedAtUtc, StringComparison.Ordinal) &&
+               left.Deleted == right.Deleted;
+    }
+
+    private static bool IndexesEquivalent(WebDavSyncIndex left, WebDavSyncIndex right)
+    {
+        if (left.Items.Count != right.Items.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Items.Count; index++)
+        {
+            if (!EntriesEquivalent(left.Items[index], right.Items[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static DateTimeOffset ParseTimestamp(string value)
+    {
+        return DateTimeOffset.TryParse(value, out var timestamp)
+            ? timestamp
+            : DateTimeOffset.MinValue;
+    }
+
+    private static string BuildRemotePackagePath(string extensionId, string packageHash)
+    {
+        return $"packages/{extensionId}/{packageHash}.zip";
+    }
+
+    private static string ComputeSha256(byte[] bytes)
+    {
+        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    }
+
+    private static DateTimeOffset GetDirectoryLastWriteUtc(string directoryPath)
+    {
+        var latest = Directory.GetLastWriteTimeUtc(directoryPath);
+        foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories))
+        {
+            var fileTime = File.GetLastWriteTimeUtc(filePath);
+            if (fileTime > latest)
+            {
+                latest = fileTime;
+            }
+        }
+
+        return new DateTimeOffset(DateTime.SpecifyKind(latest, DateTimeKind.Utc));
+    }
+
+    private static async Task ThrowWebDavFailureAsync(
+        HttpRequestMessage request,
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var body = string.Empty;
+        try
+        {
+            body = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch
+        {
+            // Some WebDAV servers return empty or non-text error bodies.
+        }
+
+        var requestUri = request.RequestUri?.ToString() ?? "(unknown)";
+        var detail = string.IsNullOrWhiteSpace(body)
+            ? string.Empty
+            : $" 响应：{TrimForMessage(body)}";
+        throw new HttpRequestException(
+            $"WebDAV 请求失败：{request.Method} {requestUri} -> {(int)response.StatusCode} {response.ReasonPhrase}.{detail}",
+            null,
+            response.StatusCode);
+    }
+
+    private static string TrimForMessage(string value)
+    {
+        var normalized = value.ReplaceLineEndings(" ").Trim();
+        return normalized.Length <= 300 ? normalized : normalized[..300] + "...";
     }
 
     private string BuildRelativeUri(string relativePath)
@@ -316,7 +580,37 @@ public sealed class WebDavSyncService
         return value.EndsWith("/", StringComparison.Ordinal) ? value : value + "/";
     }
 
-    private sealed record WebDavEntry(string RelativePath, string? Name, bool IsCollection);
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
+
+    private sealed record LocalSnapshot(
+        IReadOnlyList<WebDavSyncEntry> Items,
+        IReadOnlyDictionary<string, byte[]> PackageBytesByExtensionId);
 }
 
 public sealed record WebDavSyncResult(int UploadedCount, int PulledCount, string RemoteRoot);
+
+public sealed class WebDavSyncIndex
+{
+    public int SchemaVersion { get; set; } = 1;
+
+    public List<WebDavSyncEntry> Items { get; set; } = [];
+}
+
+public sealed class WebDavSyncEntry
+{
+    public string ExtensionId { get; set; } = string.Empty;
+
+    public string Version { get; set; } = "0.1.0";
+
+    public string PackageHash { get; set; } = string.Empty;
+
+    public string PackagePath { get; set; } = string.Empty;
+
+    public string UpdatedAtUtc { get; set; } = string.Empty;
+
+    public bool Deleted { get; set; }
+}

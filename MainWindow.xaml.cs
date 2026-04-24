@@ -11,6 +11,8 @@ using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Windows.Controls;
 using System.Text.Json;
+using System.IO;
+using System.Windows.Threading;
 using Forms = System.Windows.Forms;
 
 namespace OpenQuickHost;
@@ -24,6 +26,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const uint ModWin = 0x0008;
     private const uint ModNoRepeat = 0x4000;
     private const int WmHotKey = 0x0312;
+    private const string CloudWebDavConfigId = "yanzi-webdav-settings";
 
     private readonly List<CommandItem> _allCommands;
     private readonly CloudSyncClient? _cloudSyncClient;
@@ -45,6 +48,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isPinned;
     private int _nextExtensionHotkeyId = 0x5400;
     private QuickPanelWindow? _quickPanel;
+    private readonly DispatcherTimer _backgroundWebDavSyncTimer;
+    private bool _backgroundWebDavSyncRunning;
+    private bool _backgroundWebDavSyncRequested;
 
     public MainWindow()
     {
@@ -76,13 +82,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Closing += (s, e) => InputHookService.Stop();
 
         _quickPanel = new QuickPanelWindow(this);
+        _backgroundWebDavSyncTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromHours(6)
+        };
+        _backgroundWebDavSyncTimer.Tick += (_, _) => QueueBackgroundWebDavSync("timer");
     }
 
     private void ApplyWindowIcon()
     {
         try
         {
-            Icon = BitmapFrame.Create(new Uri("pack://application:,,,/logo.png", UriKind.Absolute));
+            Icon = BitmapFrame.Create(new Uri("pack://application:,,,/yanzi.ico", UriKind.Absolute));
         }
         catch
         {
@@ -242,12 +253,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         SearchBox.Focus();
+        StartBackgroundWebDavSync();
 
         if (_cloudSyncClient == null)
         {
             InputHookService.Start(
                 () => _quickPanel?.ShowAtMouse(),
                 () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease());
+            QueueBackgroundWebDavSync("startup");
             return;
         }
 
@@ -256,6 +269,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease());
         if (!AppSettingsStore.Load().RefreshCloudOnStartup)
         {
+            QueueBackgroundWebDavSync("startup");
             return;
         }
 
@@ -890,29 +904,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            SyncStatus = "正在读取云端扩展和用户同步状态...";
+            SyncStatus = "正在读取账号状态和云端配置...";
             if (!await EnsureAuthenticatedAsync())
             {
                 return;
             }
 
             var me = await _cloudSyncClient.GetMeAsync();
-            var cloudExtensions = await _cloudSyncClient.GetExtensionsAsync();
-            var userExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
-            MergeCloudCommands(cloudExtensions, userExtensions);
-            var autoSyncedCount = await AutoSyncLocalExtensionsAsync();
-            if (autoSyncedCount > 0)
+            var pulledConfig = await PullWebDavConfigFromCloudAsync();
+            _allCommands.RemoveAll(x => x.Source == CommandSource.Cloud);
+            foreach (var command in _allCommands)
             {
-                cloudExtensions = await _cloudSyncClient.GetExtensionsAsync();
-                userExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
-                MergeCloudCommands(cloudExtensions, userExtensions);
+                command.ClearCloudData();
             }
-
+            ApplyFilter(SearchBox.Text);
             SyncStatus = $"已登录 {me?.Username ?? _cloudSyncClient.CurrentUserLabel}";
-            LastRunMessage = autoSyncedCount > 0
-                ? $"已刷新云端扩展：{cloudExtensions.Count} 个，并自动同步了 {autoSyncedCount} 个本地扩展。"
-                : $"已刷新云端扩展：{cloudExtensions.Count} 个，全局用户扩展：{userExtensions.Count} 条。";
-            await SyncPersonalWebDavAsync(showDisabledMessage: false);
+            LastRunMessage = pulledConfig
+                ? "已同步账号状态，并更新了坚果云 / WebDAV 配置。"
+                : "已同步账号状态。";
             OnPropertyChanged(nameof(SyncSummaryText));
         }
         catch (Exception ex)
@@ -927,47 +936,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task SyncSelectedCommandAsync()
+    private Task SyncSelectedCommandAsync()
     {
-        if (_cloudSyncClient == null)
-        {
-            SyncStatus = "云同步未配置，无法写入。";
-            return;
-        }
-
-        if (SelectedCommand == null)
-        {
-            SyncStatus = "没有可同步的命令。";
-            return;
-        }
-
-        try
-        {
-            if (!await EnsureAuthenticatedAsync())
-            {
-                return;
-            }
-
-            SyncStatus = $"正在同步 {SelectedCommand.Title} ...";
-            var version = SelectedCommand.DeclaredVersion;
-            await _cloudSyncClient.UpsertExtensionAsync(SelectedCommand);
-            var packageBytes = ExtensionPackageService.BuildPackage(SelectedCommand, version);
-            await _cloudSyncClient.UploadExtensionArchiveAsync(SelectedCommand, packageBytes, version);
-            await _cloudSyncClient.UpsertUserExtensionAsync(SelectedCommand);
-            SelectedCommand.MarkAsSynced(version);
-            LastRunMessage = $"已把命令和扩展包同步到云端：{SelectedCommand.Title}";
-            await RefreshCloudStateAsync();
-        }
-        catch (Exception ex)
-        {
-            if (await TryRecoverAuthenticationAsync(ex))
-            {
-                await SyncSelectedCommandAsync();
-                return;
-            }
-
-            SyncStatus = $"同步失败：{FormatExceptionMessage(ex)}";
-        }
+        SyncStatus = "Cloudflare 当前只同步账号状态和坚果云 / WebDAV 配置，扩展分享稍后接入。";
+        return Task.CompletedTask;
     }
 
     private async Task DownloadSelectedCommandAsync()
@@ -1017,7 +989,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task AddJsonExtensionAsync()
+    private Task AddJsonExtensionAsync()
     {
         try
         {
@@ -1026,25 +998,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 isEditMode: false);
             if (command == null)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             LastRunMessage = $"已添加本地 JSON 扩展：{command.Title}";
-            await SyncPersonalWebDavAsync(showDisabledMessage: false);
-            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
-            {
-                await SyncCommandToCloudAsync(command);
-                await RefreshCloudStateAsync();
-            }
+            QueueBackgroundWebDavSync("extension-add");
         }
         catch (Exception ex)
         {
             HostAssets.AppendDevLog($"AddJsonExtensionAsync failed: {ex}");
             SyncStatus = $"添加扩展失败：{FormatExceptionMessage(ex)}";
         }
+
+        return Task.CompletedTask;
     }
 
-    private async Task EditSelectedExtensionAsync()
+    private Task EditSelectedExtensionAsync()
     {
         var sourceCommand = SelectedCommand != null && !IsInternalCommand(SelectedCommand)
             ? SelectedCommand
@@ -1052,14 +1021,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (sourceCommand == null)
         {
             SyncStatus = "没有可编辑的扩展。";
-            return;
+            return Task.CompletedTask;
         }
 
         var editable = ResolveRunnableCommand(sourceCommand);
         if (editable.Source != CommandSource.LocalExtension)
         {
             SyncStatus = "当前选中项不是本地 JSON 扩展，不能直接编辑。";
-            return;
+            return Task.CompletedTask;
         }
 
         try
@@ -1068,21 +1037,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var updated = ShowJsonExtensionEditorAsync(manifestJson, isEditMode: true);
             if (updated == null)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             LastRunMessage = $"已更新本地 JSON 扩展：{updated.Title}";
-            await SyncPersonalWebDavAsync(showDisabledMessage: false);
-            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
-            {
-                await SyncCommandToCloudAsync(updated);
-                await RefreshCloudStateAsync();
-            }
+            QueueBackgroundWebDavSync("extension-edit");
         }
         catch (Exception ex)
         {
             SyncStatus = $"编辑失败：{FormatExceptionMessage(ex)}";
         }
+
+        return Task.CompletedTask;
     }
 
     private async Task DeleteSelectedExtensionAsync()
@@ -1104,7 +1070,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         var confirm = System.Windows.MessageBox.Show(
-            $"确认删除扩展“{deletable.Title}”吗？\n这会删除本地扩展目录，并卸载当前用户的云端安装记录。",
+            $"确认删除扩展“{deletable.Title}”吗？\n这会删除本地扩展目录；如果已启用坚果云/WebDAV，同步器会在后台更新远端副本。",
             "删除扩展",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -1121,15 +1087,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SelectedCommand = FilteredCommands.FirstOrDefault();
             CommandList.SelectedItem = SelectedCommand;
 
-            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
-            {
-                await _cloudSyncClient.RemoveUserExtensionAsync(deletable.ExtensionId);
-                await RefreshCloudStateAsync();
-            }
-
             LastRunMessage = $"已删除本地扩展：{deletable.Title}";
             SyncStatus = $"已删除扩展：{deletable.Title}";
-            await SyncPersonalWebDavAsync(showDisabledMessage: false);
+            QueueBackgroundWebDavSync("extension-delete");
         }
         catch (Exception ex)
         {
@@ -1258,32 +1218,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return string.Join(" | ", messages.Distinct(StringComparer.Ordinal));
     }
 
-    private async Task<int> AutoSyncLocalExtensionsAsync()
-    {
-        if (_cloudSyncClient == null)
-        {
-            return 0;
-        }
-
-        var pendingCommands = _allCommands
-            .Where(x => x.Source == CommandSource.LocalExtension && (!x.ExistsInCloud || !x.InstalledForUser))
-            .ToList();
-        if (pendingCommands.Count == 0)
-        {
-            return 0;
-        }
-
-        var syncedCount = 0;
-        foreach (var command in pendingCommands)
-        {
-            await SyncCommandToCloudAsync(command);
-            command.MarkAsSynced(command.DeclaredVersion);
-            syncedCount++;
-        }
-
-        return syncedCount;
-    }
-
     private static List<CommandItem> CreateSeedCommands()
     {
         return
@@ -1301,72 +1235,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             new("近", "最近运行", "打开最近执行记录。", "文件", "#FF34D399", HostAssets.RecentCommandsPath, ["最近", "history"]),
             new("志", "日志", "打开日志文件。", "文件", "#FF60A5FA", HostAssets.HostLogPath, ["日志", "diagnose"])
         ];
-    }
-
-    private async Task SyncCommandToCloudAsync(CommandItem command)
-    {
-        if (_cloudSyncClient == null)
-        {
-            return;
-        }
-
-        var packageBytes = ExtensionPackageService.BuildPackage(command, command.DeclaredVersion);
-        await _cloudSyncClient.UpsertExtensionAsync(command);
-        await _cloudSyncClient.UploadExtensionArchiveAsync(command, packageBytes, command.DeclaredVersion);
-        await _cloudSyncClient.UpsertUserExtensionAsync(command);
-    }
-
-    private void MergeCloudCommands(
-        IReadOnlyList<CloudExtensionRecord> cloudExtensions,
-        IReadOnlyList<UserExtensionRecord> userExtensions)
-    {
-        var userMap = userExtensions.ToDictionary(x => x.ExtensionId, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var command in _allCommands)
-        {
-            command.ClearCloudData();
-        }
-
-        _allCommands.RemoveAll(x => x.Source == CommandSource.Cloud);
-        var localById = _allCommands
-            .Where(x => x.Source != CommandSource.Cloud)
-            .ToDictionary(x => x.ExtensionId, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var extension in cloudExtensions)
-        {
-            var extensionId = extension.ExtensionId;
-            if (localById.TryGetValue(extensionId, out var existing))
-            {
-                existing.ApplyCloudData(
-                    extension.DisplayName,
-                    extension.LatestVersion,
-                    true,
-                    userMap.ContainsKey(extensionId),
-                    extension.ArchiveKey);
-                continue;
-            }
-
-            var cloudCommand = new CommandItem(
-                glyph: "C",
-                title: extension.DisplayName,
-                subtitle: $"来自云端扩展库，扩展 ID：{extension.ExtensionId}",
-                category: "云扩展",
-                accentHex: "#FF4ADE80",
-                openTarget: null,
-                keywords: [extension.ExtensionId, extension.DisplayName, "cloud", "extension"],
-                source: CommandSource.Cloud,
-                extensionId: extension.ExtensionId);
-            cloudCommand.ApplyCloudData(
-                extension.DisplayName,
-                extension.LatestVersion,
-                true,
-                userMap.ContainsKey(extensionId),
-                extension.ArchiveKey);
-            _allCommands.Add(cloudCommand);
-        }
-
-        ApplyFilter(SearchBox.Text);
-        OnPropertyChanged(nameof(SyncSummaryText));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -1441,6 +1309,144 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             SyncStatus = $"个人扩展同步失败：{FormatExceptionMessage(ex)}";
+        }
+    }
+
+    private void StartBackgroundWebDavSync()
+    {
+        if (AppSettingsStore.Load().EnableWebDavSync && !_backgroundWebDavSyncTimer.IsEnabled)
+        {
+            _backgroundWebDavSyncTimer.Start();
+        }
+    }
+
+    private void QueueBackgroundWebDavSync(string reason)
+    {
+        var settings = AppSettingsStore.Load();
+        if (!settings.EnableWebDavSync)
+        {
+            return;
+        }
+
+        StartBackgroundWebDavSync();
+        if (_backgroundWebDavSyncRunning)
+        {
+            _backgroundWebDavSyncRequested = true;
+            HostAssets.AppendLog($"WebDAV background sync queued while running: {reason}");
+            return;
+        }
+
+        _ = RunBackgroundWebDavSyncAsync(reason);
+    }
+
+    private async Task RunBackgroundWebDavSyncAsync(string reason)
+    {
+        _backgroundWebDavSyncRunning = true;
+        try
+        {
+            HostAssets.AppendLog($"WebDAV background sync started: {reason}");
+            var service = new WebDavSyncService(AppSettingsStore.Load());
+            var result = await service.SyncExtensionsAsync();
+            ReloadLocalExtensionsFromWebDav();
+            SyncStatus = $"个人扩展后台同步完成：上传 {result.UploadedCount} 个，拉取 {result.PulledCount} 个。";
+            HostAssets.AppendLog($"WebDAV background sync completed: {reason}, uploaded={result.UploadedCount}, pulled={result.PulledCount}");
+        }
+        catch (Exception ex)
+        {
+            var message = FormatExceptionMessage(ex);
+            SyncStatus = $"个人扩展后台同步失败：{message}";
+            HostAssets.AppendLog($"WebDAV background sync failed: {reason} -> {message}");
+        }
+        finally
+        {
+            _backgroundWebDavSyncRunning = false;
+            if (_backgroundWebDavSyncRequested)
+            {
+                _backgroundWebDavSyncRequested = false;
+                QueueBackgroundWebDavSync("queued");
+            }
+        }
+    }
+
+    private async Task<bool> PullWebDavConfigFromCloudAsync()
+    {
+        if (_cloudSyncClient == null)
+        {
+            return false;
+        }
+
+        var snapshot = await _cloudSyncClient.GetUserConfigAsync<CloudWebDavConfigSnapshot>(CloudWebDavConfigId);
+        if (snapshot == null)
+        {
+            return false;
+        }
+
+        var settings = AppSettingsStore.Load();
+        var changed =
+            settings.EnableWebDavSync != snapshot.EnableWebDavSync ||
+            !string.Equals(settings.WebDavServerUrl, snapshot.WebDavServerUrl, StringComparison.Ordinal) ||
+            !string.Equals(settings.WebDavRootPath, snapshot.WebDavRootPath, StringComparison.Ordinal) ||
+            !string.Equals(settings.WebDavUsername, snapshot.WebDavUsername, StringComparison.Ordinal);
+        if (!changed)
+        {
+            return false;
+        }
+
+        settings.EnableWebDavSync = snapshot.EnableWebDavSync;
+        settings.WebDavServerUrl = string.IsNullOrWhiteSpace(snapshot.WebDavServerUrl)
+            ? settings.WebDavServerUrl
+            : snapshot.WebDavServerUrl.Trim();
+        settings.WebDavRootPath = string.IsNullOrWhiteSpace(snapshot.WebDavRootPath)
+            ? "/yanzi"
+            : snapshot.WebDavRootPath.Trim();
+        settings.WebDavUsername = snapshot.WebDavUsername?.Trim() ?? string.Empty;
+        AppSettingsStore.Save(settings);
+        _appSettings = settings;
+        if (settings.EnableWebDavSync)
+        {
+            StartBackgroundWebDavSync();
+        }
+        else
+        {
+            _backgroundWebDavSyncTimer.Stop();
+        }
+
+        return true;
+    }
+
+    private void QueueCloudWebDavConfigSync(string reason)
+    {
+        if (_cloudSyncClient == null)
+        {
+            return;
+        }
+
+        _ = PushWebDavConfigToCloudSafeAsync(reason);
+    }
+
+    private async Task PushWebDavConfigToCloudSafeAsync(string reason)
+    {
+        try
+        {
+            if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+            {
+                return;
+            }
+
+            await _cloudSyncClient.EnsureAuthenticatedAsync();
+            var settings = AppSettingsStore.Load();
+            await _cloudSyncClient.UpsertUserConfigAsync(CloudWebDavConfigId, new CloudWebDavConfigSnapshot
+            {
+                EnableWebDavSync = settings.EnableWebDavSync,
+                WebDavServerUrl = settings.WebDavServerUrl,
+                WebDavRootPath = settings.WebDavRootPath,
+                WebDavUsername = settings.WebDavUsername
+            });
+            HostAssets.AppendLog($"Cloud WebDAV config synced: {reason}");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Cloud WebDAV config sync skipped: {reason} -> {FormatExceptionMessage(ex)}");
         }
     }
 
@@ -1884,6 +1890,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         settings.WebDavUsername = username.Trim();
         AppSettingsStore.Save(settings);
         _appSettings = settings;
+        if (enabled)
+        {
+            StartBackgroundWebDavSync();
+        }
+        else
+        {
+            _backgroundWebDavSyncTimer.Stop();
+        }
+
+        QueueCloudWebDavConfigSync("settings-saved");
     }
 
     public void SaveWebDavCredential(string username, string password)
@@ -1898,6 +1914,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         settings.WebDavUsername = username.Trim();
         AppSettingsStore.Save(settings);
         _appSettings = settings;
+        StartBackgroundWebDavSync();
+        QueueBackgroundWebDavSync("credential-saved");
+        QueueCloudWebDavConfigSync("credential-saved");
     }
 
     public bool HasWebDavCredential()
@@ -1970,56 +1989,81 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .ToList();
     }
 
-    public async Task<(bool ok, string message)> EditExtensionFromSettingsAsync(string extensionId, Window? owner = null)
+    public IReadOnlyList<CommandItem> GetQuickPanelRecommendedCommands(ForegroundAppContext? context, IEnumerable<string> excludeExtensionIds, int maxCount = 8)
+    {
+        if (context == null || string.IsNullOrWhiteSpace(context.ProcessName))
+        {
+            return [];
+        }
+
+        var exclude = new HashSet<string>(excludeExtensionIds, StringComparer.OrdinalIgnoreCase);
+        var aliases = BuildContextAliases(context.ProcessName, context.WindowTitle);
+
+        return _allCommands
+            .Where(static command => !IsInternalCommand(command))
+            .Where(command => !exclude.Contains(command.ExtensionId))
+            .Select(command => new
+            {
+                Command = command,
+                Score = ScoreQuickPanelRecommendation(command, aliases, context.WindowTitle)
+            })
+            .Where(static item => item.Score > 0)
+            .OrderByDescending(static item => item.Score)
+            .ThenBy(item => item.Command.Title, StringComparer.OrdinalIgnoreCase)
+            .Take(Math.Max(0, maxCount))
+            .Select(static item => item.Command)
+            .ToList();
+    }
+
+    public Task<(bool ok, string message)> EditExtensionFromSettingsAsync(string extensionId, Window? owner = null)
     {
         try
         {
             if (!_localExtensionIndex.TryGetValue(extensionId, out var editable))
             {
-                return (false, "没有找到对应扩展。");
+                return Task.FromResult((false, "没有找到对应扩展。"));
             }
 
             var manifestJson = LocalExtensionCatalog.LoadManifestJson(editable.ExtensionId);
             var updated = ShowJsonExtensionEditorForOwner(manifestJson, isEditMode: true, owner);
             if (updated == null)
             {
-                return (false, string.Empty);
+                return Task.FromResult((false, string.Empty));
             }
 
             LastRunMessage = $"已更新本地 JSON 扩展：{updated.Title}";
-            await SyncPersonalWebDavAsync(showDisabledMessage: false);
-            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
-            {
-                await SyncCommandToCloudAsync(updated);
-                await RefreshCloudStateAsync();
-            }
-
-            return (true, $"已更新扩展：{updated.Title}");
+            QueueBackgroundWebDavSync("extension-edit-settings");
+            return Task.FromResult((true, $"已更新扩展：{updated.Title}"));
         }
         catch (Exception ex)
         {
-            return (false, $"编辑失败：{FormatExceptionMessage(ex)}");
+            return Task.FromResult((false, $"编辑失败：{FormatExceptionMessage(ex)}"));
         }
     }
 
-    public async Task<(bool ok, string message)> DeleteExtensionFromSettingsAsync(string extensionId, Window? owner = null)
+    public Task<(bool ok, string message)> EditExtensionFromQuickPanelAsync(string extensionId, Window? owner = null)
+    {
+        return EditExtensionFromSettingsAsync(extensionId, owner);
+    }
+
+    public Task<(bool ok, string message)> DeleteExtensionFromSettingsAsync(string extensionId, Window? owner = null)
     {
         try
         {
             if (!_localExtensionIndex.TryGetValue(extensionId, out var deletable))
             {
-                return (false, "没有找到对应扩展。");
+                return Task.FromResult((false, "没有找到对应扩展。"));
             }
 
             var confirm = System.Windows.MessageBox.Show(
                 owner ?? this,
-                $"确认删除扩展“{deletable.Title}”吗？\n这会删除本地扩展目录，并卸载当前用户的云端安装记录。",
+                $"确认删除扩展“{deletable.Title}”吗？\n这会删除本地扩展目录；如果已启用坚果云/WebDAV，同步器会在后台更新远端副本。",
                 "删除扩展",
                 MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
+            MessageBoxImage.Warning);
             if (confirm != MessageBoxResult.Yes)
             {
-                return (false, string.Empty);
+                return Task.FromResult((false, string.Empty));
             }
 
             LocalExtensionCatalog.DeleteExtension(deletable.ExtensionId);
@@ -2028,50 +2072,60 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SelectedCommand = FilteredCommands.FirstOrDefault();
             CommandList.SelectedItem = SelectedCommand;
 
-            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
-            {
-                await _cloudSyncClient.RemoveUserExtensionAsync(deletable.ExtensionId);
-                await RefreshCloudStateAsync();
-            }
-
             LastRunMessage = $"已删除本地扩展：{deletable.Title}";
             SyncStatus = $"已删除扩展：{deletable.Title}";
-            await SyncPersonalWebDavAsync(showDisabledMessage: false);
-            return (true, $"已删除扩展：{deletable.Title}");
+            QueueBackgroundWebDavSync("extension-delete-settings");
+            return Task.FromResult((true, $"已删除扩展：{deletable.Title}"));
         }
         catch (Exception ex)
         {
-            return (false, $"删除失败：{FormatExceptionMessage(ex)}");
+            return Task.FromResult((false, $"删除失败：{FormatExceptionMessage(ex)}"));
         }
     }
 
-    public async Task<(bool ok, string message)> UpdateExtensionShortcutFromSettingsAsync(string extensionId, string? shortcut)
+    public bool TryOpenExtensionDirectory(string extensionId, out string message)
+    {
+        message = string.Empty;
+        if (!_localExtensionIndex.TryGetValue(extensionId, out var command) ||
+            string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
+            !Directory.Exists(command.ExtensionDirectoryPath))
+        {
+            message = "扩展目录不存在。";
+            return false;
+        }
+
+        var directoryPath = command.ExtensionDirectoryPath!;
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = directoryPath,
+            UseShellExecute = true
+        });
+        return true;
+    }
+
+    public Task<(bool ok, string message)> UpdateExtensionShortcutFromSettingsAsync(string extensionId, string? shortcut)
     {
         try
         {
             if (!string.IsNullOrWhiteSpace(shortcut) &&
                 !TryParseHotkey(shortcut, out _, out _))
             {
-                return (false, "快捷键格式无效。示例：Ctrl+Alt+T");
+                return Task.FromResult((false, "快捷键格式无效。示例：Ctrl+Alt+T"));
             }
 
             var updated = LocalExtensionCatalog.SetGlobalShortcut(extensionId, shortcut);
             UpsertLocalExtensionCommand(updated);
             ApplyFilter(SearchBox.Text);
-
-            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
-            {
-                await SyncCommandToCloudAsync(updated);
-            }
+            QueueBackgroundWebDavSync("extension-shortcut-settings");
 
             var message = string.IsNullOrWhiteSpace(updated.GlobalShortcut)
                 ? $"已清除快捷键：{updated.Title}"
                 : $"已设置快捷键：{updated.Title} -> {updated.GlobalShortcut}";
-            return (true, message);
+            return Task.FromResult((true, message));
         }
         catch (Exception ex)
         {
-            return (false, $"设置快捷键失败：{FormatExceptionMessage(ex)}");
+            return Task.FromResult((false, $"设置快捷键失败：{FormatExceptionMessage(ex)}"));
         }
     }
 
@@ -2125,7 +2179,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task RenameSelectedExtensionAsync()
+    private Task RenameSelectedExtensionAsync()
     {
         var sourceCommand = SelectedCommand != null && !IsInternalCommand(SelectedCommand)
             ? SelectedCommand
@@ -2133,14 +2187,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (sourceCommand == null)
         {
             SyncStatus = "没有可重命名的扩展。";
-            return;
+            return Task.CompletedTask;
         }
 
         var extension = ResolveRunnableCommand(sourceCommand);
         if (extension.Source != CommandSource.LocalExtension)
         {
             SyncStatus = "当前选中项不是本地扩展，不能直接重命名。";
-            return;
+            return Task.CompletedTask;
         }
 
         var dialog = new SimpleTextInputWindow("重命名扩展", "输入新的扩展名称。", extension.Title)
@@ -2149,7 +2203,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
         if (dialog.ShowDialog() != true)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         try
@@ -2160,17 +2214,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(renamed.ExtensionId, StringComparison.OrdinalIgnoreCase));
             CommandList.SelectedItem = SelectedCommand;
             LastRunMessage = $"已重命名扩展：{renamed.Title}";
-
-            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
-            {
-                await SyncCommandToCloudAsync(renamed);
-                await RefreshCloudStateAsync();
-            }
+            QueueBackgroundWebDavSync("extension-rename");
         }
         catch (Exception ex)
         {
             SyncStatus = $"重命名失败：{FormatExceptionMessage(ex)}";
         }
+
+        return Task.CompletedTask;
     }
 
     private void AddToQuickPanelMenuItem_Click(object sender, RoutedEventArgs e)
@@ -2199,7 +2250,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task SetSelectedExtensionShortcutAsync()
+    private Task SetSelectedExtensionShortcutAsync()
     {
         var sourceCommand = SelectedCommand != null && !IsInternalCommand(SelectedCommand)
             ? SelectedCommand
@@ -2207,14 +2258,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (sourceCommand == null)
         {
             SyncStatus = "没有可设置快捷键的扩展。";
-            return;
+            return Task.CompletedTask;
         }
 
         var extension = ResolveRunnableCommand(sourceCommand);
         if (extension.Source != CommandSource.LocalExtension)
         {
             SyncStatus = "当前选中项不是本地扩展，不能直接设置快捷键。";
-            return;
+            return Task.CompletedTask;
         }
 
         var dialog = new HotkeyCaptureWindow(
@@ -2227,7 +2278,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
         if (dialog.ShowDialog() != true)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         try
@@ -2236,7 +2287,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 !TryParseHotkey(dialog.ShortcutText, out _, out _))
             {
                 SyncStatus = "快捷键格式无效。示例：Ctrl+Alt+T";
-                return;
+                return Task.CompletedTask;
             }
 
             var updated = LocalExtensionCatalog.SetGlobalShortcut(extension.ExtensionId, dialog.ShortcutText);
@@ -2247,16 +2298,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             LastRunMessage = string.IsNullOrWhiteSpace(updated.GlobalShortcut)
                 ? $"已清除快捷键：{updated.Title}"
                 : $"已设置快捷键：{updated.Title} -> {updated.GlobalShortcut}";
-
-            if (_cloudSyncClient != null && await EnsureAuthenticatedAsync())
-            {
-                await SyncCommandToCloudAsync(updated);
-            }
+            QueueBackgroundWebDavSync("extension-shortcut");
         }
         catch (Exception ex)
         {
             SyncStatus = $"设置快捷键失败：{FormatExceptionMessage(ex)}";
         }
+
+        return Task.CompletedTask;
     }
 
     private bool HandleInternalCommand(CommandItem command)
@@ -2407,27 +2456,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             LastRunMessage = $"已执行脚本：{runnable.Title} -> {summary}";
             SyncStatus = "脚本执行完成。";
-            ShowScriptResultDialog(runnable.Title, result.Output, false);
             return;
         }
 
         HostAssets.AppendLog($"Script extension failed: {runnable.Title} -> {result.Error}");
         LastRunMessage = $"脚本执行失败：{runnable.Title}";
         SyncStatus = $"脚本执行失败：{result.Error}";
-        ShowScriptResultDialog(runnable.Title, result.Error, true);
-    }
-
-    private void ShowScriptResultDialog(string title, string content, bool isError)
-    {
-        var message = string.IsNullOrWhiteSpace(content)
-            ? "脚本执行完成，但没有返回输出。"
-            : content.Trim();
         System.Windows.MessageBox.Show(
             this,
-            message,
-            isError ? $"{title} 执行失败" : $"{title} 返回结果",
+            string.IsNullOrWhiteSpace(result.Error) ? "脚本执行失败。" : result.Error.Trim(),
+            $"{runnable.Title} 执行失败",
             MessageBoxButton.OK,
-            isError ? MessageBoxImage.Error : MessageBoxImage.Information);
+            MessageBoxImage.Error);
     }
 
     // --- Quick Panel Support ---
@@ -2438,6 +2478,103 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _ = ExecuteCommandAsync(ResolveRunnableCommand(command), explicitInput ?? string.Empty, launchSource);
     }
+
+    private static List<string> BuildContextAliases(string processName, string windowTitle)
+    {
+        var aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            processName
+        };
+
+        if (processName.Contains("weixin", StringComparison.OrdinalIgnoreCase) ||
+            processName.Contains("wechat", StringComparison.OrdinalIgnoreCase))
+        {
+            aliases.Add("wechat");
+            aliases.Add("weixin");
+            aliases.Add("微信");
+        }
+
+        if (processName.Contains("code", StringComparison.OrdinalIgnoreCase) ||
+            windowTitle.Contains("visual studio code", StringComparison.OrdinalIgnoreCase))
+        {
+            aliases.Add("code");
+            aliases.Add("vscode");
+            aliases.Add("visual studio code");
+            aliases.Add("编辑器");
+        }
+
+        if (processName.Contains("chrome", StringComparison.OrdinalIgnoreCase))
+        {
+            aliases.Add("chrome");
+            aliases.Add("浏览器");
+        }
+
+        if (processName.Contains("explorer", StringComparison.OrdinalIgnoreCase))
+        {
+            aliases.Add("explorer");
+            aliases.Add("资源管理器");
+            aliases.Add("文件");
+        }
+
+        foreach (var token in windowTitle.Split([' ', '-', '_', '|', '·', ':', '(', ')', '[', ']'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (token.Length >= 2)
+            {
+                aliases.Add(token);
+            }
+        }
+
+        return aliases.ToList();
+    }
+
+    private static int ScoreQuickPanelRecommendation(CommandItem command, IReadOnlyList<string> aliases, string windowTitle)
+    {
+        var score = 0;
+        foreach (var alias in aliases)
+        {
+            if (command.Title.Contains(alias, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 10;
+            }
+
+            if (command.Category.Contains(alias, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 6;
+            }
+
+            if (command.Subtitle.Contains(alias, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 4;
+            }
+
+            if (command.Keywords.Any(keyword => keyword.Contains(alias, StringComparison.OrdinalIgnoreCase)))
+            {
+                score += 12;
+            }
+        }
+
+        if (windowTitle.Contains(command.Title, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 5;
+        }
+
+        if (command.HasHostedView)
+        {
+            score += 1;
+        }
+
+        if (command.Source == CommandSource.LocalExtension)
+        {
+            score += 2;
+        }
+
+        return score;
+    }
+}
+
+public sealed record ForegroundAppContext(string ProcessName, string WindowTitle)
+{
+    public string DisplayLabel => string.IsNullOrWhiteSpace(WindowTitle) ? ProcessName : $"{ProcessName} · {WindowTitle}";
 }
 
 public readonly record struct CommandMatch(bool IsMatch, int Priority);
@@ -2455,6 +2592,17 @@ public sealed record HostedPluginViewDefinition(
     string? EmptyState);
 
 public sealed record HostedPluginSession(CommandItem Command, HostedPluginViewDefinition Definition);
+
+public sealed class CloudWebDavConfigSnapshot
+{
+    public bool EnableWebDavSync { get; set; }
+
+    public string WebDavServerUrl { get; set; } = "https://dav.jianguoyun.com/dav/";
+
+    public string WebDavRootPath { get; set; } = "/yanzi";
+
+    public string WebDavUsername { get; set; } = string.Empty;
+}
 
 public sealed class CommandItem : INotifyPropertyChanged
 {
@@ -2479,7 +2627,8 @@ public sealed class CommandItem : INotifyPropertyChanged
         string? entryPoint = null,
         IEnumerable<string>? permissions = null,
         string? entryMode = null,
-        string? inlineScriptSource = null)
+        string? inlineScriptSource = null,
+        string? iconReference = null)
     {
         Glyph = glyph;
         Title = title;
@@ -2504,26 +2653,26 @@ public sealed class CommandItem : INotifyPropertyChanged
         Permissions = permissions?.ToArray() ?? [];
         EntryMode = entryMode;
         InlineScriptSource = inlineScriptSource;
+        IconReference = iconReference;
+        IconSource = ExtensionIconLibrary.ResolveImageSource(iconReference, extensionDirectoryPath);
+        VectorIcon = ExtensionIconLibrary.ResolveVectorIcon(iconReference);
     }
 
     public string Glyph { get; }
 
-    public ImageSource? IconSource
-    {
-        get
-        {
-            if (string.IsNullOrEmpty(Glyph)) return null;
-            if (Glyph.StartsWith("http") || Glyph.Contains(":\\") || Glyph.StartsWith("/"))
-            {
-                try
-                {
-                    return new BitmapImage(new Uri(Glyph, Glyph.StartsWith("http") ? UriKind.Absolute : UriKind.RelativeOrAbsolute));
-                }
-                catch { }
-            }
-            return null;
-        }
-    }
+    public string DisplayGlyph => Glyph;
+
+    public string? IconReference { get; }
+
+    public ImageSource? IconSource { get; }
+
+    public Geometry? VectorIcon { get; }
+
+    public bool HasImageIcon => IconSource != null;
+
+    public bool HasVectorIcon => VectorIcon != null;
+
+    public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon;
 
     public string Title { get; }
 

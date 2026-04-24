@@ -1,5 +1,7 @@
+using System;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 
@@ -71,13 +73,30 @@ public static class ExtensionPackageService
     {
         using var stream = new MemoryStream();
         using var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true);
-        foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories))
+        foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
+                     .Where(path => ShouldIncludeInPackage(directoryPath, path)))
         {
             var relativePath = Path.GetRelativePath(directoryPath, filePath);
             archive.CreateEntryFromFile(filePath, relativePath, CompressionLevel.Optimal);
         }
 
         return stream.ToArray();
+    }
+
+    private static bool ShouldIncludeInPackage(string rootDirectory, string filePath)
+    {
+        var segments = Path.GetRelativePath(rootDirectory, filePath)
+            .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (segments.Any(static segment =>
+                segment.Equals(".yanzi-csharp-cache", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("obj", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        return !(segments.Length == 1 &&
+                 Path.GetExtension(filePath).Equals(".zip", StringComparison.OrdinalIgnoreCase));
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

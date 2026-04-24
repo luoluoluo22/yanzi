@@ -186,11 +186,11 @@ Extensions/
 - 打开目录
 - 打开 URL
 - 搜索前缀类命令
-- 轻量内联脚本
+- 轻量内联动作
 
-单 JSON 轻量脚本建议使用：
+单 JSON 轻量动作建议优先使用：
 
-- `runtime: "powershell"`
+- `runtime: "csharp"`
 - `entryMode: "inline"`
 - `script.source`
 
@@ -207,10 +207,12 @@ Extensions/
 
 当前运行时：
 
+- `csharp`
 - `powershell`
 
 脚本扩展适合：
 
+- 处理快捷面板传入的选中文本
 - 读取剪贴板
 - 获取前台窗口
 - 访问本地系统能力
@@ -228,6 +230,7 @@ Extensions/
 
 - 优先通过本机 API 改扩展，而不是直接猜测运行目录
 - 修改扩展协议时，要同步更新 skill 文档
+- 新扩展优先使用 C# 内联动作，除非任务明确需要 Windows shell 自动化
 - 如果是 PowerShell 脚本，`param(...)` 必须放在文件开头
 - 如果脚本需要中文输出，必须注意文件编码和 stdout 编码
 

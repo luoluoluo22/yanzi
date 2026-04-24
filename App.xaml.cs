@@ -1,12 +1,10 @@
 using System.Drawing;
-using System.Runtime.InteropServices;
 using System.Windows;
 using OpenQuickHost.Sync;
 using Forms = System.Windows.Forms;
 using WpfApplication = System.Windows.Application;
 using WpfStartupEventArgs = System.Windows.StartupEventArgs;
 using WpfExitEventArgs = System.Windows.ExitEventArgs;
-using System.IO;
 
 namespace OpenQuickHost;
 
@@ -136,24 +134,14 @@ public partial class App : WpfApplication
     {
         try
         {
-            var resource = WpfApplication.GetResourceStream(new Uri("logo.png", UriKind.Relative));
+            var resource = WpfApplication.GetResourceStream(new Uri("yanzi.ico", UriKind.Relative));
             if (resource == null)
             {
                 return null;
             }
 
-            using var bitmap = new Bitmap(resource.Stream);
-            IntPtr handle = bitmap.GetHicon();
-
-            try
-            {
-                using var rawIcon = Icon.FromHandle(handle);
-                return (Icon)rawIcon.Clone();
-            }
-            finally
-            {
-                DestroyIcon(handle);
-            }
+            using var icon = new Icon(resource.Stream);
+            return (Icon)icon.Clone();
         }
         catch
         {
@@ -190,8 +178,4 @@ public partial class App : WpfApplication
         _settingsWindow.Activate();
         _settingsWindow.Focus();
     }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DestroyIcon(IntPtr hIcon);
 }

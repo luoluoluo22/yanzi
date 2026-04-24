@@ -21,6 +21,10 @@ public class InputHookService
     private const int VK_CONTROL = 0x11;
     private const int XBUTTON1 = 1;
     private const int XBUTTON2 = 2;
+    private const uint LLMHF_INJECTED = 0x00000001;
+    private const uint INPUT_MOUSE = 0;
+    private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
 
     private static LowLevelMouseProc _proc = HookCallback;
     private static IntPtr _hookID = IntPtr.Zero;
@@ -31,6 +35,7 @@ public class InputHookService
     private static bool _isEnabled;
     private static bool _dragTriggered;
     private static bool _releaseShouldExecute;
+    private static bool _rightButtonDownSwallowed;
     private static TrackedMouseButton _trackedButton = TrackedMouseButton.None;
     private static POINT _downPoint;
 
@@ -103,6 +108,11 @@ public class InputHookService
         {
             var message = wParam.ToInt32();
             var mouse = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+            if ((mouse.flags & LLMHF_INJECTED) != 0)
+            {
+                return CallNextHookEx(_hookID, nCode, wParam, lParam);
+            }
+
             if (message == WM_LBUTTONDOWN)
             {
                 if (_settings.CtrlLeftClick && IsControlDown())
@@ -114,14 +124,21 @@ public class InputHookService
             else if (message == WM_RBUTTONDOWN)
             {
                 BeginTracking(TrackedMouseButton.Right, mouse.pt);
+                _rightButtonDownSwallowed = ShouldDelayRightButtonClick();
                 if (_settings.CtrlRightClick && IsControlDown())
                 {
+                    _releaseShouldExecute = true;
                     HostAssets.AppendLog("Input hook: Ctrl+right click triggered.");
                     InvokeShowPanel();
                 }
                 else if (_settings.RightButtonLongPress)
                 {
                     StartLongPressTimer();
+                }
+
+                if (_rightButtonDownSwallowed)
+                {
+                    return (IntPtr)1;
                 }
             }
             else if (message == WM_MBUTTONDOWN)
@@ -168,7 +185,23 @@ public class InputHookService
             }
             else if (message == WM_RBUTTONUP)
             {
-                EndTracking(TrackedMouseButton.Right);
+                var shouldReplayShortClick = _rightButtonDownSwallowed && !_releaseShouldExecute;
+                var shouldSwallow = _rightButtonDownSwallowed || _releaseShouldExecute;
+                if (EndTracking(TrackedMouseButton.Right))
+                {
+                    HostAssets.AppendLog("Input hook: swallowed right button up after panel trigger.");
+                    return (IntPtr)1;
+                }
+
+                if (shouldReplayShortClick)
+                {
+                    ReplayShortRightClickAfterHookReturns();
+                }
+
+                if (shouldSwallow)
+                {
+                    return (IntPtr)1;
+                }
             }
             else if (message == WM_MBUTTONUP)
             {
@@ -194,6 +227,17 @@ public class InputHookService
         _downPoint = point;
         _dragTriggered = false;
         _releaseShouldExecute = false;
+        if (button == TrackedMouseButton.Right)
+        {
+            _rightButtonDownSwallowed = false;
+        }
+    }
+
+    private static bool ShouldDelayRightButtonClick()
+    {
+        return _settings.RightButtonLongPress ||
+               _settings.RightButtonDrag ||
+               (_settings.CtrlRightClick && IsControlDown());
     }
 
     private static void StartLongPressTimer()
@@ -225,14 +269,15 @@ public class InputHookService
         InvokeShowPanel();
     }
 
-    private static void EndTracking(TrackedMouseButton button)
+    private static bool EndTracking(TrackedMouseButton button)
     {
         if (_trackedButton != button)
         {
-            return;
+            return false;
         }
 
         _longPressTimer?.Stop();
+        var swallowRelease = button == TrackedMouseButton.Right && _releaseShouldExecute;
         if (_releaseShouldExecute && _settings.ExecuteOnButtonRelease)
         {
             HostAssets.AppendLog($"Input hook: {button} released after trigger.");
@@ -241,7 +286,48 @@ public class InputHookService
 
         _dragTriggered = false;
         _releaseShouldExecute = false;
+        if (button == TrackedMouseButton.Right)
+        {
+            _rightButtonDownSwallowed = false;
+        }
+
         _trackedButton = TrackedMouseButton.None;
+        return swallowRelease;
+    }
+
+    private static void ReplayShortRightClickAfterHookReturns()
+    {
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(25);
+            SendSyntheticRightClick();
+        });
+    }
+
+    private static void SendSyntheticRightClick()
+    {
+        var inputs = new[]
+        {
+            MouseInput(MOUSEEVENTF_RIGHTDOWN),
+            MouseInput(MOUSEEVENTF_RIGHTUP)
+        };
+        var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        HostAssets.AppendLog($"Input hook: replayed short right click, SendInput sent={sent}/2.");
+    }
+
+    private static INPUT MouseInput(uint flags)
+    {
+        return new INPUT
+        {
+            type = INPUT_MOUSE,
+            U = new InputUnion
+            {
+                mi = new MOUSEINPUT
+                {
+                    dwFlags = flags
+                }
+            }
+        };
     }
 
     private static void InvokeShowPanel()
@@ -269,6 +355,9 @@ public class InputHookService
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
     private enum TrackedMouseButton
     {
         None,
@@ -293,5 +382,54 @@ public class InputHookService
         public uint flags;
         public uint time;
         public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public uint type;
+        public InputUnion U;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)]
+        public MOUSEINPUT mi;
+
+        [FieldOffset(0)]
+        public KEYBDINPUT ki;
+
+        [FieldOffset(0)]
+        public HARDWAREINPUT hi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HARDWAREINPUT
+    {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
     }
 }

@@ -28,6 +28,8 @@ public static class HostAssets
 
     public static string LogoPath => Path.Combine(RootPath, "logo.png");
 
+    public static string WebDavSyncStatePath => Path.Combine(RootPath, "webdav-sync-state.json");
+
     public static void EnsureCreated()
     {
         Directory.CreateDirectory(RootPath);

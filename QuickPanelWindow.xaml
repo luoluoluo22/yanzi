@@ -43,6 +43,27 @@
             </Setter>
         </Style>
 
+        <Style x:Key="GroupButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="10" BorderThickness="1" BorderBrush="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#1AFFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="SlotButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -66,42 +87,122 @@
         
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="42"/> <!-- Sidebar -->
-                <ColumnDefinition Width="*"/>  <!-- Main Content -->
+                <ColumnDefinition Width="42"/>
+                <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="1"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-            <!-- 1. Left Sidebar -->
-            <Border BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" Padding="0,12">
+            <!-- Sidebar -->
+            <Border Grid.RowSpan="4" BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" Padding="0,12">
                 <Grid>
-                    <StackPanel HorizontalAlignment="Center">
-                        <!-- All / Grid icon - active when NOT showing favorites -->
-                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="全部"
-                                Background="{Binding IsShowingFavorites, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='Transparent|#1A3B82F6'}"
-                                Click="SidebarAllButton_Click">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="1"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="1">
+                        <StackPanel HorizontalAlignment="Center">
+                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="通用收藏" Click="ToggleGlobalFavorites_Click">
                             <Viewbox Width="16" Height="16">
                                 <Canvas Width="24" Height="24">
-                                    <Path Fill="{Binding IsShowingFavorites, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF555555|#FF3B82F6'}">
-                                        <Path.Data>M4,4H10V10H4V4M14,4H20V10H14V4M4,14H10V20H4V14M14,14H20V20H14V14Z</Path.Data>
-                                    </Path>
-                                </Canvas>
-                            </Viewbox>
-                        </Button>
-                        <!-- Favorites / Star icon - active when showing favorites -->
-                        <Button Style="{StaticResource SidebarButtonStyle}" Margin="0,6,0,0" Width="32" Height="32" ToolTip="收藏"
-                                Background="{Binding IsShowingFavorites, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#1AFBBF24|Transparent'}"
-                                Click="SidebarFavButton_Click">
-                            <Viewbox Width="16" Height="16">
-                                <Canvas Width="24" Height="24">
-                                    <Path Fill="{Binding IsShowingFavorites, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FFFBBF24|#FF555555'}">
+                                    <Path Fill="#FFFBBF24">
                                         <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
                                     </Path>
                                 </Canvas>
                             </Viewbox>
                         </Button>
-                    </StackPanel>
+                        <ItemsControl ItemsSource="{Binding GlobalGroups}" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource GroupButtonStyle}"
+                                            Margin="0,0,0,6"
+                                            Tag="{Binding}"
+                                            Click="GlobalGroupButton_Click"
+                                            ToolTip="{Binding Name}">
+                                        <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="重命名分组" Click="RenameGlobalGroup_Click" CommandParameter="{Binding}" />
+                                                <MenuItem Header="删除分组" Click="DeleteGlobalGroup_Click" CommandParameter="{Binding}" />
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                        <Button.Background>
+                                            <Binding Path="IsSelected" Converter="{StaticResource BooleanToColorConverter}" ConverterParameter="Transparent|#1A3B82F6"/>
+                                        </Button.Background>
+                                        <TextBlock Text="{Binding ShortName}"
+                                                   Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF6EA8FF|#FFFFFFFF'}"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"/>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建通用分组" Click="AddGlobalGroupButton_Click">
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="#FFFFFFFF"/>
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <Rectangle Grid.Row="2" Height="1" Fill="#18FFFFFF" Margin="6,0"/>
+
+                    <Border Grid.Row="3">
+                        <StackPanel HorizontalAlignment="Center" Margin="0,12,0,0">
+                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="专属收藏" Click="ToggleContextFavorites_Click">
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="#FFFBBF24">
+                                        <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
+                                    </Path>
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                        <ItemsControl ItemsSource="{Binding ContextGroups}" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource GroupButtonStyle}"
+                                            Margin="0,0,0,6"
+                                            Tag="{Binding}"
+                                            Click="ContextGroupButton_Click"
+                                            ToolTip="{Binding Name}">
+                                        <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="重命名分组" Click="RenameContextGroup_Click" CommandParameter="{Binding}" />
+                                                <MenuItem Header="删除分组" Click="DeleteContextGroup_Click" CommandParameter="{Binding}" />
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                        <Button.Background>
+                                            <Binding Path="IsSelected" Converter="{StaticResource BooleanToColorConverter}" ConverterParameter="Transparent|#1A22C55E"/>
+                                        </Button.Background>
+                                        <TextBlock Text="{Binding ShortName}"
+                                                   Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF4ADE80|#FFFFFFFF'}"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"/>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建专属分组" Click="AddContextGroupButton_Click">
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="24" Height="24">
+                                    <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="#FFFFFFFF"/>
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                        </StackPanel>
+                    </Border>
                     
-                    <!-- Settings icon -->
-                    <Button Style="{StaticResource SidebarButtonStyle}" VerticalAlignment="Bottom" HorizontalAlignment="Center" Click="SettingsButton_Click" Width="32" Height="32" ToolTip="设置">
+                    <Button Grid.Row="4" Style="{StaticResource SidebarButtonStyle}" VerticalAlignment="Bottom" HorizontalAlignment="Center" Click="SettingsButton_Click" Width="32" Height="32" ToolTip="设置">
                         <Viewbox Width="16" Height="16">
                             <Canvas Width="24" Height="24">
                                 <Path Data="M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10M10,22C9.75,22 9.54,21.82 9.5,21.58L9.13,18.93C8.5,18.68 7.96,18.34 7.44,17.94L4.95,18.95C4.73,19.03 4.46,18.95 4.34,18.73L2.34,15.27C2.21,15.05 2.27,14.78 2.46,14.63L4.57,12.97L4.5,12L4.57,11L2.46,9.37C2.27,9.22 2.21,8.95 2.34,8.73L4.34,5.27C4.46,5.05 4.73,4.96 4.95,5.05L7.44,6.05C7.96,5.66 8.5,5.32 9.13,5.07L9.5,2.42C9.54,2.18 9.75,2 10,2H14C14.25,2 14.46,2.18 14.5,2.42L14.87,5.07C15.5,5.32 16.04,5.66 16.56,6.05L19.05,5.05C19.27,4.96 19.54,5.05 19.66,5.27L21.66,8.73C21.79,8.95 21.73,9.22 21.54,9.37L19.43,11L19.5,12L19.43,13L21.54,14.63C21.73,14.78 21.79,15.05 21.66,15.27L19.66,18.73C19.54,18.95 19.27,19.04 19.05,18.95L16.56,17.95C16.04,18.34 15.5,18.68 14.87,18.93L14.5,21.58C14.46,21.82 14.25,22 14,22H10Z" Fill="#FF888888"/>
@@ -111,15 +212,8 @@
                 </Grid>
             </Border>
 
-            <!-- 2. Main Content -->
-            <Grid Grid.Column="1" Margin="10,10">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/> <!-- Header -->
-                    <RowDefinition Height="*"/>    <!-- Scrollable content -->
-                </Grid.RowDefinitions>
-
-                <!-- Top Bar -->
-                <Grid Margin="0,0,0,12">
+            <!-- Top Bar -->
+            <Grid Grid.Column="1" Grid.Row="0" Margin="10,10,10,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
@@ -127,7 +221,7 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Text="燕子 Hub" Foreground="White" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding PanelTitle}" Foreground="White" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" ToolTip="{Binding GlobalHintText}"/>
 
                     <Button Grid.Column="2"
                             Width="28"
@@ -182,16 +276,10 @@
                             </Grid>
                         </Border>
                     </StackPanel>
-                </Grid>
+            </Grid>
 
-                <!-- Sections -->
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden">
-                    <StackPanel>
-                        <!-- 常用 Section -->
-                        <Grid Margin="0,0,0,8">
-                            <TextBlock Text="常用" Foreground="#FFAAAAAA" FontSize="12" FontWeight="SemiBold"/>
-                        </Grid>
-                        <ItemsControl ItemsSource="{Binding Slots}">
+            <Grid Grid.Column="1" Grid.Row="1" Margin="10,0,10,10" MouseWheel="GlobalPanel_MouseWheel">
+                <ItemsControl ItemsSource="{Binding GlobalSlots}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <UniformGrid Columns="4"/>
@@ -214,9 +302,13 @@
                                                         <Path Data="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" Fill="#FBBF24" Stretch="Uniform" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <Separator Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Separator Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                 <MenuItem Header="移除扩展" Click="RemoveExtension_Click" CommandParameter="{Binding}"
-                                                          Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                          Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" Fill="#EF4444" Stretch="Uniform" />
                                                     </MenuItem.Icon>
@@ -225,6 +317,7 @@
                                         </Button.ContextMenu>
                                         <StackPanel Margin="0,6" HorizontalAlignment="Center">
                                             <Border Width="44" Height="44" CornerRadius="10" 
+                                                    ClipToBounds="True"
                                                     HorizontalAlignment="Center"
                                                     Margin="0,0,0,5">
                                                 <Border.Style>
@@ -267,12 +360,20 @@
                                                     
                                                     <!-- Occupied -->
                                                     <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Image Source="{Binding Icon}" Stretch="Uniform" Margin="8"
+                                                        <Image Source="{Binding Icon}" Stretch="UniformToFill" Margin="2"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                               Visibility="{Binding Icon, Converter={StaticResource NotNullToVisibilityConverter}}"/>
-                                                        <TextBlock Text="{Binding Command.Glyph}" Foreground="White" FontSize="18" FontWeight="SemiBold"
+                                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        <Viewbox Width="22" Height="22"
+                                                                 HorizontalAlignment="Center"
+                                                                 VerticalAlignment="Center"
+                                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="18" FontWeight="SemiBold"
                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                   Visibility="{Binding Icon, Converter={StaticResource NullToVisibilityConverter}}"/>
+                                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         <!-- Favorite indicator -->
                                                         <Border Width="10" Height="10" CornerRadius="5" Background="#FFFBBF24"
                                                                 HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,3,3,0"
@@ -287,17 +388,121 @@
                                     </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        
-                        <!-- 扩展中心 Section Placeholder -->
-                        <Grid Margin="0,15,0,8">
-                            <TextBlock Text="扩展中心" Foreground="#FF555555" FontSize="12" FontWeight="SemiBold"/>
-                        </Grid>
-                        <Border Background="#0DFFFFFF" CornerRadius="10" Height="80" BorderBrush="#1AFFFFFF" BorderThickness="1">
-                            <TextBlock Text="推荐中心" Foreground="#FF333333" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
+                </ItemsControl>
+            </Grid>
+
+            <Rectangle Grid.ColumnSpan="2" Grid.Row="2" Height="1" Fill="#18FFFFFF" Margin="8,4"/>
+
+            <Grid Grid.Column="1" Grid.Row="3" Margin="10,10,10,10" MouseWheel="ContextPanel_MouseWheel">
+                <StackPanel>
+                    <TextBlock Text="{Binding ContextSectionTitle}"
+                               Foreground="#FFAAAAAA"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,10"
+                               ToolTip="{Binding ContextHintText}"/>
+                    <ItemsControl ItemsSource="{Binding ContextSlots}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="4"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource SlotButtonStyle}"
+                                            Margin="2"
+                                            Click="SlotButton_Click"
+                                            MouseEnter="SlotButton_MouseEnter"
+                                            MouseLeave="SlotButton_MouseLeave"
+                                            MouseMove="SlotButton_MouseMove"
+                                            Tag="{Binding}">
+                                        <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="{Binding FavoriteLabel}" Click="ToggleFavorite_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" Fill="#FBBF24" Stretch="Uniform" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                        <StackPanel Margin="0,6" HorizontalAlignment="Center">
+                                            <Border Width="44" Height="44" CornerRadius="10"
+                                                    ClipToBounds="True"
+                                                    HorizontalAlignment="Center"
+                                                    Margin="0,0,0,5">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}"/>
+                                                        <Setter Property="BorderBrush" Value="Transparent"/>
+                                                        <Setter Property="BorderThickness" Value="0"/>
+                                                        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                                                        <Setter Property="RenderTransform">
+                                                            <Setter.Value>
+                                                                <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                <Setter Property="Background" Value="#FF3B82F6"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
+                                                                <Setter Property="Background" Value="#FF2563EB"/>
+                                                                <Setter Property="BorderBrush" Value="#FFFFFFFF"/>
+                                                                <Setter Property="BorderThickness" Value="2"/>
+                                                                <Setter Property="RenderTransform">
+                                                                    <Setter.Value>
+                                                                        <ScaleTransform ScaleX="1.08" ScaleY="1.08"/>
+                                                                    </Setter.Value>
+                                                                </Setter>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Grid>
+                                                    <Viewbox Width="18" Height="18"
+                                                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                             Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="#14FFFFFF"/>
+                                                        </Canvas>
+                                                    </Viewbox>
+
+                                                    <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Image Source="{Binding Icon}" Stretch="UniformToFill" Margin="2"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        <Viewbox Width="22" Height="22"
+                                                                 HorizontalAlignment="Center"
+                                                                 VerticalAlignment="Center"
+                                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="18" FontWeight="SemiBold"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        <Border Width="10" Height="10" CornerRadius="5" Background="#FFFBBF24"
+                                                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,3,3,0"
+                                                                Visibility="{Binding IsFavorite, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    </Grid>
+                                                </Grid>
+                                            </Border>
+                                            <TextBlock Text="{Binding Title, FallbackValue='推荐位'}"
+                                                       Foreground="{Binding IsEmpty, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF444444|White'}"
+                                                       FontSize="10" TextAlignment="Center" Width="56" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </Grid>
         </Grid>
     </Border>

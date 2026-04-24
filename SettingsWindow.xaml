@@ -388,7 +388,7 @@
                             <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16" Margin="0,16,0,0">
                                 <StackPanel>
                                     <TextBlock Text="个人扩展同步（坚果云 / WebDAV）" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
-                                    <TextBlock Text="官方云负责账号和扩展分享；用户自己的扩展目录同步走坚果云或其他 WebDAV。" Foreground="#FF8E8E8E" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="官方云负责账号、坚果云配置和后续扩展分享；你自己的扩展目录同步走坚果云或其他 WebDAV。" Foreground="#FF8E8E8E" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"/>
 
                                     <Grid Margin="0,16,0,0">
                                         <TextBlock Text="启用个人同步" Foreground="White" FontSize="13" VerticalAlignment="Center"/>

@@ -1,14 +1,16 @@
 # 扩展规范
 
-当前版本支持两类扩展：
+当前版本支持这些扩展：
 
 - 单文件 JSON 扩展
-- 目录脚本扩展
+- C# 动作扩展
+- PowerShell 脚本扩展
+- 宿主视图扩展
 
 脚本扩展又分两种入口模式：
 
 - `entryMode: inline`
-  轻量扩展，脚本直接写在 `manifest.json` 的 `script.source`
+  轻量扩展，C# 或 PowerShell 源码直接写在 `manifest.json` 的 `script.source`
 - `entry`
   目录脚本入口，适合复杂项目或压缩包分发
 
@@ -38,15 +40,38 @@ Extensions/
 
 如果你把燕子当作脚本管理器来用，可以让扩展直接执行脚本。
 
-当前第一版脚本运行时支持：
+当前脚本运行时支持：
 
+- `csharp`
 - `powershell`
 
-### 单 JSON 内联脚本
+### 单 JSON 内联 C# 动作
 
 这是轻量脚本扩展的推荐方式。
 
 示例：
+
+```json
+{
+  "id": "csharp-echo",
+  "name": "C# 输入回显",
+  "version": "0.1.0",
+  "category": "C#",
+  "description": "读取宿主传入的 InputText 并返回。",
+  "keywords": ["csharp", "dotnet", "输入"],
+  "icon": "mdi:code",
+  "runtime": "csharp",
+  "entryMode": "inline",
+  "permissions": ["context.read"],
+  "script": {
+    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到输入\\\" : context.InputText.Trim());\\n    }\\n}"
+  }
+}
+```
+
+### 单 JSON 内联 PowerShell 脚本
+
+PowerShell 适合调用 Windows 系统命令、剪贴板、进程和文件自动化。
 
 ```json
 {
@@ -191,6 +216,17 @@ Extensions/
 - 用于搜索命中
 - 建议同时写中文、英文、拼音缩写
 
+### `icon`
+
+- 类型：`string`
+- 选填
+- 用于启动器、快捷面板和扩展编辑器展示图标
+- 支持：
+  - 内置图标，例如 `mdi:search`、`mdi:folder`、`mdi:clipboard`、`mdi:code`
+  - 应用别名，例如 `app:wechat`、`app:qq`、`app:google`、`app:selection`
+  - 扩展目录下的相对图片路径，例如 `icons/logo.png`
+  - 绝对路径或 HTTPS 图片地址
+
 ### `openTarget`
 
 - 类型：`string`
@@ -267,7 +303,8 @@ Extensions/
 
 - 类型：`string`
 - 选填
-- 当前支持：`powershell`
+- 当前支持：`csharp`、`powershell`
+- 建议新扩展优先使用 `csharp`
 
 ### `entry`
 
@@ -288,22 +325,36 @@ Extensions/
 
 - 类型：`object`
 - 选填
-- 当前用于单 JSON 内联脚本
+- 当前用于单 JSON 内联动作
 
 当前支持字段：
 
 - `source`
-  PowerShell 脚本源码
+  C# 动作源码或 PowerShell 脚本源码
 
 推荐组合：
 
 ```json
 {
-  "runtime": "powershell",
+  "runtime": "csharp",
   "entryMode": "inline",
   "script": {
     "source": "..."
   }
+}
+```
+
+C# 内联动作需要提供 `YanziAction` 类：
+
+```csharp
+using OpenQuickHost.CSharpRuntime;
+
+public static class YanziAction
+{
+    public static Task<string> RunAsync(YanziActionContext context)
+    {
+        return Task.FromResult(context.InputText);
+    }
 }
 ```
 

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 
@@ -269,6 +270,38 @@ public sealed class CloudSyncClient
         using var request = CreateRequest(
             HttpMethod.Delete,
             $"/v1/me/extensions/{Uri.EscapeDataString(extensionId)}",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<T?> GetUserConfigAsync<T>(string configId, CancellationToken cancellationToken = default)
+    {
+        var items = await GetUserExtensionsAsync(cancellationToken);
+        var record = items.FirstOrDefault(item =>
+            item.ExtensionId.Equals(configId, StringComparison.OrdinalIgnoreCase));
+        if (record == null || string.IsNullOrWhiteSpace(record.SettingsJson))
+        {
+            return default;
+        }
+
+        return JsonSerializer.Deserialize<T>(record.SettingsJson);
+    }
+
+    public async Task UpsertUserConfigAsync(string configId, object settings, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new
+        {
+            installedVersion = "1",
+            enabled = true,
+            settings
+        });
+
+        using var request = CreateJsonRequest(
+            HttpMethod.Put,
+            $"/v1/me/extensions/{Uri.EscapeDataString(configId)}",
+            body,
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();

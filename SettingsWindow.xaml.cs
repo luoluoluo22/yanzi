@@ -125,7 +125,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            AboutLogoImage.Source = new BitmapImage(new Uri("pack://application:,,,/logo.png", UriKind.Absolute));
+            AboutLogoImage.Source = new BitmapImage(new Uri("pack://application:,,,/logo-white.png", UriKind.Absolute));
         }
         catch
         {
@@ -695,8 +695,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        ExtensionItems.Remove(item);
         RefreshExtensionSummary();
-        RefreshExtensionItems();
+        OnPropertyChanged(nameof(ExtensionSearchSummary));
         RefreshShortcutItems();
     }
 

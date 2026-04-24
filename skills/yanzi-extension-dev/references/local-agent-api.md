@@ -47,7 +47,7 @@ Content-Type: application/json
 }
 ```
 
-The manifest may contain inline PowerShell script fields such as:
+The manifest may contain inline C# or PowerShell action fields such as:
 
 - `runtime`
 - `entryMode`

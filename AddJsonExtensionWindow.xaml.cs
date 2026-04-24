@@ -14,12 +14,24 @@ namespace OpenQuickHost;
 
 public partial class AddJsonExtensionWindow : Window
 {
+    private enum EditorSource
+    {
+        Form,
+        Json
+    }
+
+    private readonly IReadOnlyList<ExtensionIconOption> _builtInIcons = ExtensionIconLibrary.GetBuiltInOptions();
+    private bool _suppressEditorTracking;
+    private EditorSource _lastEditedSource = EditorSource.Json;
+
     public AddJsonExtensionWindow(string initialJson, bool isEditMode = false)
     {
         InitializeComponent();
         Title = isEditMode ? "编辑 JSON 扩展" : "添加 JSON 扩展";
         TitleText.Text = isEditMode ? "编辑单文件 JSON 扩展" : "添加单文件 JSON 扩展";
         SaveButton.Content = isEditMode ? "保存修改" : "保存扩展";
+        BuiltInIconsList.ItemsSource = _builtInIcons;
+        RegisterEditorTracking();
         JsonEditor.Text = initialJson;
         TryPopulateFormFromJson(initialJson);
         Loaded += (_, _) =>
@@ -27,6 +39,7 @@ public partial class AddJsonExtensionWindow : Window
             NameBox.Focus();
             NameBox.SelectAll();
             UpdateScriptModeUi();
+            RefreshIconPreview();
         };
     }
 
@@ -71,9 +84,77 @@ public partial class AddJsonExtensionWindow : Window
         GenerateJsonFromForm();
     }
 
+    private void JsonEditor_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (_suppressEditorTracking)
+        {
+            return;
+        }
+
+        _lastEditedSource = EditorSource.Json;
+    }
+
+    private void IconBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        RefreshIconPreview();
+    }
+
+    private void IconPreviewContext_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        RefreshIconPreview();
+    }
+
+    private void BuiltInIconButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string iconReference })
+        {
+            return;
+        }
+
+        IconBox.Text = iconReference;
+        RefreshIconPreview();
+    }
+
+    private void PickIconImageButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择扩展图标",
+            Filter = "图片文件|*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.ico|所有文件|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        IconBox.Text = dialog.FileName;
+        RefreshIconPreview();
+    }
+
+    private void ClearIconButton_Click(object sender, RoutedEventArgs e)
+    {
+        IconBox.Text = string.Empty;
+        RefreshIconPreview();
+    }
+
     private void InlineScriptModeCheckBox_Changed(object sender, RoutedEventArgs e)
     {
+        MarkFormEdited();
         UpdateScriptModeUi();
+    }
+
+    private void InlineRuntimeBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        MarkFormEdited();
+        if (InlineScriptModeCheckBox.IsChecked == true)
+        {
+            RuntimeBox.Text = GetSelectedInlineRuntime();
+            ScriptSourceBox.Text = GetDefaultInlineScript(GetSelectedInlineRuntime());
+            RefreshIconPreview();
+        }
     }
 
     private async void TestRunButton_Click(object sender, RoutedEventArgs e)
@@ -183,7 +264,8 @@ public partial class AddJsonExtensionWindow : Window
         {
             ErrorText.Visibility = Visibility.Collapsed;
             var manifest = BuildManifestFromForm();
-            JsonEditor.Text = JsonSerializer.Serialize(manifest, CreateJsonOptions());
+            SetJsonEditorText(JsonSerializer.Serialize(manifest, CreateJsonOptions()));
+            _lastEditedSource = EditorSource.Form;
         }
         catch (Exception ex)
         {
@@ -193,26 +275,22 @@ public partial class AddJsonExtensionWindow : Window
 
     private string NormalizeJsonForSave()
     {
-        if (!string.IsNullOrWhiteSpace(JsonEditor.Text))
+        if (_lastEditedSource == EditorSource.Form)
         {
-            try
-            {
-                var normalizedJson = ExtractJsonPayload(JsonEditor.Text);
-                var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(normalizedJson, CreateJsonOptions());
-                if (manifest != null)
-                {
-                    ApplyManifestToForm(manifest);
-                    return JsonSerializer.Serialize(manifest, CreateJsonOptions());
-                }
-            }
-            catch (Exception ex)
-            {
-                HostAssets.AppendDevLog($"NormalizeJsonForSave editor path failed: {ex.Message}");
-            }
+            var formManifest = BuildManifestFromForm();
+            return JsonSerializer.Serialize(formManifest, CreateJsonOptions());
         }
 
-        var formManifest = BuildManifestFromForm();
-        return JsonSerializer.Serialize(formManifest, CreateJsonOptions());
+        if (string.IsNullOrWhiteSpace(JsonEditor.Text))
+        {
+            throw new InvalidOperationException("JSON 内容不能为空。");
+        }
+
+        var normalizedJson = ExtractJsonPayload(JsonEditor.Text);
+        var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(normalizedJson, CreateJsonOptions())
+            ?? throw new InvalidOperationException("JSON 解析失败。");
+        ApplyManifestToForm(manifest);
+        return JsonSerializer.Serialize(manifest, CreateJsonOptions());
     }
 
     private void TryPopulateFormFromJson(string json)
@@ -229,8 +307,9 @@ public partial class AddJsonExtensionWindow : Window
                 return;
             }
 
-            JsonEditor.Text = JsonSerializer.Serialize(manifest, CreateJsonOptions());
+            SetJsonEditorText(JsonSerializer.Serialize(manifest, CreateJsonOptions()));
             ApplyManifestToForm(manifest);
+            _lastEditedSource = EditorSource.Json;
             ErrorText.Visibility = Visibility.Collapsed;
             HostAssets.AppendDevLog($"TryPopulateFormFromJson succeeded. Id={manifest.Id}");
         }
@@ -261,10 +340,11 @@ public partial class AddJsonExtensionWindow : Window
             Category = NullIfEmpty(CategoryBox.Text),
             Description = NullIfEmpty(DescriptionBox.Text),
             Keywords = SplitCsv(KeywordsBox.Text),
+            Icon = NullIfEmpty(IconBox.Text),
             OpenTarget = InlineScriptModeCheckBox.IsChecked == true ? null : NullIfEmpty(OpenTargetBox.Text),
             GlobalShortcut = NullIfEmpty(GlobalShortcutBox.Text),
             HotkeyBehavior = NullIfEmpty(HotkeyBehaviorBox.Text),
-            Runtime = InlineScriptModeCheckBox.IsChecked == true ? "powershell" : NullIfEmpty(RuntimeBox.Text),
+            Runtime = InlineScriptModeCheckBox.IsChecked == true ? GetSelectedInlineRuntime() : NullIfEmpty(RuntimeBox.Text),
             EntryMode = InlineScriptModeCheckBox.IsChecked == true ? "inline" : null,
             Entry = InlineScriptModeCheckBox.IsChecked == true ? null : NullIfEmpty(EntryBox.Text),
             Permissions = SplitCsv(PermissionsBox.Text),
@@ -272,7 +352,7 @@ public partial class AddJsonExtensionWindow : Window
                 ? new LocalExtensionInlineScriptManifest
                 {
                     Source = string.IsNullOrWhiteSpace(ScriptSourceBox.Text)
-                        ? GetDefaultInlineScript()
+                        ? GetDefaultInlineScript(GetSelectedInlineRuntime())
                         : ScriptSourceBox.Text.ReplaceLineEndings("\r\n")
                 }
                 : null
@@ -287,6 +367,7 @@ public partial class AddJsonExtensionWindow : Window
         CategoryBox.Text = manifest.Category ?? string.Empty;
         DescriptionBox.Text = manifest.Description ?? string.Empty;
         KeywordsBox.Text = manifest.Keywords == null ? string.Empty : string.Join(", ", manifest.Keywords);
+        IconBox.Text = manifest.Icon ?? string.Empty;
         OpenTargetBox.Text = manifest.OpenTarget ?? string.Empty;
         GlobalShortcutBox.Text = manifest.GlobalShortcut ?? string.Empty;
         HotkeyBehaviorBox.Text = manifest.HotkeyBehavior ?? string.Empty;
@@ -296,8 +377,73 @@ public partial class AddJsonExtensionWindow : Window
         InlineScriptModeCheckBox.IsChecked =
             string.Equals(manifest.EntryMode, "inline", StringComparison.OrdinalIgnoreCase) ||
             !string.IsNullOrWhiteSpace(manifest.Script?.Source);
+        SetSelectedInlineRuntime(manifest.Runtime);
         ScriptSourceBox.Text = manifest.Script?.Source ?? string.Empty;
         UpdateScriptModeUi();
+        RefreshIconPreview();
+    }
+
+    private void RegisterEditorTracking()
+    {
+        var manifestBoxes = new System.Windows.Controls.TextBox[]
+        {
+            IdBox,
+            NameBox,
+            VersionBox,
+            CategoryBox,
+            DescriptionBox,
+            KeywordsBox,
+            IconBox,
+            OpenTargetBox,
+            GlobalShortcutBox,
+            HotkeyBehaviorBox,
+            RuntimeBox,
+            EntryBox,
+            PermissionsBox,
+            ScriptSourceBox
+        };
+
+        foreach (var box in manifestBoxes)
+        {
+            box.TextChanged += FormField_TextChanged;
+        }
+
+        JsonEditor.TextChanged += JsonEditor_TextChanged;
+        InlineScriptModeCheckBox.Checked += FormField_CheckChanged;
+        InlineScriptModeCheckBox.Unchecked += FormField_CheckChanged;
+    }
+
+    private void FormField_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        MarkFormEdited();
+    }
+
+    private void FormField_CheckChanged(object sender, RoutedEventArgs e)
+    {
+        MarkFormEdited();
+    }
+
+    private void MarkFormEdited()
+    {
+        if (_suppressEditorTracking)
+        {
+            return;
+        }
+
+        _lastEditedSource = EditorSource.Form;
+    }
+
+    private void SetJsonEditorText(string json)
+    {
+        _suppressEditorTracking = true;
+        try
+        {
+            JsonEditor.Text = json;
+        }
+        finally
+        {
+            _suppressEditorTracking = false;
+        }
     }
 
     private static string? NullIfEmpty(string? value)
@@ -536,22 +682,35 @@ public partial class AddJsonExtensionWindow : Window
             "1. 输出必须是合法 JSON，不要附带 Markdown 代码块。\n" +
             "2. 只保留需要的字段，不要保留 null，也不要随意补充未知字段。\n" +
             "3. 这个扩展会保存为 manifest.json，供燕子直接加载。\n" +
-            "4. 常用字段说明：\n" +
+            "4. 按需求选择扩展类型：\n" +
+            "   - 只打开文件、目录、URL 或系统协议：使用 openTarget，不要写脚本。\n" +
+            "   - 搜索或带参数打开 URL：使用 queryPrefixes + queryTargetTemplate，模板里用 {query}。\n" +
+            "   - 处理选中文本、剪贴板、文件路径、调用 API：优先使用 runtime = csharp + entryMode = inline。\n" +
+            "   - 需要宿主界面：使用 hostedView，actionType 优先使用 script。\n" +
+            "   - Windows 系统自动化：可以使用 runtime = powershell。\n" +
+            "5. 常用字段说明：\n" +
             "   - id：扩展唯一标识，建议英文小写加连字符\n" +
             "   - name：扩展名称\n" +
             "   - version：版本号，例如 0.1.0\n" +
             "   - category：分类\n" +
             "   - description：扩展说明\n" +
             "   - keywords：关键词数组\n" +
+            "   - icon：可选，支持内置图标如 mdi:search / app:wechat，也支持扩展目录下的相对图片路径如 icons/logo.png\n" +
             "   - openTarget：打开的文件、目录、URL 或系统协议\n" +
+            "   - queryPrefixes / queryTargetTemplate：参数化命令，queryTargetTemplate 中使用 {query}\n" +
             "   - globalShortcut：可选，全局快捷键\n" +
             "   - hotkeyBehavior：可选，例如 show-view\n" +
-            "   - runtime / permissions：脚本扩展需要时填写\n" +
-            "   - entryMode：单 JSON 内联脚本时使用 inline\n" +
-            "   - script.source：单 JSON 内联 PowerShell 脚本源码\n" +
-            "5. 轻量脚本扩展优先使用 entryMode = inline + script.source。\n" +
-            "6. 复杂扩展再使用目录脚本入口 entry。\n" +
-            "7. 如果你认为某些字段更合理，可以调整值，但请保持结构简单清晰。\n\n" +
+            "   - runtime / permissions：脚本扩展需要时填写，主力运行时建议 csharp，也支持 powershell\n" +
+            "   - entryMode：单 JSON 内联动作时使用 inline\n" +
+            "   - script.source：单 JSON 内联 C# 或 PowerShell 源码\n" +
+            "   - hostedView：宿主界面配置，type 当前使用 split-workbench\n" +
+            "6. C# 动作源码必须包含 public static class YanziAction，并实现 public static Task<string> RunAsync(YanziActionContext context)。\n" +
+            "7. C# 源码可使用 context.InputText、context.ExtensionDirectory、context.LaunchSource、context.Now、context.Permissions。\n" +
+            "8. 成功结果返回字符串；错误可以 throw。不要生成需要额外 NuGet 包的代码。\n" +
+            "9. 复杂扩展再使用目录脚本入口 entry。\n" +
+            "10. 如果你认为某些字段更合理，可以调整值，但请保持结构简单清晰。\n\n" +
+            "C# 内联动作模板：\n" +
+            "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText);\\n    }\\n}\n\n" +
             "当前草稿如下，请在这个基础上完善并输出最终 JSON：\n" +
             manifestJson;
     }
@@ -559,6 +718,8 @@ public partial class AddJsonExtensionWindow : Window
     private void UpdateScriptModeUi()
     {
         var isInline = InlineScriptModeCheckBox.IsChecked == true;
+        InlineRuntimeLabel.Visibility = isInline ? Visibility.Visible : Visibility.Collapsed;
+        InlineRuntimeBox.Visibility = isInline ? Visibility.Visible : Visibility.Collapsed;
         ScriptSourceLabel.Visibility = isInline ? Visibility.Visible : Visibility.Collapsed;
         ScriptSourceBox.Visibility = isInline ? Visibility.Visible : Visibility.Collapsed;
         TestInputLabel.Visibility = isInline ? Visibility.Visible : Visibility.Collapsed;
@@ -568,17 +729,156 @@ public partial class AddJsonExtensionWindow : Window
         OpenTargetBox.IsEnabled = !isInline;
         if (isInline)
         {
-            RuntimeBox.Text = "powershell";
+            RuntimeBox.Text = GetSelectedInlineRuntime();
             EntryBox.Text = string.Empty;
             if (string.IsNullOrWhiteSpace(ScriptSourceBox.Text))
             {
-                ScriptSourceBox.Text = GetDefaultInlineScript();
+                ScriptSourceBox.Text = GetDefaultInlineScript(GetSelectedInlineRuntime());
             }
         }
     }
 
-    private static string GetDefaultInlineScript()
+    private void RefreshIconPreview()
     {
+        IconPreviewImage.Visibility = Visibility.Collapsed;
+        IconPreviewImage.Source = null;
+        IconPreviewVectorHost.Visibility = Visibility.Collapsed;
+        IconPreviewVector.Data = null;
+        IconPreviewGlyph.Visibility = Visibility.Collapsed;
+
+        var iconReference = NullIfEmpty(IconBox.Text);
+        var previewDirectory = string.IsNullOrWhiteSpace(IdBox.Text)
+            ? HostAssets.ExtensionsPath
+            : Path.Combine(HostAssets.ExtensionsPath, IdBox.Text.Trim());
+
+        var imageSource = ExtensionIconLibrary.ResolveImageSource(iconReference, previewDirectory);
+        if (imageSource != null)
+        {
+            IconPreviewImage.Source = imageSource;
+            IconPreviewImage.Visibility = Visibility.Visible;
+            IconPreviewHintText.Text = "当前使用图片图标。保存后会把这个值写入 manifest.json。";
+            HighlightSelectedBuiltInButton(null);
+            return;
+        }
+
+        var vectorIcon = ExtensionIconLibrary.ResolveVectorIcon(iconReference);
+        if (vectorIcon != null)
+        {
+            IconPreviewVector.Data = vectorIcon;
+            IconPreviewVectorHost.Visibility = Visibility.Visible;
+            IconPreviewHintText.Text = $"当前使用内置图标：{iconReference}";
+            HighlightSelectedBuiltInButton(iconReference);
+            return;
+        }
+
+        IconPreviewGlyph.Text = InferFallbackGlyph();
+        IconPreviewGlyph.Visibility = Visibility.Visible;
+        IconPreviewHintText.Text = string.IsNullOrWhiteSpace(iconReference)
+            ? "未设置图标时会回退为字母标识。"
+            : $"当前 icon 值未解析成功：{iconReference}";
+        HighlightSelectedBuiltInButton(null);
+    }
+
+    private void HighlightSelectedBuiltInButton(string? selectedReference)
+    {
+        foreach (var button in FindVisualChildren<System.Windows.Controls.Button>(BuiltInIconsList))
+        {
+            var isSelected = !string.IsNullOrWhiteSpace(selectedReference) &&
+                             string.Equals(button.Tag as string, selectedReference, StringComparison.OrdinalIgnoreCase);
+            button.BorderBrush = isSelected
+                ? new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF3B82F6"))
+                : new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF2A2A2A"));
+            button.Background = isSelected
+                ? new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF1E293B"))
+                : new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF1E1E1E"));
+        }
+    }
+
+    private string InferFallbackGlyph()
+    {
+        if (!string.IsNullOrWhiteSpace(NameBox.Text))
+        {
+            return NameBox.Text.Trim()[0].ToString().ToUpperInvariant();
+        }
+
+        if (InlineScriptModeCheckBox.IsChecked == true)
+        {
+            return string.Equals(GetSelectedInlineRuntime(), "csharp", StringComparison.OrdinalIgnoreCase) ? "C" : "S";
+        }
+
+        return "E";
+    }
+
+    private string GetSelectedInlineRuntime()
+    {
+        if (InlineRuntimeBox.SelectedItem is System.Windows.Controls.ComboBoxItem item &&
+            item.Tag is string runtime &&
+            !string.IsNullOrWhiteSpace(runtime))
+        {
+            return runtime;
+        }
+
+        return "csharp";
+    }
+
+    private void SetSelectedInlineRuntime(string? runtime)
+    {
+        var normalized = string.Equals(runtime, "powershell", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(runtime, "ps1", StringComparison.OrdinalIgnoreCase)
+            ? "powershell"
+            : "csharp";
+
+        foreach (var item in InlineRuntimeBox.Items.OfType<System.Windows.Controls.ComboBoxItem>())
+        {
+            item.IsSelected = string.Equals(item.Tag as string, normalized, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static IEnumerable<T> FindVisualChildren<T>(System.Windows.DependencyObject? parent) where T : System.Windows.DependencyObject
+    {
+        if (parent == null)
+        {
+            yield break;
+        }
+
+        var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
+        for (var index = 0; index < count; index++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, index);
+            if (child is T typed)
+            {
+                yield return typed;
+            }
+
+            foreach (var descendant in FindVisualChildren<T>(child))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
+    private static string GetDefaultInlineScript(string runtime)
+    {
+        if (string.Equals(runtime, "csharp", StringComparison.OrdinalIgnoreCase))
+        {
+            return
+"""
+using OpenQuickHost.CSharpRuntime;
+
+public static class YanziAction
+{
+    public static Task<string> RunAsync(YanziActionContext context)
+    {
+        var input = string.IsNullOrWhiteSpace(context.InputText)
+            ? "你好，燕子。"
+            : context.InputText.Trim();
+
+        return Task.FromResult($"收到输入: {input}");
+    }
+}
+""";
+        }
+
         return
 """
 param(
@@ -600,7 +900,7 @@ if ([string]::IsNullOrWhiteSpace($InputText)) {
     {
         var extensionDirectory = Path.Combine(HostAssets.ExtensionsPath, manifest.Id);
         return new CommandItem(
-            glyph: string.IsNullOrWhiteSpace(manifest.Runtime) && manifest.Script == null ? "J" : "S",
+            glyph: GetDefaultGlyph(manifest),
             title: manifest.Name,
             subtitle: manifest.Description ?? "来自扩展编辑器测试执行",
             category: manifest.Category ?? "扩展",
@@ -618,7 +918,22 @@ if ([string]::IsNullOrWhiteSpace($InputText)) {
             entryPoint: manifest.Entry,
             permissions: manifest.Permissions ?? [],
             entryMode: manifest.EntryMode,
-            inlineScriptSource: manifest.Script?.Source);
+            inlineScriptSource: manifest.Script?.Source,
+            iconReference: manifest.Icon);
+    }
+
+    private static string GetDefaultGlyph(LocalExtensionManifest manifest)
+    {
+        if (string.IsNullOrWhiteSpace(manifest.Runtime) && manifest.Script == null)
+        {
+            return "J";
+        }
+
+        return string.Equals(manifest.Runtime, "csharp", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(manifest.Runtime, "cs", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(manifest.Runtime, "c#", StringComparison.OrdinalIgnoreCase)
+            ? "C"
+            : "S";
     }
 
     private void ShowExecutionLogWindow(string title, bool success, string? output, string? error, int? exitCode, string? extraMeta)

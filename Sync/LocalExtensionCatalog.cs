@@ -19,6 +19,7 @@ public static class LocalExtensionCatalog
         EnsureInlineClipboardExtension();
         EnsureInlineTimestampExtension();
         EnsureSelectionContextExtension();
+        EnsureCSharpInlineExtension();
     }
 
     public static IReadOnlyList<CommandItem> LoadCommands()
@@ -41,7 +42,7 @@ public static class LocalExtensionCatalog
                 }
 
                 commands.Add(new CommandItem(
-                    glyph: string.IsNullOrWhiteSpace(manifest.Runtime) && manifest.Script == null ? "E" : "S",
+                    glyph: GetDefaultGlyph(manifest, "E"),
                     title: manifest.Name,
                     subtitle: manifest.Description ?? $"来自本地扩展目录：{Path.GetDirectoryName(manifestPath)}",
                     category: manifest.Category ?? "扩展",
@@ -59,7 +60,8 @@ public static class LocalExtensionCatalog
                     entryPoint: manifest.Entry,
                     permissions: manifest.Permissions ?? [],
                     entryMode: manifest.EntryMode,
-                    inlineScriptSource: manifest.Script?.Source));
+                    inlineScriptSource: manifest.Script?.Source,
+                    iconReference: manifest.Icon));
             }
             catch
             {
@@ -84,13 +86,15 @@ public static class LocalExtensionCatalog
             Description = "示例扩展：打开桌面扩展目录里的便签说明文件。",
             Keywords = ["note", "memo", "sample", "extension"],
             OpenTarget = Path.Combine(extensionDirectory, "README.txt"),
-            GlobalShortcut = "Ctrl+Alt+N"
+            GlobalShortcut = "Ctrl+Alt+N",
+            Icon = "mdi:note"
         };
         EnsureSampleManifest(Path.Combine(extensionDirectory, "manifest.json"), manifest, existing =>
             existing with
             {
                 OpenTarget = existing.OpenTarget ?? manifest.OpenTarget,
-                GlobalShortcut = string.IsNullOrWhiteSpace(existing.GlobalShortcut) ? manifest.GlobalShortcut : existing.GlobalShortcut
+                GlobalShortcut = string.IsNullOrWhiteSpace(existing.GlobalShortcut) ? manifest.GlobalShortcut : existing.GlobalShortcut,
+                Icon = string.IsNullOrWhiteSpace(existing.Icon) ? manifest.Icon : existing.Icon
             });
         File.WriteAllText(
             Path.Combine(extensionDirectory, "README.txt"),
@@ -114,6 +118,7 @@ public static class LocalExtensionCatalog
             Runtime = "powershell",
             Entry = "main.ps1",
             Permissions = ["clipboard", "network"],
+            Icon = "mdi:translate",
             HostedView = new LocalExtensionHostedViewManifest
             {
                 Type = "split-workbench",
@@ -134,7 +139,8 @@ public static class LocalExtensionCatalog
                 Runtime = existing.Runtime ?? manifest.Runtime,
                 Entry = existing.Entry ?? manifest.Entry,
                 Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
-                HostedView = existing.HostedView ?? manifest.HostedView
+                HostedView = existing.HostedView ?? manifest.HostedView,
+                Icon = string.IsNullOrWhiteSpace(existing.Icon) ? manifest.Icon : existing.Icon
             });
         WritePowerShellScript(
             Path.Combine(extensionDirectory, "main.ps1"),
@@ -174,7 +180,8 @@ Write-Output "说明：这是示例脚本输出。后续可以替换为真实翻
             GlobalShortcut = "Ctrl+Alt+C",
             Runtime = "powershell",
             Entry = "main.ps1",
-            Permissions = ["clipboard.read"]
+            Permissions = ["clipboard.read"],
+            Icon = "mdi:clipboard"
         };
         EnsureSampleManifest(Path.Combine(extensionDirectory, "manifest.json"), manifest, existing =>
             existing with
@@ -182,7 +189,8 @@ Write-Output "说明：这是示例脚本输出。后续可以替换为真实翻
                 GlobalShortcut = string.IsNullOrWhiteSpace(existing.GlobalShortcut) ? manifest.GlobalShortcut : existing.GlobalShortcut,
                 Runtime = existing.Runtime ?? manifest.Runtime,
                 Entry = existing.Entry ?? manifest.Entry,
-                Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions
+                Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
+                Icon = string.IsNullOrWhiteSpace(existing.Icon) ? manifest.Icon : existing.Icon
             });
         WritePowerShellScript(
             Path.Combine(extensionDirectory, "main.ps1"),
@@ -220,7 +228,8 @@ if ([string]::IsNullOrWhiteSpace($text)) {
             GlobalShortcut = "Ctrl+Alt+W",
             Runtime = "powershell",
             Entry = "main.ps1",
-            Permissions = ["window.foreground"]
+            Permissions = ["window.foreground"],
+            Icon = "mdi:window"
         };
         EnsureSampleManifest(Path.Combine(extensionDirectory, "manifest.json"), manifest, existing =>
             existing with
@@ -228,7 +237,8 @@ if ([string]::IsNullOrWhiteSpace($text)) {
                 GlobalShortcut = string.IsNullOrWhiteSpace(existing.GlobalShortcut) ? manifest.GlobalShortcut : existing.GlobalShortcut,
                 Runtime = existing.Runtime ?? manifest.Runtime,
                 Entry = existing.Entry ?? manifest.Entry,
-                Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions
+                Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
+                Icon = string.IsNullOrWhiteSpace(existing.Icon) ? manifest.Icon : existing.Icon
             });
         WritePowerShellScript(
             Path.Combine(extensionDirectory, "main.ps1"),
@@ -281,6 +291,7 @@ Write-Output ("进程 ID: " + $processId)
             Runtime = "powershell",
             EntryMode = "inline",
             Permissions = ["clipboard.read"],
+            Icon = "mdi:clipboard",
             Script = new LocalExtensionInlineScriptManifest
             {
                 Source =
@@ -308,7 +319,8 @@ if ([string]::IsNullOrWhiteSpace($text)) {
                 Runtime = existing.Runtime ?? manifest.Runtime,
                 EntryMode = existing.EntryMode ?? manifest.EntryMode,
                 Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
-                Script = existing.Script ?? manifest.Script
+                Script = existing.Script ?? manifest.Script,
+                Icon = string.IsNullOrWhiteSpace(existing.Icon) ? manifest.Icon : existing.Icon
             });
     }
 
@@ -328,6 +340,7 @@ if ([string]::IsNullOrWhiteSpace($text)) {
             Runtime = "powershell",
             EntryMode = "inline",
             Permissions = ["clipboard.read"],
+            Icon = "mdi:clock",
             HostedView = new LocalExtensionHostedViewManifest
             {
                 Type = "split-workbench",
@@ -368,7 +381,8 @@ if ([string]::IsNullOrWhiteSpace($InputText)) {
                 EntryMode = existing.EntryMode ?? manifest.EntryMode,
                 Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
                 HostedView = existing.HostedView ?? manifest.HostedView,
-                Script = existing.Script ?? manifest.Script
+                Script = existing.Script ?? manifest.Script,
+                Icon = string.IsNullOrWhiteSpace(existing.Icon) ? manifest.Icon : existing.Icon
             });
     }
 
@@ -388,6 +402,7 @@ if ([string]::IsNullOrWhiteSpace($InputText)) {
             Runtime = "powershell",
             EntryMode = "inline",
             Permissions = ["clipboard.read"],
+            Icon = "app:selection",
             Script = new LocalExtensionInlineScriptManifest
             {
                 Source =
@@ -449,7 +464,62 @@ Write-Output $trimmed
                 Runtime = existing.Runtime ?? manifest.Runtime,
                 EntryMode = existing.EntryMode ?? manifest.EntryMode,
                 Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
-                Script = existing.Script ?? manifest.Script
+                Script = existing.Script ?? manifest.Script,
+                Icon = string.IsNullOrWhiteSpace(existing.Icon) ? manifest.Icon : existing.Icon
+            });
+    }
+
+    private static void EnsureCSharpInlineExtension()
+    {
+        var extensionDirectory = Path.Combine(CatalogRootPath, "csharp-context-demo");
+        Directory.CreateDirectory(extensionDirectory);
+
+        var manifest = new LocalExtensionManifest
+        {
+            Id = "csharp-context-demo",
+            Name = "C# 动作示例",
+            Version = "0.1.0",
+            Category = "C#",
+            Description = "示例：使用 C# 读取宿主传入的上下文并返回结果。",
+            Keywords = ["csharp", "dotnet", "context", "示例"],
+            Runtime = "csharp",
+            EntryMode = "inline",
+            Permissions = ["context.read"],
+            Icon = "mdi:code",
+            Script = new LocalExtensionInlineScriptManifest
+            {
+                Source =
+"""
+using OpenQuickHost.CSharpRuntime;
+
+public static class YanziAction
+{
+    public static Task<string> RunAsync(YanziActionContext context)
+    {
+        var input = string.IsNullOrWhiteSpace(context.InputText)
+            ? "没有收到选中内容。"
+            : context.InputText.Trim();
+
+        return Task.FromResult(
+            $"来源: {context.LaunchSource}" + Environment.NewLine +
+            $"扩展目录: {context.ExtensionDirectory}" + Environment.NewLine +
+            Environment.NewLine +
+            "输入:" + Environment.NewLine +
+            input);
+    }
+}
+"""
+            }
+        };
+
+        EnsureSampleManifest(Path.Combine(extensionDirectory, "manifest.json"), manifest, existing =>
+            existing with
+            {
+                Runtime = existing.Runtime ?? manifest.Runtime,
+                EntryMode = existing.EntryMode ?? manifest.EntryMode,
+                Permissions = existing.Permissions is { Length: > 0 } ? existing.Permissions : manifest.Permissions,
+                Script = existing.Script ?? manifest.Script,
+                Icon = string.IsNullOrWhiteSpace(existing.Icon) ? manifest.Icon : existing.Icon
             });
     }
 
@@ -467,7 +537,7 @@ Write-Output $trimmed
             JsonSerializer.Serialize(manifest, JsonOptions));
 
         return new CommandItem(
-            glyph: string.IsNullOrWhiteSpace(manifest.Runtime) && manifest.Script == null ? "J" : "S",
+            glyph: GetDefaultGlyph(manifest, "J"),
             title: manifest.Name,
             subtitle: manifest.Description ?? $"来自本地扩展目录：{extensionDirectory}",
             category: manifest.Category ?? "扩展",
@@ -485,7 +555,8 @@ Write-Output $trimmed
             entryPoint: manifest.Entry,
             permissions: manifest.Permissions ?? [],
             entryMode: manifest.EntryMode,
-            inlineScriptSource: manifest.Script?.Source);
+            inlineScriptSource: manifest.Script?.Source,
+            iconReference: manifest.Icon);
     }
 
     public static string LoadManifestJson(string extensionId)
@@ -538,6 +609,7 @@ Write-Output $trimmed
             Description = manifest.Description,
             Keywords = manifest.Keywords,
             OpenTarget = manifest.OpenTarget,
+            Icon = manifest.Icon,
             HostedView = manifest.HostedView,
             GlobalShortcut = manifest.GlobalShortcut,
             HotkeyBehavior = manifest.HotkeyBehavior,
@@ -580,7 +652,8 @@ Write-Output $trimmed
             Category = "扩展",
             Description = "示例：打开本地文档或目录。",
             Keywords = ["json", "extension"],
-            OpenTarget = HostAssets.DocsReadmePath
+            OpenTarget = HostAssets.DocsReadmePath,
+            Icon = "mdi:note"
         };
 
         return JsonSerializer.Serialize(manifest, JsonOptions);
@@ -606,9 +679,9 @@ Write-Output $trimmed
 
         if (string.Equals(manifest.EntryMode, "inline", StringComparison.OrdinalIgnoreCase))
         {
-            if (!string.Equals(manifest.Runtime, "powershell", StringComparison.OrdinalIgnoreCase))
+            if (!IsSupportedInlineRuntime(manifest.Runtime))
             {
-                throw new InvalidOperationException("当前内联脚本只支持 runtime = powershell。");
+                throw new InvalidOperationException("当前内联动作只支持 runtime = csharp 或 powershell。");
             }
 
             if (string.IsNullOrWhiteSpace(manifest.Script?.Source))
@@ -618,6 +691,29 @@ Write-Output $trimmed
         }
 
         return manifest;
+    }
+
+    private static bool IsSupportedInlineRuntime(string? runtime)
+    {
+        return string.Equals(runtime, "powershell", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(runtime, "ps1", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(runtime, "csharp", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(runtime, "cs", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(runtime, "c#", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetDefaultGlyph(LocalExtensionManifest manifest, string staticGlyph)
+    {
+        if (string.IsNullOrWhiteSpace(manifest.Runtime) && manifest.Script == null)
+        {
+            return staticGlyph;
+        }
+
+        return string.Equals(manifest.Runtime, "csharp", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(manifest.Runtime, "cs", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(manifest.Runtime, "c#", StringComparison.OrdinalIgnoreCase)
+            ? "C"
+            : "S";
     }
 
     private static string GetManifestPath(string extensionId)
@@ -706,6 +802,8 @@ public sealed record LocalExtensionManifest
     public string[]? Keywords { get; init; }
 
     public string? OpenTarget { get; init; }
+
+    public string? Icon { get; init; }
 
     public LocalExtensionHostedViewManifest? HostedView { get; init; }
 
