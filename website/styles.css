@@ -420,6 +420,11 @@ pre {
   border-color: var(--accent);
 }
 
+.doc-link.featured {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(20, 22, 28, 0.85));
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
 .doc-link strong {
   display: block;
   font-size: 1.1rem;
@@ -460,6 +465,126 @@ pre {
   margin-bottom: 2rem;
 }
 
+.release-link {
+  display: inline-flex;
+  margin-top: 1rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.release-link:hover {
+  color: var(--text);
+}
+
+.doc-page {
+  padding-top: 48px;
+}
+
+.doc-hero {
+  padding: 4rem 0 3rem;
+}
+
+.doc-hero h1 {
+  font-size: clamp(2.6rem, 7vw, 4.8rem);
+  max-width: 900px;
+}
+
+.doc-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.doc-toc {
+  position: sticky;
+  top: 96px;
+  padding: 1.25rem;
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.doc-toc a {
+  display: block;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 0.55rem 0;
+  font-size: 0.92rem;
+}
+
+.doc-toc a:hover {
+  color: var(--text);
+}
+
+.guide-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.guide-card {
+  padding: 2rem;
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.guide-card h2 {
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  margin-top: 0;
+}
+
+.guide-card h3 {
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.guide-card p,
+.guide-card li {
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.guide-card ul,
+.guide-card ol {
+  padding-left: 1.25rem;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.guide-mini {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+}
+
+.guide-mini strong {
+  display: block;
+  margin-bottom: 0.45rem;
+}
+
+.guide-mini span {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.back-link {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--text);
+}
+
 @media (max-width: 1024px) {
   .hero, .split {
     grid-template-columns: 1fr;
@@ -475,10 +600,22 @@ pre {
   .hero-actions, .hero-meta {
     justify-content: center;
   }
+
+  .doc-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .doc-toc {
+    position: static;
+  }
 }
 
 @media (max-width: 768px) {
   .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-grid {
     grid-template-columns: 1fr;
   }
   

@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>扩展开发指南 | Yanzi</title>
+  <meta name="description" content="燕子 Yanzi 扩展开发指南，包含打开目录、网页搜索、C# 动作、PowerShell 自动化和宿主界面扩展示例。">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="site-header">
+    <div class="brand">SWALLOW</div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/#download">下载</a>
+      <a href="/docs/extension-spec.html">扩展规范</a>
+      <a href="https://github.com/luoluoluo22/yanzi">GitHub</a>
+    </nav>
+  </header>
+
+  <main class="doc-page">
+    <section class="doc-hero">
+      <a class="back-link" href="/">← 返回官网首页</a>
+      <p class="eyebrow">Extension Guide</p>
+      <h1>用一个 manifest.json，把高频操作变成燕子扩展。</h1>
+      <p class="hero-text">
+        扩展的核心是一个标准 JSON 文件。简单动作直接声明目标，复杂动作使用 C# 或 PowerShell，快捷面板会把选中的文本或文件路径传入动作上下文。
+      </p>
+    </section>
+
+    <section class="doc-layout">
+      <aside class="doc-toc">
+        <a href="#choose">选择扩展类型</a>
+        <a href="#open-target">打开目录/网页</a>
+        <a href="#query">带参数搜索</a>
+        <a href="#csharp">C# 动作</a>
+        <a href="#powershell">PowerShell 自动化</a>
+        <a href="#hosted-view">宿主界面</a>
+        <a href="#icons">图标写法</a>
+        <a href="#ai-prompt">给 AI 的提示词</a>
+      </aside>
+
+      <div class="guide-stack">
+        <article id="choose" class="guide-card">
+          <h2>如何选择扩展类型</h2>
+          <div class="guide-grid">
+            <div class="guide-mini">
+              <strong>打开文件、目录、网页</strong>
+              <span>使用 <code>openTarget</code>，最稳定，适合常用目录、系统设置和固定网页。</span>
+            </div>
+            <div class="guide-mini">
+              <strong>搜索类命令</strong>
+              <span>使用 <code>queryPrefixes</code> 和 <code>queryTargetTemplate</code>，把用户输入替换到 <code>{query}</code>。</span>
+            </div>
+            <div class="guide-mini">
+              <strong>处理选中文本/文件</strong>
+              <span>优先使用 C#，读取 <code>context.InputText</code>，适合文本处理、API 调用和复杂逻辑。</span>
+            </div>
+            <div class="guide-mini">
+              <strong>Windows 自动化</strong>
+              <span>使用 PowerShell，适合剪贴板、进程、文件系统和系统命令。</span>
+            </div>
+          </div>
+        </article>
+
+        <article id="open-target" class="guide-card">
+          <h2>打开目录、网页或系统位置</h2>
+          <p>这是最简单的扩展形式，只需要声明 <code>openTarget</code>。</p>
+          <div class="code-card">
+<pre><code>{
+  "id": "open-downloads",
+  "name": "打开下载目录",
+  "version": "0.1.0",
+  "category": "目录",
+  "description": "打开当前用户的下载目录。",
+  "keywords": ["downloads", "下载", "xiazai"],
+  "icon": "mdi:folder",
+  "openTarget": "C:\\Users\\你的用户名\\Downloads"
+}</code></pre>
+          </div>
+        </article>
+
+        <article id="query" class="guide-card">
+          <h2>带参数网页搜索</h2>
+          <p>当用户输入 <code>谷歌 Yanzi</code> 或 <code>gg Yanzi</code> 时，剩余文本会替换到模板中的 <code>{query}</code>。</p>
+          <div class="code-card">
+<pre><code>{
+  "id": "google-search",
+  "name": "谷歌搜索",
+  "version": "0.1.0",
+  "category": "搜索",
+  "description": "用默认浏览器打开 Google 搜索。",
+  "keywords": ["google", "谷歌", "gg", "guge"],
+  "icon": "mdi:search",
+  "queryPrefixes": ["谷歌", "google", "gg", "guge"],
+  "queryTargetTemplate": "https://www.google.com/search?q={query}"
+}</code></pre>
+          </div>
+        </article>
+
+        <article id="csharp" class="guide-card">
+          <h2>C# 动作：处理选中文本</h2>
+          <p>快捷面板执行扩展时，燕子会在点击扩展后抓取当前选中的文本或文件路径，并写入 <code>context.InputText</code>。</p>
+          <div class="code-card">
+<pre><code>{
+  "id": "csharp-selection-summary",
+  "name": "选中内容摘要",
+  "version": "0.1.0",
+  "category": "C#",
+  "description": "读取快捷面板传入的选中文本。",
+  "keywords": ["csharp", "selection", "选中", "摘要"],
+  "icon": "mdi:code",
+  "runtime": "csharp",
+  "entryMode": "inline",
+  "permissions": ["context.read"],
+  "script": {
+    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\\n    {\\n        var text = string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到选中内容。\\\" : context.InputText.Trim();\\n        return Task.FromResult($\\\"来源: {context.LaunchSource}\\\\n长度: {text.Length}\\\\n\\\\n{text}\\\");\\n    }\\n}"
+  }
+}</code></pre>
+          </div>
+          <h3>C# 入口要求</h3>
+          <div class="code-card">
+<pre><code>using OpenQuickHost.CSharpRuntime;
+
+public static class YanziAction
+{
+    public static Task&lt;string&gt; RunAsync(YanziActionContext context)
+    {
+        return Task.FromResult(context.InputText);
+    }
+}</code></pre>
+          </div>
+        </article>
+
+        <article id="powershell" class="guide-card">
+          <h2>PowerShell 自动化</h2>
+          <p>PowerShell 适合调用系统命令、读取剪贴板、操作进程和文件。</p>
+          <div class="code-card">
+<pre><code>{
+  "id": "clipboard-read",
+  "name": "读取剪贴板",
+  "version": "0.1.0",
+  "category": "脚本",
+  "description": "读取当前剪贴板文本。",
+  "keywords": ["clipboard", "剪贴板"],
+  "icon": "mdi:clipboard",
+  "runtime": "powershell",
+  "entryMode": "inline",
+  "permissions": ["clipboard.read"],
+  "script": {
+    "source": "param([string]$InputText = \\\"\\\", [string]$ContextPath = \\\"\\\")\\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\\n$text = Get-Clipboard -Raw\\nif ([string]::IsNullOrWhiteSpace($text)) { Write-Output \\\"当前剪贴板为空。\\\" } else { Write-Output $text.Trim() }"
+  }
+}</code></pre>
+          </div>
+        </article>
+
+        <article id="hosted-view" class="guide-card">
+          <h2>需要界面的扩展</h2>
+          <p>使用 <code>hostedView</code> 可以让扩展在主窗口中展示输入区、输出区和执行按钮，适合翻译、文本处理和查询类工具。</p>
+          <div class="code-card">
+<pre><code>{
+  "id": "text-workbench",
+  "name": "文本处理台",
+  "version": "0.1.0",
+  "category": "工具",
+  "description": "在宿主窗口中输入文本并执行 C# 动作。",
+  "keywords": ["text", "文本", "workbench"],
+  "icon": "mdi:terminal",
+  "runtime": "csharp",
+  "entryMode": "inline",
+  "hostedView": {
+    "type": "split-workbench",
+    "title": "文本处理台",
+    "description": "左侧输入文本，右侧显示执行结果。",
+    "inputLabel": "输入",
+    "inputPlaceholder": "输入要处理的文本...",
+    "outputLabel": "结果",
+    "actionButtonText": "执行",
+    "actionType": "script",
+    "emptyState": "结果会显示在这里。"
+  },
+  "script": {
+    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText.ToUpperInvariant());\\n    }\\n}"
+  }
+}</code></pre>
+          </div>
+        </article>
+
+        <article id="icons" class="guide-card">
+          <h2>图标写法</h2>
+          <ul>
+            <li>内置图标：<code>mdi:search</code>、<code>mdi:translate</code>、<code>mdi:folder</code>、<code>mdi:clipboard</code>、<code>mdi:code</code></li>
+            <li>应用别名：<code>app:wechat</code>、<code>app:qq</code>、<code>app:google</code>、<code>app:selection</code></li>
+            <li>图片路径：扩展目录下相对路径，例如 <code>icons/logo.png</code>，也支持绝对路径和 HTTPS 图片地址</li>
+          </ul>
+        </article>
+
+        <article id="ai-prompt" class="guide-card">
+          <h2>给 AI 的提示词</h2>
+          <p>复制这段给 AI，可以让它生成能直接导入燕子的扩展 JSON。</p>
+          <div class="code-card">
+<pre><code>请为燕子 Yanzi 生成一个单文件 manifest.json 扩展。
+
+要求：
+1. 只输出合法 JSON，不要 Markdown 代码块。
+2. 优先使用 runtime = "csharp"、entryMode = "inline"、script.source。
+3. C# 源码必须包含 public static class YanziAction，并实现 public static Task&lt;string&gt; RunAsync(YanziActionContext context)。
+4. 如果只是打开文件、目录、网页或系统协议，使用 openTarget，不要写脚本。
+5. 如果是搜索类命令，使用 queryPrefixes 和 queryTargetTemplate，模板里用 {query}。
+6. 如果需要宿主界面，使用 hostedView，actionType 优先使用 script。
+7. 必须包含 id、name、version、category、description、keywords。
+8. icon 优先使用内置值，例如 mdi:search、mdi:folder、mdi:clipboard、mdi:code、mdi:translate。
+9. 不要写 null 字段，不要补充燕子未支持的字段。
+10. 输出的 JSON 要能直接保存为 manifest.json。
+
+我要的扩展功能是：
+在这里描述你的需求。</code></pre>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

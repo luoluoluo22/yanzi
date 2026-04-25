@@ -223,12 +223,8 @@ npx wrangler deploy
 官网静态站位于 `website/` 目录：
 
 ```powershell
-cd website
-npm install
-npm run build
-
 # 部署到 Cloudflare Pages
-npx wrangler pages deploy ./dist
+npx wrangler pages deploy ./website --project-name openquickhost-site --branch main
 ```
 
 ### 目录说明
