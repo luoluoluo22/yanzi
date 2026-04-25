@@ -8,14 +8,22 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$project = Join-Path $root "src\OpenQuickHost\OpenQuickHost.csproj"
 $publishDir = Join-Path $root ".artifacts\publish\$Runtime"
 $installerOutDir = Join-Path $root ".artifacts\installer"
 $issPath = Join-Path $root "installer\yanzi.iss"
 
+if (Test-Path $publishDir) {
+    Remove-Item -Path $publishDir -Recurse -Force
+}
+if (Test-Path $installerOutDir) {
+    Remove-Item -Path (Join-Path $installerOutDir "YanziSetup-$Version.exe") -Force -ErrorAction SilentlyContinue
+}
+
 New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
 New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
 
-dotnet publish (Join-Path $root "OpenQuickHost.csproj") `
+dotnet publish $project `
     -c $Configuration `
     -r $Runtime `
     --self-contained true `
@@ -34,6 +42,7 @@ if ($SkipInstaller) {
 $iscc = Get-Command iscc -ErrorAction SilentlyContinue
 if (-not $iscc) {
     $candidatePaths = @(
+        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
     )

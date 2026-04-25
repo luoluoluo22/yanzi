@@ -51,13 +51,13 @@
 
 为了避免本地调试、发布和临时验证目录混淆，当前项目只认这两个标准输出目录：
 
-- 调试版：`bin\Debug\net9.0-windows\`
-- 发布版：`bin\Release\net9.0-windows\`
+- 调试版：`src\OpenQuickHost\bin\Debug\net9.0-windows\`
+- 发布版：`src\OpenQuickHost\bin\Release\net9.0-windows\`
 
 约定说明：
 
-- `bin\Debug\net9.0-windows\` 是默认本地运行目录
-- `bin\Release\net9.0-windows\` 是默认发布构建目录
+- `src\OpenQuickHost\bin\Debug\net9.0-windows\` 是默认本地运行目录
+- `src\OpenQuickHost\bin\Release\net9.0-windows\` 是默认发布构建目录
 - 像 `net9.0`、`net9.0-windows-verify` 这类目录，属于历史残留或临时验证目录，不作为正式输出目录使用
 - 临时验证输出如果需要保留，统一明确标成 `verify`，验证完成后清理
 
@@ -173,13 +173,13 @@ cd yanzi
 dotnet build
 
 # 运行（Debug）
-.\bin\Debug\net9.0-windows\Yanzi.exe
+.\src\OpenQuickHost\bin\Debug\net9.0-windows\Yanzi.exe
 ```
 
 ### 发布单文件可执行程序
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o .\publish
+dotnet publish .\src\OpenQuickHost\OpenQuickHost.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o .\publish
 ```
 
 输出文件在 `./publish/Yanzi.exe`，可直接分发给用户，无需安装 .NET 运行时。
@@ -235,16 +235,21 @@ npx wrangler pages deploy ./dist
 
 ```text
 OpenQuickHost/
-├── MainWindow.xaml / .cs      启动器主界面与交互逻辑
-├── SettingsWindow.xaml / .cs  设置窗口
-├── QuickPanelWindow.xaml / .cs 快速浮动面板
-├── AddJsonExtensionWindow.*   扩展编辑器（含 AI 提示词工具）
-├── ScriptExtensionRunner.cs   C# / PowerShell 扩展运行时
-├── LocalAgentApiServer.cs     本地 Agent API 服务器
-├── Sync/                      云同步、扩展读取、会话与凭据存储
+├── OpenQuickHost.sln          根目录解决方案
+├── src/
+│   └── OpenQuickHost/         WPF 桌面应用源码
+│       ├── MainWindow.xaml / .cs
+│       ├── SettingsWindow.xaml / .cs
+│       ├── QuickPanelWindow.xaml / .cs
+│       ├── AddJsonExtensionWindow.*
+│       ├── ScriptExtensionRunner.cs
+│       ├── LocalAgentApiServer.cs
+│       └── Sync/
 ├── cloudflare/                Cloudflare Worker 后端源码
 ├── website/                   官网静态站源码
 ├── docs/                      产品说明与扩展规范文档
+├── installer/                 Inno Setup 一键安装包脚本
+├── scripts/                   发布与验证脚本
 ├── skills/                    内置 Agent Skill 包
 └── syncsettings.example.json  云同步配置示例
 ```

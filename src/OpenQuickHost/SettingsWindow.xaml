@@ -228,13 +228,14 @@
                             <DataTemplate>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="32" />
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Border Width="20"
                                             Height="20"
                                             Background="Transparent"
-                                            VerticalAlignment="Center">
+                                            VerticalAlignment="Center"
+                                            Margin="4,0,0,0">
                                         <Path x:Name="IconPath"
                                               Data="{Binding Glyph}"
                                               Fill="{Binding Accent}"
@@ -247,7 +248,8 @@
                                                VerticalAlignment="Center"
                                                Text="{Binding Title}"
                                                FontSize="13"
-                                               Foreground="White" />
+                                               Foreground="White"
+                                               Margin="12,0,0,0" />
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -293,9 +295,12 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="⌕" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="#FF666666" FontSize="14"/>
                             <TextBox Grid.Column="1" 
+                                     x:Name="SettingsSearchBox"
+                                     Text="{Binding SettingsSearchText, UpdateSourceTrigger=PropertyChanged}"
                                      Background="Transparent" 
                                      BorderThickness="0" 
                                      Foreground="White" 
+                                     CaretBrush="White"
                                      VerticalAlignment="Center"
                                      FontSize="13"/>
                             <TextBlock Grid.Column="1" 
@@ -304,7 +309,22 @@
                                        VerticalAlignment="Center" 
                                        IsHitTestVisible="False"
                                        FontSize="13"
-                                       Margin="2,0,0,0"/>
+                                       Margin="2,0,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding SettingsSearchText}" Value=""/>
+                                                    <Condition Binding="{Binding IsKeyboardFocusWithin, ElementName=SettingsSearchBox}" Value="False"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                         </Grid>
                     </Border>
 
@@ -436,19 +456,19 @@
                             <TextBlock Text="链接与反馈" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,20,0,10"/>
                             <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1">
                                 <StackPanel>
-                                    <Grid Margin="15,12">
-                                        <TextBlock Text="官方网站" Foreground="White" FontSize="13"/>
-                                        <TextBlock Text="https://yanzi.luoluoluo.cc.cd/" Foreground="#FF555555" HorizontalAlignment="Right" FontSize="11"/>
+                                    <Grid Margin="15,12" Cursor="Hand" Background="Transparent" ToolTip="点击访问官网" Tag="https://yanzi.luoluoluo.cc.cd/" MouseLeftButtonDown="ExternalLink_Click">
+                                        <TextBlock Text="官方网站" Foreground="White" FontSize="13" IsHitTestVisible="False"/>
+                                        <TextBlock Text="https://yanzi.luoluoluo.cc.cd/" Foreground="#FF555555" HorizontalAlignment="Right" FontSize="11" IsHitTestVisible="False"/>
                                     </Grid>
                                     <Rectangle Height="1" Fill="#FF2A2A2A" Margin="15,0"/>
-                                    <Grid Margin="15,12">
-                                        <TextBlock Text="QQ 反馈 (1137583371)" Foreground="White" FontSize="13"/>
-                                        <TextBlock Text="↗" Foreground="#FF555555" HorizontalAlignment="Right"/>
+                                    <Grid Margin="15,12" Cursor="Hand" Background="Transparent" ToolTip="点击联系开发者" Tag="tencent://Message/?Uin=1137583371&amp;websiteName=qzone.qq.com&amp;Menu=yes" MouseLeftButtonDown="ExternalLink_Click">
+                                        <TextBlock Text="QQ 反馈 (1137583371)" Foreground="White" FontSize="13" IsHitTestVisible="False"/>
+                                        <TextBlock Text="↗" Foreground="#FF555555" HorizontalAlignment="Right" IsHitTestVisible="False"/>
                                     </Grid>
                                     <Rectangle Height="1" Fill="#FF2A2A2A" Margin="15,0"/>
-                                    <Grid Margin="15,12">
-                                        <TextBlock Text="GitHub 仓库" Foreground="White" FontSize="13"/>
-                                        <TextBlock Text="https://github.com/luoluoluo22/yanzi" Foreground="#FF555555" HorizontalAlignment="Right" FontSize="11"/>
+                                    <Grid Margin="15,12" Cursor="Hand" Background="Transparent" ToolTip="访问 GitHub 仓库" Tag="https://github.com/luoluoluo22/yanzi" MouseLeftButtonDown="ExternalLink_Click">
+                                        <TextBlock Text="GitHub 仓库" Foreground="White" FontSize="13" IsHitTestVisible="False"/>
+                                        <TextBlock Text="https://github.com/luoluoluo22/yanzi" Foreground="#FF555555" HorizontalAlignment="Right" FontSize="11" IsHitTestVisible="False"/>
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -463,7 +483,7 @@
                                     <TextBlock Text="面板触发方式" Foreground="White" FontSize="13"/>
                                     <TextBlock Text="{Binding QuickPanelTriggerSummary}" Foreground="#FF666666" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <Button Content="保存" Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Right" Padding="14,5" Click="SaveQuickPanelTrigger_Click"/>
+                                <Button Content="保存" Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Right" Click="SaveQuickPanelTrigger_Click"/>
                             </Grid>
                             <Rectangle Height="1" Fill="#FF222222" Margin="0,12"/>
 

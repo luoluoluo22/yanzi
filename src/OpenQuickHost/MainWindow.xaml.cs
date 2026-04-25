@@ -273,7 +273,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        await RefreshCloudStateAsync();
+        await RefreshCloudStateAsync(allowLoginPrompt: false);
     }
 
     private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -894,7 +894,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             $"{Environment.NewLine}后续你可以把这个 actionType 替换成真正的翻译服务或脚本执行器。";
     }
 
-    private async Task RefreshCloudStateAsync()
+    private async Task RefreshCloudStateAsync(bool allowLoginPrompt = true)
     {
         if (_cloudSyncClient == null)
         {
@@ -905,7 +905,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             SyncStatus = "正在读取账号状态和云端配置...";
-            if (!await EnsureAuthenticatedAsync())
+            if (!await EnsureAuthenticatedAsync(allowPrompt: allowLoginPrompt))
             {
                 return;
             }
@@ -926,7 +926,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            if (await TryRecoverAuthenticationAsync(ex))
+            if (allowLoginPrompt && await TryRecoverAuthenticationAsync(ex))
             {
                 await RefreshCloudStateAsync();
                 return;
@@ -1081,6 +1081,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
+            WebDavSyncService.MarkExtensionDeletedLocally(deletable.ExtensionId, deletable.DeclaredVersion);
             LocalExtensionCatalog.DeleteExtension(deletable.ExtensionId);
             RemoveLocalExtensionCommand(deletable.ExtensionId);
             ApplyFilter(SearchBox.Text);
@@ -1103,7 +1104,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task<bool> EnsureAuthenticatedAsync(bool forcePrompt = false)
+    private async Task<bool> EnsureAuthenticatedAsync(bool forcePrompt = false, bool allowPrompt = true)
     {
         if (_cloudSyncClient == null)
         {
@@ -1112,6 +1113,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (forcePrompt || !_cloudSyncClient.HasCredential)
         {
+            if (!allowPrompt)
+            {
+                SyncStatus = "未登录，已跳过云端账号同步。";
+                return false;
+            }
+
             if (!ShowLoginDialog())
             {
                 SyncStatus = "未登录，云同步不可用。";
@@ -1127,6 +1134,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            if (!allowPrompt)
+            {
+                SyncStatus = $"云端账号同步失败，已跳过登录弹窗：{FormatExceptionMessage(ex)}";
+                HostAssets.AppendLog($"Cloud silent auth failed: {FormatExceptionMessage(ex)}");
+                return false;
+            }
+
             if (ShowLoginDialog(FormatExceptionMessage(ex)))
             {
                 await _cloudSyncClient.EnsureAuthenticatedAsync();
@@ -1155,7 +1169,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return false;
         }
 
-        _cloudSyncClient.ClearCredential();
+        _cloudSyncClient.ClearSessionOnly();
+        if (await EnsureAuthenticatedAsync(allowPrompt: false))
+        {
+            return true;
+        }
+
         return await EnsureAuthenticatedAsync(forcePrompt: true);
     }
 
@@ -1378,6 +1397,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var snapshot = await _cloudSyncClient.GetUserConfigAsync<CloudWebDavConfigSnapshot>(CloudWebDavConfigId);
         if (snapshot == null)
         {
+            if (ShouldSyncLocalWebDavConfigToCloud())
+            {
+                await PushWebDavConfigToCloudAsync("cloud-refresh-bootstrap");
+            }
             return false;
         }
 
@@ -1428,26 +1451,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
-            {
-                return;
-            }
-
-            await _cloudSyncClient.EnsureAuthenticatedAsync();
-            var settings = AppSettingsStore.Load();
-            await _cloudSyncClient.UpsertUserConfigAsync(CloudWebDavConfigId, new CloudWebDavConfigSnapshot
-            {
-                EnableWebDavSync = settings.EnableWebDavSync,
-                WebDavServerUrl = settings.WebDavServerUrl,
-                WebDavRootPath = settings.WebDavRootPath,
-                WebDavUsername = settings.WebDavUsername
-            });
+            await PushWebDavConfigToCloudAsync(reason);
             HostAssets.AppendLog($"Cloud WebDAV config synced: {reason}");
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Cloud WebDAV config sync skipped: {reason} -> {FormatExceptionMessage(ex)}");
         }
+    }
+
+    private async Task PushWebDavConfigToCloudAsync(string reason)
+    {
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || !ShouldSyncLocalWebDavConfigToCloud())
+        {
+            return;
+        }
+
+        await _cloudSyncClient.EnsureAuthenticatedAsync();
+        var settings = AppSettingsStore.Load();
+        await _cloudSyncClient.UpsertUserConfigAsync(CloudWebDavConfigId, new CloudWebDavConfigSnapshot
+        {
+            EnableWebDavSync = settings.EnableWebDavSync,
+            WebDavServerUrl = settings.WebDavServerUrl,
+            WebDavRootPath = settings.WebDavRootPath,
+            WebDavUsername = settings.WebDavUsername
+        });
+    }
+
+    private static bool ShouldSyncLocalWebDavConfigToCloud()
+    {
+        var settings = AppSettingsStore.Load();
+        return !string.IsNullOrWhiteSpace(settings.WebDavServerUrl) &&
+               !string.IsNullOrWhiteSpace(settings.WebDavRootPath) &&
+               !string.IsNullOrWhiteSpace(settings.WebDavUsername);
     }
 
     private CommandItem? ShowJsonExtensionEditorAsync(string initialJson, bool isEditMode)
@@ -2066,6 +2102,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return Task.FromResult((false, string.Empty));
             }
 
+            WebDavSyncService.MarkExtensionDeletedLocally(deletable.ExtensionId, deletable.DeclaredVersion);
             LocalExtensionCatalog.DeleteExtension(deletable.ExtensionId);
             RemoveLocalExtensionCommand(deletable.ExtensionId);
             ApplyFilter(SearchBox.Text);

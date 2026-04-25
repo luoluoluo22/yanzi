@@ -72,12 +72,14 @@ public static class ExtensionPackageService
     private static byte[] BuildDirectoryPackage(string directoryPath)
     {
         using var stream = new MemoryStream();
-        using var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true);
-        foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
-                     .Where(path => ShouldIncludeInPackage(directoryPath, path)))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            var relativePath = Path.GetRelativePath(directoryPath, filePath);
-            archive.CreateEntryFromFile(filePath, relativePath, CompressionLevel.Optimal);
+            foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
+                         .Where(path => ShouldIncludeInPackage(directoryPath, path)))
+            {
+                var relativePath = Path.GetRelativePath(directoryPath, filePath);
+                archive.CreateEntryFromFile(filePath, relativePath, CompressionLevel.Optimal);
+            }
         }
 
         return stream.ToArray();

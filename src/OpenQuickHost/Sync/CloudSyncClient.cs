@@ -60,6 +60,11 @@ public sealed class CloudSyncClient
         ClearSession();
     }
 
+    public void ClearSessionOnly()
+    {
+        ClearSession();
+    }
+
     public async Task EnsureAuthenticatedAsync(CancellationToken cancellationToken = default)
     {
         if (HasValidSession())
@@ -291,6 +296,7 @@ public sealed class CloudSyncClient
     public async Task UpsertUserConfigAsync(string configId, object settings, CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
+        await EnsureConfigExtensionExistsAsync(configId, cancellationToken);
         var body = JsonSerializer.Serialize(new
         {
             installedVersion = "1",
@@ -301,6 +307,30 @@ public sealed class CloudSyncClient
         using var request = CreateJsonRequest(
             HttpMethod.Put,
             $"/v1/me/extensions/{Uri.EscapeDataString(configId)}",
+            body,
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private async Task EnsureConfigExtensionExistsAsync(string configId, CancellationToken cancellationToken)
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            manifest = new
+            {
+                name = configId,
+                displayName = "Yanzi WebDAV Settings",
+                version = "1",
+                category = "系统配置",
+                description = "Stores non-secret WebDAV sync configuration for the current account.",
+                keywords = new[] { "yanzi", "webdav", "settings" }
+            }
+        });
+
+        using var request = CreateJsonRequest(
+            HttpMethod.Put,
+            $"/v1/extensions/{Uri.EscapeDataString(configId)}",
             body,
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);

@@ -1,10 +1,15 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using OpenQuickHost.Sync;
 
@@ -19,6 +24,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _accountSubtitle = "点击左上角账户卡片登录或切换账号。";
     private string _accountInitial = "燕";
     private string _localExtensionSummary = "正在统计...";
+    private string _settingsSearchText = string.Empty;
     private string _extensionSearchText = string.Empty;
     private string _launcherHotkey = "Ctrl+Shift+Space";
     private string _syncStatusText = "同步服务状态未知。";
@@ -88,6 +94,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsShortcutsSelected));
             OnPropertyChanged(nameof(IsQuickPanelSelected));
             OnPropertyChanged(nameof(IsAboutSelected));
+            if (IsExtensionsSelected)
+            {
+                RefreshExtensionsFromDisk();
+            }
         }
     }
 
@@ -319,6 +329,22 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string SettingsSearchText
+    {
+        get => _settingsSearchText;
+        set
+        {
+            if (value == _settingsSearchText)
+            {
+                return;
+            }
+
+            _settingsSearchText = value;
+            OnPropertyChanged();
+            ApplySettingsSearch(value);
+        }
+    }
+
     public string ExtensionSearchText
     {
         get => _extensionSearchText;
@@ -497,6 +523,31 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshWebDavSummary();
     }
 
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ButtonState != MouseButtonState.Pressed || IsInteractiveSource(e.OriginalSource as DependencyObject))
+        {
+            return;
+        }
+
+        try
+        {
+            DragMove();
+        }
+        catch (InvalidOperationException)
+        {
+            // DragMove can throw if the mouse button is released before WPF starts the drag loop.
+        }
+    }
+
+    private void SettingsSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.TextBox textBox && string.IsNullOrEmpty(textBox.Text))
+        {
+            textBox.CaretIndex = 0;
+        }
+    }
+
     private void SaveSettingsToggle_Click(object sender, RoutedEventArgs e)
     {
         AppSettingsStore.Save(_settings);
@@ -597,9 +648,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         SaveWebDavSettingsButton_Click(sender, e);
         var result = await _mainWindow.SyncWebDavNowAsync();
         WebDavStatusText = result.message;
-        RefreshExtensionSummary();
-        RefreshExtensionItems();
-        RefreshShortcutItems();
+        RefreshExtensionsFromDisk();
         if (!result.ok)
         {
             System.Windows.MessageBox.Show(this, result.message, "WebDAV 同步失败", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -617,9 +666,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void RefreshExtensionStatsButton_Click(object sender, RoutedEventArgs e)
     {
-        RefreshExtensionSummary();
-        RefreshExtensionItems();
-        RefreshShortcutItems();
+        RefreshExtensionsFromDisk();
     }
 
     private void OpenExtensionDirectoryButton_Click(object sender, RoutedEventArgs e)
@@ -632,8 +679,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (!Directory.Exists(item.DirectoryPath))
         {
             System.Windows.MessageBox.Show(this, "扩展目录不存在。", "打开目录失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-            RefreshExtensionSummary();
-            RefreshExtensionItems();
+            RefreshExtensionsFromDisk();
             return;
         }
 
@@ -698,6 +744,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ExtensionItems.Remove(item);
         RefreshExtensionSummary();
         OnPropertyChanged(nameof(ExtensionSearchSummary));
+        RefreshShortcutItems();
+    }
+
+    private void RefreshExtensionsFromDisk()
+    {
+        _mainWindow.ReloadLocalExtensionsFromExternal();
+        RefreshExtensionSummary();
+        RefreshExtensionItems();
         RefreshShortcutItems();
     }
 
@@ -899,6 +953,76 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void ApplySettingsSearch(string query)
+    {
+        query = query.Trim();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return;
+        }
+
+        var target = NavigationItems.FirstOrDefault(item => SettingsSearchMatches(item.Key, query));
+        if (target != null)
+        {
+            SelectedNavigation = target;
+        }
+    }
+
+    private static bool SettingsSearchMatches(string sectionKey, string query)
+    {
+        return GetSettingsSearchTerms(sectionKey)
+            .Any(term => term.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                         query.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string[] GetSettingsSearchTerms(string sectionKey) => sectionKey switch
+    {
+        "general" =>
+        [
+            "常规", "开机", "启动", "托盘", "关闭", "主程序", "快捷键", "general", "startup", "launch", "tray", "hotkey"
+        ],
+        "sync" =>
+        [
+            "同步", "云", "云同步", "账号", "登录", "注册", "坚果云", "webdav", "cloud", "cloudflare", "服务器", "密码", "配置"
+        ],
+        "extensions" =>
+        [
+            "扩展", "插件", "目录", "本地", "删除", "编辑", "搜索", "打开目录", "extension", "plugin", "folder", "delete", "edit"
+        ],
+        "shortcuts" =>
+        [
+            "快捷键", "热键", "组合键", "录制", "全局快捷键", "shortcut", "hotkey", "keyboard"
+        ],
+        "quickpanel" =>
+        [
+            "快捷面板", "面板", "鼠标", "右键", "中键", "x1", "x2", "长按", "滚轮", "松开", "quick panel", "mouse", "middle", "right click"
+        ],
+        "about" =>
+        [
+            "关于", "版本", "协议", "logo", "about", "version", "license"
+        ],
+        _ => [sectionKey]
+    };
+
+    private static bool IsInteractiveSource(DependencyObject? source)
+    {
+        while (source != null)
+        {
+            if (source is System.Windows.Controls.TextBox or
+                System.Windows.Controls.Primitives.ButtonBase or
+                Selector or
+                System.Windows.Controls.Primitives.ScrollBar or
+                ResizeGrip)
+            {
+                return true;
+            }
+
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return false;
+    }
+
     private void UpdateQuickPanelMouseTrigger(bool value, Action<QuickPanelMouseTriggerSettings> update)
     {
         _settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
@@ -941,6 +1065,37 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+    private void ExternalLink_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string url } && !string.IsNullOrWhiteSpace(url))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this, $"无法打开链接: {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+    }
+}
+
+public sealed class EmptyStringToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        return string.IsNullOrEmpty(value as string) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotSupportedException();
     }
 }
 
