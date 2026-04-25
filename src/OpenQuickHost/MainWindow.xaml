@@ -86,20 +86,87 @@
 
             <!-- 1. Search Bar -->
             <Grid Grid.Row="0" Margin="20,15,20,10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
+                <ItemsControl Grid.Row="0"
+                              Grid.ColumnSpan="3"
+                              ItemsSource="{Binding SearchScopes}"
+                              Margin="0,0,0,8">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type local:SearchScopeTab}">
+                            <Button Content="{Binding DisplayLabel}"
+                                    ToolTip="{Binding Tooltip}"
+                                    Tag="{Binding}"
+                                    Click="SearchScopeButton_Click"
+                                    Margin="0,0,6,0"
+                                    Padding="9,4"
+                                    FontSize="12"
+                                    FontWeight="SemiBold"
+                                    BorderThickness="1"
+                                    Cursor="Hand">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="#141F2937" />
+                                        <Setter Property="BorderBrush" Value="#303B4658" />
+                                        <Setter Property="Foreground" Value="#FF9CA3AF" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="Root"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            CornerRadius="8"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Root" Property="Background" Value="#203B82F6" />
+                                                            <Setter Property="Foreground" Value="White" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="Background" Value="#303B82F6" />
+                                                <Setter Property="BorderBrush" Value="#703B82F6" />
+                                                <Setter Property="Foreground" Value="White" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
                 <!-- Search Icon -->
-                <TextBlock VerticalAlignment="Center"
+                <TextBlock Grid.Row="1"
+                           VerticalAlignment="Center"
                            FontSize="20"
                            Foreground="#FFAAAAAA"
                            Text="⌕" 
                            Margin="5,0,15,0"/>
 
                 <TextBox x:Name="SearchBox"
+                         Grid.Row="1"
                          Grid.Column="1"
                          FontSize="20"
                          Foreground="White"
@@ -113,8 +180,9 @@
                 
                 <!-- Search Box Placeholder -->
                 <TextBlock Grid.Column="1"
+                           Grid.Row="1"
                            IsHitTestVisible="False"
-                           Text="Search for apps and commands..."
+                           Text="开始搜索，或输入 @谷歌 关键词..."
                            VerticalAlignment="Center"
                            Foreground="#FF555555"
                            FontSize="20"
@@ -130,7 +198,8 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-                <Button Grid.Column="2"
+                <Button Grid.Row="1"
+                        Grid.Column="2"
                         Width="32"
                         Height="32"
                         Background="Transparent"

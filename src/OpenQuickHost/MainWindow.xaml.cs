@@ -27,10 +27,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const uint ModNoRepeat = 0x4000;
     private const int WmHotKey = 0x0312;
     private const string CloudWebDavConfigId = "yanzi-webdav-settings";
+    private const string SearchScopeAll = "all";
+    private const string SearchScopeWeb = "web";
 
     private readonly List<CommandItem> _allCommands;
     private readonly CloudSyncClient? _cloudSyncClient;
     private readonly SyncOptions _syncOptions;
+    private readonly SearchUsageMemory _searchUsageMemory;
     private AppSettings _appSettings;
     private readonly Dictionary<string, CommandItem> _localExtensionIndex;
     private readonly Dictionary<int, CommandItem> _registeredExtensionHotkeys = new();
@@ -51,6 +54,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _backgroundWebDavSyncTimer;
     private bool _backgroundWebDavSyncRunning;
     private bool _backgroundWebDavSyncRequested;
+    private SearchScopeTab? _selectedSearchScope;
 
     public MainWindow()
     {
@@ -59,6 +63,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HostAssets.EnsureCreated();
         _syncOptions = SyncConfigLoader.Load();
         _appSettings = AppSettingsStore.Load();
+        _searchUsageMemory = SearchUsageMemory.Load();
         LocalExtensionCatalog.EnsureSampleExtension();
         if (_syncOptions.IsConfigured)
         {
@@ -72,8 +77,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .GroupBy(x => x.ExtensionId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
         FilteredCommands = new ObservableCollection<CommandItem>(_allCommands);
+        SearchScopes = new ObservableCollection<SearchScopeTab>(CreateSearchScopes());
+        _selectedSearchScope = SearchScopes.First();
         SelectedCommand = FilteredCommands.FirstOrDefault();
         DataContext = this;
+        ApplyFilter(string.Empty);
         Loaded += MainWindow_Loaded;
         SourceInitialized += MainWindow_SourceInitialized;
         Closing += MainWindow_Closing;
@@ -102,6 +110,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public ObservableCollection<CommandItem> FilteredCommands { get; }
+
+    public ObservableCollection<SearchScopeTab> SearchScopes { get; }
+
+    public SearchScopeTab? SelectedSearchScope
+    {
+        get => _selectedSearchScope;
+        set
+        {
+            if (Equals(value, _selectedSearchScope))
+            {
+                return;
+            }
+
+            if (_selectedSearchScope != null)
+            {
+                _selectedSearchScope.IsSelected = false;
+            }
+
+            _selectedSearchScope = value;
+            if (_selectedSearchScope != null)
+            {
+                _selectedSearchScope.IsSelected = true;
+            }
+
+            OnPropertyChanged();
+            ApplyFilter(SearchBox.Text);
+        }
+    }
 
     public bool AllowClose { get; set; }
 
@@ -297,6 +333,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             RunSelectedCommand();
             e.Handled = true;
+        }
+        else if (e.Key == Key.Tab)
+        {
+            CycleSearchScope(Keyboard.Modifiers == ModifierKeys.Shift ? -1 : 1);
+            e.Handled = true;
+        }
+    }
+
+    private void SearchScopeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: SearchScopeTab scope })
+        {
+            SelectedSearchScope = scope;
+            SearchBox.Focus();
+            SearchBox.CaretIndex = SearchBox.Text.Length;
         }
     }
 
@@ -611,29 +662,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ApplyFilter(string? query)
     {
-        var normalized = (query ?? string.Empty).Trim();
+        var parsed = ParseSearchQuery(query);
+        UpdateSearchScopeCounts(parsed);
         _activeQueryArgument = string.Empty;
-        var matches = string.IsNullOrWhiteSpace(normalized)
-            ? _allCommands
+        var sourceCommands = parsed.IsEmpty
+            ? _allCommands.Where(command => SearchScopeAllows(command, parsed.ScopeKey))
             : _allCommands
+                .Where(command => SearchScopeAllows(command, parsed.ScopeKey))
                 .Select(command => new
                 {
                     Command = command,
-                    Match = BuildCommandMatch(command, normalized)
+                    Match = BuildCommandMatch(command, parsed.Term)
                 })
                 .Where(x => x.Match.IsMatch)
-                .OrderByDescending(x => x.Match.Priority)
-                .ThenBy(x => x.Command.Title, StringComparer.OrdinalIgnoreCase)
-                .Select(x => x.Command)
-                .ToList();
+                .Select(x => x.Command);
 
-        if (!string.IsNullOrWhiteSpace(normalized))
-        {
-            var leadingCommand = matches.FirstOrDefault();
-            if (leadingCommand != null)
+        var matches = sourceCommands
+            .Concat(BuildWebSearchCommands(parsed))
+            .DistinctBy(command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
+            .Select(command => new
             {
-                _activeQueryArgument = ExtractQueryArgument(leadingCommand, normalized);
-            }
+                Command = command,
+                Score = ScoreSearchResult(command, parsed.Term)
+            })
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Command.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Command.Title, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.Command)
+            .ToList();
+
+        var leadingCommand = matches.FirstOrDefault(static command => command.SupportsQueryArgument);
+        if (leadingCommand != null && !string.IsNullOrWhiteSpace(parsed.Term))
+        {
+            _activeQueryArgument = parsed.Term;
         }
 
         FilteredCommands.Clear();
@@ -646,6 +707,136 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CommandList.SelectedItem = SelectedCommand;
         OnPropertyChanged(nameof(VisibleCountText));
         OnPropertyChanged(nameof(FooterHint));
+    }
+
+    private void CycleSearchScope(int delta)
+    {
+        if (SearchScopes.Count == 0)
+        {
+            return;
+        }
+
+        var currentIndex = SelectedSearchScope == null ? 0 : SearchScopes.IndexOf(SelectedSearchScope);
+        if (currentIndex < 0)
+        {
+            currentIndex = 0;
+        }
+
+        var nextIndex = (currentIndex + delta) % SearchScopes.Count;
+        if (nextIndex < 0)
+        {
+            nextIndex = SearchScopes.Count - 1;
+        }
+
+        SelectedSearchScope = SearchScopes[nextIndex];
+    }
+
+    private static List<SearchScopeTab> CreateSearchScopes()
+    {
+        return
+        [
+            new(SearchScopeAll, "全部", "所有结果", true),
+            new(SearchScopeWeb, "网页", "百度 / Bing / 谷歌"),
+            new("baidu", "百度", "只显示百度搜索"),
+            new("bing", "Bing", "只显示 Bing 搜索"),
+            new("google", "谷歌", "只显示 Google 搜索"),
+            new("extension", "扩展", "本地扩展"),
+            new("command", "命令", "系统命令")
+        ];
+    }
+
+    private SearchQueryState ParseSearchQuery(string? query)
+    {
+        var raw = (query ?? string.Empty).Trim();
+        var scope = SelectedSearchScope?.Key ?? SearchScopeAll;
+        if (!raw.StartsWith('@') && !raw.StartsWith('＠'))
+        {
+            return new SearchQueryState(scope, raw, string.IsNullOrWhiteSpace(raw));
+        }
+
+        var withoutAt = raw[1..].TrimStart();
+        if (string.IsNullOrWhiteSpace(withoutAt))
+        {
+            return new SearchQueryState(scope, string.Empty, true);
+        }
+
+        var separator = withoutAt.IndexOf(' ');
+        var token = separator < 0 ? withoutAt : withoutAt[..separator];
+        var term = separator < 0 ? string.Empty : withoutAt[(separator + 1)..].Trim();
+        return TryResolveSearchScopeAlias(token, out var parsedScope)
+            ? new SearchQueryState(parsedScope, term, string.IsNullOrWhiteSpace(term))
+            : new SearchQueryState(scope, raw, false);
+    }
+
+    private static bool TryResolveSearchScopeAlias(string token, out string scope)
+    {
+        scope = token.Trim().ToLowerInvariant() switch
+        {
+            "all" or "全部" => SearchScopeAll,
+            "web" or "网页" or "搜索" => SearchScopeWeb,
+            "baidu" or "bd" or "百度" => "baidu",
+            "bing" or "必应" => "bing",
+            "google" or "gg" or "谷歌" or "guge" => "google",
+            "extension" or "ext" or "扩展" or "插件" => "extension",
+            "command" or "cmd" or "命令" or "动作" => "command",
+            _ => string.Empty
+        };
+        return scope.Length > 0;
+    }
+
+    private static bool SearchScopeAllows(CommandItem command, string scope)
+    {
+        return scope switch
+        {
+            SearchScopeAll => true,
+            SearchScopeWeb or "baidu" or "bing" or "google" => false,
+            "extension" => command.Source == CommandSource.LocalExtension,
+            "command" => command.Source != CommandSource.LocalExtension,
+            _ => true
+        };
+    }
+
+    private static IEnumerable<CommandItem> BuildWebSearchCommands(SearchQueryState query)
+    {
+        if (query.IsEmpty)
+        {
+            return [];
+        }
+
+        var providers = WebSearchProvider.Defaults
+            .Where(provider => query.ScopeKey is SearchScopeAll or SearchScopeWeb ||
+                               provider.Key.Equals(query.ScopeKey, StringComparison.OrdinalIgnoreCase));
+        return providers.Select(provider => provider.ToCommand(query.Term));
+    }
+
+    private int ScoreSearchResult(CommandItem command, string query)
+    {
+        var score = string.IsNullOrWhiteSpace(query)
+            ? 0
+            : BuildCommandMatch(command, query).Priority;
+        score += command.Source == CommandSource.WebSearch ? 80 : 0;
+        score += _searchUsageMemory.Score(command.ExtensionId);
+        return score;
+    }
+
+    private void UpdateSearchScopeCounts(SearchQueryState parsed)
+    {
+        foreach (var scope in SearchScopes)
+        {
+            var scopedQuery = parsed with { ScopeKey = scope.Key };
+            scope.Count = CountScopeResults(scopedQuery);
+        }
+    }
+
+    private int CountScopeResults(SearchQueryState query)
+    {
+        var commandCount = query.IsEmpty
+            ? _allCommands.Count(command => SearchScopeAllows(command, query.ScopeKey))
+            : _allCommands.Count(command =>
+                SearchScopeAllows(command, query.ScopeKey) &&
+                BuildCommandMatch(command, query.Term).IsMatch);
+        var webCount = BuildWebSearchCommands(query).Count();
+        return commandCount + webCount;
     }
 
     private void MoveSelection(int delta)
@@ -687,6 +878,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var hasExternalInput = !string.IsNullOrWhiteSpace(explicitInput);
         if (runnable.HostedView != null)
         {
+            RecordCommandUsage(runnable);
             if (!string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
             {
                 ShowPanel();
@@ -722,6 +914,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     FileName = executionTarget,
                     UseShellExecute = true
                 });
+                RecordCommandUsage(runnable);
                 HostAssets.AppendRecent(runnable.Title);
                 HostAssets.AppendLog($"Executed command: {runnable.Title} -> {executionTarget}");
                 LastRunMessage = $"已运行：{runnable.Title} -> {executionTarget}";
@@ -1241,15 +1434,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         return
         [
-            new("谷", "谷歌", "输入“谷歌 关键词”后直接搜索。", "搜索", "#FF3B82F6", null, ["谷歌", "google", "guge", "gg", "搜索", "网页搜索"], queryPrefixes: ["谷歌", "guge", "google", "gg"], queryTargetTemplate: "https://www.google.com/search?q={query}"),
             new("设", "设置", "打开设置面板。", "命令", "#FF4F46E5", "oqh://settings", ["设置", "preferences", "config"]),
             new("加", "添加扩展", "添加一个单文件 JSON 扩展。", "命令", "#FF16A34A", "oqh://add-extension", ["扩展", "json", "添加"]),
             new("编", "编辑扩展", "编辑当前选中的本地扩展。", "命令", "#FF0284C7", "oqh://edit-extension", ["扩展", "编辑", "manifest"]),
             new("删", "删除扩展", "删除当前选中的本地扩展。", "命令", "#FFDC2626", "oqh://delete-extension", ["扩展", "删除", "remove"]),
             new("库", "应用库", "打开本地扩展目录。", "目录", "#FFE66A32", HostAssets.ExtensionsPath, ["应用", "扩展", "library"]),
             new("市", "插件市场", "打开本地扩展市场说明页。", "文件", "#FF9FE870", HostAssets.MarketplacePath, ["市场", "商店", "publish"]),
-            new("工", "工作区", "打开开发工作区目录。", "目录", "#FFFACC15", @"F:\Desktop\kaifa", ["工作区", "folder"]),
-            new("Q", "Quicker 动作目录", "打开当前 Quicker 相关开发目录。", "目录", "#FFA78BFA", @"F:\Desktop\kaifa\applanuch", ["quicker", "action"]),
             new("文", "帮助文档", "打开本地帮助文档。", "文件", "#FFFB7185", HostAssets.DocsReadmePath, ["文档", "help"]),
             new("近", "最近运行", "打开最近执行记录。", "文件", "#FF34D399", HostAssets.RecentCommandsPath, ["最近", "history"]),
             new("志", "日志", "打开日志文件。", "文件", "#FF60A5FA", HostAssets.HostLogPath, ["日志", "diagnose"])
@@ -2481,6 +2671,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var result = await ScriptExtensionRunner.ExecuteAsync(runnable, input, launchSource);
         if (result.Success)
         {
+            RecordCommandUsage(runnable);
             HostAssets.AppendRecent(runnable.Title);
             HostAssets.AppendLog($"Executed script extension: {runnable.Title} -> {runnable.EntryPoint}");
             var summary = string.IsNullOrWhiteSpace(result.Output)
@@ -2514,6 +2705,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public void ExecuteCommandExternally(CommandItem command, string? explicitInput = null, string launchSource = "quick-panel")
     {
         _ = ExecuteCommandAsync(ResolveRunnableCommand(command), explicitInput ?? string.Empty, launchSource);
+    }
+
+    private void RecordCommandUsage(CommandItem command)
+    {
+        _searchUsageMemory.Record(command.ExtensionId);
+        SearchUsageMemory.Save(_searchUsageMemory);
+        QueueBackgroundWebDavSync("search-memory");
     }
 
     private static List<string> BuildContextAliases(string processName, string windowTitle)
@@ -2615,6 +2813,96 @@ public sealed record ForegroundAppContext(string ProcessName, string WindowTitle
 }
 
 public readonly record struct CommandMatch(bool IsMatch, int Priority);
+
+public readonly record struct SearchQueryState(string ScopeKey, string Term, bool IsEmpty);
+
+public sealed record WebSearchProvider(
+    string Key,
+    string DisplayName,
+    string Domain,
+    string SearchUrlTemplate,
+    string AccentHex,
+    string[] Aliases)
+{
+    public static readonly IReadOnlyList<WebSearchProvider> Defaults =
+    [
+        new("baidu", "百度", "baidu.com", "https://www.baidu.com/s?wd={query}", "#FF2563EB", ["百度", "baidu", "bd"]),
+        new("bing", "Bing", "bing.com", "https://www.bing.com/search?q={query}", "#FF10B981", ["Bing", "必应", "bing"]),
+        new("google", "谷歌", "google.com", "https://www.google.com/search?q={query}", "#FF3B82F6", ["谷歌", "Google", "google", "gg", "guge"])
+    ];
+
+    public CommandItem ToCommand(string query)
+    {
+        var trimmed = query.Trim();
+        var encoded = Uri.EscapeDataString(trimmed);
+        return new CommandItem(
+            glyph: DisplayName[..1],
+            title: $"{DisplayName} 搜索：{trimmed}",
+            subtitle: $"用 {DisplayName} 搜索网页内容",
+            category: "网页搜索",
+            accentHex: AccentHex,
+            openTarget: SearchUrlTemplate.Replace("{query}", encoded, StringComparison.Ordinal),
+            keywords: Aliases.Concat(["网页", "搜索", trimmed]),
+            source: CommandSource.WebSearch,
+            extensionId: $"web-search-{Key}",
+            iconReference: $"https://www.google.com/s2/favicons?domain={Domain}&sz=64");
+    }
+}
+
+public sealed class SearchScopeTab : INotifyPropertyChanged
+{
+    private bool _isSelected;
+    private int _count;
+
+    public SearchScopeTab(string key, string label, string tooltip, bool isSelected = false)
+    {
+        Key = key;
+        Label = label;
+        Tooltip = tooltip;
+        _isSelected = isSelected;
+    }
+
+    public string Key { get; }
+
+    public string Label { get; }
+
+    public string Tooltip { get; }
+
+    public string DisplayLabel => Count > 0 ? $"{Label}{Count}" : Label;
+
+    public int Count
+    {
+        get => _count;
+        set
+        {
+            if (value == _count)
+            {
+                return;
+            }
+
+            _count = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Count)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayLabel)));
+        }
+    }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (value == _isSelected)
+            {
+                return;
+            }
+
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
 
 public sealed record HostedPluginViewDefinition(
     string Type,
@@ -2775,6 +3063,8 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public string ItemKindLabel => Source == CommandSource.Cloud
         ? "云端"
+        : Source == CommandSource.WebSearch
+            ? "网页"
         : HasHostedView
             ? "插件界面"
             : HasScriptEntry
@@ -2792,6 +3082,7 @@ public sealed class CommandItem : INotifyPropertyChanged
     {
         CommandSource.Cloud => "云端",
         CommandSource.LocalExtension => "本地扩展",
+        CommandSource.WebSearch => "网页搜索",
         _ => "本地"
     };
     private string ArchiveSummary => HasArchive ? "已包含扩展包。" : "当前还没有扩展包。";
@@ -2847,5 +3138,6 @@ public enum CommandSource
 {
     Local,
     LocalExtension,
-    Cloud
+    Cloud,
+    WebSearch
 }

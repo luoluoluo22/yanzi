@@ -30,6 +30,8 @@ public static class HostAssets
 
     public static string WebDavSyncStatePath => Path.Combine(RootPath, "webdav-sync-state.json");
 
+    public static string SearchMemoryPath => Path.Combine(RootPath, "search-memory.json");
+
     public static void EnsureCreated()
     {
         Directory.CreateDirectory(RootPath);

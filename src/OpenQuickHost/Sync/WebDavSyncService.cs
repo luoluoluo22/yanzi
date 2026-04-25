@@ -183,7 +183,31 @@ public sealed class WebDavSyncService
         }
 
         SaveLocalIndex(ClearLocalPendingFlags(mergedIndex));
+        await SyncSearchMemoryAsync(cancellationToken);
         return new WebDavSyncResult(uploaded, pulled, SyncRootDisplay);
+    }
+
+    private async Task SyncSearchMemoryAsync(CancellationToken cancellationToken)
+    {
+        await EnsureCollectionAsync("state", cancellationToken);
+
+        var localMemory = SearchUsageMemory.Load();
+        var remoteBytes = await TryGetBytesAsync("state/search-memory.json", cancellationToken);
+        var remoteMemory = remoteBytes is { Length: > 0 }
+            ? JsonSerializer.Deserialize<SearchUsageMemory>(Encoding.UTF8.GetString(remoteBytes), JsonOptions) ?? new SearchUsageMemory()
+            : new SearchUsageMemory();
+
+        var merged = SearchUsageMemory.Merge(localMemory, remoteMemory);
+        SearchUsageMemory.Save(merged);
+
+        var json = JsonSerializer.Serialize(merged, JsonOptions);
+        using var request = CreateRequest(HttpMethod.Put, "state/search-memory.json");
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            await ThrowWebDavFailureAsync(request, response, cancellationToken);
+        }
     }
 
     private static WebDavSyncIndex LoadLocalIndex()

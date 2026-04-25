@@ -1,4 +1,6 @@
 using System.IO;
+using System.Net.Http;
+using System.Security.Cryptography;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -6,6 +8,11 @@ namespace OpenQuickHost;
 
 internal static class ExtensionIconLibrary
 {
+    private static readonly HttpClient IconHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(3)
+    };
+
     private static readonly IReadOnlyDictionary<string, string> MdiIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["search"] = "M15.5,14H14.71L14.43,13.73C15.41,12.59 16,11.11 16,9.5A6.5,6.5 0 1,0 9.5,16C11.11,16 12.59,15.41 13.73,14.43L14,14.71V15.5L19,20.5L20.5,19L15.5,14M9.5,14C7.01,14 5,11.99 5,9.5C5,7.01 7.01,5 9.5,5C11.99,5 14,7.01 14,9.5C14,11.99 11.99,14 9.5,14Z",
@@ -205,8 +212,12 @@ internal static class ExtensionIconLibrary
             }
 
             if (string.Equals(absoluteUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(absoluteUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(absoluteUri.Scheme, "pack", StringComparison.OrdinalIgnoreCase))
+                string.Equals(absoluteUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
+                return ResolveCachedRemoteImage(absoluteUri);
+            }
+
+            if (string.Equals(absoluteUri.Scheme, "pack", StringComparison.OrdinalIgnoreCase))
             {
                 return absoluteUri.AbsoluteUri;
             }
@@ -227,6 +238,39 @@ internal static class ExtensionIconLibrary
         }
 
         return null;
+    }
+
+    private static string ResolveCachedRemoteImage(Uri uri)
+    {
+        var cacheDirectory = Path.Combine(HostAssets.RootPath, "icon-cache");
+        Directory.CreateDirectory(cacheDirectory);
+        var cachePath = Path.Combine(cacheDirectory, ComputeCacheName(uri.AbsoluteUri));
+        if (File.Exists(cachePath))
+        {
+            return new Uri(cachePath).AbsoluteUri;
+        }
+
+        try
+        {
+            var bytes = IconHttpClient.GetByteArrayAsync(uri).GetAwaiter().GetResult();
+            if (bytes.Length > 0)
+            {
+                File.WriteAllBytes(cachePath, bytes);
+                return new Uri(cachePath).AbsoluteUri;
+            }
+        }
+        catch
+        {
+            // Fall back to direct URL so WPF can still attempt to load the icon.
+        }
+
+        return uri.AbsoluteUri;
+    }
+
+    private static string ComputeCacheName(string value)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+        return hash + ".img";
     }
 
     private static bool TryParseBuiltinReference(string? iconReference, out string library, out string name)

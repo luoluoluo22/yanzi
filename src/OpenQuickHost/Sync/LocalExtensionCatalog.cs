@@ -12,14 +12,40 @@ public static class LocalExtensionCatalog
     public static void EnsureSampleExtension()
     {
         Directory.CreateDirectory(CatalogRootPath);
-        EnsureSampleNotesExtension();
-        EnsureSampleTranslateExtension();
-        EnsureClipboardScriptExtension();
-        EnsureForegroundWindowScriptExtension();
-        EnsureInlineClipboardExtension();
-        EnsureInlineTimestampExtension();
-        EnsureSelectionContextExtension();
-        EnsureCSharpInlineExtension();
+        RemoveLegacySampleExtensions();
+    }
+
+    private static void RemoveLegacySampleExtensions()
+    {
+        var legacyIds = new[]
+        {
+            "sample-notes",
+            "sample-translate",
+            "script-clipboard",
+            "script-foreground-window",
+            "inline-clipboard",
+            "inline-timestamp",
+            "selection-context-demo",
+            "csharp-context-demo"
+        };
+
+        foreach (var id in legacyIds)
+        {
+            var directory = Path.Combine(CatalogRootPath, id);
+            if (!Directory.Exists(directory))
+            {
+                continue;
+            }
+
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+            catch
+            {
+                // Keep startup resilient. The settings page can still show the directory if deletion fails.
+            }
+        }
     }
 
     public static IReadOnlyList<CommandItem> LoadCommands()
