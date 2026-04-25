@@ -41,11 +41,16 @@
 
 ### 1. 下载与安装
 
-从 [Releases](https://github.com/luoluoluo22/yanzi/releases) 页面下载最新版 ZIP 压缩包，解压后直接运行 `Yanzi.exe`，无需安装。
+从 [Releases](https://github.com/luoluoluo22/yanzi/releases) 页面下载最新版安装包：
+
+- 当前版本：[`YanziSetup-0.1.0.exe`](https://github.com/luoluoluo22/yanzi/releases/download/v0.1.0/YanziSetup-0.1.0.exe)
+- Release 页面：<https://github.com/luoluoluo22/yanzi/releases/tag/v0.1.0>
+
+下载后直接运行安装包。安装完成后启动 `Yanzi.exe`，默认使用 `Ctrl+Shift+Space` 呼出启动器。
 
 **系统要求：**
 - Windows 10 / 11（64 位）
-- .NET 9 运行时（首次运行时 Windows 会提示下载）
+- 安装包为自包含构建，不需要用户额外安装 .NET 运行时
 
 ### 构建输出目录约定
 
@@ -83,39 +88,64 @@
 
 **方法二：直接写 JSON 文件**
 
-在应用数据目录的 `Extensions/` 下新建一个子目录，放入 `manifest.json`：
+在应用运行目录的 `Extensions/` 下新建一个子目录，放入 `manifest.json`：
 
 ```json
 {
-  "id": "my-extension",
-  "name": "打开项目目录",
+  "id": "open-downloads",
+  "name": "打开下载目录",
   "version": "0.1.0",
   "category": "目录",
-  "keywords": ["project", "项目", "代码"],
-  "openTarget": "C:\\Users\\你的用户名\\Desktop\\my-project"
+  "description": "打开当前用户的下载目录。",
+  "keywords": ["downloads", "下载", "xiazai"],
+  "icon": "mdi:folder",
+  "openTarget": "C:\\Users\\你的用户名\\Downloads"
 }
 ```
 
-重启启动器或手动刷新后即可命中。
+重启启动器或在设置页刷新扩展统计后即可命中。
 
-**方法三：内联 C# 动作**
+**方法三：搜索类扩展**
+
+使用 `queryPrefixes` 和 `queryTargetTemplate`。启动器输入 `gg openai`，即可用默认浏览器打开搜索页。
 
 ```json
 {
-  "id": "csharp-echo",
-  "name": "C# 输入回显",
+  "id": "google-search",
+  "name": "谷歌搜索",
+  "version": "0.1.0",
+  "category": "搜索",
+  "description": "用默认浏览器打开 Google 搜索。",
+  "keywords": ["google", "谷歌", "gg", "guge"],
+  "icon": "mdi:search",
+  "queryPrefixes": ["谷歌", "google", "gg", "guge"],
+  "queryTargetTemplate": "https://www.google.com/search?q={query}"
+}
+```
+
+**方法四：内联 C# 动作**
+
+快捷面板触发扩展时，燕子会在点击扩展后抓取当前选中的文本或文件路径，并写入 `context.InputText`。
+
+```json
+{
+  "id": "csharp-selection-summary",
+  "name": "选中内容摘要",
   "version": "0.1.0",
   "category": "C#",
-  "keywords": ["csharp", "dotnet"],
+  "description": "读取快捷面板传入的选中文本。",
+  "keywords": ["csharp", "selection", "选中", "摘要"],
+  "icon": "mdi:code",
   "runtime": "csharp",
   "entryMode": "inline",
+  "permissions": ["context.read"],
   "script": {
-    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到输入\\\" : context.InputText.Trim());\\n    }\\n}"
+    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var text = string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到选中内容。\\\" : context.InputText.Trim();\\n        return Task.FromResult($\\\"来源: {context.LaunchSource}\\\\n长度: {text.Length}\\\\n\\\\n{text}\\\");\\n    }\\n}"
   }
 }
 ```
 
-**方法四：内联 PowerShell 脚本**
+**方法五：内联 PowerShell 脚本**
 
 ```json
 {
@@ -123,36 +153,65 @@
   "name": "读取剪贴板",
   "version": "0.1.0",
   "category": "脚本",
+  "description": "读取当前剪贴板文本。",
   "keywords": ["clipboard", "剪贴板"],
+  "icon": "mdi:clipboard",
   "runtime": "powershell",
   "entryMode": "inline",
+  "permissions": ["clipboard.read"],
   "script": {
-    "source": "param([string]$InputText = '')\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\nGet-Clipboard -Raw"
+    "source": "param([string]$InputText = \\\"\\\", [string]$ContextPath = \\\"\\\")\\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\\n$text = Get-Clipboard -Raw\\nif ([string]::IsNullOrWhiteSpace($text)) { Write-Output \\\"当前剪贴板为空。\\\" } else { Write-Output $text.Trim() }"
   }
 }
 ```
 
-### 4. 参数化命令
+**方法六：宿主界面扩展**
 
-在 `manifest.json` 中声明前缀和 URL 模板：
+适合翻译、文本处理、查询等需要输入区和结果区的工具。`actionType = "script"` 时，按钮会执行当前扩展的 C# 或 PowerShell 入口，并把结果显示在右侧。
 
 ```json
 {
-  "id": "google-search",
-  "name": "谷歌搜索",
-  "keywords": ["谷歌", "gg", "guge", "google"],
-  "queryPrefixes": ["谷歌", "gg", "guge", "google"],
-  "queryTargetTemplate": "https://www.google.com/search?q={query}"
+  "id": "text-workbench",
+  "name": "文本处理台",
+  "version": "0.1.0",
+  "category": "工具",
+  "description": "在宿主窗口中输入文本并执行 C# 动作。",
+  "keywords": ["text", "文本", "workbench"],
+  "icon": "mdi:terminal",
+  "runtime": "csharp",
+  "entryMode": "inline",
+  "hostedView": {
+    "type": "split-workbench",
+    "title": "文本处理台",
+    "description": "左侧输入文本，右侧显示执行结果。",
+    "inputLabel": "输入",
+    "inputPlaceholder": "输入要处理的文本...",
+    "outputLabel": "结果",
+    "actionButtonText": "执行",
+    "actionType": "script",
+    "emptyState": "结果会显示在这里。"
+  },
+  "script": {
+    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText.ToUpperInvariant());\\n    }\\n}"
+  }
 }
 ```
 
-启动器输入 `gg openai`，即可用默认浏览器打开对应搜索页。
+更多示例见 [扩展编写指南](docs/extension-authoring-guide.md)。
 
-### 5. 云同步
+### 4. 云同步
 
-1. 在设置窗口登录账号（需配置你自己的 Cloudflare Worker）
-2. 新增或修改扩展后，客户端自动同步扩展元数据到云端
-3. 其他设备登录同一账号后可一键拉取全部扩展记录
+当前客户端支持两类同步：
+
+- Cloudflare 账号同步：用于账号、分享扩展、坚果云配置等账户级信息。
+- 坚果云 / WebDAV 个人扩展同步：用于低频同步个人扩展包，适合多设备恢复和备份。
+
+推荐流程：
+
+1. 在设置窗口登录燕子云账号。
+2. 在“同步”设置里配置坚果云 / WebDAV。
+3. 点击“立即同步”完成首轮上传或拉取。
+4. 后续新建、修改、删除扩展后，客户端会按低频策略进行后台同步。
 
 ---
 
