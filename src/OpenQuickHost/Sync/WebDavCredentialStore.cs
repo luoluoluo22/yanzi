@@ -7,7 +7,7 @@ namespace OpenQuickHost.Sync;
 public static class WebDavCredentialStore
 {
     public static string CredentialPath =>
-        Path.Combine(AppContext.BaseDirectory, "webdavcredentials.dat");
+        HostAssets.ResolveDataFilePath("webdavcredentials.dat");
 
     public static SavedWebDavCredential? Load()
     {

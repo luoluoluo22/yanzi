@@ -7,45 +7,56 @@ namespace OpenQuickHost.Sync;
 
 public static class LocalExtensionCatalog
 {
+    private static readonly HashSet<string> HiddenBuiltInSampleIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "sample-notes",
+        "sample-translate",
+        "script-clipboard",
+        "script-foreground-window",
+        "inline-clipboard",
+        "inline-timestamp",
+        "selection-context-demo",
+        "csharp-context-demo"
+    };
+
     public static string CatalogRootPath => ExtensionPackageService.ExtensionsRootPath;
 
     public static void EnsureSampleExtension()
     {
         Directory.CreateDirectory(CatalogRootPath);
-        RemoveLegacySampleExtensions();
+        EnsureDefaultWebSearchExtensions();
     }
 
-    private static void RemoveLegacySampleExtensions()
+    private static void EnsureDefaultWebSearchExtensions()
     {
-        var legacyIds = new[]
+        if (Directory.EnumerateFiles(CatalogRootPath, "manifest.json", SearchOption.AllDirectories)
+            .Any(path => Path.GetFileName(Path.GetDirectoryName(path))?.StartsWith("web-search-", StringComparison.OrdinalIgnoreCase) == true))
         {
-            "sample-notes",
-            "sample-translate",
-            "script-clipboard",
-            "script-foreground-window",
-            "inline-clipboard",
-            "inline-timestamp",
-            "selection-context-demo",
-            "csharp-context-demo"
-        };
-
-        foreach (var id in legacyIds)
-        {
-            var directory = Path.Combine(CatalogRootPath, id);
-            if (!Directory.Exists(directory))
-            {
-                continue;
-            }
-
-            try
-            {
-                Directory.Delete(directory, recursive: true);
-            }
-            catch
-            {
-                // Keep startup resilient. The settings page can still show the directory if deletion fails.
-            }
+            return;
         }
+
+        EnsureWebSearchExtension("web-search-baidu", "百度搜索", "百度网页搜索。", "https://www.baidu.com/s?wd={query}", ["百度", "baidu", "bd"], "https://www.baidu.com/favicon.ico");
+        EnsureWebSearchExtension("web-search-bing", "Bing 搜索", "Bing 网页搜索。", "https://www.bing.com/search?q={query}", ["Bing", "必应", "bing"], "https://www.bing.com/favicon.ico");
+        EnsureWebSearchExtension("web-search-google", "谷歌搜索", "Google 网页搜索。", "https://www.google.com/search?q={query}", ["谷歌", "Google", "google", "gg", "guge"], "https://www.google.com/favicon.ico");
+    }
+
+    private static void EnsureWebSearchExtension(string id, string name, string description, string targetTemplate, string[] prefixes, string icon)
+    {
+        var extensionDirectory = Path.Combine(CatalogRootPath, id);
+        Directory.CreateDirectory(extensionDirectory);
+        var manifest = new LocalExtensionManifest
+        {
+            Id = id,
+            Name = name,
+            Version = "1.0.0",
+            Category = "网页搜索",
+            Description = description,
+            Keywords = prefixes.Concat(["网页", "搜索"]).ToArray(),
+            QueryPrefixes = prefixes,
+            QueryTargetTemplate = targetTemplate,
+            Icon = icon
+        };
+        EnsureSampleManifest(Path.Combine(extensionDirectory, "manifest.json"), manifest, existing => existing);
     }
 
     public static IReadOnlyList<CommandItem> LoadCommands()
@@ -67,6 +78,11 @@ public static class LocalExtensionCatalog
                     continue;
                 }
 
+                if (HiddenBuiltInSampleIds.Contains(manifest.Id))
+                {
+                    continue;
+                }
+
                 commands.Add(new CommandItem(
                     glyph: GetDefaultGlyph(manifest, "E"),
                     title: manifest.Name,
@@ -79,7 +95,7 @@ public static class LocalExtensionCatalog
                     extensionId: manifest.Id,
                     declaredVersion: manifest.Version ?? "0.1.0",
                     extensionDirectoryPath: Path.GetDirectoryName(manifestPath),
-                    hostedView: manifest.HostedView?.ToDefinition(),
+                    hostedView: manifest.HostedViewXaml?.ToDefinition() ?? manifest.HostedViewV2?.ToDefinition() ?? manifest.HostedView?.ToDefinition(),
                     globalShortcut: manifest.GlobalShortcut,
                     hotkeyBehavior: manifest.HotkeyBehavior,
                     runtime: manifest.Runtime,
@@ -87,7 +103,9 @@ public static class LocalExtensionCatalog
                     permissions: manifest.Permissions ?? [],
                     entryMode: manifest.EntryMode,
                     inlineScriptSource: manifest.Script?.Source,
-                    iconReference: manifest.Icon));
+                    iconReference: manifest.Icon,
+                    queryPrefixes: manifest.QueryPrefixes,
+                    queryTargetTemplate: manifest.QueryTargetTemplate));
             }
             catch
             {
@@ -574,7 +592,7 @@ public static class YanziAction
             extensionId: manifest.Id,
             declaredVersion: manifest.Version ?? "0.1.0",
             extensionDirectoryPath: extensionDirectory,
-            hostedView: manifest.HostedView?.ToDefinition(),
+            hostedView: manifest.HostedViewXaml?.ToDefinition() ?? manifest.HostedViewV2?.ToDefinition() ?? manifest.HostedView?.ToDefinition(),
             globalShortcut: manifest.GlobalShortcut,
             hotkeyBehavior: manifest.HotkeyBehavior,
             runtime: manifest.Runtime,
@@ -582,7 +600,9 @@ public static class YanziAction
             permissions: manifest.Permissions ?? [],
             entryMode: manifest.EntryMode,
             inlineScriptSource: manifest.Script?.Source,
-            iconReference: manifest.Icon);
+            iconReference: manifest.Icon,
+            queryPrefixes: manifest.QueryPrefixes,
+            queryTargetTemplate: manifest.QueryTargetTemplate);
     }
 
     public static string LoadManifestJson(string extensionId)
@@ -829,9 +849,17 @@ public sealed record LocalExtensionManifest
 
     public string? OpenTarget { get; init; }
 
+    public string[]? QueryPrefixes { get; init; }
+
+    public string? QueryTargetTemplate { get; init; }
+
     public string? Icon { get; init; }
 
     public LocalExtensionHostedViewManifest? HostedView { get; init; }
+
+    public LocalExtensionHostedViewV2Manifest? HostedViewV2 { get; init; }
+
+    public LocalExtensionHostedViewXamlManifest? HostedViewXaml { get; init; }
 
     public string? GlobalShortcut { get; init; }
 
@@ -875,6 +903,14 @@ public sealed class LocalExtensionHostedViewManifest
 
     public string? EmptyState { get; init; }
 
+    public double? WindowWidth { get; init; }
+
+    public double? WindowHeight { get; init; }
+
+    public double? MinWindowWidth { get; init; }
+
+    public double? MinWindowHeight { get; init; }
+
     public HostedPluginViewDefinition ToDefinition()
     {
         return new HostedPluginViewDefinition(
@@ -887,6 +923,176 @@ public sealed class LocalExtensionHostedViewManifest
             ActionButtonText,
             ActionType,
             OutputTemplate,
-            EmptyState);
+            EmptyState,
+            WindowWidth,
+            WindowHeight,
+            MinWindowWidth,
+            MinWindowHeight,
+            null,
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            []);
+    }
+}
+
+public sealed class LocalExtensionHostedViewV2Manifest
+{
+    public string Type { get; init; } = "single-pane";
+
+    public string? Title { get; init; }
+
+    public string? Description { get; init; }
+
+    public LocalExtensionHostedViewWindowManifest? Window { get; init; }
+
+    public Dictionary<string, string>? State { get; init; }
+
+    public LocalExtensionHostedViewV2ComponentManifest[]? Components { get; init; }
+
+    public HostedPluginViewDefinition ToDefinition()
+    {
+        var window = Window;
+        return new HostedPluginViewDefinition(
+            Type,
+            Title,
+            Description,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            window?.Width,
+            window?.Height,
+            window?.MinWidth,
+            window?.MinHeight,
+            null,
+            new Dictionary<string, string>(State ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
+            Components?.Select(component => component.ToDefinition()).ToArray() ?? []);
+    }
+}
+
+public sealed class LocalExtensionHostedViewXamlManifest
+{
+    public string Type { get; init; } = "xaml";
+
+    public string? Title { get; init; }
+
+    public string? Description { get; init; }
+
+    public LocalExtensionHostedViewWindowManifest? Window { get; init; }
+
+    public Dictionary<string, string>? State { get; init; }
+
+    public string Xaml { get; init; } = string.Empty;
+
+    public HostedPluginViewDefinition ToDefinition()
+    {
+        var window = Window;
+        return new HostedPluginViewDefinition(
+            Type,
+            Title,
+            Description,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            window?.Width,
+            window?.Height,
+            window?.MinWidth,
+            window?.MinHeight,
+            Xaml,
+            new Dictionary<string, string>(State ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
+            []);
+    }
+}
+
+public sealed class LocalExtensionHostedViewWindowManifest
+{
+    public double? Width { get; init; }
+
+    public double? Height { get; init; }
+
+    public double? MinWidth { get; init; }
+
+    public double? MinHeight { get; init; }
+}
+
+public sealed class LocalExtensionHostedViewV2ComponentManifest
+{
+    public string Id { get; init; } = Guid.NewGuid().ToString("N");
+
+    public string Type { get; init; } = "text";
+
+    public string? Label { get; init; }
+
+    public string? Text { get; init; }
+
+    public string? Bind { get; init; }
+
+    public string? Placeholder { get; init; }
+
+    public string? Region { get; init; }
+
+    public LocalExtensionHostedViewV2ActionManifest[]? Actions { get; init; }
+
+    public HostedViewComponentDefinition ToDefinition()
+    {
+        return new HostedViewComponentDefinition(
+            Id,
+            Type,
+            Label,
+            Text,
+            Bind,
+            Placeholder,
+            Region,
+            Actions?.Select(action => action.ToDefinition()).ToArray() ?? []);
+    }
+}
+
+public sealed class LocalExtensionHostedViewV2ActionManifest
+{
+    public string Type { get; init; } = "setState";
+
+    public string? Path { get; init; }
+
+    public string? Value { get; init; }
+
+    public string? ValueFrom { get; init; }
+
+    public string? InputFrom { get; init; }
+
+    public string? OutputTo { get; init; }
+
+    public string? SuccessMessage { get; init; }
+
+    public bool Append { get; init; }
+
+    public string? Separator { get; init; }
+
+    public string? Key { get; init; }
+
+    public string? Scope { get; init; }
+
+    public string? DefaultValue { get; init; }
+
+    public HostedViewActionDefinition ToDefinition()
+    {
+        return new HostedViewActionDefinition(
+            Type,
+            Path,
+            Value,
+            ValueFrom,
+            InputFrom,
+            OutputTo,
+            SuccessMessage,
+            Append,
+            Separator,
+            Key,
+            Scope,
+            DefaultValue);
     }
 }

@@ -9,7 +9,7 @@ namespace OpenQuickHost.Sync;
 public static class SecureCredentialStore
 {
     public static string CredentialPath =>
-        Path.Combine(AppContext.BaseDirectory, "synccredentials.dat");
+        HostAssets.ResolveDataFilePath("synccredentials.dat");
 
     public static SavedCredential? Load()
     {

@@ -39,6 +39,6 @@ public static class StartupRegistrationService
             throw new InvalidOperationException("无法确定当前程序路径，不能设置开机自启。");
         }
 
-        return $"\"{processPath}\"";
+        return $"\"{processPath}\" --tray";
     }
 }

@@ -11,8 +11,10 @@ using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Windows.Controls;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.IO;
 using System.Windows.Threading;
+using System.Windows.Markup;
 using Forms = System.Windows.Forms;
 
 namespace OpenQuickHost;
@@ -44,6 +46,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _hostedViewInput = string.Empty;
     private string _hostedViewOutput = string.Empty;
     private string _hostedViewStatus = "准备就绪。";
+    private object? _hostedViewDynamicContent;
     private string _lastRunMessage = "准备就绪。输入关键字后按 Enter 运行。";
     private string _syncStatus = "云同步未初始化。";
     private HwndSource? _source;
@@ -55,10 +58,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _backgroundWebDavSyncRunning;
     private bool _backgroundWebDavSyncRequested;
     private SearchScopeTab? _selectedSearchScope;
+    private bool _listenerServicesPaused;
+    private readonly double _defaultWindowWidth;
+    private readonly double _defaultWindowHeight;
+    private readonly double _defaultMinWindowWidth;
+    private readonly double _defaultMinWindowHeight;
+    private readonly Dictionary<string, List<Action<string>>> _hostedViewStateBindings = new(StringComparer.OrdinalIgnoreCase);
+    private System.Windows.Controls.Control? _hostedViewPreferredFocusControl;
+    private Window? _hostedViewEditorWindowToRestore;
 
     public MainWindow()
     {
         InitializeComponent();
+        _defaultWindowWidth = Width;
+        _defaultWindowHeight = Height;
+        _defaultMinWindowWidth = MinWidth;
+        _defaultMinWindowHeight = MinHeight;
         ApplyWindowIcon();
         HostAssets.EnsureCreated();
         _syncOptions = SyncConfigLoader.Load();
@@ -83,6 +98,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DataContext = this;
         ApplyFilter(string.Empty);
         Loaded += MainWindow_Loaded;
+        Activated += MainWindow_Activated;
+        IsVisibleChanged += MainWindow_IsVisibleChanged;
         SourceInitialized += MainWindow_SourceInitialized;
         Closing += MainWindow_Closing;
         StateChanged += MainWindow_StateChanged;
@@ -210,6 +227,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string HostedViewActionButtonText => _activeHostedView?.Definition.ActionButtonText ?? "执行";
 
+    public bool IsHostedViewDynamic => _activeHostedView?.Definition.UsesDynamicLayout == true;
+
+    public Visibility HostedViewLegacyVisibility => IsHostedViewDynamic ? Visibility.Collapsed : Visibility.Visible;
+
+    public Visibility HostedViewDynamicVisibility => IsHostedViewDynamic ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility HostedViewFooterActionVisibility => IsHostedViewDynamic ? Visibility.Collapsed : Visibility.Visible;
+
     public string HostedViewInput
     {
         get => _hostedViewInput;
@@ -255,6 +280,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public object? HostedViewDynamicContent
+    {
+        get => _hostedViewDynamicContent;
+        set
+        {
+            if (ReferenceEquals(value, _hostedViewDynamicContent))
+            {
+                return;
+            }
+
+            _hostedViewDynamicContent = value;
+            OnPropertyChanged();
+        }
+    }
+
     public CommandItem? EffectiveSelectedCommand =>
         SelectedCommand == null
             ? null
@@ -289,20 +329,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         SearchBox.Focus();
+        SetSearchScopePopupOpen(true);
         StartBackgroundWebDavSync();
 
         if (_cloudSyncClient == null)
         {
-            InputHookService.Start(
-                () => _quickPanel?.ShowAtMouse(),
-                () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease());
+            StartMousePanelService();
             QueueBackgroundWebDavSync("startup");
             return;
         }
 
-        InputHookService.Start(
-            () => _quickPanel?.ShowAtMouse(),
-            () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease());
+        StartMousePanelService();
         if (!AppSettingsStore.Load().RefreshCloudOnStartup)
         {
             QueueBackgroundWebDavSync("startup");
@@ -349,6 +386,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SearchBox.Focus();
             SearchBox.CaretIndex = SearchBox.Text.Length;
         }
+    }
+
+    private void SearchScopeAddButton_Click(object sender, RoutedEventArgs e)
+    {
+        var command = ShowJsonExtensionEditorAsync(CreateWebSearchTemplateJson(), false);
+        if (command != null)
+        {
+            LastRunMessage = $"已添加网页搜索扩展：{command.Title}";
+            QueueBackgroundWebDavSync("web-search-extension-add");
+        }
+
+        SearchBox.Focus();
+        SearchBox.CaretIndex = SearchBox.Text.Length;
     }
 
     private void CommandList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -666,19 +716,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         UpdateSearchScopeCounts(parsed);
         _activeQueryArgument = string.Empty;
         var sourceCommands = parsed.IsEmpty
-            ? _allCommands.Where(command => SearchScopeAllows(command, parsed.ScopeKey))
+            ? _allCommands
+                .Where(command => IsExtensionEnabled(command.ExtensionId))
+                .Where(command => SearchScopeAllows(command, parsed.ScopeKey))
             : _allCommands
+                .Where(command => IsExtensionEnabled(command.ExtensionId))
                 .Where(command => SearchScopeAllows(command, parsed.ScopeKey))
                 .Select(command => new
                 {
                     Command = command,
-                    Match = BuildCommandMatch(command, parsed.Term)
+                    Match = BuildCommandMatch(command, parsed.Term, AllowsRawQueryArgument(parsed.ScopeKey))
                 })
                 .Where(x => x.Match.IsMatch)
                 .Select(x => x.Command);
 
         var matches = sourceCommands
-            .Concat(BuildWebSearchCommands(parsed))
             .DistinctBy(command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
             .Select(command => new
             {
@@ -789,24 +841,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return scope switch
         {
             SearchScopeAll => true,
-            SearchScopeWeb or "baidu" or "bing" or "google" => false,
+            SearchScopeWeb => command.Source == CommandSource.LocalExtension &&
+                              command.Category.Contains("网页搜索", StringComparison.OrdinalIgnoreCase),
+            "baidu" => command.ExtensionId.Contains("baidu", StringComparison.OrdinalIgnoreCase) ||
+                       command.Keywords.Any(keyword => keyword.Contains("baidu", StringComparison.OrdinalIgnoreCase) || keyword.Contains("百度", StringComparison.OrdinalIgnoreCase)),
+            "bing" => command.ExtensionId.Contains("bing", StringComparison.OrdinalIgnoreCase) ||
+                      command.Keywords.Any(keyword => keyword.Contains("bing", StringComparison.OrdinalIgnoreCase) || keyword.Contains("必应", StringComparison.OrdinalIgnoreCase)),
+            "google" => command.ExtensionId.Contains("google", StringComparison.OrdinalIgnoreCase) ||
+                        command.Keywords.Any(keyword => keyword.Contains("google", StringComparison.OrdinalIgnoreCase) || keyword.Contains("谷歌", StringComparison.OrdinalIgnoreCase)),
             "extension" => command.Source == CommandSource.LocalExtension,
             "command" => command.Source != CommandSource.LocalExtension,
             _ => true
         };
-    }
-
-    private static IEnumerable<CommandItem> BuildWebSearchCommands(SearchQueryState query)
-    {
-        if (query.IsEmpty)
-        {
-            return [];
-        }
-
-        var providers = WebSearchProvider.Defaults
-            .Where(provider => query.ScopeKey is SearchScopeAll or SearchScopeWeb ||
-                               provider.Key.Equals(query.ScopeKey, StringComparison.OrdinalIgnoreCase));
-        return providers.Select(provider => provider.ToCommand(query.Term));
     }
 
     private int ScoreSearchResult(CommandItem command, string query)
@@ -831,13 +877,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int CountScopeResults(SearchQueryState query)
     {
         var commandCount = query.IsEmpty
-            ? _allCommands.Count(command => SearchScopeAllows(command, query.ScopeKey))
+            ? 0
             : _allCommands.Count(command =>
+                IsExtensionEnabled(command.ExtensionId) &&
                 SearchScopeAllows(command, query.ScopeKey) &&
-                BuildCommandMatch(command, query.Term).IsMatch);
-        var webCount = BuildWebSearchCommands(query).Count();
-        return commandCount + webCount;
+                BuildCommandMatch(command, query.Term, AllowsRawQueryArgument(query.ScopeKey)).IsMatch);
+        return commandCount;
     }
+
+    private static bool AllowsRawQueryArgument(string scopeKey) =>
+        scopeKey is SearchScopeWeb or "baidu" or "bing" or "google";
 
     private void MoveSelection(int delta)
     {
@@ -870,7 +919,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        await ExecuteCommandAsync(ResolveRunnableCommand(SelectedCommand));
+        var runnable = ResolveRunnableCommand(SelectedCommand);
+        var explicitInput = runnable.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
+            ? _activeQueryArgument
+            : null;
+        await ExecuteCommandAsync(runnable, explicitInput);
     }
 
     private async Task ExecuteCommandAsync(CommandItem runnable, string? explicitInput = null, string launchSource = "launcher")
@@ -959,12 +1012,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _activeHostedView = new HostedPluginSession(command, command.HostedView);
+        ApplyHostedViewWindowMetrics(command.HostedView);
         HostedViewInput = (initialInput ?? string.Empty).Trim();
+        InitializeHostedViewState(initialInput);
+        HostedViewDynamicContent = command.HostedView.UsesDynamicLayout
+            ? BuildHostedViewDynamicContent(_activeHostedView)
+            : null;
         HostedViewOutput = command.HostedView.EmptyState ?? "等待插件输出。";
         HostedViewStatus = string.IsNullOrWhiteSpace(HostedViewInput)
             ? $"已进入 {command.Title}。输入内容后可直接在当前窗口完成操作。"
             : $"已进入 {command.Title}，并填入外部选中内容。";
         OnPropertyChanged(nameof(IsHostedViewOpen));
+        OnPropertyChanged(nameof(IsHostedViewDynamic));
+        OnPropertyChanged(nameof(HostedViewLegacyVisibility));
+        OnPropertyChanged(nameof(HostedViewDynamicVisibility));
+        OnPropertyChanged(nameof(HostedViewFooterActionVisibility));
         OnPropertyChanged(nameof(HostedViewTitle));
         OnPropertyChanged(nameof(HostedViewSubtitle));
         OnPropertyChanged(nameof(HostedViewCommandLabel));
@@ -973,7 +1035,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(HostedViewInputPlaceholder));
         OnPropertyChanged(nameof(HostedViewActionButtonText));
         LastRunMessage = $"已打开插件视图：{command.Title}";
-        Dispatcher.BeginInvoke(() => HostedViewInputBox.Focus());
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_hostedViewPreferredFocusControl != null)
+            {
+                _hostedViewPreferredFocusControl.Focus();
+                return;
+            }
+
+            HostedViewInputBox.Focus();
+        });
     }
 
     private void CloseHostedView()
@@ -985,10 +1056,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var title = _activeHostedView.Command.Title;
         _activeHostedView = null;
+        _hostedViewStateBindings.Clear();
+        _hostedViewPreferredFocusControl = null;
         HostedViewInput = string.Empty;
         HostedViewOutput = string.Empty;
+        HostedViewDynamicContent = null;
         HostedViewStatus = "已关闭插件视图。";
         OnPropertyChanged(nameof(IsHostedViewOpen));
+        OnPropertyChanged(nameof(IsHostedViewDynamic));
+        OnPropertyChanged(nameof(HostedViewLegacyVisibility));
+        OnPropertyChanged(nameof(HostedViewDynamicVisibility));
+        OnPropertyChanged(nameof(HostedViewFooterActionVisibility));
         OnPropertyChanged(nameof(HostedViewTitle));
         OnPropertyChanged(nameof(HostedViewSubtitle));
         OnPropertyChanged(nameof(HostedViewCommandLabel));
@@ -996,8 +1074,45 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(HostedViewOutputLabel));
         OnPropertyChanged(nameof(HostedViewInputPlaceholder));
         OnPropertyChanged(nameof(HostedViewActionButtonText));
+        RestoreHostedViewWindowMetrics();
         LastRunMessage = $"已返回命令列表：{title}";
+        if (_hostedViewEditorWindowToRestore != null)
+        {
+            var editorWindow = _hostedViewEditorWindowToRestore;
+            _hostedViewEditorWindowToRestore = null;
+            editorWindow.Show();
+            editorWindow.Activate();
+        }
         SearchBox.Focus();
+    }
+
+    public async Task PreviewHostedViewForTestAsync(
+        CommandItem command,
+        string initialInput = "测试输入",
+        Window? editorWindowToRestore = null)
+    {
+        if (command.HostedView == null)
+        {
+            return;
+        }
+
+        _hostedViewEditorWindowToRestore = editorWindowToRestore;
+        ShowPanel();
+        Activate();
+        OpenHostedView(command, initialInput);
+        if (command.HostedView.UsesDynamicLayout)
+        {
+            return;
+        }
+
+        if (UsesScriptHostedView(command.HostedView))
+        {
+            await RefreshHostedViewOutputAsync();
+        }
+        else if (!string.IsNullOrWhiteSpace(initialInput))
+        {
+            RefreshHostedViewOutput();
+        }
     }
 
     private void RefreshHostedViewOutput()
@@ -1075,6 +1190,797 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static bool UsesScriptHostedView(HostedPluginViewDefinition definition)
     {
         return string.Equals(definition.ActionType, "script", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void InitializeHostedViewState(string? initialInput)
+    {
+        if (_activeHostedView == null)
+        {
+            return;
+        }
+
+        _activeHostedView.State.Clear();
+        _hostedViewStateBindings.Clear();
+        _hostedViewPreferredFocusControl = null;
+
+        foreach (var pair in _activeHostedView.Definition.InitialState)
+        {
+            _activeHostedView.State[pair.Key] = pair.Value ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(initialInput))
+        {
+            return;
+        }
+
+        if (_activeHostedView.State.ContainsKey("input"))
+        {
+            _activeHostedView.State["input"] = initialInput.Trim();
+            return;
+        }
+
+        var firstBoundTextarea = _activeHostedView.Definition.Components
+            .FirstOrDefault(component =>
+                string.Equals(component.Type, "textarea", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(component.Bind));
+        if (firstBoundTextarea != null && !string.IsNullOrWhiteSpace(firstBoundTextarea.Bind))
+        {
+            _activeHostedView.State[firstBoundTextarea.Bind] = initialInput.Trim();
+        }
+    }
+
+    private UIElement BuildHostedViewDynamicContent(HostedPluginSession session)
+    {
+        if (!string.IsNullOrWhiteSpace(session.Definition.XamlTemplate))
+        {
+            return BuildHostedViewXamlContent(session);
+        }
+
+        return ResolveHostedViewLayout(session.Definition) switch
+        {
+            "split-horizontal" => BuildSplitHorizontalHostedView(session),
+            _ => BuildSinglePaneHostedView(session)
+        };
+    }
+
+    private UIElement BuildHostedViewXamlContent(HostedPluginSession session)
+    {
+        try
+        {
+            var parserContext = CreateHostedViewXamlParserContext();
+            var xaml = NormalizeHostedViewXaml(session.Definition.XamlTemplate!);
+            var root = XamlReader.Parse(xaml, parserContext) switch
+            {
+                Window window => ExtractHostedViewWindowContent(window),
+                System.Windows.Controls.UserControl userControl => ExtractHostedViewUserControlContent(userControl),
+                FrameworkElement element => element,
+                _ => null
+            };
+
+            if (root == null)
+            {
+                return BuildHostedViewXamlError("XAML 根元素必须是 Window、UserControl 或 FrameworkElement。");
+            }
+
+            root.DataContext = session.BindingContext;
+            AttachHostedViewActions(root, session);
+            return root;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"HostedViewXaml parse failed: {ex}");
+            return BuildHostedViewXamlError(ex.Message);
+        }
+    }
+
+    private static ParserContext CreateHostedViewXamlParserContext()
+    {
+        var assemblyName = typeof(HostedViewBridge).Assembly.GetName().Name ?? "Yanzi";
+        var parserContext = new ParserContext
+        {
+            XamlTypeMapper = new XamlTypeMapper(Array.Empty<string>())
+        };
+        parserContext.XamlTypeMapper.AddMappingProcessingInstruction("oqh", "OpenQuickHost", assemblyName);
+        parserContext.XmlnsDictionary.Add(string.Empty, "http://schemas.microsoft.com/winfx/2006/xaml/presentation");
+        parserContext.XmlnsDictionary.Add("x", "http://schemas.microsoft.com/winfx/2006/xaml");
+        parserContext.XmlnsDictionary.Add("oqh", $"clr-namespace:OpenQuickHost;assembly={assemblyName}");
+        return parserContext;
+    }
+
+    private static string NormalizeHostedViewXaml(string xaml)
+    {
+        var assemblyName = typeof(HostedViewBridge).Assembly.GetName().Name ?? "Yanzi";
+        const string plainNamespace = "xmlns:oqh=\"clr-namespace:OpenQuickHost\"";
+        var qualifiedNamespace = $"xmlns:oqh=\"clr-namespace:OpenQuickHost;assembly={assemblyName}\"";
+        var normalized = xaml;
+
+        normalized = normalized.Replace(
+            "xmlns=\"[http://schemas.microsoft.com/winfx/2006/xaml/presentation](http://schemas.microsoft.com/winfx/2006/xaml/presentation)\"",
+            "xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"",
+            StringComparison.Ordinal);
+        normalized = normalized.Replace(
+            "xmlns:x=\"[http://schemas.microsoft.com/winfx/2006/xaml](http://schemas.microsoft.com/winfx/2006/xaml)\"",
+            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"",
+            StringComparison.Ordinal);
+
+        return normalized.Contains(plainNamespace, StringComparison.Ordinal)
+            ? normalized.Replace(plainNamespace, qualifiedNamespace, StringComparison.Ordinal)
+            : normalized;
+    }
+
+    private FrameworkElement ExtractHostedViewWindowContent(Window window)
+    {
+        if (window.Content is not FrameworkElement content)
+        {
+            throw new InvalidOperationException("Window 类型的 XAML 必须包含可视内容。");
+        }
+
+        if (!double.IsNaN(window.Width) && window.Width > 0)
+        {
+            Width = Math.Max(window.Width, MinWidth);
+        }
+
+        if (!double.IsNaN(window.Height) && window.Height > 0)
+        {
+            Height = Math.Max(window.Height, MinHeight);
+        }
+
+        if (!double.IsNaN(window.MinWidth) && window.MinWidth > 0)
+        {
+            MinWidth = Math.Max(window.MinWidth, 320);
+        }
+
+        if (!double.IsNaN(window.MinHeight) && window.MinHeight > 0)
+        {
+            MinHeight = Math.Max(window.MinHeight, 240);
+        }
+
+        window.Content = null;
+        if (window.Resources.Count > 0)
+        {
+            content.Resources.MergedDictionaries.Add(new ResourceDictionary
+            {
+                MergedDictionaries = { window.Resources }
+            });
+        }
+
+        return content;
+    }
+
+    private FrameworkElement ExtractHostedViewUserControlContent(System.Windows.Controls.UserControl userControl)
+    {
+        if (userControl.Content is not FrameworkElement content)
+        {
+            return userControl;
+        }
+
+        userControl.Content = null;
+        return content;
+    }
+
+    private FrameworkElement BuildHostedViewXamlError(string errorMessage)
+    {
+        return new Border
+        {
+            Background = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#331F2937")!,
+            BorderBrush = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFDC2626")!,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(14),
+            Child = new TextBlock
+            {
+                Text = $"自定义 XAML 视图加载失败：{errorMessage}",
+                Foreground = System.Windows.Media.Brushes.OrangeRed,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 13
+            }
+        };
+    }
+
+    private void AttachHostedViewActions(DependencyObject root, HostedPluginSession session)
+    {
+        foreach (var button in FindVisualChildren<System.Windows.Controls.Button>(root))
+        {
+            var actionText = HostedViewBridge.GetAction(button);
+            if (string.IsNullOrWhiteSpace(actionText))
+            {
+                continue;
+            }
+
+            button.Click += async (_, _) =>
+            {
+                button.IsEnabled = false;
+                try
+                {
+                    await ExecuteHostedViewActionsAsync(session, ParseHostedViewActionString(actionText));
+                }
+                finally
+                {
+                    button.IsEnabled = true;
+                }
+            };
+        }
+
+        var preferredFocusName = HostedViewBridge.GetPreferredFocus(root as DependencyObject);
+        if (!string.IsNullOrWhiteSpace(preferredFocusName) && root is FrameworkElement frameworkRoot)
+        {
+            if (frameworkRoot.FindName(preferredFocusName) is System.Windows.Controls.Control control)
+            {
+                _hostedViewPreferredFocusControl = control;
+            }
+        }
+
+        var loadedActionText = HostedViewBridge.GetLoadedAction(root);
+        if (!string.IsNullOrWhiteSpace(loadedActionText) && root is FrameworkElement loadedRoot)
+        {
+            RoutedEventHandler? loadedHandler = null;
+            loadedHandler = async (_, _) =>
+            {
+                loadedRoot.Loaded -= loadedHandler;
+                await ExecuteHostedViewActionsAsync(session, ParseHostedViewActionString(loadedActionText));
+            };
+            loadedRoot.Loaded += loadedHandler;
+        }
+    }
+
+    private UIElement BuildSinglePaneHostedView(HostedPluginSession session)
+    {
+        var panel = new StackPanel();
+        foreach (var component in session.Definition.Components)
+        {
+            panel.Children.Add(BuildHostedViewComponent(component, session));
+        }
+
+        return WrapHostedViewRegion(panel);
+    }
+
+    private UIElement BuildSplitHorizontalHostedView(HostedPluginSession session)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var left = new StackPanel();
+        var right = new StackPanel();
+        foreach (var component in session.Definition.Components)
+        {
+            var region = string.IsNullOrWhiteSpace(component.Region) ? "left" : component.Region.Trim().ToLowerInvariant();
+            var target = region == "right" ? right : left;
+            target.Children.Add(BuildHostedViewComponent(component, session));
+        }
+
+        var leftBorder = WrapHostedViewRegion(left);
+        var rightBorder = WrapHostedViewRegion(right);
+        Grid.SetColumn(leftBorder, 0);
+        Grid.SetColumn(rightBorder, 2);
+        grid.Children.Add(leftBorder);
+        grid.Children.Add(rightBorder);
+        return grid;
+    }
+
+    private Border WrapHostedViewRegion(System.Windows.Controls.Panel content)
+    {
+        return new Border
+        {
+            Background = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF202020")!,
+            BorderBrush = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF2E2E2E")!,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(14),
+            Child = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = content
+            }
+        };
+    }
+
+    private FrameworkElement BuildHostedViewComponent(HostedViewComponentDefinition component, HostedPluginSession session)
+    {
+        var wrapper = new StackPanel
+        {
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+
+        if (!string.IsNullOrWhiteSpace(component.Label))
+        {
+            wrapper.Children.Add(new TextBlock
+            {
+                Text = component.Label,
+                Foreground = System.Windows.Media.Brushes.White,
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+        }
+
+        FrameworkElement content = component.Type.Trim().ToLowerInvariant() switch
+        {
+            "text" => BuildHostedViewTextComponent(component, session, markdown: false),
+            "markdown" => BuildHostedViewTextComponent(component, session, markdown: true),
+            "textarea" => BuildHostedViewTextareaComponent(component, session),
+            "button" => BuildHostedViewButtonComponent(component, session),
+            _ => BuildHostedViewUnsupportedComponent(component)
+        };
+
+        wrapper.Children.Add(content);
+        return wrapper;
+    }
+
+    private FrameworkElement BuildHostedViewTextComponent(HostedViewComponentDefinition component, HostedPluginSession session, bool markdown)
+    {
+        var textBlock = new TextBlock
+        {
+            Foreground = markdown
+                ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFE5E5E5")!
+                : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFD7D7D7")!,
+            FontSize = 14,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        if (!string.IsNullOrWhiteSpace(component.Bind))
+        {
+            RegisterHostedViewStateBinding(component.Bind, value => textBlock.Text = value);
+        }
+        else
+        {
+            textBlock.Text = component.Text ?? string.Empty;
+        }
+
+        return new Border
+        {
+            Background = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF171717")!,
+            BorderBrush = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF2E2E2E")!,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(12),
+            Child = textBlock
+        };
+    }
+
+    private FrameworkElement BuildHostedViewTextareaComponent(HostedViewComponentDefinition component, HostedPluginSession session)
+    {
+        var textBox = new System.Windows.Controls.TextBox
+        {
+            AcceptsReturn = true,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            TextWrapping = TextWrapping.Wrap,
+            Background = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF171717")!,
+            BorderBrush = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF2E2E2E")!,
+            BorderThickness = new Thickness(1),
+            Foreground = System.Windows.Media.Brushes.White,
+            CaretBrush = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF3B82F6")!,
+            Padding = new Thickness(12),
+            FontSize = 14,
+            MinHeight = 180
+        };
+
+        if (_hostedViewPreferredFocusControl == null)
+        {
+            _hostedViewPreferredFocusControl = textBox;
+        }
+
+        if (!string.IsNullOrWhiteSpace(component.Bind))
+        {
+            var path = component.Bind;
+            RegisterHostedViewStateBinding(path, value =>
+            {
+                if (!string.Equals(textBox.Text, value, StringComparison.Ordinal))
+                {
+                    textBox.Text = value;
+                }
+            });
+            textBox.TextChanged += (_, _) => SetHostedViewState(path, textBox.Text);
+        }
+
+        var grid = new Grid();
+        grid.Children.Add(textBox);
+        if (!string.IsNullOrWhiteSpace(component.Placeholder))
+        {
+            var placeholder = new TextBlock
+            {
+                IsHitTestVisible = false,
+                Margin = new Thickness(14, 12, 14, 0),
+                VerticalAlignment = VerticalAlignment.Top,
+                Foreground = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF555555")!,
+                TextWrapping = TextWrapping.Wrap,
+                Text = component.Placeholder
+            };
+            textBox.TextChanged += (_, _) =>
+            {
+                placeholder.Visibility = string.IsNullOrWhiteSpace(textBox.Text) ? Visibility.Visible : Visibility.Collapsed;
+            };
+            placeholder.Visibility = string.IsNullOrWhiteSpace(textBox.Text) ? Visibility.Visible : Visibility.Collapsed;
+            grid.Children.Add(placeholder);
+        }
+
+        return grid;
+    }
+
+    private FrameworkElement BuildHostedViewButtonComponent(HostedViewComponentDefinition component, HostedPluginSession session)
+    {
+        var button = new System.Windows.Controls.Button
+        {
+            Content = component.Text ?? component.Label ?? "执行",
+            Background = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF2563EB")!,
+            Foreground = System.Windows.Media.Brushes.White,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(18, 10, 18, 10),
+            FontSize = 13,
+            FontWeight = FontWeights.SemiBold,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left
+        };
+
+        button.Click += async (_, _) =>
+        {
+            button.IsEnabled = false;
+            try
+            {
+                await ExecuteHostedViewActionsAsync(session, component.Actions);
+            }
+            finally
+            {
+                button.IsEnabled = true;
+            }
+        };
+        return button;
+    }
+
+    private FrameworkElement BuildHostedViewUnsupportedComponent(HostedViewComponentDefinition component)
+    {
+        return new TextBlock
+        {
+            Text = $"暂不支持的组件类型：{component.Type}",
+            Foreground = System.Windows.Media.Brushes.OrangeRed,
+            FontSize = 12
+        };
+    }
+
+    private void RegisterHostedViewStateBinding(string path, Action<string> updater)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        if (!_hostedViewStateBindings.TryGetValue(path, out var updaters))
+        {
+            updaters = [];
+            _hostedViewStateBindings[path] = updaters;
+        }
+
+        updaters.Add(updater);
+        updater(GetHostedViewState(path));
+    }
+
+    private string GetHostedViewState(string path)
+    {
+        if (_activeHostedView == null || string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        return _activeHostedView.State.TryGetValue(path, out var value) ? value : string.Empty;
+    }
+
+    private void SetHostedViewState(string path, string? value)
+    {
+        if (_activeHostedView == null || string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        var normalized = value ?? string.Empty;
+        _activeHostedView.State[path] = normalized;
+        _activeHostedView.BindingContext.NotifyChanged();
+        if (_hostedViewStateBindings.TryGetValue(path, out var updaters))
+        {
+            foreach (var updater in updaters)
+            {
+                updater(normalized);
+            }
+        }
+    }
+
+    private async Task ExecuteHostedViewActionsAsync(
+        HostedPluginSession session,
+        IReadOnlyList<HostedViewActionDefinition> actions)
+    {
+        if (actions.Count == 0)
+        {
+            HostedViewStatus = "当前按钮没有配置动作。";
+            return;
+        }
+
+        foreach (var action in actions)
+        {
+            switch (action.Type.Trim().ToLowerInvariant())
+            {
+                case "setstate":
+                    var value = !string.IsNullOrWhiteSpace(action.ValueFrom)
+                        ? GetHostedViewState(action.ValueFrom)
+                        : action.Value ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(action.Path))
+                    {
+                        if (action.Append)
+                        {
+                            var existingValue = GetHostedViewState(action.Path);
+                            if (!string.IsNullOrWhiteSpace(value))
+                            {
+                                value = string.IsNullOrWhiteSpace(existingValue)
+                                    ? value
+                                    : $"{existingValue}{action.Separator ?? Environment.NewLine}{value}";
+                            }
+                        }
+
+                        SetHostedViewState(action.Path, value);
+                    }
+                    HostedViewStatus = string.IsNullOrWhiteSpace(action.SuccessMessage)
+                        ? "已更新界面状态。"
+                        : action.SuccessMessage;
+                    break;
+                case "runscript":
+                    await ExecuteHostedViewScriptActionAsync(session, action);
+                    break;
+                case "loadstorage":
+                    await ExecuteHostedViewLoadStorageActionAsync(session, action);
+                    break;
+                case "savestorage":
+                    await ExecuteHostedViewSaveStorageActionAsync(session, action);
+                    break;
+                case "close":
+                    HostedViewStatus = string.IsNullOrWhiteSpace(action.SuccessMessage)
+                        ? "正在关闭视图。"
+                        : action.SuccessMessage;
+                    CloseHostedView();
+                    return;
+                default:
+                    HostedViewStatus = $"暂不支持的动作类型：{action.Type}";
+                    break;
+            }
+        }
+    }
+
+    private async Task ExecuteHostedViewScriptActionAsync(HostedPluginSession session, HostedViewActionDefinition action)
+    {
+        if (!ScriptExtensionRunner.CanExecute(session.Command))
+        {
+            HostedViewStatus = "当前扩展没有可执行的脚本入口。";
+            return;
+        }
+
+        var input = !string.IsNullOrWhiteSpace(action.InputFrom)
+            ? GetHostedViewState(action.InputFrom)
+            : ResolveDefaultHostedViewInput(session);
+        HostedViewStatus = $"正在执行 {session.Command.Title} 脚本...";
+        var result = await ScriptExtensionRunner.ExecuteAsync(session.Command, input, "hosted-view-v2");
+        var outputPath = string.IsNullOrWhiteSpace(action.OutputTo) ? "output" : action.OutputTo;
+        SetHostedViewState(outputPath, result.Success ? result.Output : result.Error);
+        HostedViewStatus = result.Success
+            ? (string.IsNullOrWhiteSpace(action.SuccessMessage) ? "脚本执行完成。" : action.SuccessMessage)
+            : $"脚本执行失败：{result.Error}";
+    }
+
+    private async Task ExecuteHostedViewLoadStorageActionAsync(HostedPluginSession session, HostedViewActionDefinition action)
+    {
+        var statePath = string.IsNullOrWhiteSpace(action.Path) ? action.ValueFrom : action.Path;
+        if (string.IsNullOrWhiteSpace(statePath))
+        {
+            HostedViewStatus = "loadStorage 缺少 path。";
+            return;
+        }
+
+        var storageKey = string.IsNullOrWhiteSpace(action.Key) ? $"{statePath}.txt" : action.Key;
+        var readResult = await ExtensionStorageService.ReadTextAsync(session.Command.ExtensionId, storageKey, action.Scope);
+        var value = readResult.Found ? readResult.Content ?? string.Empty : action.DefaultValue ?? string.Empty;
+        SetHostedViewState(statePath, value);
+        HostedViewStatus = string.IsNullOrWhiteSpace(action.SuccessMessage)
+            ? (readResult.Found ? $"已从 {readResult.Source} 加载存储数据。" : "未找到存储数据，已使用默认值。")
+            : action.SuccessMessage;
+    }
+
+    private async Task ExecuteHostedViewSaveStorageActionAsync(HostedPluginSession session, HostedViewActionDefinition action)
+    {
+        var statePath = string.IsNullOrWhiteSpace(action.Path) ? action.ValueFrom : action.Path;
+        var storageKey = string.IsNullOrWhiteSpace(action.Key)
+            ? (!string.IsNullOrWhiteSpace(statePath) ? $"{statePath}.txt" : null)
+            : action.Key;
+        if (string.IsNullOrWhiteSpace(storageKey))
+        {
+            HostedViewStatus = "saveStorage 缺少 key。";
+            return;
+        }
+
+        var value = !string.IsNullOrWhiteSpace(action.ValueFrom)
+            ? GetHostedViewState(action.ValueFrom)
+            : !string.IsNullOrWhiteSpace(statePath)
+                ? GetHostedViewState(statePath)
+                : action.Value ?? string.Empty;
+        var result = await ExtensionStorageService.WriteTextAsync(
+            session.Command.ExtensionId,
+            storageKey,
+            value,
+            action.Scope);
+        HostedViewStatus = string.IsNullOrWhiteSpace(action.SuccessMessage)
+            ? (result.CloudSaved ? "已保存到本地并同步到坚果云。" : "已保存到本地存储。")
+            : action.SuccessMessage;
+    }
+
+    private static string ResolveHostedViewLayout(HostedPluginViewDefinition definition)
+    {
+        return string.IsNullOrWhiteSpace(definition.Type)
+            ? "single-pane"
+            : definition.Type.Trim().ToLowerInvariant();
+    }
+
+    private static IReadOnlyList<HostedViewActionDefinition> ParseHostedViewActionString(string actionText)
+    {
+        var actions = new List<HostedViewActionDefinition>();
+        foreach (var rawAction in actionText.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var segments = rawAction.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (segments.Length == 0)
+            {
+                continue;
+            }
+
+            string type;
+            string? path = null;
+            string? value = null;
+            string? valueFrom = null;
+            string? inputFrom = null;
+            string? outputTo = null;
+            string? successMessage = null;
+            var append = false;
+            string? separator = null;
+            string? key = null;
+            string? scope = null;
+            string? defaultValue = null;
+
+            if (segments[0].Contains('='))
+            {
+                type = "setState";
+            }
+            else
+            {
+                type = segments[0];
+                segments = segments.Skip(1).ToArray();
+            }
+
+            foreach (var segment in segments)
+            {
+                var parts = segment.Split('=', 2);
+                if (parts.Length != 2)
+                {
+                    continue;
+                }
+
+                var propertyKey = parts[0].Trim();
+                var parsedValue = parts[1].Trim();
+                switch (propertyKey.ToLowerInvariant())
+                {
+                    case "type":
+                        type = parsedValue;
+                        break;
+                    case "path":
+                        path = parsedValue;
+                        break;
+                    case "value":
+                        value = parsedValue;
+                        break;
+                    case "valuefrom":
+                        valueFrom = parsedValue;
+                        break;
+                    case "inputfrom":
+                        inputFrom = parsedValue;
+                        break;
+                    case "outputto":
+                        outputTo = parsedValue;
+                        break;
+                    case "successmessage":
+                        successMessage = parsedValue;
+                        break;
+                    case "append":
+                        append = parsedValue.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+                                 parsedValue.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+                                 parsedValue.Equals("yes", StringComparison.OrdinalIgnoreCase);
+                        break;
+                    case "separator":
+                        separator = parsedValue
+                            .Replace("\\r\\n", "\r\n", StringComparison.Ordinal)
+                            .Replace("\\n", "\n", StringComparison.Ordinal)
+                            .Replace("\\t", "\t", StringComparison.Ordinal);
+                        break;
+                    case "key":
+                        key = parsedValue;
+                        break;
+                    case "scope":
+                        scope = parsedValue;
+                        break;
+                    case "defaultvalue":
+                        defaultValue = parsedValue
+                            .Replace("\\r\\n", "\r\n", StringComparison.Ordinal)
+                            .Replace("\\n", "\n", StringComparison.Ordinal)
+                            .Replace("\\t", "\t", StringComparison.Ordinal);
+                        break;
+                }
+            }
+
+            actions.Add(new HostedViewActionDefinition(type, path, value, valueFrom, inputFrom, outputTo, successMessage, append, separator, key, scope, defaultValue));
+        }
+
+        return actions;
+    }
+
+    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
+    {
+        if (parent == null)
+        {
+            yield break;
+        }
+
+        var childrenCount = VisualTreeHelper.GetChildrenCount(parent);
+        for (var index = 0; index < childrenCount; index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T typed)
+            {
+                yield return typed;
+            }
+
+            foreach (var descendant in FindVisualChildren<T>(child))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
+    private string ResolveDefaultHostedViewInput(HostedPluginSession session)
+    {
+        if (!string.IsNullOrWhiteSpace(HostedViewInput))
+        {
+            return HostedViewInput.Trim();
+        }
+
+        if (session.State.TryGetValue("input", out var stateInput) && !string.IsNullOrWhiteSpace(stateInput))
+        {
+            return stateInput;
+        }
+
+        var firstBoundTextarea = session.Definition.Components
+            .FirstOrDefault(component =>
+                string.Equals(component.Type, "textarea", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(component.Bind));
+        return firstBoundTextarea != null && !string.IsNullOrWhiteSpace(firstBoundTextarea.Bind)
+            ? GetHostedViewState(firstBoundTextarea.Bind)
+            : string.Empty;
+    }
+
+    private void ApplyHostedViewWindowMetrics(HostedPluginViewDefinition definition)
+    {
+        var minWidth = NormalizeHostedViewDimension(definition.MinWindowWidth, _defaultMinWindowWidth);
+        var minHeight = NormalizeHostedViewDimension(definition.MinWindowHeight, _defaultMinWindowHeight);
+        var width = NormalizeHostedViewDimension(definition.WindowWidth, _defaultWindowWidth);
+        var height = NormalizeHostedViewDimension(definition.WindowHeight, _defaultWindowHeight);
+
+        MinWidth = minWidth;
+        MinHeight = minHeight;
+        Width = Math.Max(width, minWidth);
+        Height = Math.Max(height, minHeight);
+    }
+
+    private void RestoreHostedViewWindowMetrics()
+    {
+        MinWidth = _defaultMinWindowWidth;
+        MinHeight = _defaultMinWindowHeight;
+        Width = Math.Max(_defaultWindowWidth, MinWidth);
+        Height = Math.Max(_defaultWindowHeight, MinHeight);
+    }
+
+    private static double NormalizeHostedViewDimension(double? value, double fallback)
+    {
+        return value is > 0 ? value.Value : fallback;
     }
 
     private static string BuildMockTranslation(string input)
@@ -1187,7 +2093,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var command = ShowJsonExtensionEditorAsync(
-                LocalExtensionCatalog.CreateTemplateJson(),
+                string.Empty,
                 isEditMode: false);
             if (command == null)
             {
@@ -1381,7 +2287,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _authPromptActive = true;
         try
         {
-            ShowPanel();
             var saved = SecureCredentialStore.Load();
             var dialog = new LoginWindow(saved?.LoginEmail);
             dialog.SendRegistrationCodeAsync = (email, username) => _cloudSyncClient.SendRegistrationCodeAsync(email, username);
@@ -1432,18 +2337,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static List<CommandItem> CreateSeedCommands()
     {
-        return
-        [
-            new("设", "设置", "打开设置面板。", "命令", "#FF4F46E5", "oqh://settings", ["设置", "preferences", "config"]),
-            new("加", "添加扩展", "添加一个单文件 JSON 扩展。", "命令", "#FF16A34A", "oqh://add-extension", ["扩展", "json", "添加"]),
-            new("编", "编辑扩展", "编辑当前选中的本地扩展。", "命令", "#FF0284C7", "oqh://edit-extension", ["扩展", "编辑", "manifest"]),
-            new("删", "删除扩展", "删除当前选中的本地扩展。", "命令", "#FFDC2626", "oqh://delete-extension", ["扩展", "删除", "remove"]),
-            new("库", "应用库", "打开本地扩展目录。", "目录", "#FFE66A32", HostAssets.ExtensionsPath, ["应用", "扩展", "library"]),
-            new("市", "插件市场", "打开本地扩展市场说明页。", "文件", "#FF9FE870", HostAssets.MarketplacePath, ["市场", "商店", "publish"]),
-            new("文", "帮助文档", "打开本地帮助文档。", "文件", "#FFFB7185", HostAssets.DocsReadmePath, ["文档", "help"]),
-            new("近", "最近运行", "打开最近执行记录。", "文件", "#FF34D399", HostAssets.RecentCommandsPath, ["最近", "history"]),
-            new("志", "日志", "打开日志文件。", "文件", "#FF60A5FA", HostAssets.HostLogPath, ["日志", "diagnose"])
-        ];
+        return [];
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -1472,6 +2366,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public void ReloadLocalExtensionsFromExternal()
     {
+        LocalExtensionCatalog.EnsureSampleExtension();
         _allCommands.RemoveAll(x => x.Source == CommandSource.LocalExtension);
         _localExtensionIndex.Clear();
         foreach (var command in LocalExtensionCatalog.LoadCommands())
@@ -1587,6 +2482,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var snapshot = await _cloudSyncClient.GetUserConfigAsync<CloudWebDavConfigSnapshot>(CloudWebDavConfigId);
         if (snapshot == null)
         {
+            HostAssets.AppendLog("WebDAV cloud pull: no user config found.");
             if (ShouldSyncLocalWebDavConfigToCloud())
             {
                 await PushWebDavConfigToCloudAsync("cloud-refresh-bootstrap");
@@ -1594,18 +2490,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return false;
         }
 
+        HostAssets.AppendLog(
+            $"WebDAV cloud pull: enabled={snapshot.EnableWebDavSync}, serverUrl={snapshot.WebDavServerUrl}, rootPath={snapshot.WebDavRootPath}, username={snapshot.WebDavUsername}, hasPassword={!string.IsNullOrWhiteSpace(snapshot.WebDavPassword)}");
+
         var settings = AppSettingsStore.Load();
+        var shouldDefaultEnable = snapshot.EnableWebDavSync || HasWebDavConfigValues(snapshot.WebDavServerUrl, snapshot.WebDavRootPath, snapshot.WebDavUsername, snapshot.WebDavPassword);
+        var resolvedEnabled = settings.WebDavSyncManuallyDisabled ? false : shouldDefaultEnable;
         var changed =
-            settings.EnableWebDavSync != snapshot.EnableWebDavSync ||
+            settings.EnableWebDavSync != resolvedEnabled ||
             !string.Equals(settings.WebDavServerUrl, snapshot.WebDavServerUrl, StringComparison.Ordinal) ||
             !string.Equals(settings.WebDavRootPath, snapshot.WebDavRootPath, StringComparison.Ordinal) ||
             !string.Equals(settings.WebDavUsername, snapshot.WebDavUsername, StringComparison.Ordinal);
+        var credential = WebDavCredentialStore.Load();
+        var passwordChanged = !string.Equals(credential?.Password, snapshot.WebDavPassword, StringComparison.Ordinal);
         if (!changed)
         {
+            if (passwordChanged && !string.IsNullOrWhiteSpace(snapshot.WebDavPassword))
+            {
+                HostAssets.AppendLog("WebDAV cloud pull: applying password-only update.");
+                SaveWebDavCredential(snapshot.WebDavUsername ?? string.Empty, snapshot.WebDavPassword);
+                NotifySettingsWindowWebDavConfigChanged();
+                return true;
+            }
+
+            HostAssets.AppendLog("WebDAV cloud pull: no local changes detected.");
             return false;
         }
 
-        settings.EnableWebDavSync = snapshot.EnableWebDavSync;
+        settings.EnableWebDavSync = resolvedEnabled;
         settings.WebDavServerUrl = string.IsNullOrWhiteSpace(snapshot.WebDavServerUrl)
             ? settings.WebDavServerUrl
             : snapshot.WebDavServerUrl.Trim();
@@ -1613,8 +2525,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? "/yanzi"
             : snapshot.WebDavRootPath.Trim();
         settings.WebDavUsername = snapshot.WebDavUsername?.Trim() ?? string.Empty;
+        if (resolvedEnabled)
+        {
+            settings.WebDavSyncManuallyDisabled = false;
+        }
         AppSettingsStore.Save(settings);
         _appSettings = settings;
+        if (!string.IsNullOrWhiteSpace(snapshot.WebDavPassword))
+        {
+            SaveWebDavCredential(snapshot.WebDavUsername ?? string.Empty, snapshot.WebDavPassword);
+        }
         if (settings.EnableWebDavSync)
         {
             StartBackgroundWebDavSync();
@@ -1624,6 +2544,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _backgroundWebDavSyncTimer.Stop();
         }
 
+        HostAssets.AppendLog(
+            $"WebDAV cloud pull applied: enabled={settings.EnableWebDavSync}, serverUrl={settings.WebDavServerUrl}, rootPath={settings.WebDavRootPath}, username={settings.WebDavUsername}, passwordSaved={!string.IsNullOrWhiteSpace(snapshot.WebDavPassword)}");
+        NotifySettingsWindowWebDavConfigChanged();
         return true;
     }
 
@@ -1654,17 +2577,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || !ShouldSyncLocalWebDavConfigToCloud())
         {
+            HostAssets.AppendLog($"WebDAV cloud push skipped: {reason}");
             return;
         }
 
         await _cloudSyncClient.EnsureAuthenticatedAsync();
         var settings = AppSettingsStore.Load();
+        var credential = WebDavCredentialStore.Load();
+        HostAssets.AppendLog(
+            $"WebDAV cloud push: reason={reason}, enabled={settings.EnableWebDavSync}, serverUrl={settings.WebDavServerUrl}, rootPath={settings.WebDavRootPath}, username={settings.WebDavUsername}, hasPassword={!string.IsNullOrWhiteSpace(credential?.Password)}");
         await _cloudSyncClient.UpsertUserConfigAsync(CloudWebDavConfigId, new CloudWebDavConfigSnapshot
         {
             EnableWebDavSync = settings.EnableWebDavSync,
             WebDavServerUrl = settings.WebDavServerUrl,
             WebDavRootPath = settings.WebDavRootPath,
-            WebDavUsername = settings.WebDavUsername
+            WebDavUsername = settings.WebDavUsername,
+            WebDavPassword = credential?.Password
         });
     }
 
@@ -1691,8 +2619,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 Owner = owner
             };
-            var result = dialog.ShowDialog();
-            if (result != true)
+            dialog.ShowDialog();
+            if (!dialog.WasAccepted)
             {
                 return null;
             }
@@ -1714,7 +2642,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     Owner = owner
                 };
                 retryDialog.ShowError(ex.Message);
-                if (retryDialog.ShowDialog() != true)
+                retryDialog.ShowDialog();
+                if (!retryDialog.WasAccepted)
                 {
                     return null;
                 }
@@ -1722,6 +2651,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 currentJson = retryDialog.JsonContent;
             }
         }
+    }
+
+    private static string CreateWebSearchTemplateJson()
+    {
+        var id = $"web-search-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
+        var manifest = new LocalExtensionManifest
+        {
+            Id = id,
+            Name = "自定义网页搜索",
+            Version = "1.0.0",
+            Category = "网页搜索",
+            Description = "输入关键词后打开指定网站的搜索结果。",
+            Keywords = ["网页", "搜索", "自定义"],
+            QueryPrefixes = ["搜索", "web"],
+            QueryTargetTemplate = "https://www.example.com/search?q={query}",
+            Icon = "mdi:magnify"
+        };
+
+        return JsonSerializer.Serialize(manifest, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = true
+        });
     }
 
     private CommandItem ResolveRunnableCommand(CommandItem command)
@@ -1738,8 +2690,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public CommandItem? OpenAddExtensionForSlot()
     {
-        var templateJson = LocalExtensionCatalog.CreateTemplateJson();
-        return ShowJsonExtensionEditorAsync(templateJson, false);
+        return ShowJsonExtensionEditorAsync(string.Empty, false);
     }
 
     public void ShowPanel()
@@ -1761,6 +2712,52 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Focus();
         SearchBox.Focus();
         SearchBox.SelectAll();
+        SetSearchScopePopupOpen(true);
+    }
+
+    public void ShowMousePanel()
+    {
+        _quickPanel?.ShowAtMouse();
+    }
+
+    public void StartMousePanelService()
+    {
+        if (_listenerServicesPaused)
+        {
+            return;
+        }
+
+        InputHookService.Start(
+            () => _quickPanel?.ShowAtMouse(),
+            () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease());
+    }
+
+    public void StopMousePanelService()
+    {
+        InputHookService.Stop();
+    }
+
+    public bool IsMousePanelServiceRunning => InputHookService.IsRunning;
+
+    public bool AreListenerServicesPaused => _listenerServicesPaused;
+
+    public void PauseListenerServices()
+    {
+        _listenerServicesPaused = true;
+        StopMousePanelService();
+        UnregisterLauncherHotkey();
+        UnregisterExtensionHotkeys();
+        SyncStatus = "已暂停快捷键、扩展快捷键和鼠标面板监听。";
+    }
+
+    public void ResumeListenerServices()
+    {
+        _listenerServicesPaused = false;
+        InputHookService.ReloadSettings();
+        StartMousePanelService();
+        RefreshLauncherHotkeyRegistration();
+        RefreshExtensionHotkeys();
+        SyncStatus = "已恢复快捷键、扩展快捷键和鼠标面板监听。";
     }
 
     private void PinAutoHideButton_Click(object sender, RoutedEventArgs e)
@@ -1774,6 +2771,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public void HideToTray()
     {
         ShowInTaskbar = false;
+        SetSearchScopePopupOpen(false);
         Hide();
     }
 
@@ -1798,8 +2796,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _source.AddHook(WndProc);
-        RefreshLauncherHotkeyRegistration();
-        RefreshExtensionHotkeys();
+        if (!_listenerServicesPaused)
+        {
+            RefreshLauncherHotkeyRegistration();
+            RefreshExtensionHotkeys();
+        }
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -1809,7 +2810,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_source != null)
             {
                 UnregisterExtensionHotkeys();
-                UnregisterHotKey(_source.Handle, HotKeyId);
+                UnregisterLauncherHotkey();
                 _source.RemoveHook(WndProc);
             }
 
@@ -1831,12 +2832,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (WindowState == WindowState.Minimized)
         {
+            SetSearchScopePopupOpen(false);
             HideToTray();
+        }
+        else if (IsActive)
+        {
+            SetSearchScopePopupOpen(true);
         }
     }
 
     private void Window_Deactivated(object? sender, EventArgs e)
     {
+        SetSearchScopePopupOpen(false);
+
         if (_isPinned || !IsVisible)
         {
             return;
@@ -1853,6 +2861,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         HideToTray();
+    }
+
+    private void MainWindow_Activated(object? sender, EventArgs e)
+    {
+        SetSearchScopePopupOpen(true);
+    }
+
+    private void MainWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        SetSearchScopePopupOpen(IsVisible && IsActive);
+    }
+
+    private void SetSearchScopePopupOpen(bool isOpen)
+    {
+        if (!IsInitialized)
+        {
+            return;
+        }
+
+        SearchScopePopup.IsOpen = isOpen && IsVisible && WindowState != WindowState.Minimized;
     }
 
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1901,6 +2929,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _nextExtensionHotkeyId = 0x5400;
 
         foreach (var command in _localExtensionIndex.Values
+                     .Where(command => IsExtensionEnabled(command.ExtensionId))
                      .Where(static x => !string.IsNullOrWhiteSpace(x.GlobalShortcut))
                      .OrderBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
         {
@@ -2018,7 +3047,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return false;
         }
 
-        UnregisterHotKey(_source.Handle, HotKeyId);
+        UnregisterLauncherHotkey();
         var shortcut = AppSettingsStore.Load().LauncherHotkey;
         if (!TryParseHotkey(shortcut, out var modifiers, out var key))
         {
@@ -2037,6 +3066,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         return success;
+    }
+
+    private void UnregisterLauncherHotkey()
+    {
+        if (_source == null)
+        {
+            return;
+        }
+
+        UnregisterHotKey(_source.Handle, HotKeyId);
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -2064,6 +3103,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await _cloudSyncClient.EnsureAuthenticatedAsync();
             OnPropertyChanged(nameof(SyncSummaryText));
             SyncStatus = "已登录，可进行云同步。";
+            HostAssets.AppendLog("PromptLoginFromSettingsAsync: authentication succeeded, pulling WebDAV config.");
+            await PullWebDavConfigFromCloudAsync();
+            NotifySettingsWindowWebDavConfigChanged();
+            
             return true;
         }
         catch (Exception ex)
@@ -2071,6 +3114,64 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SyncStatus = $"登录失败：{FormatExceptionMessage(ex)}";
             return false;
         }
+    }
+
+    private async Task SyncWebDavConfigFromCloudAsync()
+    {
+        if (_cloudSyncClient == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var config = await _cloudSyncClient.FetchWebDavConfigAsync();
+            if (config != null)
+            {
+                var localSettings = AppSettingsStore.Load();
+                var resolvedEnabled = localSettings.WebDavSyncManuallyDisabled
+                    ? false
+                    : (config.Enabled || HasWebDavConfigValues(config.ServerUrl, config.RootPath, config.Username, config.Password));
+                // Apply configuration to local settings
+                SaveWebDavSettings(
+                    resolvedEnabled,
+                    config.ServerUrl ?? string.Empty,
+                    config.RootPath ?? string.Empty,
+                    config.Username ?? string.Empty
+                );
+                
+                // Save credential if provided
+                if (!string.IsNullOrWhiteSpace(config.Password))
+                {
+                    SaveWebDavCredential(config.Username ?? string.Empty, config.Password);
+                }
+                
+                // Notify SettingsWindow to refresh UI if open
+                NotifySettingsWindowWebDavConfigChanged();
+                
+                System.Diagnostics.Debug.WriteLine("WebDAV configuration synced from cloud successfully.");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't block login process
+            System.Diagnostics.Debug.WriteLine($"Failed to sync WebDAV config from cloud: {ex.Message}");
+        }
+    }
+
+    private static bool HasWebDavConfigValues(string? serverUrl, string? rootPath, string? username, string? password)
+    {
+        return !string.IsNullOrWhiteSpace(serverUrl) ||
+               !string.IsNullOrWhiteSpace(rootPath) ||
+               !string.IsNullOrWhiteSpace(username) ||
+               !string.IsNullOrWhiteSpace(password);
+    }
+
+    private void NotifySettingsWindowWebDavConfigChanged()
+    {
+        // If SettingsWindow is open, refresh its WebDAV UI
+        var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+        settingsWindow?.RefreshWebDavConfigFromExternal();
     }
 
     public async Task RefreshCloudFromSettingsAsync()
@@ -2085,17 +3186,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        HostAssets.AppendLog(
+            $"SignOutFromSettings: before clear sessionExists={File.Exists(SyncSessionStore.SessionPath)}, credentialExists={File.Exists(SecureCredentialStore.CredentialPath)}");
         _cloudSyncClient.ClearCredential();
         SyncStatus = "已退出登录。";
         OnPropertyChanged(nameof(SyncSummaryText));
+        NotifySettingsWindowAccountChanged();
+        HostAssets.AppendLog(
+            $"SignOutFromSettings: after clear sessionExists={File.Exists(SyncSessionStore.SessionPath)}, credentialExists={File.Exists(SecureCredentialStore.CredentialPath)}");
+    }
+
+    private void NotifySettingsWindowAccountChanged()
+    {
+        var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+        settingsWindow?.RefreshAccountFromExternal();
     }
 
     public void RefreshAppSettings()
     {
         var settings = AppSettingsStore.Load();
         _appSettings = settings;
-        InputHookService.ReloadSettings();
-        RefreshLauncherHotkeyRegistration();
+        if (!_listenerServicesPaused)
+        {
+            InputHookService.ReloadSettings();
+            RefreshLauncherHotkeyRegistration();
+            RefreshExtensionHotkeys();
+        }
         SyncStatus = settings.LaunchAtStartup
             ? "设置已保存。开机启动已启用。"
             : settings.RefreshCloudOnStartup
@@ -2111,6 +3227,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var settings = AppSettingsStore.Load();
         settings.EnableWebDavSync = enabled;
+        settings.WebDavSyncManuallyDisabled = !enabled && HasWebDavConfigValues(serverUrl, rootPath, username, null);
         settings.WebDavServerUrl = serverUrl.Trim();
         settings.WebDavRootPath = string.IsNullOrWhiteSpace(rootPath) ? "/yanzi" : rootPath.Trim();
         settings.WebDavUsername = username.Trim();
@@ -2215,6 +3332,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .ToList();
     }
 
+    public IReadOnlyList<CommandItem> GetExtensionsForSettings()
+    {
+        return _localExtensionIndex.Values
+            .OrderBy(static x => x.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static x => x.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public bool IsExtensionEnabled(string extensionId) =>
+        !_appSettings.DisabledExtensionIds.Contains(extensionId, StringComparer.OrdinalIgnoreCase);
+
+    public void SetExtensionEnabled(string extensionId, bool enabled)
+    {
+        var settings = AppSettingsStore.Load();
+        settings.DisabledExtensionIds ??= [];
+        settings.DisabledExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+        if (!enabled)
+        {
+            settings.DisabledExtensionIds.Add(extensionId);
+        }
+
+        AppSettingsStore.Save(settings);
+        _appSettings = settings;
+        RefreshExtensionHotkeys();
+        ApplyFilter(SearchBox.Text);
+    }
+
     public IReadOnlyList<CommandItem> GetQuickPanelRecommendedCommands(ForegroundAppContext? context, IEnumerable<string> excludeExtensionIds, int maxCount = 8)
     {
         if (context == null || string.IsNullOrWhiteSpace(context.ProcessName))
@@ -2227,6 +3371,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         return _allCommands
             .Where(static command => !IsInternalCommand(command))
+            .Where(command => IsExtensionEnabled(command.ExtensionId))
             .Where(command => !exclude.Contains(command.ExtensionId))
             .Select(command => new
             {
@@ -2364,8 +3509,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        CommandList.ContextMenu.PlacementTarget = CommandList;
-        CommandList.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        // 获取当前选中的列表项
+        var selectedItem = CommandList.ItemContainerGenerator.ContainerFromItem(SelectedCommand) as FrameworkElement;
+        
+        if (selectedItem != null)
+        {
+            // 在选中的列表项右侧显示菜单
+            CommandList.ContextMenu.PlacementTarget = selectedItem;
+            CommandList.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Right;
+        }
+        else
+        {
+            // 如果找不到选中项，则在列表控件上显示
+            CommandList.ContextMenu.PlacementTarget = CommandList;
+            CommandList.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Center;
+        }
+        
         CommandList.ContextMenu.IsOpen = true;
     }
 
@@ -2469,11 +3628,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             slots[index] = command.ExtensionId;
             AppSettingsStore.Save(settings with { QuickPanelSlots = slots });
-            LastRunMessage = $"已添加到快捷面板第 {index + 1} 个槽位：{command.Title}";
+            LastRunMessage = $"已添加到鼠标面板第 {index + 1} 个槽位：{command.Title}";
         }
         else
         {
-            SyncStatus = "快捷面板已满（28 个槽位），请先在面板中移除旧扩展。";
+            SyncStatus = "鼠标面板已满（28 个槽位），请先在面板中移除旧扩展。";
         }
     }
 
@@ -2566,9 +3725,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return command.OpenTarget?.StartsWith("oqh://", StringComparison.OrdinalIgnoreCase) == true;
     }
 
-    private static CommandMatch BuildCommandMatch(CommandItem command, string query)
+    private static CommandMatch BuildCommandMatch(CommandItem command, string query, bool allowRawQueryArgument = false)
     {
-        var argument = ExtractQueryArgument(command, query);
+        var argument = ExtractQueryArgument(command, query, allowRawQueryArgument);
         if (command.SupportsQueryArgument && argument.Length > 0)
         {
             return new CommandMatch(true, 300);
@@ -2816,39 +3975,6 @@ public readonly record struct CommandMatch(bool IsMatch, int Priority);
 
 public readonly record struct SearchQueryState(string ScopeKey, string Term, bool IsEmpty);
 
-public sealed record WebSearchProvider(
-    string Key,
-    string DisplayName,
-    string Domain,
-    string SearchUrlTemplate,
-    string AccentHex,
-    string[] Aliases)
-{
-    public static readonly IReadOnlyList<WebSearchProvider> Defaults =
-    [
-        new("baidu", "百度", "baidu.com", "https://www.baidu.com/s?wd={query}", "#FF2563EB", ["百度", "baidu", "bd"]),
-        new("bing", "Bing", "bing.com", "https://www.bing.com/search?q={query}", "#FF10B981", ["Bing", "必应", "bing"]),
-        new("google", "谷歌", "google.com", "https://www.google.com/search?q={query}", "#FF3B82F6", ["谷歌", "Google", "google", "gg", "guge"])
-    ];
-
-    public CommandItem ToCommand(string query)
-    {
-        var trimmed = query.Trim();
-        var encoded = Uri.EscapeDataString(trimmed);
-        return new CommandItem(
-            glyph: DisplayName[..1],
-            title: $"{DisplayName} 搜索：{trimmed}",
-            subtitle: $"用 {DisplayName} 搜索网页内容",
-            category: "网页搜索",
-            accentHex: AccentHex,
-            openTarget: SearchUrlTemplate.Replace("{query}", encoded, StringComparison.Ordinal),
-            keywords: Aliases.Concat(["网页", "搜索", trimmed]),
-            source: CommandSource.WebSearch,
-            extensionId: $"web-search-{Key}",
-            iconReference: $"https://www.google.com/s2/favicons?domain={Domain}&sz=64");
-    }
-}
-
 public sealed class SearchScopeTab : INotifyPropertyChanged
 {
     private bool _isSelected;
@@ -2914,19 +4040,204 @@ public sealed record HostedPluginViewDefinition(
     string? ActionButtonText,
     string? ActionType,
     string? OutputTemplate,
-    string? EmptyState);
+    string? EmptyState,
+    double? WindowWidth,
+    double? WindowHeight,
+    double? MinWindowWidth,
+    double? MinWindowHeight,
+    string? XamlTemplate,
+    IReadOnlyDictionary<string, string> InitialState,
+    IReadOnlyList<HostedViewComponentDefinition> Components)
+{
+    public bool UsesDynamicLayout => Components.Count > 0 || !string.IsNullOrWhiteSpace(XamlTemplate);
+}
 
-public sealed record HostedPluginSession(CommandItem Command, HostedPluginViewDefinition Definition);
+public sealed class HostedPluginSession
+{
+    public HostedPluginSession(CommandItem command, HostedPluginViewDefinition definition)
+    {
+        Command = command;
+        Definition = definition;
+        BindingContext = new HostedViewStateBindingContext(this);
+    }
+
+    public CommandItem Command { get; }
+
+    public HostedPluginViewDefinition Definition { get; }
+
+    public Dictionary<string, string> State { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public HostedViewStateBindingContext BindingContext { get; }
+}
+
+public sealed record HostedViewComponentDefinition(
+    string Id,
+    string Type,
+    string? Label,
+    string? Text,
+    string? Bind,
+    string? Placeholder,
+    string? Region,
+    IReadOnlyList<HostedViewActionDefinition> Actions);
+
+public sealed record HostedViewActionDefinition(
+    string Type,
+    string? Path,
+    string? Value,
+    string? ValueFrom,
+    string? InputFrom,
+    string? OutputTo,
+    string? SuccessMessage,
+    bool Append,
+    string? Separator,
+    string? Key,
+    string? Scope,
+    string? DefaultValue);
+
+public sealed class HostedViewStateBindingContext : INotifyPropertyChanged
+{
+    private readonly HostedPluginSession _session;
+
+    public HostedViewStateBindingContext(HostedPluginSession session)
+    {
+        _session = session;
+    }
+
+    public string this[string key]
+    {
+        get => _session.State.TryGetValue(key, out var value) ? value : string.Empty;
+        set
+        {
+            _session.State[key] = value ?? string.Empty;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+        }
+    }
+
+    public void NotifyChanged()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+public static class HostedViewBridge
+{
+    public static readonly DependencyProperty ActionProperty =
+        DependencyProperty.RegisterAttached(
+            "Action",
+            typeof(string),
+            typeof(HostedViewBridge),
+            new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty PreferredFocusProperty =
+        DependencyProperty.RegisterAttached(
+            "PreferredFocus",
+            typeof(string),
+            typeof(HostedViewBridge),
+            new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty LoadedActionProperty =
+        DependencyProperty.RegisterAttached(
+            "LoadedAction",
+            typeof(string),
+            typeof(HostedViewBridge),
+            new PropertyMetadata(string.Empty));
+
+    public static void SetAction(DependencyObject element, string value) => element.SetValue(ActionProperty, value);
+
+    public static string GetAction(DependencyObject element) => (string)element.GetValue(ActionProperty);
+
+    public static void SetPreferredFocus(DependencyObject element, string value) => element.SetValue(PreferredFocusProperty, value);
+
+    public static string GetPreferredFocus(DependencyObject element) => (string)element.GetValue(PreferredFocusProperty);
+
+    public static void SetLoadedAction(DependencyObject element, string value) => element.SetValue(LoadedActionProperty, value);
+
+    public static string GetLoadedAction(DependencyObject element) => (string)element.GetValue(LoadedActionProperty);
+}
 
 public sealed class CloudWebDavConfigSnapshot
 {
+    [JsonPropertyName("enabled")]
     public bool EnableWebDavSync { get; set; }
 
+    [JsonPropertyName("serverUrl")]
     public string WebDavServerUrl { get; set; } = "https://dav.jianguoyun.com/dav/";
 
+    [JsonPropertyName("rootPath")]
     public string WebDavRootPath { get; set; } = "/yanzi";
 
+    [JsonPropertyName("username")]
     public string WebDavUsername { get; set; } = string.Empty;
+
+    [JsonPropertyName("password")]
+    public string? WebDavPassword { get; set; }
+
+    [JsonPropertyName("enableWebDavSync")]
+    public bool? LegacyEnabled
+    {
+        get => null;
+        set
+        {
+            if (value.HasValue)
+            {
+                EnableWebDavSync = value.Value;
+            }
+        }
+    }
+
+    [JsonPropertyName("webDavServerUrl")]
+    public string? LegacyServerUrl
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                WebDavServerUrl = value;
+            }
+        }
+    }
+
+    [JsonPropertyName("webDavRootPath")]
+    public string? LegacyRootPath
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                WebDavRootPath = value;
+            }
+        }
+    }
+
+    [JsonPropertyName("webDavUsername")]
+    public string? LegacyUsername
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                WebDavUsername = value;
+            }
+        }
+    }
+
+    [JsonPropertyName("webDavPassword")]
+    public string? LegacyPassword
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                WebDavPassword = value;
+            }
+        }
+    }
 }
 
 public sealed class CommandItem : INotifyPropertyChanged

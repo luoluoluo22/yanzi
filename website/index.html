@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Swallow - 燕子启动器 | 极致效率的桌面中心</title>
-  <meta name="description" content="燕子 (Swallow) 是一个开源、轻量且强大的桌面启动器，支持极致的扩展性与跨端同步。">
+  <title>燕子 (Swallow) - 面向小白的开源免费 Quicker 替代方案 | 桌面效率神器</title>
+  <meta name="description" content="燕子 (Swallow) 是一款对标 Quicker 的开源桌面效率工具，通过鼠标或快捷键呼出强大捷径面板，只需一键即可完成所有复杂操作。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
@@ -14,10 +14,7 @@
   <div class="noise"></div>
   <header class="site-header">
     <div class="brand">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="logo-svg">
-        <path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z" fill="currentColor" opacity="0.9"/>
-        <path d="M12 2L10 10L12 18L14 10L12 2Z" fill="#fff" opacity="0.5"/>
-      </svg>
+      <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="Swallow Logo" class="brand-logo" style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
       SWALLOW
     </div>
     <nav>
@@ -31,11 +28,11 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">The Next Gen Launcher</p>
-        <h1>灵动如燕，
-        快如闪电。</h1>
+        <p class="eyebrow">超好用的开源免费效率工具</p>
+        <h1>化繁为简，
+        指尖上的效率神器。</h1>
         <p class="hero-text">
-          燕子 (Swallow) 重塑了你与电脑交互的方式。它是开源的、可灵活扩展的，并原生支持 Cloudflare 分布式同步。
+          燕子 (Swallow) 是一款对标 Quicker 的开源桌面工具。通过按下鼠标中键呼出捷径面板，帮你把日常工作中的繁琐操作（如：查单词、传文件、批量处理等）变成“一键点击”，更有完全免费的跨设备数据同步功能。
         </p>
         <div class="hero-actions">
           <a class="button primary" href="https://github.com/luoluoluo22/yanzi/releases/download/v0.1.0/YanziSetup-0.1.0.exe">下载安装包</a>
@@ -48,42 +45,10 @@
         </div>
       </div>
       <div class="hero-panel">
-        <div class="launcher-mock">
-          <div class="search-row">
-            <span class="search-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-            </span>
-            <span class="search-text">搜索文件、执行指令、或是询问...</span>
-          </div>
-          <div class="list">
-            <div class="item active">
-              <div class="icon google">G</div>
-              <div class="meta">
-                <strong>快速搜索</strong>
-                <span>使用 Google 快速查询“AI 的未来”</span>
-              </div>
-              <div class="side">↵ Enter</div>
-            </div>
-            <div class="item">
-              <div class="icon green">C</div>
-              <div class="meta">
-                <strong>云端同步</strong>
-                <span>同步你的 128 个自定义扩展到云端</span>
-              </div>
-              <div class="side">Command</div>
-            </div>
-            <div class="item">
-              <div class="icon blue">S</div>
-              <div class="meta">
-                <strong>系统偏好</strong>
-                <span>调整热键、主题以及同步策略</span>
-              </div>
-              <div class="side">System</div>
-            </div>
-          </div>
-          <div class="status-row">
-            <span>Swallow v0.9.2-beta</span>
-            <span>⌥ Space 呼出</span>
+        <div class="mock-image-container hero-mock perspective-container">
+          <div class="tilt-wrapper tilt-effect">
+            <img src="/assets/interface.png" alt="Swallow 主界面" class="app-screenshot" />
+            <div class="glass-reflection"></div>
           </div>
         </div>
       </div>
@@ -100,39 +65,39 @@
           <div class="card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
           </div>
-          <h3>命令优先</h3>
-          <p>无需在层层菜单中寻找。通过关键词和智能参数，直接呼出你想执行的操作，直达终点。</p>
+          <h3>一键即达，不再繁琐</h3>
+          <p>不用再一层一层地点开菜单。选中任意文字或文件，呼出燕子面板即可一键完成：翻译、全网搜索、发送至微信、或是打开指定工具。</p>
         </article>
         <article class="card">
           <div class="card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           </div>
-          <h3>扩展生态</h3>
-          <p>主程序与扩展彻底分离。每一个具体的业务逻辑都由可拔插、可定义的扩展来提供生命力。</p>
+          <h3>海量前沿扩展，随意搭配</h3>
+          <p>主程序开箱即用，你可以自由安装各种大神分享的扩展动作。不管是小白、学生还是打工人，都能搭出最顺手的桌面超级工具箱。</p>
         </article>
         <article class="card">
           <div class="card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
-          <h3>极简开发</h3>
-          <p>低门槛是我们的核心。普通用户只需编写一个标准的 JSON 文件，即可将高频操作转化为超级指令。</p>
+          <h3>你也可以轻松做插件</h3>
+          <p>不用学复杂的电脑编程技术！哪怕是小白，只要简单填几个网址或是勾选两个选项，任何人都能轻松做出真正服务于自己的专属效率增强动作。</p>
         </article>
         <article class="card">
           <div class="card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a3.5 3.5 0 1 1 0-7c.18 0 .34.03.5.07.13-4.22 3.63-7.57 7.9-7.57 4.14 0 7.5 3.36 7.5 7.5a7.48 7.48 0 0 1-5.13 7.12C27.97 18.59 27.5 19 26.5 19h-9z" transform="scale(0.6) translate(4, 4)"/><path d="M12 10V6"/><path d="M12 18v-2"/><path d="M16 12l-2 2-2-2"/></svg>
           </div>
-          <h3>原生云同步</h3>
-          <p>基于 Cloudflare 全球边缘节点。你的扩展、脚本和配置逻辑始终随你而行，跨越设备边界。</p>
+          <h3>免费数据云同步</h3>
+          <p>你的自定义动作面板、偏好设置每天自动加密备份至云端。在公司和家里随意切换新电脑，只需登录一次即可瞬间找回全部习惯，无缝办公不等待。</p>
         </article>
       </div>
     </section>
 
     <section id="extensions" class="section split">
       <div>
-        <p class="eyebrow">开发生态</p>
-        <h2>不仅仅是启动器。</h2>
+        <p class="eyebrow">无形之力</p>
+        <h2>让枯燥的流程自动运转。</h2>
         <p class="section-text">
-          通过参数化模板，你可以将任何 Web 服务或本地脚本转化为 Swallow 执行流。
+          即使你没有任何敲代码的经验也能直接使用这套简单至极的方法。看看我们是如何配置一个人工智能问答接口的：
         </p>
         <div class="code-card">
 <pre><code>{
@@ -162,57 +127,10 @@
         <h2>指尖上的效能中心。</h2>
       </div>
       <div class="actions-demo">
-        <div class="quick-menu">
-          <div class="menu-header">
-            <strong>快捷操作</strong>
-            <span>直接进入常用动作，不打断当前搜索。</span>
-          </div>
-          <div class="menu-list">
-            <div class="menu-item">
-              <div class="menu-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              </div>
-              <div class="menu-info">
-                <strong>添加扩展</strong>
-                <span>新建单文件 JSON 扩展</span>
-              </div>
-            </div>
-            <div class="menu-item">
-              <div class="menu-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              </div>
-              <div class="menu-info">
-                <strong>设置</strong>
-                <span>进入设置页调整同步与偏好</span>
-              </div>
-            </div>
-            <div class="menu-item">
-              <div class="menu-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-              </div>
-              <div class="menu-info">
-                <strong>刷新云端</strong>
-                <span>重新拉取扩展与当前用户状态</span>
-              </div>
-            </div>
-            <div class="menu-item">
-              <div class="menu-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-              </div>
-              <div class="menu-info">
-                <strong>帮助文档</strong>
-                <span>打开本地说明与扩展文档</span>
-              </div>
-            </div>
-            <div class="menu-item">
-              <div class="menu-icon bird-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4.5 20.29L5.21 21L12 18L18.79 21L19.5 20.29L12 2Z"/></svg>
-              </div>
-              <div class="menu-info">
-                <strong>关于燕子</strong>
-                <span>查看版本与产品说明</span>
-              </div>
-            </div>
+        <div class="mock-image-container panel-mock perspective-container">
+          <div class="tilt-wrapper tilt-effect-subtle">
+            <img src="/assets/mouse-panel.png" alt="Swallow 鼠标面板" class="app-screenshot" />
+            <div class="glass-reflection"></div>
           </div>
         </div>
       </div>

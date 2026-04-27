@@ -265,7 +265,7 @@
                 </Grid.RowDefinitions>
 
                 <!-- Top Bar -->
-                <Grid Grid.Row="0" Margin="15,10,15,10">
+                <Grid Grid.Row="0" Margin="15,10,15,10" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
@@ -398,9 +398,9 @@
                                     <Rectangle Height="1" Fill="#FF2A2A2A" Margin="0,0,0,10"/>
                                     <TextBlock Text="{Binding SyncStatusText}" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                        <Button Content="登录或切换账号" Style="{StaticResource PrimaryBtn}" Margin="0,0,10,0" Click="SignInButton_Click"/>
-                                        <Button Content="退出登录" Style="{StaticResource SecondaryBtn}" Margin="0,0,10,0" Click="SignOutButton_Click"/>
-                                        <Button Content="刷新云状态" Style="{StaticResource SecondaryBtn}" Click="RefreshSyncStatusButton_Click"/>
+                                        <Button Content="{Binding SignInButtonText}" Style="{StaticResource PrimaryBtn}" Margin="0,0,10,0" Click="SignInButton_Click"/>
+                                        <Button Content="退出登录" Style="{StaticResource SecondaryBtn}" Margin="0,0,10,0" Click="SignOutButton_Click" IsEnabled="{Binding IsAccountLoggedIn}"/>
+                                        <Button Content="刷新云状态" Style="{StaticResource SecondaryBtn}" Click="RefreshSyncStatusButton_Click" IsEnabled="{Binding IsAccountLoggedIn}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
@@ -425,6 +425,10 @@
                                     <TextBlock Text="用户名" Foreground="#FFB8B8B8" FontSize="12" Margin="0,14,0,0" />
                                     <TextBox Text="{Binding WebDavUsername, Mode=TwoWay}" Margin="0,6,0,0"/>
 
+                                    <TextBlock Text="应用密码" Foreground="#FFB8B8B8" FontSize="12" Margin="0,14,0,0" />
+                                    <PasswordBox x:Name="WebDavPasswordBox" Margin="0,6,0,0" Height="40" Padding="12,10" VerticalAlignment="Top" PasswordChanged="WebDavPasswordBox_PasswordChanged"/>
+                                    <TextBlock Text="应用密码会使用 Windows DPAPI 本机加密保存，并自动同步到当前账号配置。" Foreground="#FF666666" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
+
                                     <Grid Margin="0,16,0,0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -433,7 +437,6 @@
                                         <TextBlock Text="{Binding WebDavStatusText}" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0,0,0">
                                             <Button Content="保存配置" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="SaveWebDavSettingsButton_Click"/>
-                                            <Button Content="设置密码" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="SetWebDavCredentialButton_Click"/>
                                             <Button Content="测试连接" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="TestWebDavButton_Click"/>
                                             <Button Content="立即同步" Style="{StaticResource PrimaryBtn}" Click="SyncWebDavButton_Click"/>
                                         </StackPanel>
@@ -474,9 +477,9 @@
                             </Border>
                         </StackPanel>
 
-                        <!-- Quick Panel View -->
+                        <!-- Mouse Panel View -->
                         <StackPanel Visibility="{Binding IsQuickPanelSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="快捷面板 (Quick Panel)" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,15"/>
+                            <TextBlock Text="鼠标面板" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,15"/>
                             
                             <Grid Margin="0,5">
                                 <StackPanel>
@@ -499,7 +502,7 @@
                                     <CheckBox Content="长按中键" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerMiddleButtonLongPress, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
                                     <CheckBox Content="长按右键" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerRightButtonLongPress, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
                                     <CheckBox Content="按右键移动" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerRightButtonDrag, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
-                                    <CheckBox Content="画圈（暂未启用，避免误触）" Foreground="#FF666666" FontSize="13" Margin="0,0,0,8" IsChecked="{Binding TriggerCircleGesture, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
+
                                     <CheckBox Content="滚轮左右（需要鼠标支持）" Foreground="#FFE5E5E5" FontSize="13" IsChecked="{Binding TriggerHorizontalWheel, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
 
                                     <Border BorderBrush="#FF333333" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,14,0,0">
@@ -515,7 +518,7 @@
                             <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="15">
                                 <StackPanel>
                                     <TextBlock Text="1. 在主界面搜索您需要的扩展。" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8"/>
-                                    <TextBlock Text="2. 在搜索结果上点击右键，选择“添加到快捷面板”。" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8"/>
+                                    <TextBlock Text="2. 在搜索结果上点击右键，选择“添加到鼠标面板”。" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8"/>
                                     <TextBlock Text="3. 面板将自动占用第一个可用槽位（共 28 个）。" Foreground="#FFE5E5E5" FontSize="13" Margin="0,0,0,8"/>
                                     <TextBlock Text="4. 长按或拖动触发时，如果启用“松开后执行”，移动到扩展上松开即可自动运行。" Foreground="#FFE5E5E5" FontSize="13"/>
                                 </StackPanel>
@@ -569,12 +572,14 @@
                                                     <ColumnDefinition Width="2.3*" />
                                                     <ColumnDefinition Width="1.1*" />
                                                     <ColumnDefinition Width="0.8*" />
+                                                    <ColumnDefinition Width="0.8*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Text="扩展" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold"/>
                                                 <TextBlock Grid.Column="1" Text="分类" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold"/>
                                                 <TextBlock Grid.Column="2" Text="版本" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold"/>
-                                                <TextBlock Grid.Column="3" Text="操作" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                                <TextBlock Grid.Column="3" Text="启用" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold"/>
+                                                <TextBlock Grid.Column="4" Text="操作" Foreground="#FF8E8E8E" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right"/>
                                             </Grid>
 
                                             <ItemsControl Grid.Row="1" ItemsSource="{Binding ExtensionItems}">
@@ -586,20 +591,27 @@
                                                                     <ColumnDefinition Width="2.3*" />
                                                                     <ColumnDefinition Width="1.1*" />
                                                                     <ColumnDefinition Width="0.8*" />
+                                                                    <ColumnDefinition Width="0.8*" />
                                                                     <ColumnDefinition Width="Auto" />
                                                                 </Grid.ColumnDefinitions>
 
                                                                 <StackPanel>
                                                                     <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
                                                                     <TextBlock Text="{Binding ExtensionId}" Foreground="#FF8E8E8E" FontSize="11" Margin="0,4,0,0"/>
+                                                                    <TextBlock Text="{Binding SourceLabel}" Foreground="#FF666666" FontSize="11" Margin="0,4,0,0"/>
                                                                     <TextBlock Text="{Binding DirectoryPath}" Foreground="#FF666666" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                                                 </StackPanel>
 
                                                                 <TextBlock Grid.Column="1" Text="{Binding Category}" Foreground="#FFE5E5E5" FontSize="12" VerticalAlignment="Center"/>
                                                                 <TextBlock Grid.Column="2" Text="{Binding Version}" Foreground="#FFE5E5E5" FontSize="12" VerticalAlignment="Center"/>
+                                                                <CheckBox Grid.Column="3"
+                                                                          Style="{StaticResource RaycastSwitchStyle}"
+                                                                          IsChecked="{Binding IsEnabled, Mode=OneWay}"
+                                                                          VerticalAlignment="Center"
+                                                                          Click="ExtensionEnabledSwitch_Click"/>
 
-                                                                <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
-                                                                    <Button Content="打开目录" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="OpenExtensionDirectoryButton_Click"/>
+                                                                <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right">
+                                                                    <Button Content="打开目录" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" IsEnabled="{Binding CanOpenDirectory}" Click="OpenExtensionDirectoryButton_Click"/>
                                                                     <Button Content="编辑" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="EditExtensionButton_Click"/>
                                                                     <Button Content="删除" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="DeleteExtensionButton_Click"/>
                                                                 </StackPanel>

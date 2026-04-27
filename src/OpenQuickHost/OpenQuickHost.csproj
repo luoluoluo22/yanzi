@@ -11,6 +11,7 @@
     <Product>Yanzi</Product>
     <Title>Yanzi</Title>
     <ApplicationIcon>yanzi.ico</ApplicationIcon>
+    <CETCompat>false</CETCompat>
   </PropertyGroup>
 
   <ItemGroup>

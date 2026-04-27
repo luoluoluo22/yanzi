@@ -8,7 +8,7 @@ public static class SyncConfigLoader
     private const string FileName = "syncsettings.json";
 
     public static string ConfigPath =>
-        Path.Combine(AppContext.BaseDirectory, FileName);
+        HostAssets.ResolveDataFilePath(FileName);
 
     public static SyncOptions Load()
     {
@@ -31,7 +31,7 @@ public static class SyncConfigLoader
 
     public static void EnsureExampleFile()
     {
-        var examplePath = Path.Combine(AppContext.BaseDirectory, "syncsettings.example.json");
+        var examplePath = HostAssets.ResolveDataFilePath("syncsettings.example.json");
         if (File.Exists(examplePath))
         {
             return;

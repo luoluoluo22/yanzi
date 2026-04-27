@@ -8,7 +8,7 @@ namespace OpenQuickHost;
 public static class AppSettingsStore
 {
     public static string SettingsPath =>
-        Path.Combine(AppContext.BaseDirectory, "appsettings.local.json");
+        HostAssets.ResolveDataFilePath("appsettings.local.json");
 
     public static AppSettings Load()
     {
@@ -80,6 +80,7 @@ public static class AppSettingsStore
 
         settings.GlobalFavoriteExtensionIds ??= settings.FavoriteExtensionIds?.ToList() ?? [];
         settings.ContextFavoriteExtensionIds ??= [];
+        settings.DisabledExtensionIds ??= [];
 
         if (string.IsNullOrWhiteSpace(settings.SelectedQuickPanelGlobalGroupId) ||
             settings.QuickPanelGlobalGroups.All(group => !string.Equals(group.Id, settings.SelectedQuickPanelGlobalGroupId, StringComparison.OrdinalIgnoreCase)))
@@ -93,7 +94,20 @@ public static class AppSettingsStore
             settings.SelectedQuickPanelContextGroupId = settings.QuickPanelContextGroups[0].Id;
         }
 
+        if (!settings.WebDavSyncManuallyDisabled &&
+            HasWebDavConfigValues(settings.WebDavServerUrl, settings.WebDavRootPath, settings.WebDavUsername))
+        {
+            settings.EnableWebDavSync = true;
+        }
+
         return settings;
+    }
+
+    private static bool HasWebDavConfigValues(string? serverUrl, string? rootPath, string? username)
+    {
+        return !string.IsNullOrWhiteSpace(serverUrl) ||
+               !string.IsNullOrWhiteSpace(rootPath) ||
+               !string.IsNullOrWhiteSpace(username);
     }
 }
 
@@ -127,6 +141,8 @@ public sealed record AppSettings
 
     public List<string> ContextFavoriteExtensionIds { get; set; } = new();
 
+    public List<string> DisabledExtensionIds { get; set; } = new();
+
     public bool EnableAgentApi { get; set; } = true;
 
     public int AgentApiPort { get; set; } = 53919;
@@ -135,11 +151,15 @@ public sealed record AppSettings
 
     public bool EnableWebDavSync { get; set; } = false;
 
+    public bool WebDavSyncManuallyDisabled { get; set; } = false;
+
     public string WebDavServerUrl { get; set; } = "https://dav.jianguoyun.com/dav/";
 
     public string WebDavRootPath { get; set; } = "/yanzi";
 
     public string WebDavUsername { get; set; } = string.Empty;
+
+    public bool PreferManualExtensionEditor { get; set; } = false;
 }
 
 public sealed class QuickPanelGroupSettings
@@ -171,7 +191,7 @@ public sealed record QuickPanelMouseTriggerSettings
 
     public bool HorizontalWheel { get; set; } = false;
 
-    public bool CircleGesture { get; set; } = false;
+
 
     public bool ExecuteOnButtonRelease { get; set; } = true;
 

@@ -6,31 +6,38 @@ public static class HostAssets
 {
     private const string DevWorkspacePath = @"F:\Desktop\kaifa\OpenQuickHost";
 
-    public static string RootPath => AppDomain.CurrentDomain.BaseDirectory;
+    public static string InstallRootPath => AppDomain.CurrentDomain.BaseDirectory;
 
-    public static string ExtensionsPath => Path.Combine(RootPath, "Extensions");
+    public static string RootPath => DataRootPath;
 
-    public static string DocsPath => Path.Combine(RootPath, "docs");
+    public static string DataRootPath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OpenQuickHost");
 
-    public static string SkillsPath => Path.Combine(RootPath, "skills");
+    public static string ExtensionsPath => ResolveDataDirectoryPath("Extensions");
+
+    public static string DocsPath => ResolveDataDirectoryPath("docs");
+
+    public static string SkillsPath => ResolveDataDirectoryPath("skills");
 
     public static string DocsReadmePath => Path.Combine(DocsPath, "README.txt");
 
-    public static string LogsPath => Path.Combine(RootPath, "logs");
+    public static string LogsPath => ResolveDataDirectoryPath("logs");
 
     public static string HostLogPath => Path.Combine(LogsPath, "host.log");
 
     public static string DevDebugLogPath => Path.Combine(LogsPath, "dev-debug.log");
 
-    public static string RecentCommandsPath => Path.Combine(RootPath, "recent-commands.txt");
+    public static string RecentCommandsPath => ResolveDataFilePath("recent-commands.txt");
 
-    public static string MarketplacePath => Path.Combine(RootPath, "marketplace.txt");
+    public static string MarketplacePath => ResolveDataFilePath("marketplace.txt");
 
-    public static string LogoPath => Path.Combine(RootPath, "logo.png");
+    public static string LogoPath => Path.Combine(InstallRootPath, "logo.png");
 
-    public static string WebDavSyncStatePath => Path.Combine(RootPath, "webdav-sync-state.json");
+    public static string WebDavSyncStatePath => ResolveDataFilePath("webdav-sync-state.json");
 
-    public static string SearchMemoryPath => Path.Combine(RootPath, "search-memory.json");
+    public static string SearchMemoryPath => ResolveDataFilePath("search-memory.json");
 
     public static void EnsureCreated()
     {
@@ -71,6 +78,20 @@ public static class HostAssets
             "最近执行命令会追加在这里。");
     }
 
+    public static string ResolveDataFilePath(string fileName)
+    {
+        Directory.CreateDirectory(DataRootPath);
+        MigrateLegacyFile(fileName);
+        return Path.Combine(DataRootPath, fileName);
+    }
+
+    public static string ResolveDataDirectoryPath(string directoryName)
+    {
+        Directory.CreateDirectory(DataRootPath);
+        MigrateLegacyDirectory(directoryName);
+        return Path.Combine(DataRootPath, directoryName);
+    }
+
     public static void AppendRecent(string title)
     {
         EnsureCreated();
@@ -105,6 +126,64 @@ public static class HostAssets
         if (!File.Exists(path))
         {
             File.WriteAllText(path, content);
+        }
+    }
+
+    private static void MigrateLegacyFile(string fileName)
+    {
+        var legacyPath = Path.Combine(InstallRootPath, fileName);
+        var targetPath = Path.Combine(DataRootPath, fileName);
+        if (!File.Exists(legacyPath) || File.Exists(targetPath))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            File.Copy(legacyPath, targetPath, overwrite: false);
+        }
+        catch
+        {
+            // Ignore migration failures and continue using the new location.
+        }
+    }
+
+    private static void MigrateLegacyDirectory(string directoryName)
+    {
+        var legacyPath = Path.Combine(InstallRootPath, directoryName);
+        var targetPath = Path.Combine(DataRootPath, directoryName);
+        if (!Directory.Exists(legacyPath) || Directory.Exists(targetPath))
+        {
+            return;
+        }
+
+        try
+        {
+            CopyDirectory(legacyPath, targetPath);
+        }
+        catch
+        {
+            // Ignore migration failures and continue using the new location.
+        }
+    }
+
+    private static void CopyDirectory(string sourcePath, string targetPath)
+    {
+        Directory.CreateDirectory(targetPath);
+
+        foreach (var directoryPath in Directory.GetDirectories(sourcePath, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourcePath, directoryPath);
+            Directory.CreateDirectory(Path.Combine(targetPath, relativePath));
+        }
+
+        foreach (var filePath in Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourcePath, filePath);
+            var destinationPath = Path.Combine(targetPath, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+            File.Copy(filePath, destinationPath, overwrite: false);
         }
     }
 }

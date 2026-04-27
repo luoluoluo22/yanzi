@@ -98,3 +98,86 @@ public sealed class UserExtensionRecord
     [JsonPropertyName("updated_at")]
     public string UpdatedAt { get; init; } = string.Empty;
 }
+
+public sealed class WebDavConfigDto
+{
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
+    
+    [JsonPropertyName("serverUrl")]
+    public string? ServerUrl { get; set; }
+    
+    [JsonPropertyName("rootPath")]
+    public string? RootPath { get; set; }
+    
+    [JsonPropertyName("username")]
+    public string? Username { get; set; }
+    
+    [JsonPropertyName("password")]
+    public string? Password { get; set; }
+
+    [JsonPropertyName("enableWebDavSync")]
+    public bool? LegacyEnabled
+    {
+        get => null;
+        set
+        {
+            if (value.HasValue)
+            {
+                Enabled = value.Value;
+            }
+        }
+    }
+
+    [JsonPropertyName("webDavServerUrl")]
+    public string? LegacyServerUrl
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                ServerUrl = value;
+            }
+        }
+    }
+
+    [JsonPropertyName("webDavRootPath")]
+    public string? LegacyRootPath
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                RootPath = value;
+            }
+        }
+    }
+
+    [JsonPropertyName("webDavUsername")]
+    public string? LegacyUsername
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                Username = value;
+            }
+        }
+    }
+
+    [JsonPropertyName("webDavPassword")]
+    public string? LegacyPassword
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                Password = value;
+            }
+        }
+    }
+}

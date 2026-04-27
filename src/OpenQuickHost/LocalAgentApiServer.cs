@@ -89,7 +89,7 @@ public sealed class LocalAgentApiServer : IDisposable
         var response = context.Response;
         response.ContentType = "application/json; charset=utf-8";
         response.Headers["Access-Control-Allow-Origin"] = "*";
-        response.Headers["Access-Control-Allow-Headers"] = "Content-Type, X-Yanzi-Token";
+        response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Yanzi-Token";
         response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 
         try
@@ -132,6 +132,34 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "GET" && path == "/v1/sync/webdav-config")
+            {
+                await WriteJsonAsync(response, 200, GetWebDavConfigDto());
+                return;
+            }
+
+            if (request.HttpMethod == "GET" && path.StartsWith("/v1/storage/", StringComparison.Ordinal))
+            {
+                var extensionId = Uri.UnescapeDataString(path["/v1/storage/".Length..]);
+                var key = GetQueryString(request, "key");
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    await WriteJsonAsync(response, 400, new { error = "key_required" });
+                    return;
+                }
+
+                var scope = GetQueryString(request, "scope");
+                var result = await ExtensionStorageService.ReadTextAsync(extensionId, key, scope);
+                await WriteJsonAsync(response, 200, new
+                {
+                    found = result.Found,
+                    content = result.Content,
+                    source = result.Source,
+                    localPath = result.LocalPath
+                });
+                return;
+            }
+
             if (request.HttpMethod == "GET" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal))
             {
                 var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..]);
@@ -153,6 +181,31 @@ public sealed class LocalAgentApiServer : IDisposable
                 var command = LocalExtensionCatalog.SaveJsonExtension(manifest);
                 _onMutated();
                 await WriteJsonAsync(response, 201, new { item = ToDto(command) });
+                return;
+            }
+
+            if (request.HttpMethod == "PUT" && path.StartsWith("/v1/storage/", StringComparison.Ordinal))
+            {
+                var extensionId = Uri.UnescapeDataString(path["/v1/storage/".Length..]);
+                var payload = await ReadJsonBodyAsync(request);
+                var key = GetString(payload, "key");
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    await WriteJsonAsync(response, 400, new { error = "key_required" });
+                    return;
+                }
+
+                var content = GetString(payload, "content") ?? string.Empty;
+                var scope = GetString(payload, "scope");
+                var result = await ExtensionStorageService.WriteTextAsync(extensionId, key, content, scope);
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    localPath = result.LocalPath,
+                    cloudSaved = result.CloudSaved,
+                    result.Scope,
+                    cloudMessage = result.CloudMessage
+                });
                 return;
             }
 
@@ -246,8 +299,31 @@ public sealed class LocalAgentApiServer : IDisposable
             return true;
         }
 
+        var bearer = request.Headers["Authorization"];
+        if (!string.IsNullOrWhiteSpace(bearer) &&
+            bearer.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(bearer["Bearer ".Length..].Trim(), _token, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         var incoming = request.Headers["X-Yanzi-Token"];
         return string.Equals(incoming, _token, StringComparison.Ordinal);
+    }
+
+    private static WebDavConfigDto GetWebDavConfigDto()
+    {
+        var settings = AppSettingsStore.Load();
+        var credential = WebDavCredentialStore.Load();
+
+        return new WebDavConfigDto
+        {
+            Enabled = settings.EnableWebDavSync,
+            ServerUrl = settings.WebDavServerUrl,
+            RootPath = settings.WebDavRootPath,
+            Username = settings.WebDavUsername,
+            Password = string.IsNullOrWhiteSpace(credential?.Password) ? null : credential.Password
+        };
     }
 
     private static object ToDto(CommandItem x)
@@ -289,6 +365,11 @@ public sealed class LocalAgentApiServer : IDisposable
         }
 
         return value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    }
+
+    private static string? GetQueryString(HttpListenerRequest request, string key)
+    {
+        return request.QueryString[key];
     }
 
     private static async Task WriteJsonAsync(HttpListenerResponse response, int statusCode, object payload)

@@ -23,6 +23,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _accountTitle = "未登录";
     private string _accountSubtitle = "点击左上角账户卡片登录或切换账号。";
     private string _accountInitial = "燕";
+    private bool _isAccountLoggedIn;
     private string _localExtensionSummary = "正在统计...";
     private string _settingsSearchText = string.Empty;
     private string _extensionSearchText = string.Empty;
@@ -45,7 +46,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             new SettingsNavigationItem("sync", "M12,6V9L16,5L12,1V4A8,8 0 0,0 4,12C4,13.43 4.37,14.77 5.03,15.94L6.47,14.5C6.17,13.73 6,12.89 6,12A6,6 0 0,1 12,6M18.97,8.06L17.53,9.5C17.83,10.27 18,11.11 18,12A6,6 0 0,1 12,18V15L8,19L12,23V20A8,8 0 0,0 20,12C20,10.57 19.63,9.23 18.97,8.06Z", "同步", "#FF22C55E"),
             new SettingsNavigationItem("extensions", "M20.5,11H19V7C19,5.89 18.11,5 17,5H13V3.5A1.5,1.5 0 0,0 11.5,2A1.5,1.5 0 0,0 10,3.5V5H6C4.89,5 4,5.89 4,7V11H2.5A1.5,1.5 0 0,0 1,12.5A1.5,1.5 0 0,0 2.5,14H4V18C4,19.11 4.89,20 6,20H10V21.5A1.5,1.5 0 0,0 11.5,23A1.5,1.5 0 0,0 13,21.5V20H17C18.11,20 19,19.11 19,18V14H20.5A1.5,1.5 0 0,0 22,12.5A1.5,1.5 0 0,0 20.5,11Z", "扩展", "#FFF97316"),
             new SettingsNavigationItem("shortcuts", "M7,7H17V9H7V7M7,11H13V13H7V11M15,11H17V13H15V11M7,15H11V17H7V15M13,15H17V17H13V15M5,3H19A2,2 0 0,1 21,5V19A2,2 0 0,1 19,21H5A2,2 0 0,1 3,19V5A2,2 0 0,1 5,3Z", "快捷键", "#FFEAB308"),
-            new SettingsNavigationItem("quickpanel", "M4,4H20V20H4V4M6,6V18H18V6H6M8,8H10V10H8V8M14,8H16V10H14V8M8,14H10V16H8V14M14,14H16V16H14V14Z", "快捷面板", "#FFEC4899"),
+            new SettingsNavigationItem("quickpanel", "M4,4H20V20H4V4M6,6V18H18V6H6M8,8H10V10H8V8M14,8H16V10H14V8M8,14H10V16H8V14M14,14H16V16H14V14Z", "鼠标面板", "#FFEC4899"),
             new SettingsNavigationItem("about", "M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z", "关于", "#FF8B5CF6")
         ];
         _selectedNavigation = NavigationItems.First();
@@ -202,6 +203,27 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
         }
     }
+
+    public bool IsAccountLoggedIn
+    {
+        get => _isAccountLoggedIn;
+        private set
+        {
+            if (value == _isAccountLoggedIn)
+            {
+                return;
+            }
+
+            _isAccountLoggedIn = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SignInButtonText));
+            OnPropertyChanged(nameof(SignInMenuText));
+        }
+    }
+
+    public string SignInButtonText => IsAccountLoggedIn ? "切换账号" : "登录账号";
+
+    public string SignInMenuText => IsAccountLoggedIn ? "切换账号" : "登录账号";
 
     public string BaseUrl { get; }
 
@@ -420,11 +442,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.HorizontalWheel = value);
     }
 
-    public bool TriggerCircleGesture
-    {
-        get => _settings.QuickPanelMouseTriggers.CircleGesture;
-        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.CircleGesture = value);
-    }
+
 
     public bool ExecuteOnButtonRelease
     {
@@ -447,7 +465,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (trigger.RightButtonLongPress) labels.Add("长按右键");
             if (trigger.RightButtonDrag) labels.Add("按右键移动");
             if (trigger.HorizontalWheel) labels.Add("滚轮左右");
-            if (trigger.CircleGesture) labels.Add("画圈");
+
             return labels.Count == 0 ? "未启用鼠标触发，默认回退为长按中键。" : string.Join("、", labels);
         }
     }
@@ -501,7 +519,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshExtensionItems();
         RefreshShortcutItems();
         RefreshQuickPanelTriggerBindings();
-        SyncStatusText = $"当前同步服务：{BaseUrl}";
+        SyncStatusText = _mainWindow.SyncStatus;
     }
 
     private void SettingsWindow_Activated(object? sender, EventArgs e)
@@ -516,11 +534,24 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         WebDavServerUrl = string.IsNullOrWhiteSpace(_settings.WebDavServerUrl) ? "https://dav.jianguoyun.com/dav/" : _settings.WebDavServerUrl;
         WebDavRootPath = _settings.WebDavRootPath;
         WebDavUsername = _settings.WebDavUsername;
+        
+        // 加载已保存的密码
+        var credential = WebDavCredentialStore.Load();
+        if (credential != null && !string.IsNullOrWhiteSpace(credential.Password))
+        {
+            WebDavPasswordBox.Password = credential.Password;
+        }
+        else
+        {
+            WebDavPasswordBox.Password = string.Empty;
+        }
+        
         RefreshAccountSummary();
         RefreshExtensionSummary();
         RefreshExtensionItems();
         RefreshShortcutItems();
         RefreshWebDavSummary();
+        SyncStatusText = _mainWindow.SyncStatus;
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -602,9 +633,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void SaveWebDavSettingsButton_Click(object sender, RoutedEventArgs e)
     {
         _mainWindow.SaveWebDavSettings(EnableWebDavSync, WebDavServerUrl, WebDavRootPath, WebDavUsername);
+        
+        // 保存密码
+        var password = WebDavPasswordBox.Password;
+        if (!string.IsNullOrWhiteSpace(password))
+        {
+            _mainWindow.SaveWebDavCredential(WebDavUsername, password);
+        }
+        
         _settings = AppSettingsStore.Load();
         RefreshWebDavSummary();
         SyncStatusText = "WebDAV 配置已保存。";
+    }
+
+    private void WebDavPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        // 密码改变时更新状态
+        RefreshWebDavSummary();
     }
 
     private void SetWebDavCredentialButton_Click(object sender, RoutedEventArgs e)
@@ -613,7 +658,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var requireUsername = string.IsNullOrWhiteSpace(username);
         if (requireUsername)
         {
-            System.Windows.MessageBox.Show(this, "请先在上一层填写坚果云用户名，再设置应用密码。", "缺少用户名", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show(this, "请先在上一层填写 WebDAV 用户名，再设置应用密码。", "缺少用户名", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -713,6 +758,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        _settings = _mainWindow.GetCurrentAppSettings();
         RefreshExtensionSummary();
         RefreshExtensionItems();
         RefreshShortcutItems();
@@ -742,6 +788,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         ExtensionItems.Remove(item);
+        _settings = _mainWindow.GetCurrentAppSettings();
         RefreshExtensionSummary();
         OnPropertyChanged(nameof(ExtensionSearchSummary));
         RefreshShortcutItems();
@@ -762,6 +809,31 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             : _mainWindow.HasWebDavCredential()
                 ? $"已配置：{WebDavServerUrl} {WebDavRootPath}"
                 : "已启用，但还未设置 WebDAV 密码。";
+    }
+
+    public void RefreshWebDavConfigFromExternal()
+    {
+        _settings = AppSettingsStore.Load();
+        EnableWebDavSync = _settings.EnableWebDavSync;
+        WebDavServerUrl = string.IsNullOrWhiteSpace(_settings.WebDavServerUrl) 
+            ? "https://dav.jianguoyun.com/dav/" 
+            : _settings.WebDavServerUrl;
+        WebDavRootPath = _settings.WebDavRootPath;
+        WebDavUsername = _settings.WebDavUsername;
+        
+        // Load password from credential store
+        var credential = WebDavCredentialStore.Load();
+        if (credential != null && !string.IsNullOrWhiteSpace(credential.Password))
+        {
+            WebDavPasswordBox.Password = credential.Password;
+        }
+        else
+        {
+            WebDavPasswordBox.Password = string.Empty;
+        }
+        
+        RefreshWebDavSummary();
+        SyncStatusText = "WebDAV 配置已从云端同步。";
     }
 
     private void EditLauncherHotkeyButton_Click(object sender, RoutedEventArgs e)
@@ -863,52 +935,90 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (ok)
         {
             await _mainWindow.RefreshCloudFromSettingsAsync();
+            RefreshWebDavConfigFromExternal();
+            SyncStatusText = _mainWindow.SyncStatus;
         }
+    }
+
+    private void ExtensionEnabledSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.CheckBox { DataContext: SettingsExtensionItem item } checkbox)
+        {
+            return;
+        }
+
+        _mainWindow.SetExtensionEnabled(item.ExtensionId, checkbox.IsChecked == true);
+        _settings = _mainWindow.GetCurrentAppSettings();
+        RefreshExtensionSummary();
+        RefreshExtensionItems();
     }
 
     private async Task SignOutAsync()
     {
         _mainWindow.SignOutFromSettings();
+        ClearWebDavConfiguration();
         RefreshAccountSummary();
+        SyncStatusText = _mainWindow.SyncStatus;
         await Task.CompletedTask;
+    }
+
+    private void ClearWebDavConfiguration()
+    {
+        // Clear UI-bound properties
+        EnableWebDavSync = false;
+        WebDavServerUrl = string.Empty;
+        WebDavRootPath = string.Empty;
+        WebDavUsername = string.Empty;
+        WebDavPasswordBox.Password = string.Empty;
+        
+        // Save cleared settings to persistent storage
+        _mainWindow.SaveWebDavSettings(false, string.Empty, string.Empty, string.Empty);
+        
+        // Clear stored credential
+        WebDavCredentialStore.Clear();
+        
+        // Update UI status
+        RefreshWebDavSummary();
+        SyncStatusText = "已退出登录，WebDAV 配置已清除。";
     }
 
     private async Task RefreshCloudAsync()
     {
         await _mainWindow.RefreshCloudFromSettingsAsync();
         RefreshAccountSummary();
-        SyncStatusText = "已刷新云状态。";
+        RefreshWebDavConfigFromExternal();
+        SyncStatusText = _mainWindow.SyncStatus;
     }
 
     private void RefreshAccountSummary()
     {
         var session = SyncSessionStore.Load();
-        var credential = SecureCredentialStore.Load();
+        HostAssets.AppendLog($"Settings RefreshAccountSummary: sessionExists={session != null}, sessionExpired={session != null && session.ExpiresAt <= DateTimeOffset.UtcNow.ToUnixTimeSeconds()}");
         if (session != null && session.ExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds())
         {
+            IsAccountLoggedIn = true;
             AccountTitle = session.Username;
             AccountSubtitle = $"已登录 Cloud · 用户 ID {session.UserId}";
             AccountInitial = session.Username[..1].ToUpperInvariant();
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(credential?.LoginEmail))
-        {
-            AccountTitle = credential.LoginEmail;
-            AccountSubtitle = "本机已保存登录信息，下一次同步时会自动登录。";
-            AccountInitial = credential.LoginEmail[..1].ToUpperInvariant();
-            return;
-        }
-
+        IsAccountLoggedIn = false;
         AccountTitle = "未登录";
         AccountSubtitle = "点击左上角账户卡片登录或切换账号。";
         AccountInitial = "燕";
     }
 
+    public void RefreshAccountFromExternal()
+    {
+        RefreshAccountSummary();
+        SyncStatusText = _mainWindow.SyncStatus;
+    }
+
     private void RefreshExtensionSummary()
     {
-        var count = LocalExtensionCatalog.LoadCommands().Count;
-        LocalExtensionSummary = $"当前机器已发现 {count} 个本地扩展。";
+        var count = _mainWindow.GetExtensionsForSettings().Count;
+        LocalExtensionSummary = $"当前机器已发现 {count} 个扩展。";
         OnPropertyChanged(nameof(ExtensionSearchSummary));
     }
 
@@ -917,7 +1027,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ExtensionItems.Clear();
 
         var keyword = ExtensionSearchText.Trim();
-        var items = _mainWindow.GetLocalExtensionsForSettings()
+        var items = _mainWindow.GetExtensionsForSettings()
             .Where(command =>
                 string.IsNullOrWhiteSpace(keyword) ||
                 command.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
@@ -929,7 +1039,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 command.Title,
                 command.Category,
                 command.DeclaredVersion,
-                command.ExtensionDirectoryPath ?? string.Empty))
+                command.ExtensionDirectoryPath ?? string.Empty,
+                command.Category.Contains("网页搜索", StringComparison.OrdinalIgnoreCase) ? "网页搜索扩展" : "本地扩展",
+                command.Source == CommandSource.LocalExtension,
+                _mainWindow.IsExtensionEnabled(command.ExtensionId)))
             .ToList();
 
         foreach (var item in items)
@@ -995,7 +1108,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ],
         "quickpanel" =>
         [
-            "快捷面板", "面板", "鼠标", "右键", "中键", "x1", "x2", "长按", "滚轮", "松开", "quick panel", "mouse", "middle", "right click"
+            "鼠标面板", "快捷面板", "面板", "鼠标", "右键", "中键", "x1", "x2", "长按", "滚轮", "松开", "quick panel", "mouse", "middle", "right click"
         ],
         "about" =>
         [
@@ -1033,16 +1146,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SaveQuickPanelTriggerSettings()
     {
-        if (_settings.QuickPanelMouseTriggers.CircleGesture)
-        {
-            _settings.QuickPanelMouseTriggers.CircleGesture = false;
-            OnPropertyChanged(nameof(TriggerCircleGesture));
-            System.Windows.MessageBox.Show(this, "画圈手势需要轨迹识别，暂未启用，避免误触。", "暂未支持", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
+
 
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
-        SyncStatusText = $"快捷面板鼠标触发已保存：{QuickPanelTriggerSummary}";
+        SyncStatusText = $"鼠标面板触发已保存：{QuickPanelTriggerSummary}";
     }
 
     private void RefreshQuickPanelTriggerBindings()
@@ -1057,7 +1165,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(TriggerRightButtonLongPress));
         OnPropertyChanged(nameof(TriggerRightButtonDrag));
         OnPropertyChanged(nameof(TriggerHorizontalWheel));
-        OnPropertyChanged(nameof(TriggerCircleGesture));
+
         OnPropertyChanged(nameof(ExecuteOnButtonRelease));
         OnPropertyChanged(nameof(QuickPanelTriggerSummary));
     }
@@ -1115,4 +1223,7 @@ public sealed record SettingsExtensionItem(
     string Title,
     string Category,
     string Version,
-    string DirectoryPath);
+    string DirectoryPath,
+    string SourceLabel,
+    bool CanOpenDirectory,
+    bool IsEnabled);

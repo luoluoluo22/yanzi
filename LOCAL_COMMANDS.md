@@ -5,18 +5,9 @@
 ## 构建与验证
 
 ```powershell
-dotnet build OpenQuickHost.sln
+dotnet build
 ```
 
-```powershell
-.\scripts\verify-extension-package.ps1
-```
-
-如果要验证 WebDAV 扩展包上传/下载回环：
-
-```powershell
-.\scripts\verify-extension-package.ps1 -WebDav
-```
 
 ## 生成发布包
 

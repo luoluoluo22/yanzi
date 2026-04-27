@@ -772,6 +772,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     public void ShowAtMouse()
     {
+        HostAssets.AppendLog("Quick panel show requested.");
         _previousForegroundWindow = NativeMethods.GetForegroundWindow();
         _foregroundAppContext = BuildForegroundAppContext(_previousForegroundWindow);
         var point = NativeMethods.GetCursorPosition();
@@ -789,6 +790,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         HubSearchBox.Text = string.Empty; // Reset search on show
         _hoveredSlot = null;
         LoadSlots(); // Refresh
+        var occupiedGlobal = GlobalSlots.Count(slot => slot.IsOccupied);
+        var occupiedContext = ContextSlots.Count(slot => slot.IsOccupied);
+        HostAssets.AppendLog($"Quick panel showing at ({Left:0},{Top:0}), cursor=({point.X:0},{point.Y:0}), occupiedGlobal={occupiedGlobal}, occupiedContext={occupiedContext}, totalGlobal={GlobalSlots.Count}, totalContext={ContextSlots.Count}.");
         OnPropertyChanged(nameof(ContextSectionTitle));
         OnPropertyChanged(nameof(ContextHintText));
         Show();

@@ -39,14 +39,26 @@ public class InputHookService
     private static TrackedMouseButton _trackedButton = TrackedMouseButton.None;
     private static POINT _downPoint;
 
+    public static bool IsRunning => _isEnabled;
+
     public static void Start(Action onLongPress, Action? onLongPressRelease = null)
     {
-        if (_isEnabled) return;
+        if (_isEnabled)
+        {
+            HostAssets.AppendLog("Input hook: start skipped because hook is already running.");
+            return;
+        }
         
         _onShowPanel = onLongPress;
         _onLongPressRelease = onLongPressRelease;
         ReloadSettings();
         _hookID = SetHook(_proc);
+        if (_hookID == IntPtr.Zero)
+        {
+            var error = Marshal.GetLastWin32Error();
+            HostAssets.AppendLog($"Input hook: failed to install low level mouse hook, lastError={error}.");
+            return;
+        }
         
         _longPressTimer = new DispatcherTimer();
         _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 150, 2000));
@@ -59,13 +71,16 @@ public class InputHookService
         };
 
         _isEnabled = true;
+        HostAssets.AppendLog($"Input hook: started. hook=0x{_hookID.ToInt64():X}, triggers={DescribeSettings()}.");
     }
 
     public static void Stop()
     {
         if (!_isEnabled) return;
-        UnhookWindowsHookEx(_hookID);
+        var unhooked = UnhookWindowsHookEx(_hookID);
+        HostAssets.AppendLog($"Input hook: stopped. unhooked={unhooked}.");
         _longPressTimer?.Stop();
+        _hookID = IntPtr.Zero;
         _isEnabled = false;
     }
 
@@ -96,8 +111,33 @@ public class InputHookService
         using (Process curProcess = Process.GetCurrentProcess())
         using (ProcessModule curModule = curProcess.MainModule!)
         {
-            return SetWindowsHookEx(WH_MOUSE_LL, proc, GetModuleHandle(curModule.ModuleName), 0);
+            var moduleHandle = GetModuleHandle(curModule.ModuleName);
+            var hook = SetWindowsHookEx(WH_MOUSE_LL, proc, moduleHandle, 0);
+            if (hook != IntPtr.Zero)
+            {
+                return hook;
+            }
+
+            var firstError = Marshal.GetLastWin32Error();
+            HostAssets.AppendLog($"Input hook: SetWindowsHookEx failed with module handle, module={curModule.ModuleName}, hMod=0x{moduleHandle.ToInt64():X}, lastError={firstError}; retrying with hMod=0.");
+            return SetWindowsHookEx(WH_MOUSE_LL, proc, IntPtr.Zero, 0);
         }
+    }
+
+    private static string DescribeSettings()
+    {
+        var enabled = new List<string>();
+        if (_settings.MiddleButtonDown) enabled.Add("MiddleDown");
+        if (_settings.X1ButtonDown) enabled.Add("X1Down");
+        if (_settings.X2ButtonDown) enabled.Add("X2Down");
+        if (_settings.CtrlLeftClick) enabled.Add("CtrlLeft");
+        if (_settings.CtrlRightClick) enabled.Add("CtrlRight");
+        if (_settings.MiddleButtonLongPress) enabled.Add($"MiddleLong:{_settings.LongPressMilliseconds}ms");
+        if (_settings.RightButtonLongPress) enabled.Add($"RightLong:{_settings.LongPressMilliseconds}ms");
+        if (_settings.RightButtonDrag) enabled.Add($"RightDrag:{_settings.DragThresholdPixels}px");
+        if (_settings.HorizontalWheel) enabled.Add("HorizontalWheel");
+        if (_settings.ExecuteOnButtonRelease) enabled.Add("ReleaseExec");
+        return enabled.Count == 0 ? "none" : string.Join(",", enabled);
     }
 
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
@@ -124,6 +164,7 @@ public class InputHookService
             else if (message == WM_RBUTTONDOWN)
             {
                 BeginTracking(TrackedMouseButton.Right, mouse.pt);
+                HostAssets.AppendLog($"Input hook: right button down, rightLong={_settings.RightButtonLongPress}, rightDrag={_settings.RightButtonDrag}, ctrlRight={_settings.CtrlRightClick}, ctrlDown={IsControlDown()}, pt=({mouse.pt.x},{mouse.pt.y}).");
                 _rightButtonDownSwallowed = ShouldDelayRightButtonClick();
                 if (_settings.CtrlRightClick && IsControlDown())
                 {
@@ -144,6 +185,7 @@ public class InputHookService
             else if (message == WM_MBUTTONDOWN)
             {
                 BeginTracking(TrackedMouseButton.Middle, mouse.pt);
+                HostAssets.AppendLog($"Input hook: middle button down, middleDown={_settings.MiddleButtonDown}, middleLong={_settings.MiddleButtonLongPress}, pt=({mouse.pt.x},{mouse.pt.y}).");
                 if (_settings.MiddleButtonDown)
                 {
                     _releaseShouldExecute = true;
@@ -185,6 +227,7 @@ public class InputHookService
             }
             else if (message == WM_RBUTTONUP)
             {
+                HostAssets.AppendLog($"Input hook: right button up, tracked={_trackedButton}, releaseShouldExecute={_releaseShouldExecute}, rightDownSwallowed={_rightButtonDownSwallowed}.");
                 var shouldReplayShortClick = _rightButtonDownSwallowed && !_releaseShouldExecute;
                 var shouldSwallow = _rightButtonDownSwallowed || _releaseShouldExecute;
                 if (EndTracking(TrackedMouseButton.Right))
@@ -205,6 +248,7 @@ public class InputHookService
             }
             else if (message == WM_MBUTTONUP)
             {
+                HostAssets.AppendLog($"Input hook: middle button up, tracked={_trackedButton}, releaseShouldExecute={_releaseShouldExecute}.");
                 EndTracking(TrackedMouseButton.Middle);
             }
             else if (message == WM_XBUTTONUP)
@@ -245,6 +289,7 @@ public class InputHookService
         ReloadSettings();
         _longPressTimer?.Stop();
         _longPressTimer?.Start();
+        HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, interval={Math.Clamp(_settings.LongPressMilliseconds, 150, 2000)}ms.");
     }
 
     private static void HandleMouseMove(POINT point)

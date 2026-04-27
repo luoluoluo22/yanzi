@@ -85,88 +85,23 @@
             </Grid.RowDefinitions>
 
             <!-- 1. Search Bar -->
-            <Grid Grid.Row="0" Margin="20,15,20,10">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+            <Grid x:Name="SearchBarGrid"
+                  Grid.Row="0"
+                  Margin="20,15,20,10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <ItemsControl Grid.Row="0"
-                              Grid.ColumnSpan="3"
-                              ItemsSource="{Binding SearchScopes}"
-                              Margin="0,0,0,8">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type local:SearchScopeTab}">
-                            <Button Content="{Binding DisplayLabel}"
-                                    ToolTip="{Binding Tooltip}"
-                                    Tag="{Binding}"
-                                    Click="SearchScopeButton_Click"
-                                    Margin="0,0,6,0"
-                                    Padding="9,4"
-                                    FontSize="12"
-                                    FontWeight="SemiBold"
-                                    BorderThickness="1"
-                                    Cursor="Hand">
-                                <Button.Style>
-                                    <Style TargetType="Button">
-                                        <Setter Property="Background" Value="#141F2937" />
-                                        <Setter Property="BorderBrush" Value="#303B4658" />
-                                        <Setter Property="Foreground" Value="#FF9CA3AF" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border x:Name="Root"
-                                                            Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                                            CornerRadius="8"
-                                                            Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter HorizontalAlignment="Center"
-                                                                          VerticalAlignment="Center" />
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="Root" Property="Background" Value="#203B82F6" />
-                                                            <Setter Property="Foreground" Value="White" />
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                <Setter Property="Background" Value="#303B82F6" />
-                                                <Setter Property="BorderBrush" Value="#703B82F6" />
-                                                <Setter Property="Foreground" Value="White" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-
                 <!-- Search Icon -->
-                <TextBlock Grid.Row="1"
-                           VerticalAlignment="Center"
+                <TextBlock VerticalAlignment="Center"
                            FontSize="20"
                            Foreground="#FFAAAAAA"
                            Text="⌕" 
                            Margin="5,0,15,0"/>
 
                 <TextBox x:Name="SearchBox"
-                         Grid.Row="1"
                          Grid.Column="1"
                          FontSize="20"
                          Foreground="White"
@@ -180,7 +115,6 @@
                 
                 <!-- Search Box Placeholder -->
                 <TextBlock Grid.Column="1"
-                           Grid.Row="1"
                            IsHitTestVisible="False"
                            Text="开始搜索，或输入 @谷歌 关键词..."
                            VerticalAlignment="Center"
@@ -198,8 +132,7 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-                <Button Grid.Row="1"
-                        Grid.Column="2"
+                <Button Grid.Column="2"
                         Width="32"
                         Height="32"
                         Background="Transparent"
@@ -217,24 +150,135 @@
                 </Button>
             </Grid>
 
+            <Popup x:Name="SearchScopePopup"
+                   PlacementTarget="{Binding ElementName=SearchBarGrid}"
+                   Placement="Top"
+                   HorizontalOffset="0"
+                   VerticalOffset="-20"
+                   AllowsTransparency="True"
+                   IsOpen="False"
+                   StaysOpen="True"
+                   DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                <StackPanel Orientation="Horizontal">
+                    <ItemsControl ItemsSource="{Binding SearchScopes}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type local:SearchScopeTab}">
+                                <Button Content="{Binding DisplayLabel}"
+                                        ToolTip="{Binding Tooltip}"
+                                        Tag="{Binding}"
+                                        Click="SearchScopeButton_Click"
+                                        Margin="0,0,5,0"
+                                        Padding="7,3"
+                                        FontSize="12"
+                                        FontWeight="SemiBold"
+                                        BorderThickness="1"
+                                        Cursor="Hand">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Background" Value="#E012151B" />
+                                            <Setter Property="BorderBrush" Value="#48516172" />
+                                            <Setter Property="Foreground" Value="#FFE5E7EB" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border x:Name="Root"
+                                                                Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                CornerRadius="4"
+                                                                Padding="{TemplateBinding Padding}">
+                                                            <Border.Effect>
+                                                                <DropShadowEffect BlurRadius="10"
+                                                                                  ShadowDepth="2"
+                                                                                  Opacity="0.32"
+                                                                                  Color="#000000" />
+                                                            </Border.Effect>
+                                                            <ContentPresenter HorizontalAlignment="Center"
+                                                                              VerticalAlignment="Center" />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Root" Property="Background" Value="#E0192435" />
+                                                                <Setter TargetName="Root" Property="BorderBrush" Value="#6D7B8BA3" />
+                                                                <Setter Property="Foreground" Value="White" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                    <Setter Property="Background" Value="#E0192945" />
+                                                    <Setter Property="BorderBrush" Value="#A03B82F6" />
+                                                    <Setter Property="Foreground" Value="White" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="+"
+                            ToolTip="自定义添加"
+                            Click="SearchScopeAddButton_Click"
+                            Margin="1,0,0,0"
+                            Padding="7,3"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            BorderThickness="1"
+                            Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#E012151B" />
+                                <Setter Property="BorderBrush" Value="#48516172" />
+                                <Setter Property="Foreground" Value="#FFE5E7EB" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="Root"
+                                                    Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    CornerRadius="4"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="10"
+                                                                      ShadowDepth="2"
+                                                                      Opacity="0.32"
+                                                                      Color="#000000" />
+                                                </Border.Effect>
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Root" Property="Background" Value="#E01F9D55" />
+                                                    <Setter TargetName="Root" Property="BorderBrush" Value="#B034D399" />
+                                                    <Setter Property="Content" Value="+ 添加" />
+                                                    <Setter Property="Foreground" Value="White" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </Popup>
+
             <!-- Separator -->
             <Rectangle Grid.Row="0" Height="1" Fill="#FF2A2A2A" VerticalAlignment="Bottom" Margin="0,5,0,0"/>
 
             <!-- 2. List Content -->
             <Grid Grid.Row="1" Margin="10,5,10,5">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-
-                <TextBlock Text="Suggestions" 
-                           Margin="12,10,0,5" 
-                           Foreground="#FF666666" 
-                           FontSize="12" 
-                           FontWeight="SemiBold"/>
-
                 <ListBox x:Name="CommandList"
-                         Grid.Row="1"
                          Background="Transparent"
                          BorderThickness="0"
                          ItemsSource="{Binding FilteredCommands}"
@@ -252,7 +296,7 @@
                                       Header="添加桌面快捷方式"
                                       Click="CreateDesktopShortcutMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="M10,2V4.5L12,6.5V10H18V6.5L20,4.5V2M15,12A3,3 0 0,0 12,15A3,3 0 0,0 15,18A3,3 0 0,0 18,15A3,3 0 0,0 15,12Z" Fill="#A0FFFFFF" Stretch="Uniform" />
+                                    <Path Data="M4,2H20A2,2 0 0,1 22,4V16A2,2 0 0,1 20,18H16L12,22L8,18H4A2,2 0 0,1 2,16V4A2,2 0 0,1 4,2M4,4V16H8.83L12,19.17L15.17,16H20V4H4M13,14V10H15V14H18L14,18L10,14H13Z" Fill="#60A5FA" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <Separator />
@@ -260,7 +304,7 @@
                                       Header="设置快捷键"
                                       Click="SetCommandShortcutMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="M7,12V7H12A5,5 0 0,1 17,12A5,5 0 0,1 12,17H7V12M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2Z" Fill="#A0FFFFFF" Stretch="Uniform" />
+                                    <Path Data="M19,10H17V8H19M19,13H17V11H19M16,10H14V8H16M16,13H14V11H16M16,17H8V15H16M7,10H5V8H7M7,13H5V11H7M8,11H10V13H8M8,8H10V10H8M11,11H13V13H11M11,8H13V10H11M20,5H4C2.89,5 2,5.89 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7C22,5.89 21.1,5 20,5Z" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="RenameCommandMenuItem"
@@ -274,22 +318,22 @@
                                       Header="编辑扩展"
                                       Click="EditExtensionMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25M21.41,6.34L17.66,2.59L16.06,4.19L19.81,7.94L21.41,6.34Z" Fill="#A0FFFFFF" Stretch="Uniform" />
+                                    <Path Data="M14.06,9L15,9.94L5.92,19H5V18.08L14.06,9M17.66,3C17.41,3 17.15,3.1 16.96,3.29L15.13,5.12L18.88,8.87L20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18.17,3.09 17.92,3 17.66,3M14.06,6.19L3,17.25V21H6.75L17.81,9.94L14.06,6.19Z" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="DeleteExtensionMenuItem"
                                       Header="删除"
                                       Click="DeleteExtensionMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" Fill="#EF4444" Stretch="Uniform" />
+                                    <Path Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <Separator />
                             <MenuItem x:Name="AddToQuickPanelMenuItem"
-                                      Header="添加到快捷面板"
+                                      Header="添加到鼠标面板"
                                       Click="AddToQuickPanelMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="#A0FFFFFF" Stretch="Uniform" />
+                                    <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                         </ContextMenu>
@@ -470,7 +514,7 @@
                         </Border>
                     </Grid>
 
-                    <Grid Grid.Row="1" Margin="0,18,0,0">
+                    <Grid Grid.Row="1" Margin="0,18,0,0" Visibility="{Binding HostedViewLegacyVisibility}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="14" />
@@ -565,6 +609,11 @@
                         </Border>
                     </Grid>
 
+                    <ContentControl Grid.Row="1"
+                                    Margin="0,18,0,0"
+                                    Content="{Binding HostedViewDynamicContent}"
+                                    Visibility="{Binding HostedViewDynamicVisibility}" />
+
                     <Grid Grid.Row="2" Margin="0,16,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -585,7 +634,8 @@
                                 Padding="18,10"
                                 FontSize="13"
                                 FontWeight="SemiBold"
-                                Click="HostedViewRunButton_Click" />
+                                Click="HostedViewRunButton_Click"
+                                Visibility="{Binding HostedViewFooterActionVisibility}" />
                     </Grid>
                 </Grid>
             </Border>
@@ -603,9 +653,8 @@
                                 ToolTip="添加扩展"
                                 Click="FooterAddExtensionButton_Click"
                                 Style="{StaticResource QuickMenuButtonStyle}">
-                            <Path Data="M5,12 H19 M12,5 V19"
-                                  Stroke="#FFE5E7EB"
-                                  StrokeThickness="1.6"
+                            <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"
+                                  Fill="#FFE5E7EB"
                                   Height="14"
                                   Width="14"
                                   Stretch="Uniform"
@@ -622,11 +671,10 @@
                             <Path Data="M3,6H21V8H3V6ZM3,11H21V13H3V11ZM3,16H21V18H3V16Z" 
                                   Fill="#FF888888" Height="14" Width="14" Stretch="Uniform" HorizontalAlignment="Center"/>
                         </Button>
-                        <TextBlock Text="{Binding FooterHint}" Foreground="#FF666666" FontSize="12" VerticalAlignment="Center"/>
                     </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <TextBlock Text="Actions" Foreground="#FF888888" FontSize="12" VerticalAlignment="Center"/>
+                        <TextBlock Text="更多菜单" Foreground="#FF888888" FontSize="12" VerticalAlignment="Center"/>
                         <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
                             <Border Background="#FF282828" CornerRadius="3" Padding="4,2" Margin="0,0,4,0" VerticalAlignment="Center">
                                 <TextBlock Text="Ctrl" Foreground="#FF888888" FontSize="10"/>

@@ -54,6 +54,42 @@ public sealed class WebDavSyncService
         await EnsureCollectionAsync("packages", cancellationToken);
     }
 
+    public async Task<string?> TryReadExtensionDataTextAsync(string extensionId, string key, CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+        await EnsureCollectionAsync("appdata", cancellationToken);
+        var bytes = await TryGetBytesAsync(BuildExtensionDataPath(extensionId, key), cancellationToken);
+        return bytes == null ? null : Encoding.UTF8.GetString(bytes);
+    }
+
+    public async Task WriteExtensionDataTextAsync(string extensionId, string key, string content, CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+        await EnsureCollectionAsync("appdata", cancellationToken);
+
+        var segments = key.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var collectionSegments = new List<string> { "appdata", extensionId };
+        if (segments.Length > 1)
+        {
+            collectionSegments.AddRange(segments.Take(segments.Length - 1));
+        }
+
+        await EnsureCollectionTreeAsync(cancellationToken, collectionSegments.ToArray());
+
+        using var request = CreateRequest(HttpMethod.Put, BuildExtensionDataPath(extensionId, key));
+        request.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(content ?? string.Empty));
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("text/plain")
+        {
+            CharSet = "utf-8"
+        };
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            await ThrowWebDavFailureAsync(request, response, cancellationToken);
+        }
+    }
+
     public async Task<WebDavSyncResult> SyncExtensionsAsync(CancellationToken cancellationToken = default)
     {
         EnsureConfigured();
@@ -668,6 +704,11 @@ public sealed class WebDavSyncService
     private static string BuildRemotePackagePath(string extensionId, string packageHash)
     {
         return $"packages/{extensionId}/{packageHash}.zip";
+    }
+
+    private static string BuildExtensionDataPath(string extensionId, string key)
+    {
+        return $"appdata/{NormalizeRelativePath(extensionId)}/{NormalizeRelativePath(key)}";
     }
 
     private static string ComputeSha256(byte[] bytes)

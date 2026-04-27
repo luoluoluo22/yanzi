@@ -13,6 +13,7 @@ public partial class App : WpfApplication
     private Forms.NotifyIcon? _notifyIcon;
     private SettingsWindow? _settingsWindow;
     private LocalAgentApiServer? _agentApiServer;
+    private bool _listenerServicesPaused;
 
     protected override void OnStartup(WpfStartupEventArgs e)
     {
@@ -25,11 +26,26 @@ public partial class App : WpfApplication
 
         var window = new MainWindow();
         MainWindow = window;
-        window.Show();
-        window.HideToTray();
-
         _notifyIcon = BuildNotifyIcon(window);
+        window.Show();
+        if (ShouldStartHidden(e.Args))
+        {
+            window.HideToTray();
+        }
+        else
+        {
+            window.ShowPanel();
+        }
+
         StartLocalAgentApi(window, settings);
+    }
+
+    private static bool ShouldStartHidden(string[] args)
+    {
+        return args.Any(arg =>
+            string.Equals(arg, "--tray", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(arg, "/tray", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(arg, "-tray", StringComparison.OrdinalIgnoreCase));
     }
 
     protected override void OnExit(WpfExitEventArgs e)
@@ -75,7 +91,7 @@ public partial class App : WpfApplication
         }
     }
 
-    private static Forms.NotifyIcon BuildNotifyIcon(MainWindow window)
+    private Forms.NotifyIcon BuildNotifyIcon(MainWindow window)
     {
         var notifyIcon = new Forms.NotifyIcon
         {
@@ -85,8 +101,7 @@ public partial class App : WpfApplication
 
         notifyIcon.Icon = TryCreateNotifyIcon() ?? SystemIcons.Application;
         
-        // 双击显示/隐藏
-        notifyIcon.DoubleClick += (_, _) => window.TogglePanelVisibility();
+        notifyIcon.DoubleClick += (_, _) => ToggleListenerServices();
         
         // 右键弹出 WPF ContextMenu
         notifyIcon.MouseUp += (s, e) =>
@@ -95,6 +110,7 @@ public partial class App : WpfApplication
             {
                 if (WpfApplication.Current.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu menu)
                 {
+                    UpdateTrayMenuState(menu);
                     menu.IsOpen = true;
                     // 激活窗口以确保菜单失去焦点时能自动关闭
                     window.Activate();
@@ -109,6 +125,16 @@ public partial class App : WpfApplication
     private void TrayShow_Click(object sender, RoutedEventArgs e)
     {
         (MainWindow as MainWindow)?.ShowPanel();
+    }
+
+    private void TrayMousePanel_Click(object sender, RoutedEventArgs e)
+    {
+        (MainWindow as MainWindow)?.ShowMousePanel();
+    }
+
+    private void TrayToggleMousePanelService_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleListenerServices();
     }
 
     private void TrayHide_Click(object sender, RoutedEventArgs e)
@@ -130,6 +156,45 @@ public partial class App : WpfApplication
         }
     }
 
+    private void ToggleListenerServices()
+    {
+        if (MainWindow is not MainWindow mainWindow || _notifyIcon == null)
+        {
+            return;
+        }
+
+        _listenerServicesPaused = !_listenerServicesPaused;
+        if (_listenerServicesPaused)
+        {
+            mainWindow.PauseListenerServices();
+            _notifyIcon.Icon = TryCreateDisabledNotifyIcon() ?? SystemIcons.Application;
+            _notifyIcon.Text = "燕子 - 服务已暂停";
+            HostAssets.AppendLog("Tray: listener services paused.");
+        }
+        else
+        {
+            mainWindow.ResumeListenerServices();
+            _notifyIcon.Icon = TryCreateNotifyIcon() ?? SystemIcons.Application;
+            _notifyIcon.Text = "燕子";
+            HostAssets.AppendLog("Tray: listener services resumed.");
+        }
+    }
+
+    private void UpdateTrayMenuState(System.Windows.Controls.ContextMenu menu)
+    {
+        foreach (var item in menu.Items.OfType<System.Windows.Controls.MenuItem>())
+        {
+            if (Equals(item.Tag, "service-toggle"))
+            {
+                item.Header = _listenerServicesPaused ? "恢复全部服务" : "暂停全部服务";
+            }
+            else if (Equals(item.Tag, "mouse-panel"))
+            {
+                item.IsEnabled = !_listenerServicesPaused;
+            }
+        }
+    }
+
     private static Icon? TryCreateNotifyIcon()
     {
         try
@@ -142,6 +207,30 @@ public partial class App : WpfApplication
 
             using var icon = new Icon(resource.Stream);
             return (Icon)icon.Clone();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Icon? TryCreateDisabledNotifyIcon()
+    {
+        try
+        {
+            using var bitmap = new Bitmap(32, 32);
+            using (var g = Graphics.FromImage(bitmap))
+            {
+                g.Clear(Color.Transparent);
+                using var fill = new SolidBrush(Color.FromArgb(255, 96, 96, 96));
+                using var border = new Pen(Color.FromArgb(255, 150, 150, 150), 2);
+                g.FillEllipse(fill, 4, 4, 24, 24);
+                g.DrawEllipse(border, 4, 4, 24, 24);
+                using var slash = new Pen(Color.FromArgb(255, 220, 220, 220), 3);
+                g.DrawLine(slash, 10, 22, 22, 10);
+            }
+
+            return Icon.FromHandle(bitmap.GetHicon());
         }
         catch
         {

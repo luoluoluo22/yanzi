@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:OpenQuickHost"
         mc:Ignorable="d"
-        Title="快捷面板" Height="620" Width="340"
+        Title="鼠标面板" Height="620" Width="340"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"

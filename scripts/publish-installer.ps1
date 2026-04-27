@@ -30,6 +30,7 @@ dotnet publish $project `
     -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:EnableCompressionInSingleFile=true `
+    -p:CETCompat=false `
     -o $publishDir
 
 Write-Host "Published portable executable:"

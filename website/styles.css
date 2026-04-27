@@ -733,3 +733,70 @@ pre {
     padding: 1rem;
   }
 }
+
+/* App Screenshot Styles */
+.perspective-container {
+  perspective: 1500px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.mock-image-container {
+  position: relative;
+  border-radius: var(--radius-lg);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.hero-mock {
+  max-width: 600px;
+}
+
+.panel-mock {
+  max-width: 440px;
+}
+
+.app-screenshot {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), 0 0 40px rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: block;
+}
+
+.tilt-wrapper {
+  position: relative;
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-style: preserve-3d;
+  width: 100%;
+}
+
+.tilt-effect {
+  transform: rotateY(-15deg) rotateX(5deg) scale(0.95);
+}
+
+.mock-image-container:hover .tilt-effect {
+  transform: rotateY(0deg) rotateX(0deg) scale(1);
+}
+
+.tilt-effect-subtle {
+  transform: rotateY(10deg) rotateX(5deg) scale(0.95);
+}
+
+.mock-image-container:hover .tilt-effect-subtle {
+  transform: rotateY(0deg) rotateX(0deg) scale(1);
+}
+
+.glass-reflection {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 40%, transparent 60%, rgba(255, 255, 255, 0.05) 100%);
+  pointer-events: none;
+  z-index: 10;
+  transform: translateZ(10px);
+}

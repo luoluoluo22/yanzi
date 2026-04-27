@@ -268,14 +268,21 @@ public static class ScriptExtensionRunner
 
     private static ScriptExecutionContext CreateContext(CommandItem command, string? inputText, string launchSource)
     {
+        var settings = AppSettingsStore.Load();
+        var agentApiBaseUrl = settings.EnableAgentApi
+            ? $"http://127.0.0.1:{settings.AgentApiPort}"
+            : string.Empty;
         return new ScriptExecutionContext(
             command.ExtensionId,
             command.Title,
             command.ExtensionDirectoryPath!,
+            ExtensionStorageService.GetExtensionStorageDirectoryPath(command.ExtensionId),
             inputText ?? string.Empty,
             launchSource,
             DateTimeOffset.Now,
-            command.Permissions);
+            command.Permissions,
+            agentApiBaseUrl,
+            settings.AgentApiToken);
     }
 
     private static void ApplyRuntimeEnvironment(
@@ -285,11 +292,17 @@ public static class ScriptExtensionRunner
         string contextPath,
         string launchSource)
     {
+        var settings = AppSettingsStore.Load();
         startInfo.Environment["YANZI_INPUT"] = inputText ?? string.Empty;
         startInfo.Environment["YANZI_CONTEXT_PATH"] = contextPath;
         startInfo.Environment["YANZI_EXTENSION_ID"] = command.ExtensionId;
         startInfo.Environment["YANZI_EXTENSION_DIR"] = command.ExtensionDirectoryPath!;
+        startInfo.Environment["YANZI_EXTENSION_DATA_DIR"] = ExtensionStorageService.GetExtensionStorageDirectoryPath(command.ExtensionId);
         startInfo.Environment["YANZI_LAUNCH_SOURCE"] = launchSource;
+        startInfo.Environment["YANZI_AGENT_API_BASE_URL"] = settings.EnableAgentApi
+            ? $"http://127.0.0.1:{settings.AgentApiPort}"
+            : string.Empty;
+        startInfo.Environment["YANZI_AGENT_API_TOKEN"] = settings.AgentApiToken ?? string.Empty;
     }
 
     private static string Quote(string value)
@@ -316,10 +329,13 @@ public static class ScriptExtensionRunner
         string ExtensionId,
         string Title,
         string ExtensionDirectory,
+        string ExtensionDataDirectory,
         string InputText,
         string LaunchSource,
         DateTimeOffset Now,
-        IReadOnlyList<string> Permissions);
+        IReadOnlyList<string> Permissions,
+        string AgentApiBaseUrl,
+        string AgentApiToken);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -353,6 +369,10 @@ public static class ScriptExtensionRunner
 
     private const string CSharpRuntimeSource =
         """
+        using System.Linq;
+        using System.Net.Http;
+        using System.Net.Http.Json;
+        using System.Text;
         using System.Text.Json;
 
         namespace OpenQuickHost.CSharpRuntime;
@@ -361,11 +381,18 @@ public static class ScriptExtensionRunner
             string ExtensionId,
             string Title,
             string ExtensionDirectory,
+            string ExtensionDataDirectory,
             string InputText,
             string LaunchSource,
             DateTimeOffset Now,
-            IReadOnlyList<string> Permissions)
+            IReadOnlyList<string> Permissions,
+            string AgentApiBaseUrl,
+            string AgentApiToken)
         {
+            private YanziStorageClient? _storage;
+
+            public YanziStorageClient Storage => _storage ??= new YanziStorageClient(this);
+
             public static async Task<YanziActionContext> LoadFromEnvironmentAsync()
             {
                 var contextPath = Environment.GetEnvironmentVariable("YANZI_CONTEXT_PATH");
@@ -380,6 +407,108 @@ public static class ScriptExtensionRunner
                     PropertyNameCaseInsensitive = true
                 }) ?? throw new InvalidOperationException("Failed to read Yanzi context.");
             }
+        }
+
+        public sealed class YanziStorageClient
+        {
+            private readonly YanziActionContext _context;
+
+            public YanziStorageClient(YanziActionContext context)
+            {
+                _context = context;
+            }
+
+            public async Task<string?> ReadTextAsync(string key, string scope = "local")
+            {
+                if (string.Equals(scope, "local", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(_context.AgentApiBaseUrl))
+                {
+                    var path = ResolveLocalPath(key);
+                    return File.Exists(path) ? await File.ReadAllTextAsync(path) : null;
+                }
+
+                using var client = CreateClient();
+                var response = await client.GetAsync($"/v1/storage/{Uri.EscapeDataString(_context.ExtensionId)}?key={Uri.EscapeDataString(key)}&scope={Uri.EscapeDataString(scope)}");
+                response.EnsureSuccessStatusCode();
+                var payload = await response.Content.ReadFromJsonAsync<StorageReadResponse>();
+                return payload?.Content;
+            }
+
+            public async Task WriteTextAsync(string key, string content, string scope = "local")
+            {
+                if (string.Equals(scope, "local", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(_context.AgentApiBaseUrl))
+                {
+                    var path = ResolveLocalPath(key);
+                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                    await File.WriteAllTextAsync(path, content ?? string.Empty, Encoding.UTF8);
+                    return;
+                }
+
+                using var client = CreateClient();
+                using var response = await client.PutAsJsonAsync(
+                    $"/v1/storage/{Uri.EscapeDataString(_context.ExtensionId)}",
+                    new StorageWriteRequest(key, content ?? string.Empty, scope));
+                response.EnsureSuccessStatusCode();
+            }
+
+            public async Task<T?> ReadJsonAsync<T>(string key, string scope = "local")
+            {
+                var text = await ReadTextAsync(key, scope);
+                return string.IsNullOrWhiteSpace(text) ? default : JsonSerializer.Deserialize<T>(text, SerializerOptions);
+            }
+
+            public Task WriteJsonAsync<T>(string key, T value, string scope = "local")
+            {
+                var json = JsonSerializer.Serialize(value, SerializerOptions);
+                return WriteTextAsync(key, json, scope);
+            }
+
+            private string ResolveLocalPath(string key)
+            {
+                var normalized = NormalizeKey(key);
+                return Path.Combine(_context.ExtensionDataDirectory, normalized.Replace('/', Path.DirectorySeparatorChar));
+            }
+
+            private HttpClient CreateClient()
+            {
+                var client = new HttpClient
+                {
+                    BaseAddress = new Uri(_context.AgentApiBaseUrl, UriKind.Absolute)
+                };
+
+                if (!string.IsNullOrWhiteSpace(_context.AgentApiToken))
+                {
+                    client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _context.AgentApiToken);
+                }
+
+                return client;
+            }
+
+            private static string NormalizeKey(string key)
+            {
+                var normalized = (key ?? string.Empty).Replace('\\', '/').Trim('/');
+                if (string.IsNullOrWhiteSpace(normalized))
+                {
+                    throw new InvalidOperationException("Storage key is required.");
+                }
+
+                var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (segments.Any(static segment => segment is "." or ".."))
+                {
+                    throw new InvalidOperationException("Storage key cannot contain . or .. segments.");
+                }
+
+                return string.Join("/", segments);
+            }
+
+            private static readonly JsonSerializerOptions SerializerOptions = new()
+            {
+                PropertyNameCaseInsensitive = true,
+                WriteIndented = true
+            };
+
+            private sealed record StorageReadResponse(bool Found, string? Content, string Source, string LocalPath);
+
+            private sealed record StorageWriteRequest(string Key, string Content, string Scope);
         }
         """;
 }

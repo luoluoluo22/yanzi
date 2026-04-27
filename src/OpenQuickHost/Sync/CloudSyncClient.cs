@@ -323,7 +323,7 @@ public sealed class CloudSyncClient
                 displayName = "Yanzi WebDAV Settings",
                 version = "1",
                 category = "系统配置",
-                description = "Stores non-secret WebDAV sync configuration for the current account.",
+                description = "Stores WebDAV sync configuration for the current account.",
                 keywords = new[] { "yanzi", "webdav", "settings" }
             }
         });
@@ -500,6 +500,37 @@ public sealed class CloudSyncClient
             Username = auth.Username,
             Email = auth.Email
         };
+    }
+
+    public async Task<WebDavConfigDto?> FetchWebDavConfigAsync(CancellationToken cancellationToken = default)
+    {
+        if (!HasValidSession())
+        {
+            return null;
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/sync/webdav-config");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session!.AccessToken);
+            
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                // No WebDAV config on server
+                return null;
+            }
+            
+            await EnsureSuccessAsync(response, cancellationToken);
+            
+            return await ReadAsync<WebDavConfigDto>(response, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to fetch WebDAV config: {ex.Message}");
+            return null;
+        }
     }
 
     private static async Task<T?> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)

@@ -6,7 +6,7 @@ namespace OpenQuickHost.Sync;
 public static class SyncSessionStore
 {
     public static string SessionPath =>
-        Path.Combine(AppContext.BaseDirectory, "syncsession.json");
+        HostAssets.ResolveDataFilePath("syncsession.json");
 
     public static SyncSession? Load()
     {
