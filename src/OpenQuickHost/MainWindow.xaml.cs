@@ -104,7 +104,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Closing += MainWindow_Closing;
         StateChanged += MainWindow_StateChanged;
 
-        Closing += (s, e) => InputHookService.Stop();
+        Closing += (s, e) =>
+        {
+            InputHookService.Stop();
+            KeyboardDoubleTapService.Stop();
+        };
 
         _quickPanel = new QuickPanelWindow(this);
         _backgroundWebDavSyncTimer = new DispatcherTimer
@@ -347,6 +351,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         await RefreshCloudStateAsync(allowLoginPrompt: false);
+        StartStartupExtensions();
     }
 
     private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -2720,6 +2725,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _quickPanel?.ShowAtMouse();
     }
 
+    private void StartStartupExtensions()
+    {
+        _ = Task.Run(async () =>
+        {
+            // 给软件一点初始化时间
+            await Task.Delay(3000);
+            
+            var startupCommands = _allCommands
+                .Where(x => x.Startup?.Mode == "on_app_launch")
+                .ToList();
+
+            foreach (var command in startupCommands)
+            {
+                await Dispatcher.InvokeAsync(async () => 
+                {
+                    try
+                    {
+                        HostAssets.AppendLog($"Starting startup extension: {command.Title} ({command.ExtensionId})");
+                        await ExecuteCommandAsync(command, launchSource: "app-startup");
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Failed to start extension {command.Title}: {ex.Message}");
+                    }
+                });
+                
+                // 多个自启动扩展之间稍微间隔下，避免瞬间压力过大
+                await Task.Delay(500);
+            }
+        });
+    }
+
     public void StartMousePanelService()
     {
         if (_listenerServicesPaused)
@@ -2745,6 +2782,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _listenerServicesPaused = true;
         StopMousePanelService();
+        KeyboardDoubleTapService.Stop();
         UnregisterLauncherHotkey();
         UnregisterExtensionHotkeys();
         SyncStatus = "已暂停快捷键、扩展快捷键和鼠标面板监听。";
@@ -2755,6 +2793,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _listenerServicesPaused = false;
         InputHookService.ReloadSettings();
         StartMousePanelService();
+        KeyboardDoubleTapService.Start(HandleKeyboardDoubleTap);
         RefreshLauncherHotkeyRegistration();
         RefreshExtensionHotkeys();
         SyncStatus = "已恢复快捷键、扩展快捷键和鼠标面板监听。";
@@ -2798,6 +2837,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _source.AddHook(WndProc);
         if (!_listenerServicesPaused)
         {
+            KeyboardDoubleTapService.Start(HandleKeyboardDoubleTap);
             RefreshLauncherHotkeyRegistration();
             RefreshExtensionHotkeys();
         }
@@ -2811,6 +2851,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 UnregisterExtensionHotkeys();
                 UnregisterLauncherHotkey();
+                KeyboardDoubleTapService.Stop();
                 _source.RemoveHook(WndProc);
             }
 
@@ -2918,6 +2959,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = ExecuteCommandAsync(runnable, string.Empty, "hotkey");
     }
 
+    private void HandleKeyboardDoubleTap(string keyName)
+    {
+        var configuredShortcut = AppSettingsStore.Load().LauncherHotkey;
+        var expectedShortcut = keyName switch
+        {
+            "Control" => "DoubleCtrl",
+            "Alt" => "DoubleAlt",
+            _ => string.Empty
+        };
+
+        if (!string.Equals(configuredShortcut, expectedShortcut, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        HostAssets.AppendLog($"Launcher keyboard double tap invoked: {keyName}.");
+        TogglePanelVisibility();
+    }
+
     private void RefreshExtensionHotkeys()
     {
         if (_source == null)
@@ -2936,6 +2996,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!TryParseHotkey(command.GlobalShortcut!, out var modifiers, out var key))
             {
                 HostAssets.AppendLog($"Invalid global shortcut skipped: {command.Title} -> {command.GlobalShortcut}");
+                continue;
+            }
+
+            if (key == Key.None || modifiers == 0)
+            {
+                HostAssets.AppendLog($"Unsupported extension shortcut skipped: {command.Title} -> {command.GlobalShortcut}");
                 continue;
             }
 
@@ -2984,6 +3050,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(shortcut))
         {
             return false;
+        }
+
+        if (IsDoubleTapShortcut(shortcut))
+        {
+            return true;
         }
 
         var segments = shortcut
@@ -3040,6 +3111,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return modifiers != 0 && key != Key.None;
     }
 
+    private static bool IsDoubleTapShortcut(string shortcut)
+    {
+        return string.Equals(shortcut, "DoubleCtrl", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(shortcut, "DoubleAlt", StringComparison.OrdinalIgnoreCase);
+    }
+
     private bool RefreshLauncherHotkeyRegistration()
     {
         if (_source == null)
@@ -3049,6 +3126,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         UnregisterLauncherHotkey();
         var shortcut = AppSettingsStore.Load().LauncherHotkey;
+        if (IsDoubleTapShortcut(shortcut))
+        {
+            HostAssets.AppendLog($"Launcher hotkey registered as double tap: {shortcut}");
+            return true;
+        }
+
         if (!TryParseHotkey(shortcut, out var modifiers, out var key))
         {
             HostAssets.AppendLog($"Invalid launcher hotkey skipped: {shortcut}");
@@ -3303,7 +3386,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         message = string.Empty;
         if (string.IsNullOrWhiteSpace(shortcut) || !TryParseHotkey(shortcut, out _, out _))
         {
-            message = "快捷键格式无效。示例：Ctrl+Shift+Space";
+            message = "快捷键格式无效。示例：Alt+Space 或 DoubleCtrl";
             return false;
         }
 
@@ -3480,7 +3563,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             if (!string.IsNullOrWhiteSpace(shortcut) &&
-                !TryParseHotkey(shortcut, out _, out _))
+                (!TryParseHotkey(shortcut, out _, out _) || IsDoubleTapShortcut(shortcut)))
             {
                 return Task.FromResult((false, "快捷键格式无效。示例：Ctrl+Alt+T"));
             }
@@ -3670,7 +3753,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             if (!string.IsNullOrWhiteSpace(dialog.ShortcutText) &&
-                !TryParseHotkey(dialog.ShortcutText, out _, out _))
+                (!TryParseHotkey(dialog.ShortcutText, out _, out _) || IsDoubleTapShortcut(dialog.ShortcutText)))
             {
                 SyncStatus = "快捷键格式无效。示例：Ctrl+Alt+T";
                 return Task.CompletedTask;
@@ -4094,6 +4177,10 @@ public sealed record HostedViewActionDefinition(
     string? Scope,
     string? DefaultValue);
 
+public sealed record ExtensionStartupDefinition(
+    string? Mode,
+    string? Schedule);
+
 public sealed class HostedViewStateBindingContext : INotifyPropertyChanged
 {
     private readonly HostedPluginSession _session;
@@ -4264,7 +4351,8 @@ public sealed class CommandItem : INotifyPropertyChanged
         IEnumerable<string>? permissions = null,
         string? entryMode = null,
         string? inlineScriptSource = null,
-        string? iconReference = null)
+        string? iconReference = null,
+        ExtensionStartupDefinition? startup = null)
     {
         Glyph = glyph;
         Title = title;
@@ -4292,6 +4380,7 @@ public sealed class CommandItem : INotifyPropertyChanged
         IconReference = iconReference;
         IconSource = ExtensionIconLibrary.ResolveImageSource(iconReference, extensionDirectoryPath);
         VectorIcon = ExtensionIconLibrary.ResolveVectorIcon(iconReference);
+        Startup = startup;
     }
 
     public string Glyph { get; }
@@ -4347,6 +4436,8 @@ public sealed class CommandItem : INotifyPropertyChanged
     public IReadOnlyList<string> Permissions { get; }
 
     public string? EntryMode { get; }
+
+    public ExtensionStartupDefinition? Startup { get; }
 
     public string? InlineScriptSource { get; }
 

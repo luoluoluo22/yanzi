@@ -6,7 +6,8 @@
         Height="260"
         WindowStartupLocation="CenterOwner"
         Style="{StaticResource DialogWindow}"
-        PreviewKeyDown="Window_PreviewKeyDown">
+        PreviewKeyDown="Window_PreviewKeyDown"
+        PreviewKeyUp="Window_PreviewKeyUp">
     <Border Margin="15"
             CornerRadius="12"
             Background="#FF161616"

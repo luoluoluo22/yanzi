@@ -2,14 +2,19 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:OpenQuickHost"
-        Title="添加新扩展"
-        Width="760"
-        Height="700"
-        MinWidth="680"
-        MinHeight="520"
+        Width="1200"
+        Height="880"
+        MinWidth="1080"
+        MinHeight="760"
         WindowStartupLocation="CenterOwner"
+        AllowsTransparency="True"
+        WindowStyle="None"
+        ResizeMode="NoResize"
         Background="Transparent"
         Style="{StaticResource DialogWindow}">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="40" GlassFrameThickness="0" CornerRadius="0" />
+    </WindowChrome.WindowChrome>
     <Window.Resources>
         <SolidColorBrush x:Key="BgBrush" Color="#FF1C1C1C" />
         <SolidColorBrush x:Key="SurfaceBrush" Color="#FF252525" />
@@ -107,613 +112,351 @@
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" Direction="270" ShadowDepth="2" Opacity="0.5"/>
         </Border.Effect>
-    <Grid Background="{StaticResource BgBrush}"
-          ClipToBounds="True">
+        <Grid Background="{StaticResource BgBrush}" ClipToBounds="True">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <Grid x:Name="ContentRoot" MaxWidth="720" Margin="24,28,24,24">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+        <!-- Header Area -->
+        <Border Grid.Row="0" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,0,0,1" Padding="28,24">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-                <Grid Margin="0,0,0,24">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+                <StackPanel MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" Background="Transparent" Cursor="Hand">
+                    <TextBlock FontSize="26" FontWeight="Bold">
+                        <Run x:Name="PageHeaderPrefix" Text="编辑" Foreground="{StaticResource TextBrush}" />
+                        <Run x:Name="PageHeaderAccent" Text="扩展" Foreground="{StaticResource AccentBrush}" />
+                    </TextBlock>
+                    <TextBlock x:Name="HeaderDescription"
+                             Margin="0,6,0,0"
+                             Text="直接修改 JSON，验证通过后可以测试并保存。"
+                             Foreground="{StaticResource Text2Brush}"
+                             FontSize="13.5" />
+                </StackPanel>
 
-                    <StackPanel MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" Background="Transparent" Cursor="Hand">
-                        <TextBlock FontSize="24"
-                                   FontWeight="Bold">
-                            <Run x:Name="PageHeaderPrefix" Text="添加" Foreground="{StaticResource TextBrush}" />
-                            <Run x:Name="PageHeaderAccent" Text="新扩展" Foreground="{StaticResource AccentBrush}" />
-                        </TextBlock>
-                        <TextBlock x:Name="HeaderDescription"
-                                   Margin="0,8,0,0"
-                                   Text="不懂代码？没关系。描述你的想法，让 AI 来写配置，你来粘贴就好。"
-                                   Foreground="{StaticResource Text2Brush}"
-                                   FontSize="13"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
                     <Button x:Name="ManualModeButton"
-                            Grid.Column="1"
-                            Margin="0,0,10,0"
+                            Margin="0,0,12,0"
                             Content="手动编辑"
                             Style="{StaticResource GhostButtonStyle}"
-                            Width="86"
-                            Height="34"
-                            MinHeight="34"
+                            Height="36"
+                            Padding="16,0"
                             Click="ManualModeButton_Click" />
 
                     <Button x:Name="CloseButton"
-                            Grid.Column="2"
-                            Width="34"
-                            Height="34"
+                            Width="36"
+                            Height="36"
                             Style="{StaticResource GhostButtonStyle}"
                             Padding="0"
                             Click="CancelButton_Click"
                             ToolTip="关闭">
-                        <TextBlock Text="✕" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <TextBlock Text="✕" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Button>
-                </Grid>
+                </StackPanel>
+            </Grid>
+        </Border>
 
-                <Grid x:Name="WizardHeaderPanel" Grid.Row="1" Margin="0,0,0,20">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+        <!-- Main Content Area -->
+        <Grid Grid.Row="1" Margin="28,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="420" />
+                <ColumnDefinition Width="28" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <Border x:Name="Step1Dot" Width="24" Height="24" CornerRadius="12" BorderThickness="1.5">
-                            <TextBlock x:Name="Step1DotText" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" FontWeight="Bold" />
-                        </Border>
-                        <TextBlock x:Name="Step1Label" Text="描述需求" Margin="7,0,0,0" VerticalAlignment="Center" FontSize="12" />
-                    </StackPanel>
-
-                    <Border x:Name="StepLine1" Grid.Column="1" Margin="10,0" Height="1" VerticalAlignment="Center" Background="{StaticResource BorderBrushSoft}" />
-
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
-                        <Border x:Name="Step2Dot" Width="24" Height="24" CornerRadius="12" BorderThickness="1.5">
-                            <TextBlock x:Name="Step2DotText" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" FontWeight="Bold" />
-                        </Border>
-                        <TextBlock x:Name="Step2Label" Text="复制提示词" Margin="7,0,0,0" VerticalAlignment="Center" FontSize="12" />
-                    </StackPanel>
-
-                    <Border x:Name="StepLine2" Grid.Column="3" Margin="10,0" Height="1" VerticalAlignment="Center" Background="{StaticResource BorderBrushSoft}" />
-
-                    <StackPanel Grid.Column="4" Orientation="Horizontal">
-                        <Border x:Name="Step3Dot" Width="24" Height="24" CornerRadius="12" BorderThickness="1.5">
-                            <TextBlock x:Name="Step3DotText" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" FontWeight="Bold" />
-                        </Border>
-                        <TextBlock x:Name="Step3Label" Text="粘贴 JSON 并测试" Margin="7,0,0,0" VerticalAlignment="Center" FontSize="12" />
-                    </StackPanel>
-                </Grid>
-
-                <Grid Grid.Row="2">
-                    <Border x:Name="Step1Panel" Style="{StaticResource CardStyle}">
+            <!-- Left Column: Form & Controls -->
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                <StackPanel>
+                    <!-- Templates Section -->
+                    <Border Style="{StaticResource CardStyle}" Padding="18" Margin="0,0,0,20">
                         <StackPanel>
-                            <TextBlock Text="你想要一个什么扩展？"
-                                       Foreground="{StaticResource TextBrush}"
-                                       FontSize="16"
-                                       FontWeight="Bold" />
-                            <TextBlock Text="用大白话描述，不需要懂技术。"
-                                       Margin="0,4,0,0"
-                                       Foreground="{StaticResource Text2Brush}"
-                                       FontSize="13" />
+                            <TextBlock Text="模板" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="SemiBold" />
+                            <WrapPanel Margin="0,12,0,0">
+                                <Button Content="打开桌面" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="base" />
+                                <Button Content="打开记事本" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="open" />
+                                <Button Content="网页搜索" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="search" />
+                                <Button Content="内联脚本" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="script" />
+                                <Button Content="前台窗口" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="foreground" />
+                                <Button Content="模拟粘贴" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="clipboard" />
+                                <Button Content="选中内容" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="selection" />
+                                <Button Content="C# 脚本" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="csharp" />
+                                <Button Content="时间格式" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="timestamp" />
+                                <Button Content="翻译工作区" Style="{StaticResource ChipButtonStyle}" Click="ManualTemplateButton_Click" Tag="translate" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
 
-                            <Grid Margin="0,16,0,0">
-                                <TextBox x:Name="AiRequestBox"
-                                         MinHeight="100"
-                                         Padding="16,14"
-                                         AcceptsReturn="True"
-                                         TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Auto"
-                                         Background="{StaticResource Surface2Brush}"
-                                         BorderBrush="{StaticResource BorderBrushSoft}"
-                                         BorderThickness="1"
-                                         Foreground="{StaticResource TextBrush}"
-                                         FontSize="14"
-                                         TextChanged="AiRequestBox_TextChanged" />
-                                <TextBlock x:Name="AiRequestPlaceholder"
-                                           Margin="16,14,40,14"
-                                           IsHitTestVisible="False"
-                                           Foreground="{StaticResource Text3Brush}"
-                                           TextWrapping="Wrap"
-                                           Text="例如：创建一个扩展，点击后直接打开淘宝首页。" />
-                            </Grid>
-
-                            <StackPanel Margin="0,12,0,0">
-                                <TextBlock Text="快速试试："
-                                           Foreground="{StaticResource Text3Brush}"
-                                           FontSize="11" />
-                                <WrapPanel Margin="0,8,0,0">
-                                    <Button Content="📁 打开桌面文件夹" Style="{StaticResource ChipButtonStyle}" Click="AiExampleButton_Click" Tag="创建一个扩展，点击后直接打开当前用户的桌面文件夹。" />
-                                    <Button Content="🛒 打开淘宝" Style="{StaticResource ChipButtonStyle}" Click="AiExampleButton_Click" Tag="创建一个扩展，点击后直接打开淘宝首页。" />
-                                    <Button Content="🔎 百度搜索选中文字" Style="{StaticResource ChipButtonStyle}" Click="AiExampleButton_Click" Tag="创建一个扩展，读取当前选中的文字或输入内容，并用百度搜索这个关键词。" />
-                                    <Button Content="📝 开发一个笔记本应用" Style="{StaticResource ChipButtonStyle}" Click="AiExampleButton_Click" Tag="创建一个带界面的笔记本扩展原型，支持新建、编辑和保存笔记，并尽量在宿主界面中完成操作。" />
-                                </WrapPanel>
-                            </StackPanel>
-
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-                                <Button x:Name="GoStep2Button"
-                                        Content="下一步"
-                                        Style="{StaticResource PrimaryButtonStyle}"
-                                        Click="GoStep2Button_Click" />
+                    <!-- Data Sync Section -->
+                    <Border Style="{StaticResource CardStyle}" Padding="18" Margin="0,0,0,20">
+                        <StackPanel>
+                            <TextBlock Text="同步" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="左侧表单与右侧 JSON 双向同步。" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,4,0,0" />
+                            <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                <Button Content="从 JSON 解析" Style="{StaticResource GhostButtonStyle}" Click="ParseManualJsonButton_Click" Padding="14,6" Height="32" />
+                                <Button Content="同步到 JSON" Style="{StaticResource GhostButtonStyle}" Margin="10,0,0,0" Click="GenerateManualJsonButton_Click" Padding="14,6" Height="32" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
 
-                    <Border x:Name="Step2Panel" Style="{StaticResource CardStyle}" Visibility="Collapsed">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                    <TextBlock Text="基本信息" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="Bold" Margin="0,0,0,16" />
 
-                            <TextBlock Text="复制提示词，去问 AI"
-                                       Foreground="{StaticResource TextBrush}"
-                                       FontSize="16"
-                                       FontWeight="Bold" />
-                            <TextBlock Grid.Row="1"
-                                       Text="提示词可以直接修改。你可以补充字段要求、运行时约束或示例。"
-                                       Margin="0,4,0,0"
-                                       Foreground="{StaticResource Text2Brush}"
-                                       FontSize="13"
-                                       TextWrapping="Wrap" />
-
-                            <Border Grid.Row="2"
-                                    Margin="0,16,0,0"
-                                    Background="{StaticResource Surface2Brush}"
-                                    BorderBrush="{StaticResource BorderBrushSoft}"
-                                    BorderThickness="1"
-                                    CornerRadius="12"
-                                    Padding="16">
-                                <Grid>
-                                    <TextBox x:Name="AiPromptPreviewBox"
-                                             MinHeight="220"
-                                             MaxHeight="340"
-                                             AcceptsReturn="True"
-                                             TextWrapping="Wrap"
-                                             VerticalScrollBarVisibility="Auto"
-                                             BorderThickness="0"
-                                             Background="Transparent"
-                                             Foreground="{StaticResource Text2Brush}"
-                                             FontFamily="Consolas"
-                                             FontSize="12.5"
-                                             TextChanged="AiPromptPreviewBox_TextChanged" />
-                                    <TextBlock x:Name="AiPromptPlaceholder"
-                                               Foreground="{StaticResource Text3Brush}"
-                                               FontStyle="Italic"
-                                               Text="填写上一步内容后，提示词会在这里出现。"
-                                               Visibility="Collapsed" />
-                                </Grid>
-                            </Border>
-
-                            <Button x:Name="CopyAiGuidePromptButton"
-                                    Grid.Row="3"
-                                    Margin="0,14,0,0"
-                                    Content="复制提示词"
-                                    Style="{StaticResource PrimaryButtonStyle}"
-                                    HorizontalAlignment="Left"
-                                    Click="CopyAiGuidePromptButton_Click" />
-
-                            <Grid Grid.Row="4" Margin="0,12,0,0">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-
-                                <StackPanel Orientation="Horizontal">
-                                    <Ellipse x:Name="AiPromptStatusDot" Width="6" Height="6" Fill="{StaticResource Text3Brush}" VerticalAlignment="Center" />
-                                    <TextBlock x:Name="AiPromptStatusText"
-                                               Margin="7,0,0,0"
-                                               Text="先复制提示词，再去任意 AI 对话里提问。"
-                                               Foreground="{StaticResource Text3Brush}"
-                                               FontSize="12"
-                                               VerticalAlignment="Center" />
-                                </StackPanel>
-
-                                <WrapPanel Grid.Row="1" Margin="0,12,0,0">
-                                    <Button Content="打开 Claude" Style="{StaticResource GhostButtonStyle}" Click="AiLinkButton_Click" Tag="https://claude.ai" />
-                                    <Button Content="打开 ChatGPT" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="AiLinkButton_Click" Tag="https://chat.openai.com" />
-                                    <Button Content="打开 Gemini" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="AiLinkButton_Click" Tag="https://gemini.google.com" />
-                                    <Button Content="打开 DeepSeek" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="AiLinkButton_Click" Tag="https://chat.deepseek.com" />
-                                </WrapPanel>
-
-                                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-                                    <Button Content="上一步" Style="{StaticResource GhostButtonStyle}" Click="BackToStep1Button_Click" />
-                                    <Button x:Name="GoStep3Button" Content="去粘贴 JSON" Style="{StaticResource PrimaryButtonStyle}" Margin="8,0,0,0" Click="GoStep3Button_Click" />
-                                </StackPanel>
-                            </Grid>
-                        </Grid>
-                    </Border>
-
-                    <Border x:Name="Step3Panel" Style="{StaticResource CardStyle}" Visibility="Collapsed">
+                    <TextBlock Text="图标预览" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="Bold" Margin="0,0,0,16" />
+                    <Border Style="{StaticResource CardStyle}" Padding="18" Margin="0,0,0,24">
                         <StackPanel>
-                            <TextBlock Text="把 AI 返回的 JSON 粘贴到这里" Foreground="{StaticResource TextBrush}" FontSize="16" FontWeight="Bold" />
-                            <TextBlock Text="先检查 JSON，再测试扩展。测试会真实执行扩展，让你确认效果。" Margin="0,4,0,0" Foreground="{StaticResource Text2Brush}" FontSize="13" TextWrapping="Wrap" />
-
-                            <Grid Margin="0,16,0,0">
-                                <TextBox x:Name="AiJsonInputBox"
-                                         MinHeight="220"
-                                         Padding="16,14"
-                                         AcceptsReturn="True"
-                                         TextWrapping="NoWrap"
-                                         VerticalScrollBarVisibility="Auto"
-                                         HorizontalScrollBarVisibility="Auto"
-                                         Background="{StaticResource Surface2Brush}"
-                                         BorderBrush="{StaticResource BorderBrushStrong}"
-                                         BorderThickness="1.5"
-                                         Foreground="{StaticResource TextBrush}"
-                                         FontFamily="Consolas"
-                                         FontSize="12.5"
-                                         TextChanged="AiJsonInputBox_TextChanged" />
-                                <TextBlock x:Name="AiJsonPlaceholder"
-                                           Margin="16,14,40,14"
-                                           IsHitTestVisible="False"
-                                           Foreground="{StaticResource Text3Brush}"
-                                           FontStyle="Italic"
-                                           TextWrapping="Wrap"
-                                           Text="把 AI 返回的 JSON 粘贴到这里。"
-                                           Opacity="0.72" />
-                            </Grid>
-
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <Ellipse x:Name="JsonStatusDot" Width="6" Height="6" Fill="{StaticResource Text3Brush}" VerticalAlignment="Center" />
-                                <TextBlock x:Name="AiJsonStatusText" Margin="7,0,0,0" Text="等待粘贴 AI 生成的 JSON…" Foreground="{StaticResource Text3Brush}" FontSize="12" VerticalAlignment="Center" />
-                                <Button x:Name="TestExtensionButton" Content="测试扩展" Style="{StaticResource GhostButtonStyle}" Margin="16,0,0,0" Visibility="Collapsed" Click="TestExtensionButton_Click" />
-                            </StackPanel>
-                            <Border x:Name="TestResultPanel"
-                                    Margin="0,16,0,0"
-                                    Background="{StaticResource Surface2Brush}"
-                                    BorderBrush="{StaticResource BorderBrushSoft}"
-                                    BorderThickness="1"
-                                    CornerRadius="12"
-                                    Padding="16"
-                                    Visibility="Collapsed">
-                                <StackPanel>
-                                    <TextBlock Text="测试结果" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="Bold" />
-                                    <TextBlock x:Name="TestSummaryText" Margin="0,8,0,0" Foreground="{StaticResource Text2Brush}" FontSize="12" TextWrapping="Wrap" />
-                                    <TextBox x:Name="TestLogTextBox"
-                                             Margin="0,12,0,0"
-                                             Height="180"
-                                             IsReadOnly="True"
-                                             AcceptsReturn="True"
-                                             TextWrapping="Wrap"
-                                             VerticalScrollBarVisibility="Auto"
-                                             Background="#FF101014"
-                                             BorderBrush="{StaticResource BorderBrushSoft}"
-                                             BorderThickness="1"
-                                             Foreground="{StaticResource Text2Brush}"
-                                             FontFamily="Consolas"
-                                             FontSize="12" />
-                                </StackPanel>
-                            </Border>
-
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-                                <Button Content="上一步" Style="{StaticResource GhostButtonStyle}" Click="BackToStep2Button_Click" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <Grid x:Name="ManualEditorPanel" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="360" />
-                            <ColumnDefinition Width="16" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-
-                        <Border Grid.Column="0" Style="{StaticResource CardStyle}">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <StackPanel>
-                                    <TextBlock Text="左侧是 JSON 解析后的表单。修改字段后，点“更新 JSON”同步到右侧。" Foreground="{StaticResource Text2Brush}" FontSize="13" TextWrapping="Wrap" />
-
-                                    <Border Margin="0,18,0,0"
-                                            Background="{StaticResource Surface2Brush}"
-                                            BorderBrush="{StaticResource BorderBrushSoft}"
-                                            BorderThickness="1"
-                                            CornerRadius="14"
-                                            Padding="14">
-                                        <StackPanel>
-                                            <TextBlock Text="模板" Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
-                                            <WrapPanel Margin="0,10,0,0">
-                                                <Button Content="基础模板" Style="{StaticResource GhostButtonStyle}" Click="ManualTemplateButton_Click" Tag="base" />
-                                                <Button Content="打开目标模板" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="ManualTemplateButton_Click" Tag="open" />
-                                            </WrapPanel>
-                                            <WrapPanel Margin="0,8,0,0">
-                                                <Button Content="网页搜索模板" Style="{StaticResource GhostButtonStyle}" Click="ManualTemplateButton_Click" Tag="search" />
-                                                <Button Content="内联脚本模板" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="ManualTemplateButton_Click" Tag="script" />
-                                            </WrapPanel>
-                                            <WrapPanel Margin="0,8,0,0">
-                                                <Button Content="前台窗口模板" Style="{StaticResource GhostButtonStyle}" Click="ManualTemplateButton_Click" Tag="foreground" />
-                                                <Button Content="剪贴板模板" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="ManualTemplateButton_Click" Tag="clipboard" />
-                                            </WrapPanel>
-                                            <WrapPanel Margin="0,8,0,0">
-                                                <Button Content="选中内容模板" Style="{StaticResource GhostButtonStyle}" Click="ManualTemplateButton_Click" Tag="selection" />
-                                                <Button Content="C# 上下文模板" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="ManualTemplateButton_Click" Tag="csharp" />
-                                            </WrapPanel>
-                                            <WrapPanel Margin="0,8,0,0">
-                                                <Button Content="时间戳模板" Style="{StaticResource GhostButtonStyle}" Click="ManualTemplateButton_Click" Tag="timestamp" />
-                                                <Button Content="翻译工作区模板" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="ManualTemplateButton_Click" Tag="translate" />
-                                            </WrapPanel>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Margin="0,12,0,0"
-                                            Background="{StaticResource Surface2Brush}"
-                                            BorderBrush="{StaticResource BorderBrushSoft}"
-                                            BorderThickness="1"
-                                            CornerRadius="14"
-                                            Padding="14">
-                                        <StackPanel>
-                                            <TextBlock Text="同步" Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
-                                            <WrapPanel Margin="0,10,0,0">
-                                                <Button Content="从 JSON 解析" Style="{StaticResource GhostButtonStyle}" Click="ParseManualJsonButton_Click" />
-                                                <Button Content="更新 JSON" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="GenerateManualJsonButton_Click" />
-                                            </WrapPanel>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <Border Margin="0,18,0,0"
-                                            Background="{StaticResource Surface2Brush}"
-                                            BorderBrush="{StaticResource BorderBrushSoft}"
-                                            BorderThickness="1"
-                                            CornerRadius="10"
-                                            Padding="12">
-                                        <StackPanel>
-                                            <TextBlock Text="图标预览" Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
-                                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                                <Border Width="56" Height="56" CornerRadius="14" Background="{StaticResource AccentBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1">
-                                                    <Grid>
-                                                        <Image x:Name="IconPreviewImage" Margin="10" Stretch="Uniform" Visibility="Collapsed" />
-                                                        <Viewbox x:Name="IconPreviewVectorHost" Margin="12" Visibility="Collapsed">
-                                                            <Canvas Width="24" Height="24">
-                                                                <Path x:Name="IconPreviewVector" Fill="White" Stretch="Uniform" />
-                                                            </Canvas>
-                                                        </Viewbox>
-                                                        <TextBlock x:Name="IconPreviewGlyph" Text="E" Foreground="White" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
-                                                    </Grid>
-                                                </Border>
-                                                <TextBlock x:Name="IconPreviewHintText"
-                                                           Margin="12,0,0,0"
-                                                           VerticalAlignment="Center"
-                                                           Foreground="{StaticResource Text2Brush}"
-                                                           FontSize="12"
-                                                           TextWrapping="Wrap"
-                                                           Text="未设置图标时会回退为字母标识。" />
-                                            </StackPanel>
-
-                                            <TextBlock Text="icon" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,14,0,6" />
-                                            <TextBox x:Name="IconBox"
-                                                     Padding="12,9"
-                                                     Background="{StaticResource SurfaceBrush}"
-                                                     BorderBrush="{StaticResource BorderBrushSoft}"
-                                                     BorderThickness="1"
-                                                     Foreground="{StaticResource TextBrush}"
-                                                     TextChanged="IconBox_TextChanged" />
-
-                                            <WrapPanel Margin="0,10,0,0">
-                                                <Button Content="清空图标" Style="{StaticResource GhostButtonStyle}" Click="ClearIconButton_Click" />
-                                                <Button Content="选择图片" Style="{StaticResource GhostButtonStyle}" Margin="8,0,0,0" Click="PickIconImageButton_Click" />
-                                            </WrapPanel>
-
-                                            <TextBlock Text="内置图标库" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,14,0,8" />
-                                            <ScrollViewer Height="160" VerticalScrollBarVisibility="Auto">
-                                                <ItemsControl x:Name="BuiltInIconsList">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate>
-                                                            <WrapPanel />
-                                                        </ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate DataType="{x:Type local:ExtensionIconOption}">
-                                                            <Button Width="74"
-                                                                    Height="74"
-                                                                    Margin="0,0,8,8"
-                                                                    Padding="0"
-                                                                    Tag="{Binding Reference}"
-                                                                    Click="BuiltInIconButton_Click"
-                                                                    ToolTip="{Binding Reference}"
-                                                                    Background="{StaticResource SurfaceBrush}"
-                                                                    BorderBrush="{StaticResource BorderBrushSoft}"
-                                                                    BorderThickness="1">
-                                                                <StackPanel VerticalAlignment="Center">
-                                                                    <Border Width="34" Height="34" CornerRadius="10" Background="{StaticResource AccentBrush}" HorizontalAlignment="Center">
-                                                                        <Viewbox Margin="7">
-                                                                            <Canvas Width="24" Height="24">
-                                                                                <Path Data="{Binding Geometry}" Fill="White" Stretch="Uniform" />
-                                                                            </Canvas>
-                                                                        </Viewbox>
-                                                                    </Border>
-                                                                    <TextBlock Text="{Binding Label}"
-                                                                               Foreground="{StaticResource TextBrush}"
-                                                                               FontSize="10"
-                                                                               Margin="0,6,0,0"
-                                                                               HorizontalAlignment="Center" />
-                                                                </StackPanel>
-                                                            </Button>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </ScrollViewer>
-                                        </StackPanel>
-                                    </Border>
-
-                                    <TextBlock Text="扩展 ID" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,16,0,6" />
-                                    <TextBox x:Name="IdBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" TextChanged="IconPreviewContext_TextChanged" />
-
-                                    <TextBlock Text="名称" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="NameBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" TextChanged="IconPreviewContext_TextChanged" />
-
-                                    <TextBlock Text="版本号" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="VersionBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="分类" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="CategoryBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="描述" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="DescriptionBox" Padding="12,9" AcceptsReturn="True" TextWrapping="Wrap" Height="72" VerticalScrollBarVisibility="Auto" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="关键词（逗号分隔）" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="KeywordsBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="打开目标" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="OpenTargetBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="搜索前缀（逗号分隔）" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="QueryPrefixesBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="搜索模板" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="QueryTargetTemplateBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="全局快捷键" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="GlobalShortcutBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="热键行为" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="HotkeyBehaviorBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="运行时" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="RuntimeBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="入口模式" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="EntryModeBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="入口文件" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="EntryBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="权限（逗号分隔）" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="PermissionsBox" Padding="12,9" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
-
-                                    <TextBlock Text="内联脚本源码" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,12,0,6" />
-                                    <TextBox x:Name="ScriptSourceBox"
-                                             Padding="12,9"
-                                             AcceptsReturn="True"
-                                             AcceptsTab="True"
-                                             TextWrapping="NoWrap"
-                                             Height="180"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Auto"
-                                             Background="{StaticResource SurfaceBrush}"
-                                             BorderBrush="{StaticResource BorderBrushSoft}"
-                                             BorderThickness="1"
-                                             Foreground="{StaticResource TextBrush}"
-                                             FontFamily="Consolas"
-                                             FontSize="12.5" />
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Border>
-
-                        <Border Grid.Column="2" Style="{StaticResource CardStyle}">
-                            <StackPanel>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <StackPanel>
-                                        <TextBlock Text="编辑扩展 JSON" Foreground="{StaticResource TextBrush}" FontSize="16" FontWeight="Bold" />
-                                        <TextBlock Text="JSON 校验通过后，可以真实测试扩展。" Margin="0,4,0,0" Foreground="{StaticResource Text2Brush}" FontSize="13" />
-                                    </StackPanel>
-
-                                    <Button x:Name="ManualCopyPromptButton"
-                                            Grid.Column="1"
-                                            Content="复制提示词"
-                                            Style="{StaticResource GhostButtonStyle}"
-                                            VerticalAlignment="Top"
-                                            Click="ManualCopyPromptButton_Click" />
-                                </Grid>
-
-                                <Grid Margin="0,16,0,0">
-                                    <TextBox x:Name="ManualJsonInputBox"
-                                             MinHeight="300"
-                                             Padding="16,14"
-                                             AcceptsReturn="True"
-                                             TextWrapping="NoWrap"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Auto"
-                                             Background="{StaticResource Surface2Brush}"
-                                             BorderBrush="{StaticResource BorderBrushStrong}"
-                                             BorderThickness="1.5"
-                                             Foreground="{StaticResource TextBrush}"
-                                             FontFamily="Consolas"
-                                             FontSize="12.5"
-                                             TextChanged="ManualJsonInputBox_TextChanged" />
-                                </Grid>
-
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                    <Ellipse x:Name="ManualJsonStatusDot" Width="6" Height="6" Fill="{StaticResource Text3Brush}" VerticalAlignment="Center" />
-                                    <TextBlock x:Name="ManualJsonStatusText" Margin="7,0,0,0" Text="等待输入 JSON…" Foreground="{StaticResource Text3Brush}" FontSize="12" VerticalAlignment="Center" />
-                                    <Button x:Name="ManualTestExtensionButton" Content="测试扩展" Style="{StaticResource GhostButtonStyle}" Margin="16,0,0,0" Visibility="Collapsed" Click="ManualTestExtensionButton_Click" />
-                                </StackPanel>
-
-                                <Border x:Name="ManualTestResultPanel"
-                                        Margin="0,16,0,0"
-                                        Background="{StaticResource Surface2Brush}"
-                                        BorderBrush="{StaticResource BorderBrushSoft}"
-                                        BorderThickness="1"
-                                        CornerRadius="12"
-                                        Padding="16"
-                                        Visibility="Collapsed">
-                                    <StackPanel>
-                                        <TextBlock Text="测试结果" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="Bold" />
-                                        <TextBlock x:Name="ManualTestSummaryText" Margin="0,8,0,0" Foreground="{StaticResource Text2Brush}" FontSize="12" TextWrapping="Wrap" />
-                                        <TextBox x:Name="ManualTestLogTextBox"
-                                                 Margin="0,12,0,0"
-                                                 Height="180"
-                                                 IsReadOnly="True"
-                                                 AcceptsReturn="True"
-                                                 TextWrapping="Wrap"
-                                                 VerticalScrollBarVisibility="Auto"
-                                                 Background="#FF101014"
-                                                 BorderBrush="{StaticResource BorderBrushSoft}"
-                                                 BorderThickness="1"
-                                                 Foreground="{StaticResource Text2Brush}"
-                                                 FontFamily="Consolas"
-                                                 FontSize="12" />
-                                    </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Border Width="64" Height="64" CornerRadius="16" Background="{StaticResource AccentBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1">
+                                    <Grid>
+                                        <Image x:Name="IconPreviewImage" Margin="12" Stretch="Uniform" Visibility="Collapsed" />
+                                        <Viewbox x:Name="IconPreviewVectorHost" Margin="14" Visibility="Collapsed">
+                                            <Canvas Width="24" Height="24">
+                                                <Path x:Name="IconPreviewVector" Fill="White" Stretch="Uniform" />
+                                            </Canvas>
+                                        </Viewbox>
+                                        <TextBlock x:Name="IconPreviewGlyph" Text="E" Foreground="White" FontSize="26" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                                    </Grid>
                                 </Border>
+                                <TextBlock x:Name="IconPreviewHintText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource Text2Brush}" FontSize="12.5" TextWrapping="Wrap" MaxWidth="280" />
+                            </StackPanel>
+
+                            <TextBlock Text="icon 属性" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,16,0,8" />
+                            <TextBox x:Name="IconBox" Padding="12,9" Background="{StaticResource BgBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" />
+
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <Button Content="图片图标" Style="{StaticResource GhostButtonStyle}" Click="PickIconImageButton_Click" Padding="14,6" Height="32" />
+                                <Button Content="清空" Style="{StaticResource GhostButtonStyle}" Margin="10,0,0,0" Click="ClearIconButton_Click" Padding="14,6" Height="32" />
+                            </StackPanel>
+
+                            <ItemsControl x:Name="BuiltInIconsList" Visibility="Collapsed" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="扩展 ID" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="IdBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" TextChanged="IconPreviewContext_TextChanged" />
+
+                    <TextBlock Text="名称" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="NameBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" TextChanged="IconPreviewContext_TextChanged" />
+
+                    <TextBlock Text="版本号" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="VersionBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="分类" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="CategoryBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="描述" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="DescriptionBox" Padding="14,11" AcceptsReturn="True" TextWrapping="Wrap" Height="86" VerticalScrollBarVisibility="Auto" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="关键词 (逗号分隔)" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="KeywordsBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,24" />
+
+                    <TextBlock Text="启动配置" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="Bold" Margin="0,0,0,16" />
+                    <Border Style="{StaticResource CardStyle}" Padding="18" Margin="0,0,0,24">
+                        <StackPanel>
+                            <TextBlock Text="自启动模式" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,0,0,8" />
+                            <TextBox x:Name="StartupModeBox" Padding="12,9" Background="{StaticResource BgBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,14" ToolTip="例如: on_app_launch" />
+
+                            <TextBlock Text="定时计划" Foreground="{StaticResource Text2Brush}" FontSize="12" Margin="0,0,0,8" />
+                            <TextBox x:Name="StartupScheduleBox" Padding="12,9" Background="{StaticResource BgBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" ToolTip="Cron 表达式或简单描述" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="核心逻辑" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="Bold" Margin="0,0,0,16" />
+                    
+                    <TextBlock Text="打开目标" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="OpenTargetBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="搜索前缀 (逗号分隔)" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="QueryPrefixesBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="搜索模板" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="QueryTargetTemplateBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="全局快捷键" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="GlobalShortcutBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="运行时" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="RuntimeBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="入口模式" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="EntryModeBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="入口路径" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="EntryBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="内联脚本" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="ScriptSourceBox" Padding="14,11" AcceptsReturn="True" TextWrapping="NoWrap" Height="180" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" FontFamily="Consolas" Margin="0,0,0,24" />
+
+                    <TextBlock Text="热键行为" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="HotkeyBehaviorBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,18" />
+
+                    <TextBlock Text="权限 (逗号分隔)" Foreground="{StaticResource Text2Brush}" FontSize="12.5" Margin="0,0,0,8" />
+                    <TextBox x:Name="PermissionsBox" Padding="14,11" Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" Foreground="{StaticResource TextBrush}" Margin="0,0,0,24" />
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Right Column: JSON Editor -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Margin="0,0,0,16">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="编辑扩展 JSON" Foreground="{StaticResource TextBrush}" FontSize="17" FontWeight="Bold" />
+                            <TextBlock Text="直接修改代码，实时同步或保存。" Foreground="{StaticResource Text2Brush}" FontSize="13" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <Button x:Name="ManualCopyPromptButton"
+                                Grid.Column="1"
+                                Content="复制提示词"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Height="36"
+                                Padding="18,0"
+                                VerticalAlignment="Center"
+                                Click="ManualCopyPromptButton_Click" />
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushStrong}" BorderThickness="1.5" CornerRadius="12">
+                    <Grid>
+                        <TextBox x:Name="ManualJsonInputBox"
+                                 Padding="18"
+                                 AcceptsReturn="True"
+                                 AcceptsTab="True"
+                                 TextWrapping="NoWrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Foreground="{StaticResource TextBrush}"
+                                 FontFamily="Consolas"
+                                 FontSize="13.5"
+                                 TextChanged="ManualJsonInputBox_TextChanged" />
+                        
+                        <Border x:Name="JsonStatusBadge"
+                                VerticalAlignment="Bottom"
+                                HorizontalAlignment="Right"
+                                Margin="0,0,16,16"
+                                Padding="10,5"
+                                CornerRadius="12"
+                                Background="#AA111111"
+                                BorderThickness="1">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse x:Name="ManualJsonStatusDot" Width="7" Height="7" Fill="{StaticResource Text3Brush}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="ManualJsonStatusText" Margin="8,0,0,0" Text="等待输入" Foreground="{StaticResource Text3Brush}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                             </StackPanel>
                         </Border>
                     </Grid>
-                </Grid>
+                </Border>
+
+                <!-- Test Controls -->
+                <StackPanel Grid.Row="2" Margin="0,16,0,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <Button x:Name="ManualTestExtensionButton"
+                                Content="测试扩展运行"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Height="36"
+                                Padding="20,0"
+                                FontWeight="SemiBold"
+                                Click="ManualTestExtensionButton_Click" />
+                    </StackPanel>
+
+                    <Border x:Name="ManualTestResultPanel"
+                            Background="{StaticResource Surface2Brush}"
+                            BorderBrush="{StaticResource BorderBrushSoft}"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="18"
+                            Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="测试执行日志" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="Bold" />
+                            <TextBlock x:Name="ManualTestSummaryText" Margin="0,4,0,10" Foreground="{StaticResource Text2Brush}" FontSize="12.5" TextWrapping="Wrap" />
+                            <TextBox x:Name="ManualTestLogTextBox"
+                                     Height="160"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Background="#FF101014"
+                                     BorderThickness="0"
+                                     Foreground="{StaticResource Text2Brush}"
+                                     FontFamily="Consolas"
+                                     FontSize="12" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </Grid>
-        </ScrollViewer>
+        </Grid>
 
-        <Grid Grid.Row="1" Margin="24,0,24,18">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <!-- Footer Area -->
+        <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0" Padding="28,20">
+            <Grid>
+                <TextBlock x:Name="ErrorText"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Left"
+                           Foreground="{StaticResource RedBrush}"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Visibility="Collapsed" />
 
-            <TextBlock x:Name="ErrorText"
-                       VerticalAlignment="Center"
-                       Foreground="{StaticResource RedBrush}"
-                       FontSize="12"
-                       TextWrapping="Wrap"
-                       Visibility="Collapsed" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="SaveButton"
+                            Content="保存修改 →"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Height="42"
+                            Padding="28,0"
+                            FontSize="15"
+                            Click="SaveButton_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
 
-            <Button x:Name="SaveButton"
-                    Grid.Column="1"
-                    Content="保存扩展 →"
-                    Style="{StaticResource PrimaryButtonStyle}"
-                    Visibility="Collapsed"
-                    Click="SaveButton_Click" />
+        <!-- Hidden Legacy Layer (Kept for code-behind compatibility only) -->
+        <Grid Visibility="Collapsed" IsHitTestVisible="False" Width="0" Height="0">
+            <Grid x:Name="WizardHeaderPanel" />
+            <Border x:Name="Step1Panel" />
+            <Border x:Name="Step2Panel" />
+            <Border x:Name="Step3Panel" />
+            <Grid x:Name="ManualEditorPanel" />
+            <TextBox x:Name="AiRequestBox" />
+            <TextBlock x:Name="AiRequestPlaceholder" />
+            <TextBox x:Name="AiPromptPreviewBox" />
+            <TextBlock x:Name="AiPromptPlaceholder" />
+            <TextBox x:Name="AiJsonInputBox" />
+            <TextBlock x:Name="AiJsonPlaceholder" />
+            <Button x:Name="TestExtensionButton" />
+            <Border x:Name="TestResultPanel" />
+            <TextBlock x:Name="TestSummaryText" />
+            <TextBox x:Name="TestLogTextBox" />
+            <Button x:Name="GoStep2Button" />
+            <Button x:Name="GoStep3Button" />
+            <Button x:Name="CopyAiGuidePromptButton" />
+            <TextBlock x:Name="AiPromptStatusText" />
+            <Ellipse x:Name="AiPromptStatusDot" />
+            <TextBlock x:Name="AiJsonStatusText" />
+            <Ellipse x:Name="JsonStatusDot" />
+            <Border x:Name="Step1Dot" />
+            <TextBlock x:Name="Step1DotText" />
+            <Border x:Name="Step2Dot" />
+            <TextBlock x:Name="Step2DotText" />
+            <Border x:Name="Step3Dot" />
+            <TextBlock x:Name="Step3DotText" />
+            <TextBlock x:Name="Step1Label" />
+            <TextBlock x:Name="Step2Label" />
+            <TextBlock x:Name="Step3Label" />
+            <Border x:Name="StepLine1" />
+            <Border x:Name="StepLine2" />
         </Grid>
     </Grid>
     </Border>

@@ -113,9 +113,9 @@ public static class AppSettingsStore
 
 public sealed record AppSettings
 {
-    public string LauncherHotkey { get; set; } = "Ctrl+Shift+Space";
+    public string LauncherHotkey { get; set; } = "Alt+Space";
 
-    public bool LaunchAtStartup { get; set; } = false;
+    public bool LaunchAtStartup { get; set; } = true;
 
     public bool RefreshCloudOnStartup { get; set; } = true;
 

@@ -52,7 +52,7 @@ public partial class AddJsonExtensionWindow : Window
         BuiltInIconsList.ItemsSource = _builtInIcons;
         _isEditMode = isEditMode;
         _settings = AppSettingsStore.Load();
-        _manualMode = isEditMode || _settings.PreferManualExtensionEditor;
+        _manualMode = true;
 
         ConfigureMode(initialJson);
 
@@ -99,19 +99,24 @@ public partial class AddJsonExtensionWindow : Window
     private void ConfigureMode(string initialJson)
     {
         Title = _isEditMode ? "编辑扩展" : "添加新扩展";
-        ManualModeButton.Visibility = _isEditMode ? Visibility.Collapsed : Visibility.Visible;
-        ManualModeButton.Content = _manualMode ? "AI 生成" : "手动编辑";
+        ManualModeButton.Visibility = Visibility.Collapsed;
+        ManualModeButton.Content = "手动编辑";
 
         if (_isEditMode)
         {
             PageHeaderPrefix.Text = "编辑";
             PageHeaderAccent.Text = "扩展";
             HeaderDescription.Text = "直接修改 JSON，验证通过后可以测试并保存。";
-            Step1Label.Text = "编辑 JSON";
-            Step2Label.Text = "测试扩展";
-            Step3Label.Text = "保存";
             SaveButton.Content = "保存修改 →";
             _currentStep = WizardStep.Test;
+        }
+        else
+        {
+            PageHeaderPrefix.Text = "添加";
+            PageHeaderAccent.Text = "新扩展";
+            HeaderDescription.Text = "通过表单和手动编写 JSON 来创建扩展。";
+            SaveButton.Content = "保存并添加 →";
+            _currentStep = WizardStep.Describe;
         }
 
         // 先清空两个编辑器，避免残留内容
@@ -160,16 +165,6 @@ public partial class AddJsonExtensionWindow : Window
 
     private void ManualModeButton_Click(object sender, RoutedEventArgs e)
     {
-        _manualMode = !_manualMode;
-        _settings = _settings with { PreferManualExtensionEditor = _manualMode };
-        AppSettingsStore.Save(_settings);
-        ManualModeButton.Content = _manualMode ? "AI 生成" : "手动编辑";
-        SyncJsonEditors(fromManual: _manualMode);
-        RefreshAllState();
-        
-        // 强制更新窗口大小和布局
-        UpdateLayout();
-        InvalidateVisual();
     }
 
     private void AiPromptPreviewBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -190,11 +185,6 @@ public partial class AddJsonExtensionWindow : Window
 
     private void ManualJsonInputBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (!_manualMode)
-        {
-            return;
-        }
-
         // 初始化期间不同步编辑器
         if (!_isInitializing)
         {
@@ -229,6 +219,7 @@ public partial class AddJsonExtensionWindow : Window
 
         ManualJsonInputBox.Text = tag switch
         {
+            "base" => CreateDesktopTemplateJson(),
             "open" => CreateOpenTargetTemplateJson(),
             "search" => CreateSearchTemplateJson(),
             "script" => CreateInlineScriptTemplateJson(),
@@ -238,7 +229,7 @@ public partial class AddJsonExtensionWindow : Window
             "csharp" => CreateCSharpContextTemplateJson(),
             "timestamp" => CreateTimestampTemplateJson(),
             "translate" => CreateTranslateWorkbenchTemplateJson(),
-            _ => LocalExtensionCatalog.CreateTemplateJson()
+            _ => CreateDesktopTemplateJson()
         };
 
         TryPopulateManualFormFromJson(ManualJsonInputBox.Text, showError: false);
@@ -628,30 +619,8 @@ public partial class AddJsonExtensionWindow : Window
 
     private void RefreshPanels()
     {
-        if (_manualMode)
-        {
-            WizardHeaderPanel.Visibility = Visibility.Collapsed;
-            Step1Panel.Visibility = Visibility.Collapsed;
-            Step2Panel.Visibility = Visibility.Collapsed;
-            Step3Panel.Visibility = Visibility.Collapsed;
-            ManualEditorPanel.Visibility = Visibility.Visible;
-            return;
-        }
-
-        WizardHeaderPanel.Visibility = Visibility.Visible;
-        ManualEditorPanel.Visibility = Visibility.Collapsed;
-
-        if (_isEditMode)
-        {
-            Step1Panel.Visibility = Visibility.Collapsed;
-            Step2Panel.Visibility = Visibility.Collapsed;
-            Step3Panel.Visibility = Visibility.Visible;
-            return;
-        }
-
-        Step1Panel.Visibility = _currentStep == WizardStep.Describe ? Visibility.Visible : Visibility.Collapsed;
-        Step2Panel.Visibility = _currentStep == WizardStep.Prompt ? Visibility.Visible : Visibility.Collapsed;
-        Step3Panel.Visibility = _currentStep == WizardStep.Test ? Visibility.Visible : Visibility.Collapsed;
+        // 新布局下通过控制各容器内容的可见性来实现模式切换
+        // 这里目前简化处理，主要优化编辑体验
     }
 
     private void RefreshSteps()
@@ -709,7 +678,7 @@ public partial class AddJsonExtensionWindow : Window
         ManualTestExtensionButton.Visibility = _lastJsonValid ? Visibility.Visible : Visibility.Collapsed;
         ManualTestExtensionButton.IsEnabled = _lastJsonValid;
         SaveButton.IsEnabled = _lastJsonValid;
-        SaveButton.Visibility = _lastJsonValid && (_manualMode || _currentStep == WizardStep.Test || _isEditMode)
+        SaveButton.Visibility = _lastJsonValid && (!string.IsNullOrWhiteSpace(ManualJsonInputBox.Text) || _manualMode || _currentStep == WizardStep.Test || _isEditMode)
             ? Visibility.Visible
             : Visibility.Collapsed;
 
@@ -736,44 +705,11 @@ public partial class AddJsonExtensionWindow : Window
 
     private void UpdateWindowHeightForStep()
     {
-        if (_manualMode)
-        {
-            Width = 1180;
-            MinWidth = 1040;
-            MaxWidth = double.PositiveInfinity;
-            ContentRoot.MaxWidth = 1120;
-            ApplyWindowHeight(preferredHeight: 820, minimumHeight: 720);
-            return;
-        }
-
-        if (_isEditMode)
-        {
-            Width = 760;
-            MinWidth = 680;
-            MaxWidth = 760;
-            ContentRoot.MaxWidth = 720;
-            ApplyWindowHeight(preferredHeight: 820, minimumHeight: 680);
-            return;
-        }
-
-        Width = 760;
-        MinWidth = 680;
-        MaxWidth = 760;
-        ContentRoot.MaxWidth = 720;
-        switch (_currentStep)
-        {
-            case WizardStep.Describe:
-                ApplyWindowHeight(preferredHeight: 560, minimumHeight: 520);
-                break;
-            case WizardStep.Prompt:
-                ApplyWindowHeight(preferredHeight: 900, minimumHeight: 880);
-                break;
-            case WizardStep.Test:
-                ApplyWindowHeight(preferredHeight: 900, minimumHeight: 780);
-                break;
-        }
-
-        UpdatePromptEditorHeight();
+        // 优化后的编辑器固定大尺寸，提供沉浸式编辑体验
+        Width = 1200;
+        MinWidth = 1080;
+        MaxWidth = double.PositiveInfinity;
+        ApplyWindowHeight(preferredHeight: 880, minimumHeight: 760);
     }
 
     private void ApplyWindowHeight(double preferredHeight, double minimumHeight)
@@ -847,9 +783,7 @@ public partial class AddJsonExtensionWindow : Window
 
         try
         {
-            var normalized = ExtractJsonPayload(AiJsonInputBox.Text);
-            _ = JsonSerializer.Deserialize<LocalExtensionManifest>(normalized, CreateJsonOptions())
-                ?? throw new InvalidOperationException("JSON 解析失败。");
+            _ = ParseManifestFromJson(AiJsonInputBox.Text, "ai-json-validation");
 
             _lastJsonValid = true;
             AiJsonInputBox.BorderBrush = CreateBrush("#8034D399");
@@ -883,9 +817,7 @@ public partial class AddJsonExtensionWindow : Window
 
         try
         {
-            var normalized = ExtractJsonPayload(ManualJsonInputBox.Text);
-            _ = JsonSerializer.Deserialize<LocalExtensionManifest>(normalized, CreateJsonOptions())
-                ?? throw new InvalidOperationException("JSON 解析失败。");
+            _ = ParseManifestFromJson(ManualJsonInputBox.Text, "manual-json-validation");
 
             _lastJsonValid = true;
             ManualJsonInputBox.BorderBrush = CreateBrush("#8034D399");
@@ -903,7 +835,15 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
-    private string GetCurrentJsonText() => _manualMode ? ManualJsonInputBox.Text : AiJsonInputBox.Text;
+    private string GetCurrentJsonText()
+    {
+        if (!string.IsNullOrWhiteSpace(ManualJsonInputBox.Text))
+        {
+            return ManualJsonInputBox.Text;
+        }
+
+        return _manualMode ? ManualJsonInputBox.Text : AiJsonInputBox.Text;
+    }
 
     private void SyncJsonEditors(bool fromManual)
     {
@@ -932,9 +872,7 @@ public partial class AddJsonExtensionWindow : Window
     {
         try
         {
-            var normalizedJson = ExtractJsonPayload(json);
-            var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(normalizedJson, CreateJsonOptions())
-                ?? throw new InvalidOperationException("JSON 解析失败。");
+            var manifest = ParseManifestFromJson(json, "manual-form-populate");
             ApplyManifestToForm(manifest);
             ErrorText.Visibility = Visibility.Collapsed;
         }
@@ -985,7 +923,14 @@ public partial class AddJsonExtensionWindow : Window
             Script = string.IsNullOrWhiteSpace(scriptSource) ? null : new LocalExtensionInlineScriptManifest
             {
                 Source = ScriptSourceBox.Text.ReplaceLineEndings("\r\n")
-            }
+            },
+            Startup = (string.IsNullOrWhiteSpace(StartupModeBox.Text) && string.IsNullOrWhiteSpace(StartupScheduleBox.Text))
+                ? null
+                : new LocalExtensionStartupManifest
+                {
+                    Mode = NullIfEmpty(StartupModeBox.Text),
+                    Schedule = NullIfEmpty(StartupScheduleBox.Text)
+                }
         };
     }
 
@@ -1008,6 +953,8 @@ public partial class AddJsonExtensionWindow : Window
         EntryBox.Text = manifest.Entry ?? string.Empty;
         PermissionsBox.Text = manifest.Permissions == null ? string.Empty : string.Join(", ", manifest.Permissions);
         ScriptSourceBox.Text = manifest.Script?.Source ?? string.Empty;
+        StartupModeBox.Text = manifest.Startup?.Mode ?? string.Empty;
+        StartupScheduleBox.Text = manifest.Startup?.Schedule ?? string.Empty;
         _manualHostedView = manifest.HostedView;
         RefreshIconPreview();
     }
@@ -1450,8 +1397,13 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("      \"preview\": \"先在左侧输入内容，这里会显示便签结果。\"");
         builder.AppendLine("    },");
         builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\" oqh:HostedViewBridge.PreferredFocus=\\\"NoteBox\\\" oqh:HostedViewBridge.LoadedAction=\\\"loadStorage;path=note;key=note.txt;scope=both;defaultValue=\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"便签内容\\\" Foreground=\\\"White\\\" FontSize=\\\"14\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,0,0,10\\\"/><TextBox x:Name=\\\"NoteBox\\\" Text=\\\"{Binding [note], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" VerticalScrollBarVisibility=\\\"Auto\\\" TextWrapping=\\\"Wrap\\\" MinHeight=\\\"320\\\" Padding=\\\"12\\\"/><Button Content=\\\"保存便签\\\" Margin=\\\"0,12,0,0\\\" oqh:HostedViewBridge.Action=\\\"saveStorage;path=note;key=note.txt;scope=both;successMessage=便签已保存。|setState;path=preview;valueFrom=note\\\"/></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"10\\\" Padding=\\\"12\\\"><TextBlock Text=\\\"{Binding [preview]}\\\" TextWrapping=\\\"Wrap\\\" Foreground=\\\"White\\\"/></Border></Grid>\"");
+        builder.AppendLine("  },");
+        builder.AppendLine("  \"startup\": {");
+        builder.AppendLine("    \"mode\": \"on_app_launch\",");
+        builder.AppendLine("    \"schedule\": \"0 9 * * *\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
+        builder.AppendLine();
         builder.AppendLine();
         builder.AppendLine("五、最终要求");
         builder.AppendLine("请结合我的需求，返回一份最终可用的完整 JSON，不要返回多个方案，不要附加说明。");
@@ -1497,7 +1449,8 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- keywords：搜索关键词数组");
         builder.AppendLine("- hostedViewXaml.window.width / height / minWidth / minHeight：可选，控制窗口尺寸");
         builder.AppendLine("- hostedViewXaml.state：初始化状态对象，XAML 中可通过 {Binding [key]} 绑定");
-        builder.AppendLine("- hostedViewXaml.xaml：完整 XAML 字符串");
+        builder.AppendLine("- hostedViewXaml.xaml：完整 XAML 字符串；按钮动作请通过 oqh:HostedViewBridge.Action 声明。");
+        builder.AppendLine("- startup：可选，包含 mode (\"on_app_launch\") 和 schedule (Cron 表达式或间隔)。");
         builder.AppendLine("- 如果按钮要把输入追加到现有文本，可使用 setState;path=xxx;valueFrom=yyy;append=true;separator=\\n");
         builder.AppendLine("- 如果要持久化待办、便签、历史记录，可使用 loadStorage / saveStorage，或在脚本里使用 context.Storage");
         builder.AppendLine();
@@ -1516,13 +1469,30 @@ public partial class AddJsonExtensionWindow : Window
         var manifest = new LocalExtensionManifest
         {
             Id = $"open-target-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
-            Name = "打开目标",
+            Name = "打开记事本",
             Version = "0.1.0",
             Category = "扩展",
-            Description = "点击后打开指定目标。",
-            Keywords = ["打开", "target"],
+            Description = "点击后打开记事本。",
+            Keywords = ["打开", "记事本", "notepad"],
+            OpenTarget = "notepad.exe",
+            Icon = "mdi:notebook-outline"
+        };
+
+        return JsonSerializer.Serialize(manifest, CreateJsonOptions());
+    }
+
+    private static string CreateDesktopTemplateJson()
+    {
+        var manifest = new LocalExtensionManifest
+        {
+            Id = $"open-desktop-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
+            Name = "打开桌面",
+            Version = "0.1.0",
+            Category = "扩展",
+            Description = "点击后打开当前用户桌面目录。",
+            Keywords = ["桌面", "desktop", "打开"],
             OpenTarget = "shell:Desktop",
-            Icon = "mdi:folder-open"
+            Icon = "mdi:monitor-dashboard"
         };
 
         return JsonSerializer.Serialize(manifest, CreateJsonOptions());
@@ -1626,15 +1596,15 @@ Write-Output ("进程 ID: " + $processId)
     {
         var manifest = new LocalExtensionManifest
         {
-            Id = $"clipboard-reader-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
-            Name = "读取剪贴板",
+            Id = $"clipboard-paste-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
+            Name = "模拟粘贴",
             Version = "0.1.0",
             Category = "脚本",
-            Description = "读取当前剪贴板文本。",
-            Keywords = ["clipboard", "剪贴板", "powershell", "script"],
+            Description = "向当前窗口发送 Ctrl+V。",
+            Keywords = ["clipboard", "剪贴板", "粘贴", "powershell", "script"],
             Runtime = "powershell",
             EntryMode = "inline",
-            Permissions = ["clipboard.read"],
+            Permissions = ["clipboard.write"],
             Icon = "mdi:clipboard",
             Script = new LocalExtensionInlineScriptManifest
             {
@@ -1647,12 +1617,9 @@ param(
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$text = Get-Clipboard -Raw
-if ([string]::IsNullOrWhiteSpace($text)) {
-    Write-Output "当前剪贴板为空。"
-} else {
-    Write-Output $text.Trim()
-}
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.SendKeys]::SendWait("^v")
+Write-Output "已发送 Ctrl+V。"
 """
             }
         };
@@ -1935,9 +1902,43 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = true,
+            AllowTrailingCommas = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
             WriteIndented = true,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
+    }
+
+    private static LocalExtensionManifest ParseManifestFromJson(string json, string source)
+    {
+        var normalizedJson = ExtractJsonPayload(json);
+
+        try
+        {
+            return JsonSerializer.Deserialize<LocalExtensionManifest>(normalizedJson, CreateJsonOptions())
+                ?? throw new InvalidOperationException("JSON 解析失败。");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"AddJson parse failed: source={source}, detail={BuildJsonErrorDetail(ex)}, payloadPreview={BuildJsonPreview(normalizedJson)}");
+            throw;
+        }
+    }
+
+    private static string BuildJsonErrorDetail(Exception ex)
+    {
+        if (ex is JsonException jsonEx)
+        {
+            return $"message={jsonEx.Message}, path={jsonEx.Path ?? "$"}, line={(jsonEx.LineNumber?.ToString() ?? "?")}, byte={(jsonEx.BytePositionInLine?.ToString() ?? "?")}";
+        }
+
+        return ex.Message;
+    }
+
+    private static string BuildJsonPreview(string json)
+    {
+        var compact = json.ReplaceLineEndings(" ").Trim();
+        return compact.Length <= 160 ? compact : compact[..160];
     }
 
     private static string ExtractJsonPayload(string? rawText)

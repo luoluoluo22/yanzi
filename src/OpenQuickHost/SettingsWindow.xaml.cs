@@ -27,12 +27,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _localExtensionSummary = "正在统计...";
     private string _settingsSearchText = string.Empty;
     private string _extensionSearchText = string.Empty;
-    private string _launcherHotkey = "Ctrl+Shift+Space";
+    private string _launcherHotkey = "Alt+Space";
     private string _syncStatusText = "同步服务状态未知。";
     private string _webDavServerUrl = "https://dav.jianguoyun.com/dav/";
     private string _webDavRootPath = "/yanzi";
     private string _webDavUsername = string.Empty;
     private string _webDavStatusText = "未启用个人扩展同步。";
+    private string _syncActivityLogText = "暂无同步记录。";
 
     public SettingsWindow(MainWindow mainWindow)
     {
@@ -60,7 +61,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         WebDavUsername = _settings.WebDavUsername;
         BaseUrl = _mainWindow.SyncBaseUrl;
         ExtensionsRootPath = LocalExtensionCatalog.CatalogRootPath;
-        AppVersionText = $"燕子 · {GetType().Assembly.GetName().Version}";
+        AppVersionText = AppVersionInfo.DisplayText;
         ShortcutItems = new ObservableCollection<SettingsShortcutItem>();
         ExtensionItems = new ObservableCollection<SettingsExtensionItem>();
         DataContext = this;
@@ -336,6 +337,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string SyncActivityLogText
+    {
+        get => _syncActivityLogText;
+        private set
+        {
+            if (value == _syncActivityLogText)
+            {
+                return;
+            }
+
+            _syncActivityLogText = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string LocalExtensionSummary
     {
         get => _localExtensionSummary;
@@ -520,6 +536,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshShortcutItems();
         RefreshQuickPanelTriggerBindings();
         SyncStatusText = _mainWindow.SyncStatus;
+        RefreshSyncActivityLog();
     }
 
     private void SettingsWindow_Activated(object? sender, EventArgs e)
@@ -552,6 +569,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshShortcutItems();
         RefreshWebDavSummary();
         SyncStatusText = _mainWindow.SyncStatus;
+        RefreshSyncActivityLog();
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -630,6 +648,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         await RefreshCloudAsync();
     }
 
+    private void RefreshSyncLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshSyncActivityLog();
+    }
+
     private void SaveWebDavSettingsButton_Click(object sender, RoutedEventArgs e)
     {
         _mainWindow.SaveWebDavSettings(EnableWebDavSync, WebDavServerUrl, WebDavRootPath, WebDavUsername);
@@ -644,6 +667,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _settings = AppSettingsStore.Load();
         RefreshWebDavSummary();
         SyncStatusText = "WebDAV 配置已保存。";
+        RefreshSyncActivityLog();
     }
 
     private void WebDavPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
@@ -682,6 +706,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         SaveWebDavSettingsButton_Click(sender, e);
         var result = await _mainWindow.ProbeWebDavAsync();
         WebDavStatusText = result.message;
+        RefreshSyncActivityLog();
         if (!result.ok)
         {
             System.Windows.MessageBox.Show(this, result.message, "WebDAV 测试失败", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -694,6 +719,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var result = await _mainWindow.SyncWebDavNowAsync();
         WebDavStatusText = result.message;
         RefreshExtensionsFromDisk();
+        RefreshSyncActivityLog();
         if (!result.ok)
         {
             System.Windows.MessageBox.Show(this, result.message, "WebDAV 同步失败", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -834,14 +860,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         
         RefreshWebDavSummary();
         SyncStatusText = "WebDAV 配置已从云端同步。";
+        RefreshSyncActivityLog();
     }
 
     private void EditLauncherHotkeyButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new HotkeyCaptureWindow(
             "设置主程序快捷键",
-            "窗口激活后，直接按一次新的组合键即可完成录制。",
-            LauncherHotkey)
+            "窗口激活后，直接按一次新的组合键即可完成录制。也支持全局双击 Ctrl 或双击 Alt 呼出主界面。",
+            LauncherHotkey,
+            allowDoubleTap: true)
         {
             Owner = this
         };
@@ -854,6 +882,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             LauncherHotkey = _mainWindow.GetLauncherHotkey();
             SyncStatusText = message;
+            RefreshSyncActivityLog();
             return;
         }
 
@@ -862,10 +891,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void ResetLauncherHotkeyButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_mainWindow.TryUpdateLauncherHotkey("Ctrl+Shift+Space", out var message))
+        if (_mainWindow.TryUpdateLauncherHotkey("Alt+Space", out var message))
         {
             LauncherHotkey = _mainWindow.GetLauncherHotkey();
             SyncStatusText = message;
+            RefreshSyncActivityLog();
             return;
         }
 
@@ -937,6 +967,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             await _mainWindow.RefreshCloudFromSettingsAsync();
             RefreshWebDavConfigFromExternal();
             SyncStatusText = _mainWindow.SyncStatus;
+            RefreshSyncActivityLog();
         }
     }
 
@@ -959,7 +990,38 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ClearWebDavConfiguration();
         RefreshAccountSummary();
         SyncStatusText = _mainWindow.SyncStatus;
+        RefreshSyncActivityLog();
         await Task.CompletedTask;
+    }
+
+    private void RefreshSyncActivityLog()
+    {
+        try
+        {
+            if (!File.Exists(HostAssets.HostLogPath))
+            {
+                SyncActivityLogText = "暂无同步记录。";
+                return;
+            }
+
+            var lines = File.ReadAllLines(HostAssets.HostLogPath)
+                .Where(static line =>
+                    line.Contains("sync", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("webdav", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("cloud", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("登录", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("账号", StringComparison.OrdinalIgnoreCase))
+                .TakeLast(40)
+                .ToArray();
+
+            SyncActivityLogText = lines.Length == 0
+                ? "暂无同步记录。"
+                : string.Join(Environment.NewLine, lines);
+        }
+        catch (Exception ex)
+        {
+            SyncActivityLogText = $"读取同步记录失败：{ex.Message}";
+        }
     }
 
     private void ClearWebDavConfiguration()

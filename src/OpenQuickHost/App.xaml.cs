@@ -27,6 +27,7 @@ public partial class App : WpfApplication
         var window = new MainWindow();
         MainWindow = window;
         _notifyIcon = BuildNotifyIcon(window);
+        HostAssets.AppendLog($"App startup: version={AppVersionInfo.Version}, build={AppVersionInfo.BuildStamp}, baseDir={AppDomain.CurrentDomain.BaseDirectory}");
         window.Show();
         if (ShouldStartHidden(e.Args))
         {

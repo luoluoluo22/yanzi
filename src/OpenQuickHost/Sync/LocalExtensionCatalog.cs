@@ -105,7 +105,8 @@ public static class LocalExtensionCatalog
                     inlineScriptSource: manifest.Script?.Source,
                     iconReference: manifest.Icon,
                     queryPrefixes: manifest.QueryPrefixes,
-                    queryTargetTemplate: manifest.QueryTargetTemplate));
+                    queryTargetTemplate: manifest.QueryTargetTemplate,
+                    startup: manifest.Startup?.ToDefinition()));
             }
             catch
             {
@@ -602,7 +603,8 @@ public static class YanziAction
             inlineScriptSource: manifest.Script?.Source,
             iconReference: manifest.Icon,
             queryPrefixes: manifest.QueryPrefixes,
-            queryTargetTemplate: manifest.QueryTargetTemplate);
+            queryTargetTemplate: manifest.QueryTargetTemplate,
+            startup: manifest.Startup?.ToDefinition());
     }
 
     public static string LoadManifestJson(string extensionId)
@@ -692,14 +694,14 @@ public static class YanziAction
     {
         var manifest = new LocalExtensionManifest
         {
-            Id = "my-json-extension",
-            Name = "我的 JSON 扩展",
+            Id = "open-desktop-template",
+            Name = "打开桌面",
             Version = "0.1.0",
             Category = "扩展",
-            Description = "示例：打开本地文档或目录。",
-            Keywords = ["json", "extension"],
-            OpenTarget = HostAssets.DocsReadmePath,
-            Icon = "mdi:note"
+            Description = "示例：打开当前用户桌面目录。",
+            Keywords = ["桌面", "desktop", "打开"],
+            OpenTarget = "shell:Desktop",
+            Icon = "mdi:monitor-dashboard"
         };
 
         return JsonSerializer.Serialize(manifest, JsonOptions);
@@ -874,6 +876,26 @@ public sealed record LocalExtensionManifest
     public string[]? Permissions { get; init; }
 
     public LocalExtensionInlineScriptManifest? Script { get; init; }
+
+    public LocalExtensionStartupManifest? Startup { get; init; }
+}
+
+public sealed record LocalExtensionStartupManifest
+{
+    /// <summary>
+    /// 启动模式：null (不自动启动), "on_app_launch" (软件启动时启动)
+    /// </summary>
+    public string? Mode { get; init; }
+
+    /// <summary>
+    /// 定时计划（可选）：cron 表达式或简单的间隔描述
+    /// </summary>
+    public string? Schedule { get; init; }
+
+    public ExtensionStartupDefinition ToDefinition()
+    {
+        return new ExtensionStartupDefinition(Mode, Schedule);
+    }
 }
 
 public sealed class LocalExtensionInlineScriptManifest

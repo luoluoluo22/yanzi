@@ -360,22 +360,10 @@
                             </Grid>
                             <Rectangle Height="1" Fill="#FF222222" Margin="0,12"/>
 
-                            <Grid Margin="0,5">
-                                <TextBlock Text="主程序全局快捷键" Foreground="White" FontSize="13" VerticalAlignment="Center"/>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Border Background="#FF2D2D2D" CornerRadius="4" Padding="8,4" Margin="0,0,8,0">
-                                        <TextBlock Text="{Binding LauncherHotkey}" Foreground="White" FontSize="12"/>
-                                    </Border>
-                                    <Button Content="修改" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="EditLauncherHotkeyButton_Click"/>
-                                    <Button Content="重置" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="ResetLauncherHotkeyButton_Click"/>
-                                </StackPanel>
-                            </Grid>
-                            <Rectangle Height="1" Fill="#FF222222" Margin="0,12"/>
-
                             <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="14" Margin="0,18,0,0">
                                 <StackPanel>
                                     <TextBlock Text="说明" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
-                                    <TextBlock Text="主程序快捷键修改后会立即重新注册。若注册失败，通常是被系统或其他软件占用了同一组合键。" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <TextBlock Text="基础行为设置会在保存后立即生效。" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -441,6 +429,30 @@
                                             <Button Content="立即同步" Style="{StaticResource PrimaryBtn}" Click="SyncWebDavButton_Click"/>
                                         </StackPanel>
                                     </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16" Margin="0,16,0,0">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="同步记录" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                        <Button Grid.Column="1" Content="刷新记录" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="RefreshSyncLogButton_Click"/>
+                                    </Grid>
+                                    <TextBox Text="{Binding SyncActivityLogText, Mode=OneWay}"
+                                             Height="180"
+                                             IsReadOnly="True"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto"
+                                             Background="#FF101014"
+                                             BorderThickness="0"
+                                             Foreground="#FFB8B8B8"
+                                             FontFamily="Consolas"
+                                             FontSize="12" />
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -645,6 +657,11 @@
                                             <TextBlock Text="{Binding LauncherHotkey}" Foreground="White" FontSize="12"/>
                                         </Border>
                                     </Grid>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Button Content="修改主快捷键" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="EditLauncherHotkeyButton_Click"/>
+                                        <Button Content="重置为 Alt+Space" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="ResetLauncherHotkeyButton_Click"/>
+                                    </StackPanel>
+                                    <TextBlock Text="主程序快捷键修改后会立即重新注册。支持常规组合键，也支持录制 DoubleCtrl / DoubleAlt。" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
                                     <Rectangle Height="1" Fill="#FF2A2A2A" Margin="0,0,0,12"/>
                                     <ItemsControl ItemsSource="{Binding ShortcutItems}">
                                         <ItemsControl.ItemTemplate>

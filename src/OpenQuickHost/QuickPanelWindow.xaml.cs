@@ -80,7 +80,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFF59E0B")!
         : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
 
-    public string PinButtonTooltip => _isPinned ? "已固定，失去焦点时不自动关闭" : "点击固定，失去焦点时不自动关闭";
+    public string PinButtonTooltip => _isPinned ? "已常驻，失去焦点时不自动关闭" : "点击后常驻，失去焦点时不自动关闭";
 
     public QuickPanelGroupItem? SelectedGlobalGroup
     {
@@ -308,7 +308,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        Hide();
+        HidePanel();
         _mainWindow.OpenSettingsWindow("quickpanel");
     }
 
@@ -606,7 +606,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             var command = vm.Command;
             HostAssets.AppendLog($"Quick panel execute: source={launchSource}, slot={vm.Index}, extension={command.ExtensionId}.");
             _releaseTargetTimer.Stop();
-            Hide();
+            HidePanel();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             if (_previousForegroundWindow != IntPtr.Zero)
             {
@@ -767,48 +767,90 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
 
         _releaseTargetTimer.Stop();
-        Hide();
+        HidePanel();
     }
 
     public void ShowAtMouse()
     {
-        HostAssets.AppendLog("Quick panel show requested.");
-        _previousForegroundWindow = NativeMethods.GetForegroundWindow();
-        _foregroundAppContext = BuildForegroundAppContext(_previousForegroundWindow);
-        var point = NativeMethods.GetCursorPosition();
-        const double safeAnchorY = 310;
-        Left = point.X - Width / 2;
-        Top = point.Y - safeAnchorY;
-        
-        // Ensure within screen bounds
-        var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)point.X, (int)point.Y));
-        if (Left < screen.Bounds.Left) Left = screen.Bounds.Left;
-        if (Top < screen.Bounds.Top) Top = screen.Bounds.Top;
-        if (Left + Width > screen.Bounds.Right) Left = screen.Bounds.Right - Width;
-        if (Top + Height > screen.Bounds.Bottom) Top = screen.Bounds.Bottom - Height;
+        try
+        {
+            HostAssets.AppendLog("Quick panel show requested.");
+            _previousForegroundWindow = NativeMethods.GetForegroundWindow();
+            _foregroundAppContext = BuildForegroundAppContext(_previousForegroundWindow);
+            var cursorPixels = NativeMethods.GetCursorPosition();
+            var cursorDips = DeviceToDips(cursorPixels);
+            const double safeAnchorY = 310;
+            Left = cursorDips.X - Width / 2;
+            Top = cursorDips.Y - safeAnchorY;
 
-        HubSearchBox.Text = string.Empty; // Reset search on show
-        _hoveredSlot = null;
-        LoadSlots(); // Refresh
-        var occupiedGlobal = GlobalSlots.Count(slot => slot.IsOccupied);
-        var occupiedContext = ContextSlots.Count(slot => slot.IsOccupied);
-        HostAssets.AppendLog($"Quick panel showing at ({Left:0},{Top:0}), cursor=({point.X:0},{point.Y:0}), occupiedGlobal={occupiedGlobal}, occupiedContext={occupiedContext}, totalGlobal={GlobalSlots.Count}, totalContext={ContextSlots.Count}.");
-        OnPropertyChanged(nameof(ContextSectionTitle));
-        OnPropertyChanged(nameof(ContextHintText));
-        Show();
-        _releaseTargetTimer.Start();
+            var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)cursorPixels.X, (int)cursorPixels.Y));
+            var screenBounds = DeviceRectToDips(screen.Bounds);
+            if (Left < screenBounds.Left) Left = screenBounds.Left;
+            if (Top < screenBounds.Top) Top = screenBounds.Top;
+            if (Left + Width > screenBounds.Right) Left = screenBounds.Right - Width;
+            if (Top + Height > screenBounds.Bottom) Top = screenBounds.Bottom - Height;
+
+            HubSearchBox.Text = string.Empty; // Reset search on show
+            _hoveredSlot = null;
+            LoadSlots(); // Refresh
+            var occupiedGlobal = GlobalSlots.Count(slot => slot.IsOccupied);
+            var occupiedContext = ContextSlots.Count(slot => slot.IsOccupied);
+            HostAssets.AppendLog($"Quick panel showing at ({Left:0},{Top:0}), cursorPixels=({cursorPixels.X:0},{cursorPixels.Y:0}), cursorDips=({cursorDips.X:0},{cursorDips.Y:0}), screenDips=({screenBounds.Left:0},{screenBounds.Top:0},{screenBounds.Right:0},{screenBounds.Bottom:0}), occupiedGlobal={occupiedGlobal}, occupiedContext={occupiedContext}, totalGlobal={GlobalSlots.Count}, totalContext={ContextSlots.Count}.");
+            OnPropertyChanged(nameof(ContextSectionTitle));
+            OnPropertyChanged(nameof(ContextHintText));
+            Topmost = true;
+            Show();
+            _releaseTargetTimer.Start();
+            Activate();
+            BringToFront();
+            Dispatcher.BeginInvoke(() =>
+            {
+                BringToFront();
+                HubSearchBox.Focus();
+                Keyboard.Focus(HubSearchBox);
+                HubSearchBox.Select(0, 0);
+                HubSearchBox.CaretIndex = 0;
+            }, DispatcherPriority.ApplicationIdle);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Quick panel show failed: {ex}");
+        }
+    }
+
+    private void BringToFront()
+    {
         Activate();
         Focus();
         NativeMethods.SetForegroundWindow(new WindowInteropHelper(this).Handle);
-        Dispatcher.BeginInvoke(() =>
-        {
-            Activate();
-            Focus();
-            HubSearchBox.Focus();
-            Keyboard.Focus(HubSearchBox);
-            HubSearchBox.Select(0, 0);
-            HubSearchBox.CaretIndex = 0;
-        }, DispatcherPriority.ApplicationIdle);
+    }
+
+    private void HidePanel()
+    {
+        _releaseTargetTimer.Stop();
+        ClearReleaseTarget();
+        Topmost = false;
+        Hide();
+    }
+
+    private System.Windows.Point DeviceToDips(System.Windows.Point point)
+    {
+        var transform = GetTransformFromDevice();
+        return transform.Transform(point);
+    }
+
+    private Rect DeviceRectToDips(System.Drawing.Rectangle rectangle)
+    {
+        var topLeft = DeviceToDips(new System.Windows.Point(rectangle.Left, rectangle.Top));
+        var bottomRight = DeviceToDips(new System.Windows.Point(rectangle.Right, rectangle.Bottom));
+        return new Rect(topLeft, bottomRight);
+    }
+
+    private Matrix GetTransformFromDevice()
+    {
+        var handle = new WindowInteropHelper(this).EnsureHandle();
+        var source = HwndSource.FromHwnd(handle);
+        return source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
     }
 
     private void PollReleaseTarget()

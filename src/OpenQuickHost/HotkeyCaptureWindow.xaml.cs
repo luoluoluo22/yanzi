@@ -7,11 +7,17 @@ namespace OpenQuickHost;
 public partial class HotkeyCaptureWindow : Window
 {
     private readonly bool _allowEmpty;
+    private readonly bool _allowDoubleTap;
+    private Key? _pendingModifierKey;
+    private long _lastModifierTapTimestamp;
+    private string? _lastModifierShortcut;
+    private bool _capturedChordDuringModifierPress;
 
-    public HotkeyCaptureWindow(string title, string description, string? initialValue = null, bool allowEmpty = false)
+    public HotkeyCaptureWindow(string title, string description, string? initialValue = null, bool allowEmpty = false, bool allowDoubleTap = false)
     {
         InitializeComponent();
         _allowEmpty = allowEmpty;
+        _allowDoubleTap = allowDoubleTap;
         Title = title;
         TitleText.Text = title;
         DescriptionText.Text = description;
@@ -39,9 +45,11 @@ public partial class HotkeyCaptureWindow : Window
             return;
         }
 
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var key = ResolveActualKey(e);
         if (IsModifierKey(key))
         {
+            _pendingModifierKey = key;
+            _capturedChordDuringModifierPress = false;
             e.Handled = true;
             return;
         }
@@ -59,6 +67,73 @@ public partial class HotkeyCaptureWindow : Window
         ShortcutText = BuildShortcutText(modifiers, key);
         CapturedHotkeyText.Text = ShortcutText;
         ConfirmButton.IsEnabled = true;
+        _capturedChordDuringModifierPress = true;
+        e.Handled = true;
+    }
+
+    private void Window_PreviewKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = ResolveActualKey(e);
+        if (!IsModifierKey(key))
+        {
+            return;
+        }
+
+        if (!_allowDoubleTap)
+        {
+            _pendingModifierKey = null;
+            _capturedChordDuringModifierPress = false;
+            e.Handled = true;
+            return;
+        }
+
+        if (_capturedChordDuringModifierPress)
+        {
+            _pendingModifierKey = null;
+            _capturedChordDuringModifierPress = false;
+            e.Handled = true;
+            return;
+        }
+
+        if (_pendingModifierKey != key)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var shortcut = key switch
+        {
+            Key.LeftCtrl or Key.RightCtrl => "DoubleCtrl",
+            Key.LeftAlt or Key.RightAlt => "DoubleAlt",
+            _ => string.Empty
+        };
+
+        _pendingModifierKey = null;
+        if (string.IsNullOrWhiteSpace(shortcut))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (string.Equals(_lastModifierShortcut, shortcut, StringComparison.Ordinal) &&
+            now - _lastModifierTapTimestamp <= 400)
+        {
+            ShortcutText = shortcut;
+            CapturedHotkeyText.Text = shortcut;
+            ConfirmButton.IsEnabled = true;
+            _lastModifierShortcut = null;
+            _lastModifierTapTimestamp = 0;
+        }
+        else
+        {
+            _lastModifierShortcut = shortcut;
+            _lastModifierTapTimestamp = now;
+            CapturedHotkeyText.Text = $"{shortcut}（再按一次确认）";
+            ConfirmButton.IsEnabled = false;
+        }
+
+        ErrorText.Visibility = Visibility.Collapsed;
         e.Handled = true;
     }
 
@@ -68,6 +143,10 @@ public partial class HotkeyCaptureWindow : Window
         CapturedHotkeyText.Text = "请直接按下新的组合键";
         ConfirmButton.IsEnabled = false;
         ErrorText.Visibility = Visibility.Collapsed;
+        _pendingModifierKey = null;
+        _lastModifierShortcut = null;
+        _lastModifierTapTimestamp = 0;
+        _capturedChordDuringModifierPress = false;
         Focus();
     }
 
@@ -87,6 +166,10 @@ public partial class HotkeyCaptureWindow : Window
         CapturedHotkeyText.Text = "当前将清空快捷键";
         ConfirmButton.IsEnabled = true;
         ErrorText.Visibility = Visibility.Collapsed;
+        _pendingModifierKey = null;
+        _lastModifierShortcut = null;
+        _lastModifierTapTimestamp = 0;
+        _capturedChordDuringModifierPress = false;
         Focus();
     }
 
@@ -108,6 +191,26 @@ public partial class HotkeyCaptureWindow : Window
             or Key.LeftAlt or Key.RightAlt
             or Key.LeftShift or Key.RightShift
             or Key.LWin or Key.RWin;
+    }
+
+    private static Key ResolveActualKey(System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.System)
+        {
+            return e.SystemKey;
+        }
+
+        if (e.Key == Key.ImeProcessed)
+        {
+            return e.ImeProcessedKey;
+        }
+
+        if (e.Key == Key.DeadCharProcessed)
+        {
+            return e.DeadCharProcessedKey;
+        }
+
+        return e.Key;
     }
 
     private static string BuildShortcutText(ModifierKeys modifiers, Key key)

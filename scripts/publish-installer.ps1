@@ -27,6 +27,10 @@ dotnet publish $project `
     -c $Configuration `
     -r $Runtime `
     --self-contained true `
+    -p:Version=$Version `
+    -p:InformationalVersion=$Version `
+    -p:FileVersion="$Version.0" `
+    -p:AssemblyVersion="$Version.0" `
     -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:EnableCompressionInSingleFile=true `
