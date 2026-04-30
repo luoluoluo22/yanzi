@@ -17,5 +17,8 @@ website/downloads/*.zip
 syncsession.json
 synccredentials.dat
 cloudflare/.dev.vars
+.env
+.env.*
+!.env.example
 
 .vs/

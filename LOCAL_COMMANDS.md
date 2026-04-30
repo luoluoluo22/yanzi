@@ -70,15 +70,30 @@ dotnet build OpenQuickHost.sln
 官网是纯静态文件，源码在 `website/`。
 
 ```powershell
-npx wrangler@latest pages deploy .\website --project-name openquickhost-site --branch main
+.\scripts\publish-website.ps1
 ```
 
-如果当前终端是非交互式环境，需要先设置 Cloudflare API Token：
+发布脚本会自动读取根目录 `.env` 里的环境变量，再调用 Cloudflare Pages 发布。建议在 `.env` 中至少写入：
+
+```dotenv
+CLOUDFLARE_API_TOKEN=你的 Cloudflare API Token
+```
+
+如果 `.env` 里只有一行裸 token，没有 `CLOUDFLARE_API_TOKEN=` 前缀，发布脚本也会自动把它当作 `CLOUDFLARE_API_TOKEN` 使用。
+
+当前脚本默认会使用本项目的 Cloudflare Account ID：
+
+```text
+cc88cc0084b504db93ccd9462af37212
+```
+
+如需自定义项目名、分支或网站目录：
 
 ```powershell
-$env:CLOUDFLARE_API_TOKEN = "你的 Cloudflare API Token"
-$env:CLOUDFLARE_ACCOUNT_ID = "cc88cc0084b504db93ccd9462af37212"
+.\scripts\publish-website.ps1 -ProjectName openquickhost-site -Branch main -SitePath .\website
 ```
+
+`.env` 已加入 `.gitignore`，不要上传到 GitHub。
 
 当前机器代理偶尔会导致 Cloudflare/GitHub 上传链路 TLS 失败。遇到 `fetch failed` 或 EOF 时，优先切换代理策略后重试。
 
