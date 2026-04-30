@@ -29,6 +29,16 @@ public static class ScriptExtensionRunner
         string launchSource,
         CancellationToken cancellationToken = default)
     {
+        return await ExecuteAsync(command, inputText, launchSource, null, cancellationToken);
+    }
+
+    public static async Task<ScriptExecutionResult> ExecuteAsync(
+        CommandItem command,
+        string? inputText,
+        string launchSource,
+        IReadOnlyDictionary<string, string>? state,
+        CancellationToken cancellationToken = default)
+    {
         if (!CanExecute(command))
         {
             return new ScriptExecutionResult(false, string.Empty, "扩展没有可执行脚本入口。", -1);
@@ -50,7 +60,7 @@ public static class ScriptExtensionRunner
 
                 try
                 {
-                    return await ExecutePowerShellAsync(command, entryPath, inputText, launchSource, cancellationToken);
+                    return await ExecutePowerShellAsync(command, entryPath, inputText, launchSource, state, cancellationToken);
                 }
                 finally
                 {
@@ -70,7 +80,7 @@ public static class ScriptExtensionRunner
                     : await ReadEntrySourceAsync(command, cancellationToken);
                 return string.IsNullOrWhiteSpace(source)
                     ? new ScriptExecutionResult(false, string.Empty, "C# 扩展缺少源码入口。", -1)
-                    : await ExecuteCSharpAsync(command, source, inputText, launchSource, cancellationToken);
+                    : await ExecuteCSharpAsync(command, source, inputText, launchSource, state, cancellationToken);
             }
 
             default:
@@ -105,10 +115,13 @@ public static class ScriptExtensionRunner
         string entryPath,
         string? inputText,
         string launchSource,
+        IReadOnlyDictionary<string, string>? state,
         CancellationToken cancellationToken)
     {
-        var context = CreateContext(command, inputText, launchSource);
+        var context = CreateContext(command, inputText, launchSource, state);
         var contextPath = Path.Combine(Path.GetTempPath(), $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}.json");
+        var stateUpdatePath = Path.Combine(Path.GetTempPath(), $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}-state.json");
+        var wrapperPath = Path.Combine(Path.GetTempPath(), $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}-wrapper.ps1");
 
         try
         {
@@ -117,12 +130,16 @@ public static class ScriptExtensionRunner
                 JsonSerializer.Serialize(context, JsonOptions),
                 Encoding.UTF8,
                 cancellationToken);
+            await File.WriteAllTextAsync(
+                wrapperPath,
+                BuildPowerShellWrapperScript(entryPath, inputText ?? string.Empty, contextPath),
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: true),
+                cancellationToken);
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = "powershell.exe",
-                Arguments =
-                    $"-NoProfile -ExecutionPolicy Bypass -File {Quote(entryPath)} -InputText {Quote(inputText ?? string.Empty)} -ContextPath {Quote(contextPath)}",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(wrapperPath)}",
                 WorkingDirectory = command.ExtensionDirectoryPath!,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -131,9 +148,9 @@ public static class ScriptExtensionRunner
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };
-            ApplyRuntimeEnvironment(startInfo, command, inputText, contextPath, launchSource);
+            ApplyRuntimeEnvironment(startInfo, command, inputText, contextPath, stateUpdatePath, launchSource);
 
-            return await RunProcessAsync(startInfo, "脚本", cancellationToken);
+            return await RunProcessAsync(startInfo, "脚本", stateUpdatePath, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -142,6 +159,8 @@ public static class ScriptExtensionRunner
         finally
         {
             TryDeleteTempFile(contextPath);
+            TryDeleteTempFile(stateUpdatePath);
+            TryDeleteTempFile(wrapperPath);
         }
     }
 
@@ -150,10 +169,12 @@ public static class ScriptExtensionRunner
         string source,
         string? inputText,
         string launchSource,
+        IReadOnlyDictionary<string, string>? state,
         CancellationToken cancellationToken)
     {
-        var context = CreateContext(command, inputText, launchSource);
+        var context = CreateContext(command, inputText, launchSource, state);
         var contextPath = Path.Combine(Path.GetTempPath(), $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}.json");
+        var stateUpdatePath = Path.Combine(Path.GetTempPath(), $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}-state.json");
 
         try
         {
@@ -181,9 +202,9 @@ public static class ScriptExtensionRunner
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };
-            ApplyRuntimeEnvironment(startInfo, command, inputText, contextPath, launchSource);
+            ApplyRuntimeEnvironment(startInfo, command, inputText, contextPath, stateUpdatePath, launchSource);
 
-            return await RunProcessAsync(startInfo, "C# 扩展", cancellationToken);
+            return await RunProcessAsync(startInfo, "C# 扩展", stateUpdatePath, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -192,6 +213,7 @@ public static class ScriptExtensionRunner
         finally
         {
             TryDeleteTempFile(contextPath);
+            TryDeleteTempFile(stateUpdatePath);
         }
     }
 
@@ -228,7 +250,7 @@ public static class ScriptExtensionRunner
             StandardErrorEncoding = Encoding.UTF8
         };
 
-        var result = await RunProcessAsync(startInfo, "C# 扩展编译", cancellationToken);
+        var result = await RunProcessAsync(startInfo, "C# 扩展编译", null, cancellationToken);
         return result.Success && File.Exists(dllPath)
             ? new ScriptExecutionResult(true, dllPath, string.Empty, 0)
             : result;
@@ -250,6 +272,7 @@ public static class ScriptExtensionRunner
     private static async Task<ScriptExecutionResult> RunProcessAsync(
         ProcessStartInfo startInfo,
         string label,
+        string? stateUpdatePath,
         CancellationToken cancellationToken)
     {
         using var process = new Process { StartInfo = startInfo };
@@ -261,12 +284,13 @@ public static class ScriptExtensionRunner
 
         var output = (await outputTask).Trim();
         var error = (await errorTask).Trim();
+        var stateUpdates = await TryReadStateUpdatesAsync(stateUpdatePath, cancellationToken);
         return process.ExitCode == 0
-            ? new ScriptExecutionResult(true, output, error, process.ExitCode)
-            : new ScriptExecutionResult(false, output, string.IsNullOrWhiteSpace(error) ? $"{label}退出码：{process.ExitCode}" : error, process.ExitCode);
+            ? new ScriptExecutionResult(true, output, error, process.ExitCode, stateUpdates)
+            : new ScriptExecutionResult(false, output, string.IsNullOrWhiteSpace(error) ? $"{label}退出码：{process.ExitCode}" : error, process.ExitCode, stateUpdates);
     }
 
-    private static ScriptExecutionContext CreateContext(CommandItem command, string? inputText, string launchSource)
+    private static ScriptExecutionContext CreateContext(CommandItem command, string? inputText, string launchSource, IReadOnlyDictionary<string, string>? state)
     {
         var settings = AppSettingsStore.Load();
         var agentApiBaseUrl = settings.EnableAgentApi
@@ -281,6 +305,7 @@ public static class ScriptExtensionRunner
             launchSource,
             DateTimeOffset.Now,
             command.Permissions,
+            new Dictionary<string, string>(state ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
             agentApiBaseUrl,
             settings.AgentApiToken);
     }
@@ -290,11 +315,13 @@ public static class ScriptExtensionRunner
         CommandItem command,
         string? inputText,
         string contextPath,
+        string stateUpdatePath,
         string launchSource)
     {
         var settings = AppSettingsStore.Load();
         startInfo.Environment["YANZI_INPUT"] = inputText ?? string.Empty;
         startInfo.Environment["YANZI_CONTEXT_PATH"] = contextPath;
+        startInfo.Environment["YANZI_STATE_UPDATES_PATH"] = stateUpdatePath;
         startInfo.Environment["YANZI_EXTENSION_ID"] = command.ExtensionId;
         startInfo.Environment["YANZI_EXTENSION_DIR"] = command.ExtensionDirectoryPath!;
         startInfo.Environment["YANZI_EXTENSION_DATA_DIR"] = ExtensionStorageService.GetExtensionStorageDirectoryPath(command.ExtensionId);
@@ -308,6 +335,25 @@ public static class ScriptExtensionRunner
     private static string Quote(string value)
     {
         return "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+    }
+
+    private static string BuildPowerShellWrapperScript(string entryPath, string inputText, string contextPath)
+    {
+        var escapedEntryPath = EscapePowerShellSingleQuoted(entryPath);
+        var escapedInputText = EscapePowerShellSingleQuoted(inputText);
+        var escapedContextPath = EscapePowerShellSingleQuoted(contextPath);
+
+        return
+            "$utf8 = [System.Text.UTF8Encoding]::new($false)\r\n" +
+            "[Console]::InputEncoding = $utf8\r\n" +
+            "[Console]::OutputEncoding = $utf8\r\n" +
+            "$OutputEncoding = $utf8\r\n" +
+            $"& '{escapedEntryPath}' -InputText '{escapedInputText}' -ContextPath '{escapedContextPath}'\r\n";
+    }
+
+    private static string EscapePowerShellSingleQuoted(string value)
+    {
+        return (value ?? string.Empty).Replace("'", "''", StringComparison.Ordinal);
     }
 
     private static void TryDeleteTempFile(string path)
@@ -334,8 +380,33 @@ public static class ScriptExtensionRunner
         string LaunchSource,
         DateTimeOffset Now,
         IReadOnlyList<string> Permissions,
+        IReadOnlyDictionary<string, string> State,
         string AgentApiBaseUrl,
         string AgentApiToken);
+
+    private static async Task<IReadOnlyDictionary<string, string>> TryReadStateUpdatesAsync(string? stateUpdatePath, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(stateUpdatePath) || !File.Exists(stateUpdatePath))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(stateUpdatePath, cancellationToken);
+            var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            return payload != null
+                ? new Dictionary<string, string>(payload, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -386,12 +457,46 @@ public static class ScriptExtensionRunner
             string LaunchSource,
             DateTimeOffset Now,
             IReadOnlyList<string> Permissions,
+            IReadOnlyDictionary<string, string> State,
             string AgentApiBaseUrl,
             string AgentApiToken)
         {
             private YanziStorageClient? _storage;
+            private readonly Dictionary<string, string> _pendingStateUpdates = new(StringComparer.OrdinalIgnoreCase);
+            private HostedViewStateProxy? _viewState;
 
             public YanziStorageClient Storage => _storage ??= new YanziStorageClient(this);
+            public HostedViewStateProxy ViewState => _viewState ??= new HostedViewStateProxy(this);
+
+            public async Task SetStateAsync(object values)
+            {
+                if (values == null)
+                {
+                    return;
+                }
+
+                foreach (var property in values.GetType().GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public))
+                {
+                    _pendingStateUpdates[property.Name] = property.GetValue(values)?.ToString() ?? string.Empty;
+                }
+
+                await FlushStateUpdatesAsync();
+            }
+
+            public async Task SetStateAsync(IReadOnlyDictionary<string, string> values)
+            {
+                if (values == null)
+                {
+                    return;
+                }
+
+                foreach (var pair in values)
+                {
+                    _pendingStateUpdates[pair.Key] = pair.Value ?? string.Empty;
+                }
+
+                await FlushStateUpdatesAsync();
+            }
 
             public static async Task<YanziActionContext> LoadFromEnvironmentAsync()
             {
@@ -406,6 +511,67 @@ public static class ScriptExtensionRunner
                 {
                     PropertyNameCaseInsensitive = true
                 }) ?? throw new InvalidOperationException("Failed to read Yanzi context.");
+            }
+
+            private async Task FlushStateUpdatesAsync()
+            {
+                var stateUpdatePath = Environment.GetEnvironmentVariable("YANZI_STATE_UPDATES_PATH");
+                if (string.IsNullOrWhiteSpace(stateUpdatePath))
+                {
+                    return;
+                }
+
+                await File.WriteAllTextAsync(stateUpdatePath, JsonSerializer.Serialize(_pendingStateUpdates));
+            }
+
+            public Task UpdateView()
+            {
+                return FlushStateUpdatesAsync();
+            }
+
+            public sealed class HostedViewStateProxy
+            {
+                private readonly YanziActionContext _context;
+
+                public HostedViewStateProxy(YanziActionContext context)
+                {
+                    _context = context;
+                }
+
+                public object? this[string key]
+                {
+                    get
+                    {
+                        if (_context._pendingStateUpdates.TryGetValue(key, out var pending))
+                        {
+                            return pending;
+                        }
+
+                        return _context.State.TryGetValue(key, out var value) ? value : null;
+                    }
+                    set
+                    {
+                        _context._pendingStateUpdates[key] = value?.ToString() ?? string.Empty;
+                    }
+                }
+
+                public bool TryGetValue(string key, out object? value)
+                {
+                    if (_context._pendingStateUpdates.TryGetValue(key, out var pending))
+                    {
+                        value = pending;
+                        return true;
+                    }
+
+                    if (_context.State.TryGetValue(key, out var existing))
+                    {
+                        value = existing;
+                        return true;
+                    }
+
+                    value = null;
+                    return false;
+                }
             }
         }
 
@@ -513,4 +679,9 @@ public static class ScriptExtensionRunner
         """;
 }
 
-public sealed record ScriptExecutionResult(bool Success, string Output, string Error, int ExitCode);
+public sealed record ScriptExecutionResult(
+    bool Success,
+    string Output,
+    string Error,
+    int ExitCode,
+    IReadOnlyDictionary<string, string>? StateUpdates = null);

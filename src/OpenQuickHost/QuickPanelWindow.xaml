@@ -301,6 +301,11 @@
                                                         <Path Data="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" Fill="#FBBF24" Stretch="Uniform" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
+                                                <MenuItem Header="复制扩展" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <MenuItem Header="剪切扩展" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <MenuItem Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}" />
                                                 <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                 <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
@@ -424,6 +429,11 @@
                                                         <Path Data="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" Fill="#FBBF24" Stretch="Uniform" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
+                                                <MenuItem Header="复制扩展" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <MenuItem Header="剪切扩展" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <MenuItem Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}" />
                                                 <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                 <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"

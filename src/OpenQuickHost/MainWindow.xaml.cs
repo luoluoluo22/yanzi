@@ -12,9 +12,11 @@ using System.Windows.Media;
 using System.Windows.Controls;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.IO;
 using System.Windows.Threading;
 using System.Windows.Markup;
+using System.Windows.Forms;
 using Forms = System.Windows.Forms;
 
 namespace OpenQuickHost;
@@ -66,6 +68,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<string, List<Action<string>>> _hostedViewStateBindings = new(StringComparer.OrdinalIgnoreCase);
     private System.Windows.Controls.Control? _hostedViewPreferredFocusControl;
     private Window? _hostedViewEditorWindowToRestore;
+    private QuickPanelClipboardItem? _quickPanelClipboard;
 
     public MainWindow()
     {
@@ -204,7 +207,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string FooterHint => SelectedCommand == null
         ? "Up / Down 切换   Enter 执行   Ctrl+K 动作   Esc 收起"
         : SelectedCommand.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
-            ? $"{SelectedCommand.Title}   ·   {_activeQueryArgument}   ·   Ctrl+K 动作"
+            ? $"{SelectedCommand.Title}   ·   {BuildQueryPreviewText(SelectedCommand, _activeQueryArgument)}"
             : $"{SelectedCommand.Title}   ·   {SelectedCommand.Category}   ·   Ctrl+K 动作";
 
     public bool IsHostedViewOpen => _activeHostedView != null;
@@ -712,6 +715,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RenameCommandMenuItem.IsEnabled = canManageLocalExtension;
         EditExtensionMenuItem.IsEnabled = canManageLocalExtension;
         DeleteExtensionMenuItem.IsEnabled = canManageLocalExtension;
+        CopyExtensionMenuItem.IsEnabled = true;
+        CutExtensionMenuItem.IsEnabled = true;
+        PasteExtensionMenuItem.IsEnabled = true;
         return true;
     }
 
@@ -735,6 +741,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 .Where(x => x.Match.IsMatch)
                 .Select(x => x.Command);
 
+        foreach (var command in _allCommands)
+        {
+            command.SetQueryPreview(null, null);
+        }
+
         var matches = sourceCommands
             .DistinctBy(command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
             .Select(command => new
@@ -748,10 +759,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .Select(x => x.Command)
             .ToList();
 
+        var allowRawQueryArgument = AllowsRawQueryArgument(parsed.ScopeKey);
         var leadingCommand = matches.FirstOrDefault(static command => command.SupportsQueryArgument);
         if (leadingCommand != null && !string.IsNullOrWhiteSpace(parsed.Term))
         {
-            _activeQueryArgument = parsed.Term;
+            _activeQueryArgument = ExtractQueryArgument(leadingCommand, parsed.Term, allowRawQueryArgument);
+            if (string.IsNullOrWhiteSpace(_activeQueryArgument) && allowRawQueryArgument)
+            {
+                _activeQueryArgument = parsed.Term;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(parsed.Term))
+        {
+            foreach (var command in matches.Where(static item => item.SupportsQueryArgument))
+            {
+                ApplyQueryPreview(command, parsed.Term, allowRawQueryArgument);
+            }
         }
 
         FilteredCommands.Clear();
@@ -892,6 +916,51 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static bool AllowsRawQueryArgument(string scopeKey) =>
         scopeKey is SearchScopeWeb or "baidu" or "bing" or "google";
+
+    private void ApplyQueryPreview(CommandItem command, string rawInput, bool allowRawQueryArgument)
+    {
+        var argument = ExtractQueryArgument(command, rawInput, allowRawQueryArgument);
+        if (string.IsNullOrWhiteSpace(argument))
+        {
+            if (!allowRawQueryArgument)
+            {
+                command.SetQueryPreview(null, null);
+                return;
+            }
+
+            argument = rawInput.Trim();
+        }
+
+        var compactArgument = argument.Length <= 18 ? argument : argument[..18] + "...";
+        var subtitle = BuildQueryPreviewText(command, compactArgument);
+        command.SetQueryPreview(subtitle, null);
+    }
+
+    private static string BuildQueryPreviewText(CommandItem command, string argument)
+    {
+        if (!string.IsNullOrWhiteSpace(command.QueryTargetTemplate))
+        {
+            var searchName = command.Title.Replace("搜索", string.Empty, StringComparison.Ordinal).Trim();
+            if (string.IsNullOrWhiteSpace(searchName))
+            {
+                searchName = command.Title;
+            }
+
+            return $"用{searchName}搜索「{argument}」";
+        }
+
+        if (command.HasHostedView)
+        {
+            return $"打开{command.Title}并填入「{argument}」";
+        }
+
+        if (command.HasScriptEntry)
+        {
+            return $"将「{argument}」传给{command.Title}";
+        }
+
+        return $"使用{command.Title}处理「{argument}」";
+    }
 
     private void MoveSelection(int delta)
     {
@@ -1085,8 +1154,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var editorWindow = _hostedViewEditorWindowToRestore;
             _hostedViewEditorWindowToRestore = null;
-            editorWindow.Show();
+            if (editorWindow.Visibility != Visibility.Visible)
+            {
+                editorWindow.Show();
+            }
             editorWindow.Activate();
+            HostAssets.AppendLog("Hosted view preview closed: editor window restored.");
         }
         SearchBox.Focus();
     }
@@ -1307,6 +1380,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             "xmlns:x=\"[http://schemas.microsoft.com/winfx/2006/xaml](http://schemas.microsoft.com/winfx/2006/xaml)\"",
             "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"",
             StringComparison.Ordinal);
+        normalized = Regex.Replace(
+            normalized,
+            "\\s+LetterSpacing\\s*=\\s*\"[^\"]*\"",
+            string.Empty,
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        normalized = Regex.Replace(
+            normalized,
+            "\\s+LineHeight\\s*=\\s*\"[^\"]*\"",
+            string.Empty,
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         return normalized.Contains(plainNamespace, StringComparison.Ordinal)
             ? normalized.Replace(plainNamespace, qualifiedNamespace, StringComparison.Ordinal)
@@ -1372,11 +1455,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(14),
-            Child = new TextBlock
+            Child = new System.Windows.Controls.TextBox
             {
                 Text = $"自定义 XAML 视图加载失败：{errorMessage}",
+                IsReadOnly = true,
+                AcceptsReturn = true,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
                 Foreground = System.Windows.Media.Brushes.OrangeRed,
                 TextWrapping = TextWrapping.Wrap,
+                CaretBrush = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFDC2626")!,
+                Padding = new Thickness(0),
                 FontSize = 13
             }
         };
@@ -1515,22 +1606,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private FrameworkElement BuildHostedViewTextComponent(HostedViewComponentDefinition component, HostedPluginSession session, bool markdown)
     {
-        var textBlock = new TextBlock
+        var textBox = new System.Windows.Controls.TextBox
         {
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0),
             Foreground = markdown
                 ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFE5E5E5")!
                 : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFD7D7D7")!,
             FontSize = 14,
-            TextWrapping = TextWrapping.Wrap
+            TextWrapping = TextWrapping.Wrap,
+            Padding = new Thickness(0)
         };
 
         if (!string.IsNullOrWhiteSpace(component.Bind))
         {
-            RegisterHostedViewStateBinding(component.Bind, value => textBlock.Text = value);
+            RegisterHostedViewStateBinding(component.Bind, value => textBox.Text = value);
         }
         else
         {
-            textBlock.Text = component.Text ?? string.Empty;
+            textBox.Text = component.Text ?? string.Empty;
         }
 
         return new Border
@@ -1540,7 +1638,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(12),
-            Child = textBlock
+            Child = textBox
         };
     }
 
@@ -1749,7 +1847,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task ExecuteHostedViewScriptActionAsync(HostedPluginSession session, HostedViewActionDefinition action)
     {
-        if (!ScriptExtensionRunner.CanExecute(session.Command))
+        var scriptCommand = CreateHostedViewScriptCommand(session, action.Script);
+        if (scriptCommand == null || !ScriptExtensionRunner.CanExecute(scriptCommand))
         {
             HostedViewStatus = "当前扩展没有可执行的脚本入口。";
             return;
@@ -1759,7 +1858,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? GetHostedViewState(action.InputFrom)
             : ResolveDefaultHostedViewInput(session);
         HostedViewStatus = $"正在执行 {session.Command.Title} 脚本...";
-        var result = await ScriptExtensionRunner.ExecuteAsync(session.Command, input, "hosted-view-v2");
+        var result = await ScriptExtensionRunner.ExecuteAsync(scriptCommand, input, "hosted-view", session.State);
+        ApplyHostedViewScriptStateUpdates(result.StateUpdates);
         var outputPath = string.IsNullOrWhiteSpace(action.OutputTo) ? "output" : action.OutputTo;
         SetHostedViewState(outputPath, result.Success ? result.Output : result.Error);
         HostedViewStatus = result.Success
@@ -1812,6 +1912,47 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : action.SuccessMessage;
     }
 
+    private CommandItem? CreateHostedViewScriptCommand(HostedPluginSession session, string? scriptName)
+    {
+        if (!string.IsNullOrWhiteSpace(scriptName) &&
+            session.Definition.Scripts.TryGetValue(scriptName.Trim(), out var hostedScript))
+        {
+            return new CommandItem(
+                glyph: session.Command.Glyph,
+                title: session.Command.Title,
+                subtitle: session.Command.Subtitle,
+                category: session.Command.Category,
+                accentHex: session.Command.AccentBrush.ToString(),
+                openTarget: null,
+                keywords: session.Command.Keywords,
+                source: session.Command.Source,
+                extensionId: session.Command.ExtensionId,
+                declaredVersion: session.Command.DeclaredVersion,
+                extensionDirectoryPath: session.Command.ExtensionDirectoryPath,
+                runtime: hostedScript.Runtime,
+                entryPoint: hostedScript.Entry,
+                permissions: hostedScript.Permissions,
+                entryMode: hostedScript.EntryMode,
+                inlineScriptSource: hostedScript.Source,
+                iconReference: session.Command.IconReference);
+        }
+
+        return session.Command;
+    }
+
+    private void ApplyHostedViewScriptStateUpdates(IReadOnlyDictionary<string, string>? updates)
+    {
+        if (updates == null || updates.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var pair in updates)
+        {
+            SetHostedViewState(pair.Key, pair.Value);
+        }
+    }
+
     private static string ResolveHostedViewLayout(HostedPluginViewDefinition definition)
     {
         return string.IsNullOrWhiteSpace(definition.Type)
@@ -1833,6 +1974,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             string type;
             string? path = null;
             string? value = null;
+            string? script = null;
             string? valueFrom = null;
             string? inputFrom = null;
             string? outputTo = null;
@@ -1874,6 +2016,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     case "value":
                         value = parsedValue;
                         break;
+                    case "script":
+                        script = parsedValue;
+                        break;
                     case "valuefrom":
                         valueFrom = parsedValue;
                         break;
@@ -1912,7 +2057,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
             }
 
-            actions.Add(new HostedViewActionDefinition(type, path, value, valueFrom, inputFrom, outputTo, successMessage, append, separator, key, scope, defaultValue));
+            actions.Add(new HostedViewActionDefinition(type, path, value, script, valueFrom, inputFrom, outputTo, successMessage, append, separator, key, scope, defaultValue));
         }
 
         return actions;
@@ -2369,6 +2514,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshExtensionHotkeys();
     }
 
+    public CommandItem PersistJsonExtensionFromDialog(string json, bool isEditMode)
+    {
+        HostAssets.AppendLog($"PersistJsonExtensionFromDialog: start, editMode={isEditMode}.");
+        var command = LocalExtensionCatalog.SaveJsonExtension(json);
+        UpsertLocalExtensionCommand(command);
+        ApplyFilter(SearchBox.Text);
+        SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase));
+        CommandList.SelectedItem = SelectedCommand;
+        LastRunMessage = isEditMode
+            ? $"已更新本地 JSON 扩展：{command.Title}"
+            : $"已添加本地 JSON 扩展：{command.Title}";
+        HostAssets.AppendLog($"PersistJsonExtensionFromDialog: success, extensionId={command.ExtensionId}.");
+        return command;
+    }
+
     public void ReloadLocalExtensionsFromExternal()
     {
         LocalExtensionCatalog.EnsureSampleExtension();
@@ -2625,13 +2785,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Owner = owner
             };
             dialog.ShowDialog();
+            HostAssets.AppendLog($"ShowJsonExtensionEditorForOwner: dialog closed, accepted={dialog.WasAccepted}, persistedDirectly={dialog.PersistedCommand != null}.");
             if (!dialog.WasAccepted)
             {
                 return null;
             }
 
+            if (dialog.PersistedCommand != null)
+            {
+                return dialog.PersistedCommand;
+            }
+
             try
             {
+                HostAssets.AppendLog("ShowJsonExtensionEditorForOwner: persisting after dialog return.");
                 var command = LocalExtensionCatalog.SaveJsonExtension(dialog.JsonContent);
                 UpsertLocalExtensionCommand(command);
                 ApplyFilter(SearchBox.Text);
@@ -3703,19 +3870,84 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var command = ResolveRunnableCommand(sourceCommand);
 
         var settings = AppSettingsStore.Load();
-        var slots = settings.QuickPanelSlots.ToList();
-        
-        // Find first empty slot
-        var index = slots.FindIndex(string.IsNullOrEmpty);
+        var group = settings.QuickPanelGlobalGroups
+            .FirstOrDefault(item => string.Equals(item.Id, settings.SelectedQuickPanelGlobalGroupId, StringComparison.OrdinalIgnoreCase))
+            ?? settings.QuickPanelGlobalGroups.FirstOrDefault();
+        if (group == null)
+        {
+            SyncStatus = "鼠标面板分组未初始化，无法添加。";
+            return;
+        }
+
+        while (group.Slots.Count < 12)
+        {
+            group.Slots.Add(null);
+        }
+
+        if (group.Slots.Any(slot => string.Equals(slot, command.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+        {
+            LastRunMessage = $"鼠标面板中已存在：{command.Title}";
+            _quickPanel?.ReloadSlots();
+            return;
+        }
+
+        var index = group.Slots.FindIndex(string.IsNullOrEmpty);
         if (index >= 0)
         {
-            slots[index] = command.ExtensionId;
-            AppSettingsStore.Save(settings with { QuickPanelSlots = slots });
-            LastRunMessage = $"已添加到鼠标面板第 {index + 1} 个槽位：{command.Title}";
+            group.Slots[index] = command.ExtensionId;
+            if (settings.QuickPanelSlots.Count > index)
+            {
+                settings.QuickPanelSlots[index] = command.ExtensionId;
+            }
+
+            AppSettingsStore.Save(settings);
+            _quickPanel?.ReloadSlots();
+            LastRunMessage = $"已添加到鼠标面板「{group.Name}」第 {index + 1} 个槽位：{command.Title}";
         }
         else
         {
-            SyncStatus = "鼠标面板已满（28 个槽位），请先在面板中移除旧扩展。";
+            SyncStatus = $"鼠标面板分组「{group.Name}」已满（12 个槽位），请先移除旧扩展。";
+        }
+    }
+
+    private void CopyExtensionMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var sourceCommand = SelectedCommand != null && !IsInternalCommand(SelectedCommand)
+            ? SelectedCommand
+            : _lastActionableCommand;
+        if (sourceCommand == null)
+        {
+            return;
+        }
+
+        SetQuickPanelClipboard(ResolveRunnableCommand(sourceCommand), isCut: false, sourceSlot: null);
+    }
+
+    private void CutExtensionMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var sourceCommand = SelectedCommand != null && !IsInternalCommand(SelectedCommand)
+            ? SelectedCommand
+            : _lastActionableCommand;
+        if (sourceCommand == null)
+        {
+            return;
+        }
+
+        SetQuickPanelClipboard(ResolveRunnableCommand(sourceCommand), isCut: true, sourceSlot: null);
+    }
+
+    private void PasteExtensionMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (TryImportExtensionFromSystemClipboard(out var command, out var message) && command != null)
+        {
+            LastRunMessage = $"已从剪贴板导入扩展：{command.Title}";
+            QueueBackgroundWebDavSync("extension-import-clipboard");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            SyncStatus = message;
         }
     }
 
@@ -3926,6 +4158,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             LastRunMessage = $"已执行脚本：{runnable.Title} -> {summary}";
             SyncStatus = "脚本执行完成。";
+            if (!string.IsNullOrWhiteSpace(result.Output) || !string.IsNullOrWhiteSpace(result.Error))
+            {
+                var logWindow = new ExecutionLogWindow(
+                    runnable.Title,
+                    success: true,
+                    output: result.Output,
+                    error: result.Error,
+                    exitCode: result.ExitCode,
+                    extraMeta: $"来源：{launchSource}")
+                {
+                    Owner = this
+                };
+                logWindow.Show();
+                logWindow.Activate();
+            }
             return;
         }
 
@@ -3943,6 +4190,99 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // --- Quick Panel Support ---
 
     public List<CommandItem> GetAllCommands() => _allCommands.ToList();
+
+    public QuickPanelClipboardItem? GetQuickPanelClipboard() => _quickPanelClipboard;
+
+    public void ClearQuickPanelClipboard()
+    {
+        _quickPanelClipboard = null;
+        LastRunMessage = "已清空扩展剪贴板。";
+    }
+
+    public void SetQuickPanelClipboard(CommandItem command, bool isCut, QuickPanelSlotReference? sourceSlot)
+    {
+        _quickPanelClipboard = new QuickPanelClipboardItem(command.ExtensionId, command.Title, isCut, sourceSlot);
+        var action = isCut ? "剪切" : "复制";
+        LastRunMessage = sourceSlot == null
+            ? $"已{action}扩展：{command.Title}。现在可以在鼠标面板槽位右键粘贴。"
+            : $"已{action}鼠标面板中的扩展：{command.Title}。";
+    }
+
+    public bool TryImportExtensionFromSystemClipboard(out CommandItem? command, out string message)
+    {
+        command = null;
+        message = string.Empty;
+
+        string clipboardText;
+        try
+        {
+            if (!System.Windows.Clipboard.ContainsText())
+            {
+                message = "系统剪贴板里没有文本内容。";
+                return false;
+            }
+
+            clipboardText = System.Windows.Clipboard.GetText();
+        }
+        catch (Exception ex)
+        {
+            message = $"读取系统剪贴板失败：{FormatExceptionMessage(ex)}";
+            return false;
+        }
+
+        var normalizedJson = ExtractExtensionJsonFromClipboard(clipboardText);
+        if (string.IsNullOrWhiteSpace(normalizedJson))
+        {
+            message = "系统剪贴板里没有可导入的扩展 JSON。";
+            return false;
+        }
+
+        try
+        {
+            command = PersistJsonExtensionFromDialog(normalizedJson, isEditMode: false);
+            QueueBackgroundWebDavSync("extension-import-clipboard");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            message = $"剪贴板里的扩展 JSON 无法导入：{FormatExceptionMessage(ex)}";
+            return false;
+        }
+    }
+
+    private static string ExtractExtensionJsonFromClipboard(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = text.Trim();
+        if (trimmed.StartsWith("```", StringComparison.Ordinal))
+        {
+            var lines = trimmed.Split(["\r\n", "\n"], StringSplitOptions.None).ToList();
+            if (lines.Count >= 2 && lines[0].StartsWith("```", StringComparison.Ordinal))
+            {
+                lines.RemoveAt(0);
+            }
+
+            if (lines.Count > 0 && lines[^1].StartsWith("```", StringComparison.Ordinal))
+            {
+                lines.RemoveAt(lines.Count - 1);
+            }
+
+            trimmed = string.Join(Environment.NewLine, lines).Trim();
+        }
+
+        var firstBrace = trimmed.IndexOf('{');
+        var lastBrace = trimmed.LastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace)
+        {
+            trimmed = trimmed[firstBrace..(lastBrace + 1)];
+        }
+
+        return trimmed;
+    }
 
     public void ExecuteCommandExternally(CommandItem command, string? explicitInput = null, string launchSource = "quick-panel")
     {
@@ -4130,10 +4470,18 @@ public sealed record HostedPluginViewDefinition(
     double? MinWindowHeight,
     string? XamlTemplate,
     IReadOnlyDictionary<string, string> InitialState,
-    IReadOnlyList<HostedViewComponentDefinition> Components)
+    IReadOnlyList<HostedViewComponentDefinition> Components,
+    IReadOnlyDictionary<string, HostedViewInlineScriptDefinition> Scripts)
 {
     public bool UsesDynamicLayout => Components.Count > 0 || !string.IsNullOrWhiteSpace(XamlTemplate);
 }
+
+public sealed record HostedViewInlineScriptDefinition(
+    string? Runtime,
+    string? EntryMode,
+    string? Entry,
+    IReadOnlyList<string> Permissions,
+    string? Source);
 
 public sealed class HostedPluginSession
 {
@@ -4167,6 +4515,7 @@ public sealed record HostedViewActionDefinition(
     string Type,
     string? Path,
     string? Value,
+    string? Script,
     string? ValueFrom,
     string? InputFrom,
     string? OutputTo,
@@ -4329,6 +4678,9 @@ public sealed class CloudWebDavConfigSnapshot
 
 public sealed class CommandItem : INotifyPropertyChanged
 {
+    private string? _queryPreviewSubtitle;
+    private string? _queryPreviewActionLabel;
+
     public CommandItem(
         string glyph,
         string title,
@@ -4403,6 +4755,8 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public string Subtitle { get; }
 
+    public string DisplaySubtitle => string.IsNullOrWhiteSpace(_queryPreviewSubtitle) ? Subtitle : _queryPreviewSubtitle;
+
     public string Category { get; }
 
     public System.Windows.Media.Brush AccentBrush { get; }
@@ -4441,11 +4795,15 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public string? InlineScriptSource { get; }
 
-    public bool SupportsQueryArgument => QueryPrefixes.Count > 0 && !string.IsNullOrWhiteSpace(QueryTargetTemplate);
+    public bool SupportsQueryArgument => QueryPrefixes.Count > 0 && (!string.IsNullOrWhiteSpace(QueryTargetTemplate) || HasScriptEntry || HasHostedView);
 
     public bool HasHostedView => HostedView != null;
 
-    public bool HasScriptEntry => !string.IsNullOrWhiteSpace(Runtime) && !string.IsNullOrWhiteSpace(EntryPoint);
+    public bool HasScriptEntry =>
+        !string.IsNullOrWhiteSpace(Runtime) &&
+        (string.Equals(EntryMode, "inline", StringComparison.OrdinalIgnoreCase)
+            ? !string.IsNullOrWhiteSpace(InlineScriptSource)
+            : !string.IsNullOrWhiteSpace(EntryPoint));
 
     public bool HasGlobalShortcut => !string.IsNullOrWhiteSpace(GlobalShortcut);
 
@@ -4472,6 +4830,8 @@ public sealed class CommandItem : INotifyPropertyChanged
             : HasScriptEntry
                 ? "脚本"
                 : Category;
+
+    public string DisplayActionLabel => string.IsNullOrWhiteSpace(_queryPreviewActionLabel) ? ItemKindLabel : _queryPreviewActionLabel;
 
     public string CloudSummary =>
         ExistsInCloud
@@ -4522,6 +4882,20 @@ public sealed class CommandItem : INotifyPropertyChanged
     {
         LocalPackagePath = $"本地包：{path}";
         NotifyCloudChanged();
+    }
+
+    public void SetQueryPreview(string? subtitle, string? actionLabel)
+    {
+        if (string.Equals(_queryPreviewSubtitle, subtitle, StringComparison.Ordinal) &&
+            string.Equals(_queryPreviewActionLabel, actionLabel, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _queryPreviewSubtitle = subtitle;
+        _queryPreviewActionLabel = actionLabel;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplaySubtitle)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayActionLabel)));
     }
 
     private void NotifyCloudChanged()

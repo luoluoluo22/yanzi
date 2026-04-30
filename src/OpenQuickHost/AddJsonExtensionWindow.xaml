@@ -380,7 +380,21 @@
                             Padding="18"
                             Visibility="Collapsed">
                         <StackPanel>
-                            <TextBlock Text="测试执行日志" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="Bold" />
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="测试执行日志" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" />
+                                <Button x:Name="ManualCopyTestFailureButton"
+                                        Grid.Column="1"
+                                        Content="复制错误"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        Height="30"
+                                        Padding="12,0"
+                                        Visibility="Collapsed"
+                                        Click="ManualCopyTestFailureButton_Click" />
+                            </Grid>
                             <TextBlock x:Name="ManualTestSummaryText" Margin="0,4,0,10" Foreground="{StaticResource Text2Brush}" FontSize="12.5" TextWrapping="Wrap" />
                             <TextBox x:Name="ManualTestLogTextBox"
                                      Height="160"
@@ -436,6 +450,7 @@
             <TextBox x:Name="AiJsonInputBox" />
             <TextBlock x:Name="AiJsonPlaceholder" />
             <Button x:Name="TestExtensionButton" />
+            <Button x:Name="CopyTestFailureButton" />
             <Border x:Name="TestResultPanel" />
             <TextBlock x:Name="TestSummaryText" />
             <TextBox x:Name="TestLogTextBox" />

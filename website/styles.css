@@ -436,6 +436,26 @@ pre {
   color: var(--text-muted);
 }
 
+.screenshot-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.stack-shot {
+  width: 100%;
+  display: block;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+.stack-shot.compact {
+  max-width: 85%;
+  align-self: flex-end;
+}
+
 .download-section {
   text-align: center;
 }
@@ -632,6 +652,13 @@ pre {
   padding: 4rem 0;
 }
 
+.showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+  width: min(100%, 1080px);
+}
+
 .quick-menu {
   width: 100%;
   max-width: 440px;
@@ -752,11 +779,11 @@ pre {
 }
 
 .hero-mock {
-  max-width: 600px;
+  max-width: 780px;
 }
 
 .panel-mock {
-  max-width: 440px;
+  max-width: 520px;
 }
 
 .app-screenshot {
@@ -799,4 +826,15 @@ pre {
   pointer-events: none;
   z-index: 10;
   transform: translateZ(10px);
+}
+
+@media (max-width: 768px) {
+  .showcase-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stack-shot.compact {
+    max-width: 100%;
+    align-self: stretch;
+  }
 }

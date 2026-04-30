@@ -45,6 +45,7 @@ public partial class AddJsonExtensionWindow : Window
     private bool _isInitializing = true;
 
     public bool WasAccepted { get; private set; }
+    public CommandItem? PersistedCommand { get; private set; }
 
     public AddJsonExtensionWindow(string initialJson, bool isEditMode = false)
     {
@@ -134,7 +135,7 @@ public partial class AddJsonExtensionWindow : Window
 
         UpdateJsonValidationState();
         UpdateManualJsonValidationState();
-        RefreshIconPreview();
+        SafeRefreshIconPreview();
         UpdateWindowHeightForStep();
     }
 
@@ -194,6 +195,7 @@ public partial class AddJsonExtensionWindow : Window
         _testCompleted = false;
         _testSucceeded = false;
         ManualTestResultPanel.Visibility = Visibility.Collapsed;
+        ManualCopyTestFailureButton.Visibility = Visibility.Collapsed;
         ManualTestLogTextBox.Clear();
         ManualTestSummaryText.Text = string.Empty;
         UpdateManualJsonValidationState();
@@ -207,7 +209,17 @@ public partial class AddJsonExtensionWindow : Window
             ManualTestResultPanel,
             ManualTestSummaryText,
             ManualTestLogTextBox,
+            ManualCopyTestFailureButton,
             useManualJson: true);
+    }
+
+    private void ManualCopyTestFailureButton_Click(object sender, RoutedEventArgs e)
+    {
+        CopyTestFailureToClipboard(
+            ManualCopyTestFailureButton,
+            ManualJsonInputBox.Text,
+            ManualTestSummaryText.Text,
+            ManualTestLogTextBox.Text);
     }
 
     private void ManualTemplateButton_Click(object sender, RoutedEventArgs e)
@@ -257,12 +269,12 @@ public partial class AddJsonExtensionWindow : Window
 
     private void IconBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        RefreshIconPreview();
+        SafeRefreshIconPreview();
     }
 
     private void IconPreviewContext_TextChanged(object sender, TextChangedEventArgs e)
     {
-        RefreshIconPreview();
+        SafeRefreshIconPreview();
     }
 
     private void BuiltInIconButton_Click(object sender, RoutedEventArgs e)
@@ -273,7 +285,7 @@ public partial class AddJsonExtensionWindow : Window
         }
 
         IconBox.Text = iconReference;
-        RefreshIconPreview();
+        SafeRefreshIconPreview();
     }
 
     private void PickIconImageButton_Click(object sender, RoutedEventArgs e)
@@ -292,13 +304,13 @@ public partial class AddJsonExtensionWindow : Window
         }
 
         IconBox.Text = dialog.FileName;
-        RefreshIconPreview();
+        SafeRefreshIconPreview();
     }
 
     private void ClearIconButton_Click(object sender, RoutedEventArgs e)
     {
         IconBox.Clear();
-        RefreshIconPreview();
+        SafeRefreshIconPreview();
     }
 
     private void GoStep2Button_Click(object sender, RoutedEventArgs e)
@@ -551,6 +563,7 @@ public partial class AddJsonExtensionWindow : Window
         _testCompleted = false;
         _testSucceeded = false;
         TestResultPanel.Visibility = Visibility.Collapsed;
+        CopyTestFailureButton.Visibility = Visibility.Collapsed;
         TestLogTextBox.Clear();
         TestSummaryText.Text = string.Empty;
 
@@ -565,6 +578,7 @@ public partial class AddJsonExtensionWindow : Window
             TestResultPanel,
             TestSummaryText,
             TestLogTextBox,
+            CopyTestFailureButton,
             useManualJson: false);
     }
 
@@ -587,6 +601,19 @@ public partial class AddJsonExtensionWindow : Window
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         WasAccepted = false;
+        if (IsLoaded)
+        {
+            try
+            {
+                DialogResult = false;
+                return;
+            }
+            catch
+            {
+                // Fall back to Close for non-modal usage.
+            }
+        }
+
         Close();
     }
 
@@ -599,7 +626,27 @@ public partial class AddJsonExtensionWindow : Window
             _ = JsonSerializer.Deserialize<LocalExtensionManifest>(normalizedJson, CreateJsonOptions())
                 ?? throw new InvalidOperationException("JSON 解析失败。");
 
+            if (Owner is MainWindow mainWindow)
+            {
+                PersistedCommand = mainWindow.PersistJsonExtensionFromDialog(normalizedJson, _isEditMode);
+            }
+
             WasAccepted = true;
+            HostAssets.AppendLog("AddJson save accepted: dialog validation passed.");
+
+            if (IsLoaded)
+            {
+                try
+                {
+                    DialogResult = true;
+                    return;
+                }
+                catch
+                {
+                    // Fall back to Close for non-modal usage.
+                }
+            }
+
             Close();
         }
         catch (Exception ex)
@@ -956,7 +1003,7 @@ public partial class AddJsonExtensionWindow : Window
         StartupModeBox.Text = manifest.Startup?.Mode ?? string.Empty;
         StartupScheduleBox.Text = manifest.Startup?.Schedule ?? string.Empty;
         _manualHostedView = manifest.HostedView;
-        RefreshIconPreview();
+        SafeRefreshIconPreview();
     }
 
     private void RefreshIconPreview()
@@ -968,9 +1015,7 @@ public partial class AddJsonExtensionWindow : Window
         IconPreviewGlyph.Visibility = Visibility.Collapsed;
 
         var iconReference = NullIfEmpty(IconBox.Text);
-        var previewDirectory = string.IsNullOrWhiteSpace(IdBox.Text)
-            ? HostAssets.ExtensionsPath
-            : Path.Combine(HostAssets.ExtensionsPath, IdBox.Text.Trim());
+        var previewDirectory = ResolvePreviewDirectory();
 
         var imageSource = ExtensionIconLibrary.ResolveImageSource(iconReference, previewDirectory);
         if (imageSource != null)
@@ -998,6 +1043,42 @@ public partial class AddJsonExtensionWindow : Window
             ? "未设置图标时会回退为字母标识。"
             : $"当前 icon 值未解析成功：{iconReference}";
         HighlightSelectedBuiltInButton(null);
+    }
+
+    private void SafeRefreshIconPreview()
+    {
+        try
+        {
+            RefreshIconPreview();
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"AddJson icon preview failed: {ex}");
+            IconPreviewImage.Visibility = Visibility.Collapsed;
+            IconPreviewImage.Source = null;
+            IconPreviewVectorHost.Visibility = Visibility.Collapsed;
+            IconPreviewVector.Data = null;
+            IconPreviewGlyph.Text = InferFallbackGlyph();
+            IconPreviewGlyph.Visibility = Visibility.Visible;
+            IconPreviewHintText.Text = "图标预览失败，已回退为字母标识。";
+            HighlightSelectedBuiltInButton(null);
+        }
+    }
+
+    private string ResolvePreviewDirectory()
+    {
+        if (string.IsNullOrWhiteSpace(IdBox.Text))
+        {
+            return HostAssets.ExtensionsPath;
+        }
+
+        var trimmedId = IdBox.Text.Trim();
+        if (trimmedId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            return HostAssets.ExtensionsPath;
+        }
+
+        return Path.Combine(HostAssets.ExtensionsPath, trimmedId);
     }
 
     private void HighlightSelectedBuiltInButton(string? selectedReference)
@@ -1184,6 +1265,7 @@ public partial class AddJsonExtensionWindow : Window
         Border resultPanel,
         TextBlock summaryText,
         System.Windows.Controls.TextBox logTextBox,
+        System.Windows.Controls.Button copyFailureButton,
         bool useManualJson)
     {
         try
@@ -1192,6 +1274,10 @@ public partial class AddJsonExtensionWindow : Window
             triggerButton.IsEnabled = false;
             triggerButton.Content = "测试中...";
             resultPanel.Visibility = Visibility.Visible;
+            copyFailureButton.Visibility = Visibility.Collapsed;
+            copyFailureButton.Content = "复制错误";
+            copyFailureButton.Background = MediaBrushes.Transparent;
+            copyFailureButton.BorderBrush = BorderStrongBrush;
             summaryText.Text = "正在执行测试，请稍等。";
             logTextBox.Text = string.Empty;
 
@@ -1202,6 +1288,7 @@ public partial class AddJsonExtensionWindow : Window
             summaryText.Foreground = result.Success ? GreenBrush : RedBrush;
             summaryText.Text = result.Summary;
             logTextBox.Text = result.Log;
+            copyFailureButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
         }
         catch (Exception ex)
         {
@@ -1211,12 +1298,33 @@ public partial class AddJsonExtensionWindow : Window
             summaryText.Foreground = RedBrush;
             summaryText.Text = "测试执行失败。";
             logTextBox.Text = ex.ToString();
+            copyFailureButton.Visibility = Visibility.Visible;
         }
         finally
         {
             triggerButton.IsEnabled = _lastJsonValid;
             triggerButton.Content = "测试扩展";
             RefreshAllState();
+        }
+    }
+
+    private void CopyTestFailureToClipboard(
+        System.Windows.Controls.Button button,
+        string json,
+        string summary,
+        string log)
+    {
+        try
+        {
+            var prompt = BuildTestFailurePrompt(json, summary, log);
+            CopyTextToClipboard(prompt);
+            button.Content = "已复制";
+            button.Background = GreenBrush;
+            button.BorderBrush = GreenBrush;
+        }
+        catch (Exception ex)
+        {
+            ShowError($"复制错误详情失败：{ex.Message}");
         }
     }
 
@@ -1285,7 +1393,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine(request);
         builder.AppendLine();
         builder.AppendLine("二、输出要求");
-        builder.AppendLine("1. 只返回 JSON，不要解释，不要 Markdown 代码块");
+        builder.AppendLine("1. 只返回一个 ```json 代码块，不要解释，不要额外文字");
         builder.AppendLine("2. JSON 必须能直接被 System.Text.Json 解析");
         builder.AppendLine("3. 如果最简单的配置就能实现，不要过度设计");
         builder.AppendLine("4. 优先选择最贴近需求的方案：");
@@ -1293,6 +1401,15 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("   - 搜索类：优先用 queryPrefixes + queryTargetTemplate");
         builder.AppendLine("   - 脚本类：优先用 runtime = csharp，必要时才用 powershell");
         builder.AppendLine("   - 内联脚本：使用 entryMode = inline 和 script.source");
+        builder.AppendLine("4.1 如果需要用户在主界面输入“前缀 + 内容”后触发扩展，必须提供 queryPrefixes；脚本或工作区扩展会通过 context.InputText 收到去掉前缀后的内容");
+        builder.AppendLine("5. 如果是 C# 内联脚本，必须严格遵守宿主约定：");
+        builder.AppendLine("   - 必须包含 \"runtime\": \"csharp\"");
+        builder.AppendLine("   - 必须包含 \"entryMode\": \"inline\"");
+        builder.AppendLine("   - 建议包含 \"permissions\": [\"context.read\"]");
+        builder.AppendLine("   - script.source 里使用 using OpenQuickHost.CSharpRuntime;");
+        builder.AppendLine("   - script.source 里声明 public static class YanziAction");
+        builder.AppendLine("   - script.source 里实现 public static Task<string> RunAsync(YanziActionContext context)");
+        builder.AppendLine("   - 输入内容从 context.InputText 读取");
         builder.AppendLine();
         builder.AppendLine("三、字段说明");
         builder.AppendLine("- id：扩展唯一标识，只能英文小写、数字、短横线，例如 \"open-project-folder\"");
@@ -1303,7 +1420,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- keywords：搜索关键词数组");
         builder.AppendLine("- icon：图标，可用 mdi:图标名 或图片地址");
         builder.AppendLine("- openTarget：点击后直接打开的目标");
-        builder.AppendLine("- queryPrefixes：搜索前缀数组，例如 [\"百度\", \"baidu\"]");
+        builder.AppendLine("- queryPrefixes：前缀数组，例如 [\"百度\", \"baidu\"]；搜索扩展会把后面的内容替换进 {query}，脚本 / 工作区扩展会把后面的内容传给 context.InputText");
         builder.AppendLine("- queryTargetTemplate：搜索模板，必须包含 {query}");
         builder.AppendLine("- runtime：脚本运行时，例如 \"csharp\" 或 \"powershell\"");
         builder.AppendLine("- entryMode：如果是内联脚本请写 \"inline\"");
@@ -1314,15 +1431,18 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- script.source：内联脚本源码");
         builder.AppendLine("- hostedViewXaml：如果要让宿主直接加载自定义 XAML 界面，请输出 hostedViewXaml");
         builder.AppendLine("- hostedViewXaml.xaml：填写可直接解析的 WPF XAML 字符串，根元素建议用 Grid、UserControl 或 Window");
-        builder.AppendLine("- hostedViewXaml.state：初始化状态对象，XAML 中可通过 {Binding [key]} 绑定");
+        builder.AppendLine("- hostedViewXaml.xaml 必须放在合法 JSON 字符串里，内部所有双引号都必须正确转义为 \\\"");
+        builder.AppendLine("- hostedViewXaml.state：初始化状态对象，值可用字符串、数字、布尔；XAML 中可通过 {Binding [key]} 绑定");
         builder.AppendLine("- hostedViewXaml.window.width / height / minWidth / minHeight：可选，控制窗口尺寸");
         builder.AppendLine("- hostedViewXaml 中按钮可用 xmlns:oqh=\"clr-namespace:OpenQuickHost\"，再用 oqh:HostedViewBridge.Action 声明动作");
+        builder.AppendLine("- 所有 URL、xmlns、图片地址都必须是纯文本，不要写成 [text](url) 这种 Markdown 链接");
         builder.AppendLine("- oqh:HostedViewBridge.Action 当前支持 close、setState、runScript、loadStorage、saveStorage；多个动作可用 | 分隔，参数用 ;key=value");
         builder.AppendLine("- 根元素还支持 oqh:HostedViewBridge.LoadedAction，可在窗口打开时自动执行 loadStorage");
+        builder.AppendLine("- 视图脚本如果要读写界面状态，优先使用 context.State 和 await context.SetStateAsync(...)；兼容写法 context.ViewState / await context.UpdateView() 也支持");
         builder.AppendLine("- hostedViewV2：如果要在宿主里显示内置界面，也可以输出 hostedViewV2，不要返回 @view: 之类的协议字符串");
         builder.AppendLine("- hostedViewV2.type：当前支持 \"single-pane\"、\"split-horizontal\"");
         builder.AppendLine("- hostedViewV2.window.width / height / minWidth / minHeight：可选，控制窗口尺寸");
-        builder.AppendLine("- hostedViewV2.state：初始化状态对象，例如 { \"note\": \"\", \"preview\": \"先输入内容\" }");
+        builder.AppendLine("- hostedViewV2.state：初始化状态对象，例如 { \"note\": \"\", \"preview\": \"先输入内容\", \"count\": 0 }");
         builder.AppendLine("- hostedViewV2.components：当前支持 text、textarea、button、markdown");
         builder.AppendLine("- 组件的 bind 字段用于绑定到 state 路径");
         builder.AppendLine("- button.actions：当前支持 setState、runScript、loadStorage、saveStorage");
@@ -1366,10 +1486,28 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"keywords\": [\"脚本\", \"文本\", \"inline\"],");
         builder.AppendLine("  \"runtime\": \"csharp\",");
         builder.AppendLine("  \"entryMode\": \"inline\",");
-        builder.AppendLine("  \"permissions\": [\"clipboard\"],");
+        builder.AppendLine("  \"permissions\": [\"context.read\"],");
         builder.AppendLine("  \"icon\": \"mdi:code-tags\",");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using OpenQuickHost.CSharpRuntime;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(\\\"收到输入：\\\" + context.InputText);\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"收到输入：\\\" + input);\\n    }\\n}\"");
+        builder.AppendLine("  }");
+        builder.AppendLine("}");
+        builder.AppendLine();
+        builder.AppendLine("模板 3.1：带前缀输入的内联脚本扩展");
+        builder.AppendLine("{");
+        builder.AppendLine("  \"id\": \"text-length-counter\",");
+        builder.AppendLine("  \"name\": \"文本长度统计\",");
+        builder.AppendLine("  \"version\": \"0.1.0\",");
+        builder.AppendLine("  \"category\": \"脚本\",");
+        builder.AppendLine("  \"description\": \"在主界面输入前缀后，把后面的文本传给脚本并返回长度。\",");
+        builder.AppendLine("  \"keywords\": [\"文本\", \"长度\", \"统计\", \"脚本\"],");
+        builder.AppendLine("  \"queryPrefixes\": [\"统计\", \"count\"],");
+        builder.AppendLine("  \"runtime\": \"csharp\",");
+        builder.AppendLine("  \"entryMode\": \"inline\",");
+        builder.AppendLine("  \"permissions\": [\"context.read\"],");
+        builder.AppendLine("  \"icon\": \"mdi:counter\",");
+        builder.AppendLine("  \"script\": {");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"原文：\\\" + input + \\\"\\\\n长度：\\\" + input.Length);\\n    }\\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1394,7 +1532,8 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    },");
         builder.AppendLine("    \"state\": {");
         builder.AppendLine("      \"note\": \"\",");
-        builder.AppendLine("      \"preview\": \"先在左侧输入内容，这里会显示便签结果。\"");
+        builder.AppendLine("      \"preview\": \"先在左侧输入内容，这里会显示便签结果。\",");
+        builder.AppendLine("      \"saved\": true");
         builder.AppendLine("    },");
         builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\" oqh:HostedViewBridge.PreferredFocus=\\\"NoteBox\\\" oqh:HostedViewBridge.LoadedAction=\\\"loadStorage;path=note;key=note.txt;scope=both;defaultValue=\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"便签内容\\\" Foreground=\\\"White\\\" FontSize=\\\"14\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,0,0,10\\\"/><TextBox x:Name=\\\"NoteBox\\\" Text=\\\"{Binding [note], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" VerticalScrollBarVisibility=\\\"Auto\\\" TextWrapping=\\\"Wrap\\\" MinHeight=\\\"320\\\" Padding=\\\"12\\\"/><Button Content=\\\"保存便签\\\" Margin=\\\"0,12,0,0\\\" oqh:HostedViewBridge.Action=\\\"saveStorage;path=note;key=note.txt;scope=both;successMessage=便签已保存。|setState;path=preview;valueFrom=note\\\"/></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"10\\\" Padding=\\\"12\\\"><TextBlock Text=\\\"{Binding [preview]}\\\" TextWrapping=\\\"Wrap\\\" Foreground=\\\"White\\\"/></Border></Grid>\"");
         builder.AppendLine("  },");
@@ -1406,7 +1545,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine();
         builder.AppendLine();
         builder.AppendLine("五、最终要求");
-        builder.AppendLine("请结合我的需求，返回一份最终可用的完整 JSON，不要返回多个方案，不要附加说明。");
+        builder.AppendLine("请结合我的需求，只返回一个包含最终 JSON 的 ```json 代码块，不要返回多个方案，不要附加说明。");
         builder.AppendLine("如果需求里提到便签、面板、编辑器、工作区、内置界面，请优先使用 hostedViewXaml；如果只是简单表单，再考虑 hostedViewV2。");
         return builder.ToString();
     }
@@ -1425,20 +1564,24 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("4. 在宿主界面里展示一个简单工作区或自定义 XAML 界面");
         builder.AppendLine();
         builder.AppendLine("二、修改要求");
-        builder.AppendLine("1. 只返回 JSON，不要解释，不要 Markdown 代码块");
+        builder.AppendLine("1. 只返回一个 ```json 代码块，不要解释，不要额外文字");
         builder.AppendLine("2. 保留原有结构和意图，按需要修正字段，不要无意义改名");
         builder.AppendLine("3. 不要输出 null 字段，能省略就省略");
         builder.AppendLine("4. icon 支持 mdi:图标名、app:图标名、本地相对路径、绝对路径、图片 URL");
         builder.AppendLine("5. 如果是搜索扩展，确保 queryTargetTemplate 包含 {query}");
         builder.AppendLine("6. 如果是脚本扩展，优先使用 csharp；内联脚本用 entryMode = inline 和 script.source");
+        builder.AppendLine("6.0 如果需求要求用户在主界面输入“前缀 + 内容”后触发脚本或工作区，必须提供 queryPrefixes；脚本通过 context.InputText 读取前缀后面的内容");
+        builder.AppendLine("6.1 如果是 C# 内联脚本，必须严格使用宿主约定：runtime = csharp，using OpenQuickHost.CSharpRuntime，public static class YanziAction，public static Task<string> RunAsync(YanziActionContext context)，输入从 context.InputText 读取");
         builder.AppendLine("7. 如果需要宿主内置界面，请优先使用 hostedViewXaml，不要输出 @view:textarea 或其他未定义协议");
         builder.AppendLine("8. hostedViewXaml 里不要输出 x:Class，不要假设宿主会自动解析你手写的事件处理函数；按钮动作请通过 oqh:HostedViewBridge.Action 声明");
-        builder.AppendLine("9. hostedViewXaml.xaml 必须是可直接解析的 WPF XAML 字符串，不要把 xmlns 写成 Markdown 链接，不要出现 [http://...](http://...) 这种格式");
+        builder.AppendLine("9. hostedViewXaml.xaml 必须是可直接解析的 WPF XAML 字符串，必须放在合法 JSON 字符串里，内部双引号必须正确转义");
+        builder.AppendLine("9.1 不要把 xmlns、URL、图片地址写成 Markdown 链接，不要出现 [http://...](http://...) 这种格式");
         builder.AppendLine("10. XAML 根元素建议使用 Grid、UserControl 或 Window；如果用自定义命名空间，请确保 xmlns 正确");
         builder.AppendLine("11. oqh:HostedViewBridge.Action 当前支持 close、setState、runScript、loadStorage、saveStorage；setState 支持 value、valueFrom、append、separator");
         builder.AppendLine("12. 如需在窗口打开时自动加载本地或坚果云数据，可在根元素上使用 oqh:HostedViewBridge.LoadedAction");
         builder.AppendLine("13. 脚本扩展可使用 context.Storage.ReadTextAsync / WriteTextAsync / ReadJsonAsync / WriteJsonAsync，scope 支持 local、cloud、both");
-        builder.AppendLine("14. 如果只是简单表单或双栏工作区，也可以使用 hostedViewV2，但自定义界面优先用 hostedViewXaml");
+        builder.AppendLine("14. 视图脚本读状态优先用 context.State，更新状态优先用 await context.SetStateAsync(...)；兼容写法 context.ViewState / await context.UpdateView() 也支持");
+        builder.AppendLine("15. 如果只是简单表单或双栏工作区，也可以使用 hostedViewV2，但自定义界面优先用 hostedViewXaml");
         builder.AppendLine();
         builder.AppendLine("三、字段和能力提醒");
         builder.AppendLine("- id：扩展唯一标识，只能英文小写、数字、短横线");
@@ -1448,7 +1591,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- description：一句话描述扩展用途");
         builder.AppendLine("- keywords：搜索关键词数组");
         builder.AppendLine("- hostedViewXaml.window.width / height / minWidth / minHeight：可选，控制窗口尺寸");
-        builder.AppendLine("- hostedViewXaml.state：初始化状态对象，XAML 中可通过 {Binding [key]} 绑定");
+        builder.AppendLine("- hostedViewXaml.state：初始化状态对象，值可用字符串、数字、布尔，XAML 中可通过 {Binding [key]} 绑定");
         builder.AppendLine("- hostedViewXaml.xaml：完整 XAML 字符串；按钮动作请通过 oqh:HostedViewBridge.Action 声明。");
         builder.AppendLine("- startup：可选，包含 mode (\"on_app_launch\") 和 schedule (Cron 表达式或间隔)。");
         builder.AppendLine("- 如果按钮要把输入追加到现有文本，可使用 setState;path=xxx;valueFrom=yyy;append=true;separator=\\n");
@@ -1458,7 +1601,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine(manifestJson);
         builder.AppendLine();
         builder.AppendLine("五、输出要求");
-        builder.AppendLine("请直接返回修正后的完整 JSON。");
+        builder.AppendLine("请只返回一个包含修正后完整 JSON 的 ```json 代码块。");
         builder.AppendLine("如果当前 JSON 已经是 hostedViewXaml，请保留 hostedViewXaml 方案，除非它明显不适合需求。");
         builder.AppendLine("如果当前 JSON 里是待办、便签、工作区、面板这类界面扩展，请优先修正现有 XAML，而不是退回成普通 openTarget 或脚本扩展。");
         return builder.ToString();
@@ -1939,6 +2082,26 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
     {
         var compact = json.ReplaceLineEndings(" ").Trim();
         return compact.Length <= 160 ? compact : compact[..160];
+    }
+
+    private static string BuildTestFailurePrompt(string json, string summary, string log)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("请帮我修复下面这个 Yanzi / OpenQuickHost 扩展 JSON。");
+        builder.AppendLine("要求：");
+        builder.AppendLine("1. 只返回一个包含修正后完整 JSON 的 ```json 代码块，不要解释，不要额外文字");
+        builder.AppendLine("2. 优先修复测试日志中的错误，保留原有扩展意图");
+        builder.AppendLine("3. 如果是 hostedViewXaml / 自定义 XAML 错误，请修正 XAML 字段，不要改成普通 openTarget 扩展");
+        builder.AppendLine();
+        builder.AppendLine("测试结果摘要：");
+        builder.AppendLine(string.IsNullOrWhiteSpace(summary) ? "测试未通过。" : summary.Trim());
+        builder.AppendLine();
+        builder.AppendLine("测试日志：");
+        builder.AppendLine(string.IsNullOrWhiteSpace(log) ? "无详细日志。" : log.Trim());
+        builder.AppendLine();
+        builder.AppendLine("当前 JSON：");
+        builder.AppendLine(json.Trim());
+        return builder.ToString();
     }
 
     private static string ExtractJsonPayload(string? rawText)

@@ -329,6 +329,28 @@
                                 </MenuItem.Icon>
                             </MenuItem>
                             <Separator />
+                            <MenuItem x:Name="CopyExtensionMenuItem"
+                                      Header="复制扩展"
+                                      Click="CopyExtensionMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="M16,1H4C2.89,1 2,1.89 2,3V17H4V3H16M19,5H8C6.89,5 6,5.89 6,7V21C6,22.11 6.89,23 8,23H19C20.11,23 21,22.11 21,21V7C21,5.89 20.11,5 19,5Z" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem x:Name="CutExtensionMenuItem"
+                                      Header="剪切扩展"
+                                      Click="CutExtensionMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="M9.64,7.64C11.19,6.09 13.7,6.09 15.24,7.64L16.66,9.05L18.07,7.64L16.66,6.22C14.34,3.91 10.55,3.91 8.22,6.22C6.23,8.21 5.95,11.32 7.38,13.62L4,17V15H2V21H8V19H6L8.79,16.21L12.38,19.79C10.08,21.23 6.96,20.95 4.97,18.96L3.56,17.54L2.14,18.96L3.56,20.37C6.67,23.49 11.72,23.49 14.83,20.37L16.24,18.96L20.5,23.22L21.91,21.81L17.66,17.56L19.07,16.15C22.18,13.03 22.18,7.98 19.07,4.86L17.66,3.45L16.24,4.86L17.66,6.27C19.98,8.59 19.98,12.38 17.66,14.7L16.24,16.12L9.64,9.52C8.48,8.36 8.48,6.48 9.64,5.31" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem x:Name="PasteExtensionMenuItem"
+                                      Header="粘贴扩展"
+                                      Click="PasteExtensionMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="M19,20H5V4H7V2H17V6H19M19,8H5C3.89,8 3,8.89 3,10V20A2,2 0 0,0 5,22H19A2,2 0 0,0 21,20V10C21,8.89 20.11,8 19,8Z" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator />
                             <MenuItem x:Name="AddToQuickPanelMenuItem"
                                       Header="添加到鼠标面板"
                                       Click="AddToQuickPanelMenuItem_Click">
@@ -418,7 +440,7 @@
                                                    FontSize="12"
                                                    VerticalAlignment="Bottom"/>
                                     </StackPanel>
-                                    <TextBlock Text="{Binding Subtitle}"
+                                    <TextBlock Text="{Binding DisplaySubtitle}"
                                                Margin="0,2,0,0"
                                                Foreground="#FF888888"
                                                FontSize="11"
@@ -598,12 +620,18 @@
                                         BorderThickness="1"
                                         CornerRadius="10"
                                         Padding="12">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                        <TextBlock Text="{Binding HostedViewOutput}"
-                                                   Foreground="#FFE5E5E5"
-                                                   FontSize="14"
-                                                   TextWrapping="Wrap" />
-                                    </ScrollViewer>
+                                    <TextBox Text="{Binding HostedViewOutput}"
+                                             IsReadOnly="True"
+                                             AcceptsReturn="True"
+                                             VerticalScrollBarVisibility="Auto"
+                                             HorizontalScrollBarVisibility="Disabled"
+                                             TextWrapping="Wrap"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Foreground="#FFE5E5E5"
+                                             CaretBrush="#FF3B82F6"
+                                             Padding="0"
+                                             FontSize="14" />
                                 </Border>
                             </Grid>
                         </Border>

@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Globalization;
 
 namespace OpenQuickHost.Sync;
 
@@ -952,7 +953,8 @@ public sealed class LocalExtensionHostedViewManifest
             MinWindowHeight,
             null,
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-            []);
+            [],
+            new Dictionary<string, HostedViewInlineScriptDefinition>(StringComparer.OrdinalIgnoreCase));
     }
 }
 
@@ -966,7 +968,7 @@ public sealed class LocalExtensionHostedViewV2Manifest
 
     public LocalExtensionHostedViewWindowManifest? Window { get; init; }
 
-    public Dictionary<string, string>? State { get; init; }
+    public Dictionary<string, JsonElement>? State { get; init; }
 
     public LocalExtensionHostedViewV2ComponentManifest[]? Components { get; init; }
 
@@ -989,8 +991,9 @@ public sealed class LocalExtensionHostedViewV2Manifest
             window?.MinWidth,
             window?.MinHeight,
             null,
-            new Dictionary<string, string>(State ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
-            Components?.Select(component => component.ToDefinition()).ToArray() ?? []);
+            HostedViewStateValueConverter.Normalize(State),
+            Components?.Select(component => component.ToDefinition()).ToArray() ?? [],
+            new Dictionary<string, HostedViewInlineScriptDefinition>(StringComparer.OrdinalIgnoreCase));
     }
 }
 
@@ -1004,7 +1007,9 @@ public sealed class LocalExtensionHostedViewXamlManifest
 
     public LocalExtensionHostedViewWindowManifest? Window { get; init; }
 
-    public Dictionary<string, string>? State { get; init; }
+    public Dictionary<string, JsonElement>? State { get; init; }
+
+    public Dictionary<string, LocalExtensionHostedViewScriptManifest>? Scripts { get; init; }
 
     public string Xaml { get; init; } = string.Empty;
 
@@ -1027,8 +1032,67 @@ public sealed class LocalExtensionHostedViewXamlManifest
             window?.MinWidth,
             window?.MinHeight,
             Xaml,
-            new Dictionary<string, string>(State ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
-            []);
+            HostedViewStateValueConverter.Normalize(State),
+            [],
+            Scripts?.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.ToDefinition(),
+                StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, HostedViewInlineScriptDefinition>(StringComparer.OrdinalIgnoreCase));
+    }
+}
+
+public sealed class LocalExtensionHostedViewScriptManifest
+{
+    public string? Runtime { get; init; }
+
+    public string? EntryMode { get; init; }
+
+    public string? Entry { get; init; }
+
+    public string[]? Permissions { get; init; }
+
+    public string? Source { get; init; }
+
+    public HostedViewInlineScriptDefinition ToDefinition()
+    {
+        return new HostedViewInlineScriptDefinition(
+            Runtime,
+            EntryMode,
+            Entry,
+            Permissions ?? [],
+            Source);
+    }
+}
+
+internal static class HostedViewStateValueConverter
+{
+    public static Dictionary<string, string> Normalize(Dictionary<string, JsonElement>? state)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (state == null)
+        {
+            return result;
+        }
+
+        foreach (var pair in state)
+        {
+            result[pair.Key] = ToStringValue(pair.Value);
+        }
+
+        return result;
+    }
+
+    private static string ToStringValue(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString() ?? string.Empty,
+            JsonValueKind.Number => element.GetRawText(),
+            JsonValueKind.True => bool.TrueString,
+            JsonValueKind.False => bool.FalseString,
+            JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+            _ => element.GetRawText()
+        };
     }
 }
 
@@ -1083,6 +1147,8 @@ public sealed class LocalExtensionHostedViewV2ActionManifest
 
     public string? Value { get; init; }
 
+    public string? Script { get; init; }
+
     public string? ValueFrom { get; init; }
 
     public string? InputFrom { get; init; }
@@ -1107,6 +1173,7 @@ public sealed class LocalExtensionHostedViewV2ActionManifest
             Type,
             Path,
             Value,
+            Script,
             ValueFrom,
             InputFrom,
             OutputTo,

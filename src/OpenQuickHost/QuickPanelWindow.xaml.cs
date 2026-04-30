@@ -635,6 +635,60 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void CopySlotExtension_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel { Command: not null } vm })
+        {
+            return;
+        }
+
+        _mainWindow.SetQuickPanelClipboard(vm.Command!, isCut: false, BuildSlotReference(vm));
+    }
+
+    private void CutSlotExtension_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel { Command: not null } vm })
+        {
+            return;
+        }
+
+        _mainWindow.SetQuickPanelClipboard(vm.Command!, isCut: true, BuildSlotReference(vm));
+    }
+
+    private void PasteSlotExtension_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel vm })
+        {
+            return;
+        }
+
+        var clipboard = _mainWindow.GetQuickPanelClipboard();
+        if (clipboard == null)
+        {
+            if (!_mainWindow.TryImportExtensionFromSystemClipboard(out var importedCommand, out var importMessage) ||
+                importedCommand == null)
+            {
+                _mainWindow.SyncStatus = string.IsNullOrWhiteSpace(importMessage)
+                    ? "扩展剪贴板为空。先复制扩展，或把扩展 JSON 放进系统剪贴板后再粘贴。"
+                    : importMessage;
+                return;
+            }
+
+            clipboard = new QuickPanelClipboardItem(importedCommand.ExtensionId, importedCommand.Title, false, null);
+        }
+
+        if (!TryPasteClipboardIntoSlot(vm, clipboard, out var message))
+        {
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                _mainWindow.SyncStatus = message;
+            }
+            return;
+        }
+
+        _mainWindow.LastRunMessage = message;
+    }
+
     private async void EditExtension_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { CommandParameter: SlotViewModel { Command: not null } vm } ||
@@ -816,6 +870,87 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             HostAssets.AppendLog($"Quick panel show failed: {ex}");
         }
+    }
+
+    public void ReloadSlots()
+    {
+        LoadSlots();
+    }
+
+    private QuickPanelSlotReference? BuildSlotReference(SlotViewModel vm)
+    {
+        var group = vm.IsContextual ? GetSelectedContextGroupSettings() : GetSelectedGlobalGroupSettings();
+        return group == null ? null : new QuickPanelSlotReference(vm.IsContextual, group.Id, vm.Index);
+    }
+
+    private bool TryPasteClipboardIntoSlot(SlotViewModel targetSlot, QuickPanelClipboardItem clipboard, out string message)
+    {
+        var command = _mainWindow.GetAllCommands()
+            .FirstOrDefault(item => string.Equals(item.ExtensionId, clipboard.ExtensionId, StringComparison.OrdinalIgnoreCase));
+        if (command == null)
+        {
+            message = $"找不到扩展：{clipboard.Title}";
+            _mainWindow.ClearQuickPanelClipboard();
+            return false;
+        }
+
+        var targetGroup = targetSlot.IsContextual ? GetSelectedContextGroupSettings() : GetSelectedGlobalGroupSettings();
+        if (targetGroup == null)
+        {
+            message = "当前鼠标面板分组不可用。";
+            return false;
+        }
+
+        while (targetGroup.Slots.Count < (targetSlot.IsContextual ? ContextSlotCount : GlobalSlotCount))
+        {
+            targetGroup.Slots.Add(null);
+        }
+
+        if (clipboard.IsCut && clipboard.SourceSlot != null)
+        {
+            var sourceGroup = clipboard.SourceSlot.IsContextual
+                ? _settings.QuickPanelContextGroups.FirstOrDefault(group => string.Equals(group.Id, clipboard.SourceSlot.GroupId, StringComparison.OrdinalIgnoreCase))
+                : _settings.QuickPanelGlobalGroups.FirstOrDefault(group => string.Equals(group.Id, clipboard.SourceSlot.GroupId, StringComparison.OrdinalIgnoreCase));
+            if (sourceGroup != null)
+            {
+                while (sourceGroup.Slots.Count < (clipboard.SourceSlot.IsContextual ? ContextSlotCount : GlobalSlotCount))
+                {
+                    sourceGroup.Slots.Add(null);
+                }
+
+                if (clipboard.SourceSlot.Index == targetSlot.Index &&
+                    clipboard.SourceSlot.IsContextual == targetSlot.IsContextual &&
+                    string.Equals(clipboard.SourceSlot.GroupId, targetGroup.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    message = $"扩展已在当前位置：{clipboard.Title}";
+                    _mainWindow.ClearQuickPanelClipboard();
+                    return true;
+                }
+
+                var targetExisting = targetGroup.Slots[targetSlot.Index];
+                targetGroup.Slots[targetSlot.Index] = clipboard.ExtensionId;
+                if (clipboard.SourceSlot.Index >= 0 && clipboard.SourceSlot.Index < sourceGroup.Slots.Count)
+                {
+                    sourceGroup.Slots[clipboard.SourceSlot.Index] = targetExisting;
+                }
+
+                AppSettingsStore.Save(_settings);
+                _mainWindow.ClearQuickPanelClipboard();
+                LoadSlots();
+                message = string.IsNullOrWhiteSpace(targetExisting)
+                    ? $"已移动到第 {targetSlot.Index + 1} 个槽位：{clipboard.Title}"
+                    : $"已与第 {targetSlot.Index + 1} 个槽位交换位置：{clipboard.Title}";
+                return true;
+            }
+        }
+
+        targetGroup.Slots[targetSlot.Index] = clipboard.ExtensionId;
+        AppSettingsStore.Save(_settings);
+        LoadSlots();
+        message = string.IsNullOrWhiteSpace(targetSlot.Command?.ExtensionId)
+            ? $"已粘贴到第 {targetSlot.Index + 1} 个槽位：{clipboard.Title}"
+            : $"已替换第 {targetSlot.Index + 1} 个槽位为：{clipboard.Title}";
+        return true;
     }
 
     private void BringToFront()
@@ -1084,6 +1219,10 @@ public class SlotViewModel : INotifyPropertyChanged
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
+
+public sealed record QuickPanelSlotReference(bool IsContextual, string GroupId, int Index);
+
+public sealed record QuickPanelClipboardItem(string ExtensionId, string Title, bool IsCut, QuickPanelSlotReference? SourceSlot);
 
 internal static class NativeMethods
 {

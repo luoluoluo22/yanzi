@@ -55,6 +55,7 @@
                                    TextWrapping="Wrap" />
                     </StackPanel>
                     <Button Grid.Column="1"
+                            x:Name="CopyOutputButton"
                             Content="复制输出"
                             Width="92"
                             Height="32"
@@ -120,8 +121,11 @@
                            FontSize="12"
                            Text="这里显示当前测试执行的详细输出。" />
                 <Button Grid.Column="1"
+                        x:Name="CloseButton"
                         Width="100"
                         Content="关闭"
+                        IsDefault="True"
+                        IsCancel="True"
                         Click="CloseButton_Click"
                         Style="{StaticResource PrimaryBtn}" />
             </Grid>

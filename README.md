@@ -1,8 +1,18 @@
 # 燕子 (Yanzi / Swallow)
 
-> Windows 桌面启动器 — Quicker 的开源替代
+> 一个以“万物皆扩展”为核心的 Windows 桌面启动器
 
-燕子是一款面向效率用户的 Windows 桌面启动器，设计目标是成为 [Quicker](https://getquicker.net/) 的完整开源替代。通过全局热键呼出命令面板，让你在不离开当前工作流的情况下，快速执行脚本、打开文件、进行搜索，以及管理跨设备同步的个人扩展库。
+燕子是一款面向效率用户的 Windows 桌面启动器。它把启动器、鼠标呼出面板、JSON 扩展、脚本运行时和多设备同步放进同一个宿主里，让用户用一套统一的方式组织自己的桌面动作。
+
+![燕子主界面与鼠标面板](launcher-and-quick-panel.png)
+
+当前项目重点已经从“单纯替代 Quicker”转向更清晰的产品路线：
+
+- 主界面负责搜索、执行、扩展管理
+- 鼠标面板负责高频收藏动作和快速布局
+- 扩展以单文件 JSON 为主，支持 AI 生成、测试、导入
+- 脚本和工作区扩展共用同一套宿主能力
+- 本地存储、WebDAV / 坚果云同步、账号同步逐步打通
 
 ---
 
@@ -26,14 +36,34 @@
 - **全局热键呼出** — 默认 `Ctrl+Shift+Space`，在任何界面弹出命令面板
 - **命令搜索** — 中文、拼音缩写、英文关键词均可命中
 - **参数化命令** — 输入 `谷歌 今天的新闻` 即可执行带参数的搜索模板
+- **前缀传参脚本** — 输入 `统计 这段文本` 这类“前缀 + 内容”，可把后半段直接传给脚本扩展
 - **脚本扩展** — 内联 C# 动作、PowerShell 脚本或目录脚本入口，支持测试执行与日志查看
-- **宿主视图 (Hosted View)** — 扩展可在启动器内开启双栏工作区，不需要弹出新窗口
+- **宿主视图 (Hosted View)** — 扩展可在启动器内开启工作区，支持 `hostedViewXaml` 和 `hostedViewV2`
+- **JSON 扩展编辑器** — 内置新增、编辑、测试、纠错提示词复制、剪贴板导入
 - **扩展快捷键** — 每个扩展可注册独立全局快捷键，直接触发动作
 - **云同步** — 基于 Cloudflare Worker，扩展元数据与包文件跨设备同步
 - **扩展市场** — 上传 / 下载其他用户的扩展包
-- **快速面板 (Quick Panel)** — 鼠标右键式浮动面板，展示收藏扩展
+- **快速面板 (Quick Panel)** — 鼠标呼出面板支持收藏分组、复制 / 剪切 / 粘贴扩展布局
 - **Agent Skill 导出** — 将启动器内置 Skill 导出到 AI 编码工具（如 Antigravity、Cursor 等）
 - **开机自启 / 托盘驻留** — 最小化到系统托盘，随时唤起
+
+## 界面预览
+
+### 1. 主启动器 + 鼠标面板
+
+![主启动器与鼠标面板](launcher-and-quick-panel.png)
+
+### 2. JSON 扩展编辑器
+
+![JSON 扩展编辑器](json-extension-editor.png)
+
+### 3. 前缀搜索 / 传参预览
+
+![前缀搜索预览](query-prefix-preview.png)
+
+### 4. 脚本执行日志
+
+![脚本执行日志](script-execution-log.png)
 
 ---
 
@@ -83,7 +113,7 @@
 **方法一：启动器内 `+` 按钮**
 
 1. 呼出启动器，点击底部状态栏右侧 `+`
-2. 粘贴扩展 JSON（可让 AI 帮你生成）
+2. 粘贴扩展 JSON（可让 AI 帮你生成，也支持直接粘贴剪贴板里的 `json` 代码块）
 3. 点击保存即可立即使用
 
 **方法二：直接写 JSON 文件**
@@ -122,6 +152,31 @@
   "queryTargetTemplate": "https://www.google.com/search?q={query}"
 }
 ```
+
+**方法三点五：前缀传参脚本扩展**
+
+如果你希望用户在主界面输入 `前缀 + 内容`，然后把后面的内容直接传给脚本，就要同时提供 `queryPrefixes` 和脚本入口：
+
+```json
+{
+  "id": "text-length-counter",
+  "name": "文本长度统计",
+  "version": "0.1.0",
+  "category": "脚本",
+  "description": "读取主界面输入的后半段文本并返回长度。",
+  "keywords": ["文本", "长度", "统计"],
+  "queryPrefixes": ["统计", "count"],
+  "runtime": "csharp",
+  "entryMode": "inline",
+  "permissions": ["context.read"],
+  "icon": "mdi:counter",
+  "script": {
+    "source": "using System.Threading.Tasks;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"原文：\\\" + input + \\\"\\\\n长度：\\\" + input.Length);\\n    }\\n}"
+  }
+}
+```
+
+用户输入 `统计 今天的安排` 后，脚本里收到的 `context.InputText` 就是 `今天的安排`。
 
 **方法四：内联 C# 动作**
 

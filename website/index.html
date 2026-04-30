@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>燕子 (Swallow) - 面向小白的开源免费 Quicker 替代方案 | 桌面效率神器</title>
-  <meta name="description" content="燕子 (Swallow) 是一款对标 Quicker 的开源桌面效率工具，通过鼠标或快捷键呼出强大捷径面板，只需一键即可完成所有复杂操作。">
+  <title>燕子 (Yanzi / Swallow) - 万物皆扩展的桌面启动器</title>
+  <meta name="description" content="燕子是一款支持主启动器、鼠标面板、JSON 扩展、脚本工作区与云同步的 Windows 桌面启动器。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
@@ -14,12 +14,13 @@
   <div class="noise"></div>
   <header class="site-header">
     <div class="brand">
-      <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="Swallow Logo" class="brand-logo" style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
-      SWALLOW
+      <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="Yanzi Logo" class="brand-logo" style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
+      YANZI
     </div>
     <nav>
-      <a href="#features">特性</a>
-      <a href="#extensions">插件生态</a>
+      <a href="#features">能力</a>
+      <a href="#extensions">扩展</a>
+      <a href="#actions">界面</a>
       <a href="#download">获取</a>
       <a href="/docs/extension-authoring-guide.html">扩展开发指南</a>
     </nav>
@@ -28,11 +29,10 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">超好用的开源免费效率工具</p>
-        <h1>化繁为简，
-        指尖上的效率神器。</h1>
+        <p class="eyebrow">Windows 桌面启动器</p>
+        <h1>万物皆扩展。<br>一套宿主，统一你的桌面动作。</h1>
         <p class="hero-text">
-          燕子 (Swallow) 是一款对标 Quicker 的开源桌面工具。通过按下鼠标中键呼出捷径面板，帮你把日常工作中的繁琐操作（如：查单词、传文件、批量处理等）变成“一键点击”，更有完全免费的跨设备数据同步功能。
+          燕子把主界面搜索、鼠标呼出面板、JSON 扩展、C# / PowerShell 脚本、宿主工作区和同步能力放进一个统一的桌面宿主里。你可以直接使用，也可以让 AI 生成扩展，再在宿主内测试、导入、保存和运行。
         </p>
         <div class="hero-actions">
           <a class="button primary" href="https://github.com/luoluoluo22/yanzi/releases/download/v0.1.0/YanziSetup-0.1.0.exe">下载安装包</a>
@@ -40,14 +40,15 @@
         </div>
         <div class="hero-meta">
           <span>Windows 10/11</span>
-          <span>Cloudflare Edge</span>
-          <span>MIT Licensed</span>
+          <span>JSON 扩展</span>
+          <span>C# / PowerShell</span>
+          <span>Cloudflare + WebDAV</span>
         </div>
       </div>
       <div class="hero-panel">
         <div class="mock-image-container hero-mock perspective-container">
           <div class="tilt-wrapper tilt-effect">
-            <img src="/assets/interface.png" alt="Swallow 主界面" class="app-screenshot" />
+            <img src="/assets/launcher-and-quick-panel.png" alt="燕子主界面与鼠标面板" class="app-screenshot" />
             <div class="glass-reflection"></div>
           </div>
         </div>
@@ -56,81 +57,92 @@
 
     <section id="features" class="section">
       <div class="section-head">
-        <p class="eyebrow">设计哲学</p>
-        <h2>不仅仅是启动器，
-        更是你的数字中枢。</h2>
+        <p class="eyebrow">产品能力</p>
+        <h2>不是一个单点工具，<br>而是一套统一的桌面动作系统。</h2>
       </div>
       <div class="feature-grid">
         <article class="card">
           <div class="card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
           </div>
-          <h3>一键即达，不再繁琐</h3>
-          <p>不用再一层一层地点开菜单。选中任意文字或文件，呼出燕子面板即可一键完成：翻译、全网搜索、发送至微信、或是打开指定工具。</p>
+          <h3>主界面负责搜索与执行</h3>
+          <p>中文、英文、拼音缩写、搜索前缀、脚本传参都走同一个命令面板。键盘党可以直接输入、回车执行，右键继续管理扩展。</p>
         </article>
         <article class="card">
           <div class="card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           </div>
-          <h3>海量前沿扩展，随意搭配</h3>
-          <p>主程序开箱即用，你可以自由安装各种大神分享的扩展动作。不管是小白、学生还是打工人，都能搭出最顺手的桌面超级工具箱。</p>
+          <h3>鼠标面板负责高频动作</h3>
+          <p>鼠标呼出面板承载高频收藏扩展，支持分组、复制、剪切、粘贴布局，方便快速整理常用工具位置。</p>
         </article>
         <article class="card">
           <div class="card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
-          <h3>你也可以轻松做插件</h3>
-          <p>不用学复杂的电脑编程技术！哪怕是小白，只要简单填几个网址或是勾选两个选项，任何人都能轻松做出真正服务于自己的专属效率增强动作。</p>
+          <h3>扩展以 JSON 为主</h3>
+          <p>打开类、搜索类、脚本类、工作区类扩展统一走单文件 manifest。宿主内置生成提示词、测试执行、错误复制和剪贴板导入。</p>
         </article>
         <article class="card">
           <div class="card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a3.5 3.5 0 1 1 0-7c.18 0 .34.03.5.07.13-4.22 3.63-7.57 7.9-7.57 4.14 0 7.5 3.36 7.5 7.5a7.48 7.48 0 0 1-5.13 7.12C27.97 18.59 27.5 19 26.5 19h-9z" transform="scale(0.6) translate(4, 4)"/><path d="M12 10V6"/><path d="M12 18v-2"/><path d="M16 12l-2 2-2-2"/></svg>
           </div>
-          <h3>免费数据云同步</h3>
-          <p>你的自定义动作面板、偏好设置每天自动加密备份至云端。在公司和家里随意切换新电脑，只需登录一次即可瞬间找回全部习惯，无缝办公不等待。</p>
+          <h3>同步和存储是内建能力</h3>
+          <p>脚本与工作区扩展可以接入本地存储、WebDAV / 坚果云和账户同步，不再需要每个扩展单独重造存储与分发逻辑。</p>
         </article>
       </div>
     </section>
 
     <section id="extensions" class="section split">
       <div>
-        <p class="eyebrow">无形之力</p>
-        <h2>让枯燥的流程自动运转。</h2>
+        <p class="eyebrow">扩展开发</p>
+        <h2>让 AI 生成，<br>再由宿主真正运行。</h2>
         <p class="section-text">
-          即使你没有任何敲代码的经验也能直接使用这套简单至极的方法。看看我们是如何配置一个人工智能问答接口的：
+          燕子的扩展优先走单文件 JSON。搜索、打开、脚本、工作区都用同一份 manifest 描述，再由宿主负责测试、保存、运行和同步。
         </p>
         <div class="code-card">
 <pre><code>{
-  "id": "workflow-ai",
-  "name": "燕子助手",
-  "version": "1.0.0",
-  "keywords": ["ask", "ai"],
-  "queryTargetTemplate": "https://chat.me/q={query}"
+  "id": "text-length-counter",
+  "name": "文本长度统计",
+  "queryPrefixes": ["统计", "count"],
+  "runtime": "csharp",
+  "entryMode": "inline"
 }</code></pre>
+        </div>
+        <div class="screenshot-stack">
+          <img src="/assets/json-extension-editor.png" alt="燕子 JSON 扩展编辑器" class="stack-shot" />
+          <img src="/assets/script-execution-log.png" alt="燕子脚本执行日志" class="stack-shot compact" />
         </div>
       </div>
       <div class="doc-links">
         <a class="doc-link" href="/docs/extension-spec.html">
           <strong>扩展规范文档</strong>
-          <span>深入了解 Swallow 的 manifest 设计。</span>
+          <span>了解 manifest 字段、运行时入口、图标、存储和宿主视图能力。</span>
         </a>
         <a class="doc-link featured" href="/docs/extension-authoring-guide.html">
           <strong>扩展开发指南</strong>
-          <span>用可复制示例快速写出打开目录、网页搜索、C# 动作和宿主界面扩展。</span>
+          <span>用可复制示例快速写出打开目录、网页搜索、前缀脚本和 hostedViewXaml 扩展。</span>
         </a>
       </div>
     </section>
 
     <section id="actions" class="section">
       <div class="section-head">
-        <p class="eyebrow">快捷操作</p>
-        <h2>指尖上的效能中心。</h2>
+        <p class="eyebrow">界面预览</p>
+        <h2>搜索、布局、预览都在同一套桌面语义里。</h2>
       </div>
       <div class="actions-demo">
-        <div class="mock-image-container panel-mock perspective-container">
-          <div class="tilt-wrapper tilt-effect-subtle">
-            <img src="/assets/mouse-panel.png" alt="Swallow 鼠标面板" class="app-screenshot" />
-            <div class="glass-reflection"></div>
+        <div class="showcase-grid">
+          <div class="mock-image-container panel-mock perspective-container">
+            <div class="tilt-wrapper tilt-effect-subtle">
+              <img src="/assets/quick-panel-grid.png" alt="燕子鼠标面板" class="app-screenshot" />
+              <div class="glass-reflection"></div>
+            </div>
+          </div>
+          <div class="mock-image-container panel-mock perspective-container">
+            <div class="tilt-wrapper tilt-effect-subtle">
+              <img src="/assets/query-prefix-preview.png" alt="燕子前缀输入预览" class="app-screenshot" />
+              <div class="glass-reflection"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -138,11 +150,11 @@
 
     <section id="download" class="section download-section">
       <div class="section-head">
-        <p class="eyebrow">立即加入</p>
-        <h2>准备好飞跃了吗？</h2>
+        <p class="eyebrow">获取</p>
+        <h2>直接安装，<br>再按自己的方式长成桌面工具箱。</h2>
       </div>
       <div class="download-panel">
-        <strong>Swallow Launcher for Windows</strong>
+        <strong>Yanzi Launcher for Windows</strong>
         <span>版本 0.1.0 | 一键安装包，包含桌面端与扩展运行时</span>
         <a class="button primary" href="https://github.com/luoluoluo22/yanzi/releases/download/v0.1.0/YanziSetup-0.1.0.exe">下载 YanziSetup-0.1.0.exe</a>
         <a class="release-link" href="https://github.com/luoluoluo22/yanzi/releases/tag/v0.1.0">查看 Release 与校验信息</a>

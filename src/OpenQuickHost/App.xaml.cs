@@ -18,6 +18,9 @@ public partial class App : WpfApplication
     protected override void OnStartup(WpfStartupEventArgs e)
     {
         base.OnStartup(e);
+        DispatcherUnhandledException += App_DispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
         SyncConfigLoader.EnsureExampleFile();
         var settings = AppSettingsStore.Load();
         StartupRegistrationService.Apply(settings.LaunchAtStartup);
@@ -51,6 +54,9 @@ public partial class App : WpfApplication
 
     protected override void OnExit(WpfExitEventArgs e)
     {
+        DispatcherUnhandledException -= App_DispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
+        TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
         if (_notifyIcon != null)
         {
             _notifyIcon.Visible = false;
@@ -65,6 +71,21 @@ public partial class App : WpfApplication
         }
 
         base.OnExit(e);
+    }
+
+    private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        HostAssets.AppendLog($"DispatcherUnhandledException: {e.Exception}");
+    }
+
+    private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        HostAssets.AppendLog($"AppDomainUnhandledException: {e.ExceptionObject}");
+    }
+
+    private void TaskScheduler_UnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        HostAssets.AppendLog($"UnobservedTaskException: {e.Exception}");
     }
 
     private void StartLocalAgentApi(MainWindow window, AppSettings settings)
