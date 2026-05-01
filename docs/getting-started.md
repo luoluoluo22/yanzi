@@ -2,9 +2,11 @@
 
 ## 安装与启动
 
-1. 下载 Windows 压缩包
-2. 解压后运行 `OpenQuickHost.exe`
-3. 使用 `Ctrl+Shift+Space` 呼出启动器
+1. 从蓝奏云下载 Windows 安装包：<https://wwbnh.lanzout.com/b0pnkaj6j>
+2. 输入提取密码：`62yn`
+3. 运行 `YanziSetup-0.1.0.exe` 完成安装
+4. 启动 `Yanzi.exe`
+5. 使用 `Ctrl+Shift+Space` 呼出启动器
 
 ## 基本操作
 
@@ -16,9 +18,9 @@
 
 ## 添加扩展
 
-### 方法一：启动器底部 `+`
+### 方法一：顶部 `+`
 
-点击底部状态栏右侧 `+`，粘贴 JSON 内容后保存。
+点击顶部标签栏右侧 `+`，可以把当前选中项固定到顶部标签。
 
 ### 方法二：设置页管理
 

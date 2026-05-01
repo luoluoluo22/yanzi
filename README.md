@@ -1,12 +1,12 @@
 # 燕子 (Yanzi / Swallow)
 
-> 一个以“万物皆扩展”为核心的 Windows 桌面启动器
+> 开源的 Quicker 替代效率启动器
 
 燕子是一款面向效率用户的 Windows 桌面启动器。它把启动器、鼠标呼出面板、JSON 扩展、脚本运行时和多设备同步放进同一个宿主里，让用户用一套统一的方式组织自己的桌面动作。
 
 ![燕子主界面与鼠标面板](launcher-and-quick-panel.png)
 
-当前项目重点已经从“单纯替代 Quicker”转向更清晰的产品路线：
+燕子当前的产品路线是：
 
 - 主界面负责搜索、执行、扩展管理
 - 鼠标面板负责高频收藏动作和快速布局
@@ -71,10 +71,10 @@
 
 ### 1. 下载与安装
 
-从 [Releases](https://github.com/luoluoluo22/yanzi/releases) 页面下载最新版安装包：
+从蓝奏云下载最新版安装包：
 
-- 当前版本：[`YanziSetup-0.1.0.exe`](https://github.com/luoluoluo22/yanzi/releases/download/v0.1.0/YanziSetup-0.1.0.exe)
-- Release 页面：<https://github.com/luoluoluo22/yanzi/releases/tag/v0.1.0>
+- 下载地址：<https://wwbnh.lanzout.com/b0pnkaj6j>
+- 提取密码：`62yn`
 
 下载后直接运行安装包。安装完成后启动 `Yanzi.exe`，默认使用 `Ctrl+Shift+Space` 呼出启动器。
 

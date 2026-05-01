@@ -465,7 +465,7 @@
                                 </Border>
                                 <TextBlock Text="燕子 (Swallow)" FontSize="26" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
                                 <TextBlock Text="{Binding AppVersionText}" Margin="0,5,0,0" Foreground="#FF666666" FontSize="14" HorizontalAlignment="Center"/>
-                                <TextBlock Text="© 2026 Swallow Launcher. 开源、极速、现代。" Margin="0,10,0,0" Foreground="#FF555555" FontSize="11" HorizontalAlignment="Center"/>
+                                <TextBlock Text="© 2026 Swallow Launcher. 开源的 Quicker 替代效率启动器。" Margin="0,10,0,0" Foreground="#FF555555" FontSize="11" HorizontalAlignment="Center"/>
                             </StackPanel>
 
                             <TextBlock Text="链接与反馈" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,20,0,10"/>
