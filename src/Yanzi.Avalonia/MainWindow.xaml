@@ -1,0 +1,282 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Yanzi.Avalonia"
+        xmlns:shared="clr-namespace:Yanzi.Shared"
+        x:Class="Yanzi.Avalonia.MainWindow"
+        Title="Yanzi"
+        Width="1400"
+        Height="1400"
+        SystemDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        TransparencyBackgroundFallback="Transparent"
+        ExtendClientAreaToDecorationsHint="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        Focusable="False"
+        PointerPressed="Window_PointerPressed"
+        PointerMoved="Window_PointerMoved"
+        PointerReleased="Window_PointerReleased">
+    
+    <Canvas Width="{Binding OverlayWidth}"
+            Height="{Binding OverlayHeight}"
+            Background="Transparent">
+        <!-- Main Outer Ring -->
+        <Ellipse Width="430" Height="430"
+                 Canvas.Left="{Binding MainOuterEllipseX}"
+                 Canvas.Top="{Binding MainOuterEllipseY}"
+                 Fill="#AA101010"
+                 Stroke="#22FFFFFF"
+                 StrokeThickness="1"/>
+
+        <!-- Outer Separators -->
+        <ItemsControl ItemsSource="{Binding OuterSeparators}"
+                      Width="{Binding OverlayWidth}"
+                      Height="{Binding OverlayHeight}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Path Data="{Binding GeometryData}" 
+                          Stroke="#22FFFFFF" StrokeThickness="1"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Inner Ring -->
+        <Ellipse Width="270" Height="270"
+                 Canvas.Left="{Binding MainInnerEllipseX}"
+                 Canvas.Top="{Binding MainInnerEllipseY}"
+                 Fill="#CC101010"
+                 Stroke="#22FFFFFF"
+                 StrokeThickness="1"/>
+
+        <!-- Main Separators -->
+        <ItemsControl ItemsSource="{Binding MainSeparators}"
+                      Width="{Binding OverlayWidth}"
+                      Height="{Binding OverlayHeight}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Path Data="{Binding GeometryData}" 
+                          Stroke="#2DFFFFFF" StrokeThickness="1"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Center Circle -->
+        <Ellipse Width="64" Height="64"
+                 Canvas.Left="{Binding CenterCircleX}"
+                 Canvas.Top="{Binding CenterCircleY}"
+                 Fill="#F2161616"
+                 Stroke="#33FFFFFF"
+                 StrokeThickness="1"/>
+
+        <!-- Center Text -->
+        <StackPanel Canvas.Left="{Binding CenterTextX}"
+                    Canvas.Top="{Binding CenterTextY}"
+                    Width="160">
+            <TextBlock Text="{Binding CenterPrimaryText}"
+                       Foreground="White"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Active Title -->
+        <TextBlock Text="{Binding ActiveTitle}"
+                   Foreground="White"
+                   FontSize="11"
+                   Width="220"
+                   Canvas.Left="{Binding ActiveTitleX}"
+                   Canvas.Top="{Binding ActiveTitleY}"
+                   TextAlignment="Center"/>
+
+        <!-- Outer Items -->
+        <ItemsControl ItemsSource="{Binding OuterItems}"
+                      Width="{Binding OverlayWidth}"
+                      Height="{Binding OverlayHeight}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.Styles>
+                <Style Selector="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                    <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                </Style>
+            </ItemsControl.Styles>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Width="62" Height="50"
+                            Background="Transparent"
+                            PointerPressed="RadialSlot_PointerPressed"
+                            PointerEntered="RadialSlot_PointerEntered"
+                            PointerExited="RadialSlot_PointerExited">
+                        <Border.RenderTransform>
+                            <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
+                        </Border.RenderTransform>
+                        <Grid>
+                            <!-- Empty Slot Hover Background -->
+                            <Ellipse Width="40" Height="40" Fill="#20FFFFFF"
+                                     IsVisible="{Binding IsEmptyAndHovered}"/>
+                            
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <!-- Add Icon for Empty Slots -->
+                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="20"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsEmptyAndHovered}"/>
+                                
+                                <!-- Normal Content -->
+                                <Grid Width="23" Height="23" HorizontalAlignment="Center"
+                                      IsVisible="{Binding IsNotEmpty}">
+                                    <TextBlock Text="{Binding DisplayGlyph}" 
+                                               Foreground="White" FontSize="11"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                                <TextBlock Text="{Binding Title}" 
+                                           Foreground="White"
+                                           FontSize="9" Width="50" TextAlignment="Center"
+                                           Margin="0,4,0,0"
+                                           IsVisible="{Binding IsNotEmpty}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Inner Items -->
+        <ItemsControl ItemsSource="{Binding Items}"
+                      Width="{Binding OverlayWidth}"
+                      Height="{Binding OverlayHeight}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.Styles>
+                <Style Selector="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                    <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                </Style>
+            </ItemsControl.Styles>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Width="76" Height="60"
+                            Background="Transparent"
+                            PointerPressed="RadialSlot_PointerPressed"
+                            PointerEntered="RadialSlot_PointerEntered"
+                            PointerExited="RadialSlot_PointerExited">
+                        <Border.RenderTransform>
+                            <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
+                        </Border.RenderTransform>
+                        <Grid>
+                            <Ellipse Width="50" Height="50" Fill="#20FFFFFF"
+                                     IsVisible="{Binding IsEmptyAndHovered}"/>
+                            
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="24"
+                                           HorizontalAlignment="Center"
+                                           IsVisible="{Binding IsEmptyAndHovered}"/>
+                                
+                                <Grid Width="32" Height="32" HorizontalAlignment="Center"
+                                      IsVisible="{Binding IsNotEmpty}">
+                                    <TextBlock Text="{Binding DisplayGlyph}" 
+                                               Foreground="White" FontSize="13"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                                <TextBlock Text="{Binding Title}" 
+                                           Foreground="White"
+                                           FontSize="10" Width="60" TextAlignment="Center"
+                                           Margin="0,4,0,0"
+                                           IsVisible="{Binding IsNotEmpty}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Child Ring -->
+        <Canvas IsVisible="{Binding HasChildRing}"
+                Width="{Binding OverlayWidth}"
+                Height="{Binding OverlayHeight}">
+            <Ellipse Width="240" Height="240"
+                     Canvas.Left="{Binding ChildRingEllipseX}"
+                     Canvas.Top="{Binding ChildRingEllipseY}"
+                     Fill="#BB101010"
+                     Stroke="#33FFFFFF"
+                     StrokeThickness="1"/>
+            <Ellipse Width="64" Height="64"
+                     Canvas.Left="{Binding ChildRingCenterEllipseX}"
+                     Canvas.Top="{Binding ChildRingCenterEllipseY}"
+                     Fill="#F2161616"
+                     Stroke="#33FFFFFF"
+                     StrokeThickness="1"/>
+            <TextBlock Text="{Binding ChildRingTitle}"
+                       Canvas.Left="{Binding ChildRingTitleX}"
+                       Canvas.Top="{Binding ChildRingTitleY}"
+                       Width="150" TextAlignment="Center"
+                       Foreground="White" FontSize="15" FontWeight="SemiBold"/>
+            
+            <ItemsControl ItemsSource="{Binding ChildItems}"
+                          Width="{Binding OverlayWidth}"
+                          Height="{Binding OverlayHeight}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <Canvas/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.Styles>
+                    <Style Selector="ContentPresenter">
+                        <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                        <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                    </Style>
+                </ItemsControl.Styles>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Width="68" Height="54"
+                                Background="Transparent"
+                                PointerPressed="RadialSlot_PointerPressed"
+                                PointerEntered="RadialSlot_PointerEntered"
+                                PointerExited="RadialSlot_PointerExited">
+                            <Border.RenderTransform>
+                                <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
+                            </Border.RenderTransform>
+                            <Grid>
+                                <Ellipse Width="45" Height="45" Fill="#20FFFFFF"
+                                         IsVisible="{Binding IsEmptyAndHovered}"/>
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="22"
+                                               HorizontalAlignment="Center"
+                                               IsVisible="{Binding IsEmptyAndHovered}"/>
+                                    <Grid Width="26" Height="26" HorizontalAlignment="Center"
+                                          IsVisible="{Binding IsNotEmpty}">
+                                        <TextBlock Text="{Binding DisplayGlyph}" 
+                                                   Foreground="White" FontSize="12"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding Title}" 
+                                               Foreground="White"
+                                               FontSize="9" Width="54" TextAlignment="Center"
+                                               Margin="0,4,0,0"
+                                               IsVisible="{Binding IsNotEmpty}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Canvas>
+    </Canvas>
+</Window>
