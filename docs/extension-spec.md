@@ -62,9 +62,9 @@ Extensions/
   "icon": "mdi:code",
   "runtime": "csharp",
   "entryMode": "inline",
-  "permissions": ["context.read"],
+  "permissions": [],
   "script": {
-    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到输入\\\" : context.InputText.Trim());\\n    }\\n}"
+    "source": "public static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到输入\\\" : context.InputText.Trim());\\n    }\\n}"
   }
 }
 ```
@@ -227,6 +227,14 @@ Extensions/
   - 扩展目录下的相对图片路径，例如 `icons/logo.png`
   - 绝对路径或 HTTPS 图片地址
 
+### `accentHex`
+
+- 类型：`string`
+- 选填
+- 用于启动器、鼠标面板和燕环中的扩展按钮 / 卡片底色
+- 支持 `#RRGGBB` 或 `#AARRGGBB`，例如 `#10B981`、`#FFF97316`
+- 未填写或格式无效时回退为默认蓝色
+
 ### `openTarget`
 
 - 类型：`string`
@@ -347,8 +355,6 @@ Extensions/
 C# 内联动作需要提供 `YanziAction` 类：
 
 ```csharp
-using OpenQuickHost.CSharpRuntime;
-
 public static class YanziAction
 {
     public static Task<string> RunAsync(YanziActionContext context)

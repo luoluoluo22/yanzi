@@ -319,7 +319,13 @@
                     <Path Data="{local:IconGeometry running}" Fill="#A0FFFFFF" Stretch="Uniform" />
                 </MenuItem.Icon>
             </MenuItem>
-            <MenuItem Header="修复键盘状态（按键卡住时点这里）" Click="TrayResetKeyboardState_Click">
+            <Separator />
+            <MenuItem Header="查看输入状态" Click="TrayInputState_Click">
+                <MenuItem.Icon>
+                    <Path Data="{local:IconGeometry mouse-panel}" Fill="#80FFFFFF" Stretch="Uniform" />
+                </MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="重置键盘和鼠标状态" Click="TrayResetInputState_Click">
                 <MenuItem.Icon>
                     <Path Data="{local:IconGeometry shortcut}" Fill="#A0FFFFFF" Stretch="Uniform" />
                 </MenuItem.Icon>

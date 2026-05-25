@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -118,6 +119,14 @@ internal static class ExtensionIconLibrary
         ["notebook-outline"] = "note",
         ["notebook-edit-outline"] = "pen",
         ["note-text-outline"] = "note",
+        ["clipboard-outline"] = "clipboard",
+        ["clipboard-text"] = "clipboard",
+        ["clipboard-text-outline"] = "clipboard",
+        ["clipboard-check"] = "clipboard",
+        ["clipboard-check-outline"] = "clipboard",
+        ["clipboard-edit"] = "clipboard",
+        ["clipboard-edit-outline"] = "clipboard",
+        ["content-copy"] = "clipboard",
         ["text-box-edit-outline"] = "pen",
         ["text-box-search-outline"] = "note",
         ["monitor-dashboard"] = "dashboard",
@@ -163,6 +172,7 @@ internal static class ExtensionIconLibrary
 
     private static readonly Dictionary<string, Geometry> GeometryCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, ImageSource?> ImageCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Lazy<IReadOnlyDictionary<string, string>> FullMdiIcons = new(LoadFullMdiIcons);
 
     public static IReadOnlyList<ExtensionIconOption> GetBuiltInOptions()
     {
@@ -216,7 +226,7 @@ internal static class ExtensionIconLibrary
 
         var geometry = SvgAssetIcons.TryGetValue(iconKey, out var fileName)
             ? LoadSvgAssetGeometry(fileName)
-            : Geometry.Parse(MdiIcons[iconKey]);
+            : Geometry.Parse(GetMdiPathData(iconKey));
         if (geometry.CanFreeze)
         {
             geometry.Freeze();
@@ -403,10 +413,10 @@ internal static class ExtensionIconLibrary
         if (IconAliases.TryGetValue(name, out var alias))
         {
             iconKey = alias;
-            return MdiIcons.ContainsKey(iconKey) || SvgAssetIcons.ContainsKey(iconKey);
+            return HasVectorIconKey(iconKey);
         }
 
-        if (MdiIcons.ContainsKey(name) || SvgAssetIcons.ContainsKey(name))
+        if (HasVectorIconKey(name))
         {
             iconKey = name;
             return true;
@@ -414,6 +424,50 @@ internal static class ExtensionIconLibrary
 
         iconKey = string.Empty;
         return false;
+    }
+
+    private static bool HasVectorIconKey(string iconKey)
+    {
+        return MdiIcons.ContainsKey(iconKey) ||
+               SvgAssetIcons.ContainsKey(iconKey) ||
+               FullMdiIcons.Value.ContainsKey(iconKey);
+    }
+
+    private static string GetMdiPathData(string iconKey)
+    {
+        if (MdiIcons.TryGetValue(iconKey, out var builtInPath))
+        {
+            return builtInPath;
+        }
+
+        if (FullMdiIcons.Value.TryGetValue(iconKey, out var mdiPath))
+        {
+            return mdiPath;
+        }
+
+        throw new KeyNotFoundException($"MDI icon not found: {iconKey}");
+    }
+
+    private static IReadOnlyDictionary<string, string> LoadFullMdiIcons()
+    {
+        try
+        {
+            var resource = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/mdi-icons.json", UriKind.Absolute));
+            if (resource == null)
+            {
+                HostAssets.AppendLog("Full MDI icon resource not found: Assets/mdi-icons.json");
+                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            using var stream = resource.Stream;
+            var icons = JsonSerializer.Deserialize<Dictionary<string, string>>(stream) ?? [];
+            return new Dictionary<string, string>(icons, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Full MDI icon resource load failed: {ex.Message}");
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     private static Geometry LoadSvgAssetGeometry(string fileName)

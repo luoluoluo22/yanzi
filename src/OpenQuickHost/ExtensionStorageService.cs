@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text;
 using OpenQuickHost.Sync;
@@ -6,6 +7,9 @@ namespace OpenQuickHost;
 
 public static class ExtensionStorageService
 {
+    private static readonly TimeSpan BackgroundCloudTimeout = TimeSpan.FromSeconds(8);
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> CloudWriteLocks = new(StringComparer.OrdinalIgnoreCase);
+
     public static string StorageRootPath => HostAssets.ResolveDataDirectoryPath("ExtensionStorage");
 
     public static string GetExtensionStorageDirectoryPath(string extensionId)
@@ -25,6 +29,18 @@ public static class ExtensionStorageService
         var normalizedScope = ParseScope(scope);
         var normalizedKey = NormalizeStorageKey(key);
         var localPath = ResolveLocalFilePath(extensionId, normalizedKey);
+
+        if (normalizedScope == ExtensionStorageScope.Both)
+        {
+            QueueCloudReadRefresh(extensionId, normalizedKey, localPath);
+            if (File.Exists(localPath))
+            {
+                var localValue = await File.ReadAllTextAsync(localPath, cancellationToken);
+                return new ExtensionStorageReadResult(true, localValue, "local", localPath);
+            }
+
+            return new ExtensionStorageReadResult(false, null, "none", localPath);
+        }
 
         if (normalizedScope is ExtensionStorageScope.Cloud or ExtensionStorageScope.Both)
         {
@@ -62,7 +78,12 @@ public static class ExtensionStorageService
 
         var cloudSaved = false;
         string? cloudMessage = null;
-        if (normalizedScope is ExtensionStorageScope.Cloud or ExtensionStorageScope.Both)
+        if (normalizedScope == ExtensionStorageScope.Both)
+        {
+            QueueCloudWrite(extensionId, normalizedKey, content ?? string.Empty);
+            cloudMessage = "cloud write queued";
+        }
+        else if (normalizedScope == ExtensionStorageScope.Cloud)
         {
             try
             {
@@ -82,9 +103,65 @@ public static class ExtensionStorageService
         return new ExtensionStorageWriteResult(localPath, cloudSaved, normalizedScope.ToString().ToLowerInvariant(), cloudMessage);
     }
 
+    private static void QueueCloudReadRefresh(string extensionId, string key, string localPath)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(BackgroundCloudTimeout);
+                var cloudValue = await TryReadCloudTextAsync(extensionId, key, cts.Token);
+                if (cloudValue == null)
+                {
+                    return;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                await File.WriteAllTextAsync(localPath, cloudValue, Encoding.UTF8, cts.Token);
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Extension storage cloud refresh skipped: id={extensionId}, key={key}, error={ex.Message}");
+            }
+        });
+    }
+
+    private static void QueueCloudWrite(string extensionId, string key, string content)
+    {
+        _ = Task.Run(async () =>
+        {
+            var operationKey = $"{extensionId}\0{key}";
+            var writeLock = CloudWriteLocks.GetOrAdd(operationKey, static _ => new SemaphoreSlim(1, 1));
+            try
+            {
+                await writeLock.WaitAsync();
+                using var cts = new CancellationTokenSource(BackgroundCloudTimeout);
+                await WriteCloudTextAsync(extensionId, key, content, cts.Token);
+                HostAssets.AppendLog($"Extension storage cloud write completed: id={extensionId}, key={key}");
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Extension storage cloud write skipped: id={extensionId}, key={key}, error={ex.Message}");
+            }
+            finally
+            {
+                if (writeLock.CurrentCount == 0)
+                {
+                    writeLock.Release();
+                }
+            }
+        });
+    }
+
     private static async Task<string?> TryReadCloudTextAsync(string extensionId, string key, CancellationToken cancellationToken)
     {
-        var service = new WebDavSyncService(AppSettingsStore.Load());
+        var settings = AppSettingsStore.Load();
+        if (!settings.EnableWebDavSync || string.IsNullOrWhiteSpace(settings.WebDavServerUrl))
+        {
+            return null;
+        }
+
+        var service = new WebDavSyncService(settings);
         if (!service.IsConfigured)
         {
             return null;
@@ -95,7 +172,13 @@ public static class ExtensionStorageService
 
     private static async Task WriteCloudTextAsync(string extensionId, string key, string content, CancellationToken cancellationToken)
     {
-        var service = new WebDavSyncService(AppSettingsStore.Load());
+        var settings = AppSettingsStore.Load();
+        if (!settings.EnableWebDavSync || string.IsNullOrWhiteSpace(settings.WebDavServerUrl))
+        {
+            throw new InvalidOperationException("坚果云 / WebDAV 未完整配置，无法写入云端存储。");
+        }
+
+        var service = new WebDavSyncService(settings);
         if (!service.IsConfigured)
         {
             throw new InvalidOperationException("坚果云 / WebDAV 未完整配置，无法写入云端存储。");

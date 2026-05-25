@@ -165,10 +165,10 @@
   "queryPrefixes": ["统计", "count"],
   "runtime": "csharp",
   "entryMode": "inline",
-  "permissions": ["context.read"],
+  "permissions": [],
   "icon": "mdi:counter",
   "script": {
-    "source": "using System.Threading.Tasks;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"原文：\\\" + input + \\\"\\\\n长度：\\\" + input.Length);\\n    }\\n}"
+    "source": "using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"原文：\\\" + input + \\\"\\\\n长度：\\\" + input.Length);\\n    }\\n}"
   }
 }
 ```
@@ -192,7 +192,7 @@
   "entryMode": "inline",
   "permissions": ["context.read"],
   "script": {
-    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var text = string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到选中内容。\\\" : context.InputText.Trim();\\n        return Task.FromResult($\\\"来源: {context.LaunchSource}\\\\n长度: {text.Length}\\\\n\\\\n{text}\\\");\\n    }\\n}"
+    "source": "public static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var text = string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到选中内容。\\\" : context.InputText.Trim();\\n        return Task.FromResult($\\\"来源: {context.LaunchSource}\\\\n长度: {text.Length}\\\\n\\\\n{text}\\\");\\n    }\\n}"
   }
 }
 ```
@@ -244,7 +244,7 @@
     "emptyState": "结果会显示在这里。"
   },
   "script": {
-    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText.ToUpperInvariant());\\n    }\\n}"
+    "source": "public static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText.ToUpperInvariant());\\n    }\\n}"
   }
 }
 ```
@@ -372,6 +372,20 @@ OpenQuickHost/
 | [扩展规范](docs/extension-spec.md)                | manifest.json 完整字段说明      |
 | [Agent Skill 规范](docs/agent-skill-spec.md)      | 为 AI 工具导出 Skill 的格式规范 |
 | [使用说明](docs/getting-started.md)               | 快速上手指南                    |
+
+---
+
+## 更新日志
+
+### 2026-05-15
+
+- 优化燕幕默认组件样式，移除天气模块和残留说明文案，恢复便签组件并统一新增组件 HTML/AI 提示词风格。
+- 修复燕幕多屏定位漂移、同步按钮触发后退出、便签同步延迟和本地缓存读取等问题。
+- 扩展燕环触发配置，支持 Win、CapsLock、自定义快捷键和鼠标触发统一分配。
+- 为燕环、燕幕、燕选增加进程黑白名单管理，并支持通过定位窗口自动添加目标进程。
+- 新增鼠标触发录制窗口，可将识别到的鼠标动作分配给面板、燕环或燕幕。
+- 调整燕选黑名单作用范围，避免影响燕环、鼠标面板等其他输入逻辑。
+- 新增输入状态窗口和托盘修复入口，便于查看和重置键盘、鼠标状态。
 
 ---
 

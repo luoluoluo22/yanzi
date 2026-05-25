@@ -395,6 +395,58 @@ public sealed class CloudSyncClient
         return await ReadAsync<YanmStateResponse>(response, cancellationToken);
     }
 
+    public async Task RegisterDeviceAsync(
+        string deviceId,
+        string platform,
+        string displayName,
+        object? capabilities = null,
+        string? pushToken = null,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new
+        {
+            deviceId,
+            platform,
+            displayName,
+            pushToken,
+            capabilities = capabilities ?? new { }
+        });
+
+        using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/devices", body, includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DeviceMessageRecord>> GetPendingDeviceMessagesAsync(
+        string deviceId,
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"/v1/me/mobile/messages?deviceId={Uri.EscapeDataString(deviceId)}&limit={limit}",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var payload = await ReadAsync<DeviceMessageListResponse>(response, cancellationToken);
+        return payload?.Items ?? [];
+    }
+
+    public async Task AckDeviceMessageAsync(string messageId, string deviceId, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new { deviceId });
+        using var request = CreateJsonRequest(
+            HttpMethod.Post,
+            $"/v1/me/mobile/messages/{Uri.EscapeDataString(messageId)}/ack",
+            body,
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     private async Task EnsureConfigExtensionExistsAsync(string configId, CancellationToken cancellationToken)
     {
         var body = JsonSerializer.Serialize(new
@@ -694,4 +746,48 @@ public sealed class CloudSyncClient
 
         public string? Message { get; set; }
     }
+}
+
+public sealed class DeviceMessageListResponse
+{
+    public bool Ok { get; set; }
+
+    public string? UserId { get; set; }
+
+    public string? DeviceId { get; set; }
+
+    public List<DeviceMessageRecord> Items { get; set; } = [];
+}
+
+public sealed class DeviceMessageRecord
+{
+    public string MessageId { get; set; } = string.Empty;
+
+    public string? SourceDeviceId { get; set; }
+
+    public string? SourceDeviceName { get; set; }
+
+    public string? SourceDeviceDisplayName { get; set; }
+
+    public string? TargetDeviceId { get; set; }
+
+    public string? TargetPlatform { get; set; }
+
+    public string Kind { get; set; } = "text";
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Text { get; set; } = string.Empty;
+
+    public Dictionary<string, JsonElement> Payload { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public string Status { get; set; } = string.Empty;
+
+    public string CreatedAt { get; set; } = string.Empty;
+
+    public string? DeliveredAt { get; set; }
+
+    public string? AckedAt { get; set; }
+
+    public string? ExpiresAt { get; set; }
 }

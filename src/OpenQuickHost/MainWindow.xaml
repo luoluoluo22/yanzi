@@ -531,16 +531,9 @@
                         <ContextMenu Opened="CommandListContextMenu_Opened"
                                      Closed="CommandListContextMenu_Closed"
                                      PreviewKeyDown="CommandListContextMenu_PreviewKeyDown">
-                            <MenuItem x:Name="CreateDesktopShortcutMenuItem"
-                                      Header="添加桌面快捷方式"
-                                      Click="CreateDesktopShortcutMenuItem_Click">
-                                <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry desktop-shortcut}" Fill="#60A5FA" Stretch="Uniform" Width="16" Height="16" />
-                                </MenuItem.Icon>
-                            </MenuItem>
-                            <Separator />
                             <MenuItem x:Name="SetCommandShortcutMenuItem"
                                       Header="设置快捷键"
+                                      Visibility="Collapsed"
                                       Click="SetCommandShortcutMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry shortcut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -548,6 +541,7 @@
                             </MenuItem>
                             <MenuItem x:Name="RenameCommandMenuItem"
                                       Header="重命名"
+                                      Visibility="Collapsed"
                                       Click="RenameCommandMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" />
@@ -565,6 +559,21 @@
                                       Click="PublishExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem x:Name="CopyExtensionStoreLinkMenuItem"
+                                      Header="复制商店链接"
+                                      Visibility="Collapsed"
+                                      Click="CopyExtensionStoreLinkMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem x:Name="OpenExtensionStoreLinkMenuItem"
+                                      Header="打开商店链接"
+                                      Click="OpenExtensionStoreLinkMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="DeleteExtensionMenuItem"
@@ -611,6 +620,13 @@
                                     <Path Data="{local:IconGeometry plus}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem x:Name="CreateDesktopShortcutMenuItem"
+                                      Header="添加桌面快捷方式"
+                                      Click="CreateDesktopShortcutMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry desktop-shortcut}" Fill="#60A5FA" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
                         </ContextMenu>
                     </ListBox.ContextMenu>
 
@@ -647,6 +663,16 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type local:CommandItem}">
                             <Grid>
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Opacity" Value="1" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
+                                                <Setter Property="Opacity" Value="0.58" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
@@ -693,6 +719,34 @@
                                                 VerticalAlignment="Top"
                                                 Margin="0,1,1,0"
                                                 Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <Border Background="#C0181818"
+                                                Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <Viewbox Width="18"
+                                                 Height="18"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Path Data="{local:IconGeometry sync}"
+                                                  Fill="#FFE5E7EB"
+                                                  Stretch="Uniform"
+                                                  RenderTransformOrigin="0.5,0.5">
+                                                <Path.RenderTransform>
+                                                    <RotateTransform Angle="0" />
+                                                </Path.RenderTransform>
+                                                <Path.Triggers>
+                                                    <EventTrigger RoutedEvent="Loaded">
+                                                        <BeginStoryboard>
+                                                            <Storyboard RepeatBehavior="Forever">
+                                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                 From="0"
+                                                                                 To="360"
+                                                                                 Duration="0:0:0.9" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                </Path.Triggers>
+                                            </Path>
+                                        </Viewbox>
                                     </Grid>
                                 </Border>
 
@@ -708,7 +762,7 @@
                                                FontWeight="Medium"
                                                Foreground="White"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding DisplaySubtitle}"
+                                    <TextBlock Text="{Binding EffectiveSubtitle}"
                                                Grid.Row="1"
                                                Margin="0,2,0,0"
                                                Foreground="#FF888888"

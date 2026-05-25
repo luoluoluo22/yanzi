@@ -15,5 +15,10 @@ This folder contains a minimal Cloudflare backend for extension sync:
 - `GET /v1/extensions/:id/archive`
 - `GET /v1/users/:userId/extensions`
 - `PUT /v1/users/:userId/extensions/:extensionId`
+- `GET /v1/me/devices`
+- `POST /v1/me/devices`
+- `POST /v1/me/mobile/messages`
+- `GET /v1/me/mobile/messages?deviceId=<id>`
+- `POST /v1/me/mobile/messages/:messageId/ack`
 
 Write operations require header `x-api-key: <SYNC_API_KEY>`.

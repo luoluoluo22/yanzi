@@ -91,10 +91,26 @@ public partial class HotkeyCaptureWindow : Window
             return IntPtr.Zero;
         }
 
-        HostAssets.AppendLog($"Hotkey capture WndProc: msg=0x{msg:X}, key={key}, modifiers={Keyboard.Modifiers}.");
-        handled = HandleCapturedKey(key, Keyboard.Modifiers);
+        // Use GetKeyState for reliable modifier detection in WndProc
+        var modifiers = GetCurrentModifiers();
+        HostAssets.AppendLog($"Hotkey capture WndProc: msg=0x{msg:X}, key={key}, modifiers={modifiers}.");
+        handled = HandleCapturedKey(key, modifiers);
         return IntPtr.Zero;
     }
+
+    private static ModifierKeys GetCurrentModifiers()
+    {
+        var mods = ModifierKeys.None;
+        if ((GetKeyState(0x11) & 0x8000) != 0) mods |= ModifierKeys.Control; // VK_CONTROL
+        if ((GetKeyState(0x12) & 0x8000) != 0) mods |= ModifierKeys.Alt;     // VK_MENU
+        if ((GetKeyState(0x10) & 0x8000) != 0) mods |= ModifierKeys.Shift;   // VK_SHIFT
+        if ((GetKeyState(0x5B) & 0x8000) != 0 || (GetKeyState(0x5C) & 0x8000) != 0)
+            mods |= ModifierKeys.Windows; // VK_LWIN / VK_RWIN
+        return mods;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern short GetKeyState(int nVirtKey);
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
@@ -103,7 +119,7 @@ public partial class HotkeyCaptureWindow : Window
             return;
         }
 
-        e.Handled = HandleCapturedKey(ResolveActualKey(e), Keyboard.Modifiers);
+        e.Handled = HandleCapturedKey(ResolveActualKey(e), GetCurrentModifiers());
     }
 
     private bool HandleCapturedKey(Key key, ModifierKeys modifiers)

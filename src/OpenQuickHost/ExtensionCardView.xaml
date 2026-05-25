@@ -1,0 +1,300 @@
+<!-- 扩展管理卡片式布局设计 - 参考界面实现 -->
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:local="clr-namespace:OpenQuickHost">
+    
+    <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" x:Name="DetailPanelColumn" />
+    </Grid.ColumnDefinitions>
+
+    <!-- 主内容区域 -->
+    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+        <TextBlock Text="扩展管理" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
+        <!-- 顶部信息卡片 -->
+        <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16" Margin="0,0,0,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="{Binding LocalExtensionSummary}" Foreground="White" FontSize="13" FontWeight="Medium"/>
+                    <TextBlock Text="{Binding ExtensionsRootPath}" Foreground="#FF8E8E8E" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="打开目录" Height="32" Padding="12,0" Margin="0,0,8,0"/>
+                    <Button Content="刷新" Height="32" Padding="12,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 筛选标签和搜索 -->
+        <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16" Margin="0,0,0,16">
+            <StackPanel>
+                <!-- 筛选标签 -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                    <Border x:Name="FilterAllTab" Background="#FF2D2D2D" CornerRadius="6" Padding="12,6" Cursor="Hand">
+                        <TextBlock Text="全部" Foreground="White" FontSize="13" FontWeight="Medium"/>
+                    </Border>
+                    <Border Margin="8,0,0,0" Background="Transparent" CornerRadius="6" Padding="12,6" Cursor="Hand">
+                        <TextBlock Text="已发布" Foreground="#FF8E8E8E" FontSize="13" FontWeight="Medium"/>
+                    </Border>
+                    <Border Margin="8,0,0,0" Background="Transparent" CornerRadius="6" Padding="12,6" Cursor="Hand">
+                        <TextBlock Text="已禁用" Foreground="#FF8E8E8E" FontSize="13" FontWeight="Medium"/>
+                    </Border>
+                    <Border Margin="8,0,0,0" Background="Transparent" CornerRadius="6" Padding="12,6" Cursor="Hand">
+                        <TextBlock Text="快捷键" Foreground="#FF8E8E8E" FontSize="13" FontWeight="Medium"/>
+                    </Border>
+                    <Border Margin="8,0,0,0" Background="Transparent" CornerRadius="6" Padding="12,6" Cursor="Hand">
+                        <TextBlock Text="回收站" Foreground="#FF8E8E8E" FontSize="13" FontWeight="Medium"/>
+                    </Border>
+                </StackPanel>
+
+                <!-- 搜索框 -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox Height="34" Padding="12,8" VerticalContentAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="显示 12 项" Foreground="#FF8E8E8E" FontSize="12" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- 卡片网格视图 -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="600">
+            <ItemsControl>
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <!-- 扩展卡片 -->
+                        <Border Width="280" 
+                                Background="#FF16181C" 
+                                BorderBrush="#FF2A2A2A" 
+                                BorderThickness="1" 
+                                CornerRadius="12" 
+                                Padding="16" 
+                                Margin="0,0,14,14"
+                                Cursor="Hand">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="BorderBrush" Value="#FF3A3A3A" />
+                                            <Setter Property="Background" Value="#FF1A1C20" />
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <!-- 卡片头部 -->
+                                <Grid Grid.Row="0" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <!-- 图标占位符 -->
+                                    <Border Width="40" Height="40" Background="#FF2D2D2D" CornerRadius="10" VerticalAlignment="Top">
+                                        <TextBlock Text="📦" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+
+                                    <!-- 标题和ID -->
+                                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="扩展名称" Foreground="White" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="extension.id" Foreground="#FF6B7280" FontSize="11" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+
+                                    <!-- 开关 -->
+                                    <Grid Grid.Column="2" Width="36" Height="20" VerticalAlignment="Top">
+                                        <Border CornerRadius="10" Background="#FF333333"/>
+                                        <Ellipse Width="16" Height="16" Fill="White" HorizontalAlignment="Left" Margin="2,0,0,0"/>
+                                    </Grid>
+                                </Grid>
+
+                                <!-- 徽章 -->
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+                                    <Border Background="#1A16A34A" BorderBrush="#FF16A34A" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
+                                        <TextBlock Text="已发布" Foreground="#FF16A34A" FontSize="10" FontWeight="SemiBold"/>
+                                    </Border>
+                                    <Border Background="#1A3B82F6" BorderBrush="#FF3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
+                                        <TextBlock Text="Ctrl+Alt+E" Foreground="#FF3B82F6" FontSize="10" FontWeight="SemiBold"/>
+                                    </Border>
+                                    <Border Background="#1AFBBF24" BorderBrush="#FFFBBF24" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                                        <TextBlock Text="工具" Foreground="#FFFBBF24" FontSize="10" FontWeight="SemiBold"/>
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- 卡片底部 -->
+                                <Border Grid.Row="2" BorderBrush="#FF2A2A2A" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="v1.0.0" Foreground="#FF6B7280" FontSize="11" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                            <Button Width="24" Height="24" Margin="0,0,4,0" ToolTip="编辑" Background="Transparent" BorderThickness="0">
+                                                <TextBlock Text="✏️" FontSize="12"/>
+                                            </Button>
+                                            <Button Width="24" Height="24" ToolTip="打开目录" Background="Transparent" BorderThickness="0">
+                                                <TextBlock Text="📁" FontSize="12"/>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </StackPanel>
+
+    <!-- 右侧详情面板 -->
+    <Border Grid.Column="1" 
+            Width="360" 
+            Background="#FF16181C" 
+            BorderBrush="#FF2A2A2A" 
+            BorderThickness="1,0,0,0"
+            x:Name="DetailPanel">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 详情面板头部 -->
+            <Border Grid.Row="0" BorderBrush="#FF2A2A2A" BorderThickness="0,0,0,1" Padding="20">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    
+                    <Border Width="48" Height="48" Background="#FF2D2D2D" CornerRadius="12">
+                        <TextBlock Text="📦" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    
+                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="扩展名称" Foreground="White" FontSize="16" FontWeight="SemiBold"/>
+                        <TextBlock Text="v1.0.0" Foreground="#FF6B7280" FontSize="11" Margin="0,2,0,0"/>
+                    </StackPanel>
+                    
+                    <Button Grid.Column="2" Width="28" Height="28" Background="Transparent" BorderThickness="0" ToolTip="关闭">
+                        <TextBlock Text="✕" Foreground="#FF6B7280" FontSize="14"/>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- 详情面板主体 -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20">
+                <StackPanel>
+                    <!-- 基本信息 -->
+                    <TextBlock Text="基本信息" Foreground="#FF6B7280" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                    
+                    <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="14" Margin="0,0,0,16">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,10">
+                                <TextBlock Text="扩展 ID" Foreground="#FF8E8E8E" FontSize="12"/>
+                                <TextBlock Text="extension.id" Foreground="White" FontSize="12" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Rectangle Height="1" Fill="#FF2A2A2A" Margin="0,0,0,10"/>
+                            <Grid Margin="0,0,0,10">
+                                <TextBlock Text="分类" Foreground="#FF8E8E8E" FontSize="12"/>
+                                <TextBlock Text="工具" Foreground="White" FontSize="12" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Rectangle Height="1" Fill="#FF2A2A2A" Margin="0,0,0,10"/>
+                            <Grid>
+                                <TextBlock Text="快捷键" Foreground="#FF8E8E8E" FontSize="12"/>
+                                <TextBlock Text="Ctrl+Alt+E" Foreground="White" FontSize="12" HorizontalAlignment="Right"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 运行统计 -->
+                    <TextBlock Text="运行统计" Foreground="#FF6B7280" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                    
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="12" Margin="0,0,4,0">
+                            <StackPanel>
+                                <TextBlock Text="1284" Foreground="#FF3B82F6" FontSize="20" FontWeight="SemiBold"/>
+                                <TextBlock Text="总触发次数" Foreground="#FF6B7280" FontSize="11" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="1" Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="12" Margin="4,0,0,0">
+                            <StackPanel>
+                                <TextBlock Text="99.2%" Foreground="#FF16A34A" FontSize="20" FontWeight="SemiBold"/>
+                                <TextBlock Text="成功率" Foreground="#FF6B7280" FontSize="11" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- 最近日志 -->
+                    <TextBlock Text="最近日志" Foreground="#FF6B7280" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                    
+                    <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="14">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="14:32" Foreground="#FF6B7280" FontSize="11" Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="1" Text="触发：Ctrl+Alt+E" Foreground="#FF16A34A" FontSize="11"/>
+                            </Grid>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="14:28" Foreground="#FF6B7280" FontSize="11" Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="1" Text="触发：Ctrl+Alt+E" Foreground="#FF16A34A" FontSize="11"/>
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="14:15" Foreground="#FF6B7280" FontSize="11" Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="1" Text="清理旧记录 (42条)" Foreground="#FF16A34A" FontSize="11"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 详情面板底部操作 -->
+            <Border Grid.Row="2" BorderBrush="#FF2A2A2A" BorderThickness="0,1,0,0" Padding="16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Content="设置" Height="36" Margin="0,0,4,0" Background="#FF2D2D2D" BorderBrush="#FF3A3A3A" BorderThickness="1"/>
+                    <Button Grid.Column="1" Content="立即运行" Height="36" Margin="4,0,0,0" Background="#FF3B82F6" BorderThickness="0" Foreground="White"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Grid>

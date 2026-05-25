@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flowdeck · 插件中心</title>
+<style>
+  /* ============ 触发方式视觉系统（全局统一） ============ */
+  :root {
+    --bg: #f6f7fb;
+    --surface: #ffffff;
+    --surface-2: #fafbff;
+    --border: #e7e9f2;
+    --border-strong: #d6d9e6;
+    --text: #1a1d2e;
+    --text-2: #5b6079;
+    --text-3: #8a90a8;
+    --primary: #4f46e5;
+    --primary-soft: #eef0ff;
+
+    /* 五种触发方式专属色 */
+    --t-click:   #2563eb;   --t-click-bg:   #e7efff;
+    --t-startup: #7c3aed;   --t-startup-bg: #f1ebff;
+    --t-cron:    #059669;   --t-cron-bg:    #e2f7ee;
+    --t-bg:      #6b7280;   --t-bg-bg:      #eceef3;
+    --t-ctx:     #ea580c;   --t-ctx-bg:     #fdecdf;
+
+    --shadow-sm: 0 1px 2px rgba(20,22,40,.04), 0 1px 3px rgba(20,22,40,.04);
+    --shadow-md: 0 4px 12px rgba(20,22,40,.06), 0 2px 6px rgba(20,22,40,.04);
+    --shadow-lg: 0 16px 40px rgba(20,22,40,.12);
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: -apple-system, "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #d6d9e6; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #b9bdcf; }
+
+  /* ============ 整体布局 ============ */
+  .app {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+  }
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 5;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 700; font-size: 15px;
+    width: 220px;
+  }
+  .logo-mark {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, #6366f1, #ec4899);
+    display: grid; place-items: center;
+    color: white; font-weight: 700; font-size: 14px;
+  }
+  .search {
+    flex: 1;
+    max-width: 480px;
+    position: relative;
+  }
+  .search input {
+    width: 100%;
+    height: 36px;
+    padding: 0 12px 0 36px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .15s, background .15s;
+  }
+  .search input:focus { border-color: var(--primary); background: white; }
+  .search svg {
+    position: absolute; left: 11px; top: 10px;
+    color: var(--text-3);
+  }
+  .top-actions { display: flex; gap: 8px; margin-left: auto; }
+  .btn {
+    height: 34px; padding: 0 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    font-size: 13px; color: var(--text);
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: all .12s;
+  }
+  .btn:hover { border-color: var(--border-strong); }
+  .btn-primary {
+    background: var(--primary); color: white; border-color: var(--primary);
+  }
+  .btn-primary:hover { background: #4338ca; border-color: #4338ca; }
+
+  /* ============ 左侧栏：按触发方式分组 ============ */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 12px 8px;
+  }
+  .nav-section {
+    padding: 8px 12px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-top: 8px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-2);
+    user-select: none;
+    transition: background .12s, color .12s;
+  }
+  .nav-item:hover { background: var(--surface-2); color: var(--text); }
+  .nav-item.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+  .nav-icon {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    display: grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .nav-label { flex: 1; font-size: 13px; }
+  .nav-count {
+    font-size: 11px;
+    background: var(--surface-2);
+    color: var(--text-3);
+    padding: 1px 7px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  .nav-item.active .nav-count {
+    background: white; color: var(--primary); border-color: transparent;
+  }
+
+  /* 五色色块（侧栏图标底色） */
+  .nav-icon.click   { background: var(--t-click-bg);   color: var(--t-click); }
+  .nav-icon.startup { background: var(--t-startup-bg); color: var(--t-startup); }
+  .nav-icon.cron    { background: var(--t-cron-bg);    color: var(--t-cron); }
+  .nav-icon.bg      { background: var(--t-bg-bg);      color: var(--t-bg); }
+  .nav-icon.ctx     { background: var(--t-ctx-bg);     color: var(--t-ctx); }
+  .nav-icon.all     { background: var(--primary-soft); color: var(--primary); }
+
+  /* ============ 主内容区 ============ */
+  .main { overflow-y: auto; padding: 24px 28px; }
+  .page-head {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .page-title { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
+  .page-sub { color: var(--text-2); font-size: 13px; }
+
+  .filter-bar {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 18px;
+    padding: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .filter-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 12px; font-weight: 500;
+    background: var(--surface-2);
+    color: var(--text-2);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all .12s;
+  }
+  .filter-chip:hover { background: white; border-color: var(--border); }
+  .filter-chip.on { color: var(--text); background: white; border-color: var(--border-strong); }
+  .filter-chip .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+
+  /* ============ 卡片网格 ============ */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    cursor: pointer;
+    transition: all .15s;
+    display: flex; flex-direction: column;
+    gap: 12px;
+    position: relative;
+  }
+  .card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+  .card.selected {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-soft);
+  }
+  .card-head { display: flex; gap: 12px; align-items: flex-start; }
+  .plugin-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 20px;
+    flex-shrink: 0;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+  }
+  .card-title-wrap { flex: 1; min-width: 0; }
+  .card-title {
+    font-size: 14px; font-weight: 600;
+    margin: 0 0 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card-author {
+    font-size: 12px; color: var(--text-3);
+  }
+  /* 启用开关 */
+  .switch {
+    position: relative;
+    width: 34px; height: 20px;
+    background: #d1d5db;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background .15s;
+    flex-shrink: 0;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 16px; height: 16px;
+    background: white;
+    border-radius: 50%;
+    transition: transform .18s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.15);
+  }
+  .switch.on { background: var(--primary); }
+  .switch.on::after { transform: translateX(14px); }
+
+  .card-desc {
+    font-size: 12.5px;
+    color: var(--text-2);
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 36px;
+  }
+
+  /* 触发方式徽章组 —— 卡片核心信息 */
+  .triggers {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+  .trigger-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1;
+  }
+  .trigger-badge svg { width: 12px; height: 12px; }
+  .trigger-badge.click   { background: var(--t-click-bg);   color: var(--t-click); }
+  .trigger-badge.startup { background: var(--t-startup-bg); color: var(--t-startup); }
+  .trigger-badge.cron    { background: var(--t-cron-bg);    color: var(--t-cron); }
+  .trigger-badge.bg      { background: var(--t-bg-bg);      color: var(--t-bg); }
+  .trigger-badge.ctx     { background: var(--t-ctx-bg);     color: var(--t-ctx); }
+
+  /* 卡片底部状态条 */
+  .card-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11.5px; color: var(--text-3);
+  }
+  .status-dot {
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .status-dot::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #d1d5db;
+  }
+  .status-dot.running::before {
+    background: #10b981;
+    box-shadow: 0 0 0 3px rgba(16,185,129,.2);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .status-dot.idle::before { background: #d1d5db; }
+  .status-dot.error::before { background: #ef4444; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .35; }
+  }
+
+  /* ============ 右侧详情抽屉 ============ */
+  .drawer-mask {
+    position: fixed; inset: 0;
+    background: rgba(20, 22, 40, .35);
+    backdrop-filter: blur(2px);
+    opacity: 0; pointer-events: none;
+    transition: opacity .2s;
+    z-index: 10;
+  }
+  .drawer-mask.show { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 460px; max-width: 92vw;
+    background: var(--surface);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(100%);
+    transition: transform .25s cubic-bezier(.2,.8,.2,1);
+    z-index: 11;
+    display: flex; flex-direction: column;
+  }
+  .drawer.show { transform: translateX(0); }
+  .drawer-head {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .drawer-head .plugin-icon { width: 48px; height: 48px; font-size: 24px; }
+  .drawer-title { font-size: 16px; font-weight: 700; margin: 0; }
+  .drawer-meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+  .drawer-close {
+    border: none; background: transparent; color: var(--text-3);
+    width: 28px; height: 28px; border-radius: 6px;
+    display: grid; place-items: center;
+  }
+  .drawer-close:hover { background: var(--surface-2); color: var(--text); }
+
+  .drawer-body { flex: 1; overflow-y: auto; padding: 20px; }
+  .section-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-3);
+    margin: 0 0 8px;
+  }
+
+  /* 触发方式段卡 —— 每种方式独立配置 */
+  .trigger-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    transition: border-color .15s;
+  }
+  .trigger-card.active { border-color: var(--border-strong); }
+  .trigger-card-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .trigger-card-head .nav-icon {
+    width: 28px; height: 28px;
+  }
+  .trigger-card-name { flex: 1; font-weight: 600; font-size: 13px; }
+  .trigger-card-hint { font-size: 11.5px; color: var(--text-3); margin-top: 1px; font-weight: 400;}
+  .trigger-card-body {
+    padding: 0 12px 12px 50px;
+    display: none;
+    border-top: 1px dashed var(--border);
+    padding-top: 12px;
+    margin-top: -1px;
+  }
+  .trigger-card.active .trigger-card-body { display: block; }
+
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label {
+    display: block;
+    font-size: 12px; font-weight: 500;
+    color: var(--text-2);
+    margin-bottom: 5px;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 12.5px;
+    background: white;
+    outline: none;
+    font-family: inherit;
+  }
+  .field input:focus, .field select:focus { border-color: var(--primary); }
+  .field-hint { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+
+  .seg-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg-btn {
+    flex: 1; min-width: 60px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .seg-btn.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+
+  .drawer-foot {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; gap: 10px;
+    background: var(--surface-2);
+  }
+
+  /* ============ 空状态 ============ */
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-3);
+  }
+  .empty-emoji { font-size: 40px; margin-bottom: 8px; }
+
+  /* 响应式 */
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 56px auto 1fr; }
+    .sidebar { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="logo">
+      <div class="logo-mark">F</div>
+      <span>Flowdeck</span>
+    </div>
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="searchInput" placeholder="搜索插件名称、描述、作者..." />
+    </div>
+    <div class="top-actions">
+      <button class="btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h12"/></svg>
+        排序
+      </button>
+      <button class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        新建插件
+      </button>
+    </div>
+  </header>
+
+  <!-- 侧栏：触发方式分组导航 -->
+  <aside class="sidebar">
+    <div class="nav-section">浏览</div>
+    <div class="nav-item active" data-filter="all">
+      <div class="nav-icon all">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      </div>
+      <div class="nav-label">全部插件</div>
+      <div class="nav-count" id="count-all">0</div>
+    </div>
+    <div class="nav-item" data-filter="enabled">
+      <div class="nav-icon all">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>
+      </div>
+      <div class="nav-label">已启用</div>
+      <div class="nav-count" id="count-enabled">0</div>
+    </div>
+
+    <div class="nav-section">按触发方式</div>
+    <div class="nav-item" data-filter="click">
+      <div class="nav-icon click" title="点击触发">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      </div>
+      <div class="nav-label">点击触发</div>
+      <div class="nav-count" id="count-click">0</div>
+    </div>
+    <div class="nav-item" data-filter="startup">
+      <div class="nav-icon startup" title="启动时运行">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.09 12.97a1 1 0 0 0 .58 1.61L11 16l-1 6 8.91-10.97a1 1 0 0 0-.58-1.61L13 8z"/></svg>
+      </div>
+      <div class="nav-label">启动时运行</div>
+      <div class="nav-count" id="count-startup">0</div>
+    </div>
+    <div class="nav-item" data-filter="cron">
+      <div class="nav-icon cron" title="定时周期">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </div>
+      <div class="nav-label">定时周期</div>
+      <div class="nav-count" id="count-cron">0</div>
+    </div>
+    <div class="nav-item" data-filter="bg">
+      <div class="nav-icon bg" title="后台运行">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </div>
+      <div class="nav-label">后台常驻</div>
+      <div class="nav-count" id="count-bg">0</div>
+    </div>
+    <div class="nav-item" data-filter="ctx">
+      <div class="nav-icon ctx" title="特定窗口">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20"/><path d="M7 4v5"/></svg>
+      </div>
+      <div class="nav-label">特定窗口</div>
+      <div class="nav-count" id="count-ctx">0</div>
+    </div>
+  </aside>
+
+  <!-- 主区 -->
+  <main class="main">
+    <div class="page-head">
+      <div>
+        <h1 class="page-title" id="pageTitle">全部插件</h1>
+        <div class="page-sub" id="pageSub">每个卡片右下角的彩色徽章直接表示触发方式，可叠加多种</div>
+      </div>
+    </div>
+
+    <!-- 触发方式快捷过滤芯片 -->
+    <div class="filter-bar">
+      <span style="font-size: 12px; color: var(--text-3); padding: 6px 4px;">触发方式</span>
+      <span class="filter-chip on" data-chip="all">全部</span>
+      <span class="filter-chip" data-chip="click"><span class="dot" style="background:var(--t-click)"></span>点击</span>
+      <span class="filter-chip" data-chip="startup"><span class="dot" style="background:var(--t-startup)"></span>启动时</span>
+      <span class="filter-chip" data-chip="cron"><span class="dot" style="background:var(--t-cron)"></span>定时</span>
+      <span class="filter-chip" data-chip="bg"><span class="dot" style="background:var(--t-bg)"></span>后台</span>
+      <span class="filter-chip" data-chip="ctx"><span class="dot" style="background:var(--t-ctx)"></span>特定窗口</span>
+    </div>
+
+    <div class="grid" id="grid"></div>
+  </main>
+</div>
+
+<!-- 详情抽屉 -->
+<div class="drawer-mask" id="mask"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div class="plugin-icon" id="dIcon">⚡</div>
+    <div style="flex:1; min-width:0;">
+      <h2 class="drawer-title" id="dTitle">插件名</h2>
+      <div class="drawer-meta" id="dMeta">作者 · 版本</div>
+    </div>
+    <button class="drawer-close" id="closeDrawer" aria-label="关闭">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="drawer-body">
+    <p class="section-label">说明</p>
+    <p id="dDesc" style="margin: 0 0 18px; color: var(--text-2); font-size: 13px;"></p>
+
+    <p class="section-label">触发方式（可叠加多种）</p>
+    <div id="triggerEditor"></div>
+  </div>
+
+  <div class="drawer-foot">
+    <button class="btn">查看日志</button>
+    <div style="display:flex; gap:8px;">
+      <button class="btn">手动触发一次</button>
+      <button class="btn btn-primary">保存</button>
+    </div>
+  </div>
+</aside>
+
+<script>
+/* ============ 数据 ============ */
+const TRIGGERS = {
+  click:   { name: "点击触发",   color: "var(--t-click)",   bg: "var(--t-click-bg)",
+             desc: "用户在主面板或托盘上点击图标时立即执行",
+             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>' },
+  startup: { name: "启动时运行", color: "var(--t-startup)", bg: "var(--t-startup-bg)",
+             desc: "Flowdeck 主程序启动后自动执行一次",
+             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.09 12.97a1 1 0 0 0 .58 1.61L11 16l-1 6 8.91-10.97a1 1 0 0 0-.58-1.61L13 8z"/></svg>' },
+  cron:    { name: "定时周期",   color: "var(--t-cron)",    bg: "var(--t-cron-bg)",
+             desc: "按设定的时间或 cron 表达式周期性运行",
+             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' },
+  bg:      { name: "后台常驻",   color: "var(--t-bg)",      bg: "var(--t-bg-bg)",
+             desc: "插件以常驻进程方式运行，监听事件",
+             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8 2 2 0 1 1-2.8 2.8 1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5 2 2 0 1 1-4 0 1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3 2 2 0 1 1-2.8-2.8 1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1 2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8 2 2 0 1 1 2.8-2.8 1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5 2 2 0 1 1 4 0 1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3 2 2 0 1 1 2.8 2.8 1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1 2 2 0 1 1 0 4 1.7 1.7 0 0 0-1.5 1z"/></svg>' },
+  ctx:     { name: "特定窗口",   color: "var(--t-ctx)",     bg: "var(--t-ctx-bg)",
+             desc: "当前台窗口匹配指定应用时自动启用",
+             icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20"/><path d="M7 4v5"/></svg>' },
+};
+
+const PLUGINS = [
+  { id: "p1", name: "剪贴板历史", emoji: "📋", author: "Flowdeck Team", version: "1.4.2",
+    desc: "记录最近 200 条剪贴板内容，支持快速回填和搜索。",
+    enabled: true, status: "running", lastRun: "刚刚",
+    triggers: ["click", "bg"],
+    config: { hotkey: "Ctrl+Shift+V", maxItems: 200 } },
+  { id: "p2", name: "晨间日报", emoji: "🌅", author: "@morningstar", version: "0.9.0",
+    desc: "每天早晨拉取天气、日程、新闻摘要并以通知形式推送。",
+    enabled: true, status: "idle", lastRun: "今天 08:00",
+    triggers: ["startup", "cron"],
+    config: { time: "08:00", days: "工作日" } },
+  { id: "p3", name: "番茄钟", emoji: "🍅", author: "@focus", version: "2.1.0",
+    desc: "经典 25/5 番茄工作法，可手动或定时启动。",
+    enabled: true, status: "idle", lastRun: "昨天 18:30",
+    triggers: ["click", "cron"],
+    config: { focus: 25, break: 5 } },
+  { id: "p4", name: "自动免打扰", emoji: "🌙", author: "@quiet", version: "1.0.5",
+    desc: "在 OBS、Premiere、PPT 演示等专注类软件激活时静音通知。",
+    enabled: true, status: "running", lastRun: "持续监听中",
+    triggers: ["bg", "ctx"],
+    config: { apps: "OBS, Premiere, PowerPoint" } },
+  { id: "p5", name: "代码片段", emoji: "✂️", author: "Flowdeck Team", version: "3.0.1",
+    desc: "在编辑器中通过缩写快速插入代码片段。",
+    enabled: false, status: "idle", lastRun: "—",
+    triggers: ["click", "ctx"],
+    config: { apps: "VSCode, IntelliJ" } },
+  { id: "p6", name: "数据库备份", emoji: "💾", author: "@ops", version: "1.2.0",
+    desc: "每天凌晨执行 PostgreSQL 全量备份并上传到对象存储。",
+    enabled: true, status: "idle", lastRun: "今天 03:00",
+    triggers: ["cron", "startup"],
+    config: { time: "03:00", target: "S3 / backup-bucket" } },
+  { id: "p7", name: "屏幕使用统计", emoji: "📊", author: "@track", version: "0.7.3",
+    desc: "记录每个应用的前台使用时长，每周生成报表。",
+    enabled: true, status: "running", lastRun: "持续监听中",
+    triggers: ["bg"],
+    config: {} },
+  { id: "p8", name: "会议提醒", emoji: "🔔", author: "@notify", version: "1.1.0",
+    desc: "日程开始前 5 分钟弹窗提醒，可一键打开会议链接。",
+    enabled: true, status: "idle", lastRun: "今天 14:55",
+    triggers: ["cron", "click"],
+    config: { advance: 5 } },
+  { id: "p9", name: "Markdown 速记", emoji: "📝", author: "@notes", version: "2.4.1",
+    desc: "快捷键唤出窗口写笔记，自动归档到 Obsidian 仓库。",
+    enabled: false, status: "idle", lastRun: "—",
+    triggers: ["click"],
+    config: { hotkey: "Ctrl+Alt+N" } },
+  { id: "p10", name: "游戏护眼", emoji: "👁️", author: "@health", version: "0.3.0",
+    desc: "检测到游戏运行 30 分钟后自动弹窗提醒休息。",
+    enabled: true, status: "running", lastRun: "持续监听中",
+    triggers: ["ctx", "bg"],
+    config: { apps: "Steam, Epic Games", interval: 30 } },
+];
+
+/* ============ 状态 ============ */
+let currentFilter = "all";
+let searchTerm = "";
+let activeId = null;
+
+/* ============ 渲染：卡片网格 ============ */
+const grid = document.getElementById("grid");
+
+function triggerBadge(key) {
+  const t = TRIGGERS[key];
+  return `<span class="trigger-badge ${key}">${t.icon}${t.name}</span>`;
+}
+
+function plugCard(p) {
+  return `
+    <div class="card ${activeId===p.id?'selected':''}" data-id="${p.id}">
+      <div class="card-head">
+        <div class="plugin-icon">${p.emoji}</div>
+        <div class="card-title-wrap">
+          <h3 class="card-title">${p.name}</h3>
+          <div class="card-author">${p.author} · v${p.version}</div>
+        </div>
+        <div class="switch ${p.enabled?'on':''}" data-toggle="${p.id}"></div>
+      </div>
+      <p class="card-desc">${p.desc}</p>
+      <div class="triggers">
+        ${p.triggers.map(triggerBadge).join("")}
+      </div>
+      <div class="card-foot">
+        <span class="status-dot ${p.enabled?p.status:'idle'}">${p.enabled?statusText(p.status):'已禁用'}</span>
+        <span>上次：${p.lastRun}</span>
+      </div>
+    </div>`;
+}
+
+function statusText(s) {
+  return { running: "运行中", idle: "待触发", error: "异常" }[s] || s;
+}
+
+function applyFilter(p) {
+  if (currentFilter === "all") return true;
+  if (currentFilter === "enabled") return p.enabled;
+  return p.triggers.includes(currentFilter);
+}
+function applySearch(p) {
+  if (!searchTerm) return true;
+  const q = searchTerm.toLowerCase();
+  return p.name.toLowerCase().includes(q)
+      || p.desc.toLowerCase().includes(q)
+      || p.author.toLowerCase().includes(q);
+}
+
+function render() {
+  const list = PLUGINS.filter(applyFilter).filter(applySearch);
+  if (list.length === 0) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1;">
+      <div class="empty-emoji">🔍</div>
+      <div>没有符合条件的插件</div></div>`;
+  } else {
+    grid.innerHTML = list.map(plugCard).join("");
+  }
+  updateCounts();
+  updateNav();
+  updateChips();
+  updateHeader();
+}
+
+function updateCounts() {
+  document.getElementById("count-all").textContent = PLUGINS.length;
+  document.getElementById("count-enabled").textContent = PLUGINS.filter(p=>p.enabled).length;
+  ["click","startup","cron","bg","ctx"].forEach(k => {
+    document.getElementById(`count-${k}`).textContent =
+      PLUGINS.filter(p=>p.triggers.includes(k)).length;
+  });
+}
+function updateNav() {
+  document.querySelectorAll(".nav-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.filter === currentFilter);
+  });
+}
+function updateChips() {
+  document.querySelectorAll(".filter-chip").forEach(el => {
+    el.classList.toggle("on", el.dataset.chip === currentFilter);
+  });
+}
+function updateHeader() {
+  const titles = {
+    all: ["全部插件", "每个卡片右下角的彩色徽章直接表示触发方式，可叠加多种"],
+    enabled: ["已启用插件", "当前正在工作的插件清单"],
+    click: ["点击触发", "用户主动点击时执行的插件"],
+    startup: ["启动时运行", "Flowdeck 启动后自动跑一次的插件"],
+    cron: ["定时周期", "按时间或 cron 表达式周期性执行"],
+    bg: ["后台常驻", "持续监听事件、长期运行的插件"],
+    ctx: ["特定窗口", "前台应用匹配时才工作的插件"],
+  };
+  const [t, s] = titles[currentFilter] || titles.all;
+  document.getElementById("pageTitle").textContent = t;
+  document.getElementById("pageSub").textContent = s;
+}
+
+/* ============ 交互：筛选、开关、抽屉 ============ */
+document.querySelectorAll(".nav-item").forEach(el => {
+  el.addEventListener("click", () => {
+    currentFilter = el.dataset.filter;
+    render();
+  });
+});
+document.querySelectorAll(".filter-chip").forEach(el => {
+  el.addEventListener("click", () => {
+    currentFilter = el.dataset.chip;
+    render();
+  });
+});
+document.getElementById("searchInput").addEventListener("input", e => {
+  searchTerm = e.target.value.trim();
+  render();
+});
+
+grid.addEventListener("click", e => {
+  const toggle = e.target.closest("[data-toggle]");
+  if (toggle) {
+    e.stopPropagation();
+    const id = toggle.dataset.toggle;
+    const p = PLUGINS.find(x => x.id === id);
+    p.enabled = !p.enabled;
+    if (!p.enabled) p.status = "idle";
+    render();
+    return;
+  }
+  const card = e.target.closest(".card");
+  if (card) openDrawer(card.dataset.id);
+});
+
+/* ============ 详情抽屉 ============ */
+const drawer = document.getElementById("drawer");
+const mask = document.getElementById("mask");
+
+function openDrawer(id) {
+  const p = PLUGINS.find(x => x.id === id);
+  if (!p) return;
+  activeId = id;
+  document.getElementById("dIcon").textContent = p.emoji;
+  document.getElementById("dTitle").textContent = p.name;
+  document.getElementById("dMeta").textContent = `${p.author} · v${p.version}`;
+  document.getElementById("dDesc").textContent = p.desc;
+
+  // 渲染 5 段触发方式可独立开关 + 配置
+  const editor = document.getElementById("triggerEditor");
+  editor.innerHTML = Object.keys(TRIGGERS).map(key => {
+    const t = TRIGGERS[key];
+    const active = p.triggers.includes(key);
+    return `
+      <div class="trigger-card ${active?'active':''}" data-key="${key}">
+        <div class="trigger-card-head">
+          <div class="nav-icon ${key}">${t.icon}</div>
+          <div style="flex:1; min-width:0;">
+            <div class="trigger-card-name">${t.name}</div>
+            <div class="trigger-card-hint">${t.desc}</div>
+          </div>
+          <div class="switch ${active?'on':''}" data-tswitch="${key}"></div>
+        </div>
+        <div class="trigger-card-body">
+          ${triggerForm(key, p)}
+        </div>
+      </div>`;
+  }).join("");
+
+  // 触发方式开关
+  editor.querySelectorAll("[data-tswitch]").forEach(sw => {
+    sw.addEventListener("click", e => {
+      e.stopPropagation();
+      const k = sw.dataset.tswitch;
+      const idx = p.triggers.indexOf(k);
+      if (idx >= 0) p.triggers.splice(idx, 1);
+      else p.triggers.push(k);
+      openDrawer(id);
+      render();
+    });
+  });
+
+  drawer.classList.add("show");
+  mask.classList.add("show");
+  render();
+}
+function closeDrawer() {
+  drawer.classList.remove("show");
+  mask.classList.remove("show");
+  activeId = null;
+  render();
+}
+document.getElementById("closeDrawer").addEventListener("click", closeDrawer);
+mask.addEventListener("click", closeDrawer);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+
+/* 不同触发方式 → 不同表单字段（关键：每种方式参数不同） */
+function triggerForm(key, p) {
+  if (key === "click") {
+    return `
+      <div class="field">
+        <label>全局快捷键</label>
+        <input value="${p.config.hotkey || ''}" placeholder="例如 Ctrl+Shift+V" />
+      </div>
+      <div class="field">
+        <label>触发位置</label>
+        <div class="seg-row">
+          <button class="seg-btn on">主面板</button>
+          <button class="seg-btn">托盘菜单</button>
+          <button class="seg-btn">右键菜单</button>
+        </div>
+      </div>`;
+  }
+  if (key === "startup") {
+    return `
+      <div class="field">
+        <label>启动延迟（秒）</label>
+        <input type="number" value="3" />
+        <div class="field-hint">主程序启动后等待若干秒再执行，避免占用启动资源</div>
+      </div>
+      <div class="field">
+        <label>失败重试</label>
+        <div class="seg-row">
+          <button class="seg-btn">不重试</button>
+          <button class="seg-btn on">重试 1 次</button>
+          <button class="seg-btn">重试 3 次</button>
+        </div>
+      </div>`;
+  }
+  if (key === "cron") {
+    return `
+      <div class="field">
+        <label>调度模式</label>
+        <div class="seg-row">
+          <button class="seg-btn on">简单</button>
+          <button class="seg-btn">Cron 表达式</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>时间</label>
+        <input type="time" value="${p.config.time || '09:00'}" />
+      </div>
+      <div class="field">
+        <label>重复</label>
+        <div class="seg-row">
+          <button class="seg-btn">每天</button>
+          <button class="seg-btn on">工作日</button>
+          <button class="seg-btn">每周一</button>
+          <button class="seg-btn">自定义</button>
+        </div>
+      </div>`;
+  }
+  if (key === "bg") {
+    return `
+      <div class="field">
+        <label>监听事件</label>
+        <select>
+          <option>剪贴板变化</option>
+          <option>系统空闲超过 N 分钟</option>
+          <option>电量低于阈值</option>
+          <option>网络状态变化</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>资源限制</label>
+        <div class="field-hint">CPU 优先级：低 · 内存上限：128MB</div>
+      </div>`;
+  }
+  if (key === "ctx") {
+    return `
+      <div class="field">
+        <label>目标应用（前台窗口匹配时启用）</label>
+        <input value="${p.config.apps || ''}" placeholder="例如 OBS, Premiere, chrome.exe" />
+        <div class="field-hint">多个用逗号分隔，支持进程名或窗口标题</div>
+      </div>
+      <div class="field">
+        <label>匹配方式</label>
+        <div class="seg-row">
+          <button class="seg-btn on">进程名</button>
+          <button class="seg-btn">窗口标题</button>
+          <button class="seg-btn">两者均匹配</button>
+        </div>
+      </div>`;
+  }
+  return "";
+}
+
+/* 段卡折叠 */
+document.addEventListener("click", e => {
+  const head = e.target.closest(".trigger-card-head");
+  if (!head || e.target.closest("[data-tswitch]")) return;
+  head.parentElement.classList.toggle("active");
+});
+
+/* 初次渲染 */
+render();
+</script>
+</body>
+</html>

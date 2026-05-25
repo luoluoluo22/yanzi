@@ -45,6 +45,9 @@ public partial class AddJsonExtensionWindow : Window
     private string _aiGuidePrompt = string.Empty;
     private WizardStep _currentStep = WizardStep.Describe;
     private LocalExtensionHostedViewManifest? _manualHostedView;
+    private LocalExtensionSearchProviderManifest? _manualSearchProvider;
+    private LocalExtensionMouseGestureManifest? _manualMouseGesture;
+    private string? _manualUiMode;
     private bool _lastJsonValid;
     private bool _testCompleted;
     private bool _testSucceeded;
@@ -60,6 +63,8 @@ public partial class AddJsonExtensionWindow : Window
     public AddJsonExtensionWindow(string initialJson, bool isEditMode = false)
     {
         InitializeComponent();
+        Topmost = false;
+        ShowInTaskbar = true;
         AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler(AnyTextBox_TextChanged));
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(TextBoxClipboard_PreviewKeyDown), true);
         BuiltInIconsList.ItemsSource = _builtInIcons;
@@ -96,6 +101,8 @@ public partial class AddJsonExtensionWindow : Window
             RefreshPromptText();
             RefreshAllState();
             
+            // 初始化简单模式：根据已加载的 manifest 推断类型并把字段同步到简单控件
+            InitializeSimpleMode();
             // 初始化完成，允许同步
             _isInitializing = false;
         };
@@ -232,10 +239,8 @@ public partial class AddJsonExtensionWindow : Window
 
     private async void ManualCopyTestFailureButton_Click(object sender, RoutedEventArgs e)
     {
-        await CopyTestFailureToClipboardAsync(
+        await CopyTestLogToClipboardAsync(
             ManualCopyTestFailureButton,
-            ManualJsonInputBox.Text,
-            ManualTestSummaryText.Text,
             ManualTestLogTextBox.Text);
     }
 
@@ -268,7 +273,10 @@ public partial class AddJsonExtensionWindow : Window
 
     private void ParseManualJsonButton_Click(object sender, RoutedEventArgs e)
     {
-        TryPopulateManualFormFromJson(ManualJsonInputBox.Text, showError: true);
+        if (TryPopulateManualFormFromJson(ManualJsonInputBox.Text, showError: true))
+        {
+            FormatManualJsonEditor(showError: true);
+        }
     }
 
     private void GenerateManualJsonButton_Click(object sender, RoutedEventArgs e)
@@ -284,6 +292,26 @@ public partial class AddJsonExtensionWindow : Window
         {
             ShowError(ex.Message);
         }
+    }
+
+    private void FormatManualJsonButton_Click(object sender, RoutedEventArgs e)
+    {
+        FormatManualJsonEditor(showError: true);
+    }
+
+    private void FindManualJsonButton_Click(object sender, RoutedEventArgs e)
+    {
+        FindNextManualJsonMatch();
+    }
+
+    private void ReplaceManualJsonButton_Click(object sender, RoutedEventArgs e)
+    {
+        ReplaceCurrentManualJsonMatch();
+    }
+
+    private void ReplaceAllManualJsonButton_Click(object sender, RoutedEventArgs e)
+    {
+        ReplaceAllManualJsonMatches();
     }
 
     private void IconBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -442,15 +470,37 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
+    private async void ManualCopyJsonButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            ErrorText.Visibility = Visibility.Collapsed;
+            await Task.Run(() => CopyTextToClipboard(ManualJsonInputBox.Text ?? string.Empty));
+
+            ManualCopyJsonButton.Content = "已复制";
+            ManualCopyJsonButton.Background = GreenBrush;
+            ManualCopyJsonButton.BorderBrush = GreenBrush;
+
+            await Task.Delay(1800);
+            if (!IsLoaded)
+            {
+                return;
+            }
+
+            ManualCopyJsonButton.Content = "复制 JSON";
+            ManualCopyJsonButton.Background = MediaBrushes.Transparent;
+            ManualCopyJsonButton.BorderBrush = BorderStrongBrush;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"AddJson manual copy json failed: {ex}");
+            ShowError($"复制 JSON 失败：{ex.Message}");
+        }
+    }
+
     private string TryBuildManualCopyPrompt()
     {
-        if (!string.IsNullOrWhiteSpace(ManualJsonInputBox.Text))
-        {
-            var manifestJson = ExtractJsonPayload(ManualJsonInputBox.Text);
-            return BuildRefinePrompt(manifestJson);
-        }
-
-        return BuildDetailedPrompt(BuildManualRequestSummary());
+        return BuildGenerationPrompt(BuildManualRequestSummary());
     }
 
     private string BuildManualRequestSummary()
@@ -538,8 +588,8 @@ public partial class AddJsonExtensionWindow : Window
         }
 
         return parts.Count == 0
-            ? "创建一个新的 OpenQuickHost 扩展。"
-            : $"创建一个新的 OpenQuickHost 扩展，要求如下：{string.Join("；", parts)}。";
+            ? "创建一个新的 Yanzi 扩展。"
+            : $"创建一个新的 Yanzi 扩展，要求如下：{string.Join("；", parts)}。";
     }
 
     private void AiLinkButton_Click(object sender, RoutedEventArgs e)
@@ -750,9 +800,9 @@ public partial class AddJsonExtensionWindow : Window
         ManualTestExtensionButton.Visibility = _lastJsonValid ? Visibility.Visible : Visibility.Collapsed;
         ManualTestExtensionButton.IsEnabled = _lastJsonValid;
         SaveButton.IsEnabled = _lastJsonValid;
-        SaveButton.Visibility = _lastJsonValid && (!string.IsNullOrWhiteSpace(ManualJsonInputBox.Text) || _manualMode || _currentStep == WizardStep.Test || _isEditMode)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        // 新设计：保存按钮始终可见。无效时通过 IsEnabled=false 给出视觉反馈，
+        // 不再因为 JSON 暂时无效就把按钮藏起来（这会误导用户以为保存功能消失了）。
+        SaveButton.Visibility = Visibility.Visible;
 
         if (_testCompleted && !_testSucceeded)
         {
@@ -830,7 +880,7 @@ public partial class AddJsonExtensionWindow : Window
         }
 
         _aiPromptCopied = false;
-        _aiGuidePrompt = BuildDetailedPrompt(request);
+        _aiGuidePrompt = BuildGenerationPrompt(request);
         AiPromptPreviewBox.Text = _aiGuidePrompt;
         Dispatcher.BeginInvoke(() =>
         {
@@ -1006,7 +1056,9 @@ public partial class AddJsonExtensionWindow : Window
             ReferenceEquals(textBox, AiRequestBox) ||
             ReferenceEquals(textBox, AiPromptPreviewBox) ||
             ReferenceEquals(textBox, TestLogTextBox) ||
-            ReferenceEquals(textBox, ManualTestLogTextBox))
+            ReferenceEquals(textBox, ManualTestLogTextBox) ||
+            ReferenceEquals(textBox, ManualJsonFindBox) ||
+            ReferenceEquals(textBox, ManualJsonReplaceBox))
         {
             return;
         }
@@ -1016,6 +1068,14 @@ public partial class AddJsonExtensionWindow : Window
 
     private void TextBoxClipboard_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (IsFindShortcut(e))
+        {
+            ManualJsonFindBox.Focus();
+            ManualJsonFindBox.SelectAll();
+            e.Handled = true;
+            return;
+        }
+
         if (!IsCopyShortcut(e) || e.OriginalSource is not System.Windows.Controls.TextBox textBox)
         {
             return;
@@ -1048,13 +1108,22 @@ public partial class AddJsonExtensionWindow : Window
                (key == Key.C || key == Key.Insert);
     }
 
-    private void TryPopulateManualFormFromJson(string json, bool showError)
+    private static bool IsFindShortcut(System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        return (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
+               ((Keyboard.Modifiers & ModifierKeys.Alt) != ModifierKeys.Alt) &&
+               key == Key.F;
+    }
+
+    private bool TryPopulateManualFormFromJson(string json, bool showError)
     {
         try
         {
             var manifest = ParseManifestFromJson(json, "manual-form-populate");
             ApplyManifestToForm(manifest);
             ErrorText.Visibility = Visibility.Collapsed;
+            return true;
         }
         catch (Exception ex)
         {
@@ -1062,6 +1131,155 @@ public partial class AddJsonExtensionWindow : Window
             {
                 ShowError($"解析 JSON 失败：{ex.Message}");
             }
+
+            return false;
+        }
+    }
+
+    private void FormatManualJsonEditor(bool showError)
+    {
+        try
+        {
+            var formatted = FormatJsonText(ManualJsonInputBox.Text);
+            if (!string.Equals(ManualJsonInputBox.Text, formatted, StringComparison.Ordinal))
+            {
+                ManualJsonInputBox.Text = formatted;
+            }
+
+            ManualJsonInputBox.CaretIndex = 0;
+            ManualJsonInputBox.ScrollToHome();
+            ErrorText.Visibility = Visibility.Collapsed;
+            UpdateManualJsonValidationState();
+            RefreshAllState();
+        }
+        catch (Exception ex)
+        {
+            if (showError)
+            {
+                ShowError($"格式化 JSON 失败：{ex.Message}");
+            }
+        }
+    }
+
+    private void FindNextManualJsonMatch()
+    {
+        var query = ManualJsonFindBox.Text;
+        if (string.IsNullOrEmpty(query))
+        {
+            ManualJsonStatusText.Text = "请输入查找内容。";
+            ManualJsonStatusText.Foreground = Text3Brush;
+            return;
+        }
+
+        var text = ManualJsonInputBox.Text;
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        var comparison = StringComparison.OrdinalIgnoreCase;
+        var start = ManualJsonInputBox.SelectionStart + Math.Max(ManualJsonInputBox.SelectionLength, 0);
+        var index = text.IndexOf(query, Math.Min(start, text.Length), comparison);
+        if (index < 0 && start > 0)
+        {
+            index = text.IndexOf(query, 0, comparison);
+        }
+
+        if (index < 0)
+        {
+            ManualJsonStatusText.Text = "未找到匹配内容。";
+            ManualJsonStatusText.Foreground = RedBrush;
+            return;
+        }
+
+        SelectManualJsonRange(index, query.Length);
+        ManualJsonStatusText.Text = "已定位匹配内容。";
+        ManualJsonStatusText.Foreground = GreenBrush;
+    }
+
+    private void ReplaceCurrentManualJsonMatch()
+    {
+        var query = ManualJsonFindBox.Text;
+        if (string.IsNullOrEmpty(query))
+        {
+            ManualJsonStatusText.Text = "请输入查找内容。";
+            ManualJsonStatusText.Foreground = Text3Brush;
+            return;
+        }
+
+        var selected = ManualJsonInputBox.SelectedText;
+        if (!string.Equals(selected, query, StringComparison.OrdinalIgnoreCase))
+        {
+            FindNextManualJsonMatch();
+            selected = ManualJsonInputBox.SelectedText;
+            if (!string.Equals(selected, query, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        var replacement = ManualJsonReplaceBox.Text ?? string.Empty;
+        var start = ManualJsonInputBox.SelectionStart;
+        ManualJsonInputBox.SelectedText = replacement;
+        SelectManualJsonRange(start, replacement.Length);
+        ManualJsonStatusText.Text = "已替换当前匹配。";
+        ManualJsonStatusText.Foreground = GreenBrush;
+    }
+
+    private void ReplaceAllManualJsonMatches()
+    {
+        var query = ManualJsonFindBox.Text;
+        if (string.IsNullOrEmpty(query))
+        {
+            ManualJsonStatusText.Text = "请输入查找内容。";
+            ManualJsonStatusText.Foreground = Text3Brush;
+            return;
+        }
+
+        var text = ManualJsonInputBox.Text;
+        var replacement = ManualJsonReplaceBox.Text ?? string.Empty;
+        var comparison = StringComparison.OrdinalIgnoreCase;
+        var builder = new StringBuilder(text.Length);
+        var count = 0;
+        var index = 0;
+
+        while (index < text.Length)
+        {
+            var match = text.IndexOf(query, index, comparison);
+            if (match < 0)
+            {
+                builder.Append(text, index, text.Length - index);
+                break;
+            }
+
+            builder.Append(text, index, match - index);
+            builder.Append(replacement);
+            index = match + query.Length;
+            count++;
+        }
+
+        if (count == 0)
+        {
+            ManualJsonStatusText.Text = "未找到匹配内容。";
+            ManualJsonStatusText.Foreground = RedBrush;
+            return;
+        }
+
+        ManualJsonInputBox.Text = builder.ToString();
+        ManualJsonInputBox.Focus();
+        ManualJsonInputBox.CaretIndex = 0;
+        ManualJsonStatusText.Text = $"已替换 {count} 处。";
+        ManualJsonStatusText.Foreground = GreenBrush;
+    }
+
+    private void SelectManualJsonRange(int start, int length)
+    {
+        ManualJsonInputBox.Focus();
+        ManualJsonInputBox.Select(start, length);
+        var line = ManualJsonInputBox.GetLineIndexFromCharacterIndex(start);
+        if (line >= 0)
+        {
+            ManualJsonInputBox.ScrollToLine(line);
         }
     }
 
@@ -1093,10 +1311,12 @@ public partial class AddJsonExtensionWindow : Window
             QueryPrefixes = SplitCsv(QueryPrefixesBox.Text),
             QueryTargetTemplate = NullIfEmpty(QueryTargetTemplateBox.Text),
             Icon = NullIfEmpty(IconBox.Text),
+            AccentHex = NormalizeAccentHexOrNull(AccentHexBox.Text),
             HostedView = _manualHostedView,
             GlobalShortcut = NullIfEmpty(GlobalShortcutBox.Text),
             HotkeyBehavior = NullIfEmpty(HotkeyBehaviorBox.Text),
             Runtime = runtime,
+            UiMode = string.Equals(runtime, "csharp", StringComparison.OrdinalIgnoreCase) ? NullIfEmpty(_manualUiMode) : null,
             EntryMode = entryMode,
             Entry = NullIfEmpty(EntryBox.Text),
             Permissions = SplitCsv(PermissionsBox.Text),
@@ -1110,7 +1330,27 @@ public partial class AddJsonExtensionWindow : Window
                 {
                     Mode = NullIfEmpty(StartupModeBox.Text),
                     Schedule = NullIfEmpty(StartupScheduleBox.Text)
-                }
+                },
+            SearchProvider = _manualSearchProvider,
+            MouseGesture = NormalizeMouseGestureForManifest(_manualMouseGesture)
+        };
+    }
+
+    private LocalExtensionMouseGestureManifest? NormalizeMouseGestureForManifest(LocalExtensionMouseGestureManifest? gesture)
+    {
+        if (gesture == null)
+        {
+            return null;
+        }
+
+        return new LocalExtensionMouseGestureManifest
+        {
+            Trigger = GetSelectedGestureTrigger(),
+            Sequence = gesture.Sequence,
+            Sign = gesture.Sign,
+            Data = gesture.Data,
+            Tolerance = gesture.Tolerance,
+            MinDistance = gesture.MinDistance
         };
     }
 
@@ -1126,6 +1366,7 @@ public partial class AddJsonExtensionWindow : Window
         QueryPrefixesBox.Text = manifest.QueryPrefixes == null ? string.Empty : string.Join(", ", manifest.QueryPrefixes);
         QueryTargetTemplateBox.Text = manifest.QueryTargetTemplate ?? string.Empty;
         IconBox.Text = manifest.Icon ?? string.Empty;
+        AccentHexBox.Text = manifest.AccentHex ?? string.Empty;
         GlobalShortcutBox.Text = manifest.GlobalShortcut ?? string.Empty;
         HotkeyBehaviorBox.Text = manifest.HotkeyBehavior ?? string.Empty;
         RuntimeBox.Text = manifest.Runtime ?? string.Empty;
@@ -1136,6 +1377,9 @@ public partial class AddJsonExtensionWindow : Window
         StartupModeBox.Text = manifest.Startup?.Mode ?? string.Empty;
         StartupScheduleBox.Text = manifest.Startup?.Schedule ?? string.Empty;
         _manualHostedView = manifest.HostedView;
+        _manualSearchProvider = manifest.SearchProvider;
+        _manualMouseGesture = manifest.MouseGesture;
+        _manualUiMode = manifest.UiMode;
         SafeRefreshIconPreview();
     }
 
@@ -1336,14 +1580,6 @@ public partial class AddJsonExtensionWindow : Window
                 logBuilder.AppendLine("错误输出：");
                 logBuilder.AppendLine(string.IsNullOrWhiteSpace(result.Error) ? "无错误输出。" : result.Error.Trim());
 
-                var hostLogTail = ReadHostLogTail();
-                if (!string.IsNullOrWhiteSpace(hostLogTail))
-                {
-                    logBuilder.AppendLine();
-                    logBuilder.AppendLine("宿主日志（最近几行）：");
-                    logBuilder.AppendLine(hostLogTail);
-                }
-
                 var nativeWindowStarted = string.Equals(result.Output, "native-window-started", StringComparison.Ordinal);
                 retainTempDirectory = nativeWindowStarted;
                 if (retainTempDirectory)
@@ -1385,11 +1621,42 @@ public partial class AddJsonExtensionWindow : Window
             return new TestExecutionResult(true, "测试通过，已实际打开搜索结果地址。", logBuilder.ToString());
         }
 
+        if (manifest.SearchProvider != null)
+        {
+            var tempDirectory = Path.Combine(Path.GetTempPath(), "yanzi-extension-test", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDirectory);
+            try
+            {
+                var command = BuildTestCommand(manifest, tempDirectory);
+                var mainWindow = Owner as MainWindow
+                    ?? System.Windows.Application.Current.Windows.OfType<MainWindow>().FirstOrDefault();
+                if (mainWindow == null)
+                {
+                    logBuilder.AppendLine("未找到主窗口实例，无法预览搜索提供器。");
+                    return new TestExecutionResult(false, "没有可用的主窗口来预览文件夹搜索。", logBuilder.ToString());
+                }
+
+                await mainWindow.Dispatcher.InvokeAsync(() => mainWindow.OpenSearchProviderInLauncher(command, string.Empty));
+                logBuilder.AppendLine("类型：扩展搜索提供器");
+                logBuilder.AppendLine($"提供器：{manifest.SearchProvider.Type}");
+                logBuilder.AppendLine($"搜索目录：{manifest.SearchProvider.Path ?? manifest.OpenTarget ?? "未设置"}");
+                logBuilder.AppendLine("已拉起主窗口并进入该扩展的搜索输入。");
+                return new TestExecutionResult(true, "测试通过，已在主窗口中打开搜索入口。", logBuilder.ToString());
+            }
+            finally
+            {
+                TryDeleteDirectory(tempDirectory);
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(manifest.OpenTarget))
         {
             var target = manifest.OpenTarget.Trim();
             var exists = File.Exists(target) || Directory.Exists(target);
             var isUri = Uri.TryCreate(target, UriKind.Absolute, out _);
+            // 系统协议（shell:、ms-settings:、ms-photos: 之类）和 PATH 查得到的可执行文件也算合法目标
+            var isShellProtocol = target.Contains(':') && !Path.IsPathFullyQualified(target);
+            var resolvedFromPath = !exists && TryResolveExecutableOnPath(target);
             Process.Start(new ProcessStartInfo
             {
                 FileName = target,
@@ -1399,15 +1666,59 @@ public partial class AddJsonExtensionWindow : Window
             logBuilder.AppendLine($"目标：{target}");
             logBuilder.AppendLine($"本地存在：{exists}");
             logBuilder.AppendLine($"绝对地址：{isUri}");
+            if (resolvedFromPath)
+            {
+                logBuilder.AppendLine("PATH 解析：找到对应可执行文件。");
+            }
+            if (isShellProtocol)
+            {
+                logBuilder.AppendLine("协议地址：识别为 shell 或系统协议。");
+            }
             logBuilder.AppendLine("已实际执行打开动作。");
+            var success = exists || isUri || isShellProtocol || resolvedFromPath;
             return new TestExecutionResult(
-                exists || isUri,
-                exists || isUri ? "测试通过，已实际执行打开动作。" : "测试未通过，目标既不是可访问地址，也不是现有文件/目录。",
+                success,
+                success ? "测试通过，已实际执行打开动作。" : "测试未通过，目标既不是可访问地址，也不是现有文件/目录。",
                 logBuilder.ToString());
         }
 
         logBuilder.AppendLine("未检测到 runtime、queryTargetTemplate 或 openTarget。");
         return new TestExecutionResult(false, "当前扩展缺少可测试的执行入口。", logBuilder.ToString());
+    }
+
+    private static bool TryResolveExecutableOnPath(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) || fileName.IndexOfAny(new[] { '\\', '/' }) >= 0)
+        {
+            return false;
+        }
+
+        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        var pathExt = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.BAT;.CMD;.COM").Split(';', StringSplitOptions.RemoveEmptyEntries);
+        var hasExt = Path.HasExtension(fileName);
+
+        foreach (var dir in pathEnv.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                if (hasExt)
+                {
+                    if (File.Exists(Path.Combine(dir, fileName))) return true;
+                }
+                else
+                {
+                    foreach (var ext in pathExt)
+                    {
+                        if (File.Exists(Path.Combine(dir, fileName + ext))) return true;
+                    }
+                }
+            }
+            catch
+            {
+                // ignore unparseable PATH entries
+            }
+        }
+        return false;
     }
 
     private async Task RunTestAndRenderAsync(
@@ -1425,7 +1736,7 @@ public partial class AddJsonExtensionWindow : Window
             triggerButton.Content = "测试中...";
             resultPanel.Visibility = Visibility.Visible;
             copyFailureButton.Visibility = Visibility.Collapsed;
-            copyFailureButton.Content = "复制错误";
+            copyFailureButton.Content = "复制日志";
             copyFailureButton.Background = MediaBrushes.Transparent;
             copyFailureButton.BorderBrush = BorderStrongBrush;
             summaryText.Text = "正在执行测试，请稍等。";
@@ -1439,7 +1750,7 @@ public partial class AddJsonExtensionWindow : Window
             summaryText.Foreground = result.Success ? GreenBrush : RedBrush;
             summaryText.Text = result.Summary;
             logTextBox.Text = result.Log;
-            copyFailureButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
+            copyFailureButton.Visibility = string.IsNullOrWhiteSpace(result.Log) ? Visibility.Collapsed : Visibility.Visible;
         }
         catch (Exception ex)
         {
@@ -1459,23 +1770,20 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
-    private async Task CopyTestFailureToClipboardAsync(
+    private async Task CopyTestLogToClipboardAsync(
         System.Windows.Controls.Button button,
-        string json,
-        string summary,
         string log)
     {
         try
         {
-            var prompt = await Task.Run(() => BuildTestFailurePrompt(json, summary, log));
-            await Task.Run(() => CopyTextToClipboard(prompt));
+            await Task.Run(() => CopyTextToClipboard(log));
             button.Content = "已复制";
             button.Background = GreenBrush;
             button.BorderBrush = GreenBrush;
         }
         catch (Exception ex)
         {
-            ShowError($"复制错误详情失败：{ex.Message}");
+            ShowError($"复制日志失败：{ex.Message}");
         }
     }
 
@@ -1489,7 +1797,7 @@ public partial class AddJsonExtensionWindow : Window
             title: manifest.Name,
             subtitle: manifest.Description ?? "临时测试扩展",
             category: manifest.Category ?? "扩展",
-            accentHex: "#FF3B82F6",
+            accentHex: NormalizeAccentHexOrDefault(manifest.AccentHex),
             openTarget: manifest.OpenTarget,
             keywords: manifest.Keywords ?? [],
             source: CommandSource.LocalExtension,
@@ -1511,28 +1819,55 @@ public partial class AddJsonExtensionWindow : Window
             searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget));
     }
 
-    private static string ReadHostLogTail()
+    private static string BuildGenerationPrompt(string request)
     {
-        try
-        {
-            if (!File.Exists(HostAssets.HostLogPath))
-            {
-                return string.Empty;
-            }
-
-            var lines = HostAssets.ReadHostLogTailLines(128 * 1024, 12);
-            return string.Join(Environment.NewLine, lines);
-        }
-        catch
-        {
-            return string.Empty;
-        }
+        var builder = new StringBuilder();
+        builder.AppendLine("请生成一个 Yanzi 扩展 manifest JSON。");
+        builder.AppendLine();
+        builder.AppendLine("需求：");
+        builder.AppendLine(request);
+        builder.AppendLine();
+        builder.AppendLine("能力概览：");
+        builder.AppendLine("- openTarget：直接打开网页、程序、文件、文件夹或系统协议，例如 ms-settings:bluetooth。");
+        builder.AppendLine("- queryPrefixes + queryTargetTemplate：网页搜索或带前缀输入。脚本扩展也可用 queryPrefixes 接收输入，前缀后的内容会进入 context.InputText。");
+        builder.AppendLine("- runtime 只支持 csharp / powershell。entryMode=inline 时源码放在 script.source；外部脚本用 entry。");
+        builder.AppendLine("- PowerShell 适合 Windows 自动化、注册表、服务、进程、计划任务、系统命令、cmd/bat 命令包装和已有 cmdlet。不要写 runtime=cmd/bat；需要 cmd/bat 时用 powershell 调 cmd /c 或 Start-Process。");
+        builder.AppendLine("- C# 适合复杂逻辑、JSON/HTTP/文件处理、P/Invoke、强类型 .NET API、System.Drawing/System.Management、原生 WPF 窗口。");
+        builder.AppendLine("- hostedViewXaml 可做宿主内工作区；C# 加 uiMode=native-window 可做独立 WPF 窗口。");
+        builder.AppendLine("- 宿主 context 只提供管家能力：InputText、LaunchSource、ExtensionDirectory、ExtensionDataDirectory、Now、Permissions、State、SetStateAsync、Storage、ViewState、UpdateView。其它功能请用 C# / PowerShell / Windows 原生能力实现。");
+        builder.AppendLine();
+        builder.AppendLine("选择策略：");
+        builder.AppendLine("- 能用 openTarget 或 queryTargetTemplate 完成就不要写脚本。");
+        builder.AppendLine("- 系统配置和命令行自动化优先 PowerShell；复杂应用逻辑和窗口工具优先 C#。");
+        builder.AppendLine("- 需要界面时，简单宿主工作区用 hostedViewXaml，独立窗口工具用 C# native-window。");
+        builder.AppendLine();
+        builder.AppendLine("脚本约定：");
+        builder.AppendLine("- C# 内联入口：public static class YanziAction，并实现 public static Task<string> RunAsync(YanziActionContext context)。System、System.Threading.Tasks、System.IO、System.Linq 等常用命名空间和宿主运行时会自动导入。");
+        builder.AppendLine("- PowerShell 内联脚本建议第一行写 param([string]$InputText = \"\", [string]$ContextPath = \"\")，成功信息写 stdout，失败请 throw 或写 stderr。");
+        builder.AppendLine("- PowerShell 调 .NET 静态方法时类型名必须完整包在方括号里，例如 [System.Drawing.ColorTranslator]::ToWin32([System.Drawing.Color]::Gold)，不要写成 [System.Drawing.ColorTranslator::ToWin32(...)。");
+        builder.AppendLine("- 如果脚本修改 Windows 个性化、壁纸、设备、网络等外部状态，请调用真正生效的系统 API / cmdlet，并检查返回值；不要只写注册表就宣称成功。");
+        builder.AppendLine("- 不要默认用 Disable-PnpDevice / Enable-PnpDevice 做蓝牙、Wi-Fi、网卡、USB 开关；这会禁用硬件设备且需要管理员权限，除非需求明确是禁用硬件。");
+        builder.AppendLine("- 如果需要管理员权限，请明确提示；C# 不要同时设置 Verb=\"runas\" 和 UseShellExecute=false。");
+        builder.AppendLine();
+        builder.AppendLine("输出要求：");
+        builder.AppendLine("- 只返回一个 ```json 代码块，不要解释，不要额外文字。");
+        builder.AppendLine("- JSON 必须能被 System.Text.Json 解析；不要写注释、尾随逗号或 null 字段。");
+        builder.AppendLine("- 必填字段：id、name、version、category、description、keywords。");
+        builder.AppendLine("- 常用字段：icon、accentHex、openTarget、queryPrefixes、queryTargetTemplate、runtime、entryMode、entry、permissions、script.source、hostedViewXaml、uiMode。");
+        builder.AppendLine("- id 用英文小写、数字、短横线；accentHex 支持 #RRGGBB 或 #AARRGGBB。");
+        builder.AppendLine();
+        builder.AppendLine("最小示例：");
+        builder.AppendLine("打开类：{\"id\":\"open-settings\",\"name\":\"打开设置\",\"version\":\"0.1.0\",\"category\":\"系统\",\"description\":\"打开 Windows 设置。\",\"keywords\":[\"设置\"],\"icon\":\"mdi:cog\",\"openTarget\":\"ms-settings:\"}");
+        builder.AppendLine("PowerShell：{\"id\":\"ps-demo\",\"name\":\"PowerShell 示例\",\"version\":\"0.1.0\",\"category\":\"脚本\",\"description\":\"执行 PowerShell。\",\"keywords\":[\"ps\"],\"runtime\":\"powershell\",\"entryMode\":\"inline\",\"permissions\":[],\"script\":{\"source\":\"param([string]$InputText = \\\"\\\", [string]$ContextPath = \\\"\\\")\\nWrite-Output $InputText\"}}");
+        builder.AppendLine("C#：{\"id\":\"csharp-demo\",\"name\":\"C# 示例\",\"version\":\"0.1.0\",\"category\":\"脚本\",\"description\":\"执行 C#。\",\"keywords\":[\"csharp\"],\"runtime\":\"csharp\",\"entryMode\":\"inline\",\"permissions\":[],\"script\":{\"source\":\"public static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText ?? string.Empty);\\n    }\\n}\"}}");
+        return builder.ToString();
     }
 
+    // Legacy verbose prompt kept temporarily for comparison; UI copy actions use BuildGenerationPrompt.
     private static string BuildDetailedPrompt(string request)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("请帮我生成一个 Yanzi / OpenQuickHost 扩展的完整 JSON 配置。");
+        builder.AppendLine("请帮我生成一个 Yanzi 扩展的完整 JSON 配置。");
         builder.AppendLine();
         builder.AppendLine("一、背景说明");
         builder.AppendLine("这个产品的设计理念是“万物皆扩展”。用户会在桌面启动器、快捷面板、鼠标呼出面板里运行扩展。");
@@ -1540,7 +1875,9 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("1. 直接打开网页、程序、文件、文件夹");
         builder.AppendLine("2. 做网页搜索");
         builder.AppendLine("3. 运行脚本处理输入内容");
-        builder.AppendLine("4. 在宿主界面里展示一个简单工作区");
+        builder.AppendLine("4. 用 C#/.NET/WPF/Windows 原生能力完成系统操作或独立工具");
+        builder.AppendLine("5. 在宿主界面里展示一个简单工作区");
+        builder.AppendLine("宿主的角色是管家：负责搜索框入口、输入传递、扩展状态、本地/云端存储和少量受控宿主视图动作；除这些已声明 API 外，功能实现应优先写原生 C#，不要臆造宿主封装方法。");
         builder.AppendLine();
         builder.AppendLine("我的需求是：");
         builder.AppendLine(request);
@@ -1552,17 +1889,31 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("4. 优先选择最贴近需求的方案：");
         builder.AppendLine("   - 打开类：优先用 openTarget");
         builder.AppendLine("   - 搜索类：优先用 queryPrefixes + queryTargetTemplate");
-        builder.AppendLine("   - 脚本类：优先用 runtime = csharp，必要时才用 powershell");
+        builder.AppendLine("   - 脚本类：按任务选择 runtime，不要机械固定用 C#");
+        builder.AppendLine("   - 复杂业务逻辑、JSON/HTTP/文件处理、原生 WPF 窗口、P/Invoke、需要强类型 .NET API 时，优先用 runtime = csharp");
+        builder.AppendLine("   - Windows 自动化、注册表/服务/进程/计划任务/系统命令、已有 PowerShell cmdlet 能直接完成的任务，优先用 runtime = powershell");
+        builder.AppendLine("   - 如果需求本质上是一串 cmd/bat 命令，优先用 powershell 包装执行或输出外部 .bat 入口，不要为了简单命令硬套 C#");
         builder.AppendLine("   - 内联脚本：使用 entryMode = inline 和 script.source");
+        builder.AppendLine("   - 需要窗口、复杂交互、文件/进程/剪贴板/注册表/Win32 调用时，优先使用语言/系统原生能力，而不是要求宿主提供新的专用 API");
+        builder.AppendLine("   - 如果 C# 里必须启动 PowerShell，请优先用 ProcessStartInfo.ArgumentList 或 -EncodedCommand，避免手拼带嵌套双引号的 Arguments 字符串");
+        builder.AppendLine("   - 如果进程需要管理员权限，不要同时设置 Verb = \"runas\" 和 UseShellExecute = false；要么 UseShellExecute = true 触发 UAC 且不重定向输出，要么明确提示用户以管理员身份运行");
+        builder.AppendLine("   - 蓝牙、Wi-Fi、网卡、USB 等系统开关不要默认使用 Disable-PnpDevice / Enable-PnpDevice；这会禁用硬件设备、让设置页开关消失，且需要管理员权限。除非需求明确是禁用硬件设备，否则优先打开系统设置或给出可恢复的用户操作");
+        builder.AppendLine("   - 修改 Windows 个性化、壁纸、系统颜色等设置时，不能只写注册表后直接返回成功；必须调用实际生效 API、检查返回值，必要时生成壁纸文件并调用 SystemParametersInfo(SPI_SETDESKWALLPAPER) 或明确提示需要用户手动刷新/注销");
+        builder.AppendLine("   - 脚本测试只能判断代码是否成功执行，不能自动证明桌面背景、系统颜色、网络状态等外部副作用真的生效；这类脚本应自行读取/验证结果后再返回成功");
+        builder.AppendLine("   - 宿主会自动引用随应用发布的常用托管 DLL，可直接使用 System.Drawing.Common、System.Management、System.IO.Ports、System.ServiceProcess、System.Diagnostics.EventLog、System.DirectoryServices、System.Security.Cryptography.ProtectedData、System.Text.Encoding.CodePages 等基础库");
         builder.AppendLine("4.1 如果需要用户在主界面输入“前缀 + 内容”后触发扩展，必须提供 queryPrefixes；脚本或工作区扩展会通过 context.InputText 收到去掉前缀后的内容");
         builder.AppendLine("5. 如果是 C# 内联脚本，必须严格遵守宿主约定：");
         builder.AppendLine("   - 必须包含 \"runtime\": \"csharp\"");
         builder.AppendLine("   - 必须包含 \"entryMode\": \"inline\"");
-        builder.AppendLine("   - 建议包含 \"permissions\": [\"context.read\"]");
-        builder.AppendLine("   - script.source 里使用 using OpenQuickHost.CSharpRuntime;");
+        builder.AppendLine("   - 不要默认包含 \"context.read\"；只有脚本必须读取快捷面板触发前的选中文本/文件时才声明它");
+        builder.AppendLine("   - 如果通过 queryPrefixes 或 hostedViewXaml 输入框传入内容，context.InputText 不需要 \"context.read\"");
+        builder.AppendLine("   - script.source 不需要写任何宿主运行时 using；编译器已自动导入 YanziActionContext 所在命名空间");
         builder.AppendLine("   - script.source 里声明 public static class YanziAction");
         builder.AppendLine("   - script.source 里实现 public static Task<string> RunAsync(YanziActionContext context)");
         builder.AppendLine("   - 输入内容从 context.InputText 读取");
+        builder.AppendLine("   - YanziActionContext 只提供宿主管家能力：InputText、LaunchSource、ExtensionDirectory、ExtensionDataDirectory、Now、Permissions、State、SetStateAsync、Storage、ViewState、UpdateView");
+        builder.AppendLine("   - 不要发明 context.SetTheme、context.GetTheme、context.OpenFilePicker、context.ShowMessage、context.GetStateAsync<T>() 等不存在的宿主 API；这些需求应优先用原生 C#/.NET/WPF/Windows API 自己实现");
+        builder.AppendLine("   - 不要根据旧命名空间推断 pack URI、程序集名或资源路径；当前应用程序集名是 Yanzi，且没有内置主题资源字典");
         builder.AppendLine("5.1 只有脚本真正创建 WPF 原生窗口时才输出 \"uiMode\": \"native-window\"，典型特征是 new Window、ShowDialog、WindowStartupLocation 或 WindowStyle。仅使用 System.Windows.Clipboard 不属于原生窗口扩展。");
         builder.AppendLine("5.2 只要是 native-window 扩展，就不要再同时输出 hostedViewXaml 或 hostedViewV2");
         builder.AppendLine("5.3 如果需求是独立弹窗小工具、原生窗口小应用、独立编辑器，而不是寄生在宿主里的工作区，优先输出 native-window，而不是 hostedViewXaml");
@@ -1575,6 +1926,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- description：一句话描述扩展用途");
         builder.AppendLine("- keywords：搜索关键词数组");
         builder.AppendLine("- icon：图标，可用 mdi:图标名 或图片地址");
+        builder.AppendLine("- accentHex：可选，扩展按钮 / 卡片底色，支持 #RRGGBB 或 #AARRGGBB，例如 #10B981、#FFF97316；不要所有扩展都用默认蓝色");
         builder.AppendLine("- openTarget：点击后直接打开的目标");
         builder.AppendLine("- queryPrefixes：前缀数组，例如 [\"百度\", \"baidu\"]；搜索扩展会把后面的内容替换进 {query}，脚本 / 工作区扩展会把后面的内容传给 context.InputText");
         builder.AppendLine("- queryTargetTemplate：搜索模板，必须包含 {query}");
@@ -1590,6 +1942,8 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- entryMode：如果是内联脚本请写 \"inline\"");
         builder.AppendLine("- entry：如果是外部脚本文件，写入口文件名");
         builder.AppendLine("- permissions：权限数组，例如 [\"clipboard\", \"network\"]");
+        builder.AppendLine("- 宿主 API 边界：context 不是万能能力对象，只能使用本文明确列出的成员；其它能力请在 script.source 中直接使用 C# 原生库、WPF、P/Invoke、Process、File、HttpClient 等实现");
+        builder.AppendLine("- 命名边界：产品名和应用名是 Yanzi；不要在 C# 脚本里写旧产品名相关命名空间、程序集引用、pack URI、资源路径或品牌文案。hostedViewXaml 的 oqh:HostedViewBridge 命名空间使用模板给出的 Yanzi 命名空间");
         builder.AppendLine("- 扩展脚本现在支持 context.Storage 本地/云端存储 helper：ReadTextAsync、WriteTextAsync、ReadJsonAsync<T>、WriteJsonAsync<T>");
         builder.AppendLine("- context.Storage 默认支持 scope = local、cloud、both；local 写入本地扩展数据目录，cloud / both 会通过宿主 API 写入坚果云 / WebDAV");
         builder.AppendLine("- context.Storage.ReadTextAsync 的可用写法是：await context.Storage.ReadTextAsync(\"note.txt\", scope: \"both\")；不要传 defaultValue 参数");
@@ -1605,7 +1959,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- hostedViewXaml 中不要假设存在 InverseBoolConverter、BooleanToVisibilityConverter 或任何自定义 Converter，除非我明确给出");
         builder.AppendLine("- hostedViewXaml.state：初始化状态对象，值可用字符串、数字、布尔；XAML 中可通过 {Binding [key]} 绑定");
         builder.AppendLine("- hostedViewXaml.window.width / height / minWidth / minHeight：可选，控制窗口尺寸");
-        builder.AppendLine("- hostedViewXaml 中按钮可用 xmlns:oqh=\"clr-namespace:OpenQuickHost\"，再用 oqh:HostedViewBridge.Action 声明动作");
+        builder.AppendLine("- hostedViewXaml 中按钮可用 xmlns:oqh=\"clr-namespace:Yanzi\"，再用 oqh:HostedViewBridge.Action 声明动作");
         builder.AppendLine("- 所有 URL、xmlns、图片地址都必须是纯文本，不要写成 [text](url) 这种 Markdown 链接");
         builder.AppendLine("- oqh:HostedViewBridge.Action 当前支持 close、setState、runScript、loadStorage、saveStorage；多个动作可用 | 分隔，参数用 ;key=value");
         builder.AppendLine("- 根元素还支持 oqh:HostedViewBridge.LoadedAction，可在窗口打开时自动执行 loadStorage");
@@ -1615,7 +1969,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- hostedViewXaml 当前没有代码隐藏，不要输出 Click=、TextChanged= 这类事件处理函数名；宿主只会识别 oqh:HostedViewBridge.Action / LoadedAction");
         builder.AppendLine("- hostedViewXaml 当前状态模型偏扁平，优先使用 note、preview、status、path、result、query 这类简单键名，不要假设存在复杂对象树绑定");
         builder.AppendLine("- 如果需求里需要列表、表格、树、拖拽排序、复杂选择器，请先收敛成静态布局 + 按钮动作；当前宿主还没有成熟的列表模板和通用事件桥");
-        builder.AppendLine("- 如果需求里需要打开文件、选择目录、消息确认、颜色选择、进度条、取消任务，请先在说明中保留产品意图，但不要发明宿主还没实现的 action");
+        builder.AppendLine("- 如果需求里需要打开文件、选择目录、消息确认、颜色选择、进度条、取消任务，不要发明宿主 action；请改用 native-window 或 C# 原生 WPF 对话框/控件自己实现");
         builder.AppendLine("- hostedViewV2：如果要在宿主里显示内置界面，也可以输出 hostedViewV2，不要返回 @view: 之类的协议字符串");
         builder.AppendLine("- hostedViewV2.type：当前支持 \"single-pane\"、\"split-horizontal\"");
         builder.AppendLine("- hostedViewV2.window.width / height / minWidth / minHeight：可选，控制窗口尺寸");
@@ -1627,6 +1981,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- 如果不想寄生在宿主界面中，而是希望扩展自己弹原生 WPF 窗口，可使用 C# 扩展并设置 uiMode = native-window；这类扩展仍然需要用 YanziActionContext 读取输入、状态和存储");
         builder.AppendLine("- native-window 扩展中的 WPF 窗口代码必须在 STA 线程中创建和显示；如果手动 new Window / TextBox / Button，必须显式创建 STA 线程再 ShowDialog，不要直接在 RunAsync 当前线程里 new Window");
         builder.AppendLine("- 如果需求是笔记、便签、编辑器、独立小应用，并且不寄生在宿主界面中，请优先参考模板 5.1 的原生笔记窗口，不要自己改写窗口启动结构");
+        builder.AppendLine("- 如果需求是修改宿主自身界面资源，可使用 System.Windows.Application.Current.Dispatcher 和 Application.Current.Resources 等 WPF 原生对象尝试实现，但不要写 context.SetTheme 这类未声明方法");
         builder.AppendLine("- 不要输出 x:Class，也不要假设宿主会自动解析你自定义的事件处理函数");
         builder.AppendLine();
         builder.AppendLine("四、请优先参考这些模板思路");
@@ -1694,7 +2049,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    \"maxResults\": 50");
         builder.AppendLine("  },");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Text.Json;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var q = (context.InputText ?? string.Empty).Trim();\\n        var items = new object[]\\n        {\\n            new { id = \\\"doc-1\\\", title = \\\"接口文档\\\", subtitle = \\\"脚本生成的示例结果\\\", kind = \\\"record\\\", openTarget = \\\"https://example.com/docs\\\", keywords = new[] { \\\"文档\\\", q }, accentHex = \\\"#FF10B981\\\" },\\n            new { id = \\\"tool-1\\\", title = \\\"打开工具页\\\", subtitle = \\\"支持 URL / 文件 / 普通记录\\\", kind = \\\"url\\\", openTarget = \\\"https://example.com/tools?q=\\\" + System.Uri.EscapeDataString(q), keywords = new[] { \\\"工具\\\", q }, accentHex = \\\"#FF06B6D4\\\" }\\n        };\\n        return Task.FromResult(JsonSerializer.Serialize(items));\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Text.Json;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var q = (context.InputText ?? string.Empty).Trim();\\n        var items = new object[]\\n        {\\n            new { id = \\\"doc-1\\\", title = \\\"接口文档\\\", subtitle = \\\"脚本生成的示例结果\\\", kind = \\\"record\\\", openTarget = \\\"https://example.com/docs\\\", keywords = new[] { \\\"文档\\\", q }, accentHex = \\\"#FF10B981\\\" },\\n            new { id = \\\"tool-1\\\", title = \\\"打开工具页\\\", subtitle = \\\"支持 URL / 文件 / 普通记录\\\", kind = \\\"url\\\", openTarget = \\\"https://example.com/tools?q=\\\" + System.Uri.EscapeDataString(q), keywords = new[] { \\\"工具\\\", q }, accentHex = \\\"#FF06B6D4\\\" }\\n        };\\n        return Task.FromResult(JsonSerializer.Serialize(items));\\n    }\\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1708,10 +2063,10 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"keywords\": [\"脚本\", \"文本\", \"inline\"],");
         builder.AppendLine("  \"runtime\": \"csharp\",");
         builder.AppendLine("  \"entryMode\": \"inline\",");
-        builder.AppendLine("  \"permissions\": [\"context.read\"],");
+        builder.AppendLine("  \"permissions\": [],");
         builder.AppendLine("  \"icon\": \"mdi:code-tags\",");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"收到输入：\\\" + input);\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"收到输入：\\\" + input);\\n    }\\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1726,10 +2081,10 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"queryPrefixes\": [\"统计\", \"count\"],");
         builder.AppendLine("  \"runtime\": \"csharp\",");
         builder.AppendLine("  \"entryMode\": \"inline\",");
-        builder.AppendLine("  \"permissions\": [\"context.read\"],");
+        builder.AppendLine("  \"permissions\": [],");
         builder.AppendLine("  \"icon\": \"mdi:counter\",");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"原文：\\\" + input + \\\"\\\\n长度：\\\" + input.Length);\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"原文：\\\" + input + \\\"\\\\n长度：\\\" + input.Length);\\n    }\\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1758,7 +2113,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("      \"preview\": \"先在左侧输入内容，这里会显示便签结果。\",");
         builder.AppendLine("      \"saved\": true");
         builder.AppendLine("    },");
-        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\" oqh:HostedViewBridge.PreferredFocus=\\\"NoteBox\\\" oqh:HostedViewBridge.LoadedAction=\\\"loadStorage;path=note;key=note.txt;scope=both;defaultValue=\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"便签内容\\\" Foreground=\\\"White\\\" FontSize=\\\"14\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,0,0,10\\\"/><TextBox x:Name=\\\"NoteBox\\\" Text=\\\"{Binding [note], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" VerticalScrollBarVisibility=\\\"Auto\\\" TextWrapping=\\\"Wrap\\\" MinHeight=\\\"320\\\" Padding=\\\"12\\\"/><Button Content=\\\"保存便签\\\" Margin=\\\"0,12,0,0\\\" oqh:HostedViewBridge.Action=\\\"saveStorage;path=note;key=note.txt;scope=both;successMessage=便签已保存。|setState;path=preview;valueFrom=note\\\"/></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"10\\\" Padding=\\\"12\\\"><TextBlock Text=\\\"{Binding [preview]}\\\" TextWrapping=\\\"Wrap\\\" Foreground=\\\"White\\\"/></Border></Grid>\"");
+        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\" oqh:HostedViewBridge.PreferredFocus=\\\"NoteBox\\\" oqh:HostedViewBridge.LoadedAction=\\\"loadStorage;path=note;key=note.txt;scope=both;defaultValue=\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"便签内容\\\" Foreground=\\\"White\\\" FontSize=\\\"14\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,0,0,10\\\"/><TextBox x:Name=\\\"NoteBox\\\" Text=\\\"{Binding [note], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" VerticalScrollBarVisibility=\\\"Auto\\\" TextWrapping=\\\"Wrap\\\" MinHeight=\\\"320\\\" Padding=\\\"12\\\"/><Button Content=\\\"保存便签\\\" Margin=\\\"0,12,0,0\\\" oqh:HostedViewBridge.Action=\\\"saveStorage;path=note;key=note.txt;scope=both;successMessage=便签已保存。|setState;path=preview;valueFrom=note\\\"/></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"10\\\" Padding=\\\"12\\\"><TextBlock Text=\\\"{Binding [preview]}\\\" TextWrapping=\\\"Wrap\\\" Foreground=\\\"White\\\"/></Border></Grid>\"");
         builder.AppendLine("  },");
         builder.AppendLine("  \"startup\": {");
         builder.AppendLine("    \"mode\": \"on_app_launch\",");
@@ -1785,7 +2140,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("      \"defaultFolder\": \"F:\\\\Desktop\",");
         builder.AppendLine("      \"status\": \"修改后点击保存\""); 
         builder.AppendLine("    },");
-        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\" oqh:HostedViewBridge.LoadedAction=\\\"loadStorage;path=workspaceName;key=settings/workspace-name.txt;scope=local|loadStorage;path=defaultFolder;key=settings/default-folder.txt;scope=local\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><TextBlock Text=\\\"工作区设置\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Border Grid.Row=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"18\\\"><StackPanel><TextBlock Text=\\\"工作区名称\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [workspaceName], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"默认目录\\\" Foreground=\\\"White\\\" Margin=\\\"0,18,0,8\\\"/><TextBox Text=\\\"{Binding [defaultFolder], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,18,0,0\\\"/></StackPanel></Border><StackPanel Grid.Row=\\\"3\\\" Orientation=\\\"Horizontal\\\" HorizontalAlignment=\\\"Right\\\" Margin=\\\"0,14,0,0\\\"><Button Content=\\\"保存\\\" oqh:HostedViewBridge.Action=\\\"saveStorage;path=workspaceName;key=settings/workspace-name.txt;scope=local|saveStorage;path=defaultFolder;key=settings/default-folder.txt;scope=local|setState;path=status;value=设置已保存\\\"/></StackPanel></Grid>\"");
+        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\" oqh:HostedViewBridge.LoadedAction=\\\"loadStorage;path=workspaceName;key=settings/workspace-name.txt;scope=local|loadStorage;path=defaultFolder;key=settings/default-folder.txt;scope=local\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><TextBlock Text=\\\"工作区设置\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Border Grid.Row=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"18\\\"><StackPanel><TextBlock Text=\\\"工作区名称\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [workspaceName], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"默认目录\\\" Foreground=\\\"White\\\" Margin=\\\"0,18,0,8\\\"/><TextBox Text=\\\"{Binding [defaultFolder], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,18,0,0\\\"/></StackPanel></Border><StackPanel Grid.Row=\\\"3\\\" Orientation=\\\"Horizontal\\\" HorizontalAlignment=\\\"Right\\\" Margin=\\\"0,14,0,0\\\"><Button Content=\\\"保存\\\" oqh:HostedViewBridge.Action=\\\"saveStorage;path=workspaceName;key=settings/workspace-name.txt;scope=local|saveStorage;path=defaultFolder;key=settings/default-folder.txt;scope=local|setState;path=status;value=设置已保存\\\"/></StackPanel></Grid>\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1801,16 +2156,16 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"icon\": \"mdi:console\",");
         builder.AppendLine("  \"runtime\": \"csharp\",");
         builder.AppendLine("  \"entryMode\": \"inline\",");
-        builder.AppendLine("  \"permissions\": [\"context.read\", \"network\"],");
+        builder.AppendLine("  \"permissions\": [\"network\"],");
         builder.AppendLine("  \"hostedViewXaml\": {");
         builder.AppendLine("    \"type\": \"xaml\",");
         builder.AppendLine("    \"title\": \"脚本工具台\",");
         builder.AppendLine("    \"window\": { \"width\": 1020, \"height\": 720, \"minWidth\": 760, \"minHeight\": 520 },");
         builder.AppendLine("    \"state\": { \"input\": \"\", \"output\": \"执行结果会显示在这里。\", \"status\": \"准备就绪\" },");
-        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><TextBlock Text=\\\"脚本工具台\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"输入\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [input], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\" MinHeight=\\\"360\\\" Padding=\\\"12\\\"/></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [output]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border></Grid><DockPanel Grid.Row=\\\"3\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/><Button Content=\\\"执行脚本\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"runScript;inputFrom=input;outputTo=output;successMessage=脚本执行完成\\\"/></DockPanel></Grid>\"");
+        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><TextBlock Text=\\\"脚本工具台\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"输入\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [input], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\" MinHeight=\\\"360\\\" Padding=\\\"12\\\"/></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [output]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border></Grid><DockPanel Grid.Row=\\\"3\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/><Button Content=\\\"执行脚本\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"runScript;inputFrom=input;outputTo=output;successMessage=脚本执行完成\\\"/></DockPanel></Grid>\"");
         builder.AppendLine("  },");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"输入长度：\\\" + input.Length + \\\"\\\\n\\\\n\\\" + input.ToUpperInvariant());\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"输入长度：\\\" + input.Length + \\\"\\\\n\\\\n\\\" + input.ToUpperInvariant());\\n    }\\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1829,7 +2184,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    \"title\": \"状态仪表盘\",");
         builder.AppendLine("    \"window\": { \"width\": 1100, \"height\": 760, \"minWidth\": 820, \"minHeight\": 560 },");
         builder.AppendLine("    \"state\": { \"summary\": \"今日任务 5 项\", \"health\": \"运行正常\", \"recentLog\": \"暂无新日志\", \"status\": \"准备就绪\" },");
-        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"16\\\"/><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"16\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><StackPanel><TextBlock Text=\\\"状态仪表盘\\\" FontSize=\\\"24\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><TextBlock Text=\\\"用多卡片布局展示关键指标和最近状态\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,6,0,0\\\"/></StackPanel><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><Border Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"14\\\" Padding=\\\"16\\\"><StackPanel><TextBlock Text=\\\"今日摘要\\\" Foreground=\\\"#FF9CA3AF\\\"/><TextBlock Text=\\\"{Binding [summary]}\\\" Foreground=\\\"White\\\" FontSize=\\\"20\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,10,0,0\\\"/></StackPanel></Border><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"14\\\" Padding=\\\"16\\\"><StackPanel><TextBlock Text=\\\"运行状态\\\" Foreground=\\\"#FF9CA3AF\\\"/><TextBlock Text=\\\"{Binding [health]}\\\" Foreground=\\\"#FF34D399\\\" FontSize=\\\"20\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,10,0,0\\\"/></StackPanel></Border><Border Grid.Column=\\\"4\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"14\\\" Padding=\\\"16\\\"><StackPanel><TextBlock Text=\\\"快速动作\\\" Foreground=\\\"#FF9CA3AF\\\"/><Button Content=\\\"刷新摘要\\\" Margin=\\\"0,12,0,0\\\" oqh:HostedViewBridge.Action=\\\"setState;path=status;value=已刷新摘要\\\"/></StackPanel></Border></Grid><Border Grid.Row=\\\"4\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"14\\\" Padding=\\\"16\\\"><StackPanel><TextBlock Text=\\\"最近日志\\\" Foreground=\\\"White\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,0,0,10\\\"/><TextBox Text=\\\"{Binding [recentLog]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\" MinHeight=\\\"220\\\"/></StackPanel></Border><DockPanel Grid.Row=\\\"5\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/></DockPanel></Grid>\"");
+        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"16\\\"/><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"16\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><StackPanel><TextBlock Text=\\\"状态仪表盘\\\" FontSize=\\\"24\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><TextBlock Text=\\\"用多卡片布局展示关键指标和最近状态\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,6,0,0\\\"/></StackPanel><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><Border Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"14\\\" Padding=\\\"16\\\"><StackPanel><TextBlock Text=\\\"今日摘要\\\" Foreground=\\\"#FF9CA3AF\\\"/><TextBlock Text=\\\"{Binding [summary]}\\\" Foreground=\\\"White\\\" FontSize=\\\"20\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,10,0,0\\\"/></StackPanel></Border><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"14\\\" Padding=\\\"16\\\"><StackPanel><TextBlock Text=\\\"运行状态\\\" Foreground=\\\"#FF9CA3AF\\\"/><TextBlock Text=\\\"{Binding [health]}\\\" Foreground=\\\"#FF34D399\\\" FontSize=\\\"20\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,10,0,0\\\"/></StackPanel></Border><Border Grid.Column=\\\"4\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"14\\\" Padding=\\\"16\\\"><StackPanel><TextBlock Text=\\\"快速动作\\\" Foreground=\\\"#FF9CA3AF\\\"/><Button Content=\\\"刷新摘要\\\" Margin=\\\"0,12,0,0\\\" oqh:HostedViewBridge.Action=\\\"setState;path=status;value=已刷新摘要\\\"/></StackPanel></Border></Grid><Border Grid.Row=\\\"4\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"14\\\" Padding=\\\"16\\\"><StackPanel><TextBlock Text=\\\"最近日志\\\" Foreground=\\\"White\\\" FontWeight=\\\"SemiBold\\\" Margin=\\\"0,0,0,10\\\"/><TextBox Text=\\\"{Binding [recentLog]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\" MinHeight=\\\"220\\\"/></StackPanel></Border><DockPanel Grid.Row=\\\"5\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/></DockPanel></Grid>\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1845,16 +2200,16 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"icon\": \"mdi:folder-cog-outline\",");
         builder.AppendLine("  \"runtime\": \"csharp\",");
         builder.AppendLine("  \"entryMode\": \"inline\",");
-        builder.AppendLine("  \"permissions\": [\"context.read\", \"storage\"],");
+        builder.AppendLine("  \"permissions\": [\"storage\"],");
         builder.AppendLine("  \"hostedViewXaml\": {");
         builder.AppendLine("    \"type\": \"xaml\",");
         builder.AppendLine("    \"title\": \"路径工具台\",");
         builder.AppendLine("    \"window\": { \"width\": 980, \"height\": 720, \"minWidth\": 760, \"minHeight\": 520 },");
         builder.AppendLine("    \"state\": { \"path\": \"F:\\\\Desktop\", \"rule\": \"*.txt\", \"result\": \"等待执行\", \"status\": \"准备就绪\" },");
-        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><TextBlock Text=\\\"路径工具台\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Border Grid.Row=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"18\\\"><StackPanel><TextBlock Text=\\\"目标目录\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [path], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"匹配规则\\\" Foreground=\\\"White\\\" Margin=\\\"0,16,0,8\\\"/><TextBox Text=\\\"{Binding [rule], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/></StackPanel></Border><Border Grid.Row=\\\"4\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [result]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border><DockPanel Grid.Row=\\\"5\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/><Button Content=\\\"执行检查\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"runScript;inputFrom=path;outputTo=result;successMessage=检查完成\\\"/></DockPanel></Grid>\"");
+        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><TextBlock Text=\\\"路径工具台\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Border Grid.Row=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"18\\\"><StackPanel><TextBlock Text=\\\"目标目录\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [path], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"匹配规则\\\" Foreground=\\\"White\\\" Margin=\\\"0,16,0,8\\\"/><TextBox Text=\\\"{Binding [rule], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/></StackPanel></Border><Border Grid.Row=\\\"4\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [result]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border><DockPanel Grid.Row=\\\"5\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/><Button Content=\\\"执行检查\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"runScript;inputFrom=path;outputTo=result;successMessage=检查完成\\\"/></DockPanel></Grid>\"");
         builder.AppendLine("  },");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.IO;\\nusing System.Threading.Tasks;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var path = context.InputText ?? string.Empty;\\n        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))\\n        {\\n            return Task.FromResult(\\\"目录不存在：\\\" + path);\\n        }\\n\\n        var files = Directory.GetFiles(path);\\n        return Task.FromResult(\\\"目录：\\\" + path + \\\"\\\\n文件数：\\\" + files.Length);\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.IO;\\nusing System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var path = context.InputText ?? string.Empty;\\n        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))\\n        {\\n            return Task.FromResult(\\\"目录不存在：\\\" + path);\\n        }\\n\\n        var files = Directory.GetFiles(path);\\n        return Task.FromResult(\\\"目录：\\\" + path + \\\"\\\\n文件数：\\\" + files.Length);\\n    }\\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1870,16 +2225,16 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"icon\": \"mdi:file-search-outline\",");
         builder.AppendLine("  \"runtime\": \"csharp\",");
         builder.AppendLine("  \"entryMode\": \"inline\",");
-        builder.AppendLine("  \"permissions\": [\"context.read\", \"network\"],");
+        builder.AppendLine("  \"permissions\": [\"network\"],");
         builder.AppendLine("  \"hostedViewXaml\": {");
         builder.AppendLine("    \"type\": \"xaml\",");
         builder.AppendLine("    \"title\": \"搜索预览台\",");
         builder.AppendLine("    \"window\": { \"width\": 1040, \"height\": 730, \"minWidth\": 780, \"minHeight\": 540 },");
         builder.AppendLine("    \"state\": { \"query\": \"\", \"preview\": \"输入关键词后点击搜索\", \"status\": \"等待查询\" },");
-        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><DockPanel><TextBlock Text=\\\"搜索预览台\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Button Content=\\\"搜索\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"runScript;inputFrom=query;outputTo=preview;successMessage=搜索完成\\\"/></DockPanel><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"340\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"关键词\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [query], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"说明\\\" Foreground=\\\"White\\\" Margin=\\\"0,18,0,8\\\"/><Border Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBlock Text=\\\"可用于搜索文件、接口说明、知识片段等。\\\" Foreground=\\\"#FFCBD5E1\\\" TextWrapping=\\\"Wrap\\\"/></Border></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [preview]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border></Grid><TextBlock Grid.Row=\\\"3\\\" Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,14,0,0\\\"/></Grid>\"");
+        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><DockPanel><TextBlock Text=\\\"搜索预览台\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Button Content=\\\"搜索\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"runScript;inputFrom=query;outputTo=preview;successMessage=搜索完成\\\"/></DockPanel><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"340\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"关键词\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [query], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"说明\\\" Foreground=\\\"White\\\" Margin=\\\"0,18,0,8\\\"/><Border Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBlock Text=\\\"可用于搜索文件、接口说明、知识片段等。\\\" Foreground=\\\"#FFCBD5E1\\\" TextWrapping=\\\"Wrap\\\"/></Border></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [preview]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border></Grid><TextBlock Grid.Row=\\\"3\\\" Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,14,0,0\\\"/></Grid>\"");
         builder.AppendLine("  },");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var q = context.InputText ?? string.Empty;\\n        return Task.FromResult(string.IsNullOrWhiteSpace(q) ? \\\"请输入关键词。\\\" : \\\"查询：\\\" + q + \\\"\\\\n\\\\n这里是搜索结果预览占位内容。\\\");\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var q = context.InputText ?? string.Empty;\\n        return Task.FromResult(string.IsNullOrWhiteSpace(q) ? \\\"请输入关键词。\\\" : \\\"查询：\\\" + q + \\\"\\\\n\\\\n这里是搜索结果预览占位内容。\\\");\\n    }\\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1898,7 +2253,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    \"title\": \"多分区编辑器\",");
         builder.AppendLine("    \"window\": { \"width\": 1120, \"height\": 780, \"minWidth\": 860, \"minHeight\": 580 },");
         builder.AppendLine("    \"state\": { \"title\": \"新草稿\", \"main\": \"\", \"notes\": \"\", \"status\": \"准备就绪\" },");
-        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><DockPanel><TextBlock Text=\\\"多分区编辑器\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Button Content=\\\"同步预览\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"setState;path=status;value=已同步当前内容\\\"/></DockPanel><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"2*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"标题\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [title], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"正文\\\" Foreground=\\\"White\\\" Margin=\\\"0,16,0,8\\\"/><TextBox Text=\\\"{Binding [main], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\" MinHeight=\\\"360\\\" Padding=\\\"12\\\"/></StackPanel><StackPanel Grid.Column=\\\"2\\\"><TextBlock Text=\\\"补充说明\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [notes], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\" MinHeight=\\\"220\\\" Padding=\\\"12\\\"/><Border Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\" Margin=\\\"0,16,0,0\\\"><TextBlock Text=\\\"这里可以放预览、说明、模板提示等辅助内容。\\\" Foreground=\\\"#FFCBD5E1\\\" TextWrapping=\\\"Wrap\\\"/></Border></StackPanel></Grid><TextBlock Grid.Row=\\\"3\\\" Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,14,0,0\\\"/></Grid>\"");
+        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><DockPanel><TextBlock Text=\\\"多分区编辑器\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Button Content=\\\"同步预览\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"setState;path=status;value=已同步当前内容\\\"/></DockPanel><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"2*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"标题\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [title], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"正文\\\" Foreground=\\\"White\\\" Margin=\\\"0,16,0,8\\\"/><TextBox Text=\\\"{Binding [main], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\" MinHeight=\\\"360\\\" Padding=\\\"12\\\"/></StackPanel><StackPanel Grid.Column=\\\"2\\\"><TextBlock Text=\\\"补充说明\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [notes], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\" MinHeight=\\\"220\\\" Padding=\\\"12\\\"/><Border Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\" Margin=\\\"0,16,0,0\\\"><TextBlock Text=\\\"这里可以放预览、说明、模板提示等辅助内容。\\\" Foreground=\\\"#FFCBD5E1\\\" TextWrapping=\\\"Wrap\\\"/></Border></StackPanel></Grid><TextBlock Grid.Row=\\\"3\\\" Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,14,0,0\\\"/></Grid>\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1917,7 +2272,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    \"title\": \"日志查看器\",");
         builder.AppendLine("    \"window\": { \"width\": 980, \"height\": 700, \"minWidth\": 760, \"minHeight\": 520 },");
         builder.AppendLine("    \"state\": { \"logText\": \"暂无日志内容\", \"status\": \"准备就绪\" },");
-        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><DockPanel><TextBlock Text=\\\"日志查看器\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><StackPanel DockPanel.Dock=\\\"Right\\\" Orientation=\\\"Horizontal\\\"><Button Content=\\\"清空\\\" Margin=\\\"0,0,10,0\\\" oqh:HostedViewBridge.Action=\\\"setState;path=logText;value=日志已清空|setState;path=status;value=已清空\\\"/><Button Content=\\\"刷新\\\" oqh:HostedViewBridge.Action=\\\"setState;path=status;value=已刷新\\\"/></StackPanel></DockPanel><Border Grid.Row=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [logText]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border><TextBlock Grid.Row=\\\"3\\\" Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,14,0,0\\\"/></Grid>\"");
+        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><DockPanel><TextBlock Text=\\\"日志查看器\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><StackPanel DockPanel.Dock=\\\"Right\\\" Orientation=\\\"Horizontal\\\"><Button Content=\\\"清空\\\" Margin=\\\"0,0,10,0\\\" oqh:HostedViewBridge.Action=\\\"setState;path=logText;value=日志已清空|setState;path=status;value=已清空\\\"/><Button Content=\\\"刷新\\\" oqh:HostedViewBridge.Action=\\\"setState;path=status;value=已刷新\\\"/></StackPanel></DockPanel><Border Grid.Row=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [logText]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border><TextBlock Grid.Row=\\\"3\\\" Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,14,0,0\\\"/></Grid>\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1936,7 +2291,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    \"title\": \"欢迎向导\",");
         builder.AppendLine("    \"window\": { \"width\": 920, \"height\": 680, \"minWidth\": 720, \"minHeight\": 500 },");
         builder.AppendLine("    \"state\": { \"step\": \"步骤 1 / 3\", \"status\": \"欢迎使用燕子工作区\", \"summary\": \"完成快捷键设置、创建第一个扩展、尝试鼠标面板。\" },");
-        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:OpenQuickHost\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"16\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><StackPanel><TextBlock Text=\\\"欢迎向导\\\" FontSize=\\\"26\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><TextBlock Text=\\\"{Binding [step]}\\\" Foreground=\\\"#FF60A5FA\\\" Margin=\\\"0,8,0,0\\\"/></StackPanel><Border Grid.Row=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"16\\\" Padding=\\\"20\\\"><StackPanel><TextBlock Text=\\\"开始之前\\\" Foreground=\\\"White\\\" FontSize=\\\"18\\\" FontWeight=\\\"SemiBold\\\"/><TextBlock Text=\\\"{Binding [summary]}\\\" Foreground=\\\"#FFCBD5E1\\\" TextWrapping=\\\"Wrap\\\" Margin=\\\"0,12,0,0\\\"/><Border Background=\\\"#FF111827\\\" CornerRadius=\\\"12\\\" Padding=\\\"14\\\" Margin=\\\"0,18,0,0\\\"><TextBlock Text=\\\"建议顺序：设置呼出方式 -> 导入模板 -> 测试第一个扩展。\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\"/></Border></StackPanel></Border><DockPanel Grid.Row=\\\"3\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/><StackPanel DockPanel.Dock=\\\"Right\\\" Orientation=\\\"Horizontal\\\"><Button Content=\\\"下一步\\\" Margin=\\\"0,0,10,0\\\" oqh:HostedViewBridge.Action=\\\"setState;path=step;value=步骤 2 / 3|setState;path=status;value=继续查看下一步\\\"/><Button Content=\\\"完成\\\" oqh:HostedViewBridge.Action=\\\"setState;path=status;value=向导已完成|close\\\"/></StackPanel></DockPanel></Grid>\"");
+        builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"16\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><StackPanel><TextBlock Text=\\\"欢迎向导\\\" FontSize=\\\"26\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><TextBlock Text=\\\"{Binding [step]}\\\" Foreground=\\\"#FF60A5FA\\\" Margin=\\\"0,8,0,0\\\"/></StackPanel><Border Grid.Row=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"16\\\" Padding=\\\"20\\\"><StackPanel><TextBlock Text=\\\"开始之前\\\" Foreground=\\\"White\\\" FontSize=\\\"18\\\" FontWeight=\\\"SemiBold\\\"/><TextBlock Text=\\\"{Binding [summary]}\\\" Foreground=\\\"#FFCBD5E1\\\" TextWrapping=\\\"Wrap\\\" Margin=\\\"0,12,0,0\\\"/><Border Background=\\\"#FF111827\\\" CornerRadius=\\\"12\\\" Padding=\\\"14\\\" Margin=\\\"0,18,0,0\\\"><TextBlock Text=\\\"建议顺序：设置呼出方式 -> 导入模板 -> 测试第一个扩展。\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\"/></Border></StackPanel></Border><DockPanel Grid.Row=\\\"3\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/><StackPanel DockPanel.Dock=\\\"Right\\\" Orientation=\\\"Horizontal\\\"><Button Content=\\\"下一步\\\" Margin=\\\"0,0,10,0\\\" oqh:HostedViewBridge.Action=\\\"setState;path=step;value=步骤 2 / 3|setState;path=status;value=继续查看下一步\\\"/><Button Content=\\\"完成\\\" oqh:HostedViewBridge.Action=\\\"setState;path=status;value=向导已完成|close\\\"/></StackPanel></DockPanel></Grid>\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1953,9 +2308,9 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"runtime\": \"csharp\",");
         builder.AppendLine("  \"uiMode\": \"native-window\",");
         builder.AppendLine("  \"entryMode\": \"inline\",");
-        builder.AppendLine("  \"permissions\": [\"context.read\"],");
+        builder.AppendLine("  \"permissions\": [],");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System;\\nusing System.Threading;\\nusing System.Threading.Tasks;\\nusing System.Windows;\\nusing System.Windows.Controls;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        Exception? error = null;\\n\\n        var thread = new Thread(() =>\\n        {\\n            try\\n            {\\n                var textBlock = new TextBlock\\n                {\\n                    Text = string.IsNullOrWhiteSpace(input) ? \\\"这是一个独立原生窗口示例。\\\" : \\\"输入内容：\\\" + input,\\n                    Margin = new Thickness(24),\\n                    TextWrapping = TextWrapping.Wrap,\\n                    FontSize = 16\\n                };\\n\\n                var closeButton = new Button\\n                {\\n                    Content = \\\"关闭\\\",\\n                    Width = 88,\\n                    Height = 32,\\n                    Margin = new Thickness(24, 0, 24, 24),\\n                    HorizontalAlignment = HorizontalAlignment.Right\\n                };\\n\\n                var panel = new DockPanel();\\n                DockPanel.SetDock(closeButton, Dock.Bottom);\\n                panel.Children.Add(closeButton);\\n                panel.Children.Add(textBlock);\\n\\n                var window = new Window\\n                {\\n                    Title = \\\"原生窗口示例\\\",\\n                    Width = 520,\\n                    Height = 320,\\n                    MinWidth = 420,\\n                    MinHeight = 240,\\n                    Content = panel,\\n                    WindowStartupLocation = WindowStartupLocation.CenterScreen\\n                };\\n\\n                closeButton.Click += (_, _) => window.Close();\\n                window.ShowDialog();\\n            }\\n            catch (Exception ex)\\n            {\\n                error = ex;\\n            }\\n        });\\n\\n        thread.SetApartmentState(ApartmentState.STA);\\n        thread.IsBackground = false;\\n        thread.Start();\\n        thread.Join();\\n\\n        if (error != null)\\n        {\\n            throw error;\\n        }\\n\\n        return Task.FromResult(\\\"窗口已关闭\\\");\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System;\\nusing System.Threading;\\nusing System.Threading.Tasks;\\nusing System.Windows;\\nusing System.Windows.Controls;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        Exception? error = null;\\n\\n        var thread = new Thread(() =>\\n        {\\n            try\\n            {\\n                var textBlock = new TextBlock\\n                {\\n                    Text = string.IsNullOrWhiteSpace(input) ? \\\"这是一个独立原生窗口示例。\\\" : \\\"输入内容：\\\" + input,\\n                    Margin = new Thickness(24),\\n                    TextWrapping = TextWrapping.Wrap,\\n                    FontSize = 16\\n                };\\n\\n                var closeButton = new Button\\n                {\\n                    Content = \\\"关闭\\\",\\n                    Width = 88,\\n                    Height = 32,\\n                    Margin = new Thickness(24, 0, 24, 24),\\n                    HorizontalAlignment = HorizontalAlignment.Right\\n                };\\n\\n                var panel = new DockPanel();\\n                DockPanel.SetDock(closeButton, Dock.Bottom);\\n                panel.Children.Add(closeButton);\\n                panel.Children.Add(textBlock);\\n\\n                var window = new Window\\n                {\\n                    Title = \\\"原生窗口示例\\\",\\n                    Width = 520,\\n                    Height = 320,\\n                    MinWidth = 420,\\n                    MinHeight = 240,\\n                    Content = panel,\\n                    WindowStartupLocation = WindowStartupLocation.CenterScreen\\n                };\\n\\n                closeButton.Click += (_, _) => window.Close();\\n                window.ShowDialog();\\n            }\\n            catch (Exception ex)\\n            {\\n                error = ex;\\n            }\\n        });\\n\\n        thread.SetApartmentState(ApartmentState.STA);\\n        thread.IsBackground = false;\\n        thread.Start();\\n        thread.Join();\\n\\n        if (error != null)\\n        {\\n            throw error;\\n        }\\n\\n        return Task.FromResult(\\\"窗口已关闭\\\");\\n    }\\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1972,9 +2327,9 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"runtime\": \"csharp\",");
         builder.AppendLine("  \"uiMode\": \"native-window\",");
         builder.AppendLine("  \"entryMode\": \"inline\",");
-        builder.AppendLine("  \"permissions\": [\"context.read\", \"storage\"],");
+        builder.AppendLine("  \"permissions\": [\"storage\"],");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System;\\nusing System.Threading;\\nusing System.Threading.Tasks;\\nusing System.Windows;\\nusing System.Windows.Controls;\\nusing System.Windows.Media;\\nusing OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static async Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var storage = context.Storage;\\n        string noteContent;\\n        try\\n        {\\n            noteContent = await storage.ReadTextAsync(\\\"note.txt\\\", scope: \\\"both\\\") ?? string.Empty;\\n        }\\n        catch\\n        {\\n            noteContent = string.Empty;\\n        }\\n\\n        Exception? error = null;\\n        var thread = new Thread(() =>\\n        {\\n            try\\n            {\\n                var window = new Window\\n                {\\n                    Title = \\\"独立笔记\\\",\\n                    Width = 600,\\n                    Height = 500,\\n                    MinWidth = 400,\\n                    MinHeight = 300,\\n                    Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),\\n                    WindowStartupLocation = WindowStartupLocation.CenterScreen\\n                };\\n\\n                var textBox = new TextBox\\n                {\\n                    Text = noteContent,\\n                    AcceptsReturn = true,\\n                    TextWrapping = TextWrapping.Wrap,\\n                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,\\n                    Background = new SolidColorBrush(Color.FromRgb(20, 20, 20)),\\n                    Foreground = Brushes.White,\\n                    FontSize = 14,\\n                    Padding = new Thickness(12),\\n                    Margin = new Thickness(10),\\n                    MinHeight = 360\\n                };\\n\\n                var saveButton = new Button\\n                {\\n                    Content = \\\"保存笔记\\\",\\n                    Margin = new Thickness(10, 0, 10, 10),\\n                    Height = 32,\\n                    Background = new SolidColorBrush(Color.FromRgb(60, 60, 80)),\\n                    Foreground = Brushes.White,\\n                    BorderThickness = new Thickness(0)\\n                };\\n\\n                var statusText = new TextBlock\\n                {\\n                    Text = \\\"就绪\\\",\\n                    Margin = new Thickness(10),\\n                    Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),\\n                    FontSize = 12\\n                };\\n\\n                saveButton.Click += async (_, _) =>\\n                {\\n                    await storage.WriteTextAsync(\\\"note.txt\\\", textBox.Text, scope: \\\"both\\\");\\n                    statusText.Text = \\\"已保存到本地和云端\\\";\\n                };\\n\\n                var panel = new StackPanel();\\n                panel.Children.Add(textBox);\\n                panel.Children.Add(saveButton);\\n                panel.Children.Add(statusText);\\n                window.Content = panel;\\n                window.ShowDialog();\\n            }\\n            catch (Exception ex)\\n            {\\n                error = ex;\\n            }\\n        });\\n\\n        thread.SetApartmentState(ApartmentState.STA);\\n        thread.IsBackground = false;\\n        thread.Start();\\n        thread.Join();\\n\\n        if (error != null)\\n        {\\n            throw error;\\n        }\\n\\n        return \\\"笔记窗口已关闭\\\";\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System;\\nusing System.Threading;\\nusing System.Threading.Tasks;\\nusing System.Windows;\\nusing System.Windows.Controls;\\nusing System.Windows.Media;\\npublic static class YanziAction\\n{\\n    public static async Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var storage = context.Storage;\\n        string noteContent;\\n        try\\n        {\\n            noteContent = await storage.ReadTextAsync(\\\"note.txt\\\", scope: \\\"local\\\") ?? string.Empty;\\n        }\\n        catch\\n        {\\n            noteContent = string.Empty;\\n        }\\n\\n        Exception? error = null;\\n        var thread = new Thread(() =>\\n        {\\n            try\\n            {\\n                var window = new Window\\n                {\\n                    Title = \\\"独立笔记\\\",\\n                    Width = 600,\\n                    Height = 500,\\n                    MinWidth = 400,\\n                    MinHeight = 300,\\n                    Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),\\n                    WindowStartupLocation = WindowStartupLocation.CenterScreen\\n                };\\n\\n                var textBox = new TextBox\\n                {\\n                    Text = noteContent,\\n                    AcceptsReturn = true,\\n                    TextWrapping = TextWrapping.Wrap,\\n                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,\\n                    Background = new SolidColorBrush(Color.FromRgb(20, 20, 20)),\\n                    Foreground = Brushes.White,\\n                    FontSize = 14,\\n                    Padding = new Thickness(12),\\n                    Margin = new Thickness(10),\\n                    MinHeight = 360\\n                };\\n\\n                var saveButton = new Button\\n                {\\n                    Content = \\\"保存笔记\\\",\\n                    Margin = new Thickness(10, 0, 10, 10),\\n                    Height = 32,\\n                    Background = new SolidColorBrush(Color.FromRgb(60, 60, 80)),\\n                    Foreground = Brushes.White,\\n                    BorderThickness = new Thickness(0)\\n                };\\n\\n                var statusText = new TextBlock\\n                {\\n                    Text = \\\"就绪\\\",\\n                    Margin = new Thickness(10),\\n                    Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),\\n                    FontSize = 12\\n                };\\n\\n                saveButton.Click += async (_, _) =>\\n                {\\n                    await storage.WriteTextAsync(\\\"note.txt\\\", textBox.Text, scope: \\\"both\\\");\\n                    statusText.Text = \\\"已保存到本地，云端同步在后台进行\\\";\\n                };\\n\\n                var panel = new StackPanel();\\n                panel.Children.Add(textBox);\\n                panel.Children.Add(saveButton);\\n                panel.Children.Add(statusText);\\n                window.Content = panel;\\n                window.ShowDialog();\\n            }\\n            catch (Exception ex)\\n            {\\n                error = ex;\\n            }\\n        });\\n\\n        thread.SetApartmentState(ApartmentState.STA);\\n        thread.IsBackground = false;\\n        thread.Start();\\n        thread.Join();\\n\\n        if (error != null)\\n        {\\n            throw error;\\n        }\\n\\n        return \\\"笔记窗口已关闭\\\";\\n    }\\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1983,73 +2338,6 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("请结合我的需求，只返回一个包含最终 JSON 的 ```json 代码块，不要返回多个方案，不要附加说明。");
         builder.AppendLine("如果需求里提到便签、面板、编辑器、工作区、内置界面，请优先使用 hostedViewXaml；如果只是简单表单，再考虑 hostedViewV2。");
         builder.AppendLine("如果需求里明确是独立弹窗小工具或原生小应用，并且脚本需要直接 new Window / TextBox / Button，就必须输出 native-window，不要改成 hostedViewXaml。");
-        return builder.ToString();
-    }
-
-    private static string BuildRefinePrompt(string manifestJson)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine("请基于下面这份 Yanzi / OpenQuickHost 扩展 JSON，帮我修改并输出最终可用版本。");
-        builder.AppendLine();
-        builder.AppendLine("一、背景说明");
-        builder.AppendLine("这个产品的设计理念是“万物皆扩展”。用户会在桌面启动器、快捷面板、鼠标呼出面板里运行扩展。");
-        builder.AppendLine("扩展可以是：");
-        builder.AppendLine("1. 直接打开网页、程序、文件、文件夹");
-        builder.AppendLine("2. 做网页搜索");
-        builder.AppendLine("3. 运行脚本处理输入内容");
-        builder.AppendLine("4. 在宿主界面里展示一个简单工作区或自定义 XAML 界面");
-        builder.AppendLine();
-        builder.AppendLine("二、修改要求");
-        builder.AppendLine("1. 只返回一个 ```json 代码块，不要解释，不要额外文字");
-        builder.AppendLine("2. 保留原有结构和意图，按需要修正字段，不要无意义改名");
-        builder.AppendLine("3. 不要输出 null 字段，能省略就省略");
-        builder.AppendLine("4. icon 支持 mdi:图标名、app:图标名、本地相对路径、绝对路径、图片 URL");
-        builder.AppendLine("5. 如果是搜索扩展，确保 queryTargetTemplate 包含 {query}");
-        builder.AppendLine("6. 如果是脚本扩展，优先使用 csharp；内联脚本用 entryMode = inline 和 script.source");
-        builder.AppendLine("6.0 如果需求要求用户在主界面输入“前缀 + 内容”后触发脚本或工作区，必须提供 queryPrefixes；脚本通过 context.InputText 读取前缀后面的内容");
-        builder.AppendLine("6.1 如果是 C# 内联脚本，必须严格使用宿主约定：runtime = csharp，using OpenQuickHost.CSharpRuntime，public static class YanziAction，public static Task<string> RunAsync(YanziActionContext context)，输入从 context.InputText 读取");
-        builder.AppendLine("6.2 如果 script.source 里真正创建 WPF 窗口（new Window、ShowDialog、WindowStartupLocation 或 WindowStyle），必须补上 \"uiMode\": \"native-window\"；仅使用 System.Windows.Clipboard 不需要。");
-        builder.AppendLine("7. 如果需要宿主内置界面，请优先使用 hostedViewXaml，不要输出 @view:textarea 或其他未定义协议");
-        builder.AppendLine("8. hostedViewXaml 里不要输出 x:Class，不要假设宿主会自动解析你手写的事件处理函数；按钮动作请通过 oqh:HostedViewBridge.Action 声明");
-        builder.AppendLine("9. hostedViewXaml.xaml 必须是可直接解析的 WPF XAML 字符串，必须放在合法 JSON 字符串里，内部双引号必须正确转义");
-        builder.AppendLine("9.1 不要把 xmlns、URL、图片地址写成 Markdown 链接，不要出现 [http://...](http://...) 这种格式");
-        builder.AppendLine("9.2 hostedViewXaml 是标准 WPF XAML；Grid 不支持 Padding，如果要留内边距请改用 Border.Padding 或元素 Margin");
-        builder.AppendLine("9.3 hostedViewXaml 中不要引用未声明的 StaticResource；不要默认写 InverseBoolConverter、BooleanToVisibilityConverter 或其他自定义 Converter");
-        builder.AppendLine("10. XAML 根元素建议使用 Grid、UserControl 或 Window；如果用自定义命名空间，请确保 xmlns 正确");
-        builder.AppendLine("11. oqh:HostedViewBridge.Action 当前支持 close、setState、runScript、loadStorage、saveStorage；setState 支持 value、valueFrom、append、separator");
-        builder.AppendLine("12. 如需在窗口打开时自动加载本地或坚果云数据，可在根元素上使用 oqh:HostedViewBridge.LoadedAction");
-        builder.AppendLine("13. 脚本扩展可使用 context.Storage.ReadTextAsync / WriteTextAsync / ReadJsonAsync / WriteJsonAsync，scope 支持 local、cloud、both");
-        builder.AppendLine("13.1 context.Storage.ReadTextAsync 的可用写法是 await context.Storage.ReadTextAsync(\"note.txt\", scope: \"both\")；没有 defaultValue 参数");
-        builder.AppendLine("13.2 如果需要默认值，请在脚本里用 ?? string.Empty 或 try/catch 处理，不要自行添加不存在的参数");
-        builder.AppendLine("14. 视图脚本读状态优先用 context.State，更新状态优先用 await context.SetStateAsync(...)；兼容写法 context.ViewState / await context.UpdateView() 也支持");
-        builder.AppendLine("14.1 不要使用 context.GetStateAsync<T>()；当前宿主没有这个 API");
-        builder.AppendLine("15. 如果只是简单表单或双栏工作区，也可以使用 hostedViewV2，但自定义界面优先用 hostedViewXaml");
-        builder.AppendLine("16. 如果是原生窗口扩展，可使用 uiMode = native-window，并在 C# 脚本里直接创建 WPF Window / TextBox / Button 等界面元素；不要同时再输出 hostedViewXaml");
-        builder.AppendLine("16.1 原生窗口扩展中的 WPF 窗口创建和 ShowDialog 必须运行在 STA 线程；如果手动创建 Window，请显式 new Thread(...)、SetApartmentState(ApartmentState.STA) 再启动");
-        builder.AppendLine("16.2 如果当前 JSON 是笔记、便签、编辑器这类独立原生窗口，请优先保留 native-window 模板里的线程骨架，只改业务逻辑和控件内容，不要改窗口启动方式");
-        builder.AppendLine("16.3 只要是原生窗口代码，就不要把它改写成 hostedViewXaml 方案来规避程序集问题");
-        builder.AppendLine();
-        builder.AppendLine("三、字段和能力提醒");
-        builder.AppendLine("- id：扩展唯一标识，只能英文小写、数字、短横线");
-        builder.AppendLine("- name：扩展显示名称");
-        builder.AppendLine("- version：版本号，默认 \"0.1.0\"");
-        builder.AppendLine("- category：分类");
-        builder.AppendLine("- description：一句话描述扩展用途");
-        builder.AppendLine("- keywords：搜索关键词数组");
-        builder.AppendLine("- hostedViewXaml.window.width / height / minWidth / minHeight：可选，控制窗口尺寸");
-        builder.AppendLine("- hostedViewXaml.state：初始化状态对象，值可用字符串、数字、布尔，XAML 中可通过 {Binding [key]} 绑定");
-        builder.AppendLine("- hostedViewXaml.xaml：完整 XAML 字符串；按钮动作请通过 oqh:HostedViewBridge.Action 声明。");
-        builder.AppendLine("- startup：可选，包含 mode (\"on_app_launch\") 和 schedule (Cron 表达式或间隔)。");
-        builder.AppendLine("- 如果按钮要把输入追加到现有文本，可使用 setState;path=xxx;valueFrom=yyy;append=true;separator=\\n");
-        builder.AppendLine("- 如果要持久化待办、便签、历史记录，可使用 loadStorage / saveStorage，或在脚本里使用 context.Storage");
-        builder.AppendLine();
-        builder.AppendLine("四、当前 JSON");
-        builder.AppendLine(manifestJson);
-        builder.AppendLine();
-        builder.AppendLine("五、输出要求");
-        builder.AppendLine("请只返回一个包含修正后完整 JSON 的 ```json 代码块。");
-        builder.AppendLine("如果当前 JSON 已经是 hostedViewXaml，请保留 hostedViewXaml 方案，除非它明显不适合需求。");
-        builder.AppendLine("如果当前 JSON 里是待办、便签、工作区、面板这类界面扩展，请优先修正现有 XAML，而不是退回成普通 openTarget 或脚本扩展。");
         return builder.ToString();
     }
 
@@ -2064,7 +2352,8 @@ public partial class AddJsonExtensionWindow : Window
             Description = "点击后打开记事本。",
             Keywords = ["打开", "记事本", "notepad"],
             OpenTarget = "notepad.exe",
-            Icon = "mdi:notebook-outline"
+            Icon = "mdi:notebook-outline",
+            AccentHex = "#FF3B82F6"
         };
 
         return JsonSerializer.Serialize(manifest, CreateJsonOptions());
@@ -2081,7 +2370,8 @@ public partial class AddJsonExtensionWindow : Window
             Description = "点击后打开当前用户桌面目录。",
             Keywords = ["桌面", "desktop", "打开"],
             OpenTarget = "shell:Desktop",
-            Icon = "mdi:monitor-dashboard"
+            Icon = "mdi:monitor-dashboard",
+            AccentHex = "#FF06B6D4"
         };
 
         return JsonSerializer.Serialize(manifest, CreateJsonOptions());
@@ -2099,7 +2389,8 @@ public partial class AddJsonExtensionWindow : Window
             Keywords = ["搜索", "网页"],
             QueryPrefixes = ["搜索", "web"],
             QueryTargetTemplate = "https://www.baidu.com/s?wd={query}",
-            Icon = "https://www.baidu.com/favicon.ico"
+            Icon = "https://www.baidu.com/favicon.ico",
+            AccentHex = "#FF10B981"
         };
 
         return JsonSerializer.Serialize(manifest, CreateJsonOptions());
@@ -2119,9 +2410,10 @@ public partial class AddJsonExtensionWindow : Window
             EntryMode = "inline",
             Permissions = ["clipboard"],
             Icon = "mdi:code-tags",
+            AccentHex = "#FF8B5CF6",
             Script = new LocalExtensionInlineScriptManifest
             {
-                Source = "using OpenQuickHost.CSharpRuntime;\npublic static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        return Task.FromResult(\"收到输入：\" + context.InputText);\n    }\n}"
+                Source = "public static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        return Task.FromResult(\"收到输入：\" + context.InputText);\n    }\n}"
             }
         };
 
@@ -2293,35 +2585,16 @@ Write-Output $normalized.Trim()
             Name = "C# 动作示例",
             Version = "0.1.0",
             Category = "C#",
-            Description = "使用 C# 读取宿主传入的上下文并返回结果。",
+            Description = "使用 C# 打开一个原生示例窗口。",
             Keywords = ["csharp", "dotnet", "context", "示例"],
             Runtime = "csharp",
+            UiMode = "native-window",
             EntryMode = "inline",
             Permissions = ["context.read"],
             Icon = "mdi:code",
             Script = new LocalExtensionInlineScriptManifest
             {
-                Source =
-"""
-using OpenQuickHost.CSharpRuntime;
-
-public static class YanziAction
-{
-    public static Task<string> RunAsync(YanziActionContext context)
-    {
-        var input = string.IsNullOrWhiteSpace(context.InputText)
-            ? "没有收到选中内容。"
-            : context.InputText.Trim();
-
-        return Task.FromResult(
-            $"来源: {context.LaunchSource}" + Environment.NewLine +
-            $"扩展目录: {context.ExtensionDirectory}" + Environment.NewLine +
-            Environment.NewLine +
-            "输入:" + Environment.NewLine +
-            input);
-    }
-}
-"""
+                Source = CreateCSharpWindowScript()
             }
         };
 
@@ -2341,7 +2614,7 @@ public static class YanziAction
             Runtime = "csharp",
             UiMode = "native-window",
             EntryMode = "inline",
-            Permissions = ["context.read"],
+            Permissions = [],
             Icon = "mdi:application-outline",
             QueryPrefixes = ["窗口", "window"],
             Script = new LocalExtensionInlineScriptManifest
@@ -2353,8 +2626,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using OpenQuickHost.CSharpRuntime;
-
 public static class YanziAction
 {
     public static Task<string> RunAsync(YanziActionContext context)
@@ -2441,7 +2712,7 @@ public static class YanziAction
             Runtime = "csharp",
             UiMode = "native-window",
             EntryMode = "inline",
-            Permissions = ["context.read", "storage"],
+            Permissions = ["storage"],
             Icon = "mdi:notebook-edit-outline",
             Script = new LocalExtensionInlineScriptManifest
             {
@@ -2453,8 +2724,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using OpenQuickHost.CSharpRuntime;
-
 public static class YanziAction
 {
     public static async Task<string> RunAsync(YanziActionContext context)
@@ -2463,7 +2732,7 @@ public static class YanziAction
         string noteContent;
         try
         {
-            noteContent = await storage.ReadTextAsync("note.txt", scope: "both") ?? string.Empty;
+            noteContent = await storage.ReadTextAsync("note.txt", scope: "local") ?? string.Empty;
         }
         catch
         {
@@ -2521,7 +2790,7 @@ public static class YanziAction
                 saveButton.Click += async (_, _) =>
                 {
                     await storage.WriteTextAsync("note.txt", textBox.Text, scope: "both");
-                    statusText.Text = "已保存到本地和云端";
+                    statusText.Text = "已保存到本地，云端同步在后台进行";
                 };
 
                 var panel = new StackPanel();
@@ -2703,6 +2972,40 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
         return items.Length == 0 ? null : items;
     }
 
+    private static string? NormalizeAccentHexOrNull(string? accentHex)
+    {
+        return string.IsNullOrWhiteSpace(accentHex)
+            ? null
+            : NormalizeAccentHexOrDefault(accentHex);
+    }
+
+    private static string NormalizeAccentHexOrDefault(string? accentHex)
+    {
+        var value = accentHex?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "#FF3B82F6";
+        }
+
+        if (!value.StartsWith('#'))
+        {
+            value = "#" + value;
+        }
+
+        if (value.Length == 7)
+        {
+            value = "#FF" + value[1..];
+        }
+
+        if (value.Length != 9 ||
+            !value[1..].All(static ch => Uri.IsHexDigit(ch)))
+        {
+            return "#FF3B82F6";
+        }
+
+        return value.ToUpperInvariant();
+    }
+
     private static string CompactError(string message)
     {
         if (string.IsNullOrWhiteSpace(message))
@@ -2725,6 +3028,20 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
             WriteIndented = true,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
+    }
+
+    private static string FormatJsonText(string rawText)
+    {
+        var normalizedJson = ExtractJsonPayload(rawText);
+        var documentOptions = new JsonDocumentOptions
+        {
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip
+        };
+
+        using var document = JsonDocument.Parse(normalizedJson, documentOptions);
+        var root = document.RootElement.Clone();
+        return JsonSerializer.Serialize(root, CreateJsonOptions());
     }
 
     private static LocalExtensionManifest ParseManifestFromJson(string json, string source)
@@ -2757,26 +3074,6 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
     {
         var compact = json.ReplaceLineEndings(" ").Trim();
         return compact.Length <= 160 ? compact : compact[..160];
-    }
-
-    private static string BuildTestFailurePrompt(string json, string summary, string log)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine("请帮我修复下面这个 Yanzi / OpenQuickHost 扩展 JSON。");
-        builder.AppendLine("要求：");
-        builder.AppendLine("1. 只返回一个包含修正后完整 JSON 的 ```json 代码块，不要解释，不要额外文字");
-        builder.AppendLine("2. 优先修复测试日志中的错误，保留原有扩展意图");
-        builder.AppendLine("3. 如果是 hostedViewXaml / 自定义 XAML 错误，请修正 XAML 字段，不要改成普通 openTarget 扩展");
-        builder.AppendLine();
-        builder.AppendLine("测试结果摘要：");
-        builder.AppendLine(string.IsNullOrWhiteSpace(summary) ? "测试未通过。" : summary.Trim());
-        builder.AppendLine();
-        builder.AppendLine("测试日志：");
-        builder.AppendLine(string.IsNullOrWhiteSpace(log) ? "无详细日志。" : log.Trim());
-        builder.AppendLine();
-        builder.AppendLine("当前 JSON：");
-        builder.AppendLine(json.Trim());
-        return builder.ToString();
     }
 
     private static string ExtractJsonPayload(string? rawText)
@@ -2883,6 +3180,28 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
     private static SolidColorBrush CreateBrush(string colorHex)
     {
         return new SolidColorBrush((MediaColor)MediaColorConverter.ConvertFromString(colorHex));
+    }
+
+    private TResult ExecuteWithListenerServicesPaused<TResult>(Func<TResult> action)
+    {
+        var mainWindow = System.Windows.Application.Current.Windows
+            .OfType<MainWindow>()
+            .FirstOrDefault(static window => window.IsLoaded);
+
+        if (mainWindow == null)
+        {
+            return action();
+        }
+
+        mainWindow.PauseListenerServices();
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            mainWindow.ResumeListenerServices();
+        }
     }
 
     private enum WizardStep

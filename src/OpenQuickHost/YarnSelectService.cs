@@ -49,6 +49,17 @@ public static class YarnSelectService
 
     public static bool IsRunning => _isRunning;
 
+    public static string GetMouseStateSummary()
+    {
+        return $"燕选={(IsRunning ? "运行" : "停止")}，左键={(_leftButtonDown ? "已按下" : "未按下")}，已触发={_triggeredThisHold}，吞右键={_swallowRightUp}，吞侧键={_swallowXButtonUp}";
+    }
+
+    public static void ResetMouseState()
+    {
+        ResetTransientMouseState();
+        HostAssets.AppendLog("YarnSelect: mouse state reset requested from tray.");
+    }
+
     public static void Start(Action<YarnSelectActionRequest> onAction)
     {
         if (_isRunning)
@@ -95,10 +106,7 @@ public static class YarnSelectService
         }
 
         _isRunning = false;
-        _leftButtonDown = false;
-        _triggeredThisHold = false;
-        _swallowRightUp = false;
-        _swallowXButtonUp = false;
+        ResetTransientMouseState();
         HostAssets.AppendLog("YarnSelect: stopped and transient mouse state reset.");
         _onAction = null;
     }
@@ -108,10 +116,7 @@ public static class YarnSelectService
         _settings = AppSettingsStore.Load().YarnSelect ?? new YarnSelectSettings();
         _settings.WhitelistedProcesses ??= [];
         _settings.BlacklistedProcesses ??= [];
-        _leftButtonDown = false;
-        _triggeredThisHold = false;
-        _swallowRightUp = false;
-        _swallowXButtonUp = false;
+        ResetTransientMouseState();
         if (_isRunning && !_settings.Enabled)
         {
             Stop();
@@ -514,6 +519,14 @@ public static class YarnSelectService
         _lastBlockedForegroundProcess = processName;
         _lastBlockedForegroundProcessLogAt = now;
         HostAssets.AppendLog($"YarnSelect: foreground process blocked, process={processName}, reason={reason}.");
+    }
+
+    private static void ResetTransientMouseState()
+    {
+        _leftButtonDown = false;
+        _triggeredThisHold = false;
+        _swallowRightUp = false;
+        _swallowXButtonUp = false;
     }
 
     private static int GetXButton(uint mouseData) => (int)((mouseData >> 16) & 0xffff);

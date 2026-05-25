@@ -38,6 +38,8 @@ public static class HostAssets
 
     public static string MarketplacePath => ResolveDataFilePath("marketplace.txt");
 
+    public static string MobileInboxPath => ResolveDataFilePath("mobile-inbox.jsonl");
+
     public static string LogoPath => Path.Combine(InstallRootPath, "logo.png");
 
     public static string WebDavSyncStatePath => ResolveDataFilePath("webdav-sync-state.json");

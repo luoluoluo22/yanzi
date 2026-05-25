@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">燕子移动端</string>
+    <string name="accessibility_service_description">用于燕子移动端全局触发、截图和后续自动化能力。</string>
+</resources>

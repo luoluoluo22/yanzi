@@ -18,13 +18,30 @@
     </Window.Resources>
 
     <Grid>
-        <Ellipse Width="430"
-                 Height="430"
+        <Ellipse Width="392"
+                 Height="392"
                  Fill="#AA101010"
                  Stroke="#22FFFFFF"
                  StrokeThickness="1"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
+
+        <ItemsControl ItemsSource="{Binding OuterItems}"
+                      IsHitTestVisible="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Path Data="{Binding SectorGeometry}"
+                          Fill="{Binding SectorBrush}"
+                          Opacity="{Binding SectorOpacity}"
+                          Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
 
         <ItemsControl ItemsSource="{Binding OuterSeparators}">
             <ItemsControl.ItemsPanel>
@@ -39,17 +56,34 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <Ellipse Width="270"
-                 Height="270"
+        <Ellipse Width="244"
+                 Height="244"
                  Fill="#CC101010"
                  Stroke="#22FFFFFF"
                  StrokeThickness="1"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
 
+        <ItemsControl ItemsSource="{Binding Items}"
+                      IsHitTestVisible="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Path Data="{Binding SectorGeometry}"
+                          Fill="{Binding SectorBrush}"
+                          Opacity="{Binding SectorOpacity}"
+                          Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
         <!-- Ring line around inner circle - must be after the filled ellipse -->
-        <Ellipse Width="270"
-                 Height="270"
+        <Ellipse Width="244"
+                 Height="244"
                  Fill="Transparent"
                  Stroke="#33FFFFFF"
                  StrokeThickness="1.5"
@@ -69,8 +103,8 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <Ellipse Width="64"
-                 Height="64"
+        <Ellipse Width="58"
+                 Height="58"
                  Fill="#F2161616"
                  Stroke="#33FFFFFF"
                  StrokeThickness="1"
@@ -94,9 +128,43 @@
                    TextAlignment="Center"
                    TextTrimming="CharacterEllipsis">
             <TextBlock.RenderTransform>
-                <TranslateTransform Y="156"/>
+                <TranslateTransform Y="176"/>
             </TextBlock.RenderTransform>
         </TextBlock>
+
+        <Button x:Name="PinButton"
+                Width="34"
+                Height="34"
+                Padding="0"
+                Background="#E6101010"
+                BorderThickness="1"
+                BorderBrush="{Binding PinButtonBrush}"
+                ToolTip="{Binding PinButtonTooltip}"
+                Click="PinButton_Click"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+            <Button.RenderTransform>
+                <TranslateTransform X="214" Y="-154" />
+            </Button.RenderTransform>
+            <Button.Style>
+                <Style TargetType="Button">
+                    <Setter Property="Opacity" Value="0.88" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsPinHoverActive}" Value="True">
+                            <Setter Property="Opacity" Value="1" />
+                            <Setter Property="Background" Value="#F0A16207" />
+                            <Setter Property="BorderBrush" Value="#FFFCD34D" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <Viewbox Width="16"
+                     Height="16"
+                     Stretch="Uniform">
+                <Path Data="{local:IconGeometry pin}"
+                      Fill="{Binding PinButtonBrush}" />
+            </Viewbox>
+        </Button>
 
         <ItemsControl ItemsSource="{Binding OuterItems}">
             <ItemsControl.ItemsPanel>
@@ -129,28 +197,7 @@
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                         </Border.RenderTransform>
                         <Grid>
-                            <!-- Hover highlight background for empty slots -->
-                            <Ellipse Width="40" 
-                                     Height="40" 
-                                     Fill="#20FFFFFF">
-                                <Ellipse.Style>
-                                    <Style TargetType="Ellipse">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <MultiDataTrigger>
-                                                <MultiDataTrigger.Conditions>
-                                                    <Condition Binding="{Binding IsEmpty}" Value="True"/>
-                                                    <Condition Binding="{Binding IsHovered}" Value="True"/>
-                                                </MultiDataTrigger.Conditions>
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </MultiDataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Ellipse.Style>
-                            </Ellipse>
-                            
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <!-- Show ➕ for empty slots when hovered -->
                                 <TextBlock Text="➕" 
                                            Foreground="#80FFFFFF" 
                                            FontSize="20" 
@@ -160,13 +207,9 @@
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition Binding="{Binding IsEmpty}" Value="True"/>
-                                                        <Condition Binding="{Binding IsHovered}" Value="True"/>
-                                                    </MultiDataTrigger.Conditions>
+                                                <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
                                                     <Setter Property="Visibility" Value="Visible"/>
-                                                </MultiDataTrigger>
+                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>
@@ -226,28 +269,7 @@
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                         </Border.RenderTransform>
                         <Grid>
-                            <!-- Hover highlight background for empty slots -->
-                            <Ellipse Width="50" 
-                                     Height="50" 
-                                     Fill="#20FFFFFF">
-                                <Ellipse.Style>
-                                    <Style TargetType="Ellipse">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <MultiDataTrigger>
-                                                <MultiDataTrigger.Conditions>
-                                                    <Condition Binding="{Binding IsEmpty}" Value="True"/>
-                                                    <Condition Binding="{Binding IsHovered}" Value="True"/>
-                                                </MultiDataTrigger.Conditions>
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </MultiDataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Ellipse.Style>
-                            </Ellipse>
-                            
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <!-- Show ➕ for empty slots when hovered -->
                                 <TextBlock Text="➕" 
                                            Foreground="#80FFFFFF" 
                                            FontSize="24" 
@@ -257,13 +279,9 @@
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition Binding="{Binding IsEmpty}" Value="True"/>
-                                                        <Condition Binding="{Binding IsHovered}" Value="True"/>
-                                                    </MultiDataTrigger.Conditions>
+                                                <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
                                                     <Setter Property="Visibility" Value="Visible"/>
-                                                </MultiDataTrigger>
+                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>
@@ -317,6 +335,22 @@
                      Fill="#BB101010"
                      Stroke="#33FFFFFF"
                      StrokeThickness="1"/>
+            <ItemsControl ItemsSource="{Binding ChildItems}"
+                          IsHitTestVisible="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <Canvas/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Path Data="{Binding SectorGeometry}"
+                              Fill="{Binding SectorBrush}"
+                              Opacity="{Binding SectorOpacity}"
+                              Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
             <ItemsControl ItemsSource="{Binding ChildSeparators}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -375,28 +409,7 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <!-- Hover highlight background for empty slots -->
-                                <Ellipse Width="45" 
-                                         Height="45" 
-                                         Fill="#20FFFFFF">
-                                    <Ellipse.Style>
-                                        <Style TargetType="Ellipse">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition Binding="{Binding IsEmpty}" Value="True"/>
-                                                        <Condition Binding="{Binding IsHovered}" Value="True"/>
-                                                    </MultiDataTrigger.Conditions>
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </MultiDataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Ellipse.Style>
-                                </Ellipse>
-                                
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <!-- Show ➕ for empty slots when hovered -->
                                     <TextBlock Text="➕" 
                                                Foreground="#80FFFFFF" 
                                                FontSize="22" 
@@ -406,13 +419,9 @@
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Visibility" Value="Collapsed"/>
                                                 <Style.Triggers>
-                                                    <MultiDataTrigger>
-                                                        <MultiDataTrigger.Conditions>
-                                                            <Condition Binding="{Binding IsEmpty}" Value="True"/>
-                                                            <Condition Binding="{Binding IsHovered}" Value="True"/>
-                                                        </MultiDataTrigger.Conditions>
+                                                    <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
                                                         <Setter Property="Visibility" Value="Visible"/>
-                                                    </MultiDataTrigger>
+                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>
@@ -467,6 +476,22 @@
                      Fill="#B3101010"
                      Stroke="#33FFFFFF"
                      StrokeThickness="1"/>
+            <ItemsControl ItemsSource="{Binding GrandChildItems}"
+                          IsHitTestVisible="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <Canvas/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Path Data="{Binding SectorGeometry}"
+                              Fill="{Binding SectorBrush}"
+                              Opacity="{Binding SectorOpacity}"
+                              Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
             <ItemsControl ItemsSource="{Binding GrandChildSeparators}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -525,28 +550,7 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <!-- Hover highlight background for empty slots -->
-                                <Ellipse Width="40" 
-                                         Height="40" 
-                                         Fill="#20FFFFFF">
-                                    <Ellipse.Style>
-                                        <Style TargetType="Ellipse">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <MultiDataTrigger>
-                                                    <MultiDataTrigger.Conditions>
-                                                        <Condition Binding="{Binding IsEmpty}" Value="True"/>
-                                                        <Condition Binding="{Binding IsHovered}" Value="True"/>
-                                                    </MultiDataTrigger.Conditions>
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </MultiDataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Ellipse.Style>
-                                </Ellipse>
-                                
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <!-- Show ➕ for empty slots when hovered -->
                                     <TextBlock Text="➕" 
                                                Foreground="#80FFFFFF" 
                                                FontSize="20" 
@@ -556,13 +560,9 @@
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Visibility" Value="Collapsed"/>
                                                 <Style.Triggers>
-                                                    <MultiDataTrigger>
-                                                        <MultiDataTrigger.Conditions>
-                                                            <Condition Binding="{Binding IsEmpty}" Value="True"/>
-                                                            <Condition Binding="{Binding IsHovered}" Value="True"/>
-                                                        </MultiDataTrigger.Conditions>
+                                                    <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
                                                         <Setter Property="Visibility" Value="Visible"/>
-                                                    </MultiDataTrigger>
+                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>

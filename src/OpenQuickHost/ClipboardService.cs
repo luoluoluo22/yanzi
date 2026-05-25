@@ -70,6 +70,20 @@ public static class ClipboardService
     private static bool RunStaClipboardAction(Action action, out string? error)
     {
         error = null;
+        if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
+        {
+            try
+            {
+                ExecuteWithRetry(action);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
         Exception? threadError = null;
         using var done = new ManualResetEventSlim(false);
 

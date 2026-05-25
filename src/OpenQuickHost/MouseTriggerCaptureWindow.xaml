@@ -1,0 +1,45 @@
+<Window x:Class="OpenQuickHost.MouseTriggerCaptureWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="录制鼠标触发"
+        Width="460"
+        Height="320"
+        WindowStartupLocation="CenterOwner"
+        Background="#FF111113"
+        Foreground="White"
+        KeyDown="Window_KeyDown"
+        MouseDown="Window_MouseDown"
+        MouseUp="Window_MouseUp"
+        MouseMove="Window_MouseMove"
+        MouseWheel="Window_MouseWheel">
+    <Border Margin="18" Padding="18" CornerRadius="12" Background="#FF1E1E1E" BorderBrush="#FF2A2A2A" BorderThickness="1">
+        <StackPanel>
+            <TextBlock Text="录制鼠标触发方式" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock Text="在这个窗口内完成一次鼠标动作。支持中键/侧键按下、右键拖动、右键/中键长按、Ctrl+左/右/中键和横向滚轮。按 Esc 退出。"
+                       Margin="0,10,0,0"
+                       Foreground="#FF8E8E8E"
+                       TextWrapping="Wrap"/>
+            <Border Height="92" Margin="0,18,0,0" CornerRadius="10" Background="#FF101014" BorderBrush="#FF2A2A2A" BorderThickness="1">
+                <Grid>
+                    <TextBlock x:Name="StatusText"
+                               Text="等待鼠标动作..."
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="16"
+                               Foreground="#FFE5E5E5"/>
+                </Grid>
+            </Border>
+            <TextBlock Text="录制到的触发方式会分配给："
+                       Foreground="#FFB8B8B8"
+                       Margin="0,16,0,6"/>
+            <ComboBox x:Name="TargetComboBox" Height="34" SelectedIndex="0">
+                <ComboBoxItem Tag="Panel" Content="面板"/>
+                <ComboBoxItem Tag="Radial" Content="燕环"/>
+                <ComboBoxItem Tag="Yanm" Content="燕幕"/>
+            </ComboBox>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                <Button Content="取消" Width="82" Height="32" Click="CancelButton_Click"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

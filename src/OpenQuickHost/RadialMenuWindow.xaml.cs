@@ -39,9 +39,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private IntPtr _previousForegroundWindow;
     private bool _editModeLocked;
     private bool _editInteractionActive;
+    private bool _isPinned;
+    private bool _isPinHoverActive;
     private string _centerPrimaryText = "燕环";
     private RadialSlotPayload? _cutSlotPayload;
     private RadialMenuItemViewModel? _dragSourceItem;
+    private int _lastRadiusPixels = 96;
 
     public RadialMenuWindow(MainWindow mainWindow)
     {
@@ -64,6 +67,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         MouseWheel += RadialMenuWindow_MouseWheel;
         MouseLeftButtonDown += RadialMenuWindow_MouseLeftButtonDown;
         MouseRightButtonDown += RadialMenuWindow_MouseRightButtonDown;
+        Loaded += (_, _) => RebuildItemsForCurrentLayout("loaded");
+        SizeChanged += (_, _) =>
+        {
+            if (IsVisible)
+            {
+                RebuildItemsForCurrentLayout("size-changed");
+            }
+        };
     }
 
     public ObservableCollection<RadialMenuItemViewModel> Items { get; } = [];
@@ -211,27 +222,48 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public System.Windows.Media.Brush PinButtonBrush => _isPinned
+        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFF59E0B")!
+        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+
+    public string PinButtonTooltip => _isPinned ? "已常驻，失去焦点和执行命令时不自动关闭" : "点击后常驻，失去焦点和执行命令时不自动关闭";
+
+    public bool IsPinHoverActive
+    {
+        get => _isPinHoverActive;
+        private set
+        {
+            if (value == _isPinHoverActive)
+            {
+                return;
+            }
+
+            _isPinHoverActive = value;
+            OnPropertyChanged();
+        }
+    }
+
     public void ShowAtMouse()
     {
         _isExecuting = false;
         _editModeLocked = false;
         _editInteractionActive = false;
+        _selectionTimer.Stop();
         var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
+        _lastRadiusPixels = settings.RadiusPixels;
         _pages = _mainWindow.GetRadialMenuPages().ToList();
         _previousForegroundWindow = RadialMenuNativeMethods.GetForegroundWindow();
         _currentPageId = string.IsNullOrWhiteSpace(settings.SelectedPageId)
             ? _pages.FirstOrDefault()?.Id ?? string.Empty
             : settings.SelectedPageId;
         _pageStack.Clear();
-        BuildItems(settings.RadiusPixels);
-
         _centerPixels = Forms.Cursor.Position;
-        var source = PresentationSource.FromVisual(_mainWindow);
-        var centerDips = source?.CompositionTarget?.TransformFromDevice.Transform(
-            new System.Windows.Point(_centerPixels.X, _centerPixels.Y)) ?? new System.Windows.Point(_centerPixels.X, _centerPixels.Y);
 
-        Left = centerDips.X - Width / 2;
-        Top = centerDips.Y - Height / 2;
+        // First process launch can show before WPF finishes measuring this transparent
+        // window. Keep it hidden until the HWND/DPI transform and ActualWidth are stable.
+        Opacity = 0;
+        BuildItems(_lastRadiusPixels);
+        PositionAroundCursor();
         UpdateCenterText();
         ActiveTitle = "取消";
         if (!IsVisible)
@@ -239,9 +271,53 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             Show();
         }
 
-        Activate();
-        _selectionTimer.Start();
+        UpdateLayout();
+        PositionAroundCursor();
+        BuildItems(_lastRadiusPixels);
+        _ = Dispatcher.InvokeAsync(() =>
+        {
+            PositionAroundCursor();
+            BuildItems(_lastRadiusPixels);
+            Opacity = 1;
+            Activate();
+            _selectionTimer.Start();
+            UpdateSelectionFromCursor();
+        }, DispatcherPriority.Render);
         HostAssets.AppendLog($"Radial menu shown: page={_currentPageId}, items={Items.Count}, center=({_centerPixels.X},{_centerPixels.Y}).");
+    }
+
+    private void RebuildItemsForCurrentLayout(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(_currentPageId))
+        {
+            return;
+        }
+
+        BuildItems(_lastRadiusPixels);
+        HostAssets.AppendLog($"Radial menu layout rebuilt: reason={reason}, size=({ActualWidth:0.##},{ActualHeight:0.##}), page={_currentPageId}.");
+    }
+
+    private void PositionAroundCursor()
+    {
+        var source = PresentationSource.FromVisual(this) ?? PresentationSource.FromVisual(_mainWindow);
+        var centerDips = source?.CompositionTarget?.TransformFromDevice.Transform(
+            new System.Windows.Point(_centerPixels.X, _centerPixels.Y)) ?? new System.Windows.Point(_centerPixels.X, _centerPixels.Y);
+        var size = GetMenuSize();
+        Left = centerDips.X - size.Width / 2;
+        Top = centerDips.Y - size.Height / 2;
+    }
+
+    private System.Windows.Size GetMenuSize()
+    {
+        var width = ActualWidth > 1 ? ActualWidth : Width;
+        var height = ActualHeight > 1 ? ActualHeight : Height;
+        return new System.Windows.Size(width, height);
+    }
+
+    private System.Windows.Point GetMenuCenter()
+    {
+        var size = GetMenuSize();
+        return new System.Windows.Point(size.Width / 2, size.Height / 2);
     }
 
     public void ExecuteSelectedFromHoldRelease()
@@ -261,6 +337,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         _selectionTimer.Stop();
+        if (IsPinHoverActive)
+        {
+            TogglePinnedState();
+            _selectionTimer.Start();
+            UpdateSelectionFromCursor();
+            return;
+        }
+
         var selected = _selectedItem;
         var selectedChild = _selectedChildItem;
         var selectedGrandChild = _selectedGrandChildItem;
@@ -272,7 +356,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        Hide();
+        HideIfAllowed();
         if (selectedGrandChild?.Command != null)
         {
             _isExecuting = true;
@@ -314,20 +398,41 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private async Task ExecuteCommandAfterForegroundRestoreAsync(CommandItem command, string launchSource)
     {
-        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-
-        if (_previousForegroundWindow != IntPtr.Zero)
+        try
         {
-            var restored = RadialMenuNativeMethods.SetForegroundWindow(_previousForegroundWindow);
-            HostAssets.AppendLog($"Radial menu restore foreground: restored={restored}, {DescribeWindow(_previousForegroundWindow)}.");
-        }
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
 
-        await Task.Delay(120);
-        var currentForeground = RadialMenuNativeMethods.GetForegroundWindow();
-        HostAssets.AppendLog($"Radial menu execute ready: foreground={DescribeWindow(currentForeground)}, source={launchSource}, command={command.Title}.");
-        var input = await SelectionCaptureService.CaptureSelectedInputAsync();
-        HostAssets.AppendLog($"Radial menu execute captured input length={input.Length}.");
-        _mainWindow.ExecuteCommandExternally(command, input, launchSource);
+            if (_previousForegroundWindow != IntPtr.Zero)
+            {
+                var restored = RadialMenuNativeMethods.SetForegroundWindow(_previousForegroundWindow);
+                HostAssets.AppendLog($"Radial menu restore foreground: restored={restored}, {DescribeWindow(_previousForegroundWindow)}.");
+            }
+
+            var currentForeground = RadialMenuNativeMethods.GetForegroundWindow();
+            HostAssets.AppendLog($"Radial menu execute ready: foreground={DescribeWindow(currentForeground)}, source={launchSource}, command={command.Title}.");
+            var input = string.Empty;
+            if (command.ShouldCaptureSelectedInput)
+            {
+                await Task.Delay(120);
+                input = await SelectionCaptureService.CaptureSelectedInputAsync();
+                HostAssets.AppendLog($"Radial menu execute captured input length={input.Length}.");
+            }
+            else
+            {
+                HostAssets.AppendLog("Radial menu execute: selection capture skipped for command without context input.");
+            }
+
+            _mainWindow.ExecuteCommandExternally(command, input, launchSource);
+        }
+        finally
+        {
+            _isExecuting = false;
+            if (_isPinned && IsVisible)
+            {
+                _selectionTimer.Start();
+                UpdateSelectionFromCursor();
+            }
+        }
     }
 
     private static string DescribeWindow(IntPtr hwnd)
@@ -352,7 +457,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         _selectionTimer.Stop();
-        Hide();
+        HideIfAllowed();
     }
 
     private void BuildItems(int radius)
@@ -366,23 +471,35 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         ClearGrandChildSelection();
         HasChildRing = false;
         HasGrandChildRing = false;
+        IsPinHoverActive = false;
         SetSelectedItem(null);
         var items = _mainWindow.GetRadialMenuItems(_currentPageId);
         var page = _pages.FirstOrDefault(item => item.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
         PageTitle = page?.Name ?? "燕环";
         UpdateCenterText();
-        var center = new System.Windows.Point(Width / 2, Height / 2);
-        BuildSeparators(MainSeparators, center.X, center.Y, 34, 135, RadialMenuSettings.InnerSlotCount);
-        BuildSeparators(OuterSeparators, center.X, center.Y, 135, 215, RadialMenuSettings.OuterSlotCount);
+        var center = GetMenuCenter();
+        BuildSeparators(MainSeparators, center.X, center.Y, 30, 122, RadialMenuSettings.InnerSlotCount);
+        BuildSeparators(OuterSeparators, center.X, center.Y, 122, 196, RadialMenuSettings.OuterSlotCount);
         for (var index = 0; index < RadialMenuSettings.InnerSlotCount; index++)
         {
-            var angle = (-90 + index * 45) * Math.PI / 180.0;
-            var x = center.X + Math.Cos(angle) * effectiveRadius - 38;
-            var y = center.Y + Math.Sin(angle) * effectiveRadius - 30;
+            var angleDegrees = -90 + index * 45.0;
+            var angle = angleDegrees * Math.PI / 180.0;
+            var x = center.X + Math.Cos(angle) * Math.Clamp(effectiveRadius - 6, 74, 88) - 38;
+            var y = center.Y + Math.Sin(angle) * Math.Clamp(effectiveRadius - 6, 74, 88) - 30;
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
-            Items.Add(new RadialMenuItemViewModel(_currentPageId, index, command, childPageId, ResolvePageName(childPageId), x, y, angle * 180.0 / Math.PI, RadialMenuRing.Inner));
+            Items.Add(new RadialMenuItemViewModel(
+                _currentPageId,
+                index,
+                command,
+                childPageId,
+                ResolvePageName(childPageId),
+                x,
+                y,
+                angleDegrees,
+                RadialMenuRing.Inner,
+                CreateSectorGeometry(center.X, center.Y, 29, 122, angleDegrees - 22.5, angleDegrees + 22.5)));
         }
 
         for (var offset = 0; offset < RadialMenuSettings.OuterSlotCount; offset++)
@@ -390,18 +507,33 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var index = RadialMenuSettings.InnerSlotCount + offset;
             var angleDegrees = -90 + offset * 22.5;
             var angle = angleDegrees * Math.PI / 180.0;
-            var x = center.X + Math.Cos(angle) * 178 - 31;
-            var y = center.Y + Math.Sin(angle) * 178 - 25;
+            var x = center.X + Math.Cos(angle) * 162 - 31;
+            var y = center.Y + Math.Sin(angle) * 162 - 25;
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
-            OuterItems.Add(new RadialMenuItemViewModel(_currentPageId, index, command, childPageId, ResolvePageName(childPageId), x, y, angleDegrees, RadialMenuRing.Outer));
+            OuterItems.Add(new RadialMenuItemViewModel(
+                _currentPageId,
+                index,
+                command,
+                childPageId,
+                ResolvePageName(childPageId),
+                x,
+                y,
+                angleDegrees,
+                RadialMenuRing.Outer,
+                CreateSectorGeometry(center.X, center.Y, 122, 196, angleDegrees - 11.25, angleDegrees + 11.25)));
         }
     }
 
     private void UpdateSelectionFromCursor()
     {
         var cursorPoint = GetCursorWindowPoint();
+        if (UpdatePinHoverState(cursorPoint))
+        {
+            return;
+        }
+
         if (HasGrandChildRing && TryUpdateGrandChildSelection(cursorPoint))
         {
             return;
@@ -412,7 +544,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var center = new System.Windows.Point(Width / 2, Height / 2);
+        var center = GetMenuCenter();
         var dx = cursorPoint.X - center.X;
         var dy = cursorPoint.Y - center.Y;
         var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
@@ -628,7 +760,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         var items = _mainWindow.GetRadialMenuItems(parent.ChildPageId);
         var angle = parent.AngleDegrees * Math.PI / 180.0;
-        var center = new System.Windows.Point(Width / 2, Height / 2);
+        var center = GetMenuCenter();
         _childRingCenterX = center.X + Math.Cos(angle) * 250;
         _childRingCenterY = center.Y + Math.Sin(angle) * 250;
         ClampRingCenter(ref _childRingCenterX, ref _childRingCenterY, 134);
@@ -645,13 +777,24 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         const double radius = 78;
         for (var index = 0; index < 8; index++)
         {
-            var childAngle = (-90 + index * 45) * Math.PI / 180.0;
+            var childAngleDegrees = -90 + index * 45.0;
+            var childAngle = childAngleDegrees * Math.PI / 180.0;
             var x = _childRingCenterX + Math.Cos(childAngle) * radius - 34;
             var y = _childRingCenterY + Math.Sin(childAngle) * radius - 27;
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
-            ChildItems.Add(new RadialMenuItemViewModel(parent.ChildPageId, index, command, childPageId, ResolvePageName(childPageId), x, y, childAngle * 180.0 / Math.PI, RadialMenuRing.Child));
+            ChildItems.Add(new RadialMenuItemViewModel(
+                parent.ChildPageId,
+                index,
+                command,
+                childPageId,
+                ResolvePageName(childPageId),
+                x,
+                y,
+                childAngleDegrees,
+                RadialMenuRing.Child,
+                CreateSectorGeometry(_childRingCenterX, _childRingCenterY, 32, 120, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
         }
 
         HasChildRing = true;
@@ -683,13 +826,24 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         const double radius = 64;
         for (var index = 0; index < 8; index++)
         {
-            var childAngle = (-90 + index * 45) * Math.PI / 180.0;
+            var childAngleDegrees = -90 + index * 45.0;
+            var childAngle = childAngleDegrees * Math.PI / 180.0;
             var x = _grandChildRingCenterX + Math.Cos(childAngle) * radius - 31;
             var y = _grandChildRingCenterY + Math.Sin(childAngle) * radius - 25;
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
-            GrandChildItems.Add(new RadialMenuItemViewModel(parent.ChildPageId, index, command, childPageId, ResolvePageName(childPageId), x, y, childAngle * 180.0 / Math.PI, RadialMenuRing.GrandChild));
+            GrandChildItems.Add(new RadialMenuItemViewModel(
+                parent.ChildPageId,
+                index,
+                command,
+                childPageId,
+                ResolvePageName(childPageId),
+                x,
+                y,
+                childAngleDegrees,
+                RadialMenuRing.GrandChild,
+                CreateSectorGeometry(_grandChildRingCenterX, _grandChildRingCenterY, 27, 98, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
         }
 
         HasGrandChildRing = true;
@@ -777,10 +931,43 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private static Geometry CreateSectorGeometry(double centerX, double centerY, double innerRadius, double outerRadius, double startAngleDegrees, double endAngleDegrees)
+    {
+        static System.Windows.Point PointOnCircle(double cx, double cy, double radius, double angleDegrees)
+        {
+            var radians = angleDegrees * Math.PI / 180.0;
+            return new System.Windows.Point(
+                cx + Math.Cos(radians) * radius,
+                cy + Math.Sin(radians) * radius);
+        }
+
+        var outerStart = PointOnCircle(centerX, centerY, outerRadius, startAngleDegrees);
+        var outerEnd = PointOnCircle(centerX, centerY, outerRadius, endAngleDegrees);
+        var innerEnd = PointOnCircle(centerX, centerY, innerRadius, endAngleDegrees);
+        var innerStart = PointOnCircle(centerX, centerY, innerRadius, startAngleDegrees);
+        var isLargeArc = Math.Abs(endAngleDegrees - startAngleDegrees) > 180.0;
+
+        var figure = new PathFigure
+        {
+            StartPoint = outerStart,
+            IsClosed = true,
+            IsFilled = true
+        };
+        figure.Segments.Add(new ArcSegment(outerEnd, new System.Windows.Size(outerRadius, outerRadius), 0, isLargeArc, SweepDirection.Clockwise, true));
+        figure.Segments.Add(new LineSegment(innerEnd, true));
+        figure.Segments.Add(new ArcSegment(innerStart, new System.Windows.Size(innerRadius, innerRadius), 0, isLargeArc, SweepDirection.Counterclockwise, true));
+
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+        geometry.Freeze();
+        return geometry;
+    }
+
     private void ClampRingCenter(ref double x, ref double y, double radius)
     {
-        x = Math.Clamp(x, radius + 8, Width - radius - 8);
-        y = Math.Clamp(y, radius + 8, Height - radius - 8);
+        var size = GetMenuSize();
+        x = Math.Clamp(x, radius + 8, size.Width - radius - 8);
+        y = Math.Clamp(y, radius + 8, size.Height - radius - 8);
     }
 
     private void RadialMenuWindow_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -795,6 +982,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         ReturnToParentPage();
+    }
+
+    private void PinButton_Click(object sender, RoutedEventArgs e)
+    {
+        TogglePinnedState();
+        e.Handled = true;
     }
 
     private void RadialMenuWindow_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -845,7 +1038,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         if (item.Command != null)
         {
             _selectionTimer.Stop();
-            Hide();
+            HideIfAllowed();
             _isExecuting = true;
             HostAssets.AppendLog($"Radial menu clicked execute: index={item.Index}, command={item.Command.Title}, ring={item.Ring}.");
             _ = ExecuteCommandAfterForegroundRestoreAsync(item.Command, "radial-menu-click");
@@ -969,7 +1162,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private bool IsPointInCenter(System.Windows.Point point)
     {
-        var center = new System.Windows.Point(Width / 2, Height / 2);
+        var center = GetMenuCenter();
         var dx = point.X - center.X;
         var dy = point.Y - center.Y;
         return Math.Sqrt(dx * dx + dy * dy) <= 40;
@@ -1536,14 +1729,76 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+
+    private void TogglePinnedState()
+    {
+        _isPinned = !_isPinned;
+        OnPropertyChanged(nameof(PinButtonBrush));
+        OnPropertyChanged(nameof(PinButtonTooltip));
+        HostAssets.AppendLog($"Radial menu pin toggled: pinned={_isPinned}.");
+    }
+
+    private bool UpdatePinHoverState(System.Windows.Point cursorPoint)
+    {
+        var hovered = IsPointInPinButton(cursorPoint);
+        IsPinHoverActive = hovered;
+        if (!hovered)
+        {
+            return false;
+        }
+
+        SetSelectedItem(null);
+        ClearChildRing();
+        ActiveTitle = _isPinned ? "松开取消钉住" : "松开钉住";
+        return true;
+    }
+
+    private bool IsPointInPinButton(System.Windows.Point point)
+    {
+        if (!PinButton.IsLoaded)
+        {
+            return false;
+        }
+
+        var topLeft = PinButton.TranslatePoint(new System.Windows.Point(0, 0), this);
+        var bounds = new Rect(topLeft.X, topLeft.Y, PinButton.ActualWidth, PinButton.ActualHeight);
+        return bounds.Contains(point);
+    }
+
+    private void HideIfAllowed()
+    {
+        if (_isPinned)
+        {
+            HostAssets.AppendLog("Radial menu hide skipped because wheel is pinned.");
+            return;
+        }
+
+        Hide();
+    }
 }
 
 public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 {
     private bool _isSelected;
     private bool _isHovered;
+    private static readonly System.Windows.Media.Brush ChildPageAccentBrush =
+        (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF3B82F6")!;
+    private static readonly System.Windows.Media.Brush EmptySlotSectorBrush =
+        (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF64748B")!;
+    private static readonly System.Windows.Media.Brush FilledSlotFallbackSectorBrush =
+        (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF334155")!;
 
-    public RadialMenuItemViewModel(string ownerPageId, int index, CommandItem? command, string childPageId, string childPageTitle, double x, double y, double angleDegrees, RadialMenuRing ring)
+    public RadialMenuItemViewModel(
+        string ownerPageId,
+        int index,
+        CommandItem? command,
+        string childPageId,
+        string childPageTitle,
+        double x,
+        double y,
+        double angleDegrees,
+        RadialMenuRing ring,
+        Geometry? sectorGeometry = null)
     {
         OwnerPageId = ownerPageId;
         Index = index;
@@ -1554,6 +1809,7 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
         Y = y;
         AngleDegrees = angleDegrees;
         Ring = ring;
+        SectorGeometry = sectorGeometry;
     }
 
     public string OwnerPageId { get; }
@@ -1576,6 +1832,8 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 
     public double Y { get; }
 
+    public Geometry? SectorGeometry { get; }
+
     public string Title => !string.IsNullOrWhiteSpace(ChildPageId) ? ChildPageTitle : Command?.Title ?? string.Empty;
 
     public ImageSource? IconSource => Command?.IconSource;
@@ -1590,13 +1848,25 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 
     public string DisplayGlyph => !string.IsNullOrWhiteSpace(ChildPageId) ? "›" : Command?.DisplayGlyph ?? "+";
 
-    public System.Windows.Media.Brush AccentBrush => Command?.AccentBrush ?? System.Windows.Media.Brushes.Transparent;
+    public System.Windows.Media.Brush AccentBrush => Command?.AccentBrush ?? (HasChildPage ? ChildPageAccentBrush : System.Windows.Media.Brushes.Transparent);
+
+    public System.Windows.Media.Brush SectorBrush => IsEmpty
+        ? EmptySlotSectorBrush
+        : IsTransparentBrush(AccentBrush)
+            ? FilledSlotFallbackSectorBrush
+            : AccentBrush;
+
+    public double SectorOpacity => IsSelected ? 0.58 : IsHovered ? 0.44 : IsEmpty ? 0.0 : 0.32;
+
+    public bool IsSectorVisible => SectorGeometry != null && (!IsEmpty || IsHovered || IsSelected);
 
     public double Scale => IsSelected ? 1.12 : 1.0;
 
     public bool IsEmpty => Command == null && string.IsNullOrWhiteSpace(ChildPageId);
 
     public bool IsNotEmpty => !IsEmpty;
+
+    public bool ShouldShowEmptyPlaceholder => IsEmpty && (IsHovered || IsSelected);
 
     public bool IsHovered
     {
@@ -1610,6 +1880,9 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 
             _isHovered = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(ShouldShowEmptyPlaceholder));
+            OnPropertyChanged(nameof(SectorOpacity));
+            OnPropertyChanged(nameof(IsSectorVisible));
         }
     }
 
@@ -1626,10 +1899,18 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
             _isSelected = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(Scale));
+            OnPropertyChanged(nameof(ShouldShowEmptyPlaceholder));
+            OnPropertyChanged(nameof(SectorOpacity));
+            OnPropertyChanged(nameof(IsSectorVisible));
         }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private static bool IsTransparentBrush(System.Windows.Media.Brush brush)
+    {
+        return brush is SolidColorBrush solidColorBrush && solidColorBrush.Color.A == 0;
+    }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {

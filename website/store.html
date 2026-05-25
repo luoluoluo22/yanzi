@@ -248,7 +248,7 @@
           </div>
           <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1.5rem;">
             <p id="store-status" style="margin: 0; font-size: 0.9rem; color: var(--text-dim);">正在加载...</p>
-            <p id="local-client-status" style="margin: 0; font-size: 0.9rem; color: var(--accent);">检测客户端中...</p>
+            <p id="local-client-status" style="margin: 0; font-size: 0.9rem; color: var(--accent);">本机安装状态后台检测中...</p>
           </div>
         </div>
       </section>
@@ -263,7 +263,7 @@
 
     <script>
       const SITE_BASE = location.protocol === "file:" ? "https://yanzi.luoluoluo.cc.cd" : location.origin;
-      const STORE_API_BASE = "https://openquickhost-sync.a1137583371.workers.dev";
+      const STORE_API_BASE = "https://sync.luoluoluo.cc.cd";
       const LOCAL_AGENT_BASE = "http://127.0.0.1:53919";
       const storeGrid = document.getElementById("store-grid");
       const storeDetail = document.getElementById("store-detail");
@@ -280,8 +280,12 @@
       let searchDebounce = null;
 
       let localClientOnline = false;
+      let localStatusLoaded = false;
       let localStatusMap = new Map();
       let selectedId = new URLSearchParams(location.search).get("id");
+      let currentDetailItem = null;
+      let mdiIconPaths = {};
+      const mdiIconPathPromise = loadMdiIconPaths();
 
       function getPackageUrl(item) {
         return item.archive_download_url || `${SITE_BASE}${item.package_path || ""}`;
@@ -297,6 +301,12 @@
         currentPage = Number.parseInt(params.get("page") || "1", 10) || 1;
         const id = params.get("id");
         await loadStorePage(currentPage);
+        mdiIconPathPromise.then(() => {
+          renderGrid(storeItems);
+          if (currentDetailItem) {
+            renderDetail(currentDetailItem);
+          }
+        }).catch(() => {});
         if (id) {
           await openDetailById(id);
         }
@@ -391,6 +401,7 @@
       function goBack() {
         document.body.classList.remove("view-mode-detail");
         storeDetail.innerHTML = "";
+        currentDetailItem = null;
         history.pushState(null, "", buildListUrl());
       }
 
@@ -407,7 +418,7 @@
       });
 
       function buildInstallAssist(item) {
-        if (localClientOnline) {
+        if (!localStatusLoaded || localClientOnline) {
           return "";
         }
 
@@ -423,6 +434,7 @@
       async function refreshLocalStatus(ids) {
         localStatusMap = new Map();
         localClientOnline = false;
+        localStatusLoaded = false;
         updateLocalClientStatus();
 
         try {
@@ -430,19 +442,39 @@
           url.searchParams.set("ids", ids.join(","));
           const response = await fetch(url);
           if (!response.ok) {
+            localStatusLoaded = true;
             updateLocalClientStatus();
             return;
           }
 
           const payload = await response.json();
           localClientOnline = true;
+          localStatusLoaded = true;
           updateLocalClientStatus();
           for (const item of payload.items || []) {
             localStatusMap.set(item.extensionId, item);
           }
         } catch {
+          localStatusLoaded = true;
           updateLocalClientStatus();
         }
+      }
+
+      function refreshLocalStatusInBackground(ids, mode) {
+        if (!Array.isArray(ids) || !ids.length) {
+          localStatusLoaded = true;
+          updateLocalClientStatus();
+          return;
+        }
+
+        refreshLocalStatus(ids).then(() => {
+          if (mode === "detail" && currentDetailItem) {
+            renderDetail(currentDetailItem);
+            return;
+          }
+
+          renderGrid(storeItems);
+        }).catch(() => {});
       }
 
       async function fetchStoreItems() {
@@ -485,16 +517,17 @@
       async function loadStorePage(page) {
         currentPage = Math.max(1, page || 1);
         storeItems = await fetchStoreItems();
-        await refreshLocalStatus(storeItems.map((item) => item.extension_id));
         renderGrid(storeItems);
+        refreshLocalStatusInBackground(storeItems.map((item) => item.extension_id), "grid");
       }
 
       async function openDetailById(id, pushState = false) {
         try {
           const item = await fetchStoreDetail(id);
-          await refreshLocalStatus([item.extension_id]);
           selectedId = item.extension_id;
+          currentDetailItem = item;
           renderDetail(item);
+          refreshLocalStatusInBackground([item.extension_id], "detail");
           if (pushState) {
             history.pushState({ id: item.extension_id }, "", `/store.html?id=${encodeURIComponent(item.extension_id)}`);
           }
@@ -541,9 +574,14 @@
       }
 
       function updateLocalClientStatus() {
+        if (!localStatusLoaded) {
+          localClientStatus.textContent = "本机安装状态后台检测中，不影响浏览。";
+          return;
+        }
+
         localClientStatus.textContent = localClientOnline
           ? "燕子运行中，可直接安装。"
-          : "未检测到正在运行的燕子客户端。";
+          : "未检测到燕子客户端，仅影响安装状态显示。";
       }
 
       function getLocalStatusLabel(item) {
@@ -593,8 +631,43 @@
           return `<img src="${escapeHtml(icon)}" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy" referrerpolicy="no-referrer">`;
         }
 
+        const mdiName = normalizeMdiIconName(icon);
+        const mdiPath = mdiName ? mdiIconPaths[mdiName] : "";
+        if (mdiPath) {
+          return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${escapeHtml(mdiPath)}" fill="currentColor"></path></svg>`;
+        }
+
         const firstChar = (item.display_name || item.extension_id).charAt(0).toUpperCase();
         return escapeHtml(firstChar);
+      }
+
+      async function loadMdiIconPaths() {
+        try {
+          const response = await fetch("/assets/mdi-icons.json");
+          if (!response.ok) {
+            return;
+          }
+
+          const payload = await response.json();
+          if (payload && typeof payload === "object") {
+            mdiIconPaths = payload;
+          }
+        } catch {
+          mdiIconPaths = {};
+        }
+      }
+
+      function normalizeMdiIconName(icon) {
+        if (!icon) {
+          return "";
+        }
+
+        const value = String(icon).trim().toLowerCase();
+        if (!value.startsWith("mdi:")) {
+          return "";
+        }
+
+        return value.slice(4).trim();
       }
 
       function renderEmptyDetail(title, message) {

@@ -320,18 +320,20 @@ public partial class MainWindow
         {
             XamlTypeMapper = new XamlTypeMapper(Array.Empty<string>())
         };
-        parserContext.XamlTypeMapper.AddMappingProcessingInstruction("oqh", "OpenQuickHost", assemblyName);
+        parserContext.XamlTypeMapper.AddMappingProcessingInstruction("oqh", "Yanzi", assemblyName);
         parserContext.XmlnsDictionary.Add(string.Empty, "http://schemas.microsoft.com/winfx/2006/xaml/presentation");
         parserContext.XmlnsDictionary.Add("x", "http://schemas.microsoft.com/winfx/2006/xaml");
-        parserContext.XmlnsDictionary.Add("oqh", $"clr-namespace:OpenQuickHost;assembly={assemblyName}");
+        parserContext.XmlnsDictionary.Add("oqh", $"clr-namespace:Yanzi;assembly={assemblyName}");
         return parserContext;
     }
 
     private static string NormalizeHostedViewXaml(string xaml)
     {
         var assemblyName = typeof(HostedViewBridge).Assembly.GetName().Name ?? "Yanzi";
-        const string plainNamespace = "xmlns:oqh=\"clr-namespace:OpenQuickHost\"";
-        var qualifiedNamespace = $"xmlns:oqh=\"clr-namespace:OpenQuickHost;assembly={assemblyName}\"";
+        const string plainYanziNamespace = "xmlns:oqh=\"clr-namespace:Yanzi\"";
+        const string plainLegacyNamespace = "xmlns:oqh=\"clr-namespace:OpenQuickHost\"";
+        var qualifiedYanziNamespace = $"xmlns:oqh=\"clr-namespace:Yanzi;assembly={assemblyName}\"";
+        var qualifiedLegacyNamespace = $"xmlns:oqh=\"clr-namespace:OpenQuickHost;assembly={assemblyName}\"";
         var normalized = xaml;
 
         normalized = normalized.Replace(
@@ -353,8 +355,13 @@ public partial class MainWindow
             string.Empty,
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-        return normalized.Contains(plainNamespace, StringComparison.Ordinal)
-            ? normalized.Replace(plainNamespace, qualifiedNamespace, StringComparison.Ordinal)
+        if (normalized.Contains(plainYanziNamespace, StringComparison.Ordinal))
+        {
+            return normalized.Replace(plainYanziNamespace, qualifiedYanziNamespace, StringComparison.Ordinal);
+        }
+
+        return normalized.Contains(plainLegacyNamespace, StringComparison.Ordinal)
+            ? normalized.Replace(plainLegacyNamespace, qualifiedLegacyNamespace, StringComparison.Ordinal)
             : normalized;
     }
 

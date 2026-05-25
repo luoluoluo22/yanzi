@@ -1,0 +1,150 @@
+<Window x:Class="OpenQuickHost.MouseGestureRecorderWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="#D5090909"
+        Topmost="True"
+        WindowStartupLocation="Manual"
+        ShowInTaskbar="False"
+        Cursor="Cross">
+    <Grid>
+        <Canvas x:Name="StrokeCanvas" Background="Transparent" />
+
+        <!-- 顶部提示 -->
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,40,0,0" IsHitTestVisible="False">
+            <TextBlock Text="录制鼠标手势"
+                       FontSize="24" FontWeight="Bold"
+                       Foreground="#FFF0F0F5"
+                       HorizontalAlignment="Center" />
+            <TextBlock Margin="0,8,0,0"
+                       FontSize="13"
+                       Foreground="#FFA1A1AA"
+                       HorizontalAlignment="Center">
+                <Run Text="按住" />
+                <Run x:Name="TriggerLabelRun" Text="鼠标右键" Foreground="#FFFB923C" FontWeight="SemiBold" />
+                <Run Text="在屏幕任意位置拖动，画出方向序列。松开后自动识别。按 Esc 取消。" />
+            </TextBlock>
+        </StackPanel>
+
+        <!-- 中央指示 -->
+        <StackPanel x:Name="CenterHint"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    IsHitTestVisible="False">
+            <Border x:Name="HintRing" Width="100" Height="100"
+                    BorderBrush="#FF3B82F6"
+                    BorderThickness="2"
+                    CornerRadius="50">
+                <TextBlock Text="✦" FontSize="34" Foreground="#FF3B82F6"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <TextBlock x:Name="HintText"
+                       Text="准备就绪 · 按住右键开始"
+                       Margin="0,16,0,0"
+                       FontSize="13"
+                       Foreground="#FFA1A1AA"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <!-- 底部结果面板 -->
+        <Border x:Name="ResultPanel"
+                HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                Margin="0,0,0,40"
+                Padding="22,18"
+                Background="#FF16161B"
+                BorderBrush="#26FFFFFF"
+                BorderThickness="1"
+                CornerRadius="14"
+                MaxWidth="640"
+                Visibility="Collapsed">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="14" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="手势名称"
+                               Foreground="#FF71717A" FontSize="11" FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="GestureNameText" Grid.Column="2"
+                               FontFamily="Consolas" FontSize="14" FontWeight="Bold"
+                               Foreground="#FFF0F0F5"
+                               VerticalAlignment="Center" />
+                </Grid>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="14" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="识别结果"
+                               Foreground="#FF71717A" FontSize="11" FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+                    <ItemsControl x:Name="ArrowList" Grid.Column="2">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="36" Height="36"
+                                        Background="#FF1C1C22"
+                                        BorderBrush="#FF3A3A45"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Margin="0,0,6,0">
+                                    <TextBlock Text="{Binding}"
+                                               FontSize="22" FontWeight="Bold"
+                                               Foreground="#FFFB923C"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="14" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="原始轨迹"
+                               Foreground="#FF71717A" FontSize="11" FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="RawSeqText" Grid.Column="2"
+                               FontFamily="Consolas" FontSize="12"
+                               Foreground="#FFA1A1AA"
+                               VerticalAlignment="Center" />
+                </Grid>
+                <TextBlock x:Name="ConflictText"
+                           Margin="0,12,0,0"
+                           FontSize="12"
+                           TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                    <Button x:Name="RedoButton" Content="重录"
+                            Padding="12,6" Background="Transparent"
+                            BorderBrush="#FF3A3A45" BorderThickness="1"
+                            Foreground="#FFA1A1AA"
+                            Margin="0,0,8,0" Cursor="Hand"
+                            Click="RedoButton_Click" />
+                    <Button x:Name="CancelButton" Content="取消"
+                            Padding="12,6" Background="Transparent"
+                            BorderBrush="#33F87171" BorderThickness="1"
+                            Foreground="#FFF87171"
+                            Margin="0,0,8,0" Cursor="Hand"
+                            Click="CancelButton_Click" />
+                    <Button x:Name="SaveButton" Content="保存手势"
+                            Padding="14,6" Background="#FF3B82F6"
+                            BorderThickness="0"
+                            Foreground="White" FontWeight="SemiBold"
+                            Cursor="Hand"
+                            Click="SaveButton_Click" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

@@ -17,9 +17,10 @@ Two extension shapes are supported:
 2. C# or PowerShell action extension
 3. Hosted view extension
 
-For lightweight action extensions inside a single `manifest.json`, prefer:
+For lightweight action extensions inside a single `manifest.json`, choose the runtime by task:
 
-- `runtime = csharp`
+- use `runtime = csharp` for complex logic, JSON/HTTP/file processing, native WPF windows, P/Invoke, and strongly typed .NET APIs
+- use `runtime = powershell` for Windows automation, registry/service/process/scheduled-task/system-command work, clipboard/file automation, and tasks with existing PowerShell cmdlets
 - `entryMode = inline`
 - `script.source`
 
@@ -88,7 +89,15 @@ Current script runtimes:
 - `csharp`
 - `powershell`
 
-C# is the preferred runtime for new action extensions. PowerShell remains useful for Windows automation.
+Choose the runtime by task. C# is best for complex logic, native windows, P/Invoke, and strongly typed .NET APIs. PowerShell is often simpler and more reliable for Windows automation, registry/service/process/scheduled-task/system-command work, and tasks with existing cmdlets. If the task is essentially a cmd/bat command sequence, wrap it with PowerShell or use an external script entry instead of forcing C#.
+
+Capability strategy:
+
+- Prefer native language/system capabilities for feature implementation: C#/.NET/WPF/Windows APIs for complex app logic; PowerShell/cmdlets for system automation.
+- Treat `YanziActionContext` as a small host concierge API for input, launch metadata, extension directories, state, and local/cloud storage.
+- Do not invent host wrapper methods such as `context.SetTheme()`, `context.GetTheme()`, `context.OpenFilePicker()`, `context.ShowMessage()`, or `context.GetStateAsync<T>()`.
+- For windows, dialogs, file pickers, clipboard, processes, registry, HTTP, system settings, and Win32 calls, write native C# directly unless the manifest/reference docs explicitly name a host API.
+- The compiler injects the runtime namespace for `YanziActionContext`; extension source should not add host runtime usings. The app assembly is `Yanzi`; do not generate legacy product-name pack URIs, assembly references, resource paths, or assumed theme dictionaries.
 
 Inline C# example:
 
@@ -98,9 +107,9 @@ Inline C# example:
   "name": "C# 输入回显",
   "runtime": "csharp",
   "entryMode": "inline",
-  "permissions": ["context.read"],
+  "permissions": [],
   "script": {
-    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText);\\n    }\\n}"
+    "source": "public static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText);\\n    }\\n}"
   }
 }
 ```

@@ -111,7 +111,7 @@ public static class LocalExtensionCatalog
             title: manifest.Name,
             subtitle: manifest.Description ?? $"来自本地扩展目录：{Path.GetDirectoryName(manifestPath)}",
             category: manifest.Category ?? "扩展",
-            accentHex: "#FF38BDF8",
+            accentHex: NormalizeAccentHex(manifest.AccentHex),
             openTarget: manifest.OpenTarget,
             keywords: manifest.Keywords ?? [],
             source: CommandSource.LocalExtension,
@@ -605,7 +605,7 @@ public static class YanziAction
             title: manifest.Name,
             subtitle: manifest.Description ?? $"来自本地扩展目录：{extensionDirectory}",
             category: manifest.Category ?? "扩展",
-            accentHex: "#FF38BDF8",
+            accentHex: NormalizeAccentHex(manifest.AccentHex),
             openTarget: manifest.OpenTarget,
             keywords: manifest.Keywords ?? [],
             source: CommandSource.LocalExtension,
@@ -679,14 +679,23 @@ public static class YanziAction
             Keywords = manifest.Keywords,
             OpenTarget = manifest.OpenTarget,
             Icon = manifest.Icon,
+            AccentHex = manifest.AccentHex,
             HostedView = manifest.HostedView,
+            HostedViewV2 = manifest.HostedViewV2,
+            HostedViewXaml = manifest.HostedViewXaml,
+            QueryPrefixes = manifest.QueryPrefixes,
+            QueryTargetTemplate = manifest.QueryTargetTemplate,
             GlobalShortcut = manifest.GlobalShortcut,
             HotkeyBehavior = manifest.HotkeyBehavior,
             Runtime = manifest.Runtime,
+            UiMode = manifest.UiMode,
             EntryMode = manifest.EntryMode,
             Entry = manifest.Entry,
             Permissions = manifest.Permissions,
-            Script = manifest.Script
+            Script = manifest.Script,
+            Startup = manifest.Startup,
+            SearchProvider = manifest.SearchProvider,
+            MouseGesture = manifest.MouseGesture
         };
 
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(renamed, JsonOptions));
@@ -705,6 +714,50 @@ public static class YanziAction
         var updated = manifest with
         {
             GlobalShortcut = string.IsNullOrWhiteSpace(globalShortcut) ? null : globalShortcut.Trim()
+        };
+
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(updated, JsonOptions));
+        return SaveJsonExtension(JsonSerializer.Serialize(updated, JsonOptions));
+    }
+
+    public static CommandItem SetStartup(string extensionId, string? mode, string? schedule)
+    {
+        var manifestPath = GetManifestPath(extensionId);
+        if (!File.Exists(manifestPath))
+        {
+            throw new FileNotFoundException("没有找到对应扩展的 manifest.json。", manifestPath);
+        }
+
+        var normalizedMode = string.IsNullOrWhiteSpace(mode) ? null : mode.Trim();
+        var normalizedSchedule = string.IsNullOrWhiteSpace(schedule) ? null : schedule.Trim();
+        var manifest = ParseManifest(File.ReadAllText(manifestPath));
+        var updated = manifest with
+        {
+            Startup = normalizedMode == null && normalizedSchedule == null
+                ? null
+                : new LocalExtensionStartupManifest
+                {
+                    Mode = normalizedMode,
+                    Schedule = normalizedSchedule
+                }
+        };
+
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(updated, JsonOptions));
+        return SaveJsonExtension(JsonSerializer.Serialize(updated, JsonOptions));
+    }
+
+    public static CommandItem SetMouseGesture(string extensionId, LocalExtensionMouseGestureManifest? mouseGesture)
+    {
+        var manifestPath = GetManifestPath(extensionId);
+        if (!File.Exists(manifestPath))
+        {
+            throw new FileNotFoundException("没有找到对应扩展的 manifest.json。", manifestPath);
+        }
+
+        var manifest = ParseManifest(File.ReadAllText(manifestPath));
+        var updated = manifest with
+        {
+            MouseGesture = mouseGesture
         };
 
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(updated, JsonOptions));
@@ -848,6 +901,33 @@ public static class YanziAction
             : "S";
     }
 
+    private static string NormalizeAccentHex(string? accentHex)
+    {
+        var value = accentHex?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "#FF38BDF8";
+        }
+
+        if (!value.StartsWith('#'))
+        {
+            value = "#" + value;
+        }
+
+        if (value.Length == 7)
+        {
+            value = "#FF" + value[1..];
+        }
+
+        if (value.Length != 9 ||
+            !value[1..].All(static ch => Uri.IsHexDigit(ch)))
+        {
+            return "#FF38BDF8";
+        }
+
+        return value.ToUpperInvariant();
+    }
+
     private static string GetManifestPath(string extensionId)
     {
         if (string.IsNullOrWhiteSpace(extensionId))
@@ -941,6 +1021,8 @@ public sealed record LocalExtensionManifest
 
     public string? Icon { get; init; }
 
+    public string? AccentHex { get; init; }
+
     public LocalExtensionHostedViewManifest? HostedView { get; init; }
 
     public LocalExtensionHostedViewV2Manifest? HostedViewV2 { get; init; }
@@ -966,6 +1048,8 @@ public sealed record LocalExtensionManifest
     public LocalExtensionStartupManifest? Startup { get; init; }
 
     public LocalExtensionSearchProviderManifest? SearchProvider { get; init; }
+
+    public LocalExtensionMouseGestureManifest? MouseGesture { get; init; }
 }
 
 public sealed record LocalExtensionCatalogEntry(string ManifestPath, LocalExtensionManifest Manifest);
@@ -991,6 +1075,43 @@ public sealed record LocalExtensionStartupManifest
 public sealed class LocalExtensionInlineScriptManifest
 {
     public string? Source { get; init; }
+}
+
+/// <summary>
+/// 扩展级鼠标手势触发：按住右键 / 中键画一段轨迹后松开，优先用 Data 模板匹配，旧配置回退到 Sequence 匹配。
+/// 全局有效，跟 QuickPanelMouseTriggers（面板级长按）独立工作。
+/// </summary>
+public sealed class LocalExtensionMouseGestureManifest
+{
+    /// <summary>
+    /// 触发键：right-drag / middle-drag。其它值视为无效。
+    /// </summary>
+    public string Trigger { get; init; } = "right-drag";
+
+    /// <summary>
+    /// 8 方向序列字符串，例如 "↓↓"、"↓→"。最少两段。
+    /// </summary>
+    public string Sequence { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 手势显示名，例如 "P"、"UP"、"DOWN-LEFT"。运行时不依赖该字段匹配。
+    /// </summary>
+    public string? Sign { get; init; }
+
+    /// <summary>
+    /// 归一化后的轨迹模板坐标，形如 [x0, y0, x1, y1, ...]。
+    /// </summary>
+    public int[]? Data { get; init; }
+
+    /// <summary>
+    /// 模板匹配容差。未设置时使用默认值。
+    /// </summary>
+    public int? Tolerance { get; init; }
+
+    /// <summary>
+    /// 单段最小移动距离（像素）。
+    /// </summary>
+    public int? MinDistance { get; init; }
 }
 
 public sealed class LocalExtensionSearchProviderManifest

@@ -56,11 +56,6 @@ public partial class YanmOverlayWindow : Window
     private static readonly TimeSpan WebDavStateRefreshCooldown = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan WebDavVisibleRefreshInterval = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan WebDavLocalChangeSyncDelay = TimeSpan.FromSeconds(2);
-    private const int SmXVirtualScreen = 76;
-    private const int SmYVirtualScreen = 77;
-    private const int SmCxVirtualScreen = 78;
-    private const int SmCyVirtualScreen = 79;
-
     public YanmOverlayWindow(MainWindow mainWindow)
     {
         _mainWindow = mainWindow;
@@ -189,7 +184,11 @@ public partial class YanmOverlayWindow : Window
         ApplyScreenBounds();
         UpdateDynamicTexts();
         _isWebView2Available = CheckWebView2RuntimeAvailable();
-        Root.Background = new SolidColorBrush(WpfColor.FromArgb((byte)Math.Clamp(_settings.OverlayOpacity * 255, 12, 220), 0, 0, 0));
+        Root.Background = new SolidColorBrush(WpfColor.FromArgb(
+            (byte)Math.Clamp(_settings.OverlayOpacity * 255, 32, 217),
+            1,
+            3,
+            8));
         HintText.Text = pinned
             ? BuildPinnedHint()
             : BuildTemporaryHint();
@@ -355,19 +354,36 @@ public partial class YanmOverlayWindow : Window
         var handle = helper.Handle == IntPtr.Zero ? helper.EnsureHandle() : helper.Handle;
         var source = HwndSource.FromHwnd(handle) ?? PresentationSource.FromVisual(this) as HwndSource;
         var transform = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-        var rawX = GetSystemMetrics(SmXVirtualScreen);
-        var rawY = GetSystemMetrics(SmYVirtualScreen);
-        var rawWidth = GetSystemMetrics(SmCxVirtualScreen);
-        var rawHeight = GetSystemMetrics(SmCyVirtualScreen);
-        var topLeft = transform.Transform(new WpfPoint(rawX, rawY));
-        var bottomRight = transform.Transform(new WpfPoint(rawX + rawWidth, rawY + rawHeight));
+        var target = GetTargetScreenBounds();
+        var topLeft = transform.Transform(new WpfPoint(target.Left, target.Top));
+        var bottomRight = transform.Transform(new WpfPoint(target.Right, target.Bottom));
 
         Left = topLeft.X;
         Top = topLeft.Y;
         Width = Math.Max(1, bottomRight.X - topLeft.X);
         Height = Math.Max(1, bottomRight.Y - topLeft.Y);
         HostAssets.AppendLog(
-            $"Yanm: screen bounds applied, raw=({rawX},{rawY},{rawWidth},{rawHeight}), dip=({Left:0},{Top:0},{Width:0},{Height:0}), m11={transform.M11:0.###}, m22={transform.M22:0.###}, hwnd=0x{handle.ToInt64():X}.");
+            $"Yanm: screen bounds applied, target={DescribeScreen(target)}, all={DescribeAllScreens()}, dip=({Left:0},{Top:0},{Width:0},{Height:0}), m11={transform.M11:0.###}, m22={transform.M22:0.###}, hwnd=0x{handle.ToInt64():X}.");
+    }
+
+    private static System.Drawing.Rectangle GetTargetScreenBounds()
+    {
+        if (GetCursorPos(out var point))
+        {
+            return System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point(point.X, point.Y)).Bounds;
+        }
+
+        return System.Windows.Forms.Screen.PrimaryScreen?.Bounds ?? System.Windows.Forms.Screen.AllScreens[0].Bounds;
+    }
+
+    private static string DescribeAllScreens()
+    {
+        return string.Join("|", System.Windows.Forms.Screen.AllScreens.Select(screen => DescribeScreen(screen.Bounds)));
+    }
+
+    private static string DescribeScreen(System.Drawing.Rectangle bounds)
+    {
+        return $"({bounds.X},{bounds.Y},{bounds.Width},{bounds.Height})";
     }
 
     private void RenderAll()
@@ -1224,10 +1240,7 @@ public partial class YanmOverlayWindow : Window
             return _moveStartPoint;
         }
 
-        var source = PresentationSource.FromVisual(this);
-        var transform = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-        var cursorDip = transform.Transform(new WpfPoint(point.X, point.Y));
-        return new WpfPoint(cursorDip.X - Left, cursorDip.Y - Top);
+        return PointFromScreen(new WpfPoint(point.X, point.Y));
     }
 
     private YanmComponentSettings? FindCurrentComponent(string componentId)
@@ -2212,9 +2225,6 @@ public partial class YanmOverlayWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out NativePoint lpPoint);
-
-    [DllImport("user32.dll")]
-    private static extern int GetSystemMetrics(int nIndex);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx lpBuffer);

@@ -5,11 +5,15 @@ obj/
 dist/
 .artifacts/
 artifacts/
+.tools/
 .wrangler/
 cloudflare/.wrangler/
 cloudflare/node_modules/
 website/downloads/*.zip
 build-verify*/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/build/
 
 *.user
 *.suo

@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:OpenQuickHost"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
-        Title="鼠标面板" Height="620" Width="340"
+        Title="鼠标面板" Height="560" Width="284"
         WindowStyle="None"
         Background="#FF1A1A1A"
         UseLayoutRounding="True"
@@ -86,6 +86,36 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <DataTemplate x:Key="FolderPreviewIconTemplate">
+            <Border Width="16"
+                    Height="16"
+                    Margin="1"
+                    CornerRadius="5"
+                    Background="{Binding AccentBrush}"
+                    ClipToBounds="True">
+                <Grid>
+                    <Image Source="{Binding IconSource}"
+                           Stretch="UniformToFill"
+                           Margin="1"
+                           Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    <Viewbox Width="10"
+                             Height="10"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center"
+                             Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                    </Viewbox>
+                    <TextBlock Text="{Binding DisplayGlyph}"
+                               Foreground="White"
+                               FontSize="8"
+                               FontWeight="Bold"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
     </Window.Resources>
 
     <Border Margin="1"
@@ -107,7 +137,7 @@
             </Grid.RowDefinitions>
 
             <!-- Sidebar -->
-            <Border Grid.RowSpan="4" BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" Padding="0,12">
+            <Border Grid.RowSpan="4" BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" Padding="0,8">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -128,11 +158,11 @@
                                 </Canvas>
                             </Viewbox>
                         </Button>
-                        <ItemsControl ItemsSource="{Binding GlobalGroups}" Margin="0,6,0,0">
+                        <ItemsControl ItemsSource="{Binding GlobalGroups}" Margin="0,4,0,0">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Button Style="{StaticResource GroupButtonStyle}"
-                                            Margin="0,0,0,6"
+                                            Margin="0,0,0,4"
                                             Tag="{Binding}"
                                             Click="GlobalGroupButton_Click"
                                             ToolTip="{Binding Name}">
@@ -164,7 +194,7 @@
                     <Rectangle Grid.Row="2" Height="1" Fill="#18FFFFFF" Margin="6,0"/>
 
                     <Border Grid.Row="3">
-                        <StackPanel HorizontalAlignment="Center" Margin="0,12,0,0">
+                        <StackPanel HorizontalAlignment="Center" Margin="0,8,0,0">
                         <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="专属收藏" Click="ToggleContextFavorites_Click">
                             <Viewbox Width="16" Height="16">
                                 <Canvas Width="24" Height="24">
@@ -174,11 +204,11 @@
                                 </Canvas>
                             </Viewbox>
                         </Button>
-                        <ItemsControl ItemsSource="{Binding ContextGroups}" Margin="0,6,0,0">
+                        <ItemsControl ItemsSource="{Binding ContextGroups}" Margin="0,4,0,0">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Button Style="{StaticResource GroupButtonStyle}"
-                                            Margin="0,0,0,6"
+                                            Margin="0,0,0,4"
                                             Tag="{Binding}"
                                             Click="ContextGroupButton_Click"
                                             ToolTip="{Binding Name}">
@@ -207,16 +237,23 @@
                         </StackPanel>
                     </Border>
                     
-                    <Button Grid.Row="4" Style="{StaticResource SidebarButtonStyle}" VerticalAlignment="Bottom" HorizontalAlignment="Center" Click="SettingsButton_Click" Width="32" Height="32" ToolTip="设置">
-                        <Viewbox Width="16" Height="16">
-                            <Path Data="{local:IconGeometry settings}" Fill="#FF888888" Stretch="Uniform"/>
-                        </Viewbox>
-                    </Button>
+                    <StackPanel Grid.Row="4" VerticalAlignment="Bottom" HorizontalAlignment="Center">
+                        <Button Style="{StaticResource SidebarButtonStyle}" Margin="0,0,0,6" Click="MobileMessagesButton_Click" Width="32" Height="32" ToolTip="手机消息">
+                            <Viewbox Width="16" Height="16">
+                                <Path Data="{local:IconGeometry mobile}" Fill="#FF67E8F9" Stretch="Uniform"/>
+                            </Viewbox>
+                        </Button>
+                        <Button Style="{StaticResource SidebarButtonStyle}" Click="SettingsButton_Click" Width="32" Height="32" ToolTip="设置">
+                            <Viewbox Width="16" Height="16">
+                                <Path Data="{local:IconGeometry settings}" Fill="#FF888888" Stretch="Uniform"/>
+                            </Viewbox>
+                        </Button>
+                    </StackPanel>
                 </Grid>
             </Border>
 
             <!-- Top Bar -->
-            <Grid Grid.Column="1" Grid.Row="0" Margin="10,10,10,12">
+            <Grid Grid.Column="1" Grid.Row="0" Margin="8,8,8,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
@@ -263,7 +300,7 @@
                     </Button>
                     
                     <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Border Background="#FF252525" CornerRadius="6" Padding="8,4" Width="130" Margin="0,0,5,0">
+                        <Border Background="#FF252525" CornerRadius="6" Padding="8,4" Width="112" Margin="0,0,4,0">
                             <Grid>
                                 <Viewbox Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <Path Data="{local:IconGeometry search}" 
@@ -300,7 +337,7 @@
                     </StackPanel>
             </Grid>
 
-            <Grid Grid.Column="1" Grid.Row="1" Margin="10,0,10,10" MouseWheel="GlobalPanel_MouseWheel">
+            <Grid Grid.Column="1" Grid.Row="1" Margin="6,0,6,6" MouseWheel="GlobalPanel_MouseWheel">
                 <ItemsControl ItemsSource="{Binding GlobalSlots}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -310,7 +347,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Button Style="{StaticResource SlotButtonStyle}"
-                                            Margin="2"
+                                            Margin="1"
                                             Click="SlotButton_Click"
                                             PreviewMouseLeftButtonDown="SlotButton_PreviewMouseLeftButtonDown"
                                             PreviewMouseMove="SlotButton_PreviewMouseMove"
@@ -359,6 +396,18 @@
                                                         <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
+                                                <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="打开商店链接" Click="OpenStoreLink_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
                                                 <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
@@ -374,11 +423,11 @@
                                                 </MenuItem>
                                             </ContextMenu>
                                         </Button.ContextMenu>
-                                        <StackPanel Margin="0,6" HorizontalAlignment="Center">
-                                            <Border Width="44" Height="44" CornerRadius="10" 
+                                        <StackPanel Margin="0,4" HorizontalAlignment="Center">
+                                            <Border Width="40" Height="40" CornerRadius="9" 
                                                     ClipToBounds="True"
                                                     HorizontalAlignment="Center"
-                                                    Margin="0,0,0,5">
+                                                    Margin="0,0,0,3">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
                                                         <Setter Property="Background" Value="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}"/>
@@ -417,16 +466,39 @@
                                                     
                                                     <!-- Occupied -->
                                                     <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Grid.Style>
+                                                            <Style TargetType="Grid">
+                                                                <Setter Property="Opacity" Value="1" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
+                                                                        <Setter Property="Opacity" Value="0.55" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Grid.Style>
+                                                        <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
+                                                                      Width="36"
+                                                                      Height="36"
+                                                                      Visibility="{Binding HasFolderPreview, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <UniformGrid Columns="2" Rows="2"/>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                         <Image Source="{Binding Icon}" Stretch="UniformToFill" Margin="2"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Viewbox Width="22" Height="22"
+                                                        <Viewbox Width="20" Height="20"
                                                                  HorizontalAlignment="Center"
                                                                  VerticalAlignment="Center"
                                                                  Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                             <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                                         </Viewbox>
-                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="18" FontWeight="SemiBold"
+                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="16" FontWeight="SemiBold"
                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                    Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"
@@ -437,21 +509,51 @@
                                                         <Border Width="10" Height="10" CornerRadius="5" Background="#FFFBBF24"
                                                                 HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3,3,0,0"
                                                                 Visibility="{Binding IsFavorite, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Border MinWidth="16" Height="16" Padding="4,0"
-                                                                CornerRadius="8"
-                                                                Background="#FF1D4ED8"
-                                                                HorizontalAlignment="Right"
-                                                                VerticalAlignment="Bottom"
-                                                                Margin="0,0,2,2"
-                                                                Visibility="{Binding HasFolderBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                            <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                        </Border>
+                                                        <Grid Width="18"
+                                                              Height="18"
+                                                              Background="Transparent"
+                                                              HorizontalAlignment="Right"
+                                                              VerticalAlignment="Bottom"
+                                                              Margin="0,0,1,1"
+                                                              IsHitTestVisible="False"
+                                                              Visibility="{Binding HasFolderBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Data="M18,0 L18,18 L0,18 Z" Fill="#FF1D4ED8" Stretch="Fill"/>
+                                                            <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="7.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,1"/>
+                                                        </Grid>
                                                     </Grid>
+                                                    <Border Background="#C0181818"
+                                                            Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                    <Viewbox Width="20"
+                                                             Height="20"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Path Data="{local:IconGeometry sync}"
+                                                              Fill="#FFE5E7EB"
+                                                              Stretch="Uniform"
+                                                              RenderTransformOrigin="0.5,0.5">
+                                                            <Path.RenderTransform>
+                                                                <RotateTransform Angle="0" />
+                                                            </Path.RenderTransform>
+                                                            <Path.Triggers>
+                                                                <EventTrigger RoutedEvent="Loaded">
+                                                                    <BeginStoryboard>
+                                                                        <Storyboard RepeatBehavior="Forever">
+                                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                             From="0"
+                                                                                             To="360"
+                                                                                             Duration="0:0:0.9" />
+                                                                        </Storyboard>
+                                                                    </BeginStoryboard>
+                                                                </EventTrigger>
+                                                            </Path.Triggers>
+                                                        </Path>
+                                                    </Viewbox>
                                                 </Grid>
                                             </Border>
-                                            <TextBlock Text="{Binding Title, FallbackValue='添加'}" 
+                                            <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}" 
                                                        Foreground="{Binding IsEmpty, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF444444|White'}" 
-                                                       FontSize="10" TextAlignment="Center" Width="56" TextTrimming="CharacterEllipsis"/>
+                                                       FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
                                     </Button>
                                 </DataTemplate>
@@ -459,16 +561,16 @@
                 </ItemsControl>
             </Grid>
 
-            <Rectangle Grid.ColumnSpan="2" Grid.Row="2" Height="1" Fill="#18FFFFFF" Margin="8,4"/>
+            <Rectangle Grid.ColumnSpan="2" Grid.Row="2" Height="1" Fill="#18FFFFFF" Margin="8,2"/>
 
-            <Grid Grid.Column="1" Grid.Row="3" Margin="10,10,10,10" MouseWheel="ContextPanel_MouseWheel">
+            <Grid Grid.Column="1" Grid.Row="3" Margin="6,6,6,8" MouseWheel="ContextPanel_MouseWheel">
                 <StackPanel>
                     <TextBlock Text="{Binding ContextSectionTitle}"
                                Foreground="#FFAAAAAA"
                                FontSize="12"
                                FontWeight="SemiBold"
                                HorizontalAlignment="Center"
-                               Margin="0,0,0,10"
+                               Margin="0,0,0,6"
                                ToolTip="{Binding ContextHintText}"/>
                     <ItemsControl ItemsSource="{Binding ContextSlots}">
                             <ItemsControl.ItemsPanel>
@@ -479,7 +581,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Button Style="{StaticResource SlotButtonStyle}"
-                                            Margin="2"
+                                            Margin="1"
                                             Click="SlotButton_Click"
                                             PreviewMouseLeftButtonDown="SlotButton_PreviewMouseLeftButtonDown"
                                             PreviewMouseMove="SlotButton_PreviewMouseMove"
@@ -528,6 +630,18 @@
                                                         <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
+                                                <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="打开商店链接" Click="OpenStoreLink_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
                                                 <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
@@ -543,11 +657,11 @@
                                                 </MenuItem>
                                             </ContextMenu>
                                         </Button.ContextMenu>
-                                        <StackPanel Margin="0,6" HorizontalAlignment="Center">
-                                            <Border Width="44" Height="44" CornerRadius="10"
+                                        <StackPanel Margin="0,4" HorizontalAlignment="Center">
+                                            <Border Width="40" Height="40" CornerRadius="9"
                                                     ClipToBounds="True"
                                                     HorizontalAlignment="Center"
-                                                    Margin="0,0,0,5">
+                                                    Margin="0,0,0,3">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
                                                         <Setter Property="Background" Value="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}"/>
@@ -584,16 +698,39 @@
                                                     </Viewbox>
 
                                                     <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Grid.Style>
+                                                            <Style TargetType="Grid">
+                                                                <Setter Property="Opacity" Value="1" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
+                                                                        <Setter Property="Opacity" Value="0.55" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Grid.Style>
+                                                        <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
+                                                                      Width="36"
+                                                                      Height="36"
+                                                                      Visibility="{Binding HasFolderPreview, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <UniformGrid Columns="2" Rows="2"/>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                         <Image Source="{Binding Icon}" Stretch="UniformToFill" Margin="2"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Viewbox Width="22" Height="22"
+                                                        <Viewbox Width="20" Height="20"
                                                                  HorizontalAlignment="Center"
                                                                  VerticalAlignment="Center"
                                                                  Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                             <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                                         </Viewbox>
-                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="18" FontWeight="SemiBold"
+                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="16" FontWeight="SemiBold"
                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                    Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"
@@ -603,21 +740,51 @@
                                                         <Border Width="10" Height="10" CornerRadius="5" Background="#FFFBBF24"
                                                                 HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3,3,0,0"
                                                                 Visibility="{Binding IsFavorite, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Border MinWidth="16" Height="16" Padding="4,0"
-                                                                CornerRadius="8"
-                                                                Background="#FF1D4ED8"
-                                                                HorizontalAlignment="Right"
-                                                                VerticalAlignment="Bottom"
-                                                                Margin="0,0,2,2"
-                                                                Visibility="{Binding HasFolderBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                            <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                        </Border>
+                                                        <Grid Width="18"
+                                                              Height="18"
+                                                              Background="Transparent"
+                                                              HorizontalAlignment="Right"
+                                                              VerticalAlignment="Bottom"
+                                                              Margin="0,0,1,1"
+                                                              IsHitTestVisible="False"
+                                                              Visibility="{Binding HasFolderBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Data="M18,0 L18,18 L0,18 Z" Fill="#FF1D4ED8" Stretch="Fill"/>
+                                                            <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="7.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,1"/>
+                                                        </Grid>
                                                     </Grid>
+                                                    <Border Background="#C0181818"
+                                                            Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                    <Viewbox Width="20"
+                                                             Height="20"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Path Data="{local:IconGeometry sync}"
+                                                              Fill="#FFE5E7EB"
+                                                              Stretch="Uniform"
+                                                              RenderTransformOrigin="0.5,0.5">
+                                                            <Path.RenderTransform>
+                                                                <RotateTransform Angle="0" />
+                                                            </Path.RenderTransform>
+                                                            <Path.Triggers>
+                                                                <EventTrigger RoutedEvent="Loaded">
+                                                                    <BeginStoryboard>
+                                                                        <Storyboard RepeatBehavior="Forever">
+                                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                             From="0"
+                                                                                             To="360"
+                                                                                             Duration="0:0:0.9" />
+                                                                        </Storyboard>
+                                                                    </BeginStoryboard>
+                                                                </EventTrigger>
+                                                            </Path.Triggers>
+                                                        </Path>
+                                                    </Viewbox>
                                                 </Grid>
                                             </Border>
-                                            <TextBlock Text="{Binding Title, FallbackValue='推荐位'}"
+                                            <TextBlock Text="{Binding DisplayTitle, FallbackValue='推荐位'}"
                                                        Foreground="{Binding IsEmpty, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF444444|White'}"
-                                                       FontSize="10" TextAlignment="Center" Width="56" TextTrimming="CharacterEllipsis"/>
+                                                       FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
                                     </Button>
                                 </DataTemplate>
@@ -628,21 +795,86 @@
 
             <Border Grid.Column="1"
                     Grid.RowSpan="4"
-                    Margin="10"
+                    Panel.ZIndex="20"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="0,46,8,0"
+                    Padding="8,6"
+                    CornerRadius="10"
+                    Background="#E61F2937"
+                    BorderBrush="#334ADE80"
+                    BorderThickness="1"
+                    IsHitTestVisible="False"
+                    Visibility="{Binding IsDraggingSlot, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <StackPanel>
+                    <TextBlock Text="普通拖放：放入 / 交换"
+                               Foreground="#FFE5E7EB"
+                               FontSize="10.5"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="按住 Ctrl：成组 / 加入分组"
+                               Foreground="#FF86EFAC"
+                               FontSize="10.5"
+                               FontWeight="SemiBold"
+                               Margin="0,2,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1"
+                    Grid.RowSpan="4"
+                    Panel.ZIndex="15"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,8,12"
+                    Padding="9,7"
+                    Width="188"
+                    CornerRadius="12"
+                    Background="#F0222222"
+                    BorderBrush="#334ADE80"
+                    BorderThickness="1"
+                    IsHitTestVisible="False"
+                    Visibility="{Binding IsFolderPreviewVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <StackPanel>
+                    <TextBlock Text="{Binding FolderPreviewTitle}"
+                               Foreground="White"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
+                    <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
+                                  Margin="0,6,0,0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1"
+                    Grid.RowSpan="4"
+                    Panel.ZIndex="30"
+                    Margin="8"
                     Background="#F21A1A1A"
                     CornerRadius="18"
                     BorderBrush="#FF2A2A2A"
                     BorderThickness="1"
+                    MouseLeave="FolderOverlay_MouseLeave"
                     Visibility="{Binding IsFolderExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <Grid Margin="14">
+                <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                    <DockPanel Grid.Row="0" Margin="0,0,0,8">
                         <Button Width="70"
                                 Height="30"
                                 Click="FolderBackButton_Click"
+                                AllowDrop="True"
+                                DragEnter="FolderBackButton_DragOver"
+                                DragOver="FolderBackButton_DragOver"
                                 Style="{StaticResource SecondaryBtn}"
                                 Content="返回" />
                         <TextBlock Text="{Binding ActiveFolderTitle}"
@@ -650,7 +882,8 @@
                                    Foreground="White"
                                    FontSize="14"
                                    FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
+                                   VerticalAlignment="Center"
+                                   MouseLeftButtonDown="ActiveFolderTitle_MouseLeftButtonDown" />
                     </DockPanel>
                     <ItemsControl Grid.Row="1" ItemsSource="{Binding ActiveFolderSlots}">
                         <ItemsControl.ItemsPanel>
@@ -660,29 +893,202 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Button Style="{StaticResource SlotButtonStyle}" Margin="2" Click="SlotButton_Click" Tag="{Binding}">
-                                    <StackPanel Margin="0,6" HorizontalAlignment="Center">
-                                        <Border Width="44" Height="44" CornerRadius="10" Background="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}" ClipToBounds="True" HorizontalAlignment="Center" Margin="0,0,0,5">
+                                <Button Style="{StaticResource SlotButtonStyle}"
+                                        Margin="1"
+                                        Click="SlotButton_Click"
+                                        PreviewMouseLeftButtonDown="SlotButton_PreviewMouseLeftButtonDown"
+                                        PreviewMouseMove="SlotButton_PreviewMouseMove"
+                                        MouseEnter="SlotButton_MouseEnter"
+                                        MouseLeave="SlotButton_MouseLeave"
+                                        MouseMove="SlotButton_MouseMove"
+                                        DragOver="SlotButton_DragOver"
+                                        DragLeave="SlotButton_DragLeave"
+                                        Drop="SlotButton_Drop"
+                                        AllowDrop="True"
+                                        Tag="{Binding}">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="{Binding FavoriteLabel}" Click="ToggleFavorite_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry star}" Fill="#FBBF24" Stretch="Uniform" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="复制扩展" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="剪切扩展" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="打开商店链接" Click="OpenStoreLink_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <Separator Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <MenuItem Header="移除扩展" Click="RemoveExtension_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <StackPanel Margin="0,4" HorizontalAlignment="Center">
+                                        <Border Width="40" Height="40" CornerRadius="9" ClipToBounds="True" HorizontalAlignment="Center" Margin="0,0,0,3">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}"/>
+                                                    <Setter Property="BorderBrush" Value="Transparent"/>
+                                                    <Setter Property="BorderThickness" Value="0"/>
+                                                    <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                                                    <Setter Property="RenderTransform">
+                                                        <Setter.Value>
+                                                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                            <Setter Property="Background" Value="#FF3B82F6"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
+                                                            <Setter Property="Background" Value="#FF2563EB"/>
+                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF"/>
+                                                            <Setter Property="BorderThickness" Value="2"/>
+                                                            <Setter Property="RenderTransform">
+                                                                <Setter.Value>
+                                                                    <ScaleTransform ScaleX="1.08" ScaleY="1.08"/>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
                                             <Grid>
+                                                <Grid.Style>
+                                                    <Style TargetType="Grid">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
+                                                                <Setter Property="Opacity" Value="0.55" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Grid.Style>
+                                                <Viewbox Width="18" Height="18"
+                                                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                         Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Data="{local:IconGeometry plus}" Fill="#14FFFFFF" Stretch="Uniform"/>
+                                                </Viewbox>
+                                                <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
+                                                              Width="36"
+                                                              Height="36"
+                                                              Visibility="{Binding HasFolderPreview, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <UniformGrid Columns="2" Rows="2"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
                                                 <Image Source="{Binding Icon}" Stretch="UniformToFill" Margin="2"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                                        Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                <Viewbox Width="22" Height="22"
+                                                <Viewbox Width="20" Height="20"
                                                          HorizontalAlignment="Center"
                                                          VerticalAlignment="Center"
                                                          Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                                 </Viewbox>
-                                                <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="18" FontWeight="SemiBold"
+                                                <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="16" FontWeight="SemiBold"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
                                                            Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                 <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"
                                                         BorderBrush="#CCFFFFFF" BorderThickness="1"
                                                         HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,1,1,0"
                                                         Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                <Grid Width="18"
+                                                      Height="18"
+                                                      Background="Transparent"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Bottom"
+                                                      Margin="0,0,1,1"
+                                                      IsHitTestVisible="False"
+                                                      Visibility="{Binding HasFolderBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Data="M18,0 L18,18 L0,18 Z" Fill="#FF1D4ED8" Stretch="Fill"/>
+                                                    <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="7.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,1"/>
+                                                </Grid>
+                                                <Border Background="#C0181818"
+                                                        Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Viewbox Width="20"
+                                                         Height="20"
+                                                         HorizontalAlignment="Center"
+                                                         VerticalAlignment="Center"
+                                                         Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Data="{local:IconGeometry sync}"
+                                                          Fill="#FFE5E7EB"
+                                                          Stretch="Uniform"
+                                                          RenderTransformOrigin="0.5,0.5">
+                                                        <Path.RenderTransform>
+                                                            <RotateTransform Angle="0" />
+                                                        </Path.RenderTransform>
+                                                        <Path.Triggers>
+                                                            <EventTrigger RoutedEvent="Loaded">
+                                                                <BeginStoryboard>
+                                                                    <Storyboard RepeatBehavior="Forever">
+                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                         From="0"
+                                                                                         To="360"
+                                                                                         Duration="0:0:0.9" />
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </EventTrigger>
+                                                        </Path.Triggers>
+                                                    </Path>
+                                                </Viewbox>
                                             </Grid>
                                         </Border>
-                                        <TextBlock Text="{Binding Title}" Foreground="White" FontSize="10" TextAlignment="Center" Width="56" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}"
+                                                   Foreground="{Binding IsEmpty, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF444444|White'}"
+                                                   FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
                                 </Button>
                             </DataTemplate>

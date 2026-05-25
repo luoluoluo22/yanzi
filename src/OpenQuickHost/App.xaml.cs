@@ -15,6 +15,7 @@ public partial class App : WpfApplication
     private Forms.NotifyIcon? _notifyIcon;
     private SettingsWindow? _settingsWindow;
     private RunningExtensionsWindow? _runningExtensionsWindow;
+    private InputStateWindow? _inputStateWindow;
     private LocalAgentApiServer? _agentApiServer;
     private SingleInstanceService? _singleInstanceService;
     private bool _listenerServicesPaused;
@@ -55,7 +56,6 @@ public partial class App : WpfApplication
         }
 
         StartLocalAgentApi(window, settings);
-        _ = WarmupExtensionHostAsync();
         _singleInstanceService.StartServer(message => HandleSecondaryLaunchMessageAsync(window, message));
         _ = HandleLaunchArgumentsAsync(window, e.Args);
     }
@@ -247,19 +247,6 @@ public partial class App : WpfApplication
         }
     }
 
-    private static async Task WarmupExtensionHostAsync()
-    {
-        try
-        {
-            await Task.Delay(800).ConfigureAwait(false);
-            await Task.Run(() => ScriptExtensionRunner.WarmupExtensionHostAsync()).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"ExtensionHost warmup failed: {ex.Message}");
-        }
-    }
-
     private Forms.NotifyIcon BuildNotifyIcon(MainWindow window)
     {
         var notifyIcon = new Forms.NotifyIcon
@@ -341,12 +328,29 @@ public partial class App : WpfApplication
         CurrentApp?.OpenRunningExtensionsWindow();
     }
 
-    private void TrayResetKeyboardState_Click(object sender, RoutedEventArgs e)
+    private void TrayInputState_Click(object sender, RoutedEventArgs e)
+    {
+        if (_inputStateWindow is { IsVisible: true })
+        {
+            _inputStateWindow.Activate();
+            _inputStateWindow.RefreshState();
+            return;
+        }
+
+        _inputStateWindow = new InputStateWindow();
+        _inputStateWindow.Closed += (_, _) => _inputStateWindow = null;
+        _inputStateWindow.Show();
+    }
+
+    private void TrayResetInputState_Click(object sender, RoutedEventArgs e)
     {
         KeyboardDoubleTapService.ResetStuckKeyboardState();
+        InputHookService.ResetMouseState();
+        YarnSelectService.ResetMouseState();
+        _inputStateWindow?.RefreshState();
         ShowDesktopNotification(
-            "键盘状态已修复",
-            "已清理可能卡住的 Win、Ctrl、Alt、Shift 等按键状态。如果刚才输入或快捷键异常，可以继续使用。",
+            "输入状态已重置",
+            "已清理可能卡住的键盘修饰键，以及鼠标面板、燕环、燕幕和燕选的临时鼠标状态。",
             Forms.ToolTipIcon.Info);
     }
 
@@ -457,14 +461,29 @@ public partial class App : WpfApplication
         try
         {
             HostAssets.AppendLog($"Settings window open requested: section={sectionKey ?? "default"}, existing={_settingsWindow != null && _settingsWindow.IsLoaded}.");
-            EnsureMainWindowVisibleForOwnedDialogs(mainWindow);
+            var useMainWindowOwner = CanUseMainWindowAsSettingsOwner(mainWindow);
 
             if (_settingsWindow == null || !_settingsWindow.IsLoaded)
             {
                 _settingsWindow = new SettingsWindow(mainWindow);
-                _settingsWindow.Owner = mainWindow;
+                if (useMainWindowOwner)
+                {
+                    _settingsWindow.Owner = mainWindow;
+                    HostAssets.AppendLog("Settings window owner set to visible main window.");
+                }
+                else
+                {
+                    _settingsWindow.ShowInTaskbar = true;
+                    HostAssets.AppendLog("Settings window opened without main window owner.");
+                }
+
                 _settingsWindow.Closed += (_, _) => _settingsWindow = null;
                 HostAssets.AppendLog("Settings window created.");
+            }
+            else if (!_settingsWindow.IsVisible)
+            {
+                _settingsWindow.Owner = useMainWindowOwner ? mainWindow : null;
+                _settingsWindow.ShowInTaskbar = !useMainWindowOwner;
             }
 
             if (!_settingsWindow.IsVisible)
@@ -489,21 +508,8 @@ public partial class App : WpfApplication
         }
     }
 
-    private static void EnsureMainWindowVisibleForOwnedDialogs(MainWindow mainWindow)
-    {
-        if (!mainWindow.IsVisible)
-        {
-            mainWindow.ShowInTaskbar = true;
-            mainWindow.Show();
-            HostAssets.AppendLog("Settings window prerequisite: main window restored from tray.");
-        }
-
-        if (mainWindow.WindowState == System.Windows.WindowState.Minimized)
-        {
-            mainWindow.WindowState = System.Windows.WindowState.Normal;
-            HostAssets.AppendLog("Settings window prerequisite: main window restored from minimized state.");
-        }
-    }
+    private static bool CanUseMainWindowAsSettingsOwner(MainWindow mainWindow) =>
+        mainWindow.IsVisible && mainWindow.WindowState != System.Windows.WindowState.Minimized;
 
     public void OpenRunningExtensionsWindow()
     {

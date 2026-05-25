@@ -506,6 +506,7 @@ public partial class MainWindow
     {
         AppSettingsStore.Save(settings);
         _appSettings = AppSettingsStore.Load();
+        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
         RefreshYanyuRules();
         ApplyFilter(SearchBox.Text);
         LastRunMessage = successMessage;

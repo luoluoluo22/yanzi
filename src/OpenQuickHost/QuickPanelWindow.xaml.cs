@@ -11,6 +11,7 @@ using System.Linq;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.IO;
 
@@ -20,6 +21,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 {
     private const int GlobalSlotCount = 12;
     private const int ContextSlotCount = 12;
+    private const int FolderSlotCount = 24;
+    private const int QuickPanelColumnCount = 4;
+    private const double FolderOverlayBaseHeightDips = 520;
+    private const double FolderOverlayDepthStepDips = 42;
+    private const double FolderOverlayMinHeightDips = 360;
+    private const double SidebarWidthDips = 42;
+    private const double SlotGridHorizontalMarginDips = 6;
+    private const double SlotIconWidthDips = 40;
+    private const double CursorIconSafetyDips = 6;
     private readonly MainWindow _mainWindow;
     private AppSettings _settings;
     private readonly List<SlotViewModel> _allGlobalSlots = new();
@@ -30,6 +40,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private SlotViewModel? _hoveredSlot;
     private bool _isExecutingSlot;
     private IntPtr _previousForegroundWindow;
+    private IntPtr _previousFocusWindow;
     private readonly DispatcherTimer _releaseTargetTimer;
     private ForegroundAppContext? _foregroundAppContext;
     private QuickPanelGroupItem? _selectedGlobalGroup;
@@ -45,11 +56,19 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private ObservableCollection<SlotViewModel> _activeFolderSlots = [];
     private string _activeFolderTitle = string.Empty;
     private bool _isFolderExpanded;
+    private bool _isFolderPinnedOpen;
+    private QuickPanelSlotReference? _activeFolderReference;
+    private bool _isDraggingSlot;
+    private SlotViewModel? _previewFolderSlot;
+    private ObservableCollection<FolderPreviewIconViewModel> _folderPreviewItems = [];
+    private string _folderPreviewTitle = string.Empty;
+    private bool _isFolderPreviewVisible;
     private DateTimeOffset _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.MinValue;
 
     public QuickPanelWindow(MainWindow mainWindow)
     {
         InitializeComponent();
+        ShowActivated = false;
         _mainWindow = mainWindow;
         _settings = AppSettingsStore.Load();
         _releaseTargetTimer = new DispatcherTimer
@@ -174,7 +193,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     public string EditButtonTooltip => IsEditMode ? "完成编辑" : "编辑面板";
 
     public string EditModeHintText => IsEditMode
-        ? "编辑模式：拖动图标可移动；拖到另一个图标上停留 2 秒可自动成组。"
+        ? "编辑模式：拖动图标可移动/交换；按住 Ctrl 拖到图标上成组。"
         : PanelTitle;
 
     public ObservableCollection<SlotViewModel> ActiveFolderSlots
@@ -207,10 +226,66 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            _isFolderExpanded = value;
+        _isFolderExpanded = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ActiveFolderOverlayHeight));
+        }
+    }
+
+    public bool IsDraggingSlot
+    {
+        get => _isDraggingSlot;
+        private set
+        {
+            if (value == _isDraggingSlot)
+            {
+                return;
+            }
+
+            _isDraggingSlot = value;
             OnPropertyChanged();
         }
     }
+
+    public ObservableCollection<FolderPreviewIconViewModel> FolderPreviewItems
+    {
+        get => _folderPreviewItems;
+        private set
+        {
+            _folderPreviewItems = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string FolderPreviewTitle
+    {
+        get => _folderPreviewTitle;
+        private set
+        {
+            _folderPreviewTitle = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsFolderPreviewVisible
+    {
+        get => _isFolderPreviewVisible;
+        private set
+        {
+            if (value == _isFolderPreviewVisible)
+            {
+                return;
+            }
+
+            _isFolderPreviewVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public double ActiveFolderOverlayHeight =>
+        Math.Max(FolderOverlayMinHeightDips, FolderOverlayBaseHeightDips - GetActiveFolderDepth() * FolderOverlayDepthStepDips);
+
+    private int GetActiveFolderDepth() => (_activeFolderReference?.ContainerPath.Count ?? 0) + (_activeFolderReference == null ? 0 : 1);
 
     private void LoadSlots()
     {
@@ -238,7 +313,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             for (int i = 0; i < GlobalSlotCount; i++)
             {
                 var slotItem = group?.SlotItems.ElementAtOrDefault(i);
-                GlobalSlots.Add(CreateSlotViewModel(i, slotItem, allCommands, isContextual: false));
+                GlobalSlots.Add(CreateSlotViewModel(i, slotItem, allCommands, isContextual: false, group?.Id, []));
             }
         }
 
@@ -258,7 +333,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             for (int i = 0; i < ContextSlotCount; i++)
             {
                 var slotItem = group?.SlotItems.ElementAtOrDefault(i);
-                ContextSlots.Add(CreateSlotViewModel(i, slotItem, allCommands, isContextual: true));
+                ContextSlots.Add(CreateSlotViewModel(i, slotItem, allCommands, isContextual: true, group?.Id, []));
             }
         }
 
@@ -271,22 +346,38 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         _allContextSlots.AddRange(ContextSlots);
     }
 
-    private SlotViewModel CreateSlotViewModel(int index, QuickPanelSlotItem? item, IReadOnlyList<CommandItem> allCommands, bool isContextual)
+    private SlotViewModel CreateSlotViewModel(
+        int index,
+        QuickPanelSlotItem? item,
+        IReadOnlyList<CommandItem> allCommands,
+        bool isContextual,
+        string? groupId = null,
+        IReadOnlyList<int>? containerPath = null)
     {
         if (item == null)
         {
-            return new SlotViewModel(index, null, false, isContextual: isContextual);
+            var empty = new SlotViewModel(index, null, false, isContextual: isContextual);
+            empty.SetSlotLocation(groupId, containerPath);
+            return empty;
         }
 
         if (item.IsFolder)
         {
-            var resolvedIds = item.FolderExtensionIds
-                .Where(id => allCommands.Any(command => string.Equals(command.ExtensionId, id, StringComparison.OrdinalIgnoreCase)))
+            var folderSlotItems = GetFolderSlotItems(item);
+            var resolvedCommands = folderSlotItems
+                .Where(static slot => slot != null && !slot.IsFolder && !string.IsNullOrWhiteSpace(slot.ExtensionId))
+                .Select(slot => allCommands.FirstOrDefault(command => string.Equals(command.ExtensionId, slot!.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+                .OfType<CommandItem>()
                 .ToList();
-            var previewCommand = resolvedIds.Count == 0
-                ? null
-                : allCommands.FirstOrDefault(command => string.Equals(command.ExtensionId, resolvedIds[0], StringComparison.OrdinalIgnoreCase));
-            return SlotViewModel.CreateFolder(index, item.FolderName ?? "新分组", resolvedIds, previewCommand, isContextual);
+            var folder = SlotViewModel.CreateFolder(
+                index,
+                item.FolderName ?? "新分组",
+                resolvedCommands.Select(static command => command.ExtensionId).ToList(),
+                folderSlotItems,
+                resolvedCommands,
+                isContextual);
+            folder.SetSlotLocation(groupId, containerPath);
+            return folder;
         }
 
         var command = string.IsNullOrWhiteSpace(item.ExtensionId)
@@ -296,7 +387,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                     (isContextual
                         ? _settings.ContextFavoriteExtensionIds.Contains(command.ExtensionId)
                         : _settings.GlobalFavoriteExtensionIds.Contains(command.ExtensionId));
-        return new SlotViewModel(index, command, isFav, isContextual: isContextual);
+        var vm = new SlotViewModel(index, command, isFav, isContextual: isContextual);
+        vm.SetSlotLocation(groupId, containerPath);
+        return vm;
     }
 
     private void LoadGroups()
@@ -405,8 +498,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        HidePanel();
+        HidePanelIfAllowed();
         _mainWindow.OpenSettingsWindow("quickpanel");
+    }
+
+    private void MobileMessagesButton_Click(object sender, RoutedEventArgs e)
+    {
+        HidePanelIfAllowed();
+        _mainWindow.ShowMobileInboxWindow();
     }
 
     private void AddGlobalGroupButton_Click(object sender, RoutedEventArgs e)
@@ -590,6 +689,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         _suppressAutoHideUntilUtc = DateTime.UtcNow.AddMilliseconds(350);
         OnPropertyChanged(nameof(PinButtonBrush));
         OnPropertyChanged(nameof(PinButtonTooltip));
+        HostAssets.AppendLog($"Quick panel pin toggled: pinned={_isPinned}.");
         Activate();
         BringToFront();
     }
@@ -598,16 +698,19 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     {
         if (sender is FrameworkElement element && element.Tag is SlotViewModel vm)
         {
+            if (vm.IsFolder)
+            {
+                HideFolderPreview();
+                ExpandFolder(vm, pinnedOpen: true);
+                return;
+            }
+
             if (IsEditMode)
             {
                 return;
             }
 
-            if (vm.IsFolder)
-            {
-                ExpandFolder(vm);
-            }
-            else if (vm.Command != null)
+            if (vm.Command != null)
             {
                 _ = ExecuteSlotCommandAsync(vm, "quick-panel-click");
             }
@@ -618,9 +721,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 if (newCommand != null)
                 {
                     _mainWindow.MarkExtensionAsNewFromQuickPanel(newCommand);
-                    vm.SetCommand(newCommand, false);
-                    SaveSlots(isContextual: false);
-                    LoadSlots();
+                    AddCommandToSlot(vm, newCommand);
                     BringToFront();
                 }
             }
@@ -631,9 +732,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 if (newCommand != null)
                 {
                     _mainWindow.MarkExtensionAsNewFromQuickPanel(newCommand);
-                    vm.SetCommand(newCommand, false, isContextual: true);
-                    SaveSlots(isContextual: true);
-                    LoadSlots();
+                    AddCommandToSlot(vm, newCommand);
                     BringToFront();
                 }
             }
@@ -651,12 +750,70 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void FolderBackButton_Click(object sender, RoutedEventArgs e)
     {
-        CollapseFolder();
+        NavigateToParentFolder();
+    }
+
+    private void ActiveFolderTitle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount < 2 || _activeFolderReference == null)
+        {
+            return;
+        }
+
+        var folderItem = GetSlotItem(_activeFolderReference);
+        if (folderItem?.IsFolder != true)
+        {
+            return;
+        }
+
+        var dialog = new SimpleTextInputWindow("重命名分组", "输入新的分组名称。", folderItem.FolderName ?? ActiveFolderTitle)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        folderItem.FolderName = dialog.ValueText;
+        ActiveFolderTitle = folderItem.FolderName;
+        RefreshAllLegacySlots();
+        SaveQuickPanelSettings("quickpanel-rename-folder");
+        LoadSlots();
+        RefreshActiveFolderAfterMutation();
+        e.Handled = true;
+    }
+
+    private void FolderBackButton_DragOver(object sender, System.Windows.DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(typeof(SlotViewModel)) &&
+            e.Data.GetData(typeof(SlotViewModel)) is SlotViewModel { ContainerPath.Count: > 0 })
+        {
+            NavigateToParentFolder();
+            e.Effects = System.Windows.DragDropEffects.Move;
+            e.Handled = true;
+            return;
+        }
+
+        e.Effects = System.Windows.DragDropEffects.None;
+        e.Handled = true;
     }
 
     private void SlotButton_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: SlotViewModel vm } && vm.Command != null)
+        if (sender is not FrameworkElement { Tag: SlotViewModel vm })
+        {
+            return;
+        }
+
+        if (vm.IsFolder)
+        {
+            ShowFolderPreview(vm);
+            ClearReleaseTarget();
+            return;
+        }
+
+        if (vm.Command != null)
         {
             SetReleaseTarget(vm);
         }
@@ -664,15 +821,35 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void SlotButton_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: SlotViewModel vm } && ReferenceEquals(_hoveredSlot, vm))
+        if (sender is FrameworkElement { Tag: SlotViewModel vm })
         {
-            ClearReleaseTarget();
+            if (ReferenceEquals(_hoveredSlot, vm))
+            {
+                ClearReleaseTarget();
+            }
+
+            if (ReferenceEquals(_previewFolderSlot, vm))
+            {
+                HideFolderPreview();
+            }
         }
     }
 
     private void SlotButton_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: SlotViewModel vm } && vm.Command != null)
+        if (sender is not FrameworkElement { Tag: SlotViewModel vm })
+        {
+            return;
+        }
+
+        if (vm.IsFolder)
+        {
+            ShowFolderPreview(vm);
+            ClearReleaseTarget();
+            return;
+        }
+
+        if (vm.Command != null)
         {
             SetReleaseTarget(vm);
         }
@@ -680,7 +857,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void SlotButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (!IsEditMode || sender is not FrameworkElement { Tag: SlotViewModel vm } || vm.Item == null)
+        if (sender is not FrameworkElement { Tag: SlotViewModel vm } || vm.Item == null)
         {
             _dragStartPoint = null;
             _dragSourceSlot = null;
@@ -693,8 +870,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void SlotButton_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (!IsEditMode ||
-            e.LeftButton != MouseButtonState.Pressed ||
+        if (e.LeftButton != MouseButtonState.Pressed ||
             _dragStartPoint == null ||
             _dragSourceSlot?.Item == null)
         {
@@ -709,11 +885,72 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
 
         StopFolderHoverTimer();
-        var payload = new System.Windows.DataObject(typeof(SlotViewModel), _dragSourceSlot);
-        DragDrop.DoDragDrop((DependencyObject)sender, payload, System.Windows.DragDropEffects.Move);
+        HideFolderPreview();
+        var payload = new System.Windows.DataObject();
+        payload.SetData(typeof(SlotViewModel), _dragSourceSlot);
+
+        WindowBindingDropOverlayWindow? bindingOverlay = null;
+        DispatcherTimer? bindingOverlayTimer = null;
+        var draggedCommand = _dragSourceSlot.Command;
+        if (!_dragSourceSlot.IsFolder && draggedCommand != null)
+        {
+            payload.SetData(typeof(CommandItem), draggedCommand);
+            bindingOverlay = new WindowBindingDropOverlayWindow(draggedCommand, _mainWindow.GetWindowBindingMarginPixels());
+            bindingOverlay.BindingDropped += (hwnd, corner, offsetX, offsetY) =>
+            {
+                _ = _mainWindow.BindExtensionToWindowFromDropAsync(draggedCommand, hwnd, corner, offsetX, offsetY);
+            };
+            bindingOverlayTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(80)
+            };
+            bindingOverlayTimer.Tick += (_, _) =>
+            {
+                if (bindingOverlay == null || bindingOverlay.IsVisible || IsCursorInsideQuickPanel())
+                {
+                    return;
+                }
+
+                bindingOverlay.ShowFullDesktop();
+            };
+            bindingOverlayTimer.Start();
+        }
+
+        var sourceElement = (UIElement)sender;
+        System.Windows.GiveFeedbackEventHandler feedbackHandler = (_, args) =>
+        {
+            args.UseDefaultCursors = false;
+            System.Windows.Input.Mouse.SetCursor(System.Windows.Input.Cursors.Arrow);
+            args.Handled = true;
+        };
+        sourceElement.GiveFeedback += feedbackHandler;
+
+        try
+        {
+            IsDraggingSlot = true;
+            Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            DragDrop.DoDragDrop((DependencyObject)sender, payload, System.Windows.DragDropEffects.Move | System.Windows.DragDropEffects.Copy);
+        }
+        finally
+        {
+            IsDraggingSlot = false;
+            sourceElement.GiveFeedback -= feedbackHandler;
+            bindingOverlayTimer?.Stop();
+            if (bindingOverlay?.IsVisible == true)
+            {
+                bindingOverlay.Close();
+            }
+        }
         _dragStartPoint = null;
         _dragSourceSlot = null;
         ClearReleaseTarget();
+    }
+
+    private bool IsCursorInsideQuickPanel()
+    {
+        var cursor = System.Windows.Forms.Cursor.Position;
+        var point = PointFromScreen(new System.Windows.Point(cursor.X, cursor.Y));
+        return point.X >= 0 && point.Y >= 0 && point.X <= ActualWidth && point.Y <= ActualHeight;
     }
 
     private void SlotButton_DragOver(object sender, System.Windows.DragEventArgs e)
@@ -725,10 +962,48 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        // Internal panel slot drag (highest priority)
+        if (e.Data.GetDataPresent(typeof(QuickPanelFolderChildDragPayload)))
+        {
+            var source = e.Data.GetData(typeof(QuickPanelFolderChildDragPayload)) as QuickPanelFolderChildDragPayload;
+            if (source == null)
+            {
+                e.Effects = System.Windows.DragDropEffects.None;
+                return;
+            }
+
+            e.Effects = System.Windows.DragDropEffects.Move;
+            _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
+            SetReleaseTarget(target);
+            StopFolderHoverTimer();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Data.GetDataPresent(typeof(SlotViewModel)))
+        {
+            var source = e.Data.GetData(typeof(SlotViewModel)) as SlotViewModel;
+            if (source == null || ReferenceEquals(source, target))
+            {
+                e.Effects = System.Windows.DragDropEffects.None;
+                StopFolderHoverTimer();
+                return;
+            }
+
+            e.Effects = System.Windows.DragDropEffects.Move;
+            _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
+            SetReleaseTarget(target);
+            StopFolderHoverTimer();
+
+            e.Handled = true;
+            return;
+        }
+
+        // External command drop (from main window)
         if (e.Data.GetDataPresent(typeof(CommandItem)))
         {
             var command = e.Data.GetData(typeof(CommandItem)) as CommandItem;
-            if (command == null || target.Item != null)
+            if (command == null || (target.Item != null && !target.IsFolder))
             {
                 e.Effects = System.Windows.DragDropEffects.None;
             }
@@ -740,6 +1015,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             }
 
             StopFolderHoverTimer();
+            e.Handled = true;
             return;
         }
 
@@ -761,33 +1037,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (!IsEditMode || !e.Data.GetDataPresent(typeof(SlotViewModel)))
-        {
-            e.Effects = System.Windows.DragDropEffects.None;
-            StopFolderHoverTimer();
-            return;
-        }
-
-        var source = e.Data.GetData(typeof(SlotViewModel)) as SlotViewModel;
-        if (source == null || ReferenceEquals(source, target))
-        {
-            e.Effects = System.Windows.DragDropEffects.None;
-            StopFolderHoverTimer();
-            return;
-        }
-
-        e.Effects = System.Windows.DragDropEffects.Move;
-        _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
-        SetReleaseTarget(target);
-
-        if (!source.IsFolder && !target.IsFolder && source.Command != null && target.Command != null)
-        {
-            StartFolderHoverTimer(source, target);
-        }
-        else
-        {
-            StopFolderHoverTimer();
-        }
+        e.Effects = System.Windows.DragDropEffects.None;
+        StopFolderHoverTimer();
 
         e.Handled = true;
     }
@@ -804,10 +1055,58 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (e.Data.GetDataPresent(typeof(CommandItem)))
+        // Check for internal panel slot drag first (has both SlotViewModel and CommandItem)
+        if (e.Data.GetDataPresent(typeof(QuickPanelFolderChildDragPayload)))
+        {
+            var source = e.Data.GetData(typeof(QuickPanelFolderChildDragPayload)) as QuickPanelFolderChildDragPayload;
+            if (source != null)
+            {
+                StopFolderHoverTimer();
+                MoveFolderChildToSlot(source, target);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (e.Data.GetDataPresent(typeof(SlotViewModel)))
+        {
+            var source = e.Data.GetData(typeof(SlotViewModel)) as SlotViewModel;
+            if (source != null && !ReferenceEquals(source, target))
+            {
+                StopFolderHoverTimer();
+                if (IsControlKeyDown(e) && !source.IsFolder && source.Command != null)
+                {
+                    if (target.IsFolder)
+                    {
+                        AddSlotToFolder(source, target);
+                    }
+                    else if (target.Command != null)
+                    {
+                        CreateFolderFromSlots(source, target);
+                    }
+                    else
+                    {
+                        MoveOrSwapSlot(source, target);
+                    }
+                }
+                else
+                {
+                    MoveOrSwapSlot(source, target);
+                }
+
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (e.Data.GetDataPresent(typeof(CommandItem)) && !e.Data.GetDataPresent(typeof(SlotViewModel)))
         {
             var command = e.Data.GetData(typeof(CommandItem)) as CommandItem;
-            if (command != null && target.Item == null)
+            if (command != null && target.IsFolder)
+            {
+                AddCommandToFolder(target, command);
+            }
+            else if (command != null && target.Item == null)
             {
                 AddCommandToSlot(target, command);
             }
@@ -830,22 +1129,11 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             e.Handled = true;
             return;
         }
-
-        if (!IsEditMode || !e.Data.GetDataPresent(typeof(SlotViewModel)))
-        {
-            return;
-        }
-
-        var source = e.Data.GetData(typeof(SlotViewModel)) as SlotViewModel;
-        if (source == null || ReferenceEquals(source, target))
-        {
-            return;
-        }
-
-        StopFolderHoverTimer();
-        MoveOrSwapSlot(source, target);
         e.Handled = true;
     }
+
+    private static bool IsControlKeyDown(System.Windows.DragEventArgs e) =>
+        (e.KeyStates & System.Windows.DragDropKeyStates.ControlKey) == System.Windows.DragDropKeyStates.ControlKey;
 
     private static bool TryGetDroppedFilePaths(System.Windows.DragEventArgs e, out string[] filePaths)
     {
@@ -952,23 +1240,140 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             var command = vm.Command;
             HostAssets.AppendLog($"Quick panel execute: source={launchSource}, slot={vm.Index}, extension={command.ExtensionId}.");
             _releaseTargetTimer.Stop();
-            HidePanel();
+            if (TryExtractGeneratedPasteText(command, out var pasteText))
+            {
+                await ExecuteGeneratedPasteAsync(command, pasteText, launchSource);
+                return;
+            }
+
+            HidePanelIfAllowed();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             if (_previousForegroundWindow != IntPtr.Zero)
             {
                 var restored = NativeMethods.SetForegroundWindow(_previousForegroundWindow);
                 HostAssets.AppendLog($"Quick panel execute: restored previous foreground={restored}, {DescribeWindow(_previousForegroundWindow)}.");
+                RestorePreviousFocus("execute");
             }
 
-            await Task.Delay(120);
-            var input = await SelectionCaptureService.CaptureSelectedInputAsync();
-            HostAssets.AppendLog($"Quick panel execute: captured input length={input.Length}.");
+            var input = string.Empty;
+            if (command.ShouldCaptureSelectedInput)
+            {
+                await Task.Delay(120);
+                input = await SelectionCaptureService.CaptureSelectedInputAsync();
+                HostAssets.AppendLog($"Quick panel execute: captured input length={input.Length}.");
+            }
+            else
+            {
+                HostAssets.AppendLog("Quick panel execute: selection capture skipped for command without context input.");
+            }
+
             _mainWindow.ExecuteCommandExternally(command, input, launchSource);
         }
         finally
         {
             _isExecutingSlot = false;
             ClearReleaseTarget();
+            if (_isPinned && IsVisible)
+            {
+                _releaseTargetTimer.Start();
+            }
+        }
+    }
+
+    private async Task ExecuteGeneratedPasteAsync(CommandItem command, string text, string launchSource)
+    {
+        var totalStopwatch = Stopwatch.StartNew();
+        try
+        {
+            var clipboardStopwatch = Stopwatch.StartNew();
+            ClipboardService.SetText(text);
+            clipboardStopwatch.Stop();
+
+            var restoreStopwatch = Stopwatch.StartNew();
+            HidePanelIfAllowed();
+            var restoredForeground = false;
+            if (_previousForegroundWindow != IntPtr.Zero)
+            {
+                restoredForeground = NativeMethods.SetForegroundWindow(_previousForegroundWindow);
+            }
+
+            var focusRestored = RestorePreviousFocus("paste");
+            restoreStopwatch.Stop();
+
+            var settleDelayMs = string.Equals(launchSource, "quick-panel-hold-release", StringComparison.OrdinalIgnoreCase)
+                ? 35
+                : 20;
+            await Task.Delay(settleDelayMs);
+
+            var sendStopwatch = Stopwatch.StartNew();
+            var sent = NativeMethods.SendCtrlV(out var inputCount, out var lastError);
+            sendStopwatch.Stop();
+
+            _mainWindow.LastRunMessage = $"已粘贴：{command.Title}";
+            _mainWindow.SyncStatus = "已粘贴。";
+            HostAssets.AppendRecent(command.Title);
+            HostAssets.AppendLog(
+                $"Quick panel paste: id={command.ExtensionId}, title={command.Title}, source={launchSource}, textLength={text.Length}, SendInput sent={sent}/{inputCount}, lastError={lastError}, elapsedMs={totalStopwatch.ElapsedMilliseconds}, clipboardMs={clipboardStopwatch.ElapsedMilliseconds}, restoreMs={restoreStopwatch.ElapsedMilliseconds}, settleMs={settleDelayMs}, sendMs={sendStopwatch.ElapsedMilliseconds}, foregroundRestored={restoredForeground}, focusRestored={focusRestored}.");
+        }
+        catch (Exception ex)
+        {
+            _mainWindow.LastRunMessage = $"粘贴失败：{command.Title}";
+            _mainWindow.SyncStatus = $"粘贴失败：{ex.Message}";
+            HostAssets.AppendLog($"Quick panel paste failed: id={command.ExtensionId}, title={command.Title}, elapsedMs={totalStopwatch.ElapsedMilliseconds}, error={ex}");
+        }
+    }
+
+    private bool RestorePreviousFocus(string stage)
+    {
+        if (_previousFocusWindow == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        if (_previousFocusWindow == _previousForegroundWindow)
+        {
+            HostAssets.AppendLog(
+                $"Quick panel focus restore: stage={stage}, skipped=top-level-focus, focus={DescribeWindow(_previousFocusWindow)}.");
+            return false;
+        }
+
+        var restored = NativeMethods.TryRestoreFocus(_previousForegroundWindow, _previousFocusWindow, out var detail);
+        HostAssets.AppendLog(
+            $"Quick panel focus restore: stage={stage}, restored={restored}, focus={DescribeWindow(_previousFocusWindow)}, detail={detail}.");
+        return restored;
+    }
+
+    private static bool TryExtractGeneratedPasteText(CommandItem command, out string text)
+    {
+        text = string.Empty;
+        var script = command.InlineScriptSource;
+        if (string.IsNullOrWhiteSpace(script) ||
+            !string.Equals(command.EntryMode, "inline", StringComparison.OrdinalIgnoreCase) ||
+            !script.Contains("FromBase64String", StringComparison.OrdinalIgnoreCase) ||
+            !(script.Contains("Set-Clipboard", StringComparison.OrdinalIgnoreCase) ||
+              script.Contains("Clipboard.SetText", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        var match = Regex.Match(
+            script,
+            @"FromBase64String\((['""])(?<payload>[A-Za-z0-9+/=]+)\1\)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        try
+        {
+            text = Encoding.UTF8.GetString(Convert.FromBase64String(match.Groups["payload"].Value));
+            return true;
+        }
+        catch
+        {
+            text = string.Empty;
+            return false;
         }
     }
 
@@ -988,8 +1393,16 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            vm.SetCommand(null, false, vm.IsContextual);
-            SaveSlots(vm.IsContextual);
+            var reference = BuildSlotReference(vm);
+            var container = reference == null ? null : GetSlotContainer(reference);
+            if (container != null && reference!.Index >= 0 && reference.Index < container.Count)
+            {
+                container[reference.Index] = null;
+                RefreshAllLegacySlots();
+                SaveQuickPanelSettings("quickpanel-remove-slot");
+                LoadSlots();
+                RefreshActiveFolderAfterMutation();
+            }
         }
     }
 
@@ -1097,6 +1510,48 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             result.ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
     }
 
+    private void CopyStoreLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel { Command: not null } vm })
+        {
+            return;
+        }
+
+        try
+        {
+            var result = _mainWindow.CopyExtensionStoreLink(vm.Command!.ExtensionId);
+            if (!result.ok)
+            {
+                System.Windows.MessageBox.Show(this, result.message, "复制商店链接失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "复制商店链接失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void OpenStoreLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel { Command: not null } vm })
+        {
+            return;
+        }
+
+        try
+        {
+            var result = _mainWindow.OpenExtensionStoreLink(vm.Command!.ExtensionId);
+            if (!result.ok)
+            {
+                System.Windows.MessageBox.Show(this, result.message, "打开商店链接失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "打开商店链接失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void ToggleFavorite_Click(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem mi && mi.CommandParameter is SlotViewModel vm && vm.Command != null)
@@ -1191,11 +1646,6 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void Window_Deactivated(object sender, EventArgs e)
     {
-        if (_isPinned)
-        {
-            return;
-        }
-
         if (DateTime.UtcNow <= _suppressAutoHideUntilUtc)
         {
             return;
@@ -1207,7 +1657,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
 
         _releaseTargetTimer.Stop();
-        HidePanel();
+        HidePanelIfAllowed();
     }
 
     public void ShowAtMouse()
@@ -1216,18 +1666,19 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             HostAssets.AppendLog("Quick panel show requested.");
             _previousForegroundWindow = NativeMethods.GetForegroundWindow();
+            _previousFocusWindow = NativeMethods.GetForegroundFocusWindow();
             _foregroundAppContext = BuildForegroundAppContext(_previousForegroundWindow);
             var cursorPixels = NativeMethods.GetCursorPosition();
             var cursorDips = DeviceToDips(cursorPixels);
-            const double safeAnchorY = 310;
-            Left = cursorDips.X - Width / 2;
-            Top = cursorDips.Y - safeAnchorY;
 
             var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)cursorPixels.X, (int)cursorPixels.Y));
             var screenBounds = DeviceRectToDips(screen.Bounds);
-            if (Left < screenBounds.Left) Left = screenBounds.Left;
+            var safeAnchorY = Height / 2;
+            var requestedTop = cursorDips.Y - safeAnchorY;
+            var topConstrained = requestedTop <= screenBounds.Top;
+            Left = CalculateMousePanelLeft(cursorDips.X, screenBounds, topConstrained);
+            Top = requestedTop;
             if (Top < screenBounds.Top) Top = screenBounds.Top;
-            if (Left + Width > screenBounds.Right) Left = screenBounds.Right - Width;
             if (Top + Height > screenBounds.Bottom) Top = screenBounds.Bottom - Height;
 
             HubSearchBox.Text = string.Empty; // Reset search on show
@@ -1235,27 +1686,78 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             LoadSlots(); // Refresh
             var occupiedGlobal = GlobalSlots.Count(slot => slot.IsOccupied);
             var occupiedContext = ContextSlots.Count(slot => slot.IsOccupied);
-            HostAssets.AppendLog($"Quick panel showing at ({Left:0},{Top:0}), cursorPixels=({cursorPixels.X:0},{cursorPixels.Y:0}), cursorDips=({cursorDips.X:0},{cursorDips.Y:0}), screenDips=({screenBounds.Left:0},{screenBounds.Top:0},{screenBounds.Right:0},{screenBounds.Bottom:0}), occupiedGlobal={occupiedGlobal}, occupiedContext={occupiedContext}, totalGlobal={GlobalSlots.Count}, totalContext={ContextSlots.Count}.");
+            HostAssets.AppendLog($"Quick panel showing at ({Left:0},{Top:0}), cursorPixels=({cursorPixels.X:0},{cursorPixels.Y:0}), cursorDips=({cursorDips.X:0},{cursorDips.Y:0}), cursorLocalX={cursorDips.X - Left:0}, topConstrained={topConstrained}, screenDips=({screenBounds.Left:0},{screenBounds.Top:0},{screenBounds.Right:0},{screenBounds.Bottom:0}), occupiedGlobal={occupiedGlobal}, occupiedContext={occupiedContext}, totalGlobal={GlobalSlots.Count}, totalContext={ContextSlots.Count}, previousFocus={DescribeWindow(_previousFocusWindow)}.");
             OnPropertyChanged(nameof(ContextSectionTitle));
             OnPropertyChanged(nameof(ContextHintText));
             Topmost = true;
             Show();
+            NativeMethods.ShowWithoutActivation(new WindowInteropHelper(this).Handle);
             _releaseTargetTimer.Start();
-            Activate();
-            BringToFront();
-            Dispatcher.BeginInvoke(() =>
-            {
-                BringToFront();
-                HubSearchBox.Focus();
-                Keyboard.Focus(HubSearchBox);
-                HubSearchBox.Select(0, 0);
-                HubSearchBox.CaretIndex = 0;
-            }, DispatcherPriority.ApplicationIdle);
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Quick panel show failed: {ex}");
         }
+    }
+
+    private double CalculateMousePanelLeft(double cursorXDips, Rect screenBounds, bool topConstrained)
+    {
+        var defaultLeft = Clamp(cursorXDips - Width / 2, screenBounds.Left, screenBounds.Right - Width);
+        if (!topConstrained)
+        {
+            return defaultLeft;
+        }
+
+        var slotGridWidth = Math.Max(0, Width - SidebarWidthDips - SlotGridHorizontalMarginDips * 2);
+        var cellWidth = slotGridWidth / QuickPanelColumnCount;
+        var slotGridLeft = SidebarWidthDips + SlotGridHorizontalMarginDips;
+        var targetLocalXs = new[]
+        {
+            Width / 2,
+            slotGridLeft + cellWidth * 2,
+            slotGridLeft + cellWidth,
+            slotGridLeft + cellWidth * 3,
+            SidebarWidthDips / 2,
+            Width - 12
+        };
+
+        return targetLocalXs
+            .Select(targetLocalX =>
+            {
+                var left = Clamp(cursorXDips - targetLocalX, screenBounds.Left, screenBounds.Right - Width);
+                var actualLocalX = cursorXDips - left;
+                var isOverIcon = IsOverTopRowIcon(actualLocalX, slotGridLeft, cellWidth);
+                var score = (isOverIcon ? 100000 : 0) + Math.Abs(left - defaultLeft);
+                return new { Left = left, Score = score };
+            })
+            .OrderBy(static candidate => candidate.Score)
+            .First()
+            .Left;
+    }
+
+    private static bool IsOverTopRowIcon(double localX, double slotGridLeft, double cellWidth)
+    {
+        for (var column = 0; column < QuickPanelColumnCount; column++)
+        {
+            var iconLeft = slotGridLeft + column * cellWidth + (cellWidth - SlotIconWidthDips) / 2 - CursorIconSafetyDips;
+            var iconRight = iconLeft + SlotIconWidthDips + CursorIconSafetyDips * 2;
+            if (localX >= iconLeft && localX <= iconRight)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static double Clamp(double value, double min, double max)
+    {
+        if (max < min)
+        {
+            return min;
+        }
+
+        return Math.Min(Math.Max(value, min), max);
     }
 
     public void ReloadSlots()
@@ -1317,6 +1819,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         };
         _settings.QuickPanelContextGroups.Add(autoGroup);
         _settings.SelectedQuickPanelContextGroupId = autoGroup.Id;
+        HostAssets.AppendLog(
+            $"Quick panel context group auto-created: id={autoGroup.Id}, process={autoGroup.ContextProcessName}, display={autoGroup.ContextDisplayName}.");
         SaveQuickPanelSettings("quickpanel-auto-create-context-group");
         LoadGroups();
         return autoGroup;
@@ -1331,8 +1835,13 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private QuickPanelSlotReference? BuildSlotReference(SlotViewModel vm)
     {
-        var group = vm.IsContextual ? GetSelectedContextGroupSettings() : GetSelectedGlobalGroupSettings();
-        return group == null ? null : new QuickPanelSlotReference(vm.IsContextual, group.Id, vm.Index);
+        if (!string.IsNullOrWhiteSpace(vm.SourceGroupId))
+        {
+            return new QuickPanelSlotReference(vm.IsContextual, vm.SourceGroupId!, vm.Index, vm.ContainerPath.ToList());
+        }
+
+        var group = vm.IsContextual ? EnsureContextGroupForCurrentApp() : GetSelectedGlobalGroupSettings();
+        return group == null ? null : new QuickPanelSlotReference(vm.IsContextual, group.Id, vm.Index, []);
     }
 
     private bool TryPasteClipboardIntoSlot(SlotViewModel targetSlot, QuickPanelClipboardItem clipboard, out string message)
@@ -1346,54 +1855,44 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return false;
         }
 
-        var targetGroup = targetSlot.IsContextual ? EnsureContextGroupForCurrentApp() : GetSelectedGlobalGroupSettings();
-        if (targetGroup == null)
+        var targetReference = BuildSlotReference(targetSlot);
+        var targetContainer = targetReference == null ? null : GetSlotContainer(targetReference);
+        if (targetReference == null || targetContainer == null)
         {
             message = "当前鼠标面板分组不可用。";
             return false;
         }
 
-        while (targetGroup.SlotItems.Count < (targetSlot.IsContextual ? ContextSlotCount : GlobalSlotCount))
-        {
-            targetGroup.SlotItems.Add(null);
-        }
-
         if (clipboard.IsCut && clipboard.SourceSlot != null)
         {
-            var sourceGroup = clipboard.SourceSlot.IsContextual
-                ? _settings.QuickPanelContextGroups.FirstOrDefault(group => string.Equals(group.Id, clipboard.SourceSlot.GroupId, StringComparison.OrdinalIgnoreCase))
-                : _settings.QuickPanelGlobalGroups.FirstOrDefault(group => string.Equals(group.Id, clipboard.SourceSlot.GroupId, StringComparison.OrdinalIgnoreCase));
-            if (sourceGroup != null)
+            var sourceContainer = GetSlotContainer(clipboard.SourceSlot);
+            if (sourceContainer != null)
             {
-                while (sourceGroup.SlotItems.Count < (clipboard.SourceSlot.IsContextual ? ContextSlotCount : GlobalSlotCount))
-                {
-                    sourceGroup.SlotItems.Add(null);
-                }
-
-                if (clipboard.SourceSlot.Index == targetSlot.Index &&
-                    clipboard.SourceSlot.IsContextual == targetSlot.IsContextual &&
-                    string.Equals(clipboard.SourceSlot.GroupId, targetGroup.Id, StringComparison.OrdinalIgnoreCase))
+                if (clipboard.SourceSlot.Index == targetReference.Index &&
+                    clipboard.SourceSlot.IsContextual == targetReference.IsContextual &&
+                    string.Equals(clipboard.SourceSlot.GroupId, targetReference.GroupId, StringComparison.OrdinalIgnoreCase) &&
+                    clipboard.SourceSlot.ContainerPath.SequenceEqual(targetReference.ContainerPath))
                 {
                     message = $"扩展已在当前位置：{clipboard.Title}";
                     _mainWindow.ClearQuickPanelClipboard();
                     return true;
                 }
 
-                var targetExisting = targetGroup.SlotItems[targetSlot.Index];
-                targetGroup.SlotItems[targetSlot.Index] = new QuickPanelSlotItem
+                var targetExisting = targetContainer[targetReference.Index];
+                targetContainer[targetReference.Index] = new QuickPanelSlotItem
                 {
                     ExtensionId = clipboard.ExtensionId
                 };
-                if (clipboard.SourceSlot.Index >= 0 && clipboard.SourceSlot.Index < sourceGroup.SlotItems.Count)
+                if (clipboard.SourceSlot.Index >= 0 && clipboard.SourceSlot.Index < sourceContainer.Count)
                 {
-                    sourceGroup.SlotItems[clipboard.SourceSlot.Index] = targetExisting;
+                    sourceContainer[clipboard.SourceSlot.Index] = targetExisting;
                 }
 
-                targetGroup.Slots = targetGroup.SlotItems.Select(static item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
-                sourceGroup.Slots = sourceGroup.SlotItems.Select(static item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
+                RefreshAllLegacySlots();
                 SaveQuickPanelSettings("quickpanel-move-slot");
                 _mainWindow.ClearQuickPanelClipboard();
                 LoadSlots();
+                RefreshActiveFolderAfterMutation();
                 message = targetExisting == null
                     ? $"已移动到第 {targetSlot.Index + 1} 个槽位：{clipboard.Title}"
                     : $"已与第 {targetSlot.Index + 1} 个槽位交换位置：{clipboard.Title}";
@@ -1401,13 +1900,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             }
         }
 
-        targetGroup.SlotItems[targetSlot.Index] = new QuickPanelSlotItem
+        targetContainer[targetReference.Index] = new QuickPanelSlotItem
         {
             ExtensionId = clipboard.ExtensionId
         };
-        targetGroup.Slots = targetGroup.SlotItems.Select(static item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
+        RefreshAllLegacySlots();
         SaveQuickPanelSettings("quickpanel-paste-slot");
         LoadSlots();
+        RefreshActiveFolderAfterMutation();
         message = targetSlot.Item == null
             ? $"已粘贴到第 {targetSlot.Index + 1} 个槽位：{clipboard.Title}"
             : $"已替换第 {targetSlot.Index + 1} 个槽位为：{clipboard.Title}";
@@ -1425,10 +1925,22 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     {
         _releaseTargetTimer.Stop();
         StopFolderHoverTimer();
+        HideFolderPreview();
         CollapseFolder();
         ClearReleaseTarget();
         Topmost = false;
         Hide();
+    }
+
+    private void HidePanelIfAllowed()
+    {
+        if (_isPinned)
+        {
+            HostAssets.AppendLog("Quick panel hide skipped because panel is pinned.");
+            return;
+        }
+
+        HidePanel();
     }
 
     private System.Windows.Point DeviceToDips(System.Windows.Point point)
@@ -1457,7 +1969,196 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         _mainWindow.NotifyQuickPanelSettingsChanged(reason);
     }
 
-    private void ExpandFolder(SlotViewModel folderSlot)
+    private static List<QuickPanelSlotItem?> GetFolderSlotItems(QuickPanelSlotItem folderItem)
+    {
+        folderItem.FolderSlotItems ??= [];
+        if (folderItem.FolderSlotItems.Count == 0 && folderItem.FolderExtensionIds.Count > 0)
+        {
+            folderItem.FolderSlotItems = folderItem.FolderExtensionIds
+                .Take(FolderSlotCount)
+                .Select(static id => string.IsNullOrWhiteSpace(id) ? null : new QuickPanelSlotItem { ExtensionId = id })
+                .ToList();
+        }
+
+        while (folderItem.FolderSlotItems.Count < FolderSlotCount)
+        {
+            folderItem.FolderSlotItems.Add(null);
+        }
+
+        if (folderItem.FolderSlotItems.Count > FolderSlotCount)
+        {
+            folderItem.FolderSlotItems = folderItem.FolderSlotItems.Take(FolderSlotCount).ToList();
+        }
+
+        RefreshFolderLegacyIds(folderItem);
+        return folderItem.FolderSlotItems;
+    }
+
+    private QuickPanelGroupSettings? GetGroupByReference(QuickPanelSlotReference reference) =>
+        reference.IsContextual
+            ? _settings.QuickPanelContextGroups.FirstOrDefault(group => string.Equals(group.Id, reference.GroupId, StringComparison.OrdinalIgnoreCase))
+            : _settings.QuickPanelGlobalGroups.FirstOrDefault(group => string.Equals(group.Id, reference.GroupId, StringComparison.OrdinalIgnoreCase));
+
+    private List<QuickPanelSlotItem?>? GetSlotContainer(QuickPanelSlotReference reference)
+    {
+        var group = GetGroupByReference(reference);
+        if (group == null)
+        {
+            return null;
+        }
+
+        var container = group.SlotItems;
+        while (container.Count < 12)
+        {
+            container.Add(null);
+        }
+
+        foreach (var folderIndex in reference.ContainerPath)
+        {
+            if (folderIndex < 0 || folderIndex >= container.Count)
+            {
+                return null;
+            }
+
+            var folder = container[folderIndex];
+            if (folder?.IsFolder != true)
+            {
+                return null;
+            }
+
+            container = GetFolderSlotItems(folder);
+        }
+
+        return container;
+    }
+
+    private QuickPanelSlotItem? GetSlotItem(QuickPanelSlotReference reference)
+    {
+        var container = GetSlotContainer(reference);
+        return container != null && reference.Index >= 0 && reference.Index < container.Count
+            ? container[reference.Index]
+            : null;
+    }
+
+    private static void RefreshFolderLegacyIds(QuickPanelSlotItem folderItem)
+    {
+        folderItem.FolderExtensionIds = (folderItem.FolderSlotItems ?? [])
+            .Where(static slot => slot != null && !slot.IsFolder && !string.IsNullOrWhiteSpace(slot.ExtensionId))
+            .Select(static slot => slot!.ExtensionId!)
+            .ToList();
+    }
+
+    private void RefreshAllLegacySlots()
+    {
+        foreach (var group in _settings.QuickPanelGlobalGroups.Concat(_settings.QuickPanelContextGroups))
+        {
+            RefreshLegacySlots(group);
+        }
+    }
+
+    private void RefreshActiveFolderAfterMutation()
+    {
+        if (_activeFolderReference == null)
+        {
+            return;
+        }
+
+        if (LoadActiveFolderFromReference(_activeFolderReference, _isFolderPinnedOpen))
+        {
+            return;
+        }
+
+        CollapseFolder();
+    }
+
+    private bool LoadActiveFolderFromReference(QuickPanelSlotReference folderReference, bool pinnedOpen)
+    {
+        var folderItem = GetSlotItem(folderReference);
+        if (folderItem?.IsFolder != true)
+        {
+            return false;
+        }
+
+        var commands = _mainWindow.GetAllCommands();
+        var folderPath = folderReference.ContainerPath.Concat([folderReference.Index]).ToList();
+        var activeSlots = new ObservableCollection<SlotViewModel>();
+        var folderSlotItems = GetFolderSlotItems(folderItem);
+        for (var index = 0; index < FolderSlotCount; index++)
+        {
+            var slot = CreateSlotViewModel(
+                index,
+                folderSlotItems.ElementAtOrDefault(index),
+                commands,
+                folderReference.IsContextual,
+                folderReference.GroupId,
+                folderPath);
+            slot.SetFolderChildSource(folderReference.GroupId, folderReference.Index, index);
+            activeSlots.Add(slot);
+        }
+
+        _activeFolderReference = folderReference;
+        ActiveFolderTitle = folderItem.FolderName ?? "新分组";
+        ActiveFolderSlots = activeSlots;
+        _isFolderPinnedOpen = pinnedOpen;
+        OnPropertyChanged(nameof(ActiveFolderOverlayHeight));
+        IsFolderExpanded = true;
+        return true;
+    }
+
+    private void NavigateToParentFolder()
+    {
+        if (_activeFolderReference == null)
+        {
+            CollapseFolder();
+            return;
+        }
+
+        if (_activeFolderReference.ContainerPath.Count == 0)
+        {
+            CollapseFolder();
+            return;
+        }
+
+        var parentPath = _activeFolderReference.ContainerPath.ToList();
+        var parentIndex = parentPath[^1];
+        parentPath.RemoveAt(parentPath.Count - 1);
+        var parentReference = new QuickPanelSlotReference(
+            _activeFolderReference.IsContextual,
+            _activeFolderReference.GroupId,
+            parentIndex,
+            parentPath);
+        if (!LoadActiveFolderFromReference(parentReference, pinnedOpen: true))
+        {
+            CollapseFolder();
+        }
+    }
+
+    private static QuickPanelSlotItem? CloneSlotItem(QuickPanelSlotItem? item)
+    {
+        return item == null
+            ? null
+            : new QuickPanelSlotItem
+            {
+                ItemType = item.ItemType,
+                ExtensionId = item.ExtensionId,
+                FolderName = item.FolderName,
+                FolderExtensionIds = item.FolderExtensionIds.ToList(),
+                FolderSlotItems = item.FolderSlotItems.Select(CloneSlotItem).ToList()
+            };
+    }
+
+    private static List<QuickPanelSlotItem?> CreateFolderSlotItems(params QuickPanelSlotItem?[] initialItems)
+    {
+        var items = initialItems.Take(FolderSlotCount).ToList();
+        while (items.Count < FolderSlotCount)
+        {
+            items.Add(null);
+        }
+
+        return items;
+    }
+
+    private void ExpandFolder(SlotViewModel folderSlot, bool pinnedOpen)
     {
         if (!folderSlot.IsFolder)
         {
@@ -1465,23 +2166,99 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
 
         var commands = _mainWindow.GetAllCommands();
+        var parentReference = BuildSlotReference(folderSlot);
+        if (parentReference == null)
+        {
+            return;
+        }
+
+        var folderItem = GetSlotItem(parentReference);
+        if (folderItem?.IsFolder != true)
+        {
+            return;
+        }
+
+        var folderPath = parentReference.ContainerPath.Concat([parentReference.Index]).ToList();
+        _activeFolderReference = new QuickPanelSlotReference(parentReference.IsContextual, parentReference.GroupId, parentReference.Index, parentReference.ContainerPath.ToList());
         ActiveFolderTitle = folderSlot.Title;
-        ActiveFolderSlots = new ObservableCollection<SlotViewModel>(
-            folderSlot.FolderExtensionIds
-                .Select((id, index) => CreateSlotViewModel(
-                    index,
-                    new QuickPanelSlotItem { ExtensionId = id },
-                    commands,
-                    folderSlot.IsContextual))
-                .Where(static slot => slot.Command != null));
+        var activeSlots = new ObservableCollection<SlotViewModel>();
+        var folderSlotItems = GetFolderSlotItems(folderItem);
+        for (var index = 0; index < FolderSlotCount; index++)
+        {
+            var slot = CreateSlotViewModel(
+                index,
+                folderSlotItems.ElementAtOrDefault(index),
+                commands,
+                folderSlot.IsContextual,
+                parentReference.GroupId,
+                folderPath);
+            slot.SetFolderChildSource(parentReference.GroupId, parentReference.Index, index);
+            activeSlots.Add(slot);
+        }
+
+        ActiveFolderSlots = activeSlots;
+        _isFolderPinnedOpen = pinnedOpen;
+        if (!pinnedOpen)
+        {
+            _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(160);
+            ClearReleaseTarget();
+        }
+
         IsFolderExpanded = true;
+    }
+
+    private void ShowFolderPreview(SlotViewModel folderSlot)
+    {
+        if (!folderSlot.IsFolder || ReferenceEquals(_previewFolderSlot, folderSlot))
+        {
+            return;
+        }
+
+        _previewFolderSlot = folderSlot;
+        FolderPreviewTitle = folderSlot.Title;
+        FolderPreviewItems = new ObservableCollection<FolderPreviewIconViewModel>(
+            ResolveFolderPreviewCommands(folderSlot).Select(static command => new FolderPreviewIconViewModel(command)));
+        IsFolderPreviewVisible = FolderPreviewItems.Count > 0;
+    }
+
+    private void HideFolderPreview()
+    {
+        _previewFolderSlot = null;
+        FolderPreviewTitle = string.Empty;
+        FolderPreviewItems = [];
+        IsFolderPreviewVisible = false;
+    }
+
+    private IReadOnlyList<CommandItem> ResolveFolderPreviewCommands(SlotViewModel folderSlot)
+    {
+        if (!folderSlot.IsFolder)
+        {
+            return [];
+        }
+
+        var commands = _mainWindow.GetAllCommands();
+        return folderSlot.FolderExtensionIds
+            .Select(id => commands.FirstOrDefault(command => string.Equals(command.ExtensionId, id, StringComparison.OrdinalIgnoreCase)))
+            .OfType<CommandItem>()
+            .ToList();
     }
 
     private void CollapseFolder()
     {
         ActiveFolderTitle = string.Empty;
         ActiveFolderSlots = [];
+        _activeFolderReference = null;
+        _isFolderPinnedOpen = false;
         IsFolderExpanded = false;
+        ClearReleaseTarget();
+    }
+
+    private void FolderOverlay_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (!_isFolderPinnedOpen && !IsEditMode)
+        {
+            CollapseFolder();
+        }
     }
 
     private void StartFolderHoverTimer(SlotViewModel source, SlotViewModel target)
@@ -1515,7 +2292,51 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void MoveOrSwapSlot(SlotViewModel source, SlotViewModel target)
     {
-        var sourceGroup = source.IsContextual ? EnsureContextGroupForCurrentApp() : GetSelectedGlobalGroupSettings();
+        var sourceReference = BuildSlotReference(source);
+        var targetReference = BuildSlotReference(target);
+        if (sourceReference == null || targetReference == null)
+        {
+            HostAssets.AppendLog(
+                $"Quick panel drag ignored: missing slot reference, sourceContext={source.IsContextual}, targetContext={target.IsContextual}, sourceGroup={source.SourceGroupId ?? ""}, targetGroup={target.SourceGroupId ?? ""}.");
+            return;
+        }
+
+        var sourceContainer = GetSlotContainer(sourceReference);
+        var targetContainer = GetSlotContainer(targetReference);
+        if (sourceContainer == null || targetContainer == null)
+        {
+            HostAssets.AppendLog(
+                $"Quick panel drag ignored: missing slot container, sourceGroup={sourceReference.GroupId}, targetGroup={targetReference.GroupId}.");
+            return;
+        }
+
+        while (sourceContainer.Count < 12)
+        {
+            sourceContainer.Add(null);
+        }
+
+        while (targetContainer.Count < 12)
+        {
+            targetContainer.Add(null);
+        }
+
+        var sourceItem = sourceContainer[sourceReference.Index];
+        var targetItem = targetContainer[targetReference.Index];
+        targetContainer[targetReference.Index] = sourceItem;
+        sourceContainer[sourceReference.Index] = targetItem;
+        RefreshAllLegacySlots();
+        SaveQuickPanelSettings("quickpanel-drag-swap-slot");
+        HostAssets.AppendLog(
+            $"Quick panel drag saved: sourceGroup={sourceReference.GroupId}, sourceIndex={sourceReference.Index}, targetGroup={targetReference.GroupId}, targetIndex={targetReference.Index}, targetContext={targetReference.IsContextual}.");
+        LoadSlots();
+        RefreshActiveFolderAfterMutation();
+    }
+
+    private void MoveFolderChildToSlot(QuickPanelFolderChildDragPayload source, SlotViewModel target)
+    {
+        var sourceGroup = source.IsContextual
+            ? _settings.QuickPanelContextGroups.FirstOrDefault(group => string.Equals(group.Id, source.GroupId, StringComparison.OrdinalIgnoreCase))
+            : _settings.QuickPanelGlobalGroups.FirstOrDefault(group => string.Equals(group.Id, source.GroupId, StringComparison.OrdinalIgnoreCase));
         var targetGroup = target.IsContextual ? EnsureContextGroupForCurrentApp() : GetSelectedGlobalGroupSettings();
         if (sourceGroup == null || targetGroup == null)
         {
@@ -1532,14 +2353,143 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             targetGroup.SlotItems.Add(null);
         }
 
-        var sourceItem = source.CloneSlotItem();
-        var targetItem = target.CloneSlotItem();
-        targetGroup.SlotItems[target.Index] = sourceItem;
-        sourceGroup.SlotItems[source.Index] = targetItem;
-        sourceGroup.Slots = sourceGroup.SlotItems.Select(static item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
-        targetGroup.Slots = targetGroup.SlotItems.Select(static item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
-        SaveQuickPanelSettings("quickpanel-drag-swap-slot");
+        if (source.FolderIndex < 0 || source.FolderIndex >= sourceGroup.SlotItems.Count)
+        {
+            return;
+        }
+
+        var sourceFolder = sourceGroup.SlotItems[source.FolderIndex];
+        if (sourceFolder?.IsFolder != true)
+        {
+            return;
+        }
+
+        var sourceChildIndex = FindFolderChildIndex(sourceFolder, source);
+        if (sourceChildIndex < 0)
+        {
+            return;
+        }
+
+        if (target.IsFolder)
+        {
+            if (ReferenceEquals(sourceGroup, targetGroup) && source.FolderIndex == target.Index)
+            {
+                return;
+            }
+
+            var targetFolder = targetGroup.SlotItems.ElementAtOrDefault(target.Index);
+            if (targetFolder?.IsFolder != true)
+            {
+                return;
+            }
+
+            if (!targetFolder.FolderExtensionIds.Any(id => string.Equals(id, source.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+            {
+                targetFolder.FolderExtensionIds.Add(source.ExtensionId);
+            }
+
+            sourceFolder.FolderExtensionIds.RemoveAt(sourceChildIndex);
+            NormalizeFolderSlotAfterRemoval(sourceGroup, source.FolderIndex);
+            RefreshLegacySlots(sourceGroup);
+            RefreshLegacySlots(targetGroup);
+            SaveQuickPanelSettings("quickpanel-move-folder-child-to-folder");
+            CollapseFolder();
+            LoadSlots();
+            return;
+        }
+
+        var targetExisting = targetGroup.SlotItems[target.Index];
+        if (targetExisting?.IsFolder == true)
+        {
+            return;
+        }
+
+        if (targetExisting == null)
+        {
+            sourceFolder.FolderExtensionIds.RemoveAt(sourceChildIndex);
+        }
+        else if (!string.IsNullOrWhiteSpace(targetExisting.ExtensionId))
+        {
+            sourceFolder.FolderExtensionIds[sourceChildIndex] = targetExisting.ExtensionId;
+        }
+
+        targetGroup.SlotItems[target.Index] = new QuickPanelSlotItem
+        {
+            ExtensionId = source.ExtensionId
+        };
+        NormalizeFolderSlotAfterRemoval(sourceGroup, source.FolderIndex);
+        RefreshLegacySlots(sourceGroup);
+        RefreshLegacySlots(targetGroup);
+        SaveQuickPanelSettings("quickpanel-move-folder-child-to-slot");
+        CollapseFolder();
         LoadSlots();
+    }
+
+    private static int FindFolderChildIndex(QuickPanelSlotItem folderItem, QuickPanelFolderChildDragPayload source)
+    {
+        if (source.ItemIndex >= 0 &&
+            source.ItemIndex < folderItem.FolderExtensionIds.Count &&
+            string.Equals(folderItem.FolderExtensionIds[source.ItemIndex], source.ExtensionId, StringComparison.OrdinalIgnoreCase))
+        {
+            return source.ItemIndex;
+        }
+
+        return folderItem.FolderExtensionIds.FindIndex(id => string.Equals(id, source.ExtensionId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void NormalizeFolderSlotAfterRemoval(QuickPanelGroupSettings group, int folderIndex)
+    {
+        if (folderIndex < 0 || folderIndex >= group.SlotItems.Count)
+        {
+            return;
+        }
+
+        var folder = group.SlotItems[folderIndex];
+        if (folder?.IsFolder != true)
+        {
+            return;
+        }
+
+        folder.FolderExtensionIds = folder.FolderExtensionIds
+            .Where(static id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (folder.FolderExtensionIds.Count == 0)
+        {
+            group.SlotItems[folderIndex] = null;
+        }
+        else if (folder.FolderExtensionIds.Count == 1)
+        {
+            group.SlotItems[folderIndex] = new QuickPanelSlotItem
+            {
+                ExtensionId = folder.FolderExtensionIds[0]
+            };
+        }
+    }
+
+    private static void RefreshLegacySlots(QuickPanelGroupSettings group)
+    {
+        foreach (var item in group.SlotItems)
+        {
+            RefreshNestedFolderLegacyIds(item);
+        }
+
+        group.Slots = group.SlotItems.Select(static item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
+    }
+
+    private static void RefreshNestedFolderLegacyIds(QuickPanelSlotItem? item)
+    {
+        if (item?.IsFolder != true)
+        {
+            return;
+        }
+
+        foreach (var child in GetFolderSlotItems(item))
+        {
+            RefreshNestedFolderLegacyIds(child);
+        }
+
+        RefreshFolderLegacyIds(item);
     }
 
     private void CreateFolderFromSlots(SlotViewModel source, SlotViewModel target)
@@ -1549,64 +2499,160 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var sourceGroup = source.IsContextual ? EnsureContextGroupForCurrentApp() : GetSelectedGlobalGroupSettings();
-        var targetGroup = target.IsContextual ? EnsureContextGroupForCurrentApp() : GetSelectedGlobalGroupSettings();
-        if (sourceGroup == null || targetGroup == null)
+        if (string.Equals(source.Command.ExtensionId, target.Command.ExtensionId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        while (sourceGroup.SlotItems.Count < (source.IsContextual ? ContextSlotCount : GlobalSlotCount))
+        var sourceReference = BuildSlotReference(source);
+        var targetReference = BuildSlotReference(target);
+        if (sourceReference == null || targetReference == null)
         {
-            sourceGroup.SlotItems.Add(null);
+            return;
         }
 
-        while (targetGroup.SlotItems.Count < (target.IsContextual ? ContextSlotCount : GlobalSlotCount))
+        var sourceContainer = GetSlotContainer(sourceReference);
+        var targetContainer = GetSlotContainer(targetReference);
+        if (sourceContainer == null || targetContainer == null)
         {
-            targetGroup.SlotItems.Add(null);
+            return;
         }
 
-        targetGroup.SlotItems[target.Index] = new QuickPanelSlotItem
+        var sourceItem = sourceContainer[sourceReference.Index];
+        var targetItem = targetContainer[targetReference.Index];
+        if (sourceItem == null || targetItem == null)
+        {
+            return;
+        }
+
+        targetContainer[targetReference.Index] = new QuickPanelSlotItem
         {
             ItemType = "folder",
             FolderName = $"{target.Title}组",
-            FolderExtensionIds = [target.Command.ExtensionId, source.Command.ExtensionId]
+            FolderSlotItems = CreateFolderSlotItems(CloneSlotItem(targetItem), CloneSlotItem(sourceItem))
         };
-        sourceGroup.SlotItems[source.Index] = null;
-        sourceGroup.Slots = sourceGroup.SlotItems.Select(static item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
-        targetGroup.Slots = targetGroup.SlotItems.Select(static item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
+        RefreshFolderLegacyIds(targetContainer[targetReference.Index]!);
+        sourceContainer[sourceReference.Index] = null;
+        RefreshAllLegacySlots();
         SaveQuickPanelSettings("quickpanel-auto-create-folder");
         LoadSlots();
+        RefreshActiveFolderAfterMutation();
+    }
+
+    private void AddSlotToFolder(SlotViewModel source, SlotViewModel targetFolder)
+    {
+        if (source.Command == null || source.IsFolder || !targetFolder.IsFolder)
+        {
+            return;
+        }
+
+        var sourceReference = BuildSlotReference(source);
+        var targetReference = BuildSlotReference(targetFolder);
+        if (sourceReference == null || targetReference == null)
+        {
+            return;
+        }
+
+        var sourceContainer = GetSlotContainer(sourceReference);
+        var targetContainer = GetSlotContainer(targetReference);
+        if (sourceContainer == null || targetContainer == null)
+        {
+            return;
+        }
+
+        var sourceItem = sourceContainer[sourceReference.Index];
+        var folderItem = targetContainer[targetReference.Index];
+        if (sourceItem == null || folderItem?.IsFolder != true)
+        {
+            return;
+        }
+
+        var folderSlots = GetFolderSlotItems(folderItem);
+        var emptyIndex = folderSlots.FindIndex(static slot => slot == null);
+        if (emptyIndex < 0)
+        {
+            return;
+        }
+
+        folderSlots[emptyIndex] = CloneSlotItem(sourceItem);
+        RefreshFolderLegacyIds(folderItem);
+        sourceContainer[sourceReference.Index] = null;
+        RefreshAllLegacySlots();
+        SaveQuickPanelSettings("quickpanel-add-slot-to-folder");
+        LoadSlots();
+        RefreshActiveFolderAfterMutation();
+    }
+
+    private void AddCommandToFolder(SlotViewModel targetFolder, CommandItem command)
+    {
+        if (!targetFolder.IsFolder)
+        {
+            return;
+        }
+
+        var targetReference = BuildSlotReference(targetFolder);
+        if (targetReference == null)
+        {
+            return;
+        }
+
+        var targetContainer = GetSlotContainer(targetReference);
+        if (targetContainer == null)
+        {
+            return;
+        }
+
+        var folderItem = targetContainer.ElementAtOrDefault(targetReference.Index);
+        if (folderItem?.IsFolder != true)
+        {
+            return;
+        }
+
+        var folderSlots = GetFolderSlotItems(folderItem);
+        if (folderSlots.Any(slot => slot != null && !slot.IsFolder && string.Equals(slot.ExtensionId, command.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        var emptyIndex = folderSlots.FindIndex(static slot => slot == null);
+        if (emptyIndex < 0)
+        {
+            return;
+        }
+
+        folderSlots[emptyIndex] = new QuickPanelSlotItem { ExtensionId = command.ExtensionId };
+        RefreshFolderLegacyIds(folderItem);
+        RefreshAllLegacySlots();
+        SaveQuickPanelSettings("quickpanel-drop-command-to-folder");
+        LoadSlots();
+        RefreshActiveFolderAfterMutation();
     }
 
     private void AddCommandToSlot(SlotViewModel target, CommandItem command)
     {
-        var targetGroup = target.IsContextual ? EnsureContextGroupForCurrentApp() : GetSelectedGlobalGroupSettings();
-        if (targetGroup == null)
+        if (target.IsFolder)
+        {
+            AddCommandToFolder(target, command);
+            return;
+        }
+
+        var targetReference = BuildSlotReference(target);
+        if (targetReference == null)
         {
             return;
         }
 
-        while (targetGroup.SlotItems.Count < (target.IsContextual ? ContextSlotCount : GlobalSlotCount))
-        {
-            targetGroup.SlotItems.Add(null);
-        }
-
-        if (targetGroup.SlotItems.Any(slot =>
-                slot != null &&
-                ((!slot.IsFolder && string.Equals(slot.ExtensionId, command.ExtensionId, StringComparison.OrdinalIgnoreCase)) ||
-                 (slot.IsFolder && slot.FolderExtensionIds.Any(id => string.Equals(id, command.ExtensionId, StringComparison.OrdinalIgnoreCase))))))
+        var targetContainer = GetSlotContainer(targetReference);
+        if (targetContainer == null || targetContainer[targetReference.Index] != null)
         {
             return;
         }
 
-        targetGroup.SlotItems[target.Index] = new QuickPanelSlotItem
-        {
-            ExtensionId = command.ExtensionId
-        };
-        targetGroup.Slots = targetGroup.SlotItems.Select(static item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
+        targetContainer[targetReference.Index] = new QuickPanelSlotItem { ExtensionId = command.ExtensionId };
+        RefreshAllLegacySlots();
         SaveQuickPanelSettings(target.IsContextual ? "quickpanel-drop-from-launcher-context" : "quickpanel-drop-from-launcher-global");
         LoadSlots();
+        RefreshActiveFolderAfterMutation();
     }
 
     private void PollReleaseTarget()
@@ -1772,7 +2818,13 @@ public class SlotViewModel : INotifyPropertyChanged
     private bool _isContextual;
     private string _folderName = string.Empty;
     private List<string> _folderExtensionIds = [];
-    private static readonly Geometry FolderGeometry = Geometry.Parse("M10,4L12,6H20A2,2 0 0,1 22,8V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4H10Z");
+    private List<QuickPanelSlotItem?> _folderSlotItems = [];
+    private List<FolderPreviewIconViewModel> _folderPreviewItems = [];
+    private bool _isFolderChild;
+    private string? _sourceGroupId;
+    private List<int> _containerPath = [];
+    private int _sourceFolderIndex = -1;
+    private int _sourceFolderItemIndex = -1;
 
     public CommandItem? Command => _command;
 
@@ -1784,7 +2836,13 @@ public class SlotViewModel : INotifyPropertyChanged
         SetCommand(command, isFavorite, isContextual);
     }
 
-    public static SlotViewModel CreateFolder(int index, string folderName, IReadOnlyList<string> folderExtensionIds, CommandItem? previewCommand, bool isContextual)
+    public static SlotViewModel CreateFolder(
+        int index,
+        string folderName,
+        IReadOnlyList<string> folderExtensionIds,
+        IReadOnlyList<QuickPanelSlotItem?> folderSlotItems,
+        IReadOnlyList<CommandItem> previewCommands,
+        bool isContextual)
     {
         var vm = new SlotViewModel(index, null, false, isContextual)
         {
@@ -1792,11 +2850,14 @@ public class SlotViewModel : INotifyPropertyChanged
             {
                 ItemType = "folder",
                 FolderName = folderName,
-                FolderExtensionIds = folderExtensionIds.ToList()
+                FolderExtensionIds = folderExtensionIds.ToList(),
+                FolderSlotItems = folderSlotItems.Select(CloneSlotItem).ToList()
             },
             _command = null,
             _folderName = folderName,
             _folderExtensionIds = folderExtensionIds.ToList(),
+            _folderSlotItems = folderSlotItems.Select(CloneSlotItem).ToList(),
+            _folderPreviewItems = previewCommands.Take(4).Select(static command => new FolderPreviewIconViewModel(command)).ToList(),
             _isFavorite = false,
             _isContextual = isContextual
         };
@@ -1818,8 +2879,35 @@ public class SlotViewModel : INotifyPropertyChanged
         _isContextual = isContextual;
         _folderName = string.Empty;
         _folderExtensionIds = [];
+        _folderSlotItems = [];
+        _folderPreviewItems = [];
+        _isFolderChild = false;
+        _sourceGroupId = null;
+        _containerPath = [];
+        _sourceFolderIndex = -1;
+        _sourceFolderItemIndex = -1;
         AttachCommandEvents();
         NotifyAll();
+    }
+
+    public void SetSlotLocation(string? groupId, IReadOnlyList<int>? containerPath)
+    {
+        _sourceGroupId = string.IsNullOrWhiteSpace(groupId) ? null : groupId;
+        _containerPath = containerPath?.ToList() ?? [];
+        OnPropertyChanged(nameof(SourceGroupId));
+        OnPropertyChanged(nameof(ContainerPath));
+    }
+
+    public void SetFolderChildSource(string groupId, int folderIndex, int itemIndex)
+    {
+        _isFolderChild = true;
+        _sourceGroupId = groupId;
+        _sourceFolderIndex = folderIndex;
+        _sourceFolderItemIndex = itemIndex;
+        OnPropertyChanged(nameof(IsFolderChild));
+        OnPropertyChanged(nameof(SourceGroupId));
+        OnPropertyChanged(nameof(SourceFolderIndex));
+        OnPropertyChanged(nameof(SourceFolderItemIndex));
     }
 
     public void SetFavorite(bool isFavorite)
@@ -1849,33 +2937,49 @@ public class SlotViewModel : INotifyPropertyChanged
     public bool IsOccupied => _item != null;
     public bool IsFavorite => _isFavorite && !IsFolder;
     public bool IsContextual => _isContextual;
+    public bool IsFolderChild => _isFolderChild;
+    public string? SourceGroupId => _sourceGroupId;
+    public IReadOnlyList<int> ContainerPath => _containerPath;
+    public int SourceFolderIndex => _sourceFolderIndex;
+    public int SourceFolderItemIndex => _sourceFolderItemIndex;
     public bool CanEdit => !IsFolder && _command?.Source == CommandSource.LocalExtension;
     public bool CanPublish => !IsFolder && _command?.Source == CommandSource.LocalExtension;
     public bool CanOpenDirectory => CanEdit && !string.IsNullOrWhiteSpace(_command?.ExtensionDirectoryPath);
     public bool CanRemoveFromFixedSlots => _item != null;
     public string FavoriteLabel => _isFavorite ? "取消收藏" : "收藏";
     public string Title => IsFolder ? _folderName : _command?.Title ?? string.Empty;
+    public string DisplayTitle => IsCSharpPrebuilding ? "编译中..." : Title;
     public ImageSource? Icon => IsFolder ? null : _command?.IconSource;
-    public Geometry? VectorIcon => IsFolder ? FolderGeometry : _command?.VectorIcon;
+    public Geometry? VectorIcon => IsFolder ? null : _command?.VectorIcon;
     public bool HasImageIcon => !IsFolder && (_command?.HasImageIcon ?? false);
-    public bool HasVectorIcon => IsFolder || (_command?.HasVectorIcon ?? false);
+    public bool HasVectorIcon => !IsFolder && (_command?.HasVectorIcon ?? false);
     public bool UseGlyphIcon => !IsFolder && (_command?.UseGlyphIcon ?? false);
     public string DisplayGlyph => _command?.DisplayGlyph ?? string.Empty;
     public bool HasNewBadge => !IsFolder && (_command?.HasNewBadge ?? false);
+    public bool IsCSharpPrebuilding => !IsFolder && (_command?.IsCSharpPrebuilding ?? false);
+    public bool HasFolderPreview => IsFolder && _folderPreviewItems.Count > 0;
+    public IReadOnlyList<FolderPreviewIconViewModel> FolderPreviewItems => _folderPreviewItems;
     public bool HasFolderBadge => IsFolder;
     public string FolderBadgeText => _folderExtensionIds.Count > 99 ? "99+" : _folderExtensionIds.Count.ToString();
     public IReadOnlyList<string> FolderExtensionIds => _folderExtensionIds;
+    public IReadOnlyList<QuickPanelSlotItem?> FolderSlotItems => _folderSlotItems;
 
     public QuickPanelSlotItem? CloneSlotItem()
     {
-        return _item == null
+        return CloneSlotItem(_item);
+    }
+
+    private static QuickPanelSlotItem? CloneSlotItem(QuickPanelSlotItem? item)
+    {
+        return item == null
             ? null
             : new QuickPanelSlotItem
             {
-                ItemType = _item.ItemType,
-                ExtensionId = _item.ExtensionId,
-                FolderName = _folderName,
-                FolderExtensionIds = _folderExtensionIds.ToList()
+                ItemType = item.ItemType,
+                ExtensionId = item.ExtensionId,
+                FolderName = item.FolderName,
+                FolderExtensionIds = item.FolderExtensionIds.ToList(),
+                FolderSlotItems = item.FolderSlotItems.Select(CloneSlotItem).ToList()
             };
     }
 
@@ -1887,6 +2991,7 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(IsOccupied));
         OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(DisplayTitle));
         OnPropertyChanged(nameof(Icon));
         OnPropertyChanged(nameof(VectorIcon));
         OnPropertyChanged(nameof(HasImageIcon));
@@ -1894,6 +2999,9 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(UseGlyphIcon));
         OnPropertyChanged(nameof(DisplayGlyph));
         OnPropertyChanged(nameof(HasNewBadge));
+        OnPropertyChanged(nameof(IsCSharpPrebuilding));
+        OnPropertyChanged(nameof(HasFolderPreview));
+        OnPropertyChanged(nameof(FolderPreviewItems));
         OnPropertyChanged(nameof(IsFavorite));
         OnPropertyChanged(nameof(FavoriteLabel));
         OnPropertyChanged(nameof(IsContextual));
@@ -1904,6 +3012,12 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasFolderBadge));
         OnPropertyChanged(nameof(FolderBadgeText));
         OnPropertyChanged(nameof(FolderExtensionIds));
+        OnPropertyChanged(nameof(FolderSlotItems));
+        OnPropertyChanged(nameof(IsFolderChild));
+        OnPropertyChanged(nameof(SourceGroupId));
+        OnPropertyChanged(nameof(ContainerPath));
+        OnPropertyChanged(nameof(SourceFolderIndex));
+        OnPropertyChanged(nameof(SourceFolderItemIndex));
     }
 
     private void AttachCommandEvents()
@@ -1929,6 +3043,13 @@ public class SlotViewModel : INotifyPropertyChanged
         {
             OnPropertyChanged(nameof(HasNewBadge));
         }
+
+        if (string.IsNullOrWhiteSpace(e.PropertyName) ||
+            string.Equals(e.PropertyName, nameof(CommandItem.IsCSharpPrebuilding), StringComparison.Ordinal))
+        {
+            OnPropertyChanged(nameof(IsCSharpPrebuilding));
+            OnPropertyChanged(nameof(DisplayTitle));
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -1936,12 +3057,58 @@ public class SlotViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
 
-public sealed record QuickPanelSlotReference(bool IsContextual, string GroupId, int Index);
+public sealed record QuickPanelSlotReference(bool IsContextual, string GroupId, int Index, List<int> ContainerPath);
 
 public sealed record QuickPanelClipboardItem(string ExtensionId, string Title, bool IsCut, QuickPanelSlotReference? SourceSlot);
 
+public sealed record QuickPanelFolderChildDragPayload(
+    bool IsContextual,
+    string GroupId,
+    int FolderIndex,
+    int ItemIndex,
+    string ExtensionId);
+
+public sealed class FolderPreviewIconViewModel
+{
+    public FolderPreviewIconViewModel(CommandItem command)
+    {
+        IconSource = command.IconSource;
+        VectorIcon = command.VectorIcon;
+        AccentBrush = command.AccentBrush;
+        DisplayGlyph = command.DisplayGlyph;
+        HasImageIcon = command.HasImageIcon;
+        HasVectorIcon = command.HasVectorIcon;
+        UseGlyphIcon = command.UseGlyphIcon;
+    }
+
+    public ImageSource? IconSource { get; }
+
+    public Geometry? VectorIcon { get; }
+
+    public System.Windows.Media.Brush AccentBrush { get; }
+
+    public string DisplayGlyph { get; }
+
+    public bool HasImageIcon { get; }
+
+    public bool HasVectorIcon { get; }
+
+    public bool UseGlyphIcon { get; }
+}
+
 internal static class NativeMethods
 {
+    private const uint InputKeyboard = 1;
+    private const uint KeyeventfKeyup = 0x0002;
+    private const ushort VkControl = 0x11;
+    private const ushort VkV = 0x56;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoActivate = 0x0010;
+    private const uint SwpShowWindow = 0x0040;
+    private static readonly IntPtr HwndTopmost = new(-1);
+    private static readonly IntPtr SimulatedInputMarker = new(0x59414E5B);
+
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out POINT lpPoint);
@@ -1959,11 +3126,217 @@ internal static class NativeMethods
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO guiThreadInfo);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetFocus(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool IsWindow(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct POINT
     {
         public int X;
         public int Y;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct GUITHREADINFO
+    {
+        public int cbSize;
+        public uint flags;
+        public IntPtr hwndActive;
+        public IntPtr hwndFocus;
+        public IntPtr hwndCapture;
+        public IntPtr hwndMenuOwner;
+        public IntPtr hwndMoveSize;
+        public IntPtr hwndCaret;
+        public RECT rcCaret;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int left;
+        public int top;
+        public int right;
+        public int bottom;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public uint type;
+        public InputUnion U;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [System.Runtime.InteropServices.FieldOffset(0)]
+        public MOUSEINPUT mi;
+
+        [System.Runtime.InteropServices.FieldOffset(0)]
+        public KEYBDINPUT ki;
+
+        [System.Runtime.InteropServices.FieldOffset(0)]
+        public HARDWAREINPUT hi;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct HARDWAREINPUT
+    {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
+    }
+
+    public static uint SendCtrlV(out int inputCount, out int lastError)
+    {
+        var inputs = new[]
+        {
+            KeyInput(VkControl, 0),
+            KeyInput(VkV, 0),
+            KeyInput(VkV, KeyeventfKeyup),
+            KeyInput(VkControl, KeyeventfKeyup)
+        };
+
+        inputCount = inputs.Length;
+        var sent = SendInput((uint)inputs.Length, inputs, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
+        lastError = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+        return sent;
+    }
+
+    private static INPUT KeyInput(ushort virtualKey, uint flags)
+    {
+        return new INPUT
+        {
+            type = InputKeyboard,
+            U = new InputUnion
+            {
+                ki = new KEYBDINPUT
+                {
+                    wVk = virtualKey,
+                    dwFlags = flags,
+                    dwExtraInfo = SimulatedInputMarker
+                }
+            }
+        };
+    }
+
+    public static void ShowWithoutActivation(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _ = SetWindowPos(hwnd, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow);
+    }
+
+    public static IntPtr GetForegroundFocusWindow()
+    {
+        var info = new GUITHREADINFO
+        {
+            cbSize = System.Runtime.InteropServices.Marshal.SizeOf<GUITHREADINFO>()
+        };
+
+        return GetGUIThreadInfo(0, ref info)
+            ? info.hwndFocus != IntPtr.Zero ? info.hwndFocus : info.hwndCaret
+            : IntPtr.Zero;
+    }
+
+    public static bool TryRestoreFocus(IntPtr foregroundWindow, IntPtr focusWindow, out string detail)
+    {
+        if (focusWindow == IntPtr.Zero)
+        {
+            detail = "focus=zero";
+            return false;
+        }
+
+        if (!IsWindow(focusWindow))
+        {
+            detail = "focus window no longer exists";
+            return false;
+        }
+
+        var currentThreadId = GetCurrentThreadId();
+        var focusThreadId = GetWindowThreadProcessId(focusWindow, out _);
+        var foregroundThreadId = foregroundWindow == IntPtr.Zero
+            ? 0
+            : GetWindowThreadProcessId(foregroundWindow, out _);
+        var attachedFocus = false;
+        var attachedForeground = false;
+        try
+        {
+            if (focusThreadId != 0 && focusThreadId != currentThreadId)
+            {
+                attachedFocus = AttachThreadInput(currentThreadId, focusThreadId, true);
+            }
+
+            if (foregroundThreadId != 0 &&
+                foregroundThreadId != currentThreadId &&
+                foregroundThreadId != focusThreadId)
+            {
+                attachedForeground = AttachThreadInput(currentThreadId, foregroundThreadId, true);
+            }
+
+            _ = SetFocus(focusWindow);
+            var error = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            detail = $"currentThread={currentThreadId}, focusThread={focusThreadId}, foregroundThread={foregroundThreadId}, attachFocus={attachedFocus}, attachForeground={attachedForeground}, setFocusError={error}";
+            return error == 0;
+        }
+        finally
+        {
+            if (attachedForeground)
+            {
+                _ = AttachThreadInput(currentThreadId, foregroundThreadId, false);
+            }
+
+            if (attachedFocus)
+            {
+                _ = AttachThreadInput(currentThreadId, focusThreadId, false);
+            }
+        }
     }
 
     public static System.Windows.Point GetCursorPosition()
@@ -1998,4 +3371,3 @@ public class BooleanToColorConverter : System.Windows.Data.IValueConverter
     }
     public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotImplementedException();
 }
-

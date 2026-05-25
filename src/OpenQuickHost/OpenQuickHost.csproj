@@ -49,6 +49,7 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Resource>
     <Resource Include="Assets\Icons\*.svg" />
+    <Resource Include="Assets\mdi-icons.json" />
     <None Include="..\..\third_party\everything-sdk\Everything64.dll" Link="Everything64.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
@@ -78,19 +79,15 @@
     <PackageReference Include="Basic.Reference.Assemblies.Net90" Version="1.8.3" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" />
+    <PackageReference Include="System.Diagnostics.EventLog" Version="9.0.16" />
+    <PackageReference Include="System.DirectoryServices" Version="9.0.16" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.16" />
+    <PackageReference Include="System.IO.Ports" Version="9.0.16" />
+    <PackageReference Include="System.Management" Version="9.0.16" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.16" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.16" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.16" />
   </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Yanzi.ExtensionHost\Yanzi.ExtensionHost.csproj" ReferenceOutputAssembly="false" />
-  </ItemGroup>
-
-  <Target Name="PublishExtensionHostForBuild" AfterTargets="Build">
-    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)..\Yanzi.ExtensionHost\Yanzi.ExtensionHost.csproj&quot; -c $(Configuration) -r win-x64 --self-contained true -p:PublishSingleFile=true -p:SatelliteResourceLanguages=zh-Hans -p:DebugType=None -o &quot;$(TargetDir)ExtensionHost&quot;" />
-  </Target>
-
-  <Target Name="PublishExtensionHostForPublish" AfterTargets="Publish">
-    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)..\Yanzi.ExtensionHost\Yanzi.ExtensionHost.csproj&quot; -c $(Configuration) -r win-x64 --self-contained true -p:PublishSingleFile=true -p:SatelliteResourceLanguages=zh-Hans -p:DebugType=None -o &quot;$(PublishDir)ExtensionHost&quot;" />
-  </Target>
 
   <Target Name="CopyNativeWindowReferenceAssembliesForBuild" AfterTargets="Build">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\copy-native-window-refs.ps1&quot; -OutputDir &quot;$(TargetDir)NativeWindowRefs&quot;" />

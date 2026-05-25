@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="272dp"
+    android:layout_height="356dp"
+    android:clipChildren="false"
+    android:clipToPadding="false">
+
+    <FrameLayout
+        android:id="@+id/menu_shell"
+        android:layout_width="272dp"
+        android:layout_height="356dp"
+        android:background="@android:color/transparent">
+
+        <cc.luoluoluo.yanzi.mobile.arclayout.ArcLayout
+            android:id="@+id/arc_layout"
+            android:layout_width="272dp"
+            android:layout_height="356dp"
+            app:arc_axisRadius="114dp"
+            app:arc_freeAngle="true"
+            app:arc_origin="left"
+            app:arc_radius="148dp">
+
+            <FrameLayout
+                android:id="@+id/wheel_input"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:background="@drawable/floating_wheel_slot_bg"
+                app:arc_angle="26">
+
+                <ImageView
+                    android:id="@+id/wheel_input_icon"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:src="@android:drawable/ic_menu_edit"
+                    android:tint="#FFFFFF" />
+            </FrameLayout>
+
+            <FrameLayout
+                android:id="@+id/wheel_screenshot"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:background="@drawable/floating_wheel_slot_bg"
+                app:arc_angle="50">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:src="@android:drawable/ic_menu_camera"
+                    android:tint="#FFFFFF" />
+            </FrameLayout>
+
+            <FrameLayout
+                android:id="@+id/wheel_extensions"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:background="@drawable/floating_wheel_slot_bg"
+                app:arc_angle="74">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:src="@android:drawable/ic_menu_manage"
+                    android:tint="#FFFFFF" />
+            </FrameLayout>
+
+            <FrameLayout
+                android:id="@+id/wheel_add"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:background="@drawable/floating_wheel_slot_bg"
+                app:arc_angle="98">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:text="+"
+                    android:textColor="#FFFFFF"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+            </FrameLayout>
+
+            <FrameLayout
+                android:id="@+id/wheel_run"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:background="@drawable/floating_wheel_slot_bg"
+                app:arc_angle="122">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:src="@android:drawable/ic_media_play"
+                    android:tint="#FFFFFF" />
+            </FrameLayout>
+
+            <FrameLayout
+                android:id="@+id/wheel_yanm"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:background="@drawable/floating_wheel_slot_bg"
+                app:arc_angle="146">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center"
+                    android:src="@android:drawable/ic_menu_agenda"
+                    android:tint="#FFFFFF" />
+            </FrameLayout>
+        </cc.luoluoluo.yanzi.mobile.arclayout.ArcLayout>
+    </FrameLayout>
+</FrameLayout>

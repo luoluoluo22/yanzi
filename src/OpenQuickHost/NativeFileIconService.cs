@@ -67,6 +67,11 @@ public static class NativeFileIconService
         var attributes = isFolder ? FileAttributeDirectory : FileAttributeNormal;
         var flags = ShgfiIcon | ShgfiLargeIcon;
         var targetPath = path;
+        if (!isFolder && IsShortcutPath(path) && TryResolveShortcutIconTarget(path, out var shortcutIconTarget))
+        {
+            targetPath = shortcutIconTarget;
+        }
+
         if (!File.Exists(path) && !Directory.Exists(path))
         {
             flags |= ShgfiUseFileAttributes;
@@ -77,7 +82,8 @@ public static class NativeFileIconService
         }
 
         var shinfo = new Shfileinfo();
-        var handle = SHGetFileInfo(targetPath, attributes, ref shinfo, (uint)Marshal.SizeOf<Shfileinfo>(), flags);
+        var targetAttributes = Directory.Exists(targetPath) ? FileAttributeDirectory : FileAttributeNormal;
+        var handle = SHGetFileInfo(targetPath, targetAttributes, ref shinfo, (uint)Marshal.SizeOf<Shfileinfo>(), flags);
         if (handle == IntPtr.Zero || shinfo.hIcon == IntPtr.Zero)
         {
             return null;
@@ -96,6 +102,102 @@ public static class NativeFileIconService
         {
             DestroyIcon(shinfo.hIcon);
         }
+    }
+
+    private static bool IsShortcutPath(string path)
+    {
+        return string.Equals(Path.GetExtension(path), ".lnk", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryResolveShortcutIconTarget(string shortcutPath, out string targetPath)
+    {
+        targetPath = string.Empty;
+        dynamic? shell = null;
+        dynamic? shortcut = null;
+
+        try
+        {
+            if (!File.Exists(shortcutPath))
+            {
+                return false;
+            }
+
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType == null)
+            {
+                return false;
+            }
+
+            shell = Activator.CreateInstance(shellType);
+            shortcut = shell?.CreateShortcut(shortcutPath);
+            if (shortcut == null)
+            {
+                return false;
+            }
+
+            var iconLocation = ((string?)shortcut.IconLocation)?.Trim();
+            var iconPath = ParseShortcutIconPath(iconLocation);
+            if (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath))
+            {
+                targetPath = iconPath;
+                return true;
+            }
+
+            var resolvedTarget = ((string?)shortcut.TargetPath)?.Trim();
+            if (!string.IsNullOrWhiteSpace(resolvedTarget) &&
+                (File.Exists(resolvedTarget) || Directory.Exists(resolvedTarget)))
+            {
+                targetPath = resolvedTarget;
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (shortcut != null)
+            {
+                try
+                {
+                    Marshal.FinalReleaseComObject(shortcut);
+                }
+                catch
+                {
+                }
+            }
+
+            if (shell != null)
+            {
+                try
+                {
+                    Marshal.FinalReleaseComObject(shell);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static string? ParseShortcutIconPath(string? iconLocation)
+    {
+        if (string.IsNullOrWhiteSpace(iconLocation))
+        {
+            return null;
+        }
+
+        var value = iconLocation.Trim().Trim('"');
+        var commaIndex = value.LastIndexOf(',');
+        if (commaIndex > 0 && int.TryParse(value[(commaIndex + 1)..], out _))
+        {
+            value = value[..commaIndex].Trim().Trim('"');
+        }
+
+        return string.IsNullOrWhiteSpace(value) ? null : Environment.ExpandEnvironmentVariables(value);
     }
 
     private static string? ResolveSystemIconPath(string? openTarget, string? extensionId)

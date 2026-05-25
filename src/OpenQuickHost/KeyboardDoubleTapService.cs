@@ -55,6 +55,21 @@ public static class KeyboardDoubleTapService
     public static bool IsRunning => _hookId != IntPtr.Zero;
     public static bool IsYanmTriggerHeld => _winOverlayActive;
 
+    public static string GetKeyboardStateSummary()
+    {
+        var pressed = new List<string>();
+        if (_leftCtrlDown) pressed.Add("左Ctrl");
+        if (_rightCtrlDown) pressed.Add("右Ctrl");
+        if (_leftAltDown) pressed.Add("左Alt");
+        if (_rightAltDown) pressed.Add("右Alt");
+        if (_leftShiftDown) pressed.Add("左Shift");
+        if (_rightShiftDown) pressed.Add("右Shift");
+        if (_leftWinDown) pressed.Add("左Win");
+        if (_rightWinDown) pressed.Add("右Win");
+        if (_winOverlayActive) pressed.Add("燕幕触发键");
+        return $"键盘钩子={(IsRunning ? "运行" : "停止")}，按下={pressed.Count switch { 0 => "无", _ => string.Join("、", pressed) }}";
+    }
+
     public static void Start(
         Action<string> onDoubleTap,
         Action? onWinHold = null,
@@ -335,7 +350,7 @@ public static class KeyboardDoubleTapService
 
     private static bool HandleYanmTriggerDown(string key)
     {
-        if (!_winOverlayEnabled || HasBlockingModifiersForYanm(key))
+        if (!_winOverlayEnabled || HasBlockingModifiersForYanm(key) || !IsYanmAllowedForForegroundProcess())
         {
             return false;
         }
@@ -412,6 +427,99 @@ public static class KeyboardDoubleTapService
         return string.Equals(key, YanmActivationKeys.Win, StringComparison.OrdinalIgnoreCase)
             ? HasNonWinModifiersPressed()
             : _leftCtrlDown || _rightCtrlDown || _leftAltDown || _rightAltDown || _leftShiftDown || _rightShiftDown || _leftWinDown || _rightWinDown;
+    }
+
+    private static bool IsYanmAllowedForForegroundProcess()
+    {
+        var settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
+        var whitelist = settings.WhitelistedProcesses ?? [];
+        var blacklist = settings.BlacklistedProcesses ?? [];
+        if (whitelist.Count == 0 && blacklist.Count == 0)
+        {
+            return true;
+        }
+
+        var processName = GetForegroundProcessName();
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return whitelist.Count == 0;
+        }
+
+        if (whitelist.Count > 0)
+        {
+            var allowed = whitelist.Any(item => ProcessNameMatches(processName, item));
+            if (!allowed)
+            {
+                HostAssets.AppendLog($"Keyboard Yanm trigger blocked by whitelist, process={processName}.");
+            }
+
+            return allowed;
+        }
+
+        var blocked = blacklist.Any(item => ProcessNameMatches(processName, item));
+        if (blocked)
+        {
+            HostAssets.AppendLog($"Keyboard Yanm trigger blocked by blacklist, process={processName}.");
+        }
+
+        return !blocked;
+    }
+
+    private static bool ProcessNameMatches(string processName, string pattern)
+    {
+        var normalizedProcess = NormalizeProcessName(processName);
+        var normalizedPattern = NormalizeProcessName(pattern);
+        if (string.IsNullOrWhiteSpace(normalizedPattern))
+        {
+            return false;
+        }
+
+        if (normalizedPattern.Contains('*', StringComparison.Ordinal))
+        {
+            var parts = normalizedPattern.Split('*', StringSplitOptions.RemoveEmptyEntries);
+            var index = 0;
+            foreach (var part in parts)
+            {
+                var found = normalizedProcess.IndexOf(part, index, StringComparison.OrdinalIgnoreCase);
+                if (found < 0)
+                {
+                    return false;
+                }
+
+                index = found + part.Length;
+            }
+
+            return true;
+        }
+
+        return normalizedProcess.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeProcessName(string value)
+    {
+        value = (value ?? string.Empty).Trim();
+        return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? value[..^4]
+            : value;
+    }
+
+    private static string GetForegroundProcessName()
+    {
+        try
+        {
+            var hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero)
+            {
+                return string.Empty;
+            }
+
+            _ = GetWindowThreadProcessId(hwnd, out var processId);
+            return processId == 0 ? string.Empty : Process.GetProcessById((int)processId).ProcessName;
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     private static bool HasNonWinModifiersPressed()
@@ -560,4 +668,10 @@ public static class KeyboardDoubleTapService
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 }

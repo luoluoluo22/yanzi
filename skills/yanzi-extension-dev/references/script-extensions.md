@@ -10,13 +10,15 @@ Entry modes:
 - `entry`: use a script file such as `main.ps1`
 - `entryMode = inline`: put C# or PowerShell source directly in `manifest.json` under `script.source`
 
-Prefer C# for new action extensions.
+Choose the runtime by task:
+
+- Use C# for complex logic, JSON/HTTP/file processing, native WPF windows, P/Invoke, and strongly typed .NET APIs.
+- Use PowerShell for Windows automation, registry/service/process/scheduled-task/system-command work, clipboard/file automation, and tasks with existing cmdlets.
+- If the task is essentially a cmd/bat command sequence, wrap it with PowerShell or use an external script entry instead of forcing C#.
 
 C# inline pattern:
 
 ```csharp
-using OpenQuickHost.CSharpRuntime;
-
 public static class YanziAction
 {
     public static Task<string> RunAsync(YanziActionContext context)

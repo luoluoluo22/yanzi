@@ -92,6 +92,35 @@ public sealed class WebDavSyncService
         }
     }
 
+    public async Task<byte[]?> TryReadTemporaryFileAsync(string relativePath, CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+        if (!IsAllowedTemporaryPath(relativePath))
+        {
+            throw new InvalidOperationException("只允许读取 WebDAV 临时文件。");
+        }
+
+        return await TryGetBytesAsync(relativePath, cancellationToken);
+    }
+
+    public async Task DeleteTemporaryFileAsync(string relativePath, CancellationToken cancellationToken = default)
+    {
+        EnsureConfigured();
+        if (!IsAllowedTemporaryPath(relativePath))
+        {
+            throw new InvalidOperationException("只允许删除 WebDAV 临时文件。");
+        }
+
+        await DeleteRemoteFileAsync(relativePath, cancellationToken);
+    }
+
+    private static bool IsAllowedTemporaryPath(string relativePath)
+    {
+        return relativePath.StartsWith("temp/", StringComparison.OrdinalIgnoreCase) ||
+               relativePath.StartsWith("mobile-screenshot-", StringComparison.OrdinalIgnoreCase) ||
+               relativePath.StartsWith("mobile-photo-", StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task<WebDavSyncResult> SyncExtensionsAsync(CancellationToken cancellationToken = default)
     {
         EnsureConfigured();
@@ -609,6 +638,13 @@ public sealed class WebDavSyncService
             settings.Yanm = incoming.Yanm;
         }
 
+        if (HasAiConfigPayload(snapshot))
+        {
+            settings.AiBaseUrl = incoming.AiBaseUrl;
+            settings.AiApiKey = incoming.AiApiKey;
+            settings.AiModel = incoming.AiModel;
+        }
+
         settings.LauncherConfigUpdatedAtUtc = updatedAtUtc.ToString("O");
 
         AppSettingsStore.Save(settings);
@@ -655,8 +691,23 @@ public sealed class WebDavSyncService
                config.GlobalFavoriteExtensionIds.Count > 0 ||
                config.ContextFavoriteExtensionIds.Count > 0 ||
                config.YanyuRules?.Count > 0 ||
+               HasAiSettings(config) ||
                HasRadialContent(config.RadialMenu) ||
                HasYanmComponentState(config.Yanm);
+    }
+
+    private static bool HasAiSettings(CloudQuickPanelConfigSnapshot snapshot)
+    {
+        return !string.IsNullOrWhiteSpace(snapshot.AiBaseUrl) ||
+               !string.IsNullOrWhiteSpace(snapshot.AiApiKey) ||
+               !string.IsNullOrWhiteSpace(snapshot.AiModel);
+    }
+
+    private static bool HasAiConfigPayload(CloudQuickPanelConfigSnapshot snapshot)
+    {
+        return snapshot.AiBaseUrl != null ||
+               snapshot.AiApiKey != null ||
+               snapshot.AiModel != null;
     }
 
     private static bool HasGroupContent(IEnumerable<QuickPanelGroupSettings> groups)

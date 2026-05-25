@@ -1,0 +1,92 @@
+<Window x:Class="OpenQuickHost.InputStateWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="输入状态"
+        Width="720"
+        Height="420"
+        MinWidth="560"
+        MinHeight="320"
+        Background="#FF161616"
+        Foreground="White"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,12">
+            <StackPanel DockPanel.Dock="Left">
+                <TextBlock Text="输入状态" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="#FF9CA3AF" />
+            </StackPanel>
+            <Button DockPanel.Dock="Right"
+                    Width="90"
+                    Height="34"
+                    Margin="12,0,0,0"
+                    Style="{StaticResource SecondaryBtn}"
+                    Click="RefreshButton_Click"
+                    Content="刷新" />
+        </DockPanel>
+
+        <Border Grid.Row="1"
+                Background="#FF1E1E1E"
+                BorderBrush="#FF2A2A2A"
+                BorderThickness="1"
+                CornerRadius="12"
+                Padding="16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0"
+                           Text="鼠标"
+                           FontSize="16"
+                           FontWeight="SemiBold" />
+                <TextBlock x:Name="MouseStateTextBlock"
+                           Grid.Row="1"
+                           Margin="0,8,0,18"
+                           FontSize="14"
+                           Foreground="#FFD1D5DB"
+                           TextWrapping="Wrap" />
+
+                <TextBlock Grid.Row="2"
+                           Text="键盘"
+                           FontSize="16"
+                           FontWeight="SemiBold" />
+                <TextBlock x:Name="KeyboardStateTextBlock"
+                           Grid.Row="3"
+                           Margin="0,8,0,0"
+                           FontSize="14"
+                           Foreground="#FFD1D5DB"
+                           TextWrapping="Wrap" />
+            </Grid>
+        </Border>
+
+        <DockPanel Grid.Row="2" Margin="0,12,0,0">
+            <TextBlock DockPanel.Dock="Left"
+                       VerticalAlignment="Center"
+                       Foreground="#FF6B7280"
+                       Text="窗口打开时每 250ms 自动刷新，用于排查鼠标或键盘状态卡住。" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Width="120"
+                        Height="34"
+                        Margin="8,0,0,0"
+                        Style="{StaticResource SecondaryBtn}"
+                        Click="ResetKeyboardButton_Click"
+                        Content="重置键盘状态" />
+                <Button Width="120"
+                        Height="34"
+                        Margin="8,0,0,0"
+                        Style="{StaticResource SecondaryBtn}"
+                        Click="ResetMouseButton_Click"
+                        Content="重置鼠标状态" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

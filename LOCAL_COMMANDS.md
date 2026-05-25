@@ -97,6 +97,36 @@ cc88cc0084b504db93ccd9462af37212
 
 当前机器代理偶尔会导致 Cloudflare/GitHub 上传链路 TLS 失败。遇到 `fetch failed` 或 EOF 时，优先切换代理策略后重试。
 
+## 移动端 MVP
+
+安卓工程在 `mobile/android`。当前仓库不提交 Gradle Wrapper，建议用 Android Studio 打开该目录并同步 Gradle。
+
+```powershell
+# 如果本机已经安装 Gradle，也可以直接构建
+gradle -p .\mobile\android assembleDebug
+```
+
+移动端消息队列需要先发布 Cloudflare Worker 并应用 D1 迁移：
+
+```powershell
+cd cloudflare
+npx wrangler d1 migrations apply openquickhost-sync-db --remote
+npx wrangler deploy
+cd ..
+```
+
+当前机器 Maven/Google TLS 链路不稳定时，可以使用不依赖 Gradle/Maven 的兜底构建脚本直接产出 debug APK：
+
+```powershell
+.\scripts\build-android-mvp.ps1
+```
+
+输出位置：
+
+```text
+mobile\android\app\build\manual-debug\yanzi-mobile-debug.apk
+```
+
 ## GitHub 认证
 
 上传 Release 需要 GitHub CLI：

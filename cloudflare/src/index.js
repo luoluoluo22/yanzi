@@ -413,7 +413,7 @@ async function handleRequest(request, env) {
 
   if ((url.pathname === "/v1/me/yanm-state" || url.pathname === "/v1/me/yanm-webdav-state") && request.method === "GET") {
     const auth = await requireAuth(request, env);
-    const snapshot = await readYanmStateFromCloudConfig(env, auth.userId);
+    const snapshot = await readYanmStateForUser(env, auth.userId);
     if (!snapshot) {
       throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in account cloud snapshot");
     }
@@ -427,6 +427,19 @@ async function handleRequest(request, env) {
       updatedAtUtc: snapshot.updatedAtUtc || null,
       yanm: snapshot.yanm || null,
       bytes: snapshot.bytes
+    });
+  }
+
+  if (url.pathname === "/v1/sync/webdav-config" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const config = await getUserWebDavConfig(env, auth.userId);
+    return json({
+      ok: true,
+      enabled: config.enabled,
+      serverUrl: config.serverUrl,
+      rootPath: config.rootPath,
+      username: config.username,
+      password: config.password
     });
   }
 
@@ -1108,6 +1121,243 @@ async function handleRequest(request, env) {
     });
   }
 
+  if (url.pathname === "/v1/me/devices" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    await ensureUser(env, auth.userId);
+
+    const rows = await env.DB.prepare(
+      `select
+        device_id,
+        platform,
+        display_name,
+        capabilities_json,
+        last_seen_at,
+        created_at,
+        updated_at
+      from user_devices
+      where user_id = ?
+      order by updated_at desc`
+    )
+      .bind(auth.userId)
+      .all();
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      items: (rows.results ?? []).map(serializeDeviceRecord)
+    });
+  }
+
+  if (url.pathname === "/v1/me/devices" && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    await ensureUser(env, auth.userId);
+
+    const device = normalizeDevicePayload(payload);
+    const existingDeviceOwner = await env.DB.prepare(
+      `select user_id
+       from user_devices
+       where device_id = ?`
+    )
+      .bind(device.deviceId)
+      .first();
+    if (existingDeviceOwner && String(existingDeviceOwner.user_id) !== auth.userId) {
+      throw new HttpError(409, "device_id_taken", "Device ID is already bound to another account");
+    }
+
+    const now = isoNow();
+    await env.DB.prepare(
+      `insert into user_devices (
+        device_id,
+        user_id,
+        platform,
+        display_name,
+        push_token,
+        capabilities_json,
+        last_seen_at,
+        created_at,
+        updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      on conflict(device_id) do update set
+        platform = excluded.platform,
+        display_name = excluded.display_name,
+        push_token = excluded.push_token,
+        capabilities_json = excluded.capabilities_json,
+        last_seen_at = excluded.last_seen_at,
+        updated_at = excluded.updated_at`
+    )
+      .bind(
+        device.deviceId,
+        auth.userId,
+        device.platform,
+        device.displayName,
+        device.pushToken,
+        JSON.stringify(device.capabilities),
+        now,
+        now,
+        now
+      )
+      .run();
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      device: {
+        deviceId: device.deviceId,
+        platform: device.platform,
+        displayName: device.displayName,
+        capabilities: device.capabilities,
+        lastSeenAt: now
+      }
+    });
+  }
+
+  if (url.pathname === "/v1/me/mobile/messages" && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    await ensureUser(env, auth.userId);
+
+    const message = normalizeDeviceMessagePayload(payload);
+    if (message.sourceDeviceId) {
+      await ensureOwnedDevice(env, auth.userId, message.sourceDeviceId);
+      await touchDevice(env, auth.userId, message.sourceDeviceId);
+    }
+
+    if (message.targetDeviceId) {
+      await ensureOwnedDevice(env, auth.userId, message.targetDeviceId);
+    }
+
+    const now = isoNow();
+    const messageId = `msg_${randomHex(12)}`;
+    await env.DB.prepare(
+      `insert into device_messages (
+        message_id,
+        user_id,
+        source_device_id,
+        target_device_id,
+        target_platform,
+        kind,
+        title,
+        body_text,
+        payload_json,
+        status,
+        created_at,
+        expires_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
+    )
+      .bind(
+        messageId,
+        auth.userId,
+        message.sourceDeviceId,
+        message.targetDeviceId,
+        message.targetPlatform,
+        message.kind,
+        message.title,
+        message.bodyText,
+        JSON.stringify(message.payload),
+        now,
+        message.expiresAt
+      )
+      .run();
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      messageId,
+      createdAt: now
+    });
+  }
+
+  if (url.pathname === "/v1/me/mobile/messages" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
+    const limit = normalizeMessageLimit(url.searchParams.get("limit"));
+    await ensureUser(env, auth.userId);
+    const device = await ensureOwnedDevice(env, auth.userId, deviceId);
+    await touchDevice(env, auth.userId, deviceId);
+
+    const rows = await env.DB.prepare(
+      `select
+        message_id,
+        source_device_id,
+        target_device_id,
+        target_platform,
+        kind,
+        title,
+        body_text,
+        payload_json,
+        status,
+        created_at,
+        delivered_at,
+        acked_at,
+        expires_at
+      from device_messages
+      where user_id = ?
+        and status = 'pending'
+        and (expires_at is null or expires_at > ?)
+        and (
+          target_device_id = ?
+          or (
+            target_device_id is null
+            and target_platform = ?
+          )
+        )
+      order by created_at asc
+      limit ?`
+    )
+      .bind(auth.userId, isoNow(), deviceId, device.platform, limit)
+      .all();
+
+    const items = (rows.results ?? []).map(serializeDeviceMessageRecord);
+    if (items.length > 0) {
+      const deliveredAt = isoNow();
+      await env.DB.prepare(
+        `update device_messages
+         set delivered_at = coalesce(delivered_at, ?)
+         where user_id = ?
+           and message_id in (${items.map(() => "?").join(",")})`
+      )
+        .bind(deliveredAt, auth.userId, ...items.map((item) => item.messageId))
+        .run();
+    }
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      deviceId,
+      items
+    });
+  }
+
+  const deviceMessageAckMatch = url.pathname.match(/^\/v1\/me\/mobile\/messages\/([^/]+)\/ack$/);
+  if (deviceMessageAckMatch && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const messageId = normalizeMessageId(decodeURIComponent(deviceMessageAckMatch[1]));
+    const payload = await readJson(request);
+    const deviceId = normalizeDeviceId(payload.deviceId);
+    await ensureUser(env, auth.userId);
+    await ensureOwnedDevice(env, auth.userId, deviceId);
+    await touchDevice(env, auth.userId, deviceId);
+
+    const result = await env.DB.prepare(
+      `update device_messages
+       set status = 'acked',
+           acked_at = ?
+       where user_id = ?
+         and message_id = ?
+         and status = 'pending'`
+    )
+      .bind(isoNow(), auth.userId, messageId)
+      .run();
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      messageId,
+      acked: Number(result.meta?.changes ?? 0) > 0
+    });
+  }
+
   const myExtensionMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)$/);
   if (myExtensionMatch && request.method === "PUT") {
     const auth = await requireAuth(request, env);
@@ -1327,6 +1577,195 @@ function validatePassword(value) {
   }
 
   return password;
+}
+
+function normalizeDevicePayload(payload) {
+  return {
+    deviceId: normalizeDeviceId(payload.deviceId || payload.device_id),
+    platform: normalizeDevicePlatform(payload.platform),
+    displayName: normalizeShortText(payload.displayName || payload.display_name || payload.name, "displayName", 80),
+    pushToken: normalizeOptionalString(payload.pushToken || payload.push_token, 512),
+    capabilities: normalizeJsonObject(payload.capabilities, "capabilities")
+  };
+}
+
+function normalizeDeviceMessagePayload(payload) {
+  const targetDeviceId = normalizeOptionalDeviceId(payload.targetDeviceId || payload.target_device_id);
+  const targetPlatform = targetDeviceId
+    ? null
+    : normalizeOptionalDevicePlatform(payload.targetPlatform || payload.target_platform) || "desktop";
+
+  return {
+    sourceDeviceId: normalizeOptionalDeviceId(payload.sourceDeviceId || payload.source_device_id),
+    targetDeviceId,
+    targetPlatform,
+    kind: normalizeMessageKind(payload.kind),
+    title: normalizeOptionalString(payload.title, 120),
+    bodyText: normalizeOptionalString(payload.text || payload.bodyText || payload.body_text || payload.body, 4000),
+    payload: normalizeJsonObject(payload.payload, "payload"),
+    expiresAt: normalizeOptionalIsoDate(payload.expiresAt || payload.expires_at)
+  };
+}
+
+function normalizeDeviceId(value) {
+  const id = String(value || "").trim();
+  if (!/^[a-zA-Z0-9_.:-]{6,96}$/.test(id)) {
+    throw new HttpError(400, "invalid_device_id", "deviceId must be 6-96 chars: a-z, 0-9, _, ., :, -");
+  }
+
+  return id;
+}
+
+function normalizeOptionalDeviceId(value) {
+  if (value == null || String(value).trim() === "") {
+    return null;
+  }
+
+  return normalizeDeviceId(value);
+}
+
+function normalizeDevicePlatform(value) {
+  const platform = String(value || "").trim().toLowerCase();
+  if (!/^(desktop|android|ios|web)$/.test(platform)) {
+    throw new HttpError(400, "invalid_platform", "platform must be desktop, android, ios, or web");
+  }
+
+  return platform;
+}
+
+function normalizeOptionalDevicePlatform(value) {
+  if (value == null || String(value).trim() === "") {
+    return null;
+  }
+
+  return normalizeDevicePlatform(value);
+}
+
+function normalizeMessageKind(value) {
+  const kind = String(value || "text").trim().toLowerCase();
+  if (!/^[a-z0-9_.:-]{1,40}$/.test(kind)) {
+    throw new HttpError(400, "invalid_message_kind", "kind must be 1-40 lowercase chars");
+  }
+
+  return kind;
+}
+
+function normalizeMessageId(value) {
+  const id = String(value || "").trim();
+  if (!/^msg_[a-f0-9]{24}$/.test(id)) {
+    throw new HttpError(400, "invalid_message_id", "messageId format is invalid");
+  }
+
+  return id;
+}
+
+function normalizeMessageLimit(value) {
+  const limit = Number.parseInt(String(value || "20"), 10);
+  if (!Number.isFinite(limit)) {
+    return 20;
+  }
+
+  return Math.min(Math.max(limit, 1), 50);
+}
+
+function normalizeShortText(value, fieldName, maxLength) {
+  const text = String(value || "").trim();
+  if (!text) {
+    throw new HttpError(400, `invalid_${fieldName}`, `${fieldName} is required`);
+  }
+
+  return text.slice(0, maxLength);
+}
+
+function normalizeOptionalString(value, maxLength) {
+  if (value == null) {
+    return null;
+  }
+
+  const text = String(value).trim();
+  return text ? text.slice(0, maxLength) : null;
+}
+
+function normalizeJsonObject(value, fieldName) {
+  if (value == null) {
+    return {};
+  }
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(400, `invalid_${fieldName}`, `${fieldName} must be an object`);
+  }
+
+  return value;
+}
+
+async function ensureOwnedDevice(env, userId, deviceId) {
+  const device = await env.DB.prepare(
+    `select device_id, platform, display_name
+     from user_devices
+     where user_id = ? and device_id = ?`
+  )
+    .bind(userId, deviceId)
+    .first();
+
+  if (!device) {
+    throw new HttpError(404, "device_not_found", "Device was not found in this account");
+  }
+
+  return {
+    deviceId: device.device_id,
+    platform: device.platform,
+    displayName: device.display_name
+  };
+}
+
+async function touchDevice(env, userId, deviceId) {
+  await env.DB.prepare(
+    `update user_devices
+     set last_seen_at = ?,
+         updated_at = ?
+     where user_id = ? and device_id = ?`
+  )
+    .bind(isoNow(), isoNow(), userId, deviceId)
+    .run();
+}
+
+function serializeDeviceRecord(row) {
+  return {
+    deviceId: row.device_id,
+    platform: row.platform,
+    displayName: row.display_name,
+    capabilities: parseJsonObject(row.capabilities_json),
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function serializeDeviceMessageRecord(row) {
+  return {
+    messageId: row.message_id,
+    sourceDeviceId: row.source_device_id || null,
+    targetDeviceId: row.target_device_id || null,
+    targetPlatform: row.target_platform || null,
+    kind: row.kind,
+    title: row.title || "",
+    text: row.body_text || "",
+    payload: parseJsonObject(row.payload_json),
+    status: row.status,
+    createdAt: row.created_at,
+    deliveredAt: row.delivered_at || null,
+    ackedAt: row.acked_at || null,
+    expiresAt: row.expires_at || null
+  };
+}
+
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 async function sendVerificationEmail(env, email, username, code) {
@@ -2134,7 +2573,7 @@ function base64EncodeUtf8(value) {
 
 function normalizeOptionalIsoDate(value) {
   if (!value) {
-    return "";
+    return null;
   }
 
   const date = new Date(String(value));

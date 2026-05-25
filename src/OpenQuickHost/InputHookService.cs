@@ -25,6 +25,8 @@ public class InputHookService
     private const int WM_SYSKEYUP = 0x0105;
     private const int VK_CONTROL = 0x11;
     private const int VK_CAPITAL = 0x14;
+    private const int VK_LWIN = 0x5B;
+    private const int VK_RWIN = 0x5C;
     private const int XBUTTON1 = 1;
     private const int XBUTTON2 = 2;
     private const uint LLMHF_INJECTED = 0x00000001;
@@ -32,6 +34,7 @@ public class InputHookService
     private const uint INPUT_MOUSE = 0;
     private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
     private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+    private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
 
     private static LowLevelMouseProc _mouseProc = MouseHookCallback;
     private static LowLevelKeyboardProc _keyboardProc = KeyboardHookCallback;
@@ -44,23 +47,58 @@ public class InputHookService
     private static Action? _onShowRadial;
     private static Action? _onShowYanm;
     private static Action? _onYanmRelease;
+    private static Func<bool>? _onShowWindowSnap;
+    private static Action? _onWindowSnapMove;
+    private static Action? _onWindowSnapRelease;
     private static QuickPanelMouseTriggerSettings _settings = new();
     private static RadialMenuSettings _radialSettings = new();
     private static YanmSettings _yanmSettings = new();
-    private static YarnSelectSettings _yarnSelectSettings = new();
+    private static bool _windowSnapAssistEnabled;
+    private static string _windowSnapAssistMouseTriggerMode = MouseTriggerModes.None;
     private static bool _isEnabled;
     private static bool _dragTriggered;
     private static bool _releaseShouldExecute;
     private static bool _rightButtonDownSwallowed;
+    private static bool _middleButtonDownSwallowed;
     private static ActiveTriggerTarget _activeTriggerTarget = ActiveTriggerTarget.None;
     private static ActiveTriggerTarget _pendingLongPressTarget = ActiveTriggerTarget.None;
     private static bool _capsRadialActive;
+    private static bool _rightButtonDown;
+    private static bool _middleButtonDown;
+    private static bool _x1ButtonDown;
+    private static bool _x2ButtonDown;
     private static TrackedMouseButton _trackedButton = TrackedMouseButton.None;
     private static POINT _downPoint;
-    private static string _lastSuppressedForegroundProcess = string.Empty;
-    private static DateTimeOffset _lastSuppressedForegroundProcessLogAt = DateTimeOffset.MinValue;
+    private static long _lastMouseTriggerReleaseTick;
 
     public static bool IsRunning => _isEnabled;
+
+    public static bool HasActiveMouseTrigger =>
+        _dragTriggered || _releaseShouldExecute || _activeTriggerTarget != ActiveTriggerTarget.None;
+
+    public static bool WasMouseTriggerReleasedRecently(int milliseconds = 250)
+    {
+        var tick = _lastMouseTriggerReleaseTick;
+        return tick > 0 && Environment.TickCount64 - tick <= milliseconds;
+    }
+
+    public static string GetMouseStateSummary()
+    {
+        var pressed = new List<string>();
+        if (_rightButtonDown) pressed.Add("右键");
+        if (_middleButtonDown) pressed.Add("中键");
+        if (_x1ButtonDown) pressed.Add("侧键1");
+        if (_x2ButtonDown) pressed.Add("侧键2");
+        var tracked = _trackedButton == TrackedMouseButton.None ? "无" : _trackedButton.ToString();
+        var active = _activeTriggerTarget == ActiveTriggerTarget.None ? "无" : _activeTriggerTarget.ToString();
+        return $"鼠标钩子={(IsRunning ? "运行" : "停止")}，按下={pressed.Count switch { 0 => "无", _ => string.Join("、", pressed) }}，跟踪={tracked}，触发={active}，右键拦截={_rightButtonDownSwallowed}";
+    }
+
+    public static void ResetMouseState(string reason = "tray")
+    {
+        ResetTransientMouseState();
+        HostAssets.AppendLog($"Input hook: mouse state reset requested from {reason}.");
+    }
 
     public static void Start(
         Action onLongPress,
@@ -68,7 +106,10 @@ public class InputHookService
         Action? onRadial = null,
         Action? onRadialRelease = null,
         Action? onShowYanm = null,
-        Action? onYanmRelease = null)
+        Action? onYanmRelease = null,
+        Func<bool>? onShowWindowSnap = null,
+        Action? onWindowSnapMove = null,
+        Action? onWindowSnapRelease = null)
     {
         if (_isEnabled)
         {
@@ -82,6 +123,9 @@ public class InputHookService
         _onRadialRelease = onRadialRelease;
         _onShowYanm = onShowYanm;
         _onYanmRelease = onYanmRelease;
+        _onShowWindowSnap = onShowWindowSnap;
+        _onWindowSnapMove = onWindowSnapMove;
+        _onWindowSnapRelease = onWindowSnapRelease;
         ReloadSettings();
         _mouseHookID = SetMouseHook(_mouseProc);
         if (_mouseHookID == IntPtr.Zero)
@@ -102,6 +146,13 @@ public class InputHookService
         _longPressTimer.Tick += (s, e) =>
         {
             _longPressTimer.Stop();
+            if (_trackedButton == TrackedMouseButton.None || _pendingLongPressTarget == ActiveTriggerTarget.None)
+            {
+                HostAssets.AppendLog($"Input hook: ignored long press tick because state is inactive, tracked={_trackedButton}, target={_pendingLongPressTarget}.");
+                _pendingLongPressTarget = ActiveTriggerTarget.None;
+                return;
+            }
+
             _dragTriggered = true;
             _releaseShouldExecute = true;
             _activeTriggerTarget = _pendingLongPressTarget;
@@ -151,28 +202,15 @@ public class InputHookService
         _settings = appSettings.QuickPanelMouseTriggers ?? new QuickPanelMouseTriggerSettings();
         _radialSettings = appSettings.RadialMenu ?? new RadialMenuSettings();
         _yanmSettings = appSettings.Yanm ?? new YanmSettings();
-        _yarnSelectSettings = appSettings.YarnSelect ?? new YarnSelectSettings();
-        _yarnSelectSettings.BlacklistedProcesses ??= [];
-        if (!_settings.MiddleButtonDown &&
-            !_settings.X1ButtonDown &&
-            !_settings.X2ButtonDown &&
-            !_settings.CtrlLeftClick &&
-            !_settings.CtrlRightClick &&
-            !_settings.MiddleButtonLongPress &&
-            !_settings.RightButtonLongPress &&
-            !_settings.RightButtonDrag &&
-            !_settings.HorizontalWheel)
-        {
-            _settings.MiddleButtonLongPress = true;
-        }
-
+        _windowSnapAssistEnabled = appSettings.EnableWindowSnapAssist;
+        _windowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(appSettings.WindowSnapAssistMouseTriggerMode);
         if (_longPressTimer != null)
         {
             _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 150, 2000));
         }
 
         ResetTransientMouseState();
-        HostAssets.AppendLog($"Input hook: settings reloaded, transient mouse state reset, triggers={DescribeSettings()}, yarnSelectBlacklist={_yarnSelectSettings.BlacklistedProcesses.Count}.");
+        HostAssets.AppendLog($"Input hook: settings reloaded, transient mouse state reset, triggers={DescribeSettings()}.");
     }
 
     private static IntPtr SetMouseHook(LowLevelMouseProc proc)
@@ -214,9 +252,11 @@ public class InputHookService
         if (_settings.MiddleButtonLongPress) enabled.Add($"MiddleLong:{_settings.LongPressMilliseconds}ms");
         if (_settings.RightButtonLongPress) enabled.Add($"RightLong:{_settings.LongPressMilliseconds}ms");
         if (_settings.RightButtonDrag) enabled.Add($"RightDrag:{_settings.DragThresholdPixels}px");
+        if (_settings.MiddleButtonDrag) enabled.Add($"MiddleDrag:{_settings.DragThresholdPixels}px");
         if (_radialSettings.Enabled && MouseTriggerModes.Normalize(_radialSettings.MouseTriggerMode) != MouseTriggerModes.None) enabled.Add($"Radial:{_radialSettings.MouseTriggerMode}");
-        if (IsRadialCapsLockHoldEnabled()) enabled.Add("RadialCapsHold");
+        if (IsRadialKeyboardHoldEnabled()) enabled.Add($"RadialKey:{RadialActivationKeys.Normalize(_radialSettings.ActivationKey)}");
         if (_yanmSettings.Enabled && MouseTriggerModes.Normalize(_yanmSettings.MouseTriggerMode) != MouseTriggerModes.None) enabled.Add($"Yanm:{_yanmSettings.MouseTriggerMode}");
+        if (_windowSnapAssistEnabled && _windowSnapAssistMouseTriggerMode != MouseTriggerModes.None) enabled.Add($"WindowSnap:{_windowSnapAssistMouseTriggerMode}");
         if (_settings.HorizontalWheel) enabled.Add("HorizontalWheel");
         if (_settings.ExecuteOnButtonRelease) enabled.Add("ReleaseExec");
         return enabled.Count == 0 ? "none" : string.Join(",", enabled);
@@ -236,22 +276,6 @@ public class InputHookService
                 return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
             }
 
-            if (IsForegroundSuppressedByYarnSelectBlacklist(out var suppressedProcess))
-            {
-                if (_trackedButton != TrackedMouseButton.None ||
-                    _releaseShouldExecute ||
-                    _rightButtonDownSwallowed ||
-                    message == WM_RBUTTONDOWN ||
-                    message == WM_MBUTTONDOWN ||
-                    message == WM_XBUTTONDOWN)
-                {
-                    ResetTransientMouseState();
-                    LogSuppressedForegroundProcess(suppressedProcess);
-                }
-
-                return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
-            }
-
             if (message == WM_LBUTTONDOWN)
             {
                 if (_settings.CtrlLeftClick && IsControlDown())
@@ -266,6 +290,7 @@ public class InputHookService
             }
             else if (message == WM_RBUTTONDOWN)
             {
+                _rightButtonDown = true;
                 BeginTracking(TrackedMouseButton.Right, mouse.pt);
                 HostAssets.AppendLog($"Input hook: right button down, rightLong={_settings.RightButtonLongPress}, rightDrag={_settings.RightButtonDrag}, radialTrigger={_radialSettings.MouseTriggerMode}, radialRightDrag={_radialSettings.TriggerRightButtonDrag}, yanmTrigger={_yanmSettings.MouseTriggerMode}, yanmRightDrag={_yanmSettings.TriggerRightButtonDrag}, ctrlRight={_settings.CtrlRightClick}, ctrlDown={IsControlDown()}, pt=({mouse.pt.x},{mouse.pt.y}).");
                 _rightButtonDownSwallowed = ShouldDelayRightButtonClick();
@@ -292,6 +317,7 @@ public class InputHookService
             }
             else if (message == WM_MBUTTONDOWN)
             {
+                _middleButtonDown = true;
                 BeginTracking(TrackedMouseButton.Middle, mouse.pt);
                 HostAssets.AppendLog($"Input hook: middle button down, middleDown={_settings.MiddleButtonDown}, middleLong={_settings.MiddleButtonLongPress}, ctrlMiddle={_settings.CtrlMiddleClick}, ctrlDown={IsControlDown()}, pt=({mouse.pt.x},{mouse.pt.y}).");
                 
@@ -305,6 +331,7 @@ public class InputHookService
                 }
                 else if (IsControlDown() && TryTriggerMouseMode(MouseTriggerModes.CtrlMiddleClick, mouse.pt))
                 {
+                    _middleButtonDownSwallowed = true;
                     return (IntPtr)1;
                 }
                 // Check middle button down triggers
@@ -317,6 +344,7 @@ public class InputHookService
                 }
                 else if (TryTriggerMouseMode(MouseTriggerModes.MiddleDown, mouse.pt))
                 {
+                    _middleButtonDownSwallowed = true;
                     return (IntPtr)1;
                 }
                 else if (ShouldStartLongPress(TrackedMouseButton.Middle))
@@ -329,6 +357,7 @@ public class InputHookService
                 var xButton = GetXButton(mouse.mouseData);
                 if (xButton == XBUTTON1)
                 {
+                    _x1ButtonDown = true;
                     BeginTracking(TrackedMouseButton.X1, mouse.pt);
                     if (_settings.X1ButtonDown)
                     {
@@ -344,6 +373,7 @@ public class InputHookService
                 }
                 else if (xButton == XBUTTON2)
                 {
+                    _x2ButtonDown = true;
                     BeginTracking(TrackedMouseButton.X2, mouse.pt);
                     if (_settings.X2ButtonDown)
                     {
@@ -364,6 +394,7 @@ public class InputHookService
             }
             else if (message == WM_RBUTTONUP)
             {
+                _rightButtonDown = false;
                 HostAssets.AppendLog($"Input hook: right button up, tracked={_trackedButton}, releaseShouldExecute={_releaseShouldExecute}, rightDownSwallowed={_rightButtonDownSwallowed}.");
                 var shouldReplayShortClick = _rightButtonDownSwallowed && !_releaseShouldExecute;
                 var shouldSwallow = _rightButtonDownSwallowed || _releaseShouldExecute;
@@ -385,12 +416,25 @@ public class InputHookService
             }
             else if (message == WM_MBUTTONUP)
             {
+                _middleButtonDown = false;
                 HostAssets.AppendLog($"Input hook: middle button up, tracked={_trackedButton}, releaseShouldExecute={_releaseShouldExecute}.");
-                EndTracking(TrackedMouseButton.Middle);
+                if (EndTracking(TrackedMouseButton.Middle))
+                {
+                    return (IntPtr)1;
+                }
             }
             else if (message == WM_XBUTTONUP)
             {
                 var xButton = GetXButton(mouse.mouseData);
+                if (xButton == XBUTTON1)
+                {
+                    _x1ButtonDown = false;
+                }
+                else if (xButton == XBUTTON2)
+                {
+                    _x2ButtonDown = false;
+                }
+
                 EndTracking(xButton == XBUTTON1 ? TrackedMouseButton.X1 : TrackedMouseButton.X2);
             }
             else if (message == WM_MOUSEHWHEEL && _settings.HorizontalWheel)
@@ -418,15 +462,15 @@ public class InputHookService
             }
 
             if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
-                keyboard.vkCode == VK_CAPITAL &&
-                IsRadialCapsLockHoldEnabled())
+                IsRadialActivationKey(keyboard.vkCode) &&
+                IsRadialKeyboardHoldEnabled())
             {
                 if (!_capsRadialActive)
                 {
                     _capsRadialActive = true;
                     _releaseShouldExecute = true;
                     _activeTriggerTarget = ActiveTriggerTarget.Radial;
-                    HostAssets.AppendLog("Input hook: CapsLock hold radial triggered.");
+                    HostAssets.AppendLog($"Input hook: {RadialActivationKeys.Normalize(_radialSettings.ActivationKey)} hold radial triggered.");
                     InvokeShowRadial();
                 }
 
@@ -434,12 +478,12 @@ public class InputHookService
             }
 
             if ((message == WM_KEYUP || message == WM_SYSKEYUP) &&
-                keyboard.vkCode == VK_CAPITAL &&
+                IsRadialActivationKey(keyboard.vkCode) &&
                 _capsRadialActive)
             {
                 _capsRadialActive = false;
                 _releaseShouldExecute = false;
-                HostAssets.AppendLog("Input hook: CapsLock hold radial released.");
+                HostAssets.AppendLog($"Input hook: {RadialActivationKeys.Normalize(_radialSettings.ActivationKey)} hold radial released.");
                 System.Windows.Application.Current.Dispatcher.Invoke(() => _onRadialRelease?.Invoke());
                 _activeTriggerTarget = ActiveTriggerTarget.None;
                 return (IntPtr)1;
@@ -460,10 +504,19 @@ public class InputHookService
         {
             _rightButtonDownSwallowed = false;
         }
+        else if (button == TrackedMouseButton.Middle)
+        {
+            _middleButtonDownSwallowed = false;
+        }
     }
 
     private static bool ShouldDelayRightButtonClick()
     {
+        if (MouseGestureService.HasRightDragRegistrations)
+        {
+            return false;
+        }
+
         return _settings.RightButtonLongPress ||
                _settings.RightButtonDrag ||
                IsRadialRightDragEnabled() ||
@@ -473,23 +526,67 @@ public class InputHookService
 
     private static void StartLongPressTimer()
     {
-        ReloadSettings();
         _longPressTimer?.Stop();
         _pendingLongPressTarget = ResolveLongPressTarget(_trackedButton);
+        if (_pendingLongPressTarget == ActiveTriggerTarget.None)
+        {
+            HostAssets.AppendLog($"Input hook: long press timer skipped for {_trackedButton}, target=None.");
+            return;
+        }
+
+        if (_longPressTimer != null)
+        {
+            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 150, 2000));
+        }
+
         _longPressTimer?.Start();
         HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={Math.Clamp(_settings.LongPressMilliseconds, 150, 2000)}ms.");
     }
 
     private static void HandleMouseMove(POINT point)
     {
-        if (_trackedButton != TrackedMouseButton.Right || _dragTriggered || _activeTriggerTarget != ActiveTriggerTarget.None)
+        CancelLongPressOnMovement(point);
+
+        if (_activeTriggerTarget == ActiveTriggerTarget.WindowSnap && _dragTriggered)
+        {
+            InvokeWindowSnapMove();
+            return;
+        }
+
+        if (MouseGestureService.HasRightDragRegistrations && _trackedButton == TrackedMouseButton.Right)
         {
             return;
         }
 
-        var yanmDrag = _yanmSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled);
-        var radialDrag = _radialSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled);
-        if (!radialDrag && !yanmDrag && !_settings.RightButtonDrag)
+        if (MouseGestureService.HasMiddleDragRegistrations && _trackedButton == TrackedMouseButton.Middle)
+        {
+            return;
+        }
+
+        if (_trackedButton is not (TrackedMouseButton.Right or TrackedMouseButton.Middle) ||
+            _dragTriggered ||
+            _activeTriggerTarget != ActiveTriggerTarget.None)
+        {
+            return;
+        }
+
+        var mode = _trackedButton == TrackedMouseButton.Middle
+            ? MouseTriggerModes.MiddleDrag
+            : MouseTriggerModes.RightDrag;
+
+        var panelDrag = mode == MouseTriggerModes.MiddleDrag ? _settings.MiddleButtonDrag : _settings.RightButtonDrag;
+        var yanmDrag = (mode == MouseTriggerModes.MiddleDrag
+                ? _yanmSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)
+                : _yanmSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) &&
+                       IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm, logBlocked: false);
+        var radialDrag = (mode == MouseTriggerModes.MiddleDrag
+                ? _radialSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)
+                : _radialSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) &&
+                         IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial, logBlocked: false);
+        var windowSnapDrag = _windowSnapAssistEnabled &&
+                             _onShowWindowSnap != null &&
+                             string.Equals(_windowSnapAssistMouseTriggerMode, mode, StringComparison.OrdinalIgnoreCase);
+        if (!radialDrag && !yanmDrag && !panelDrag && !windowSnapDrag)
         {
             return;
         }
@@ -503,45 +600,61 @@ public class InputHookService
         var dy = point.y - _downPoint.y;
         var distanceSquared = (dx * dx) + (dy * dy);
 
-        // If a right-button drag gesture is configured, small but intentional
-        // movement should cancel the long-press timer so long-press does not
-        // steal the gesture before drag has a chance to cross its full threshold.
-        if (_longPressTimer?.IsEnabled == true && (radialDrag || yanmDrag || _settings.RightButtonDrag))
-        {
-            const int dragIntentPixels = 6;
-            if (distanceSquared >= dragIntentPixels * dragIntentPixels)
-            {
-                _longPressTimer.Stop();
-                HostAssets.AppendLog("Input hook: canceled right-button long press because drag intent was detected.");
-            }
-        }
-
         if ((dx * dx) + (dy * dy) < threshold * threshold)
         {
             return;
         }
 
         _dragTriggered = true;
-        _releaseShouldExecute = true;
         _longPressTimer?.Stop();
-        if (_settings.RightButtonDrag)
+        if (panelDrag)
         {
+            _releaseShouldExecute = true;
             _activeTriggerTarget = ActiveTriggerTarget.Panel;
-            HostAssets.AppendLog("Input hook: right button drag triggered for mouse panel.");
+            HostAssets.AppendLog($"Input hook: {mode} triggered for mouse panel.");
             InvokeShowPanel();
         }
-        else if (radialDrag)
+        else if (radialDrag && IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial))
         {
+            _releaseShouldExecute = true;
             _activeTriggerTarget = ActiveTriggerTarget.Radial;
-            HostAssets.AppendLog("Input hook: radial right button drag triggered.");
+            HostAssets.AppendLog($"Input hook: radial {mode} triggered.");
             InvokeShowRadial();
         }
-        else if (yanmDrag)
+        else if (yanmDrag && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm))
         {
+            _releaseShouldExecute = true;
             _activeTriggerTarget = ActiveTriggerTarget.Yanm;
-            HostAssets.AppendLog("Input hook: Yanm right button drag triggered.");
+            HostAssets.AppendLog($"Input hook: Yanm {mode} triggered.");
             InvokeShowYanm();
         }
+        else if (windowSnapDrag && InvokeShowWindowSnap())
+        {
+            _releaseShouldExecute = true;
+            _activeTriggerTarget = ActiveTriggerTarget.WindowSnap;
+            HostAssets.AppendLog($"Input hook: window snap {mode} triggered.");
+            InvokeWindowSnapMove();
+        }
+    }
+
+    private static void CancelLongPressOnMovement(POINT point)
+    {
+        if (_longPressTimer?.IsEnabled != true || _trackedButton == TrackedMouseButton.None)
+        {
+            return;
+        }
+
+        var dx = point.x - _downPoint.x;
+        var dy = point.y - _downPoint.y;
+        const int dragIntentPixels = 6;
+        if ((dx * dx) + (dy * dy) < dragIntentPixels * dragIntentPixels)
+        {
+            return;
+        }
+
+        _longPressTimer.Stop();
+        _pendingLongPressTarget = ActiveTriggerTarget.None;
+        HostAssets.AppendLog($"Input hook: canceled {_trackedButton} long press because mouse moved.");
     }
 
     private static bool EndTracking(TrackedMouseButton button)
@@ -552,9 +665,20 @@ public class InputHookService
         }
 
         _longPressTimer?.Stop();
-        var swallowRelease = button == TrackedMouseButton.Right && _releaseShouldExecute;
+        var swallowRelease = button is TrackedMouseButton.Right or TrackedMouseButton.Middle && _releaseShouldExecute;
+        var downSwallowedByMouseGesture = button switch
+        {
+            TrackedMouseButton.Right => MouseGestureService.HasRightDragRegistrations,
+            TrackedMouseButton.Middle => MouseGestureService.HasMiddleDragRegistrations,
+            _ => false
+        };
+        var shouldReplaySwallowedRelease = swallowRelease &&
+            !downSwallowedByMouseGesture &&
+            ((button == TrackedMouseButton.Right && !_rightButtonDownSwallowed) ||
+             (button == TrackedMouseButton.Middle && !_middleButtonDownSwallowed));
         if (_releaseShouldExecute && _settings.ExecuteOnButtonRelease)
         {
+            _lastMouseTriggerReleaseTick = Environment.TickCount64;
             HostAssets.AppendLog($"Input hook: {button} released after trigger.");
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
@@ -566,11 +690,24 @@ public class InputHookService
                 {
                     _onYanmRelease?.Invoke();
                 }
+                else if (_activeTriggerTarget == ActiveTriggerTarget.WindowSnap)
+                {
+                    _onWindowSnapRelease?.Invoke();
+                }
                 else
                 {
                     _onLongPressRelease?.Invoke();
                 }
             });
+        }
+
+        if (shouldReplaySwallowedRelease)
+        {
+            ReplayMouseButtonUpAfterHookReturns(button);
+        }
+        else if (swallowRelease && downSwallowedByMouseGesture)
+        {
+            HostAssets.AppendLog($"Input hook: skipped replaying {button} button up because mouse gesture hook swallowed the button down.");
         }
 
         _dragTriggered = false;
@@ -580,6 +717,10 @@ public class InputHookService
         if (button == TrackedMouseButton.Right)
         {
             _rightButtonDownSwallowed = false;
+        }
+        else if (button == TrackedMouseButton.Middle)
+        {
+            _middleButtonDownSwallowed = false;
         }
 
         _trackedButton = TrackedMouseButton.None;
@@ -592,9 +733,14 @@ public class InputHookService
         _dragTriggered = false;
         _releaseShouldExecute = false;
         _rightButtonDownSwallowed = false;
+        _middleButtonDownSwallowed = false;
         _activeTriggerTarget = ActiveTriggerTarget.None;
         _pendingLongPressTarget = ActiveTriggerTarget.None;
         _capsRadialActive = false;
+        _rightButtonDown = false;
+        _middleButtonDown = false;
+        _x1ButtonDown = false;
+        _x2ButtonDown = false;
         _trackedButton = TrackedMouseButton.None;
         _downPoint = default;
     }
@@ -617,6 +763,27 @@ public class InputHookService
         };
         var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
         HostAssets.AppendLog($"Input hook: replayed short right click, SendInput sent={sent}/2.");
+    }
+
+    private static void ReplayMouseButtonUpAfterHookReturns(TrackedMouseButton button)
+    {
+        var flags = button switch
+        {
+            TrackedMouseButton.Right => MOUSEEVENTF_RIGHTUP,
+            TrackedMouseButton.Middle => MOUSEEVENTF_MIDDLEUP,
+            _ => 0u
+        };
+        if (flags == 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(25);
+            var sent = SendInput(1, [MouseInput(flags)], Marshal.SizeOf<INPUT>());
+            HostAssets.AppendLog($"Input hook: replayed {button} button up after swallowed release, SendInput sent={sent}/1.");
+        });
     }
 
     private static INPUT MouseInput(uint flags)
@@ -649,122 +816,65 @@ public class InputHookService
         System.Windows.Application.Current.Dispatcher.Invoke(() => _onShowYanm?.Invoke());
     }
 
+    private static bool InvokeShowWindowSnap()
+    {
+        return System.Windows.Application.Current.Dispatcher.Invoke(() => _onShowWindowSnap?.Invoke() == true);
+    }
+
+    private static void InvokeWindowSnapMove()
+    {
+        System.Windows.Application.Current.Dispatcher.Invoke(() => _onWindowSnapMove?.Invoke());
+    }
+
+    private static void InvokeWindowSnapRelease()
+    {
+        System.Windows.Application.Current.Dispatcher.Invoke(() => _onWindowSnapRelease?.Invoke());
+    }
+
     private static bool IsMouseTriggerModeActive(string mode, string selectedMode, bool enabled)
     {
         return enabled &&
                string.Equals(MouseTriggerModes.Normalize(selectedMode), mode, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsRadialRightDragEnabled() =>
-        (_radialSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) && _onShowRadial != null;
-
-    private static bool IsYanmRightDragEnabled() =>
-        (_yanmSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) && _onShowYanm != null;
-
-    private static bool TryTriggerMouseMode(string mode, POINT point)
+    private static bool IsTriggerAllowedForTarget(ActiveTriggerTarget target, bool logBlocked = true)
     {
-        // Check radial menu triggers (both old MouseTriggerMode and new boolean properties)
-        if (_radialSettings.Enabled && _onShowRadial != null)
+        var processName = GetForegroundProcessName();
+        var (whitelist, blacklist) = target switch
         {
-            var radialTriggered = IsMouseTriggerModeActive(mode, _radialSettings.MouseTriggerMode, _radialSettings.Enabled) ||
-                                  (mode == MouseTriggerModes.MiddleDown && _radialSettings.TriggerMiddleButtonDown) ||
-                                  (mode == MouseTriggerModes.X1Down && _radialSettings.TriggerX1ButtonDown) ||
-                                  (mode == MouseTriggerModes.X2Down && _radialSettings.TriggerX2ButtonDown) ||
-                                  (mode == MouseTriggerModes.HorizontalWheel && _radialSettings.TriggerHorizontalWheel) ||
-                                  (mode == MouseTriggerModes.CtrlLeftClick && _radialSettings.TriggerCtrlLeftClick) ||
-                                  (mode == MouseTriggerModes.CtrlRightClick && _radialSettings.TriggerCtrlRightClick) ||
-                                  (mode == MouseTriggerModes.MiddleLongPress && _radialSettings.TriggerMiddleButtonLongPress) ||
-                                  (mode == MouseTriggerModes.RightLongPress && _radialSettings.TriggerRightButtonLongPress) ||
-                                  (mode == MouseTriggerModes.RightDrag && _radialSettings.TriggerRightButtonDrag);
-            
-            if (radialTriggered)
+            ActiveTriggerTarget.Radial => (_radialSettings.WhitelistedProcesses ?? [], _radialSettings.BlacklistedProcesses ?? []),
+            ActiveTriggerTarget.Yanm => (_yanmSettings.WhitelistedProcesses ?? [], _yanmSettings.BlacklistedProcesses ?? []),
+            _ => (new List<string>(), new List<string>())
+        };
+
+        if (whitelist.Count == 0 && blacklist.Count == 0)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return whitelist.Count == 0;
+        }
+
+        if (whitelist.Count > 0)
+        {
+            var allowed = whitelist.Any(item => ProcessNameMatches(processName, item));
+            if (!allowed && logBlocked)
             {
-                _releaseShouldExecute = true;
-                _activeTriggerTarget = ActiveTriggerTarget.Radial;
-                HostAssets.AppendLog($"Input hook: radial mouse mode triggered: {mode}, pt=({point.x},{point.y}).");
-                InvokeShowRadial();
-                return true;
+                HostAssets.AppendLog($"Input hook: {target} trigger blocked by whitelist, process={processName}.");
             }
+
+            return allowed;
         }
 
-        // Check Yanm triggers (both old MouseTriggerMode and new boolean properties)
-        if (_yanmSettings.Enabled && _onShowYanm != null)
+        var blocked = blacklist.Any(item => ProcessNameMatches(processName, item));
+        if (blocked && logBlocked)
         {
-            var yanmTriggered = IsMouseTriggerModeActive(mode, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled) ||
-                                (mode == MouseTriggerModes.MiddleDown && _yanmSettings.TriggerMiddleButtonDown) ||
-                                (mode == MouseTriggerModes.X1Down && _yanmSettings.TriggerX1ButtonDown) ||
-                                (mode == MouseTriggerModes.X2Down && _yanmSettings.TriggerX2ButtonDown) ||
-                                (mode == MouseTriggerModes.HorizontalWheel && _yanmSettings.TriggerHorizontalWheel) ||
-                                (mode == MouseTriggerModes.CtrlLeftClick && _yanmSettings.TriggerCtrlLeftClick) ||
-                                (mode == MouseTriggerModes.CtrlRightClick && _yanmSettings.TriggerCtrlRightClick) ||
-                                (mode == MouseTriggerModes.MiddleLongPress && _yanmSettings.TriggerMiddleButtonLongPress) ||
-                                (mode == MouseTriggerModes.RightLongPress && _yanmSettings.TriggerRightButtonLongPress) ||
-                                (mode == MouseTriggerModes.RightDrag && _yanmSettings.TriggerRightButtonDrag);
-            
-            if (yanmTriggered)
-            {
-                _releaseShouldExecute = true;
-                _activeTriggerTarget = ActiveTriggerTarget.Yanm;
-                HostAssets.AppendLog($"Input hook: Yanm mouse mode triggered: {mode}, pt=({point.x},{point.y}).");
-                InvokeShowYanm();
-                return true;
-            }
+            HostAssets.AppendLog($"Input hook: {target} trigger blocked by blacklist, process={processName}.");
         }
 
-        return false;
-    }
-
-    private static bool ShouldStartLongPress(TrackedMouseButton button)
-    {
-        return button == TrackedMouseButton.Right
-            ? _settings.RightButtonLongPress ||
-              _radialSettings.TriggerRightButtonLongPress ||
-              _yanmSettings.TriggerRightButtonLongPress ||
-              IsMouseTriggerModeActive(MouseTriggerModes.RightLongPress, _radialSettings.MouseTriggerMode, _radialSettings.Enabled) ||
-              IsMouseTriggerModeActive(MouseTriggerModes.RightLongPress, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)
-            : button == TrackedMouseButton.Middle &&
-              (_settings.MiddleButtonLongPress ||
-               _radialSettings.TriggerMiddleButtonLongPress ||
-               _yanmSettings.TriggerMiddleButtonLongPress ||
-               IsMouseTriggerModeActive(MouseTriggerModes.MiddleLongPress, _radialSettings.MouseTriggerMode, _radialSettings.Enabled) ||
-               IsMouseTriggerModeActive(MouseTriggerModes.MiddleLongPress, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled));
-    }
-
-    private static ActiveTriggerTarget ResolveLongPressTarget(TrackedMouseButton button)
-    {
-        if (button == TrackedMouseButton.Right)
-        {
-            if (_settings.RightButtonLongPress) return ActiveTriggerTarget.Panel;
-            if (_radialSettings.TriggerRightButtonLongPress || IsMouseTriggerModeActive(MouseTriggerModes.RightLongPress, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) return ActiveTriggerTarget.Radial;
-            if (_yanmSettings.TriggerRightButtonLongPress || IsMouseTriggerModeActive(MouseTriggerModes.RightLongPress, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) return ActiveTriggerTarget.Yanm;
-        }
-
-        if (button == TrackedMouseButton.Middle)
-        {
-            if (_settings.MiddleButtonLongPress) return ActiveTriggerTarget.Panel;
-            if (_radialSettings.TriggerMiddleButtonLongPress || IsMouseTriggerModeActive(MouseTriggerModes.MiddleLongPress, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) return ActiveTriggerTarget.Radial;
-            if (_yanmSettings.TriggerMiddleButtonLongPress || IsMouseTriggerModeActive(MouseTriggerModes.MiddleLongPress, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) return ActiveTriggerTarget.Yanm;
-        }
-
-        return ActiveTriggerTarget.None;
-    }
-
-    private static bool IsRadialCapsLockHoldEnabled() =>
-        _radialSettings.Enabled &&
-        _radialSettings.TriggerCapsLockHold &&
-        _onShowRadial != null;
-
-    private static bool IsControlDown() => (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-
-    private static int GetXButton(uint mouseData) => (int)((mouseData >> 16) & 0xffff);
-
-    private static bool IsForegroundSuppressedByYarnSelectBlacklist(out string processName)
-    {
-        processName = GetForegroundProcessName();
-        var currentProcessName = processName;
-        var blacklist = _yarnSelectSettings.BlacklistedProcesses ?? [];
-        return !string.IsNullOrWhiteSpace(currentProcessName) &&
-               blacklist.Any(item => ProcessNameMatches(currentProcessName, item));
+        return !blocked;
     }
 
     private static bool ProcessNameMatches(string processName, string pattern)
@@ -824,19 +934,127 @@ public class InputHookService
         }
     }
 
-    private static void LogSuppressedForegroundProcess(string processName)
+    private static bool IsRadialRightDragEnabled() =>
+        (_radialSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) && _onShowRadial != null;
+
+    private static bool IsYanmRightDragEnabled() =>
+        (_yanmSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) && _onShowYanm != null;
+
+    private static bool TryTriggerMouseMode(string mode, POINT point)
     {
-        var now = DateTimeOffset.UtcNow;
-        if (processName.Equals(_lastSuppressedForegroundProcess, StringComparison.OrdinalIgnoreCase) &&
-            now - _lastSuppressedForegroundProcessLogAt < TimeSpan.FromSeconds(5))
+        // Check radial menu triggers (both old MouseTriggerMode and new boolean properties)
+        if (_radialSettings.Enabled && _onShowRadial != null)
         {
-            return;
+            var radialTriggered = IsMouseTriggerModeActive(mode, _radialSettings.MouseTriggerMode, _radialSettings.Enabled) ||
+                                  (mode == MouseTriggerModes.MiddleDown && _radialSettings.TriggerMiddleButtonDown) ||
+                                  (mode == MouseTriggerModes.X1Down && _radialSettings.TriggerX1ButtonDown) ||
+                                  (mode == MouseTriggerModes.X2Down && _radialSettings.TriggerX2ButtonDown) ||
+                                  (mode == MouseTriggerModes.HorizontalWheel && _radialSettings.TriggerHorizontalWheel) ||
+                                  (mode == MouseTriggerModes.CtrlLeftClick && _radialSettings.TriggerCtrlLeftClick) ||
+                                  (mode == MouseTriggerModes.CtrlRightClick && _radialSettings.TriggerCtrlRightClick) ||
+                                  (mode == MouseTriggerModes.MiddleLongPress && _radialSettings.TriggerMiddleButtonLongPress) ||
+                                  (mode == MouseTriggerModes.RightLongPress && _radialSettings.TriggerRightButtonLongPress) ||
+                                  (mode == MouseTriggerModes.RightDrag && _radialSettings.TriggerRightButtonDrag) ||
+                                  (mode == MouseTriggerModes.MiddleDrag && _radialSettings.TriggerMiddleButtonDrag);
+            
+            if (radialTriggered && IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial))
+            {
+                _releaseShouldExecute = true;
+                _activeTriggerTarget = ActiveTriggerTarget.Radial;
+                HostAssets.AppendLog($"Input hook: radial mouse mode triggered: {mode}, pt=({point.x},{point.y}).");
+                InvokeShowRadial();
+                return true;
+            }
         }
 
-        _lastSuppressedForegroundProcess = processName;
-        _lastSuppressedForegroundProcessLogAt = now;
-        HostAssets.AppendLog($"Input hook: foreground process suppressed by YarnSelect blacklist, process={processName}.");
+        // Check Yanm triggers (both old MouseTriggerMode and new boolean properties)
+        if (_yanmSettings.Enabled && _onShowYanm != null)
+        {
+            var yanmTriggered = IsMouseTriggerModeActive(mode, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled) ||
+                                (mode == MouseTriggerModes.MiddleDown && _yanmSettings.TriggerMiddleButtonDown) ||
+                                (mode == MouseTriggerModes.X1Down && _yanmSettings.TriggerX1ButtonDown) ||
+                                (mode == MouseTriggerModes.X2Down && _yanmSettings.TriggerX2ButtonDown) ||
+                                (mode == MouseTriggerModes.HorizontalWheel && _yanmSettings.TriggerHorizontalWheel) ||
+                                (mode == MouseTriggerModes.CtrlLeftClick && _yanmSettings.TriggerCtrlLeftClick) ||
+                                (mode == MouseTriggerModes.CtrlRightClick && _yanmSettings.TriggerCtrlRightClick) ||
+                                (mode == MouseTriggerModes.MiddleLongPress && _yanmSettings.TriggerMiddleButtonLongPress) ||
+                                (mode == MouseTriggerModes.RightLongPress && _yanmSettings.TriggerRightButtonLongPress) ||
+                                (mode == MouseTriggerModes.RightDrag && _yanmSettings.TriggerRightButtonDrag) ||
+                                (mode == MouseTriggerModes.MiddleDrag && _yanmSettings.TriggerMiddleButtonDrag);
+            
+            if (yanmTriggered && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm))
+            {
+                _releaseShouldExecute = true;
+                _activeTriggerTarget = ActiveTriggerTarget.Yanm;
+                HostAssets.AppendLog($"Input hook: Yanm mouse mode triggered: {mode}, pt=({point.x},{point.y}).");
+                InvokeShowYanm();
+                return true;
+            }
+        }
+
+        return false;
     }
+
+    private static bool ShouldStartLongPress(TrackedMouseButton button)
+    {
+        return button == TrackedMouseButton.Right
+            ? _settings.RightButtonLongPress ||
+              _radialSettings.TriggerRightButtonLongPress ||
+              _yanmSettings.TriggerRightButtonLongPress ||
+              IsMouseTriggerModeActive(MouseTriggerModes.RightLongPress, _radialSettings.MouseTriggerMode, _radialSettings.Enabled) ||
+              IsMouseTriggerModeActive(MouseTriggerModes.RightLongPress, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)
+            : button == TrackedMouseButton.Middle &&
+              (_settings.MiddleButtonLongPress ||
+               _radialSettings.TriggerMiddleButtonLongPress ||
+               _yanmSettings.TriggerMiddleButtonLongPress ||
+               IsMouseTriggerModeActive(MouseTriggerModes.MiddleLongPress, _radialSettings.MouseTriggerMode, _radialSettings.Enabled) ||
+               IsMouseTriggerModeActive(MouseTriggerModes.MiddleLongPress, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled));
+    }
+
+    private static ActiveTriggerTarget ResolveLongPressTarget(TrackedMouseButton button)
+    {
+        if (button == TrackedMouseButton.Right)
+        {
+            if (_settings.RightButtonLongPress) return ActiveTriggerTarget.Panel;
+            if ((_radialSettings.TriggerRightButtonLongPress || IsMouseTriggerModeActive(MouseTriggerModes.RightLongPress, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) &&
+                IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial)) return ActiveTriggerTarget.Radial;
+            if ((_yanmSettings.TriggerRightButtonLongPress || IsMouseTriggerModeActive(MouseTriggerModes.RightLongPress, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) &&
+                IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm)) return ActiveTriggerTarget.Yanm;
+        }
+
+        if (button == TrackedMouseButton.Middle)
+        {
+            if (_settings.MiddleButtonLongPress) return ActiveTriggerTarget.Panel;
+            if ((_radialSettings.TriggerMiddleButtonLongPress || IsMouseTriggerModeActive(MouseTriggerModes.MiddleLongPress, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) &&
+                IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial)) return ActiveTriggerTarget.Radial;
+            if ((_yanmSettings.TriggerMiddleButtonLongPress || IsMouseTriggerModeActive(MouseTriggerModes.MiddleLongPress, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) &&
+                IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm)) return ActiveTriggerTarget.Yanm;
+        }
+
+        return ActiveTriggerTarget.None;
+    }
+
+    private static bool IsRadialKeyboardHoldEnabled() =>
+        _radialSettings.Enabled &&
+        _radialSettings.TriggerCapsLockHold &&
+        !string.Equals(RadialActivationKeys.Normalize(_radialSettings.ActivationKey), RadialActivationKeys.None, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(RadialActivationKeys.Normalize(_radialSettings.ActivationKey), RadialActivationKeys.Custom, StringComparison.OrdinalIgnoreCase) &&
+        IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial, logBlocked: false) &&
+        _onShowRadial != null;
+
+    private static bool IsRadialActivationKey(int vkCode)
+    {
+        return RadialActivationKeys.Normalize(_radialSettings.ActivationKey) switch
+        {
+            RadialActivationKeys.Win => vkCode is VK_LWIN or VK_RWIN,
+            RadialActivationKeys.CapsLock => vkCode == VK_CAPITAL,
+            _ => false
+        };
+    }
+
+    private static bool IsControlDown() => (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+
+    private static int GetXButton(uint mouseData) => (int)((mouseData >> 16) & 0xffff);
 
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr SetWindowsHookEx(int idHook, Delegate lpfn, IntPtr hMod, uint dwThreadId);
@@ -877,7 +1095,8 @@ public class InputHookService
         None,
         Panel,
         Radial,
-        Yanm
+        Yanm,
+        WindowSnap
     }
 
     [StructLayout(LayoutKind.Sequential)]

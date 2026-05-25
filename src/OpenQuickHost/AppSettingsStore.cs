@@ -51,7 +51,7 @@ public static class AppSettingsStore
                 Name = "默认",
                 Slots = settings.QuickPanelSlots.Take(12).ToList(),
                 SlotItems = settings.QuickPanelSlots
-                    .Take(12)
+                    .Take(24)
                     .Select(static slot => string.IsNullOrWhiteSpace(slot)
                         ? null
                         : new QuickPanelSlotItem { ExtensionId = slot })
@@ -206,10 +206,15 @@ public static class AppSettingsStore
         settings.RadialMenu.SelectedPageId = settings.RadialMenu.Pages.Any(page => page.Id.Equals(settings.RadialMenu.SelectedPageId, StringComparison.OrdinalIgnoreCase))
             ? settings.RadialMenu.SelectedPageId
             : settings.RadialMenu.Pages[0].Id;
+        settings.RadialMenu.ActivationKey = RadialActivationKeys.Normalize(settings.RadialMenu.ActivationKey);
+        settings.RadialMenu.CustomShortcut = (settings.RadialMenu.CustomShortcut ?? string.Empty).Trim();
+        settings.RadialMenu.WhitelistedProcesses = NormalizeProcessList(settings.RadialMenu.WhitelistedProcesses);
+        settings.RadialMenu.BlacklistedProcesses = NormalizeProcessList(settings.RadialMenu.BlacklistedProcesses);
         settings.RadialMenu.Slots = settings.RadialMenu.Pages[0].Slots.ToList();
         settings.RadialMenu.DeadZonePixels = Math.Clamp(settings.RadialMenu.DeadZonePixels, 12, 120);
         settings.RadialMenu.RadiusPixels = Math.Clamp(settings.RadialMenu.RadiusPixels, 80, 240);
         settings.RadialMenu.DragThresholdPixels = Math.Clamp(settings.RadialMenu.DragThresholdPixels, 8, 120);
+        settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode);
         settings.YanyuRules ??= [];
         settings.YanyuRules = settings.YanyuRules
             .Select(NormalizeYanyuRule)
@@ -251,9 +256,13 @@ public static class AppSettingsStore
         settings.Yanm.Components ??= [];
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         settings.Yanm.ActivationKey = YanmActivationKeys.Normalize(settings.Yanm.ActivationKey);
+        settings.Yanm.WhitelistedProcesses = NormalizeProcessList(settings.Yanm.WhitelistedProcesses);
+        settings.Yanm.BlacklistedProcesses = NormalizeProcessList(settings.Yanm.BlacklistedProcesses);
         settings.Yanm.HoldDelayMilliseconds = Math.Clamp(settings.Yanm.HoldDelayMilliseconds, 0, 1000);
         settings.Yanm.GridSizePixels = Math.Clamp(settings.Yanm.GridSizePixels, 5, 80);
-        settings.Yanm.OverlayOpacity = Math.Clamp(settings.Yanm.OverlayOpacity, 0.05, 0.85);
+        settings.Yanm.OverlayOpacity = settings.Yanm.OverlayOpacity <= 0.581
+            ? 0.85
+            : Math.Clamp(settings.Yanm.OverlayOpacity, 0.05, 0.85);
         if (!settings.Yanm.HasInitializedDefaultComponents &&
             settings.Yanm.Components.Count == 0)
         {
@@ -279,6 +288,17 @@ public static class AppSettingsStore
             component.Locked = component.Locked;
         }
 
+        settings.WindowSnapAssistHotkey = settings.WindowSnapAssistHotkey?.Trim() ?? string.Empty;
+        settings.WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(settings.WindowSnapAssistMouseTriggerMode);
+        settings.WindowSnapAssistCustomLayouts ??= [];
+        settings.WindowSnapAssistCustomLayouts = settings.WindowSnapAssistCustomLayouts
+            .Where(static slot => slot.SlotIndex is >= 0 and < WindowSnapAssistCustomLayoutSettings.TotalSlotCount)
+            .GroupBy(static slot => slot.SlotIndex)
+            .Select(static group => NormalizeWindowSnapAssistCustomLayout(group.Last()))
+            .OrderBy(static slot => slot.SlotIndex)
+            .ToList();
+        settings.WindowBindings = NormalizeWindowBindings(settings.WindowBindings);
+
         return settings;
     }
 
@@ -298,7 +318,37 @@ public static class AppSettingsStore
                 .Where(static id => !string.IsNullOrWhiteSpace(id))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            return item.FolderExtensionIds.Count == 0 ? null : item;
+            item.FolderSlotItems ??= [];
+            if (item.FolderSlotItems.Count == 0)
+            {
+                item.FolderSlotItems = item.FolderExtensionIds
+                    .Take(24)
+                    .Select(static id => string.IsNullOrWhiteSpace(id)
+                        ? null
+                        : new QuickPanelSlotItem { ExtensionId = id })
+                    .ToList();
+            }
+
+            while (item.FolderSlotItems.Count < 24)
+            {
+                item.FolderSlotItems.Add(null);
+            }
+
+            if (item.FolderSlotItems.Count > 24)
+            {
+                item.FolderSlotItems = item.FolderSlotItems.Take(24).ToList();
+            }
+
+            for (var index = 0; index < item.FolderSlotItems.Count; index++)
+            {
+                item.FolderSlotItems[index] = NormalizeSlotItem(item.FolderSlotItems[index]);
+            }
+
+            item.FolderExtensionIds = item.FolderSlotItems
+                .Where(static slot => slot != null && !slot.IsFolder && !string.IsNullOrWhiteSpace(slot.ExtensionId))
+                .Select(static slot => slot!.ExtensionId!)
+                .ToList();
+            return item.FolderSlotItems.Any(static slot => slot != null) ? item : null;
         }
 
         item.ExtensionId = string.IsNullOrWhiteSpace(item.ExtensionId) ? null : item.ExtensionId.Trim();
@@ -326,6 +376,22 @@ public static class AppSettingsStore
                !string.IsNullOrWhiteSpace(username);
     }
 
+    private static List<string> NormalizeProcessList(IEnumerable<string>? processes) =>
+        (processes ?? [])
+        .Where(static item => !string.IsNullOrWhiteSpace(item))
+        .Select(static item => item.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    private static WindowSnapAssistCustomLayoutSettings NormalizeWindowSnapAssistCustomLayout(WindowSnapAssistCustomLayoutSettings slot)
+    {
+        slot.LeftRatio = Math.Clamp(slot.LeftRatio, -2, 3);
+        slot.TopRatio = Math.Clamp(slot.TopRatio, -2, 3);
+        slot.WidthRatio = Math.Clamp(slot.WidthRatio, 0.05, 3);
+        slot.HeightRatio = Math.Clamp(slot.HeightRatio, 0.05, 3);
+        return slot;
+    }
+
     private static YanyuRuleSettings NormalizeYanyuRule(YanyuRuleSettings? rule)
     {
         rule ??= new YanyuRuleSettings();
@@ -338,6 +404,43 @@ public static class AppSettingsStore
         rule.ExtensionId = string.IsNullOrWhiteSpace(rule.ExtensionId) ? string.Empty : rule.ExtensionId.Trim();
         rule.TriggerSuffix = YanyuTriggerSuffix.Normalize(rule.TriggerSuffix);
         return rule;
+    }
+
+    private static WindowBindingSettings NormalizeWindowBindings(WindowBindingSettings? bindings)
+    {
+        bindings ??= new WindowBindingSettings();
+        bindings.Rules ??= [];
+        bindings.MarginPixels = Math.Clamp(bindings.MarginPixels, 0, 64);
+        bindings.Rules = bindings.Rules
+            .Select(NormalizeWindowBindingRule)
+            .Where(static rule => rule.Enabled && !string.IsNullOrWhiteSpace(rule.ExtensionId) && !string.IsNullOrWhiteSpace(rule.ProcessName))
+            .DistinctBy(static rule => rule.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return bindings;
+    }
+
+    private static WindowBindingRuleSettings NormalizeWindowBindingRule(WindowBindingRuleSettings? rule)
+    {
+        rule ??= new WindowBindingRuleSettings();
+        rule.Id = string.IsNullOrWhiteSpace(rule.Id) ? Guid.NewGuid().ToString("N") : rule.Id.Trim();
+        rule.ExtensionId = (rule.ExtensionId ?? string.Empty).Trim();
+        rule.ProcessName = (rule.ProcessName ?? string.Empty).Trim();
+        rule.WindowClass = (rule.WindowClass ?? string.Empty).Trim();
+        rule.TitleContains = (rule.TitleContains ?? string.Empty).Trim();
+        rule.Corner = WindowBindingCorners.Normalize(rule.Corner);
+        rule.OffsetX = RoundToGrid(rule.OffsetX, 10);
+        rule.OffsetY = RoundToGrid(rule.OffsetY, 10);
+        return rule;
+    }
+
+    private static int RoundToGrid(int value, int gridSize)
+    {
+        if (gridSize <= 0)
+        {
+            return value;
+        }
+
+        return (int)Math.Round(value / (double)gridSize, MidpointRounding.AwayFromZero) * gridSize;
     }
 }
 
@@ -364,6 +467,8 @@ public sealed record AppSettings
     public string QuickPanelTrigger { get; set; } = "MiddleButtonLongPress";
 
     public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
+
+    public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.RightDrag;
 
     public YarnSelectSettings YarnSelect { get; set; } = new();
 
@@ -411,6 +516,16 @@ public sealed record AppSettings
 
     public YanmSettings Yanm { get; set; } = new();
 
+    public bool EnableWindowSnapAssist { get; set; } = true;
+
+    public string WindowSnapAssistHotkey { get; set; } = string.Empty;
+
+    public string WindowSnapAssistMouseTriggerMode { get; set; } = MouseTriggerModes.None;
+
+    public List<WindowSnapAssistCustomLayoutSettings> WindowSnapAssistCustomLayouts { get; set; } = [];
+
+    public WindowBindingSettings WindowBindings { get; set; } = new();
+
     public string LauncherConfigUpdatedAtUtc { get; set; } = string.Empty;
 
     public double? SettingsWindowLeft { get; set; }
@@ -420,6 +535,21 @@ public sealed record AppSettings
     public double? SettingsWindowWidth { get; set; }
 
     public double? SettingsWindowHeight { get; set; }
+}
+
+public sealed class WindowSnapAssistCustomLayoutSettings
+{
+    public const int TotalSlotCount = 16;
+
+    public int SlotIndex { get; set; }
+
+    public double LeftRatio { get; set; }
+
+    public double TopRatio { get; set; }
+
+    public double WidthRatio { get; set; }
+
+    public double HeightRatio { get; set; }
 }
 
 public sealed class QuickPanelGroupSettings
@@ -447,6 +577,8 @@ public sealed class QuickPanelSlotItem
 
     public List<string> FolderExtensionIds { get; set; } = [];
 
+    public List<QuickPanelSlotItem?> FolderSlotItems { get; set; } = [];
+
     public bool IsFolder => string.Equals(ItemType, "folder", StringComparison.OrdinalIgnoreCase);
 }
 
@@ -469,6 +601,8 @@ public sealed record QuickPanelMouseTriggerSettings
     public bool RightButtonLongPress { get; set; } = false;
 
     public bool RightButtonDrag { get; set; } = false;
+
+    public bool MiddleButtonDrag { get; set; } = false;
 
     public bool HorizontalWheel { get; set; } = false;
 
@@ -565,6 +699,8 @@ public sealed class RadialMenuSettings
     public bool Enabled { get; set; } = false;
 
     public bool TriggerRightButtonDrag { get; set; } = true;
+
+    public bool TriggerMiddleButtonDrag { get; set; } = false;
     
     public bool TriggerRightButtonLongPress { get; set; } = false;
     
@@ -586,6 +722,14 @@ public sealed class RadialMenuSettings
 
     public bool TriggerCapsLockHold { get; set; } = true;
 
+    public string ActivationKey { get; set; } = RadialActivationKeys.CapsLock;
+
+    public string CustomShortcut { get; set; } = string.Empty;
+
+    public List<string> WhitelistedProcesses { get; set; } = [];
+
+    public List<string> BlacklistedProcesses { get; set; } = [];
+
     public string MouseTriggerMode { get; set; } = MouseTriggerModes.RightDrag;
 
     public int DeadZonePixels { get; set; } = 32;
@@ -599,6 +743,26 @@ public sealed class RadialMenuSettings
     public string SelectedPageId { get; set; } = "default";
 
     public List<RadialMenuPageSettings> Pages { get; set; } = [];
+}
+
+public static class RadialActivationKeys
+{
+    public const string None = "None";
+    public const string Win = "Win";
+    public const string CapsLock = "CapsLock";
+    public const string Custom = "Custom";
+
+    public static string Normalize(string? value)
+    {
+        return (value ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "win" or "windows" or "meta" => Win,
+            "caps" or "capslock" => CapsLock,
+            "custom" or "shortcut" or "hotkey" => Custom,
+            "none" or "off" or "disabled" or "disable" => None,
+            _ => CapsLock
+        };
+    }
 }
 
 public sealed class RadialMenuPageSettings
@@ -616,7 +780,7 @@ public sealed class RadialMenuPageSettings
 
 public sealed class YanmSettings
 {
-    public const int CurrentDefaultComponentVersion = 13;
+    public const int CurrentDefaultComponentVersion = 17;
 
     public bool Enabled { get; set; } = false;
 
@@ -624,11 +788,17 @@ public sealed class YanmSettings
 
     public string CustomShortcut { get; set; } = string.Empty;
 
+    public List<string> WhitelistedProcesses { get; set; } = [];
+
+    public List<string> BlacklistedProcesses { get; set; } = [];
+
     public bool TriggerWinHold { get; set; } = true;
 
     public bool TriggerWinDoubleTap { get; set; } = true;
 
     public bool TriggerRightButtonDrag { get; set; } = false;
+
+    public bool TriggerMiddleButtonDrag { get; set; } = false;
     
     public bool TriggerRightButtonLongPress { get; set; } = false;
     
@@ -656,7 +826,7 @@ public sealed class YanmSettings
 
     public int GridSizePixels { get; set; } = 10;
 
-    public double OverlayOpacity { get; set; } = 0.58;
+    public double OverlayOpacity { get; set; } = 0.85;
 
     public bool HasInitializedDefaultComponents { get; set; }
 
@@ -698,6 +868,7 @@ public static class MouseTriggerModes
     public const string MiddleLongPress = "MiddleLongPress";
     public const string RightLongPress = "RightLongPress";
     public const string RightDrag = "RightDrag";
+    public const string MiddleDrag = "MiddleDrag";
     public const string HorizontalWheel = "HorizontalWheel";
 
     public static string Normalize(string? value)
@@ -713,9 +884,46 @@ public static class MouseTriggerModes
             MiddleLongPress => MiddleLongPress,
             RightLongPress => RightLongPress,
             RightDrag => RightDrag,
+            MiddleDrag => MiddleDrag,
             HorizontalWheel => HorizontalWheel,
             _ => None
         };
+    }
+}
+
+public static class MouseGestureTriggerModes
+{
+    public const string None = "None";
+    public const string RightDrag = "RightDrag";
+    public const string MiddleDrag = "MiddleDrag";
+
+    public static string Normalize(string? value)
+    {
+        return (value ?? string.Empty).Trim() switch
+        {
+            RightDrag => RightDrag,
+            MiddleDrag => MiddleDrag,
+            "right-drag" => RightDrag,
+            "middle-drag" => MiddleDrag,
+            _ => None
+        };
+    }
+
+    public static string ToRuntimeTrigger(string? value)
+    {
+        return Normalize(value) switch
+        {
+            MiddleDrag => "middle-drag",
+            RightDrag => "right-drag",
+            _ => string.Empty
+        };
+    }
+
+    public static string FromRuntimeTrigger(string? value)
+    {
+        return (value ?? string.Empty).Trim().Equals("middle-drag", StringComparison.OrdinalIgnoreCase)
+            ? MiddleDrag
+            : RightDrag;
     }
 }
 
@@ -747,99 +955,130 @@ public sealed class YanmComponentSettings
         [
             new YanmComponentSettings
             {
-                Title = "今日概览",
-                X = 80,
+                Title = "效率概览",
+                X = 70,
                 Y = 90,
                 Width = 360,
-                Height = 245,
-                Html = CreateOverviewHtml()
+                Height = 210,
+                Html = CreateProductivityOverviewHtml()
             },
             new YanmComponentSettings
             {
-                Title = "待办清单",
-                X = 470,
+                Title = "待办事项",
+                X = 450,
                 Y = 90,
-                Width = 340,
-                Height = 260,
-                Html = CreateTodoHtml()
+                Width = 480,
+                Height = 250,
+                Html = CreateProductivityTodoHtml()
             },
             new YanmComponentSettings
             {
-                Title = "网页书签",
-                X = 840,
+                Title = "快速书签",
+                X = 950,
                 Y = 90,
-                Width = 390,
-                Height = 240,
-                Html = CreateWebMonitorHtml()
+                Width = 300,
+                Height = 250,
+                Html = CreateProductivityBookmarksHtml()
             },
             new YanmComponentSettings
             {
-                Title = "系统状态",
-                X = 80,
-                Y = 350,
+                Title = "番茄专注",
+                X = 70,
+                Y = 320,
                 Width = 360,
                 Height = 190,
-                Html = CreateSystemHtml()
+                Html = CreateProductivityFocusHtml()
             },
             new YanmComponentSettings
             {
-                Title = "燕幕提示",
-                X = 470,
-                Y = 380,
-                Width = 500,
-                Height = 180,
-                Html = CreateTipsHtml()
+                Title = "日历",
+                X = 450,
+                Y = 360,
+                Width = 235,
+                Height = 260,
+                Html = CreateProductivityCalendarHtml()
             },
             new YanmComponentSettings
             {
                 Title = "应用启动台",
-                X = 980,
+                X = 695,
                 Y = 360,
-                Width = 360,
-                Height = 340,
-                Html = CreateAppLauncherHtml()
+                Width = 235,
+                Height = 260,
+                Html = CreateProductivityAppLauncherHtml()
             },
             new YanmComponentSettings
             {
-                Title = "便签",
-                X = 80,
-                Y = 580,
-                Width = 320,
-                Height = 220,
-                Html = CreateStickyNoteHtml()
-            },
-            new YanmComponentSettings
-            {
-                Title = "番茄时钟",
-                X = 430,
-                Y = 590,
-                Width = 320,
-                Height = 220,
-                Html = CreatePomodoroHtml()
-            },
-            new YanmComponentSettings
-            {
-                Title = "倒计时",
-                X = 780,
-                Y = 590,
-                Width = 340,
-                Height = 210,
-                Html = CreateCountdownHtml()
+                Title = "习惯打卡",
+                X = 450,
+                Y = 640,
+                Width = 480,
+                Height = 170,
+                Html = CreateProductivityHabitsHtml()
             },
             new YanmComponentSettings
             {
                 Title = "桌面文件",
-                X = 1150,
-                Y = 580,
-                Width = 340,
-                Height = 230,
-                Html = CreateDesktopFolderHtml()
+                X = 950,
+                Y = 360,
+                Width = 300,
+                Height = 310,
+                Html = CreateProductivityDesktopHtml()
+            },
+            new YanmComponentSettings
+            {
+                Title = "心情喝水",
+                X = 70,
+                Y = 530,
+                Width = 360,
+                Height = 160,
+                Html = CreateProductivityMoodWaterHtml()
+            },
+            new YanmComponentSettings
+            {
+                Title = "便签",
+                X = 70,
+                Y = 710,
+                Width = 360,
+                Height = 180,
+                Html = CreateProductivityNoteHtml()
+            },
+            new YanmComponentSettings
+            {
+                Title = "系统状态",
+                X = 950,
+                Y = 690,
+                Width = 300,
+                Height = 120,
+                Html = CreateProductivitySystemHtml()
             }
         ];
     }
 
     public static void UpgradeDefaultComponents(List<YanmComponentSettings> components)
     {
+        if (components.All(item => !item.Title.Equals("效率概览", StringComparison.OrdinalIgnoreCase)))
+        {
+            var legacyDefaultTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "今日概览",
+                "待办清单",
+                "网页书签",
+                "网页监控",
+                "系统状态",
+                "燕幕提示",
+                "应用启动台",
+                "便签",
+                "番茄时钟",
+                "倒计时",
+                "桌面文件",
+                "下载目录"
+            };
+            components.RemoveAll(item => legacyDefaultTitles.Contains(item.Title));
+            components.AddRange(CreateDefaultComponents());
+            return;
+        }
+
         var legacyDownload = components.FirstOrDefault(item =>
             item.Title.Equals("下载目录", StringComparison.OrdinalIgnoreCase));
         if (legacyDownload != null &&
@@ -878,6 +1117,243 @@ public sealed class YanmComponentSettings
         }
     }
 
+    private static string ProductivityShell(string body, string script = "", string accent = "#85b7eb") => $$"""
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;overflow:hidden;background:transparent;color:#fff;font-family:"Microsoft YaHei",system-ui,sans-serif}
+    body{padding:0}
+    .card{width:100%;height:100%;padding:16px;border-radius:18px;background:linear-gradient(145deg,rgba(22,30,45,.98),rgba(8,11,18,.94));border:1px solid rgba(190,215,255,.22);box-shadow:0 24px 76px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.08);overflow:hidden}
+    .panel{height:100%;padding:0;border:0;background:transparent;overflow:hidden}
+    .lbl{font-size:10px;letter-spacing:.08em;color:rgba(255,255,255,.32);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+    .link{font-size:10px;color:rgba(255,255,255,.28);letter-spacing:0;text-transform:none;cursor:pointer}
+    .tag{font-size:10px;padding:3px 8px;border-radius:20px;background:rgba(255,255,255,.07);color:rgba(255,255,255,.42)}
+    .tag-g{background:rgba(99,153,34,.15);color:#97c459}.tag-a{background:rgba(186,117,23,.15);color:#fac775}.tag-b{background:rgba(55,138,221,.15);color:#85b7eb}
+    .scroll{overflow:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.16) transparent}
+    .scroll::-webkit-scrollbar{width:3px;height:3px}.scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:2px}
+    button,input,textarea{font-family:inherit}
+    button{cursor:pointer}
+    kbd{background:rgba(255,255,255,.07);border-radius:3px;padding:1px 5px;font-size:9px;color:rgba(255,255,255,.35)}
+    .accent{color:{{accent}}}
+  </style>
+</head>
+<body>
+  <div class="card">{{body}}</div>
+  {{script}}
+</body>
+</html>
+""";
+
+    private static string CreateProductivityOverviewHtml() => ProductivityShell("""
+<div class="panel">
+  <div class="lbl">Today <span class="tag tag-g" id="weekTag">--</span></div>
+  <div id="clock" style="font-size:46px;font-weight:200;letter-spacing:-2px;line-height:1">--:--</div>
+  <div id="date" style="font-size:12px;color:rgba(255,255,255,.42);margin-top:5px">--</div>
+  <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
+    <span class="tag tag-g" id="weekday">工作日</span>
+    <span class="tag tag-a" id="todoBadge">待办同步</span>
+    <span class="tag tag-b">本机数据</span>
+  </div>
+  <div style="margin-top:14px;padding-top:12px;border-top:.5px solid rgba(255,255,255,.06);font-size:11px;color:rgba(255,255,255,.36);line-height:1.6">
+    今天适合把关键事项、常用应用和临时想法收拢到一屏，减少来回切换。
+  </div>
+</div>
+""", """
+<script>
+(function(){
+  function weekOfYear(d){var x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));var day=x.getUTCDay()||7;x.setUTCDate(x.getUTCDate()+4-day);var y=new Date(Date.UTC(x.getUTCFullYear(),0,1));return Math.ceil((((x-y)/86400000)+1)/7);}
+  function tick(){var d=new Date();document.getElementById('clock').textContent=d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});document.getElementById('date').textContent='周'+'日一二三四五六'.charAt(d.getDay())+' · '+(d.getMonth()+1)+'月'+d.getDate()+'日 · 第'+weekOfYear(d)+'周';document.getElementById('weekTag').textContent=d.getFullYear();document.getElementById('weekday').textContent=d.getDay()===0||d.getDay()===6?'周末':'工作日';}
+  tick();setInterval(tick,1000);
+})();
+</script>
+""");
+
+    private static string CreateProductivityTodoHtml() => ProductivityShell("""
+<div class="panel" style="display:flex;flex-direction:column">
+  <div class="lbl">待办事项 <span style="display:flex;gap:6px;align-items:center"><span class="tag tag-a" id="count">0 项</span><span class="link" id="sync">本机缓存</span></span></div>
+  <div id="list" class="scroll" style="flex:1;min-height:110px"></div>
+  <div style="display:flex;gap:6px;margin-top:8px">
+    <input id="input" placeholder="快速添加待办..." style="flex:1;border:0;outline:0;border-radius:7px;padding:7px 10px;background:rgba(255,255,255,.06);color:#fff;font-size:12px">
+    <button id="add" style="border:0;border-radius:7px;background:#ef9f27;color:#1a0d00;font-weight:600;padding:0 12px">添加</button>
+    <button id="clear" style="border:0;border-radius:7px;background:rgba(255,255,255,.07);color:rgba(255,255,255,.52);padding:0 10px">清理</button>
+  </div>
+</div>
+""", """
+<script>
+(function(){
+  var key='yanm.todo.items.'+((window.yanm&&window.yanm.componentId)||window.__yanmComponentId||'default'), legacy='yanm.todos.v2', todos=[], hostLoaded=false;
+  function fallback(){return[{text:'晨会 + 更新周报',done:true,due:'09:30'},{text:'UI 重设计提案 PPT',done:false,due:'今天',hot:true},{text:'与产品对齐需求文档',done:false,due:'14:00'},{text:'整理文档结构',done:false,due:'本周'}];}
+  function load(){try{todos=JSON.parse(localStorage.getItem(key)||localStorage.getItem(legacy)||'null')||fallback();}catch(e){todos=fallback();}}
+  function local(){try{localStorage.setItem(key,JSON.stringify(todos));localStorage.setItem(legacy,JSON.stringify(todos));}catch(e){}}
+  function save(){local();render();if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.set',{key:key,value:JSON.stringify(todos)}).then(function(){hostLoaded=true;render();}).catch(function(){});}}
+  function dot(item){return item.done?'#27500a':item.hot?'#ef9f27':'transparent';}
+  function render(){var list=document.getElementById('list');list.innerHTML='';var open=0;todos.forEach(function(item,i){if(!item.done)open++;var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;cursor:pointer';row.onmouseenter=function(){row.style.background='rgba(255,255,255,.05)'};row.onmouseleave=function(){row.style.background='transparent'};row.innerHTML='<span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:'+dot(item)+';border:'+(item.done||item.hot?'0':'1.5px solid rgba(255,255,255,.2)')+'"></span><span style="font-size:13px;flex:1;color:'+(item.done?'rgba(255,255,255,.25)':'rgba(255,255,255,.8)')+';text-decoration:'+(item.done?'line-through':'none')+'">'+item.text+'</span><span style="font-size:10px;color:'+(item.hot?'#ef9f27':'rgba(255,255,255,.25)')+'">'+(item.due||'')+'</span>';row.onclick=function(){item.done=!item.done;save();};list.appendChild(row);});document.getElementById('count').textContent=open+' 项';document.getElementById('sync').textContent=hostLoaded?'已接入宿主同步':'本机缓存';}
+  function add(){var input=document.getElementById('input');var v=input.value.trim();if(!v){input.focus();return;}todos.unshift({text:v,done:false,due:'今天'});input.value='';save();input.focus();}
+  function request(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.get',{key:key}).then(function(res){var v=res&&res.value;if(v){try{todos=JSON.parse(v)||todos;hostLoaded=true;local();}catch(e){}}render();}).catch(render);return true;}return false;}
+  load();render();document.getElementById('add').onclick=add;document.getElementById('clear').onclick=function(){todos=todos.filter(function(x){return !x.done});save();};document.getElementById('input').onkeydown=function(e){if(e.key==='Enter')add();};if(!request())setTimeout(request,300);
+})();
+</script>
+""");
+
+    private static string CreateProductivityFocusHtml() => ProductivityShell("""
+<div class="panel">
+  <div class="lbl">番茄钟 <span class="tag tag-a" id="round">第 1 轮</span></div>
+  <div id="pomo" style="font-size:46px;font-weight:200;letter-spacing:-1px;text-align:center;line-height:1">25:00</div>
+  <div id="state" style="font-size:10px;color:rgba(255,255,255,.32);text-align:center;margin-top:5px;letter-spacing:.05em">专注 25 分钟</div>
+  <div style="height:3px;background:rgba(255,255,255,.07);border-radius:2px;margin:12px 0"><div id="bar" style="height:3px;border-radius:2px;background:#ef9f27;width:0"></div></div>
+  <div style="display:flex;gap:6px;margin-top:12px">
+    <button id="reset" style="flex:1;padding:7px 0;border-radius:20px;border:0;background:rgba(255,255,255,.07);color:rgba(255,255,255,.5)">重置</button>
+    <button id="toggle" style="flex:1;padding:7px 0;border-radius:20px;border:0;background:#ef9f27;color:#1a0d00;font-weight:600">开始</button>
+  </div>
+</div>
+""", """
+<script>
+(function(){var total=25*60,left=total,running=false,timer=null,round=1;function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}function render(){document.getElementById('pomo').textContent=fmt(left);document.getElementById('toggle').textContent=running?'暂停':'开始';document.getElementById('bar').style.width=Math.round((1-left/total)*100)+'%';document.getElementById('round').textContent='第 '+round+' 轮';document.getElementById('state').textContent=running?'专注中 · 再坚持一下':'专注 25 分钟';}
+function tick(){if(left>0){left--;render();return;}clearInterval(timer);timer=null;running=false;round++;left=5*60;total=5*60;document.getElementById('state').textContent='完成，休息 5 分钟';render();}
+document.getElementById('toggle').onclick=function(){running=!running;if(running){timer=setInterval(tick,1000)}else{clearInterval(timer);timer=null}render();};document.getElementById('reset').onclick=function(){clearInterval(timer);timer=null;running=false;total=25*60;left=total;render();};render();})();
+</script>
+""");
+
+    private static string CreateProductivityMoodWaterHtml() => ProductivityShell("""
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;height:100%">
+  <div class="panel">
+    <div class="lbl">今日心情 <span class="link" id="moodHint">记录</span></div>
+    <div id="moods" style="display:flex;gap:5px;justify-content:space-around;margin-top:4px"></div>
+    <div id="moodLog" style="font-size:10px;color:rgba(255,255,255,.25);margin-top:8px;text-align:center">等待记录</div>
+  </div>
+  <div class="panel">
+    <div class="lbl">喝水 <span class="link" id="addWater">+1 杯</span></div>
+    <div id="water" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px"></div>
+    <div id="waterTxt" style="font-size:10px;color:rgba(55,138,221,.6);margin-top:7px"></div>
+  </div>
+</div>
+""", """
+<script>
+(function(){var key='yanm.mood.water.v1', state={mood:2,water:5};function load(){try{state=JSON.parse(localStorage.getItem(key)||'null')||state;}catch(e){}}function persist(){try{localStorage.setItem(key,JSON.stringify(state));}catch(e){}if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.set',{key:key,value:JSON.stringify(state)}).catch(function(){});}}
+function renderMood(){var labels=['😫','😕','😐','😊','😄'], box=document.getElementById('moods');box.innerHTML='';labels.forEach(function(x,i){var b=document.createElement('button');b.textContent=x;b.style.cssText='width:32px;height:28px;border-radius:7px;border:'+(state.mood===i?'.5px solid rgba(99,153,34,.4)':'0')+';background:'+(state.mood===i?'rgba(99,153,34,.2)':'rgba(255,255,255,.05)')+';font-size:15px';b.onclick=function(){state.mood=i;persist();renderMood();};box.appendChild(b);});document.getElementById('moodLog').textContent='今天已记录';}
+function renderWater(){var box=document.getElementById('water');box.innerHTML='';for(var i=0;i<8;i++){var d=document.createElement('div');d.style.cssText='width:20px;height:22px;border-radius:3px;border:.5px solid rgba(55,138,221,.25);background:'+(i<state.water?'rgba(55,138,221,.25)':'rgba(255,255,255,.03)')+';cursor:pointer';(function(idx){d.onclick=function(){state.water=idx+1;persist();renderWater();};})(i);box.appendChild(d);}document.getElementById('waterTxt').textContent='已喝 '+state.water+' / 8 杯';}
+function request(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.get',{key:key}).then(function(res){if(res&&res.value){try{state=JSON.parse(res.value)||state;}catch(e){}}renderMood();renderWater();});}}
+load();renderMood();renderWater();document.getElementById('addWater').onclick=function(){state.water=Math.min(8,state.water+1);persist();renderWater();};request();})();
+</script>
+""");
+
+    private static string CreateProductivityNoteHtml() => ProductivityShell("""
+<div class="panel" style="display:flex;flex-direction:column">
+  <div class="lbl">Note <span class="link" id="hint">自动保存</span></div>
+  <textarea id="note" placeholder="写下临时想法、链接、会议重点..." style="flex:1;width:100%;min-height:80px;border:0;outline:0;resize:none;border-radius:12px;padding:12px;background:rgba(255,255,255,.055);color:rgba(255,255,255,.84);font-size:13px;line-height:1.65"></textarea>
+</div>
+""", """
+<script>
+(function(){
+  var key='yanm.sticky.note.v1', el=document.getElementById('note'), hint=document.getElementById('hint'), timer=0, hostLoaded=false;
+  function local(){try{return localStorage.getItem(key)||'';}catch(e){return '';}}
+  function saveLocal(v){try{localStorage.setItem(key,v);}catch(e){}}
+  function setHint(text){hint.textContent=text||'自动保存';}
+  function apply(v){el.value=typeof v==='string'?v:'';saveLocal(el.value);hostLoaded=true;setHint('已接入宿主同步');}
+  function invoke(method,args){if(window.yanm&&window.yanm.invoke){return window.yanm.invoke(method,args||{});}if(window.yanmHost&&method==='state.get'&&yanmHost.getState){return Promise.resolve(yanmHost.getState(args.key));}if(window.yanmHost&&method==='state.set'&&yanmHost.setState){return Promise.resolve(yanmHost.setState(args.key,args.value));}return Promise.reject(new Error('YANM_HOST_UNAVAILABLE'));}
+  function request(){invoke('state.get',{key:key}).then(function(res){var v=res&&typeof res.value==='string'?res.value:'';if(v||!local()){apply(v||'');}else{hostLoaded=true;setHint('本机缓存优先');}}).catch(function(){setHint('本机缓存');});}
+  function saveHost(v){setHint('保存中...');invoke('state.set',{key:key,value:v}).then(function(){hostLoaded=true;setHint('已保存');}).catch(function(){setHint('本机缓存');});}
+  el.value=local();
+  el.addEventListener('input',function(){var v=el.value;saveLocal(v);clearTimeout(timer);timer=setTimeout(function(){saveHost(v);},350);if(!hostLoaded){setHint('准备同步');}});
+  window.addEventListener('yanm:message',function(e){var d=e.detail||{};if(d.type==='host.state'&&d.key===key&&Object.prototype.hasOwnProperty.call(d,'value')){var v=String(d.value||'');if(v||!local()){apply(v);}else{hostLoaded=true;setHint('本机缓存优先');}}});
+  request();setTimeout(request,300);
+})();
+</script>
+""");
+
+    private static string CreateProductivityCalendarHtml() => ProductivityShell("""
+<div class="panel">
+  <div class="lbl">日历 <span id="monthLabel" style="font-size:11px;color:rgba(255,255,255,.4);letter-spacing:0;text-transform:none">--</span></div>
+  <div id="yearLabel" style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:6px">--</div>
+  <div id="cal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center"></div>
+</div>
+""", """
+<script>
+(function(){var heads=['一','二','三','四','五','六','日'];function render(){var now=new Date(),y=now.getFullYear(),m=now.getMonth();document.getElementById('monthLabel').textContent=(m+1)+'月';document.getElementById('yearLabel').textContent=y+'年'+(m+1)+'月';var cal=document.getElementById('cal');cal.innerHTML='';heads.forEach(function(h){var e=document.createElement('div');e.textContent=h;e.style.cssText='font-size:9px;color:rgba(255,255,255,.25);padding:2px 0';cal.appendChild(e);});var first=new Date(y,m,1),start=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),prev=new Date(y,m,0).getDate();for(var i=0;i<42;i++){var day=i-start+1,other=day<1||day>days,txt=day<1?prev+day:day>days?day-days:day;var e=document.createElement('div');e.textContent=txt;e.style.cssText='font-size:11px;color:'+(other?'rgba(255,255,255,.18)':'rgba(255,255,255,.45)')+';padding:4px 2px;border-radius:4px;position:relative';if(!other&&txt===now.getDate()){e.style.background='#185fa5';e.style.color='#85b7eb';e.style.fontWeight='600';}cal.appendChild(e);}}render();})();
+</script>
+""");
+
+    private static string CreateProductivityHabitsHtml() => ProductivityShell("""
+<div class="panel">
+  <div class="lbl">习惯打卡 <span class="link" id="saveHint">宿主同步</span></div>
+  <div id="habits"></div>
+</div>
+""", """
+<script>
+(function(){var key='yanm.habits.v1', names=['早起','读书','运动'], data=[[3,3,2,3,1,0,0],[2,0,3,2,0,3,2],[3,3,0,3,0,3,2]];function load(){try{data=JSON.parse(localStorage.getItem(key)||'null')||data;}catch(e){}}function save(){try{localStorage.setItem(key,JSON.stringify(data));}catch(e){}if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.set',{key:key,value:JSON.stringify(data)}).catch(function(){});}}
+function render(){var root=document.getElementById('habits');root.innerHTML='';names.forEach(function(name,row){var wrap=document.createElement('div');wrap.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:8px';wrap.innerHTML='<span style="font-size:12px;color:rgba(255,255,255,.6);width:52px;flex-shrink:0">'+name+'</span>';var grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(7,1fr);gap:3px;flex:1';['一','二','三','四','五','六','日'].forEach(function(h){var d=document.createElement('div');d.textContent=h;d.style.cssText='font-size:9px;color:rgba(255,255,255,.2);text-align:center';grid.appendChild(d);});data[row].forEach(function(v,i){var c=document.createElement('div');c.style.cssText='height:16px;border-radius:3px;background:'+(v===0?'rgba(255,255,255,.05)':v===1?'rgba(99,153,34,.25)':v===2?'rgba(99,153,34,.5)':'#639922')+';cursor:pointer';c.onclick=function(){data[row][i]=(data[row][i]+1)%4;save();render();};grid.appendChild(c);});wrap.appendChild(grid);root.appendChild(wrap);});}
+function request(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.get',{key:key}).then(function(res){if(res&&res.value){try{data=JSON.parse(res.value)||data;}catch(e){}}render();});}}
+load();render();request();})();
+</script>
+""");
+
+    private static string CreateProductivityBookmarksHtml() => ProductivityShell("""
+<div class="panel" style="display:flex;flex-direction:column">
+  <div class="lbl">快速书签 <span class="link" id="add">添加</span></div>
+  <input id="input" placeholder="输入网址后回车..." style="border:0;outline:0;border-radius:7px;padding:7px 10px;background:rgba(255,255,255,.06);color:#fff;font-size:12px;margin-bottom:8px">
+  <div id="list" class="scroll" style="flex:1"></div>
+</div>
+""", """
+<script>
+(function(){var key='yanm.bookmarks.items.'+((window.yanm&&window.yanm.componentId)||window.__yanmComponentId||'default'), urls=[];function fallback(){return['https://github.com','https://www.notion.so','https://www.figma.com','https://www.bilibili.com'];}function load(){try{urls=JSON.parse(localStorage.getItem(key)||'null')||fallback();}catch(e){urls=fallback();}}function save(){try{localStorage.setItem(key,JSON.stringify(urls));}catch(e){}if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.set',{key:key,value:JSON.stringify(urls)}).catch(function(){});}}function host(url){try{return new URL(url).host;}catch(e){return url;}}
+function render(){var list=document.getElementById('list');list.innerHTML='';urls.forEach(function(url,i){var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;padding:6px;border-radius:7px;cursor:pointer';row.innerHTML='<div style="width:22px;height:22px;border-radius:5px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,.5)">'+(i+1)+'</div><span style="font-size:12px;color:rgba(255,255,255,.72);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+host(url)+'</span><span style="font-size:10px;color:rgba(255,255,255,.22)">打开</span>';row.onclick=function(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('path.open',{path:url});}};list.appendChild(row);});}
+function add(){var input=document.getElementById('input'), v=input.value.trim();if(!v){input.focus();return;}v=/^https?:\/\//i.test(v)?v:'https://'+v;urls.unshift(v);input.value='';save();render();}
+function request(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.get',{key:key}).then(function(res){if(res&&res.value){try{urls=JSON.parse(res.value)||urls;}catch(e){}}render();});}}
+load();render();document.getElementById('add').onclick=add;document.getElementById('input').onkeydown=function(e){if(e.key==='Enter')add();};request();})();
+</script>
+""");
+
+    private static string CreateProductivityAppLauncherHtml() => ProductivityShell("""
+<div class="panel" style="display:flex;flex-direction:column">
+  <div class="lbl">所有应用 <span class="link" id="count">加载中</span></div>
+  <input id="query" placeholder="筛选应用..." style="width:100%;border:0;outline:0;border-radius:7px;padding:7px 10px;background:rgba(255,255,255,.06);color:#fff;font-size:12px;margin-bottom:8px">
+  <div id="grid" class="scroll" style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;flex:1"></div>
+  <div style="font-size:9px;color:rgba(255,255,255,.18);text-align:center;margin-top:5px">↕ 滚动查看更多</div>
+</div>
+""", """
+<script>
+(function(){var all=[],shown=[];function glyph(t){return(t||'?').trim().slice(0,1).toUpperCase();}function render(){var grid=document.getElementById('grid');grid.innerHTML='';document.getElementById('count').textContent=shown.length+' 个';shown.forEach(function(a){var cell=document.createElement('div');cell.style.cssText='display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 2px;border-radius:8px;cursor:pointer;background:rgba(255,255,255,.02);border:.5px solid transparent';var icon=a.iconDataUrl?'<img src="'+a.iconDataUrl+'" style="width:100%;height:100%;object-fit:cover">':glyph(a.title);cell.innerHTML='<div style="width:34px;height:34px;border-radius:9px;background:rgba(55,138,221,.15);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:15px;color:#85b7eb">'+icon+'</div><span style="font-size:9px;color:rgba(255,255,255,.45);text-align:center;line-height:1.2;word-break:break-all;max-width:46px">'+(a.title||'应用')+'</span>';cell.onclick=function(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('command.execute',{extensionId:a.extensionId,launchSource:'yanm-app-grid'});}};grid.appendChild(cell);});}
+function filter(){var q=document.getElementById('query').value.toLowerCase();shown=all.filter(function(a){return !q||((a.title||'')+' '+(a.subtitle||'')+' '+(a.category||'')).toLowerCase().indexOf(q)>=0;});render();}
+function load(){if(!(window.yanm&&window.yanm.invoke)){setTimeout(load,250);return;}window.yanm.invoke('command.list',{source:'application',limit:200}).then(function(res){all=(res&&res.items)||[];shown=all.slice();render();}).catch(function(){all=[];shown=[];render();});}
+document.getElementById('query').oninput=filter;load();})();
+</script>
+""");
+
+    private static string CreateProductivityDesktopHtml() => ProductivityShell("""
+<div class="panel" style="display:flex;flex-direction:column">
+  <div class="lbl">桌面文件 <span class="link" id="openRoot">打开</span></div>
+  <input id="search" placeholder="搜索文件..." style="width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 10px;color:#fff;font-size:12px;outline:none;margin-bottom:8px">
+  <div id="list" class="scroll" style="flex:1"></div>
+</div>
+""", """
+<script>
+(function(){var root='',items=[],view=[];function ext(name,isDir){if(isDir)return'DIR';var p=(name||'').split('.');return p.length>1?p.pop().slice(0,4).toUpperCase():'FILE';}function render(){var list=document.getElementById('list');list.innerHTML='';view.slice(0,80).forEach(function(f,i){var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;padding:6px;border-radius:7px;cursor:pointer';row.innerHTML='<div style="width:28px;height:28px;border-radius:5px;background:rgba(55,138,221,.2);color:#85b7eb;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">'+ext(f.name,f.isDirectory)+'</div><div style="flex:1;min-width:0"><div style="font-size:12px;color:rgba(255,255,255,.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(f.name||'')+'</div><div style="font-size:10px;color:rgba(255,255,255,.25);margin-top:1px">'+(f.isDirectory?'文件夹':'文件')+'</div></div><span style="font-size:10px;color:rgba(255,255,255,.2)">打开</span>';row.onclick=function(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('path.open',{path:f.path});}};list.appendChild(row);});}
+function filter(){var q=document.getElementById('search').value.toLowerCase();view=items.filter(function(f){return !q||(f.name||'').toLowerCase().indexOf(q)>=0});render();}
+function load(){if(!(window.yanm&&window.yanm.invoke)){setTimeout(load,250);return;}window.yanm.invoke('desktop.list').then(function(res){root=res&&res.root||'';items=res&&res.items||[];view=items.slice();render();}).catch(function(){items=[];view=[];render();});}
+document.getElementById('search').oninput=filter;document.getElementById('openRoot').onclick=function(){if(root&&window.yanm&&window.yanm.invoke)window.yanm.invoke('path.open',{path:root});};load();})();
+</script>
+""");
+
+    private static string CreateProductivitySystemHtml() => ProductivityShell("""
+<div class="panel">
+  <div class="lbl">系统状态 <span class="link" id="time">--</span></div>
+  <div style="display:flex;gap:6px">
+    <div style="flex:1;background:rgba(255,255,255,.03);border-radius:7px;padding:7px 8px"><div id="cpu" style="font-size:16px;font-weight:200">--</div><div style="font-size:9px;color:rgba(255,255,255,.3)">CPU 核心</div></div>
+    <div style="flex:1;background:rgba(255,255,255,.03);border-radius:7px;padding:7px 8px"><div id="mem" style="font-size:16px;font-weight:200">--</div><div style="font-size:9px;color:rgba(255,255,255,.3)">内存</div><div style="height:2px;border-radius:2px;background:rgba(255,255,255,.06);margin-top:5px"><div id="memBar" style="height:2px;border-radius:2px;background:#378add;width:0"></div></div></div>
+    <div style="flex:1;background:rgba(255,255,255,.03);border-radius:7px;padding:7px 8px"><div id="net" style="font-size:16px;font-weight:200">--</div><div style="font-size:9px;color:rgba(255,255,255,.3)">网络</div></div>
+  </div>
+</div>
+""", """
+<script>
+(function(){function paint(d){document.getElementById('cpu').textContent=d&&d.cpuCores?d.cpuCores:'--';var p=d&&d.usedMemoryPercent?Math.round(d.usedMemoryPercent):0;document.getElementById('mem').textContent=p?p+'%':'--';document.getElementById('memBar').style.width=(p||0)+'%';document.getElementById('net').textContent=d&&d.isNetworkAvailable?'在线':'离线';document.getElementById('time').textContent=d&&d.time?d.time:new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
+function req(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('system.info').then(paint).catch(function(){paint(null);});}else if(window.yanmHost&&yanmHost.requestSystemInfo){yanmHost.requestSystemInfo();}else{paint(null);}}
+window.addEventListener('yanm:message',function(e){if(e.detail&&e.detail.type==='host.systemInfo')paint(e.detail);});req();setInterval(req,3000);})();
+</script>
+""");
+
     public static string DefaultHtml(string? title)
     {
         var safeTitle = System.Net.WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(title) ? "燕幕组件" : title.Trim());
@@ -887,18 +1363,20 @@ public sealed class YanmComponentSettings
 <head>
   <meta charset="utf-8">
   <style>
-    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; font-family: "Microsoft YaHei", sans-serif; }
-    .card { box-sizing: border-box; width: 100vw; height: 100vh; padding: 18px; border-radius: 22px; color: #fff; background: linear-gradient(135deg, rgba(35,38,48,.92), rgba(15,18,24,.82)); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 18px 60px rgba(0,0,0,.34); }
-    .eyebrow { font-size: 12px; color: #7cc7ff; letter-spacing: .18em; text-transform: uppercase; }
-    h1 { margin: 10px 0 8px; font-size: 22px; }
-    p { margin: 0; color: rgba(255,255,255,.68); line-height: 1.7; font-size: 13px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; color: #fff; font-family: "Microsoft YaHei", system-ui, sans-serif; }
+    .card { width: 100%; height: 100%; padding: 16px; border-radius: 18px; background: linear-gradient(145deg,rgba(22,30,45,.98),rgba(8,11,18,.94)); border: 1px solid rgba(190,215,255,.22); box-shadow: 0 24px 76px rgba(0,0,0,.46), inset 0 1px 0 rgba(255,255,255,.08); overflow: hidden; }
+    .lbl { font-size: 10px; letter-spacing: .08em; color: rgba(255,255,255,.32); text-transform: uppercase; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .tag { font-size: 10px; padding: 3px 8px; border-radius: 20px; background: rgba(55,138,221,.15); color: #85b7eb; }
+    h1 { margin: 0 0 8px; font-size: 22px; font-weight: 500; letter-spacing: -.02em; }
+    p { margin: 0; color: rgba(255,255,255,.52); line-height: 1.7; font-size: 12px; }
   </style>
 </head>
 <body>
   <section class="card">
-    <div class="eyebrow">YANM COMPONENT</div>
+    <div class="lbl">YANM COMPONENT <span class="tag">宿主同步</span></div>
     <h1>{{safeTitle}}</h1>
-    <p>这是一个 HTML 信息组件。后续可接入脚本数据、网页抓取、待办、日历或 AI 生成的自定义界面。</p>
+    <p>这是一个燕幕 HTML 组件。可以接入状态、系统信息、桌面文件、应用启动和本机持久化数据。</p>
   </section>
 </body>
 </html>
@@ -917,7 +1395,7 @@ public sealed class YanmComponentSettings
 4. 不要依赖外部网络资源、CDN、图片、字体或 npm 包。
 5. 组件运行在 Microsoft WebView2 中，组件尺寸由宿主控制，CSS 必须适配任意宽高。
 6. html, body 必须：margin:0; width:100%; height:100%; overflow:hidden; background:transparent。
-7. 主体用一个 .card 填满 100% 宽高，box-sizing:border-box，圆角 24-28px，深色/半透明/渐变风格，适合悬浮在桌面上。
+7. 主体只用一个 .card 填满 100% 宽高，box-sizing:border-box，圆角 18px，背景使用深色渐变而不是纯黑；边框用 1px 冷色半透明线并加轻微内高光，确保组件和燕幕背景能分开；不要在组件内部再套第二层卡片或外框。
 8. 字体使用 "Microsoft YaHei", sans-serif，文字优先中文，视觉风格要像高级效率工具，不要白底表单风。
 9. 可交互组件优先使用燕幕宿主状态保存数据，再用 localStorage 做本机兜底。
 10. 输入框、按钮要有清晰 hover/active 状态，颜色要适配深色玻璃拟态背景。
@@ -996,17 +1474,19 @@ public sealed class YanmComponentSettings
   <meta charset="utf-8">
   <style>
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Microsoft YaHei",sans-serif;color:#fff}
-    .card{box-sizing:border-box;width:100%;height:100%;padding:18px;border-radius:24px;background:linear-gradient(135deg,rgba(16,31,54,.96),rgba(8,12,20,.92));border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 60px rgba(0,0,0,.32)}
-    .title{font-size:22px;font-weight:800;margin:0 0 8px}
-    .path{font-size:12px;color:rgba(255,255,255,.65);word-break:break-all;margin-bottom:12px}
+    .card{box-sizing:border-box;width:100%;height:100%;padding:16px;border-radius:18px;background:linear-gradient(145deg,rgba(22,30,45,.98),rgba(8,11,18,.94));border:1px solid rgba(190,215,255,.22);box-shadow:0 24px 76px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.08);overflow:hidden}
+    .lbl{font-size:10px;letter-spacing:.08em;color:rgba(255,255,255,.32);text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+    .title{font-size:22px;font-weight:500;letter-spacing:-.02em;margin:0 0 8px}
+    .path{font-size:12px;color:rgba(255,255,255,.5);word-break:break-all;margin-bottom:12px}
     .list{height:calc(100% - 110px);overflow:auto}
-    .item{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid rgba(255,255,255,.08);cursor:pointer}
+    .item{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid rgba(255,255,255,.06);cursor:pointer}
     .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .meta{font-size:12px;color:#93c5fd}
+    .meta{font-size:12px;color:#85b7eb}
   </style>
 </head>
 <body>
   <section class="card">
+    <div class="lbl">DOWNLOADS <span>HOST</span></div>
     <div class="title">下载目录</div>
     <div class="path" id="folderPath">正在加载...</div>
     <div class="list" id="fileList"></div>
@@ -1048,10 +1528,11 @@ public sealed class YanmComponentSettings
 ```
 
 设计参考：
-- 卡片使用 radial-gradient + linear-gradient + rgba 边框 + 柔和阴影。
-- 标题 20-28px，标签 11-12px 且 letter-spacing。
-- 数据块可使用圆角 pill/chip/grid。
-- 交互控件使用圆角 12-16px，背景 rgba(255,255,255,.08-.14)。
+- 组件外层只保留一个 .card，填满宿主给定尺寸，不要再做内层面板、内层边框或嵌套卡片。
+- 默认视觉沿用燕幕效率组件：深色渐变底、1px 冷色半透明边框、18px 圆角、柔和外阴影和轻微内高光，避免组件和燕幕背景糊在一起。
+- 标签使用 10px、letter-spacing:.08em、低透明度；标题 20-26px，字重 300-600，轻微负字距。
+- 数据块可使用小型 pill/chip/grid，但背景保持低对比，不要破坏统一风格。
+- 交互控件使用圆角 12-16px，背景 rgba(255,255,255,.06-.12)，hover/active 只做轻微亮度变化。
 
 基础模板：
 ```html
@@ -1061,10 +1542,12 @@ public sealed class YanmComponentSettings
   <meta charset="utf-8">
     <style>
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Microsoft YaHei",sans-serif;color:#fff}
-    .card{box-sizing:border-box;width:100%;height:100%;padding:18px;border-radius:26px;background:radial-gradient(circle at 20% 0%,rgba(56,189,248,.22),transparent 34%),linear-gradient(135deg,rgba(20,24,35,.96),rgba(8,10,16,.92));border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 60px rgba(0,0,0,.32)}
-    .title{font-size:24px;font-weight:800;margin:0 0 10px}
-    .muted{font-size:12px;color:rgba(255,255,255,.6)}
-    .value{font-size:18px;font-weight:700}
+    .card{box-sizing:border-box;width:100%;height:100%;padding:16px;border-radius:18px;background:linear-gradient(145deg,rgba(22,30,45,.98),rgba(8,11,18,.94));border:1px solid rgba(190,215,255,.22);box-shadow:0 24px 76px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.08);overflow:hidden}
+    .lbl{font-size:10px;letter-spacing:.08em;color:rgba(255,255,255,.32);text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+    .tag{font-size:10px;padding:3px 8px;border-radius:20px;background:rgba(55,138,221,.15);color:#85b7eb}
+    .title{font-size:24px;font-weight:500;letter-spacing:-.03em;margin:0 0 10px}
+    .muted{font-size:12px;color:rgba(255,255,255,.52);line-height:1.7}
+    .value{font-size:18px;font-weight:600}
     .scrollbar{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.24) transparent}
     .scrollbar::-webkit-scrollbar{width:6px;height:6px}
     .scrollbar::-webkit-scrollbar-track{background:transparent}
@@ -1073,6 +1556,7 @@ public sealed class YanmComponentSettings
 </head>
 <body>
   <section class="card">
+    <div class="lbl">YANM COMPONENT <span class="tag">HOST</span></div>
     <div class="title">组件标题</div>
     <div class="muted" id="status">等待宿主数据</div>
     <div class="value" id="content">--</div>
@@ -1125,7 +1609,7 @@ public sealed class YanmComponentSettings
     private static string CreateOverviewHtml() => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;background:transparent;color:#fff;font-family:"Microsoft YaHei",sans-serif}
-.card{box-sizing:border-box;height:100%;padding:20px;border-radius:28px;background:radial-gradient(circle at 20% 0%,rgba(56,189,248,.38),transparent 32%),linear-gradient(135deg,rgba(23,32,51,.96),rgba(7,10,18,.9));border:1px solid rgba(255,255,255,.16);box-shadow:0 22px 70px rgba(0,0,0,.35)}
+.card{box-sizing:border-box;height:100%;padding:20px;border-radius:28px;background:radial-gradient(circle at 20% 0%,rgba(56,189,248,.42),transparent 32%),linear-gradient(135deg,rgba(28,39,63,.98),rgba(8,12,22,.94));border:1px solid rgba(190,215,255,.24);box-shadow:0 26px 82px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.1)}
 .top{display:flex;justify-content:space-between;align-items:center}.tag{font-size:12px;color:#7dd3fc;letter-spacing:.18em}.clock{font-size:13px;color:rgba(255,255,255,.72)}
 .date{font-size:30px;font-weight:800;margin:14px 0 4px}.line{color:rgba(255,255,255,.7);font-size:13px;line-height:1.7}
 .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:16px}.pill{padding:12px;border-radius:18px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.08)}.n{font-size:20px;font-weight:800}.l{font-size:11px;color:rgba(255,255,255,.58);margin-top:4px}
@@ -1137,7 +1621,7 @@ function tick(){var d=new Date();document.getElementById('clock').innerText=d.to
     private static string CreateTodoHtml() => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;background:transparent;color:#fff;font-family:"Microsoft YaHei",sans-serif}
-.card{box-sizing:border-box;height:100%;padding:18px;border-radius:28px;background:radial-gradient(circle at 100% 0%,rgba(34,197,94,.35),transparent 34%),linear-gradient(160deg,rgba(18,48,38,.96),rgba(8,13,16,.92));border:1px solid rgba(255,255,255,.14);box-shadow:0 22px 70px rgba(0,0,0,.35);display:flex;flex-direction:column}
+.card{box-sizing:border-box;height:100%;padding:18px;border-radius:28px;background:radial-gradient(circle at 100% 0%,rgba(34,197,94,.4),transparent 34%),linear-gradient(160deg,rgba(20,56,44,.98),rgba(8,16,19,.94));border:1px solid rgba(187,247,208,.22);box-shadow:0 26px 82px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.1);display:flex;flex-direction:column}
 .head{display:flex;justify-content:space-between;align-items:center}h1{font-size:22px;margin:0}.count{font-size:12px;color:#86efac;background:rgba(34,197,94,.12);padding:5px 9px;border-radius:999px}
 .add{display:flex;gap:8px;margin:14px 0}input{flex:1;border:0;outline:0;border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.1);color:white}button{border:0;border-radius:14px;padding:0 13px;background:#22c55e;color:#06200f;font-weight:800;cursor:pointer}.ghost{background:rgba(255,255,255,.1);color:#d1fae5}.list{flex:1;min-height:80px;overflow:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.24) transparent}.list::-webkit-scrollbar{width:6px;height:6px}.list::-webkit-scrollbar-track{background:transparent}.list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:999px;border:1px solid rgba(255,255,255,.06)}.item{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid rgba(255,255,255,.08)}.check{width:18px;height:18px;border-radius:9px;background:#22c55e;cursor:pointer;box-shadow:0 0 0 1px rgba(255,255,255,.18) inset}.done .text{text-decoration:line-through;color:rgba(255,255,255,.42)}.text{flex:1;font-size:13px}.del{background:rgba(255,255,255,.1);color:#fecaca;height:26px}.foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:rgba(255,255,255,.58)}
 </style></head><body><section class="card"><div class="head"><h1>待办清单</h1><span id="count" class="count">0 项</span></div><div class="add"><input id="todoInput" placeholder="添加一条待办..." /><button id="addButton" type="button">添加</button></div><div id="todoList" class="list"></div><div class="foot"><span id="syncHint">本机缓存</span><button id="clearDoneButton" type="button" class="ghost">清理已完成</button></div></section><script>
@@ -1161,7 +1645,7 @@ window.addTodo=add;if(document.readyState==="loading"){document.addEventListener
     private static string CreateWebMonitorHtml() => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;background:transparent;color:#fff;font-family:"Microsoft YaHei",sans-serif}
- .card{box-sizing:border-box;height:100%;padding:18px;border-radius:24px;background:radial-gradient(circle at 100% 0%,rgba(251,191,36,.22),transparent 34%),linear-gradient(135deg,rgba(57,38,20,.95),rgba(16,14,12,.92));border:1px solid rgba(255,255,255,.13);box-shadow:0 22px 70px rgba(0,0,0,.34);display:flex;flex-direction:column}
+ .card{box-sizing:border-box;height:100%;padding:18px;border-radius:24px;background:radial-gradient(circle at 100% 0%,rgba(251,191,36,.28),transparent 34%),linear-gradient(135deg,rgba(69,47,24,.98),rgba(18,15,13,.94));border:1px solid rgba(253,230,138,.22);box-shadow:0 26px 82px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.1);display:flex;flex-direction:column}
 .top{display:flex;justify-content:space-between;align-items:center}.tag{color:#fbbf24;font-size:12px;letter-spacing:.18em}button{border:0;border-radius:13px;padding:8px 12px;background:rgba(255,255,255,.1);color:#fff;cursor:pointer}h1{margin:10px 0 12px;font-size:24px}.row{display:flex;gap:8px;margin-bottom:10px}input{flex:1;min-width:0;border:0;outline:0;border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.1);color:#fff}button.primary{background:#fbbf24;color:#2b1800;font-weight:800}.list{flex:1;min-height:80px;overflow:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.24) transparent}.list::-webkit-scrollbar{width:6px;height:6px}.list::-webkit-scrollbar-track{background:transparent}.list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:999px;border:1px solid rgba(255,255,255,.06)}.item{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid rgba(255,255,255,.08);cursor:pointer}.left{min-width:0;flex:1}.url{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fde68a;font-size:12px}.title{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px}.meta{font-size:12px;color:rgba(255,255,255,.58)}.remove{background:rgba(255,255,255,.08);color:#fecaca;height:28px;min-width:44px}.empty{font-size:12px;color:rgba(255,255,255,.55);padding-top:16px}
 </style></head><body><section class="card"><div class="top"><div class="tag">BOOKMARKS</div><button id="addBtn" type="button">添加书签</button></div><h1>网页书签</h1><div class="row"><input id="urlInput" placeholder="输入网址后回车，或点击右上角添加书签" /></div><div id="list" class="list"></div></section><script>
 (function(){var hostKey='yanm.bookmarks.items.'+(((window.yanm&&window.yanm.componentId)||window.__yanmComponentId||'default'));var urls=[];
@@ -1179,7 +1663,7 @@ init();})();
     private static string CreateSystemHtml() => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;background:transparent;color:#fff;font-family:"Microsoft YaHei",sans-serif}
-.card{box-sizing:border-box;height:100%;padding:18px;border-radius:28px;background:radial-gradient(circle at 20% 0%,rgba(129,140,248,.38),transparent 35%),linear-gradient(135deg,rgba(36,43,64,.96),rgba(9,12,20,.92));border:1px solid rgba(255,255,255,.14);box-shadow:0 22px 70px rgba(0,0,0,.35)}
+.card{box-sizing:border-box;height:100%;padding:18px;border-radius:28px;background:radial-gradient(circle at 20% 0%,rgba(129,140,248,.42),transparent 35%),linear-gradient(135deg,rgba(43,52,78,.98),rgba(10,14,24,.94));border:1px solid rgba(199,210,254,.22);box-shadow:0 26px 82px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.1)}
 h1{font-size:22px;margin:0 0 12px}.row{display:flex;justify-content:space-between;align-items:center;margin:9px 0;color:rgba(255,255,255,.72);font-size:13px}.bar{height:9px;border-radius:9px;background:rgba(255,255,255,.12);overflow:hidden}.fill{height:100%;width:0;background:linear-gradient(90deg,#38bdf8,#22c55e);transition:.3s}.chips{display:flex;gap:8px;margin-top:14px}.chip{flex:1;padding:9px;border-radius:15px;background:rgba(255,255,255,.08);font-size:11px;color:rgba(255,255,255,.65)}.v{display:block;color:white;font-size:16px;font-weight:800;margin-top:3px}
 </style></head><body><section class="card"><h1>系统状态</h1><div class="row"><span>内存估算</span><strong id="memText">读取中</strong></div><div class="bar"><div id="memFill" class="fill"></div></div><div class="chips"><div class="chip">CPU 核心<span id="cores" class="v">--</span></div><div class="chip">在线状态<span id="net" class="v">--</span></div><div class="chip">时间<span id="time" class="v">--</span></div></div></section><script>
 function paint(data){var percent=data&&data.usedMemoryPercent?data.usedMemoryPercent:0;var total=data&&data.totalMemoryMb?Math.round(data.totalMemoryMb/1024):0;var free=data&&data.availableMemoryMb?Math.round(data.availableMemoryMb/1024):0;document.getElementById('memText').innerText=total?('已用 '+Math.round(percent)+'% · 可用 '+free+' GB / '+total+' GB'):'等待宿主数据';document.getElementById('memFill').style.width=(percent||38)+'%';document.getElementById('cores').innerText=data&&data.cpuCores?data.cpuCores:'--';document.getElementById('net').innerText=data&&data.isNetworkAvailable?'在线':'离线';document.getElementById('time').innerText=data&&data.time?data.time:new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});}
@@ -1191,7 +1675,7 @@ function request(){if(window.yanmHost&&yanmHost.requestSystemInfo){yanmHost.requ
     private static string CreateTipsHtml() => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;background:transparent;color:#fff;font-family:"Microsoft YaHei",sans-serif}
-.card{box-sizing:border-box;height:100%;padding:20px;border-radius:24px;background:linear-gradient(135deg,rgba(38,31,75,.94),rgba(13,13,20,.9));border:1px solid rgba(255,255,255,.13)}
+.card{box-sizing:border-box;height:100%;padding:20px;border-radius:24px;background:linear-gradient(135deg,rgba(48,40,92,.98),rgba(15,15,26,.94));border:1px solid rgba(216,180,254,.22);box-shadow:0 26px 82px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.1)}
 h1{font-size:23px;margin:0 0 10px}.p{font-size:13px;color:rgba(255,255,255,.68);line-height:1.8}.kbd{display:inline-block;padding:2px 8px;border-radius:8px;background:rgba(255,255,255,.12);color:#fff}
 </style></head><body><section class="card"><h1>燕幕提示</h1><div class="p"><span class="kbd">按住 Win</span> 临时查看；<span class="kbd">双击 Win</span> 固定编辑；拖动空白区域新建组件；右键组件可编辑、锁定、删除。</div></section></body></html>
 """;
@@ -1221,7 +1705,7 @@ el.addEventListener('input',function(){var v=el.value;saveLocal(v);clearTimeout(
     private static string CreatePomodoroHtml() => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;background:transparent;color:white;font-family:"Microsoft YaHei",sans-serif}
-.card{box-sizing:border-box;height:100%;padding:20px;border-radius:28px;background:radial-gradient(circle at 80% 10%,rgba(248,113,113,.42),transparent 35%),linear-gradient(135deg,rgba(70,18,31,.96),rgba(16,8,12,.92));border:1px solid rgba(255,255,255,.14);box-shadow:0 22px 70px rgba(0,0,0,.35);text-align:center}
+.card{box-sizing:border-box;height:100%;padding:20px;border-radius:28px;background:radial-gradient(circle at 80% 10%,rgba(248,113,113,.46),transparent 35%),linear-gradient(135deg,rgba(82,22,38,.98),rgba(18,9,14,.94));border:1px solid rgba(254,202,202,.22);box-shadow:0 26px 82px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.1);text-align:center}
 .tag{font-size:12px;color:#fca5a5;letter-spacing:.18em}.time{font-size:52px;font-weight:900;margin:18px 0 12px;font-variant-numeric:tabular-nums}.mode{font-size:13px;color:rgba(255,255,255,.68)}button{border:0;border-radius:14px;padding:9px 13px;margin:14px 4px 0;background:rgba(255,255,255,.13);color:white;font-weight:800;cursor:pointer}.primary{background:#fb7185;color:#2b0710}
 </style></head><body><section class="card"><div class="tag">POMODORO</div><div id="time" class="time">25:00</div><div id="mode" class="mode">专注 25 分钟</div><button id="start" class="primary">开始</button><button id="reset">重置</button></section><script>
 (function(){var total=25*60,left=total,timer=null,running=false;function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}function render(){document.getElementById('time').innerText=fmt(left);document.getElementById('start').innerText=running?'暂停':'开始';}
@@ -1234,7 +1718,7 @@ document.getElementById('reset').onclick=function(){clearInterval(timer);timer=n
     private static string CreateCountdownHtml() => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;background:transparent;color:white;font-family:"Microsoft YaHei",sans-serif}
-.card{box-sizing:border-box;height:100%;padding:18px;border-radius:26px;background:radial-gradient(circle at 0% 0%,rgba(96,165,250,.42),transparent 36%),linear-gradient(135deg,rgba(20,41,74,.96),rgba(8,12,22,.92));border:1px solid rgba(255,255,255,.14);box-shadow:0 22px 70px rgba(0,0,0,.34)}
+.card{box-sizing:border-box;height:100%;padding:18px;border-radius:26px;background:radial-gradient(circle at 0% 0%,rgba(96,165,250,.46),transparent 36%),linear-gradient(135deg,rgba(24,50,88,.98),rgba(8,13,24,.94));border:1px solid rgba(191,219,254,.22);box-shadow:0 26px 82px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.1)}
 .top{display:flex;justify-content:space-between;align-items:center}.tag{font-size:12px;color:#93c5fd;letter-spacing:.18em}.time{font-size:42px;font-weight:900;margin:15px 0 10px;font-variant-numeric:tabular-nums}.row{display:flex;gap:8px}input{flex:1;min-width:0;border:0;outline:0;border-radius:14px;padding:10px;background:rgba(255,255,255,.1);color:white}button{border:0;border-radius:14px;padding:0 12px;background:#60a5fa;color:#061525;font-weight:900;cursor:pointer}.hint{font-size:12px;color:rgba(255,255,255,.62);line-height:1.6}
 </style></head><body><section class="card"><div class="top"><div class="tag">COUNTDOWN</div><div class="hint">分钟</div></div><div id="time" class="time">10:00</div><div class="row"><input id="minutes" value="10" /><button id="start">开始</button><button id="reset">重置</button></div><div id="hint" class="hint">输入分钟后开始倒计时。</div></section><script>
 (function(){var left=600,total=600,timer=null;function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}function render(){document.getElementById('time').innerText=fmt(Math.max(0,left));}
@@ -1247,7 +1731,7 @@ document.getElementById('reset').onclick=function(){clearInterval(timer);timer=n
     private static string CreateAppLauncherHtml() => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;background:transparent;color:#fff;font-family:"Microsoft YaHei",sans-serif}
-.card{box-sizing:border-box;height:100%;padding:18px;border-radius:26px;background:radial-gradient(circle at 100% 0%,rgba(96,165,250,.24),transparent 36%),linear-gradient(135deg,rgba(15,23,42,.96),rgba(10,12,20,.92));border:1px solid rgba(255,255,255,.13);box-shadow:0 22px 70px rgba(0,0,0,.34);display:flex;flex-direction:column}
+.card{box-sizing:border-box;height:100%;padding:18px;border-radius:26px;background:radial-gradient(circle at 100% 0%,rgba(96,165,250,.3),transparent 36%),linear-gradient(135deg,rgba(20,31,54,.98),rgba(10,14,24,.94));border:1px solid rgba(191,219,254,.22);box-shadow:0 26px 82px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.1);display:flex;flex-direction:column}
 .top{display:flex;justify-content:space-between;align-items:center}.tag{font-size:12px;letter-spacing:.18em;color:#93c5fd}.search{margin-top:12px}.search input{width:100%;box-sizing:border-box;border:0;outline:0;border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.09);color:#fff}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px;flex:1;min-height:120px;overflow:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.24) transparent}.grid::-webkit-scrollbar{width:6px;height:6px}.grid::-webkit-scrollbar-track{background:transparent}.grid::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:999px;border:1px solid rgba(255,255,255,.06)}.item{padding:10px 8px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.05);cursor:pointer;text-align:center}.item:hover{background:rgba(255,255,255,.1)}.icon{width:44px;height:44px;border-radius:14px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.08);overflow:hidden;font-size:16px;font-weight:800}.icon img{width:100%;height:100%;object-fit:cover}.title{font-size:12px;line-height:1.3;height:32px;overflow:hidden}.meta{font-size:11px;color:rgba(255,255,255,.52)}.empty{margin-top:18px;font-size:12px;color:rgba(255,255,255,.55)}
 </style></head><body><section class="card"><div class="top"><div class="tag">APPLICATIONS</div><div class="meta" id="count">加载中</div></div><div class="search"><input id="queryInput" placeholder="筛选应用..." /></div><div id="grid" class="grid"></div><div id="empty" class="empty" style="display:none">没有匹配的应用。</div></section><script>
 (function(){var all=[];var filtered=[];function glyph(title){return (title||'?').replace(/^\s+/,'').slice(0,1).toUpperCase();}
@@ -1261,7 +1745,7 @@ document.getElementById('queryInput').addEventListener('input',applyQuery);load(
     private static string CreateDesktopFolderHtml() => """
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;background:transparent;color:#fff;font-family:"Microsoft YaHei",sans-serif}
-.card{box-sizing:border-box;height:100%;padding:18px;border-radius:24px;background:radial-gradient(circle at 100% 0%,rgba(14,165,233,.35),transparent 36%),linear-gradient(135deg,rgba(11,18,31,.96),rgba(9,12,20,.92));border:1px solid rgba(255,255,255,.13);box-shadow:0 22px 70px rgba(0,0,0,.34);display:flex;flex-direction:column}
+.card{box-sizing:border-box;height:100%;padding:18px;border-radius:24px;background:radial-gradient(circle at 100% 0%,rgba(14,165,233,.4),transparent 36%),linear-gradient(135deg,rgba(14,25,43,.98),rgba(9,14,24,.94));border:1px solid rgba(186,230,253,.22);box-shadow:0 26px 82px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.1);display:flex;flex-direction:column}
 .top{display:flex;justify-content:space-between;align-items:center}.tag{font-size:12px;letter-spacing:.18em;color:#7dd3fc}.btn{border:0;border-radius:14px;padding:8px 12px;background:rgba(255,255,255,.1);color:#fff;cursor:pointer}
 .path{margin-top:12px;padding:12px;border-radius:16px;background:rgba(255,255,255,.08);font-size:12px;color:rgba(255,255,255,.72);word-break:break-all;min-height:44px}
 .list{margin-top:12px;flex:1;min-height:80px;overflow:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.24) transparent}.list::-webkit-scrollbar{width:6px;height:6px}.list::-webkit-scrollbar-track{background:transparent}.list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:999px;border:1px solid rgba(255,255,255,.06)}
@@ -1384,4 +1868,74 @@ public sealed class YanyuRuleSettings
     public string TextContent { get; set; } = string.Empty;
 
     public string ExtensionId { get; set; } = string.Empty;
+}
+
+public sealed class WindowBindingSettings
+{
+    public bool Enabled { get; set; } = true;
+
+    public int MarginPixels { get; set; } = 14;
+
+    public List<WindowBindingRuleSettings> Rules { get; set; } = [];
+}
+
+public sealed class WindowBindingRuleSettings
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    public bool Enabled { get; set; } = true;
+
+    public string ExtensionId { get; set; } = string.Empty;
+
+    public string ProcessName { get; set; } = string.Empty;
+
+    public string WindowClass { get; set; } = string.Empty;
+
+    public string TitleContains { get; set; } = string.Empty;
+
+    public string Corner { get; set; } = WindowBindingCorners.TopLeft;
+
+    public int OffsetX { get; set; }
+
+    public int OffsetY { get; set; }
+
+    /// <summary>
+    /// When true, the overlay is hidden by default and only appears when the cursor enters the detection zone.
+    /// </summary>
+    public bool HoverMode { get; set; } = false;
+}
+
+public static class WindowBindingCorners
+{
+    public const string TopLeft = "top_left";
+    public const string TopRight = "top_right";
+    public const string BottomLeft = "bottom_left";
+    public const string BottomRight = "bottom_right";
+
+    // Interior positions (inside the target window)
+    public const string InsideTopLeft = "inside_top_left";
+    public const string InsideTopRight = "inside_top_right";
+    public const string InsideBottomLeft = "inside_bottom_left";
+    public const string InsideBottomRight = "inside_bottom_right";
+
+    public static bool IsInterior(string? corner)
+    {
+        var normalized = Normalize(corner);
+        return normalized.StartsWith("inside_", StringComparison.Ordinal);
+    }
+
+    public static string Normalize(string? value)
+    {
+        return (value ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            TopRight => TopRight,
+            BottomLeft => BottomLeft,
+            BottomRight => BottomRight,
+            InsideTopLeft => InsideTopLeft,
+            InsideTopRight => InsideTopRight,
+            InsideBottomLeft => InsideBottomLeft,
+            InsideBottomRight => InsideBottomRight,
+            _ => TopLeft
+        };
+    }
 }
