@@ -20,12 +20,7 @@ public sealed class MacGlobalInputTriggerListener : IGlobalInputTriggerListener
 
     public MacGlobalInputTriggerListener(GlobalInputTriggerSettings settings)
     {
-        var privateMultitouchListener = new MacPrivateMultitouchInputTriggerListener(settings);
-        _listeners = settings.EnableTrackpadGesture
-            ? privateMultitouchListener.IsAvailable
-                ? [new MacSecondaryButtonInputTriggerListener(settings), new MacFnKeyInputTriggerListener(settings), privateMultitouchListener]
-                : [new MacSecondaryButtonInputTriggerListener(settings), new MacFnKeyInputTriggerListener(settings), new MacTrackpadGestureInputTriggerListener(settings)]
-            : [new MacSecondaryButtonInputTriggerListener(settings), new MacFnKeyInputTriggerListener(settings)];
+        _listeners = [new MacSecondaryButtonInputTriggerListener(settings), new MacFnKeyInputTriggerListener(settings)];
 
         foreach (var listener in _listeners)
         {
@@ -506,8 +501,9 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
     {
         var mask = CGEventMaskBit(CGEventType.FlagsChanged) |
                    CGEventMaskBit(CGEventType.MouseMoved) |
-                   CGEventMaskBit(CGEventType.LeftMouseDragged) |
-                   CGEventMaskBit(CGEventType.RightMouseDragged);
+                    CGEventMaskBit(CGEventType.LeftMouseDragged) |
+                    CGEventMaskBit(CGEventType.RightMouseDragged) |
+                    CGEventMaskBit(CGEventType.ScrollWheel);
 
         return CGEventTapCreate(
             CGEventTapLocation.HID,
@@ -516,6 +512,29 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             mask,
             _eventTapCallback,
             IntPtr.Zero);
+    }
+
+    private void HandleFnStateChange(bool fnPressed, IntPtr eventRef)
+    {
+        if (fnPressed && !_fnKeyPressed)
+        {
+            _fnKeyPressed = true;
+            var loc = CGEventGetLocation(eventRef);
+            _pressPoint = new Point(loc.X, loc.Y);
+            if (_settings.EnableInputDiagnostics)
+                Console.WriteLine($"[input] Fn key down registered at {loc.X:0},{loc.Y:0}");
+        }
+        else if (!fnPressed && _fnKeyPressed)
+        {
+            _fnKeyPressed = false;
+            if (_gestureTriggered)
+            {
+                if (_settings.EnableInputDiagnostics)
+                    Console.WriteLine("[input] Fn key up registered, releasing radial menu");
+                ActivationReleased?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture));
+            }
+            _gestureTriggered = false;
+        }
     }
 
     private IntPtr EventTapCallback(IntPtr proxy, CGEventType type, IntPtr eventRef, IntPtr refcon)
@@ -527,28 +546,13 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 
             if (type == CGEventType.FlagsChanged)
             {
-                if (fnPressed && !_fnKeyPressed)
-                {
-                    _fnKeyPressed = true;
-                    var loc = CGEventGetLocation(eventRef);
-                    _pressPoint = new Point(loc.X, loc.Y);
-                    if (_settings.EnableInputDiagnostics)
-                        Console.WriteLine($"[input] Fn key down at {loc.X:0},{loc.Y:0}");
-                }
-                else if (!fnPressed && _fnKeyPressed)
-                {
-                    _fnKeyPressed = false;
-                    if (_gestureTriggered)
-                    {
-                        if (_settings.EnableInputDiagnostics)
-                            Console.WriteLine("[input] Fn key up, releasing radial menu");
-                        ActivationReleased?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture));
-                    }
-                    _gestureTriggered = false;
-                }
+                HandleFnStateChange(fnPressed, eventRef);
             }
-            else if (type == CGEventType.MouseMoved || type == CGEventType.LeftMouseDragged || type == CGEventType.RightMouseDragged)
+            else if (type == CGEventType.MouseMoved || type == CGEventType.LeftMouseDragged || type == CGEventType.RightMouseDragged || type == CGEventType.ScrollWheel)
             {
+                // Sync Fn key state on mouse movements/drags/scrolls as fallback
+                HandleFnStateChange(fnPressed, eventRef);
+
                 if (_fnKeyPressed)
                 {
                     var currentPoint = GetEventLocation(eventRef);
@@ -617,7 +621,8 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         MouseMoved = 5,
         LeftMouseDragged = 6,
         RightMouseDragged = 7,
-        FlagsChanged = 12
+        FlagsChanged = 12,
+        ScrollWheel = 22
     }
 
     [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]

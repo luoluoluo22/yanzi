@@ -41,6 +41,55 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         private set => SetField(ref _isContentVisible, value);
     }
 
+    public GlobalInputTriggerSettings InputTriggerSettings => _inputTriggerSettings;
+
+    public bool IsServiceRunning => _globalInputTriggerListener?.IsRunning == true;
+
+    public void ToggleService()
+    {
+        if (_globalInputTriggerListener == null)
+            return;
+
+        if (_globalInputTriggerListener.IsRunning)
+        {
+            _globalInputTriggerListener.Stop();
+            Console.WriteLine("[service] Service paused via tray menu");
+        }
+        else
+        {
+            _globalInputTriggerListener.Start();
+            Console.WriteLine("[service] Service started via tray menu");
+        }
+    }
+
+    public void RestartInputTriggerListener(bool shouldStart)
+    {
+        if (_globalInputTriggerListener != null)
+        {
+            _globalInputTriggerListener.ActivationRequested -= GlobalInputTriggerListener_ActivationRequested;
+            _globalInputTriggerListener.ActivationUpdated -= GlobalInputTriggerListener_ActivationUpdated;
+            _globalInputTriggerListener.ActivationReleased -= GlobalInputTriggerListener_ActivationReleased;
+            _globalInputTriggerListener.Stop();
+            _globalInputTriggerListener.Dispose();
+        }
+
+        _globalInputTriggerListener = _globalInputTriggerListenerFactory.Create(_inputTriggerSettings);
+        _globalInputTriggerListener.ActivationRequested += GlobalInputTriggerListener_ActivationRequested;
+        _globalInputTriggerListener.ActivationUpdated += GlobalInputTriggerListener_ActivationUpdated;
+        _globalInputTriggerListener.ActivationReleased += GlobalInputTriggerListener_ActivationReleased;
+
+        if (shouldStart)
+        {
+            _globalInputTriggerListener.Start();
+            Console.WriteLine("[service] Listener restarted and started");
+        }
+        else
+        {
+            Console.WriteLine("[service] Listener restarted and kept stopped");
+        }
+    }
+
+
     public ObservableCollection<RadialMenuItemViewModel> Items => _radialMenuService.Items;
     public ObservableCollection<RadialMenuItemViewModel> OuterItems => _radialMenuService.OuterItems;
     public ObservableCollection<RadialMenuItemViewModel> ChildItems => _radialMenuService.ChildItems;
