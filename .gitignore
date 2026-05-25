@@ -29,3 +29,8 @@ cloudflare/.dev.vars
 
 .vs/
 docs/local-release-assets/
+
+# Build outputs and macOS bundles
+publish/
+Yanzi.app/
+

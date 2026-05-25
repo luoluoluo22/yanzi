@@ -8,6 +8,8 @@ namespace Yanzi.Avalonia;
 
 public partial class App : Application
 {
+    private MainWindow? _mainWindow;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -17,9 +19,15 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow(
+            _mainWindow = new MainWindow(
                 CreateGlobalInputTriggerListenerFactory(),
                 CreateCommandActionExecutor());
+
+            // Post assigning of MainWindow to after the desktop lifetime has finished starting,
+            // which prevents ClassicDesktopStyleApplicationLifetime from automatically calling Show() at startup.
+            global::Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+                desktop.MainWindow = _mainWindow;
+            });
         }
 
         base.OnFrameworkInitializationCompleted();

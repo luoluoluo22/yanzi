@@ -1,3 +1,4 @@
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Yanzi.Shared;
@@ -7,21 +8,62 @@ public partial class RadialMenuItemViewModel : ObservableObject
     private bool _isSelected;
     private bool _isHovered;
     private double _scale = 1;
+    private string _childPageId;
+    private string _childPageTitle;
 
     public string OwnerPageId { get; }
     public int Index { get; }
     public CommandItem? Command { get; }
-    public string ChildPageId { get; }
-    public string ChildPageTitle { get; }
+    public string ChildPageId
+    {
+        get => _childPageId;
+        set
+        {
+            if (SetProperty(ref _childPageId, value))
+            {
+                OnPropertyChanged(nameof(HasChildPage));
+                OnPropertyChanged(nameof(IsEmpty));
+                OnPropertyChanged(nameof(IsNotEmpty));
+                OnPropertyChanged(nameof(Title));
+                OnPropertyChanged(nameof(SectorBrush));
+                OnPropertyChanged(nameof(SectorOpacity));
+                OnPropertyChanged(nameof(IsSectorVisible));
+                OnPropertyChanged(nameof(ShouldShowEmptyPlaceholder));
+            }
+        }
+    }
+
+    public string ChildPageTitle
+    {
+        get => _childPageTitle;
+        set
+        {
+            if (SetProperty(ref _childPageTitle, value))
+            {
+                OnPropertyChanged(nameof(Title));
+                OnPropertyChanged(nameof(SectorBrush));
+            }
+        }
+    }
     public double X { get; }
     public double Y { get; }
     public double AngleDegrees { get; }
     public RadialMenuRing Ring { get; }
+    public Geometry? SectorGeometry { get; }
 
     public bool IsSelected
     {
         get => _isSelected;
-        set => SetProperty(ref _isSelected, value);
+        set
+        {
+            if (SetProperty(ref _isSelected, value))
+            {
+                OnPropertyChanged(nameof(Scale));
+                OnPropertyChanged(nameof(SectorOpacity));
+                OnPropertyChanged(nameof(IsSectorVisible));
+                OnPropertyChanged(nameof(ShouldShowEmptyPlaceholder));
+            }
+        }
     }
 
     public bool IsHovered
@@ -32,20 +74,31 @@ public partial class RadialMenuItemViewModel : ObservableObject
             if (SetProperty(ref _isHovered, value))
             {
                 OnPropertyChanged(nameof(IsEmptyAndHovered));
+                OnPropertyChanged(nameof(SectorOpacity));
+                OnPropertyChanged(nameof(IsSectorVisible));
+                OnPropertyChanged(nameof(ShouldShowEmptyPlaceholder));
             }
         }
     }
 
     public double Scale
     {
-        get => _scale;
+        get => IsSelected ? 1.08 : _scale;
         set => SetProperty(ref _scale, value);
     }
 
     public bool IsEmpty => Command == null && !HasChildPage;
     public bool IsNotEmpty => !IsEmpty;
     public bool IsEmptyAndHovered => IsEmpty && IsHovered;
+    public bool ShouldShowEmptyPlaceholder => IsEmpty && (IsHovered || IsSelected);
     public bool HasChildPage => !string.IsNullOrWhiteSpace(ChildPageId);
+    public IBrush SectorBrush => IsEmpty
+        ? new SolidColorBrush(Color.Parse("#FF64748B"))
+        : HasChildPage
+            ? new SolidColorBrush(Color.Parse("#FF3B82F6"))
+            : new SolidColorBrush(Color.Parse("#FF334155"));
+    public double SectorOpacity => IsSelected ? 0.58 : IsHovered ? 0.44 : IsEmpty ? 0.0 : 0.32;
+    public bool IsSectorVisible => SectorGeometry != null && (!IsEmpty || IsHovered || IsSelected);
 
     public string? IconSource => Command?.IconPath;
     public bool HasImageIcon => !string.IsNullOrWhiteSpace(IconSource);
@@ -55,17 +108,19 @@ public partial class RadialMenuItemViewModel : ObservableObject
     public bool UseGlyphIcon => !string.IsNullOrWhiteSpace(DisplayGlyph);
     public string Title => Command?.Title ?? ChildPageTitle;
 
-    public RadialMenuItemViewModel(string ownerPageId, int index, CommandItem? command, string childPageId, 
-                                   string childPageTitle, double x, double y, double angleDegrees, RadialMenuRing ring)
+    public RadialMenuItemViewModel(string ownerPageId, int index, CommandItem? command, string childPageId,
+                                   string childPageTitle, double x, double y, double angleDegrees, RadialMenuRing ring,
+                                   Geometry? sectorGeometry = null)
     {
         OwnerPageId = ownerPageId;
         Index = index;
         Command = command;
-        ChildPageId = childPageId;
-        ChildPageTitle = childPageTitle;
+        _childPageId = childPageId;
+        _childPageTitle = childPageTitle;
         X = x;
         Y = y;
         AngleDegrees = angleDegrees;
         Ring = ring;
+        SectorGeometry = sectorGeometry;
     }
 }

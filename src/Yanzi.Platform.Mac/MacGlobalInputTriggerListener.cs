@@ -12,16 +12,20 @@ public sealed class MacGlobalInputTriggerListenerFactory : IGlobalInputTriggerLi
 
 public sealed class MacGlobalInputTriggerListener : IGlobalInputTriggerListener
 {
+    private static readonly TimeSpan ActivationHoldWindow = TimeSpan.FromMilliseconds(900);
     private readonly IGlobalInputTriggerListener[] _listeners;
+    private readonly object _activationLock = new();
+    private IGlobalInputTriggerListener? _activeListener;
+    private DateTime _activeListenerExpiresAtUtc = DateTime.MinValue;
 
     public MacGlobalInputTriggerListener(GlobalInputTriggerSettings settings)
     {
         var privateMultitouchListener = new MacPrivateMultitouchInputTriggerListener(settings);
         _listeners = settings.EnableTrackpadGesture
             ? privateMultitouchListener.IsAvailable
-                ? [new MacSecondaryButtonInputTriggerListener(settings), privateMultitouchListener]
-                : [new MacSecondaryButtonInputTriggerListener(settings), new MacTrackpadGestureInputTriggerListener(settings)]
-            : [new MacSecondaryButtonInputTriggerListener(settings)];
+                ? [new MacSecondaryButtonInputTriggerListener(settings), new MacFnKeyInputTriggerListener(settings), privateMultitouchListener]
+                : [new MacSecondaryButtonInputTriggerListener(settings), new MacFnKeyInputTriggerListener(settings), new MacTrackpadGestureInputTriggerListener(settings)]
+            : [new MacSecondaryButtonInputTriggerListener(settings), new MacFnKeyInputTriggerListener(settings)];
 
         foreach (var listener in _listeners)
         {
@@ -62,17 +66,83 @@ public sealed class MacGlobalInputTriggerListener : IGlobalInputTriggerListener
 
     private void Listener_ActivationRequested(object? sender, RadialMenuActivationEventArgs e)
     {
+        if (!TryClaimActivation(sender))
+            return;
+
         ActivationRequested?.Invoke(this, e);
     }
 
     private void Listener_ActivationUpdated(object? sender, RadialMenuActivationEventArgs e)
     {
+        if (!TryAcceptActiveEvent(sender, release: false))
+            return;
+
         ActivationUpdated?.Invoke(this, e);
     }
 
     private void Listener_ActivationReleased(object? sender, RadialMenuActivationEventArgs e)
     {
+        if (!TryAcceptActiveEvent(sender, release: true))
+            return;
+
         ActivationReleased?.Invoke(this, e);
+    }
+
+    private bool TryClaimActivation(object? sender)
+    {
+        if (sender is not IGlobalInputTriggerListener listener)
+            return true;
+
+        lock (_activationLock)
+        {
+            var now = DateTime.UtcNow;
+            if (_activeListener != null &&
+                !ReferenceEquals(_activeListener, listener) &&
+                now < _activeListenerExpiresAtUtc)
+            {
+                return false;
+            }
+
+            _activeListener = listener;
+            _activeListenerExpiresAtUtc = now + ActivationHoldWindow;
+            return true;
+        }
+    }
+
+    private bool TryAcceptActiveEvent(object? sender, bool release)
+    {
+        if (sender is not IGlobalInputTriggerListener listener)
+            return true;
+
+        lock (_activationLock)
+        {
+            var now = DateTime.UtcNow;
+            if (_activeListener != null && !ReferenceEquals(_activeListener, listener))
+            {
+                if (now < _activeListenerExpiresAtUtc)
+                    return false;
+
+                _activeListener = listener;
+            }
+
+            if (_activeListener == null)
+                _activeListener = listener;
+
+            if (release)
+            {
+                if (!ReferenceEquals(_activeListener, listener))
+                    return false;
+
+                _activeListener = null;
+                _activeListenerExpiresAtUtc = DateTime.MinValue;
+            }
+            else
+            {
+                _activeListenerExpiresAtUtc = now + ActivationHoldWindow;
+            }
+
+            return true;
+        }
     }
 }
 
@@ -90,11 +160,7 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
     public bool IsRunning => _isEnabled;
 
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationRequested;
-    public event EventHandler<RadialMenuActivationEventArgs>? ActivationUpdated
-    {
-        add { }
-        remove { }
-    }
+    public event EventHandler<RadialMenuActivationEventArgs>? ActivationUpdated;
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationReleased;
 
     public MacSecondaryButtonInputTriggerListener(GlobalInputTriggerSettings settings)
@@ -122,7 +188,7 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
         CFRelease(runLoopSource);
 
         CGEventTapEnable(_eventTap, true);
-        
+
         _isEnabled = true;
         Console.WriteLine("Mac secondary-button trigger listener started");
         LogInput($"settings secondaryLongPress={_settings.EnableSecondaryButtonLongPress}, secondaryDrag={_settings.EnableSecondaryButtonDrag}");
@@ -136,7 +202,7 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
         CGEventTapEnable(_eventTap, false);
         CFRelease(_eventTap);
         _eventTap = IntPtr.Zero;
-        
+
         _longPressTimer?.Stop();
         _rightButtonPressed = false;
         _dragTriggered = false;
@@ -207,7 +273,7 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
         _longPressTimer?.Stop();
         LogInput("secondary up");
 
-        if (_rightButtonPressed && !_dragTriggered)
+        if (_rightButtonPressed && _dragTriggered)
         {
             ReleaseActivation(RadialMenuActivationSource.SecondaryButton);
         }
@@ -218,10 +284,17 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
 
     private void HandleMouseMove(IntPtr eventPtr)
     {
-        if (!_rightButtonPressed || _dragTriggered)
+        if (!_rightButtonPressed)
             return;
 
         var currentPoint = GetEventLocation(eventPtr);
+
+        if (_dragTriggered)
+        {
+            ActivationUpdated?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.SecondaryButton, null, currentPoint.X, currentPoint.Y));
+            return;
+        }
+
         var dx = currentPoint.X - _pressPoint.X;
         var dy = currentPoint.Y - _pressPoint.Y;
         var distanceSquared = dx * dx + dy * dy;
@@ -349,6 +422,236 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
 
     [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     private static extern CGPoint CGEventGetLocation(IntPtr @event);
+
+    private static ulong CGEventMaskBit(CGEventType type) => 1UL << (int)type;
+
+    private static readonly IntPtr CFRunLoopModeDefaultMode =
+        CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopDefaultMode", CFStringEncodingUtf8);
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern IntPtr CFStringCreateWithCString(IntPtr allocator, string cStr, uint encoding);
+
+    private const uint CFStringEncodingUtf8 = 0x08000100;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct CGPoint
+    {
+        public readonly double X;
+        public readonly double Y;
+    }
+
+    #endregion
+}
+
+internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
+{
+    private readonly GlobalInputTriggerSettings _settings;
+    private IntPtr _eventTap;
+    private bool _isEnabled;
+    private bool _fnKeyPressed;
+    private bool _gestureTriggered;
+    private Point _pressPoint = new(0, 0);
+    private readonly CGEventTapCallBack _eventTapCallback;
+
+    public bool IsRunning => _isEnabled;
+
+    public event EventHandler<RadialMenuActivationEventArgs>? ActivationRequested;
+    public event EventHandler<RadialMenuActivationEventArgs>? ActivationUpdated;
+    public event EventHandler<RadialMenuActivationEventArgs>? ActivationReleased;
+
+    public MacFnKeyInputTriggerListener(GlobalInputTriggerSettings settings)
+    {
+        _settings = settings;
+        _eventTapCallback = EventTapCallback;
+    }
+
+    public void Start()
+    {
+        if (_isEnabled)
+            return;
+
+        _eventTap = CreateEventTap();
+        if (_eventTap == IntPtr.Zero)
+        {
+            Console.WriteLine("Failed to create Fn key event tap");
+            return;
+        }
+
+        var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, CFRunLoopModeDefaultMode);
+        CFRelease(runLoopSource);
+
+        CGEventTapEnable(_eventTap, true);
+
+        _isEnabled = true;
+        Console.WriteLine("Mac Fn key trigger listener started");
+    }
+
+    public void Stop()
+    {
+        if (!_isEnabled)
+            return;
+
+        CGEventTapEnable(_eventTap, false);
+        CFRelease(_eventTap);
+        _eventTap = IntPtr.Zero;
+
+        _fnKeyPressed = false;
+        _gestureTriggered = false;
+        _isEnabled = false;
+        Console.WriteLine("Mac Fn key trigger listener stopped");
+    }
+
+    private IntPtr CreateEventTap()
+    {
+        var mask = CGEventMaskBit(CGEventType.FlagsChanged) |
+                   CGEventMaskBit(CGEventType.MouseMoved) |
+                   CGEventMaskBit(CGEventType.LeftMouseDragged) |
+                   CGEventMaskBit(CGEventType.RightMouseDragged);
+
+        return CGEventTapCreate(
+            CGEventTapLocation.HID,
+            CGEventTapPlacement.HeadInsertEventTap,
+            CGEventTapOptions.ListenOnly,
+            mask,
+            _eventTapCallback,
+            IntPtr.Zero);
+    }
+
+    private IntPtr EventTapCallback(IntPtr proxy, CGEventType type, IntPtr eventRef, IntPtr refcon)
+    {
+        try
+        {
+            var flags = CGEventGetFlags(eventRef);
+            var fnPressed = (flags & (1UL << 23)) != 0;
+
+            if (type == CGEventType.FlagsChanged)
+            {
+                if (fnPressed && !_fnKeyPressed)
+                {
+                    _fnKeyPressed = true;
+                    var loc = CGEventGetLocation(eventRef);
+                    _pressPoint = new Point(loc.X, loc.Y);
+                    if (_settings.EnableInputDiagnostics)
+                        Console.WriteLine($"[input] Fn key down at {loc.X:0},{loc.Y:0}");
+                }
+                else if (!fnPressed && _fnKeyPressed)
+                {
+                    _fnKeyPressed = false;
+                    if (_gestureTriggered)
+                    {
+                        if (_settings.EnableInputDiagnostics)
+                            Console.WriteLine("[input] Fn key up, releasing radial menu");
+                        ActivationReleased?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture));
+                    }
+                    _gestureTriggered = false;
+                }
+            }
+            else if (type == CGEventType.MouseMoved || type == CGEventType.LeftMouseDragged || type == CGEventType.RightMouseDragged)
+            {
+                if (_fnKeyPressed)
+                {
+                    var currentPoint = GetEventLocation(eventRef);
+                    if (_gestureTriggered)
+                    {
+                        ActivationUpdated?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture, null, currentPoint.X, currentPoint.Y));
+                    }
+                    else
+                    {
+                        var dx = currentPoint.X - _pressPoint.X;
+                        var dy = currentPoint.Y - _pressPoint.Y;
+                        var distanceSquared = dx * dx + dy * dy;
+                        var threshold = _settings.DragThresholdPixels;
+
+                        if (distanceSquared >= threshold * threshold)
+                        {
+                            _gestureTriggered = true;
+                            if (_settings.EnableInputDiagnostics)
+                                Console.WriteLine($"[input] Fn drag menu triggered at {currentPoint.X:0},{currentPoint.Y:0}");
+                            ActivationRequested?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture, null, currentPoint.X, currentPoint.Y));
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fn key trigger callback failed: {ex}");
+        }
+
+        return eventRef;
+    }
+
+    private Point GetEventLocation(IntPtr eventPtr)
+    {
+        var point = CGEventGetLocation(eventPtr);
+        return new Point(point.X, point.Y);
+    }
+
+    public void Dispose()
+    {
+        Stop();
+    }
+
+    private record Point(double X, double Y);
+
+    #region P/Invoke
+
+    private enum CGEventTapLocation : uint
+    {
+        HID = 0
+    }
+
+    private enum CGEventTapPlacement : uint
+    {
+        HeadInsertEventTap = 0
+    }
+
+    private enum CGEventTapOptions : uint
+    {
+        ListenOnly = 1
+    }
+
+    private enum CGEventType : uint
+    {
+        MouseMoved = 5,
+        LeftMouseDragged = 6,
+        RightMouseDragged = 7,
+        FlagsChanged = 12
+    }
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern IntPtr CGEventTapCreate(
+        CGEventTapLocation tap,
+        CGEventTapPlacement place,
+        CGEventTapOptions options,
+        ulong eventsOfInterest,
+        CGEventTapCallBack callback,
+        IntPtr userInfo);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr CGEventTapCallBack(IntPtr proxy, CGEventType type, IntPtr @event, IntPtr refcon);
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern void CGEventTapEnable(IntPtr tap, bool enable);
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern IntPtr CFMachPortCreateRunLoopSource(IntPtr allocator, IntPtr port, uint order);
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern IntPtr CFRunLoopGetCurrent();
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern void CFRunLoopAddSource(IntPtr runLoop, IntPtr source, IntPtr mode);
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern void CFRelease(IntPtr cf);
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern CGPoint CGEventGetLocation(IntPtr @event);
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern ulong CGEventGetFlags(IntPtr @event);
 
     private static ulong CGEventMaskBit(CGEventType type) => 1UL << (int)type;
 

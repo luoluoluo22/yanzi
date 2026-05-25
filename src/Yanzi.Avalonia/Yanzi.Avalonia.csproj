@@ -16,11 +16,18 @@
 
   <ItemGroup>
     <AvaloniaResource Include="**\*.xaml" />
+    <AvaloniaResource Include="Assets\logo.png" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Yanzi.Platform.Mac\Yanzi.Platform.Mac.csproj" />
     <ProjectReference Include="..\Yanzi.Shared\Yanzi.Shared.csproj" />
+  </ItemGroup>
+
+  <!-- macOS app icon and Info.plist -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Content Include="Info.plist" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\yanzi.icns" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
