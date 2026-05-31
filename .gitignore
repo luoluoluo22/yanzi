@@ -32,7 +32,10 @@ docs/local-release-assets/
 
 # Build outputs and macOS bundles
 publish/
-Yanzi.app/
+*.app/
 *.dmg
+*.pkg
+*.msi
+*Setup*.exe
 .DS_Store
 
