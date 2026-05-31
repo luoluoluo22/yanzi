@@ -218,14 +218,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Opacity = 0;
         _isRadialMenuActive = false;
 
-        // Start listener directly here
         _globalInputTriggerListener = _globalInputTriggerListenerFactory.Create(_inputTriggerSettings);
         _globalInputTriggerListener.ActivationRequested += GlobalInputTriggerListener_ActivationRequested;
         _globalInputTriggerListener.ActivationUpdated += GlobalInputTriggerListener_ActivationUpdated;
         _globalInputTriggerListener.ActivationReleased += GlobalInputTriggerListener_ActivationReleased;
         _globalInputTriggerListener.LauncherRequested += GlobalInputTriggerListener_LauncherRequested;
         _globalInputTriggerListener.HotkeyTriggered += GlobalInputTriggerListener_HotkeyTriggered;
-        _globalInputTriggerListener.Start();
+
+        // Start listener after the main Cocoa event loop is fully initialized on boot
+        global::Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+            _globalInputTriggerListener.Start();
+            Console.WriteLine("[service] Listener started asynchronously after AppKit loop active");
+        }, global::Avalonia.Threading.DispatcherPriority.Background);
 
         Closed += MainWindow_Closed;
         Closed += (s, e) => {

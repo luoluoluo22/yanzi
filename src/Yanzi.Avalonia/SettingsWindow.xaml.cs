@@ -50,6 +50,13 @@ public partial class SettingsWindow : Window
             dragThresholdInput.Value = _mainWindow.InputTriggerSettings.DragThresholdPixels;
         }
 
+        var autoStartCheck = this.FindControl<CheckBox>("AutoStartCheck");
+        if (autoStartCheck != null)
+        {
+            autoStartCheck.IsChecked = IsAutoStartEnabled();
+            autoStartCheck.IsEnabled = System.OperatingSystem.IsMacOS();
+        }
+
         var launcherHotkeyInput = this.FindControl<TextBox>("LauncherHotkeyInput");
         if (launcherHotkeyInput != null)
         {
@@ -110,6 +117,13 @@ public partial class SettingsWindow : Window
         if (launcherHotkeyInput != null && !string.IsNullOrEmpty(launcherHotkeyInput.Text))
         {
             _mainWindow.InputTriggerSettings.LauncherHotkey = launcherHotkeyInput.Text.Trim();
+        }
+
+        // Save auto-start setting on macOS
+        var autoStartCheck = this.FindControl<CheckBox>("AutoStartCheck");
+        if (autoStartCheck != null && autoStartCheck.IsEnabled)
+        {
+            SetAutoStart(autoStartCheck.IsChecked ?? false);
         }
 
         // Apply service running state
@@ -189,6 +203,87 @@ public partial class SettingsWindow : Window
         _isRecordingHotkey = false;
         if (btn != null) btn.Content = "录制";
         textBox.KeyDown -= TextBox_RecordKeyDown;
+    }
+
+    private bool IsAutoStartEnabled()
+    {
+        if (!System.OperatingSystem.IsMacOS()) return false;
+        try
+        {
+            var plistPath = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library/LaunchAgents/com.luoluoluo22.yanzi.plist"
+            );
+            return System.IO.File.Exists(plistPath);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void SetAutoStart(bool enable)
+    {
+        if (!System.OperatingSystem.IsMacOS()) return;
+        try
+        {
+            var folder = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library/LaunchAgents"
+            );
+            var plistPath = System.IO.Path.Combine(folder, "com.luoluoluo22.yanzi.plist");
+
+            if (enable)
+            {
+                if (!System.IO.Directory.Exists(folder))
+                {
+                    System.IO.Directory.CreateDirectory(folder);
+                }
+
+                string exePath = Environment.ProcessPath ?? string.Empty;
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty;
+                }
+
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    Console.WriteLine("Could not resolve executing process path for auto-start registration.");
+                    return;
+                }
+
+                var plistContent = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<!DOCTYPE plist PUBLIC ""-//Apple//DTD PLIST 1.0//EN"" ""http://www.apple.com/DTDs/PropertyList-1.0.dtd"">
+<plist version=""1.0"">
+<dict>
+    <key>Label</key>
+    <string>com.luoluoluo22.yanzi</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exePath}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>";
+                System.IO.File.WriteAllText(plistPath, plistContent);
+                Console.WriteLine($"Successfully registered auto-start LaunchAgent pointing to {exePath}");
+            }
+            else
+            {
+                if (System.IO.File.Exists(plistPath))
+                {
+                    System.IO.File.Delete(plistPath);
+                    Console.WriteLine("Successfully removed auto-start LaunchAgent");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to toggle auto-start settings: {ex.Message}");
+        }
     }
 
     [System.Runtime.InteropServices.DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]

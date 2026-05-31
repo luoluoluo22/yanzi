@@ -3,7 +3,7 @@
         x:Class="Yanzi.Avalonia.SettingsWindow"
         Title="燕子启动器 - 设置"
         Width="460"
-        Height="360"
+        Height="390"
         SystemDecorations="None"
         Background="#F0181818"
         TransparencyLevelHint="Transparent"
@@ -46,8 +46,16 @@
                                 <TextBlock Text="启用或暂停全局触发服务" Foreground="#80FFFFFF" FontSize="10"/>
                             </StackPanel>
                             <ToggleSwitch x:Name="ServiceSwitch" OnContent="运行中" OffContent="已暂停" 
-                                          HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                           HorizontalAlignment="Right" VerticalAlignment="Center"/>
                         </DockPanel>
+                    </Border>
+                    
+                    <!-- General Settings Section -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="通用系统设置" Foreground="White" FontSize="14" FontWeight="Medium"/>
+                            <CheckBox x:Name="AutoStartCheck" Content="随系统开机自启动" Foreground="#E0FFFFFF"/>
+                        </StackPanel>
                     </Border>
                     
                     <!-- Launcher Hotkey Settings -->
