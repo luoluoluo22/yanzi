@@ -191,7 +191,16 @@ public sealed class MacGlobalInputTriggerListener : IGlobalInputTriggerListener
             if (release)
             {
                 if (!ReferenceEquals(_activeListener, listener))
-                    return false;
+                {
+                    if (listener is MacFnKeyInputTriggerListener)
+                    {
+                        MacLogger.WriteLog("NativeMac", "Forcing release because MacFnKeyInputTriggerListener fired release (Fn released)");
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
 
                 _activeListener = null;
                 _activeListenerExpiresAtUtc = DateTime.MinValue;
@@ -922,7 +931,9 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             
             if (_settings.EnableInputDiagnostics)
                 Console.WriteLine("[input] Fn key up registered, releasing activation");
-            ActivationReleased?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture));
+                
+            var loc = CGEventGetLocation(eventRef);
+            ActivationReleased?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture, null, loc.X, loc.Y));
             
             _gestureTriggered = false;
             _trackpadTouchDetected = false;
@@ -1031,6 +1042,18 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
                             _charBuffer.Clear();
                         }
                         LauncherRequested?.Invoke(this, EventArgs.Empty);
+                        return IntPtr.Zero; // Consume the event
+                    }
+
+                    if (IsMousePanelHotkeyMatch(hotkeyString))
+                    {
+                        lock (_bufferLock)
+                        {
+                            _charBuffer.Clear();
+                        }
+                        var location = CGEventGetLocation(eventRef);
+                        var args = new HotkeyTriggeredEventArgs(hotkeyString) { ScreenX = location.X, ScreenY = location.Y };
+                        HotkeyTriggered?.Invoke(this, args);
                         return IntPtr.Zero; // Consume the event
                     }
                 }
@@ -1224,6 +1247,14 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             return false;
 
         return NormalizeHotkey(_settings.LauncherHotkey) == NormalizeHotkey(currentPressed);
+    }
+
+    private bool IsMousePanelHotkeyMatch(string currentPressed)
+    {
+        if (string.IsNullOrEmpty(_settings.MousePanelHotkey))
+            return false;
+
+        return NormalizeHotkey(_settings.MousePanelHotkey) == NormalizeHotkey(currentPressed);
     }
 
     private static string NormalizeHotkey(string hotkey)

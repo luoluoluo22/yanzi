@@ -146,6 +146,41 @@ public partial class RadialSlotActionWindow : Window
         Close();
     }
 
+    private async void CopyPrompt_Click(object? sender, RoutedEventArgs e)
+    {
+        var prompt = @"请帮我写一个燕子启动器 (Yanzi) 的单文件 JSON 扩展。
+要求格式如下：
+{
+  ""id"": ""唯一的英文id"",
+  ""title"": ""扩展名称"",
+  ""description"": ""扩展描述"",
+  ""glyph"": ""图标(可以使用emoji)"",
+  ""actionKind"": ""操作类型(LaunchApplication 或 KeyboardShortcut 或 AppleScript)"",
+  ""applicationName"": ""当actionKind为LaunchApplication时提供，可以填应用名(如WeChat)或URL"",
+  ""shortcutKey"": ""当actionKind为KeyboardShortcut时提供(如: a, c, space)"",
+  ""shortcutCommand"": true/false,
+  ""shortcutShift"": true/false,
+  ""shortcutOption"": true/false,
+  ""shortcutControl"": true/false,
+  ""scriptSource"": ""当actionKind为AppleScript时提供的脚本代码""
+}
+注意：只输出 JSON 即可，不附带多余文本。";
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.Clipboard != null)
+        {
+            await topLevel.Clipboard.SetTextAsync(prompt);
+            
+            if (sender is Button btn)
+            {
+                var oldContent = btn.Content;
+                btn.Content = "已复制 ✓";
+                await Task.Delay(2000);
+                btn.Content = oldContent;
+            }
+        }
+    }
+
     private void RefreshResults()
     {
         Results.Clear();

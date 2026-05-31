@@ -343,7 +343,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private IEnumerable<CommandItem> GetDefaultCommands(string pageId)
+    public IEnumerable<CommandItem> GetDefaultCommands(string pageId)
     {
         yield return Shortcut("copy", "复制", "⌘C", "c");
         yield return Shortcut("paste", "粘贴", "⌘V", "v");
@@ -397,7 +397,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public void ShowQuickPanelFromTray()
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(ShowQuickPanelFromTray);
+            return;
+        }
         _quickPanel?.ShowPanel(null);
+    }
+
+    public void AddCustomExtension(CommandItem command)
+    {
+        _launcherWindow?.AddCustomExtension(command);
     }
 
     public void ShowLauncherFromTray()
@@ -427,6 +437,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
 
         var normalizedPressed = NormalizeHotkey(e.Hotkey);
+
+        if (normalizedPressed == NormalizeHotkey(_inputTriggerSettings.MousePanelHotkey))
+        {
+            e.Handled = true;
+            Dispatcher.UIThread.Post(() => 
+            {
+                if (e.ScreenX.HasValue && e.ScreenY.HasValue)
+                {
+                    var args = new RadialMenuActivationEventArgs(RadialMenuActivationSource.Unknown, null, e.ScreenX, e.ScreenY);
+                    _quickPanel?.ShowPanel(args);
+                }
+                else
+                {
+                    ShowQuickPanelFromTray();
+                }
+            });
+            return;
+        }
 
         // Gather all default and custom command items
         var commands = new List<CommandItem>();
@@ -511,6 +539,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void GlobalInputTriggerListener_ActivationRequested(object? sender, RadialMenuActivationEventArgs e)
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => GlobalInputTriggerListener_ActivationRequested(sender, e));
+            return;
+        }
+
         if (e.IsLongPress)
         {
             _quickPanel?.ShowPanel(e);
@@ -523,10 +557,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void GlobalInputTriggerListener_ActivationReleased(object? sender, RadialMenuActivationEventArgs e)
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => GlobalInputTriggerListener_ActivationReleased(sender, e));
+            return;
+        }
+
         global::Yanzi.Avalonia.App.WriteLog($"GlobalInputTriggerListener_ActivationReleased received: Source={e.Source}, _quickPanelIsVisible={_quickPanel?.IsVisible}");
         if (_quickPanel != null && _quickPanel.IsVisible)
         {
-            // Do not close the quick panel when releasing right click hold
+            _quickPanel.ExecuteSelectedFromHoldRelease(e);
         }
         else
         {
@@ -536,6 +576,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void GlobalInputTriggerListener_ActivationUpdated(object? sender, RadialMenuActivationEventArgs e)
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => GlobalInputTriggerListener_ActivationUpdated(sender, e));
+            return;
+        }
+
         if (_quickPanel != null && _quickPanel.IsVisible)
         {
             _quickPanel.UpdateSelectionFromActivation(e);
@@ -792,7 +838,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public IReadOnlyList<CommandItem> GetRadialMenuCommandCandidates(string keyword)
     {
-        var commands = GetDefaultCommands(_radialMenuService.PageTitle).ToList();
+        var commands = new List<CommandItem>();
+        
+        if (_launcherWindow != null)
+        {
+            commands.AddRange(_launcherWindow.GetCustomExtensions());
+        }
+        
+        commands.AddRange(GetDefaultCommands(_radialMenuService.PageTitle));
+        
         if (string.IsNullOrWhiteSpace(keyword))
             return commands;
 

@@ -75,6 +75,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     public string PageTitle => "控制面板";
 
+    public static readonly StyledProperty<bool> IsPinnedProperty =
+        AvaloniaProperty.Register<QuickPanelWindow, bool>(nameof(IsPinned));
+
+    public bool IsPinned
+    {
+        get => GetValue(IsPinnedProperty);
+        set => SetValue(IsPinnedProperty, value);
+    }
+
     public ObservableCollection<RadialMenuItemViewModel> GlobalSlots { get; } = [];
     public ObservableCollection<RadialMenuItemViewModel> ContextSlots { get; } = [];
 
@@ -103,6 +112,99 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private void InitializeComponent()
     {
         AvaloniaXamlLoader.Load(this);
+        AddHandler(DragDrop.DragOverEvent, Window_DragOver);
+        AddHandler(DragDrop.DropEvent, Window_Drop);
+    }
+
+    private void Window_DragOver(object? sender, DragEventArgs e)
+    {
+        var formats = string.Join(", ", e.Data.GetDataFormats());
+        Console.WriteLine($"[ui-panel] DragOver: formats={formats}");
+        
+        if (e.Data.Contains(DataFormats.Files))
+        {
+            e.DragEffects = DragDropEffects.Copy;
+        }
+        else
+        {
+            e.DragEffects = DragDropEffects.None;
+        }
+        e.Handled = true;
+    }
+
+    private async void Window_Drop(object? sender, DragEventArgs e)
+    {
+        var formats = string.Join(", ", e.Data.GetDataFormats());
+        Console.WriteLine($"[ui-panel] Window_Drop fired. Formats: {formats}");
+        
+        if (!e.Data.Contains(DataFormats.Files)) 
+        {
+            Console.WriteLine("[ui-panel] e.Data.Contains(DataFormats.Files) returned false.");
+            return;
+        }
+
+        var files = e.Data.GetFiles()?.ToArray();
+        Console.WriteLine($"[ui-panel] Files count: {files?.Length}");
+        if (files == null || files.Length == 0) return;
+
+        var position = e.GetPosition(this);
+        var targetSlot = FindMainRingItem(position) ?? GlobalSlots.Concat(ContextSlots).FirstOrDefault(s => s.IsEmpty);
+        Console.WriteLine($"[ui-panel] Found target slot: {targetSlot?.OwnerPageId}, IsEmpty: {targetSlot?.IsEmpty}");
+        
+        if (targetSlot == null) return;
+
+        if (!targetSlot.IsEmpty)
+        {
+            var result = await Task.Run(() =>
+            {
+                var process = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "osascript",
+                        Arguments = $"-e 'display dialog \"槽位已有内容（{targetSlot.Title}），是否替换？\" buttons {{\"取消\", \"替换\"}} default button \"替换\" with title \"燕子启动器\"'",
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+                process.Start();
+                var output = process.StandardOutput.ReadToEnd();
+                process.WaitForExit();
+                return output;
+            });
+            
+            if (!result.Contains("button returned:替换"))
+            {
+                return;
+            }
+        }
+
+        var path = files[0].Path.LocalPath;
+        Console.WriteLine($"[ui-panel] LocalPath is: {path}");
+        
+        var command = new CommandItem
+        {
+            ExtensionId = "custom_" + Guid.NewGuid().ToString("N"),
+            Title = System.IO.Path.GetFileNameWithoutExtension(path),
+            ActionKind = CommandActionKind.LaunchApplication,
+            ApplicationName = path
+        };
+
+        Dispatcher.UIThread.Post(() => {
+            try 
+            {
+                Console.WriteLine($"[ui-panel] Dispatching AddCustomExtension...");
+                _mainWindow.AddCustomExtension(command);
+                Console.WriteLine($"[ui-panel] Dispatching AssignCommandToSlot...");
+                AssignCommandToSlot(targetSlot, command);
+                Console.WriteLine($"[ui-panel] Successfully assigned command.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ui-panel] Error in Drop Dispatcher: {ex}");
+            }
+        });
     }
 
     public void ShowPanel(RadialMenuActivationEventArgs? activation = null)
@@ -164,7 +266,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             if (IsOutsidePanel(position))
             {
                 global::Yanzi.Avalonia.App.WriteLog($"[ui-panel] ExecuteSelectedFromHoldRelease: Cancelled because cursor was outside panel at {position.X},{position.Y}");
-                HidePanel();
+                if (!IsPinned)
+                    HidePanel();
                 ActiveTitle = "取消";
                 return;
             }
@@ -183,13 +286,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        HidePanel();
+        if (!IsPinned)
+            HidePanel();
         ActiveTitle = "取消";
     }
 
     private void Window_Deactivated(object? sender, EventArgs e)
     {
-        HidePanel();
+        if (!IsPinned)
+            HidePanel();
     }
 
     private void Window_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -199,8 +304,13 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             if (IsOutsidePanel(pointer.Position))
             {
-                HidePanel();
+                if (!IsPinned)
+                    HidePanel();
                 e.Handled = true;
+            }
+            else
+            {
+                BeginMoveDrag(e);
             }
         }
     }
@@ -313,6 +423,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         ContextSlots.Clear();
 
         var allCommands = _mainWindow.GetRadialMenuCommandCandidates(string.Empty);
+        var defaultCommands = _mainWindow.GetDefaultCommands(string.Empty).ToList();
 
         // Load 12 Global Slots
         for (int i = 0; i < 12; i++)
@@ -323,13 +434,18 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             {
                 command = allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, slot.ExtensionId, StringComparison.OrdinalIgnoreCase));
             }
-            else if (i < allCommands.Count)
+            else if (i < defaultCommands.Count)
             {
-                command = allCommands[i];
+                command = defaultCommands[i];
             }
 
             var vm = new RadialMenuItemViewModel(key, i, command, string.Empty, string.Empty, 0, 0, 0, RadialMenuRing.Inner);
             GlobalSlots.Add(vm);
+            
+            if (command != null && command.ActionKind == CommandActionKind.LaunchApplication && !string.IsNullOrEmpty(command.ApplicationName))
+            {
+                LoadNativeIconForViewModelAsync(vm, command.ApplicationName);
+            }
         }
 
         // Load 12 Context Slots
@@ -341,13 +457,36 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             {
                 command = allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, slot.ExtensionId, StringComparison.OrdinalIgnoreCase));
             }
-            else if (i + 6 < allCommands.Count)
+            else if (i + 6 < defaultCommands.Count)
             {
-                command = allCommands[i + 6];
+                command = defaultCommands[i + 6];
             }
 
             var vm = new RadialMenuItemViewModel(key, i, command, string.Empty, string.Empty, 0, 0, 0, RadialMenuRing.Outer);
             ContextSlots.Add(vm);
+            
+            if (command != null && command.ActionKind == CommandActionKind.LaunchApplication && !string.IsNullOrEmpty(command.ApplicationName))
+            {
+                LoadNativeIconForViewModelAsync(vm, command.ApplicationName);
+            }
+        }
+    }
+    
+    private async void LoadNativeIconForViewModelAsync(RadialMenuItemViewModel vm, string path)
+    {
+        try
+        {
+            var pngBytes = await Task.Run(() => MacIconExtractor.GetFileIconPngBytes(path));
+            if (pngBytes != null && pngBytes.Length > 0)
+            {
+                using var ms = new System.IO.MemoryStream(pngBytes);
+                var bitmap = new global::Avalonia.Media.Imaging.Bitmap(ms);
+                Dispatcher.UIThread.Post(() => vm.RealIcon = bitmap);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading icon for {path}: {ex}");
         }
     }
 
@@ -491,30 +630,38 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                      Screens.All.FirstOrDefault();
 
         if (screen == null)
-        {
-            SetRadialCenter(new Point(Width / 2, Height / 2));
             return;
-        }
 
         var bounds = screen.Bounds;
-        Position = bounds.Position;
-        Width = bounds.Width;
-        Height = bounds.Height;
-        OverlayWidth = bounds.Width;
-        OverlayHeight = bounds.Height;
+        
+        // Window bounds including shadow padding
+        int windowWidth = 466;
+        int windowHeight = 680;
+        PanelLeft = 50;
+        PanelTop = 50;
 
-        SetRadialCenter(new Point(screenPoint.X - bounds.X, screenPoint.Y - bounds.Y));
+        // Calculate top-left of the PANEL on screen
+        double panelScreenLeft = screenPoint.X - 183;
+        double panelScreenTop = screenPoint.Y - 290;
+        
+        // Clamp PANEL inside screen bounds with 10px margin
+        panelScreenLeft = Math.Clamp(panelScreenLeft, bounds.X + 10, bounds.X + bounds.Width - 366 - 10);
+        panelScreenTop = Math.Clamp(panelScreenTop, bounds.Y + 10, bounds.Y + bounds.Height - 580 - 10);
+
+        // Window position is panel position minus the shadow padding
+        Position = new PixelPoint((int)panelScreenLeft - 50, (int)panelScreenTop - 50);
+        
+        Width = windowWidth;
+        Height = windowHeight;
+        OverlayWidth = windowWidth;
+        OverlayHeight = windowHeight;
+        
+        SetRadialCenter(new Point(233, 340));
     }
 
     private void SetRadialCenter(Point center)
     {
         _radialCenter = center;
-        
-        double left = center.X - 183;
-        double top = center.Y - 290;
-
-        PanelLeft = Math.Clamp(left, 10, Width - 376);
-        PanelTop = Math.Clamp(top, 10, Height - 590);
     }
 
     private bool IsOutsidePanel(Point position)

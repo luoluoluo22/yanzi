@@ -13,7 +13,7 @@ public partial class RadialMenuItemViewModel : ObservableObject
 
     public string OwnerPageId { get; }
     public int Index { get; }
-    public CommandItem? Command { get; }
+    public CommandItem? Command { get; private set; }
     public string ChildPageId
     {
         get => _childPageId;
@@ -102,10 +102,26 @@ public partial class RadialMenuItemViewModel : ObservableObject
 
     public string? IconSource => Command?.IconPath;
     public bool HasImageIcon => !string.IsNullOrWhiteSpace(IconSource);
+    
+    private global::Avalonia.Media.Imaging.Bitmap? _realIcon;
+    public global::Avalonia.Media.Imaging.Bitmap? RealIcon
+    {
+        get => _realIcon;
+        set
+        {
+            if (SetProperty(ref _realIcon, value))
+            {
+                OnPropertyChanged(nameof(HasRealIcon));
+                OnPropertyChanged(nameof(UseGlyphIcon));
+            }
+        }
+    }
+    public bool HasRealIcon => RealIcon != null;
+    
     public string? VectorIcon => Command?.VectorIconData;
     public bool HasVectorIcon => !string.IsNullOrWhiteSpace(VectorIcon);
     public string? DisplayGlyph => Command?.Glyph;
-    public bool UseGlyphIcon => !string.IsNullOrWhiteSpace(DisplayGlyph);
+    public bool UseGlyphIcon => !string.IsNullOrWhiteSpace(DisplayGlyph) && !HasRealIcon;
     public string Title => Command?.Title ?? ChildPageTitle;
 
     public RadialMenuItemViewModel(string ownerPageId, int index, CommandItem? command, string childPageId,
@@ -122,5 +138,26 @@ public partial class RadialMenuItemViewModel : ObservableObject
         AngleDegrees = angleDegrees;
         Ring = ring;
         SectorGeometry = sectorGeometry;
+    }
+
+    public void UpdateCommand(CommandItem? command)
+    {
+        if (ReferenceEquals(Command, command)) return;
+        Command = command;
+        OnPropertyChanged(nameof(Command));
+        OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(IsNotEmpty));
+        OnPropertyChanged(nameof(IsEmptyAndHovered));
+        OnPropertyChanged(nameof(ShouldShowEmptyPlaceholder));
+        OnPropertyChanged(nameof(SectorBrush));
+        OnPropertyChanged(nameof(SectorOpacity));
+        OnPropertyChanged(nameof(IsSectorVisible));
+        OnPropertyChanged(nameof(IconSource));
+        OnPropertyChanged(nameof(HasImageIcon));
+        OnPropertyChanged(nameof(VectorIcon));
+        OnPropertyChanged(nameof(HasVectorIcon));
+        OnPropertyChanged(nameof(DisplayGlyph));
+        OnPropertyChanged(nameof(UseGlyphIcon));
+        OnPropertyChanged(nameof(Title));
     }
 }

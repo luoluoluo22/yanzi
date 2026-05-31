@@ -80,6 +80,15 @@ public sealed class MacCommandActionExecutor : ICommandActionExecutor
                 UseShellExecute = false
             });
         }
+        else if (applicationName.StartsWith("/"))
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "/usr/bin/open",
+                ArgumentList = { applicationName },
+                UseShellExecute = false
+            });
+        }
         else
         {
             Process.Start(new ProcessStartInfo

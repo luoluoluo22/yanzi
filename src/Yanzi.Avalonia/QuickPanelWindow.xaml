@@ -19,7 +19,8 @@
         Deactivated="Window_Deactivated"
         PointerPressed="Window_PointerPressed"
         PointerMoved="Window_PointerMoved"
-        PointerReleased="Window_PointerReleased">
+        PointerReleased="Window_PointerReleased"
+        DragDrop.AllowDrop="True">
 
     <Canvas Width="{Binding OverlayWidth}"
             Height="{Binding OverlayHeight}"
@@ -27,7 +28,7 @@
             IsVisible="{Binding IsContentVisible}">
         
         <!-- Floating Card Panel (Matching reference screenshot exactly!) -->
-        <Border Width="366" Height="580"
+        <Border x:Name="PanelBorder" Width="366" Height="580"
                 Canvas.Left="{Binding PanelLeft}"
                 Canvas.Top="{Binding PanelTop}"
                 Background="#FF161616"
@@ -87,9 +88,9 @@
                         <!-- Category Name & Pin Icon -->
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="默认" Foreground="White" FontSize="15" FontWeight="Bold" VerticalAlignment="Center"/>
-                            <Button Width="18" Height="18" Background="Transparent" BorderThickness="0" VerticalAlignment="Center">
-                                <Path Data="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" Fill="#A0FFFFFF" Width="9" Height="9" Stretch="Uniform"/>
-                            </Button>
+                            <ToggleButton x:Name="PinButton" Width="20" Height="20" Background="Transparent" BorderThickness="0" VerticalAlignment="Center" IsChecked="{Binding IsPinned, Mode=TwoWay}">
+                                <Path Data="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" Fill="#A0FFFFFF" Width="12" Height="12" Stretch="Uniform"/>
+                            </ToggleButton>
                         </StackPanel>
 
                         <!-- Search pill shape box -->
@@ -150,6 +151,9 @@
                                                     <Path Data="{Binding VectorIcon}" Fill="White" Width="18" Height="18"
                                                           Stretch="Uniform" IsVisible="{Binding HasVectorIcon}"
                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <Image Source="{Binding RealIcon}" Width="24" Height="24"
+                                                           Stretch="Uniform" IsVisible="{Binding HasRealIcon}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                     <Image Source="{Binding IconSource}" Width="20" Height="20"
                                                            Stretch="Uniform" IsVisible="{Binding HasImageIcon}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -222,6 +226,9 @@
                                                     <Path Data="{Binding VectorIcon}" Fill="White" Width="18" Height="18"
                                                           Stretch="Uniform" IsVisible="{Binding HasVectorIcon}"
                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <Image Source="{Binding RealIcon}" Width="24" Height="24"
+                                                           Stretch="Uniform" IsVisible="{Binding HasRealIcon}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                     <Image Source="{Binding IconSource}" Width="20" Height="20"
                                                            Stretch="Uniform" IsVisible="{Binding HasImageIcon}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>

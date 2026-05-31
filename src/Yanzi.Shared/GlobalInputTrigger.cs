@@ -36,6 +36,8 @@ public class HotkeyTriggeredEventArgs : EventArgs
 {
     public string Hotkey { get; }
     public bool Handled { get; set; }
+    public double? ScreenX { get; set; }
+    public double? ScreenY { get; set; }
 
     public HotkeyTriggeredEventArgs(string hotkey)
     {
@@ -136,6 +138,7 @@ public class GlobalInputTriggerSettings
     public double TrackpadGestureScreenScalePixels { get; set; } = 2200;
     public bool EnableInputDiagnostics { get; set; }
     public string LauncherHotkey { get; set; } = "alt+space";
+    public string MousePanelHotkey { get; set; } = "alt+m";
 }
 
 public static class TrackpadGestureModes

@@ -229,10 +229,13 @@
                         <!-- Action Buttons -->
                         <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
                             <TextBlock Grid.Row="0" Text="{Binding ValidationMessage}" Foreground="{Binding ValidationColor}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
-                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
-                                <Button Grid.Column="0" Content="保存并应用" Classes="action-btn save" Command="{Binding SaveCustomSnippetCommand}"/>
+                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto">
+                                <Button Grid.Column="0" Classes="action-btn save" Command="{Binding SaveCustomSnippetCommand}">
+                                    <TextBlock Text="保存并应用" Foreground="White" HorizontalAlignment="Center" FontWeight="SemiBold"/>
+                                </Button>
                                 <Button Grid.Column="1" Content="删除" Classes="action-btn delete" Command="{Binding DeleteCustomExtensionCommand}" IsVisible="{Binding IsDeleteMode}" Margin="8,0,0,0"/>
                                 <Button Grid.Column="2" Content="关闭" Classes="action-btn cancel" Command="{Binding ToggleEditorCommand}"/>
+                                <Button Grid.Column="3" Content="复制提示词" Classes="action-btn cancel" Command="{Binding CopyPromptCommand}" ToolTip.Tip="复制提示词供 AI 生成内容"/>
                             </Grid>
                         </Grid>
                     </Grid>
@@ -262,10 +265,13 @@
                         <!-- Action Buttons -->
                         <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
                             <TextBlock Grid.Row="0" Text="{Binding ValidationMessage}" Foreground="{Binding ValidationColor}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
-                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
-                                <Button Grid.Column="0" Content="保存并应用" Classes="action-btn save" Command="{Binding SaveCustomExtensionCommand}"/>
+                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto">
+                                <Button Grid.Column="0" Classes="action-btn save" Command="{Binding SaveCustomExtensionCommand}">
+                                    <TextBlock Text="保存并应用" Foreground="White" HorizontalAlignment="Center" FontWeight="SemiBold"/>
+                                </Button>
                                 <Button Grid.Column="1" Content="删除" Classes="action-btn delete" Command="{Binding DeleteCustomExtensionCommand}" IsVisible="{Binding IsDeleteMode}" Margin="8,0,0,0"/>
                                 <Button Grid.Column="2" Content="关闭" Classes="action-btn cancel" Command="{Binding ToggleEditorCommand}"/>
+                                <Button Grid.Column="3" Content="复制写扩展提示词" Classes="action-btn cancel" Command="{Binding CopyPromptCommand}"/>
                             </Grid>
                         </Grid>
                     </Grid>

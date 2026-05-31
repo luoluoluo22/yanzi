@@ -29,6 +29,7 @@
                          KeyDown="SearchBox_KeyDown"/>
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <Button Content="新建子环" Click="AddChildPage_Click"/>
+                    <Button x:Name="CopyPromptButton" Content="复制写扩展提示词" Click="CopyPrompt_Click"/>
                     <Button x:Name="DeleteCommandButton" Content="删除扩展" Click="DeleteCommand_Click"/>
                     <Button x:Name="DeleteChildPageButton" Content="删除子环" Click="DeleteChildPage_Click"/>
                     <Button Content="关闭" Click="Close_Click"/>

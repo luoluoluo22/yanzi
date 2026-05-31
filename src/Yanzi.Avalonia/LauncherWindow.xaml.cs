@@ -526,6 +526,14 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
 
     public IReadOnlyList<CommandItem> GetCustomExtensions() => _customExtensions;
 
+    public void AddCustomExtension(CommandItem command)
+    {
+        _customExtensions.Add(command);
+        SaveCustomExtensions();
+        BuildStaticItems();
+        FilterItems();
+    }
+
     private void SaveCustomExtensions()
     {
         try
@@ -777,6 +785,33 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
     public void SaveCustomExtensionCommand() => SaveCustomExtension();
     public void SaveCustomSnippetCommand() => SaveCustomSnippet();
     public void DeleteCustomExtensionCommand() => DeleteCustomExtension();
+    public void CopyPromptCommand() => CopyPrompt();
+
+    private void CopyPrompt()
+    {
+        var prompt = "请帮我写一个燕子启动器 (Yanzi) 的单文件 JSON 扩展。要求格式如下：\n{\n  \"name\": \"扩展名称\",\n  \"description\": \"描述\",\n  \"icon\": \"🍎\",\n  \"script\": \"这里是单行 AppleScript\",\n  \"globalHotkey\": \"\",\n  \"abbreviation\": \"\",\n  \"snippet\": \"\"\n}";
+        Task.Run(async () =>
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard != null)
+            {
+                await clipboard.SetTextAsync(prompt);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    ValidationMessage = "已复制提示词到剪贴板！";
+                    ValidationColor = Brushes.Green;
+                    Task.Delay(2000).ContinueWith(_ => Dispatcher.UIThread.Post(() =>
+                    {
+                        if (ValidationMessage == "已复制提示词到剪贴板！")
+                        {
+                            ValidationMessage = string.Empty;
+                            ValidationColor = Brushes.Gray;
+                        }
+                    }));
+                });
+            }
+        });
+    }
 
     private void ToggleEditor()
     {
@@ -1452,6 +1487,15 @@ public static class MacIconExtractor
         {
             if (!System.OperatingSystem.IsMacOS()) return null;
 
+            if (!path.StartsWith("/"))
+            {
+                var fullPath = GetApplicationPath(path);
+                if (!string.IsNullOrEmpty(fullPath))
+                {
+                    path = fullPath;
+                }
+            }
+
             IntPtr nsStringClass = objc_getClass("NSString");
             IntPtr allocSel = sel_registerName("alloc");
             IntPtr initWithUtf8Sel = sel_registerName("initWithUTF8String:");
@@ -1508,6 +1552,48 @@ public static class MacIconExtractor
         catch (Exception ex)
         {
             Console.WriteLine($"Error extracting macOS app icon: {ex}");
+            return null;
+        }
+    }
+
+    public static string? GetApplicationPath(string appName)
+    {
+        try
+        {
+            if (!System.OperatingSystem.IsMacOS()) return null;
+
+            IntPtr nsStringClass = objc_getClass("NSString");
+            IntPtr allocSel = sel_registerName("alloc");
+            IntPtr initWithUtf8Sel = sel_registerName("initWithUTF8String:");
+            
+            IntPtr nameStrAlloc = objc_msgSend(nsStringClass, allocSel);
+            IntPtr nameStr = objc_msgSend(nameStrAlloc, initWithUtf8Sel, Marshal.StringToHGlobalAnsi(appName));
+
+            IntPtr nsWorkspaceClass = objc_getClass("NSWorkspace");
+            IntPtr sharedWorkspaceSel = sel_registerName("sharedWorkspace");
+            IntPtr workspace = objc_msgSend(nsWorkspaceClass, sharedWorkspaceSel);
+
+            IntPtr fullPathSel = sel_registerName("fullPathForApplication:");
+            IntPtr pathStrObj = objc_msgSend(workspace, fullPathSel, nameStr);
+            
+            string? result = null;
+            if (pathStrObj != IntPtr.Zero)
+            {
+                IntPtr utf8StringSel = sel_registerName("UTF8String");
+                IntPtr cStringPtr = objc_msgSend(pathStrObj, utf8StringSel);
+                if (cStringPtr != IntPtr.Zero)
+                {
+                    result = Marshal.PtrToStringAnsi(cStringPtr);
+                }
+            }
+
+            IntPtr releaseSel = sel_registerName("release");
+            objc_msgSend(nameStr, releaseSel);
+
+            return result;
+        }
+        catch
+        {
             return null;
         }
     }
