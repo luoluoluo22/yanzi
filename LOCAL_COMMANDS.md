@@ -56,14 +56,24 @@ dotnet build
 .\scripts\upload-release-installer.ps1 -Version 0.1.0 -KeepProxy
 ```
 
-## 完整发布流程
+## macOS 平台构建与打包
 
-```powershell
-dotnet build OpenQuickHost.sln
-.\scripts\verify-extension-package.ps1
-.\scripts\publish-installer.ps1 -Version 0.1.0
-.\scripts\upload-release-installer.ps1 -Version 0.1.0
+### 1. 编译自包含 Release 版本的 x64 二进制文件
+```bash
+/Users/mac/.dotnet/dotnet publish src/Yanzi.Avalonia/Yanzi.Avalonia.csproj -c Release -r osx-x64 --self-contained -o publish
 ```
+
+### 2. 生成标准 `.app` 应用包结构
+```bash
+./create_app_bundle.sh
+```
+该脚本会将 `publish/` 目录下的程序文件使用 `ditto` 拷贝至 `Yanzi.app/Contents/MacOS/` 并正确设置可执行权限、放置 `Info.plist` 和 `yanzi.icns` 图标资源，且完整保留其底层相对动态链接库软链。
+
+### 3. 打包压缩生成 `.dmg` 拖拽式安装镜像
+```bash
+rm -rf dmg_temp && mkdir -p dmg_temp && ditto Yanzi.app dmg_temp/Yanzi.app && ln -s /Applications dmg_temp/Applications && hdiutil create -volname "燕子启动器" -srcfolder dmg_temp -ov -format UDZO Yanzi.dmg && rm -rf dmg_temp
+```
+该命令会建立一个临时目录并软链接 `/Applications` 文件夹，最终在根目录下生成 UDZO 压缩格式的高保真 `Yanzi.dmg` 镜像，用户只需双击打开并拖拽 `Yanzi.app` 即可轻松安装。
 
 ## 更新官网
 
