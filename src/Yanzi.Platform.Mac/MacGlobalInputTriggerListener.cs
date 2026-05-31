@@ -567,7 +567,9 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
 internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 {
     private readonly GlobalInputTriggerSettings _settings;
+    private readonly object _lifecycleLock = new();
     private IntPtr _eventTap;
+    private IntPtr _runLoop;
     private bool _isEnabled;
     private bool _fnKeyPressed;
     private bool _gestureTriggered;
@@ -575,6 +577,8 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
     private Timer? _fnLongPressTimer;
     private Point _pressPoint = new(0, 0);
     private readonly CGEventTapCallBack _eventTapCallback;
+    private Thread? _eventTapThread;
+    private ManualResetEventSlim? _startedEvent;
 
     // Character buffering and abbreviation structures
     private readonly StringBuilder _charBuffer = new();
@@ -610,8 +614,14 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 
     public void Start()
     {
-        if (_isEnabled)
-            return;
+        lock (_lifecycleLock)
+        {
+            if (_isEnabled || _eventTapThread != null)
+                return;
+
+            _startedEvent?.Dispose();
+            _startedEvent = new ManualResetEventSlim(false);
+        }
 
         try
         {
@@ -625,11 +635,21 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             try
             {
                 bool trusted = AXIsProcessTrusted();
+                bool listenTrusted = CGPreflightListenEventAccess();
                 var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
                 System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] AXIsProcessTrusted check: {trusted}\n");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] CGPreflightListenEventAccess check: {listenTrusted}\n");
                 if (!trusted)
                 {
+                    trusted = RequestAccessibilityTrustPrompt();
+                    System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] AXIsProcessTrustedWithOptions prompt result: {trusted}\n");
                     Console.WriteLine("⚠️ [WARNING] 燕子启动器未获得 macOS 辅助功能 (Accessibility) 权限！全局快捷键和简写指令膨胀功能将无法工作。请在：系统设置 -> 隐私与安全 -> 辅助功能 中启用 燕子启动器 (Yanzi)！");
+                }
+                if (!listenTrusted)
+                {
+                    bool requestResult = CGRequestListenEventAccess();
+                    System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] CGRequestListenEventAccess result: {requestResult}\n");
+                    Console.WriteLine("⚠️ [WARNING] 燕子启动器未获得 macOS 输入监控 (Input Monitoring) 权限！Fn+触摸板和全局按键监听可能无法工作。请在：系统设置 -> 隐私与安全 -> 输入监控 中启用 燕子启动器 (Yanzi)！");
                 }
             }
             catch (Exception ex)
@@ -644,54 +664,130 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             }
         }
 
-        _eventTap = CreateEventTap();
-        try
+        var thread = new Thread(EventTapThreadMain)
         {
-            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
-            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacFnKey CreateEventTap returned: {_eventTap}, isTapActiveInterception={_isTapActiveInterception}\n");
-        }
-        catch {}
+            IsBackground = true,
+            Name = "YanziMacFnEventTap"
+        };
 
-        if (_eventTap == IntPtr.Zero)
+        lock (_lifecycleLock)
         {
-            Console.WriteLine("Failed to create Fn key event tap");
-            return;
+            _eventTapThread = thread;
         }
 
+        thread.Start();
+        _startedEvent?.Wait(TimeSpan.FromSeconds(3));
+
+        if (!_isEnabled)
+        {
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac ERROR] MacFnKey listener did not become enabled within startup timeout.\n");
+            }
+            catch {}
+        }
+    }
+
+    private void EventTapThreadMain()
+    {
         try
         {
+            _eventTap = CreateEventTap();
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacFnKey CreateEventTap returned: {_eventTap}, isTapActiveInterception={_isTapActiveInterception}\n");
+            }
+            catch {}
+
+            if (_eventTap == IntPtr.Zero)
+            {
+                Console.WriteLine("Failed to create Fn key event tap");
+                return;
+            }
+
             var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
-            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, CFRunLoopModeCommonModes);
+            _runLoop = CFRunLoopGetCurrent();
+            CFRunLoopAddSource(_runLoop, runLoopSource, CFRunLoopModeDefaultMode);
+            CFRunLoopAddSource(_runLoop, runLoopSource, CFRunLoopModeCommonModes);
             CFRelease(runLoopSource);
-            CFRunLoopWakeUp(CFRunLoopGetMain());
 
             CGEventTapEnable(_eventTap, true);
 
             _isEnabled = true;
             Console.WriteLine("Mac Fn key trigger listener started");
             
-            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
-            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacFnKey listener started and registered successfully!\n");
+            var successLogPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+            System.IO.File.AppendAllText(successLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacFnKey listener started on dedicated run loop and registered successfully!\n");
+            _startedEvent?.Set();
+
+            CFRunLoopRun();
         }
         catch (Exception ex)
         {
             try
             {
                 var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
-                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac ERROR] MacFnKey Start Failed: {ex.GetType().Name} - {ex.Message}\nStack: {ex.StackTrace}\n");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac ERROR] MacFnKey event tap thread failed: {ex.GetType().Name} - {ex.Message}\nStack: {ex.StackTrace}\n");
             }
             catch {}
+        }
+        finally
+        {
+            if (_eventTap != IntPtr.Zero)
+            {
+                CGEventTapEnable(_eventTap, false);
+                CFRelease(_eventTap);
+                _eventTap = IntPtr.Zero;
+            }
+
+            lock (_lifecycleLock)
+            {
+                if (ReferenceEquals(_eventTapThread, Thread.CurrentThread))
+                    _eventTapThread = null;
+
+                _runLoop = IntPtr.Zero;
+                _isEnabled = false;
+                _startedEvent?.Set();
+            }
         }
     }
 
     public void Stop()
     {
-        if (!_isEnabled)
-            return;
+        Thread? eventTapThread;
+        IntPtr runLoop;
+        IntPtr eventTap;
 
-        CGEventTapEnable(_eventTap, false);
-        CFRelease(_eventTap);
-        _eventTap = IntPtr.Zero;
+        lock (_lifecycleLock)
+        {
+            if (!_isEnabled && _eventTapThread == null)
+                return;
+
+            eventTapThread = _eventTapThread;
+            runLoop = _runLoop;
+            eventTap = _eventTap;
+        }
+
+        if (eventTap != IntPtr.Zero)
+            CGEventTapEnable(eventTap, false);
+
+        if (runLoop != IntPtr.Zero)
+        {
+            CFRunLoopStop(runLoop);
+            CFRunLoopWakeUp(runLoop);
+        }
+
+        if (eventTapThread != null && eventTapThread != Thread.CurrentThread)
+            eventTapThread.Join(TimeSpan.FromSeconds(1));
+
+        lock (_lifecycleLock)
+        {
+            _eventTapThread = null;
+            _startedEvent?.Dispose();
+            _startedEvent = null;
+        }
 
         _fnLongPressTimer?.Stop();
         _fnKeyPressed = false;
@@ -755,7 +851,6 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 
     private void HandleFnStateChange(bool fnPressed, IntPtr eventRef)
     {
-        LogBoot($"HandleFnStateChange entered: fnPressed={fnPressed}, _fnKeyPressed={_fnKeyPressed}");
         if (fnPressed && !_fnKeyPressed)
         {
             _fnKeyPressed = true;
@@ -766,6 +861,11 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             LogBoot($"HandleFnStateChange: Fn Pressed! Registered press point at {loc.X:0},{loc.Y:0}");
             if (_settings.EnableInputDiagnostics)
                 Console.WriteLine($"[input] Fn key down registered at {loc.X:0},{loc.Y:0}");
+
+            // Start the long press timer immediately when Fn is pressed!
+            _fnLongPressTimer?.Stop();
+            _fnLongPressTimer!.Interval = _settings.LongPressThresholdMs;
+            _fnLongPressTimer.Start();
         }
         else if (!fnPressed && _fnKeyPressed)
         {
@@ -803,6 +903,24 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         }
     }
 
+    private void RequestFnDragActivation(Point currentPoint, string reason)
+    {
+        _fnLongPressTimer?.Stop();
+        _gestureTriggered = true;
+        LogBoot($"HandleFnMovement: Fn drag menu triggered at {currentPoint.X:0},{currentPoint.Y:0}: {reason}");
+        if (_settings.EnableInputDiagnostics)
+            Console.WriteLine($"[input] Fn drag menu triggered at {currentPoint.X:0},{currentPoint.Y:0}: {reason}");
+
+        ActivationRequested?.Invoke(
+            this,
+            new RadialMenuActivationEventArgs(
+                RadialMenuActivationSource.TrackpadGesture,
+                null,
+                currentPoint.X,
+                currentPoint.Y,
+                isLongPress: false));
+    }
+
     private IntPtr EventTapCallback(IntPtr proxy, CGEventType type, IntPtr eventRef, IntPtr refcon)
     {
         try
@@ -819,16 +937,19 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 
             if (type == CGEventType.FlagsChanged)
             {
-                LogBoot($"Callback Event: type={type}, flags={flags:X}, fnPressed={fnPressed}, _fnKeyPressed={_fnKeyPressed}");
+                if (_settings.EnableInputDiagnostics)
+                    Console.WriteLine($"[input] Callback Event: type={type}, flags={flags:X}, fnPressed={fnPressed}, _fnKeyPressed={_fnKeyPressed}");
             }
             else if (type == CGEventType.KeyDown)
             {
                 var keyCode = (ushort)CGEventGetIntegerValueField(eventRef, 9);
-                LogBoot($"Callback Event: type={type}, keyCode={keyCode}, keyName='{GetKeyName(keyCode)}', fnPressed={fnPressed}, _fnKeyPressed={_fnKeyPressed}");
+                if (_settings.EnableInputDiagnostics)
+                    Console.WriteLine($"[input] Callback Event: type={type}, keyCode={keyCode}, keyName='{GetKeyName(keyCode)}', fnPressed={fnPressed}, _fnKeyPressed={_fnKeyPressed}");
             }
             else if (_fnKeyPressed)
             {
-                LogBoot($"Callback Event while Fn held: type={type}, fnPressed={fnPressed}");
+                if (_settings.EnableInputDiagnostics)
+                    Console.WriteLine($"[input] Callback Event while Fn held: type={type}, fnPressed={fnPressed}");
             }
 
             if (type == CGEventType.KeyDown)
@@ -1010,14 +1131,28 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
                     var currentPoint = GetEventLocation(eventRef);
                     if (_gestureTriggered)
                     {
+                        if (_settings.EnableInputDiagnostics)
+                            Console.WriteLine($"[input] HandleFnMovement: Updating active gesture at {currentPoint.X:0},{currentPoint.Y:0}");
                         ActivationUpdated?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture, null, currentPoint.X, currentPoint.Y));
                     }
                     else
                     {
+                        var dx = currentPoint.X - _pressPoint.X;
+                        var dy = currentPoint.Y - _pressPoint.Y;
+                        var distanceSquared = dx * dx + dy * dy;
+                        var threshold = Math.Max(1, _settings.DragThresholdPixels);
+
                         if (!_trackpadTouchDetected)
                         {
                             _trackpadTouchDetected = true;
-                            _pressPoint = currentPoint;
+                            if (_settings.EnableInputDiagnostics)
+                                Console.WriteLine($"[input] HandleFnMovement: First pointer movement while Fn held at {currentPoint.X:0},{currentPoint.Y:0}; distanceSquared={distanceSquared:0.0}, thresholdSquared={threshold * threshold}");
+                            if (distanceSquared >= threshold * threshold)
+                            {
+                                RequestFnDragActivation(currentPoint, "first movement threshold reached");
+                                return eventRef;
+                            }
+
                             _fnLongPressTimer?.Stop();
                             _fnLongPressTimer!.Interval = _settings.LongPressThresholdMs; // snappy long press duration
                             _fnLongPressTimer.Start();
@@ -1026,18 +1161,9 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
                         }
                         else
                         {
-                            var dx = currentPoint.X - _pressPoint.X;
-                            var dy = currentPoint.Y - _pressPoint.Y;
-                            var distanceSquared = dx * dx + dy * dy;
-                            var threshold = _settings.DragThresholdPixels;
-
                             if (distanceSquared >= threshold * threshold)
                             {
-                                _fnLongPressTimer?.Stop();
-                                _gestureTriggered = true;
-                                if (_settings.EnableInputDiagnostics)
-                                    Console.WriteLine($"[input] Fn drag menu triggered at {currentPoint.X:0},{currentPoint.Y:0}");
-                                ActivationRequested?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture, null, currentPoint.X, currentPoint.Y, isLongPress: false));
+                                RequestFnDragActivation(currentPoint, "drag threshold reached");
                             }
                         }
                     }
@@ -1267,6 +1393,37 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         catch {}
     }
 
+    private static bool RequestAccessibilityTrustPrompt()
+    {
+        try
+        {
+            var key = CreateNSString("AXTrustedCheckOptionPrompt");
+            var value = objc_msgSend_bool(objc_getClass("NSNumber"), sel_registerName("numberWithBool:"), 1);
+            var options = objc_msgSend_objectKey(
+                objc_getClass("NSDictionary"),
+                sel_registerName("dictionaryWithObject:forKey:"),
+                value,
+                key);
+
+            return options != IntPtr.Zero
+                ? AXIsProcessTrustedWithOptions(options)
+                : AXIsProcessTrusted();
+        }
+        catch (Exception ex)
+        {
+            LogBoot($"RequestAccessibilityTrustPrompt failed: {ex.GetType().Name} - {ex.Message}");
+            return AXIsProcessTrusted();
+        }
+    }
+
+    private static IntPtr CreateNSString(string value)
+    {
+        return objc_msgSend_string(
+            objc_getClass("NSString"),
+            sel_registerName("stringWithUTF8String:"),
+            value);
+    }
+
     public void Dispose()
     {
         Stop();
@@ -1346,6 +1503,12 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern void CFRunLoopWakeUp(IntPtr runLoop);
 
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern void CFRunLoopRun();
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern void CFRunLoopStop(IntPtr runLoop);
+
     [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     private static extern CGPoint CGEventGetLocation(IntPtr @event);
 
@@ -1353,6 +1516,9 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
     private static extern ulong CGEventGetFlags(IntPtr @event);
 
     private static ulong CGEventMaskBit(CGEventType type) => 1UL << (int)type;
+
+    private static readonly IntPtr CFRunLoopModeDefaultMode =
+        CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopDefaultMode", CFStringEncodingUtf8);
 
     private static readonly IntPtr CFRunLoopModeCommonModes =
         CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopCommonModes", CFStringEncodingUtf8);
@@ -1390,6 +1556,33 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 
     [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
     private static extern bool AXIsProcessTrusted();
+
+    [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+    private static extern bool AXIsProcessTrustedWithOptions(IntPtr options);
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern bool CGPreflightListenEventAccess();
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern bool CGRequestListenEventAccess();
+
+    [DllImport("/usr/lib/libobjc.A.dylib")]
+    private static extern IntPtr objc_getClass(string name);
+
+    [DllImport("/usr/lib/libobjc.A.dylib")]
+    private static extern IntPtr sel_registerName(string name);
+
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+    private static extern IntPtr objc_msgSend_string(
+        IntPtr receiver,
+        IntPtr selector,
+        [MarshalAs(UnmanagedType.LPStr)] string value);
+
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+    private static extern IntPtr objc_msgSend_bool(IntPtr receiver, IntPtr selector, byte value);
+
+    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+    private static extern IntPtr objc_msgSend_objectKey(IntPtr receiver, IntPtr selector, IntPtr obj, IntPtr key);
 
     #endregion
 }

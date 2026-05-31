@@ -20,7 +20,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly GlobalInputTriggerSettings _inputTriggerSettings;
     private readonly IGlobalInputTriggerListenerFactory _globalInputTriggerListenerFactory;
     private readonly ICommandActionExecutor _commandActionExecutor;
+    private readonly object _inputTriggerListenerLock = new();
     private IGlobalInputTriggerListener? _globalInputTriggerListener;
+    private int _inputTriggerListenerVersion;
+    private bool _inputTriggerListenerShouldRun = true;
+    private bool _isClosing;
     private QuickPanelWindow? _quickPanel;
     private LauncherWindow? _launcherWindow;
 
@@ -47,54 +51,66 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public GlobalInputTriggerSettings InputTriggerSettings => _inputTriggerSettings;
 
-    public bool IsServiceRunning => _globalInputTriggerListener?.IsRunning == true;
+    public bool IsServiceRunning
+    {
+        get
+        {
+            lock (_inputTriggerListenerLock)
+            {
+                return _globalInputTriggerListener?.IsRunning == true;
+            }
+        }
+    }
 
     public void ToggleService()
     {
-        if (_globalInputTriggerListener == null)
-            return;
+        lock (_inputTriggerListenerLock)
+        {
+            if (_globalInputTriggerListener == null)
+                return;
 
-        if (_globalInputTriggerListener.IsRunning)
-        {
-            _globalInputTriggerListener.Stop();
-            Console.WriteLine("[service] Service paused via tray menu");
-        }
-        else
-        {
-            _globalInputTriggerListener.Start();
-            Console.WriteLine("[service] Service started via tray menu");
+            if (_globalInputTriggerListener.IsRunning)
+            {
+                _inputTriggerListenerShouldRun = false;
+                _globalInputTriggerListener.Stop();
+                Console.WriteLine("[service] Service paused via tray menu");
+            }
+            else
+            {
+                _inputTriggerListenerShouldRun = true;
+                _globalInputTriggerListener.Start();
+                Console.WriteLine("[service] Service started via tray menu");
+            }
         }
     }
 
     public void RestartInputTriggerListener(bool shouldStart)
     {
-        if (_globalInputTriggerListener != null)
+        lock (_inputTriggerListenerLock)
         {
-            _globalInputTriggerListener.ActivationRequested -= GlobalInputTriggerListener_ActivationRequested;
-            _globalInputTriggerListener.ActivationUpdated -= GlobalInputTriggerListener_ActivationUpdated;
-            _globalInputTriggerListener.ActivationReleased -= GlobalInputTriggerListener_ActivationReleased;
-            _globalInputTriggerListener.LauncherRequested -= GlobalInputTriggerListener_LauncherRequested;
-            _globalInputTriggerListener.HotkeyTriggered -= GlobalInputTriggerListener_HotkeyTriggered;
-            _globalInputTriggerListener.Stop();
-            _globalInputTriggerListener.Dispose();
+            if (_globalInputTriggerListener != null)
+            {
+                UnwireInputTriggerListener(_globalInputTriggerListener);
+                _globalInputTriggerListener.Stop();
+                _globalInputTriggerListener.Dispose();
+            }
+
+            _globalInputTriggerListener = CreateInputTriggerListener();
+            _inputTriggerListenerShouldRun = shouldStart;
+            _inputTriggerListenerVersion++;
+
+            if (shouldStart)
+            {
+                _globalInputTriggerListener.Start();
+                Console.WriteLine("[service] Listener restarted and started");
+            }
+            else
+            {
+                Console.WriteLine("[service] Listener restarted and kept stopped");
+            }
         }
 
-        _globalInputTriggerListener = _globalInputTriggerListenerFactory.Create(_inputTriggerSettings);
-        _globalInputTriggerListener.ActivationRequested += GlobalInputTriggerListener_ActivationRequested;
-        _globalInputTriggerListener.ActivationUpdated += GlobalInputTriggerListener_ActivationUpdated;
-        _globalInputTriggerListener.ActivationReleased += GlobalInputTriggerListener_ActivationReleased;
-        _globalInputTriggerListener.LauncherRequested += GlobalInputTriggerListener_LauncherRequested;
-        _globalInputTriggerListener.HotkeyTriggered += GlobalInputTriggerListener_HotkeyTriggered;
-
-        if (shouldStart)
-        {
-            _globalInputTriggerListener.Start();
-            Console.WriteLine("[service] Listener restarted and started");
-        }
-        else
-        {
-            Console.WriteLine("[service] Listener restarted and kept stopped");
-        }
+        RefreshSnippetAbbreviations();
     }
 
 
@@ -210,7 +226,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ClipboardMonitor.Start();
         
         _launcherWindow = new LauncherWindow(_commandActionExecutor, this);
-        RefreshSnippetAbbreviations();
         
         DataContext = this;
 
@@ -218,29 +233,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Opacity = 0;
         _isRadialMenuActive = false;
 
-        _globalInputTriggerListener = _globalInputTriggerListenerFactory.Create(_inputTriggerSettings);
-        _globalInputTriggerListener.ActivationRequested += GlobalInputTriggerListener_ActivationRequested;
-        _globalInputTriggerListener.ActivationUpdated += GlobalInputTriggerListener_ActivationUpdated;
-        _globalInputTriggerListener.ActivationReleased += GlobalInputTriggerListener_ActivationReleased;
-        _globalInputTriggerListener.LauncherRequested += GlobalInputTriggerListener_LauncherRequested;
-        _globalInputTriggerListener.HotkeyTriggered += GlobalInputTriggerListener_HotkeyTriggered;
+        int startupListenerVersion;
+        lock (_inputTriggerListenerLock)
+        {
+            _globalInputTriggerListener = CreateInputTriggerListener();
+            _inputTriggerListenerShouldRun = true;
+            _inputTriggerListenerVersion++;
+            startupListenerVersion = _inputTriggerListenerVersion;
+        }
 
-        // Start listener with a safe 2000ms delay after the main Cocoa event loop is fully initialized on boot
-        global::Yanzi.Avalonia.App.WriteLog("MainWindow: Deferring _globalInputTriggerListener.Start() by 2000ms to allow WindowServer session connection to stabilize...");
-        global::System.Threading.Tasks.Task.Delay(2000).ContinueWith(_ => {
-            global::Avalonia.Threading.Dispatcher.UIThread.Post(() => {
-                global::Yanzi.Avalonia.App.WriteLog("MainWindow: Deferred 2000ms callback executing, calling _globalInputTriggerListener.Start()...");
-                try
-                {
-                    _globalInputTriggerListener.Start();
-                    global::Yanzi.Avalonia.App.WriteLog("MainWindow: _globalInputTriggerListener.Start() completed successfully.");
-                }
-                catch (Exception ex)
-                {
-                    global::Yanzi.Avalonia.App.WriteLog($"MainWindow ERROR: _globalInputTriggerListener.Start() failed: {ex.GetType().Name} - {ex.Message}\nStack:{ex.StackTrace}");
-                }
-            }, global::Avalonia.Threading.DispatcherPriority.Normal);
-        });
+        RefreshSnippetAbbreviations();
+        StartInputTriggerListener(startupListenerVersion, "startup");
 
         Closed += MainWindow_Closed;
         Closed += (s, e) => {
@@ -260,18 +263,84 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             isSelected ? new SolidColorBrush(Color.Parse("#FF60A5FA")) : Brushes.White);
     }
 
+    private IGlobalInputTriggerListener CreateInputTriggerListener()
+    {
+        var listener = _globalInputTriggerListenerFactory.Create(_inputTriggerSettings);
+        listener.ActivationRequested += GlobalInputTriggerListener_ActivationRequested;
+        listener.ActivationUpdated += GlobalInputTriggerListener_ActivationUpdated;
+        listener.ActivationReleased += GlobalInputTriggerListener_ActivationReleased;
+        listener.LauncherRequested += GlobalInputTriggerListener_LauncherRequested;
+        listener.HotkeyTriggered += GlobalInputTriggerListener_HotkeyTriggered;
+        return listener;
+    }
+
+    private void UnwireInputTriggerListener(IGlobalInputTriggerListener listener)
+    {
+        listener.ActivationRequested -= GlobalInputTriggerListener_ActivationRequested;
+        listener.ActivationUpdated -= GlobalInputTriggerListener_ActivationUpdated;
+        listener.ActivationReleased -= GlobalInputTriggerListener_ActivationReleased;
+        listener.LauncherRequested -= GlobalInputTriggerListener_LauncherRequested;
+        listener.HotkeyTriggered -= GlobalInputTriggerListener_HotkeyTriggered;
+    }
+
+    private void StartInputTriggerListener(int listenerVersion, string reason)
+    {
+        global::Yanzi.Avalonia.App.WriteLog($"MainWindow: Starting _globalInputTriggerListener immediately. reason={reason}");
+
+        try
+        {
+            lock (_inputTriggerListenerLock)
+            {
+                if (_isClosing)
+                {
+                    global::Yanzi.Avalonia.App.WriteLog("MainWindow: Skipping listener start because window is closing.");
+                    return;
+                }
+
+                if (!_inputTriggerListenerShouldRun)
+                {
+                    global::Yanzi.Avalonia.App.WriteLog("MainWindow: Skipping listener start because service is paused.");
+                    return;
+                }
+
+                if (listenerVersion != _inputTriggerListenerVersion)
+                {
+                    global::Yanzi.Avalonia.App.WriteLog($"MainWindow: Skipping stale listener start. expected={listenerVersion}, current={_inputTriggerListenerVersion}");
+                    return;
+                }
+
+                if (_globalInputTriggerListener == null)
+                {
+                    global::Yanzi.Avalonia.App.WriteLog("MainWindow: Skipping listener start because listener is null.");
+                    return;
+                }
+
+                _globalInputTriggerListener.Start();
+                global::Yanzi.Avalonia.App.WriteLog($"MainWindow: _globalInputTriggerListener.Start() completed. IsRunning={_globalInputTriggerListener.IsRunning}");
+            }
+        }
+        catch (Exception ex)
+        {
+            global::Yanzi.Avalonia.App.WriteLog($"MainWindow ERROR: _globalInputTriggerListener.Start() failed: {ex.GetType().Name} - {ex.Message}\nStack:{ex.StackTrace}");
+        }
+    }
+
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
-        if (_globalInputTriggerListener != null)
+        lock (_inputTriggerListenerLock)
         {
-            _globalInputTriggerListener.ActivationRequested -= GlobalInputTriggerListener_ActivationRequested;
-            _globalInputTriggerListener.ActivationUpdated -= GlobalInputTriggerListener_ActivationUpdated;
-            _globalInputTriggerListener.ActivationReleased -= GlobalInputTriggerListener_ActivationReleased;
-            _globalInputTriggerListener.LauncherRequested -= GlobalInputTriggerListener_LauncherRequested;
-        }
+            _isClosing = true;
+            _inputTriggerListenerShouldRun = false;
+            _inputTriggerListenerVersion++;
 
-        _globalInputTriggerListener?.Stop();
-        _globalInputTriggerListener?.Dispose();
+            if (_globalInputTriggerListener != null)
+            {
+                UnwireInputTriggerListener(_globalInputTriggerListener);
+                _globalInputTriggerListener.Stop();
+                _globalInputTriggerListener.Dispose();
+                _globalInputTriggerListener = null;
+            }
+        }
     }
 
     private IEnumerable<CommandItem> GetDefaultCommands(string pageId)
@@ -280,18 +349,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         yield return Shortcut("paste", "粘贴", "⌘V", "v");
         yield return Shortcut("cut", "剪切", "⌘X", "x");
         yield return Shortcut("select-all", "全选", "⌘A", "a");
-        yield return Shortcut("undo", "撤销", "⌘Z", "z");
-        yield return Shortcut("redo", "重做", "⇧⌘Z", "z", shift: true);
-        yield return Shortcut("find", "查找", "⌘F", "f");
-        yield return Shortcut("delete", "删除", "⌫", "delete", command: false);
-        yield return App("finder", "Finder", "F", "Finder");
-        yield return App("terminal", "终端", ">", "Terminal");
-        yield return App("safari", "Safari", "S", "Safari");
-        yield return App("notes", "备忘录", "N", "Notes");
-        yield return App("textedit", "文本", "T", "TextEdit");
-        yield return App("settings", "设置", "⚙", "System Settings");
-        yield return App("activity-monitor", "监视器", "M", "Activity Monitor");
-        yield return Shortcut("screenshot", "截图", "⇧⌘4", "4", shift: true);
+        yield return App("yanzi-web", "燕子官网", "🌐", "https://yanzi.luoluoluo.cc.cd");
+        yield return App("微信", "微信", "💬", "WeChat");
+        yield return App("terminal", "终端", "💻", "Terminal");
+        yield return App("safari", "Safari", "🧭", "Safari");
+        yield return App("notes", "备忘录", "📝", "Notes");
+        yield return App("music", "网易云音乐", "🎵", "NeteaseMusic");
+        yield return App("finder", "访达", "📁", "Finder");
+        yield return Shortcut("screenshot", "截图", "📸", "4", shift: true);
     }
 
     private static CommandItem Shortcut(
@@ -552,7 +617,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (_activeItem != null && _activeItem.IsEmpty)
         {
-            OpenSlotActionWindow(_activeItem);
+            if (activation?.Source == RadialMenuActivationSource.TrackpadGesture)
+            {
+                HideRadialMenu();
+            }
+            else
+            {
+                OpenSlotActionWindow(_activeItem);
+            }
             _isExecuting = false;
             return;
         }
@@ -1264,9 +1336,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public void RefreshSnippetAbbreviations()
     {
-        if (_globalInputTriggerListener == null)
-            return;
-
         var abbreviations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         if (_launcherWindow != null)
@@ -1281,7 +1350,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        _globalInputTriggerListener.UpdateAbbreviations(abbreviations);
+        lock (_inputTriggerListenerLock)
+        {
+            if (_globalInputTriggerListener == null)
+                return;
+
+            _globalInputTriggerListener.UpdateAbbreviations(abbreviations);
+        }
+
         Console.WriteLine($"[snippet] Refreshed {abbreviations.Count} abbreviation mappings globally.");
     }
 }

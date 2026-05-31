@@ -70,12 +70,25 @@ public sealed class MacCommandActionExecutor : ICommandActionExecutor
         if (string.IsNullOrWhiteSpace(applicationName))
             return;
 
-        Process.Start(new ProcessStartInfo
+        if (applicationName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
+            applicationName.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
-            FileName = "/usr/bin/open",
-            ArgumentList = { "-a", applicationName },
-            UseShellExecute = false
-        });
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "/usr/bin/open",
+                ArgumentList = { applicationName },
+                UseShellExecute = false
+            });
+        }
+        else
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "/usr/bin/open",
+                ArgumentList = { "-a", applicationName },
+                UseShellExecute = false
+            });
+        }
     }
 
     private static void PostKeyboardEvent(ushort keyCode, bool keyDown, CGEventFlags flags)

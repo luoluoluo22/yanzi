@@ -18,4 +18,7 @@ mv "$APP_NAME/Contents/MacOS/Assets/yanzi.icns" "$APP_NAME/Contents/Resources/ya
 echo "Setting permissions..."
 chmod +x "$APP_NAME/Contents/MacOS/Yanzi.Avalonia"
 
+echo "Signing app bundle with stable ad-hoc identity..."
+codesign --force --deep --sign - --identifier "com.yanzi.launcher" "$APP_NAME"
+
 echo "SUCCESS: $APP_NAME has been created successfully!"
