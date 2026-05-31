@@ -861,23 +861,17 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             LogBoot($"HandleFnStateChange: Fn Pressed! Registered press point at {loc.X:0},{loc.Y:0}");
             if (_settings.EnableInputDiagnostics)
                 Console.WriteLine($"[input] Fn key down registered at {loc.X:0},{loc.Y:0}");
-
-            // Start the long press timer immediately when Fn is pressed!
-            _fnLongPressTimer?.Stop();
-            _fnLongPressTimer!.Interval = _settings.LongPressThresholdMs;
-            _fnLongPressTimer.Start();
         }
         else if (!fnPressed && _fnKeyPressed)
         {
             _fnKeyPressed = false;
             _fnLongPressTimer?.Stop();
             LogBoot($"HandleFnStateChange: Fn Released! _gestureTriggered={_gestureTriggered}");
-            if (_gestureTriggered)
-            {
-                if (_settings.EnableInputDiagnostics)
-                    Console.WriteLine("[input] Fn key up registered, releasing activation");
-                ActivationReleased?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture));
-            }
+            
+            if (_settings.EnableInputDiagnostics)
+                Console.WriteLine("[input] Fn key up registered, releasing activation");
+            ActivationReleased?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.TrackpadGesture));
+            
             _gestureTriggered = false;
             _trackpadTouchDetected = false;
         }
@@ -1152,12 +1146,6 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
                                 RequestFnDragActivation(currentPoint, "first movement threshold reached");
                                 return eventRef;
                             }
-
-                            _fnLongPressTimer?.Stop();
-                            _fnLongPressTimer!.Interval = _settings.LongPressThresholdMs; // snappy long press duration
-                            _fnLongPressTimer.Start();
-                            if (_settings.EnableInputDiagnostics)
-                                Console.WriteLine($"[input] Fn trackpad touch detected at {currentPoint.X:0},{currentPoint.Y:0}. Starting {_settings.LongPressThresholdMs}ms timer.");
                         }
                         else
                         {

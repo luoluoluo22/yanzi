@@ -617,14 +617,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (_activeItem != null && _activeItem.IsEmpty)
         {
-            if (activation?.Source == RadialMenuActivationSource.TrackpadGesture)
-            {
-                HideRadialMenu();
-            }
-            else
-            {
-                OpenSlotActionWindow(_activeItem);
-            }
+            OpenSlotActionWindow(_activeItem);
             _isExecuting = false;
             return;
         }
