@@ -225,20 +225,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _globalInputTriggerListener.LauncherRequested += GlobalInputTriggerListener_LauncherRequested;
         _globalInputTriggerListener.HotkeyTriggered += GlobalInputTriggerListener_HotkeyTriggered;
 
-        // Start listener after the main Cocoa event loop is fully initialized on boot
-        global::Yanzi.Avalonia.App.WriteLog("MainWindow: Posting deferred _globalInputTriggerListener.Start() to Dispatcher at Normal priority...");
-        global::Avalonia.Threading.Dispatcher.UIThread.Post(() => {
-            global::Yanzi.Avalonia.App.WriteLog("MainWindow: Dispatcher deferred callback executing, calling _globalInputTriggerListener.Start()...");
-            try
-            {
-                _globalInputTriggerListener.Start();
-                global::Yanzi.Avalonia.App.WriteLog("MainWindow: _globalInputTriggerListener.Start() completed successfully.");
-            }
-            catch (Exception ex)
-            {
-                global::Yanzi.Avalonia.App.WriteLog($"MainWindow ERROR: _globalInputTriggerListener.Start() failed: {ex.GetType().Name} - {ex.Message}\nStack:{ex.StackTrace}");
-            }
-        }, global::Avalonia.Threading.DispatcherPriority.Normal);
+        // Start listener with a safe 2000ms delay after the main Cocoa event loop is fully initialized on boot
+        global::Yanzi.Avalonia.App.WriteLog("MainWindow: Deferring _globalInputTriggerListener.Start() by 2000ms to allow WindowServer session connection to stabilize...");
+        global::System.Threading.Tasks.Task.Delay(2000).ContinueWith(_ => {
+            global::Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+                global::Yanzi.Avalonia.App.WriteLog("MainWindow: Deferred 2000ms callback executing, calling _globalInputTriggerListener.Start()...");
+                try
+                {
+                    _globalInputTriggerListener.Start();
+                    global::Yanzi.Avalonia.App.WriteLog("MainWindow: _globalInputTriggerListener.Start() completed successfully.");
+                }
+                catch (Exception ex)
+                {
+                    global::Yanzi.Avalonia.App.WriteLog($"MainWindow ERROR: _globalInputTriggerListener.Start() failed: {ex.GetType().Name} - {ex.Message}\nStack:{ex.StackTrace}");
+                }
+            }, global::Avalonia.Threading.DispatcherPriority.Normal);
+        });
 
         Closed += MainWindow_Closed;
         Closed += (s, e) => {

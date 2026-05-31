@@ -239,8 +239,9 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
         try
         {
             var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
-            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, CFRunLoopModeDefaultMode);
+            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, CFRunLoopModeCommonModes);
             CFRelease(runLoopSource);
+            CFRunLoopWakeUp(CFRunLoopGetMain());
 
             CGEventTapEnable(_eventTap, true);
 
@@ -338,6 +339,13 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
     {
         try
         {
+            if (type == (CGEventType)0xFFFFFFFE || type == (CGEventType)0xFFFFFFFF)
+            {
+                Console.WriteLine($"[input] Secondary Event Tap disabled: {type}. Re-enabling...");
+                CGEventTapEnable(_eventTap, true);
+                return eventRef;
+            }
+
             switch (type)
             {
                 case CGEventType.RightMouseDown:
@@ -530,13 +538,16 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern void CFRelease(IntPtr cf);
 
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern void CFRunLoopWakeUp(IntPtr runLoop);
+
     [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     private static extern CGPoint CGEventGetLocation(IntPtr @event);
 
     private static ulong CGEventMaskBit(CGEventType type) => 1UL << (int)type;
 
-    private static readonly IntPtr CFRunLoopModeDefaultMode =
-        CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopDefaultMode", CFStringEncodingUtf8);
+    private static readonly IntPtr CFRunLoopModeCommonModes =
+        CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopCommonModes", CFStringEncodingUtf8);
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern IntPtr CFStringCreateWithCString(IntPtr allocator, string cStr, uint encoding);
@@ -650,8 +661,9 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         try
         {
             var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
-            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, CFRunLoopModeDefaultMode);
+            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, CFRunLoopModeCommonModes);
             CFRelease(runLoopSource);
+            CFRunLoopWakeUp(CFRunLoopGetMain());
 
             CGEventTapEnable(_eventTap, true);
 
@@ -795,6 +807,13 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
     {
         try
         {
+            if (type == (CGEventType)0xFFFFFFFE || type == (CGEventType)0xFFFFFFFF)
+            {
+                LogBoot($"EventTapCallback: Event tap disabled by OS! type={type}. Re-enabling...");
+                CGEventTapEnable(_eventTap, true);
+                return eventRef;
+            }
+
             var flags = CGEventGetFlags(eventRef);
             var fnPressed = (flags & (1UL << 23)) != 0;
 
@@ -1324,6 +1343,9 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern void CFRelease(IntPtr cf);
 
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern void CFRunLoopWakeUp(IntPtr runLoop);
+
     [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     private static extern CGPoint CGEventGetLocation(IntPtr @event);
 
@@ -1332,8 +1354,8 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 
     private static ulong CGEventMaskBit(CGEventType type) => 1UL << (int)type;
 
-    private static readonly IntPtr CFRunLoopModeDefaultMode =
-        CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopDefaultMode", CFStringEncodingUtf8);
+    private static readonly IntPtr CFRunLoopModeCommonModes =
+        CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopCommonModes", CFStringEncodingUtf8);
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern IntPtr CFStringCreateWithCString(IntPtr allocator, string cStr, uint encoding);
