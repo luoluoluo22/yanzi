@@ -8,6 +8,27 @@ using Yanzi.Shared;
 
 namespace Yanzi.Platform.Mac;
 
+internal static class MacLogger
+{
+    private static readonly object _fileLock = new();
+
+    public static void WriteLog(string tag, string message)
+    {
+        lock (_fileLock)
+        {
+            try
+            {
+                var logPath = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".yanzi_boot.log"
+                );
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{tag}] {message}\n");
+            }
+            catch {}
+        }
+    }
+}
+
 public sealed class MacGlobalInputTriggerListenerFactory : IGlobalInputTriggerListenerFactory
 {
     public IGlobalInputTriggerListener Create(GlobalInputTriggerSettings settings) => new MacGlobalInputTriggerListener(settings);
@@ -122,7 +143,15 @@ public sealed class MacGlobalInputTriggerListener : IGlobalInputTriggerListener
                 !ReferenceEquals(_activeListener, listener) &&
                 now < _activeListenerExpiresAtUtc)
             {
-                return false;
+                if (listener is MacSecondaryButtonInputTriggerListener)
+                {
+                    MacLogger.WriteLog("NativeMac", $"Preempting active listener {_activeListener.GetType().Name} for MacSecondaryButtonInputTriggerListener in TryClaimActivation");
+                }
+                else
+                {
+                    MacLogger.WriteLog("NativeMac", $"Rejecting claim by {listener.GetType().Name} because {_activeListener.GetType().Name} is active until {_activeListenerExpiresAtUtc}");
+                    return false;
+                }
             }
 
             _activeListener = listener;
@@ -142,7 +171,16 @@ public sealed class MacGlobalInputTriggerListener : IGlobalInputTriggerListener
             if (_activeListener != null && !ReferenceEquals(_activeListener, listener))
             {
                 if (now < _activeListenerExpiresAtUtc)
-                    return false;
+                {
+                    if (listener is MacSecondaryButtonInputTriggerListener)
+                    {
+                        MacLogger.WriteLog("NativeMac", $"Preempting active listener {_activeListener.GetType().Name} for MacSecondaryButtonInputTriggerListener in TryAcceptActiveEvent");
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
 
                 _activeListener = listener;
             }
@@ -370,6 +408,17 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
 
     private void HandleRightButtonDown(IntPtr eventPtr)
     {
+        var flags = CGEventGetFlags(eventPtr);
+        var fnPressed = (flags & (1UL << 23)) != 0;
+
+        MacLogger.WriteLog("NativeMac", $"Secondary MouseDown, fnPressed={fnPressed}");
+
+        if (!fnPressed)
+        {
+            _rightButtonPressed = false;
+            return;
+        }
+
         _rightButtonPressed = true;
         _dragTriggered = false;
         _pressPoint = GetEventLocation(eventPtr);
@@ -543,6 +592,9 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
 
     [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     private static extern CGPoint CGEventGetLocation(IntPtr @event);
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern ulong CGEventGetFlags(IntPtr @event);
 
     private static ulong CGEventMaskBit(CGEventType type) => 1UL << (int)type;
 
@@ -1373,12 +1425,7 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 
     private static void LogBoot(string message)
     {
-        try
-        {
-            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
-            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [FnListener] {message}\n");
-        }
-        catch {}
+        MacLogger.WriteLog("FnListener", message);
     }
 
     private static bool RequestAccessibilityTrustPrompt()

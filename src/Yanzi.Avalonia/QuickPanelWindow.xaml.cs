@@ -158,6 +158,18 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         _isExecuting = true;
 
+        if (activation != null && activation.HasScreenPosition)
+        {
+            var position = new Point(activation.ScreenX!.Value - Position.X, activation.ScreenY!.Value - Position.Y);
+            if (IsOutsidePanel(position))
+            {
+                global::Yanzi.Avalonia.App.WriteLog($"[ui-panel] ExecuteSelectedFromHoldRelease: Cancelled because cursor was outside panel at {position.X},{position.Y}");
+                HidePanel();
+                ActiveTitle = "取消";
+                return;
+            }
+        }
+
         if (_activeItem?.Command != null)
         {
             ExecuteCommand(_activeItem.Command);
@@ -229,6 +241,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void Slot_PointerEntered(object? sender, PointerEventArgs e)
     {
+        if (_activeActivationSource != RadialMenuActivationSource.Unknown)
+            return;
+
         if (sender is Border { DataContext: RadialMenuItemViewModel item })
         {
             SetActiveItem(item);
@@ -237,6 +252,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void Slot_PointerExited(object? sender, PointerEventArgs e)
     {
+        if (_activeActivationSource != RadialMenuActivationSource.Unknown)
+            return;
+
         if (sender is Border { DataContext: RadialMenuItemViewModel item })
         {
             if (ReferenceEquals(_activeItem, item))

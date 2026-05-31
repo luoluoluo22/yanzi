@@ -604,6 +604,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
 
         _isExecuting = true;
+
+        if (activation != null && activation.HasScreenPosition)
+        {
+            var position = GetLocalActivationPoint(activation);
+            if (IsOutsideInteractiveArea(position))
+            {
+                global::Yanzi.Avalonia.App.WriteLog($"ExecuteSelectedFromHoldRelease: Cancelled because cursor was outside interactive area at {position.X},{position.Y}");
+                HideRadialMenu();
+                ActiveTitle = "取消";
+                return;
+            }
+        }
+
         if (_activeItem?.HasChildPage == true)
         {
             global::Yanzi.Avalonia.App.WriteLog("ExecuteSelectedFromHoldRelease: Child Page match!");
@@ -707,6 +720,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RadialSlot_PointerEntered(object? sender, PointerEventArgs e)
     {
+        if (_activeActivationSource == RadialMenuActivationSource.TrackpadGesture)
+            return;
+
         if (sender is Border { DataContext: RadialMenuItemViewModel item })
         {
             SetActiveItem(item);
@@ -716,6 +732,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RadialSlot_PointerExited(object? sender, PointerEventArgs e)
     {
+        if (_activeActivationSource == RadialMenuActivationSource.TrackpadGesture)
+            return;
+
         if (sender is Border { DataContext: RadialMenuItemViewModel item })
         {
             if (ReferenceEquals(_activeItem, item))

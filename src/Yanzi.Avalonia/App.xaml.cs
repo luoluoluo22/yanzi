@@ -21,17 +21,22 @@ public partial class App : Application
         AvaloniaXamlLoader.Load(this);
     }
 
+    private static readonly object _logLock = new();
+
     public static void WriteLog(string message)
     {
-        try
+        lock (_logLock)
         {
-            var logPath = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".yanzi_boot.log"
-            );
-            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}\n");
+            try
+            {
+                var logPath = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".yanzi_boot.log"
+                );
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}\n");
+            }
+            catch {}
         }
-        catch {}
     }
 
     public override void OnFrameworkInitializationCompleted()
