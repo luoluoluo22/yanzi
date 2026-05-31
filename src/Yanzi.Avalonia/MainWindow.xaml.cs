@@ -226,10 +226,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _globalInputTriggerListener.HotkeyTriggered += GlobalInputTriggerListener_HotkeyTriggered;
 
         // Start listener after the main Cocoa event loop is fully initialized on boot
+        global::Yanzi.Avalonia.App.WriteLog("MainWindow: Posting deferred _globalInputTriggerListener.Start() to Dispatcher at Normal priority...");
         global::Avalonia.Threading.Dispatcher.UIThread.Post(() => {
-            _globalInputTriggerListener.Start();
-            Console.WriteLine("[service] Listener started asynchronously after AppKit loop active");
-        }, global::Avalonia.Threading.DispatcherPriority.Background);
+            global::Yanzi.Avalonia.App.WriteLog("MainWindow: Dispatcher deferred callback executing, calling _globalInputTriggerListener.Start()...");
+            try
+            {
+                _globalInputTriggerListener.Start();
+                global::Yanzi.Avalonia.App.WriteLog("MainWindow: _globalInputTriggerListener.Start() completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                global::Yanzi.Avalonia.App.WriteLog($"MainWindow ERROR: _globalInputTriggerListener.Start() failed: {ex.GetType().Name} - {ex.Message}\nStack:{ex.StackTrace}");
+            }
+        }, global::Avalonia.Threading.DispatcherPriority.Normal);
 
         Closed += MainWindow_Closed;
         Closed += (s, e) => {

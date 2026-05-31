@@ -214,22 +214,52 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
         if (_isEnabled)
             return;
 
+        try
+        {
+            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] Starting MacSecondaryButtonInputTriggerListener...\n");
+        }
+        catch {}
+
         _eventTap = CreateEventTap();
+        
+        try
+        {
+            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacSecondaryButton CreateEventTap returned: {_eventTap}\n");
+        }
+        catch {}
+
         if (_eventTap == IntPtr.Zero)
         {
             Console.WriteLine("Failed to create event tap");
             return;
         }
 
-        var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, CFRunLoopModeDefaultMode);
-        CFRelease(runLoopSource);
+        try
+        {
+            var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, CFRunLoopModeDefaultMode);
+            CFRelease(runLoopSource);
 
-        CGEventTapEnable(_eventTap, true);
+            CGEventTapEnable(_eventTap, true);
 
-        _isEnabled = true;
-        Console.WriteLine("Mac secondary-button trigger listener started");
-        LogInput($"settings secondaryLongPress={_settings.EnableSecondaryButtonLongPress}, secondaryDrag={_settings.EnableSecondaryButtonDrag}");
+            _isEnabled = true;
+            Console.WriteLine("Mac secondary-button trigger listener started");
+            LogInput($"settings secondaryLongPress={_settings.EnableSecondaryButtonLongPress}, secondaryDrag={_settings.EnableSecondaryButtonDrag}");
+            
+            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacSecondaryButton listener started and registered successfully!\n");
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac ERROR] MacSecondaryButton Start Failed: {ex.GetType().Name} - {ex.Message}\nStack: {ex.StackTrace}\n");
+            }
+            catch {}
+        }
     }
 
     public void Stop()
@@ -569,11 +599,21 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         if (_isEnabled)
             return;
 
+        try
+        {
+            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] Starting MacFnKeyInputTriggerListener...\n");
+        }
+        catch {}
+
         if (System.OperatingSystem.IsMacOS())
         {
             try
             {
-                if (!AXIsProcessTrusted())
+                bool trusted = AXIsProcessTrusted();
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] AXIsProcessTrusted check: {trusted}\n");
+                if (!trusted)
                 {
                     Console.WriteLine("⚠️ [WARNING] 燕子启动器未获得 macOS 辅助功能 (Accessibility) 权限！全局快捷键和简写指令膨胀功能将无法工作。请在：系统设置 -> 隐私与安全 -> 辅助功能 中启用 燕子启动器 (Yanzi)！");
                 }
@@ -581,24 +621,52 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed to check AXIsProcessTrusted: {ex.Message}");
+                try
+                {
+                    var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+                    System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac ERROR] AXIsProcessTrusted failed: {ex.Message}\n");
+                }
+                catch {}
             }
         }
 
         _eventTap = CreateEventTap();
+        try
+        {
+            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacFnKey CreateEventTap returned: {_eventTap}, isTapActiveInterception={_isTapActiveInterception}\n");
+        }
+        catch {}
+
         if (_eventTap == IntPtr.Zero)
         {
             Console.WriteLine("Failed to create Fn key event tap");
             return;
         }
 
-        var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, CFRunLoopModeDefaultMode);
-        CFRelease(runLoopSource);
+        try
+        {
+            var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, CFRunLoopModeDefaultMode);
+            CFRelease(runLoopSource);
 
-        CGEventTapEnable(_eventTap, true);
+            CGEventTapEnable(_eventTap, true);
 
-        _isEnabled = true;
-        Console.WriteLine("Mac Fn key trigger listener started");
+            _isEnabled = true;
+            Console.WriteLine("Mac Fn key trigger listener started");
+            
+            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacFnKey listener started and registered successfully!\n");
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac ERROR] MacFnKey Start Failed: {ex.GetType().Name} - {ex.Message}\nStack: {ex.StackTrace}\n");
+            }
+            catch {}
+        }
     }
 
     public void Stop()
