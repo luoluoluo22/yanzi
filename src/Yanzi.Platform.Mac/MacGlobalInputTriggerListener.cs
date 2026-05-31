@@ -239,7 +239,7 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
         try
         {
             var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, CFRunLoopModeDefaultMode);
+            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, CFRunLoopModeDefaultMode);
             CFRelease(runLoopSource);
 
             CGEventTapEnable(_eventTap, true);
@@ -522,6 +522,9 @@ internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTrigg
     private static extern IntPtr CFRunLoopGetCurrent();
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern IntPtr CFRunLoopGetMain();
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern void CFRunLoopAddSource(IntPtr runLoop, IntPtr source, IntPtr mode);
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
@@ -647,7 +650,7 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         try
         {
             var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, CFRunLoopModeDefaultMode);
+            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, CFRunLoopModeDefaultMode);
             CFRelease(runLoopSource);
 
             CGEventTapEnable(_eventTap, true);
@@ -740,6 +743,7 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 
     private void HandleFnStateChange(bool fnPressed, IntPtr eventRef)
     {
+        LogBoot($"HandleFnStateChange entered: fnPressed={fnPressed}, _fnKeyPressed={_fnKeyPressed}");
         if (fnPressed && !_fnKeyPressed)
         {
             _fnKeyPressed = true;
@@ -747,6 +751,7 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             _pressPoint = new Point(loc.X, loc.Y);
             _trackpadTouchDetected = false;
             _gestureTriggered = false;
+            LogBoot($"HandleFnStateChange: Fn Pressed! Registered press point at {loc.X:0},{loc.Y:0}");
             if (_settings.EnableInputDiagnostics)
                 Console.WriteLine($"[input] Fn key down registered at {loc.X:0},{loc.Y:0}");
         }
@@ -754,6 +759,7 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         {
             _fnKeyPressed = false;
             _fnLongPressTimer?.Stop();
+            LogBoot($"HandleFnStateChange: Fn Released! _gestureTriggered={_gestureTriggered}");
             if (_gestureTriggered)
             {
                 if (_settings.EnableInputDiagnostics)
@@ -791,6 +797,20 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         {
             var flags = CGEventGetFlags(eventRef);
             var fnPressed = (flags & (1UL << 23)) != 0;
+
+            if (type == CGEventType.FlagsChanged)
+            {
+                LogBoot($"Callback Event: type={type}, flags={flags:X}, fnPressed={fnPressed}, _fnKeyPressed={_fnKeyPressed}");
+            }
+            else if (type == CGEventType.KeyDown)
+            {
+                var keyCode = (ushort)CGEventGetIntegerValueField(eventRef, 9);
+                LogBoot($"Callback Event: type={type}, keyCode={keyCode}, keyName='{GetKeyName(keyCode)}', fnPressed={fnPressed}, _fnKeyPressed={_fnKeyPressed}");
+            }
+            else if (_fnKeyPressed)
+            {
+                LogBoot($"Callback Event while Fn held: type={type}, fnPressed={fnPressed}");
+            }
 
             if (type == CGEventType.KeyDown)
             {
@@ -1218,6 +1238,16 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         return new Point(point.X, point.Y);
     }
 
+    private static void LogBoot(string message)
+    {
+        try
+        {
+            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
+            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [FnListener] {message}\n");
+        }
+        catch {}
+    }
+
     public void Dispose()
     {
         Stop();
@@ -1284,6 +1314,9 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern IntPtr CFRunLoopGetCurrent();
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern IntPtr CFRunLoopGetMain();
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern void CFRunLoopAddSource(IntPtr runLoop, IntPtr source, IntPtr mode);
