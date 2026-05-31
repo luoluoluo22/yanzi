@@ -8,8 +8,8 @@ echo "Creating macOS App Bundle structure..."
 mkdir -p "$APP_NAME/Contents/MacOS"
 mkdir -p "$APP_NAME/Contents/Resources"
 
-echo "Copying application files..."
-cp -R "$PUBLISH_DIR/"* "$APP_NAME/Contents/MacOS/"
+echo "Copying application files using ditto to preserve relative symlinks..."
+ditto "$PUBLISH_DIR" "$APP_NAME/Contents/MacOS"
 
 echo "Placing Info.plist and yanzi.icns..."
 mv "$APP_NAME/Contents/MacOS/Info.plist" "$APP_NAME/Contents/Info.plist"

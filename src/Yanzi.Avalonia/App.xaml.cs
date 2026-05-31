@@ -41,18 +41,19 @@ public partial class App : Application
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
+                WriteLog("App OnFrameworkInitializationCompleted: Instantiating MainWindow...");
                 _mainWindow = new MainWindow(
                     CreateGlobalInputTriggerListenerFactory(),
                     CreateCommandActionExecutor());
-                WriteLog("App: MainWindow instantiated successfully");
+                WriteLog("App OnFrameworkInitializationCompleted: MainWindow instantiated successfully");
 
-                // Post assigning of MainWindow to after the desktop lifetime has finished starting,
-                // which prevents ClassicDesktopStyleApplicationLifetime from automatically calling Show() at startup.
-                global::Avalonia.Threading.Dispatcher.UIThread.Post(() => {
-                    WriteLog("App: Deferred Assigning MainWindow and Creating TrayIcon starting...");
-                    desktop.MainWindow = _mainWindow;
-                    CreateTrayIcon();
-                });
+                WriteLog("App OnFrameworkInitializationCompleted: Creating TrayIcon...");
+                CreateTrayIcon();
+                WriteLog("App OnFrameworkInitializationCompleted: CreateTrayIcon completed successfully.");
+            }
+            else
+            {
+                WriteLog("App OnFrameworkInitializationCompleted: ApplicationLifetime is NOT IClassicDesktopStyleApplicationLifetime!");
             }
         }
         catch (Exception ex)
@@ -60,7 +61,9 @@ public partial class App : Application
             WriteLog($"App OnFrameworkInitializationCompleted ERROR: {ex.GetType().Name} - {ex.Message}\nStack:{ex.StackTrace}");
         }
 
+        WriteLog("App OnFrameworkInitializationCompleted: Invoking base...");
         base.OnFrameworkInitializationCompleted();
+        WriteLog("App OnFrameworkInitializationCompleted: base invocation completed.");
     }
 
     private void CreateTrayIcon()
