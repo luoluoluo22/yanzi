@@ -5,6 +5,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <CodePage>65001</CodePage>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +18,7 @@
   <ItemGroup>
     <AvaloniaResource Include="**\*.xaml" />
     <AvaloniaResource Include="Assets\logo.png" />
+    <AvaloniaResource Include="Assets\logo_dark.png" />
   </ItemGroup>
 
   <ItemGroup>

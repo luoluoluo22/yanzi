@@ -23,6 +23,11 @@ public partial class RadialSlotActionWindow : Window
     private TextBox? SearchBoxControl { get; set; }
     private ListBox? ResultListControl { get; set; }
 
+    public RadialSlotActionWindow()
+        : this("搜寻/设置", _ => Array.Empty<CommandItem>(), _ => {}, () => {}, () => {}, () => {}, false, false)
+    {
+    }
+
     public RadialSlotActionWindow(
         string title,
         Func<string, IReadOnlyList<CommandItem>> commandProvider,

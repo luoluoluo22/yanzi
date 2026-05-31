@@ -21,6 +21,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly IGlobalInputTriggerListenerFactory _globalInputTriggerListenerFactory;
     private readonly ICommandActionExecutor _commandActionExecutor;
     private IGlobalInputTriggerListener? _globalInputTriggerListener;
+    private QuickPanelWindow? _quickPanel;
+    private LauncherWindow? _launcherWindow;
+
+    public ClipboardMonitorService ClipboardMonitor { get; private set; } = null!;
 
     private bool _canPointerCancel;
     private RadialMenuActivationSource _activeActivationSource = RadialMenuActivationSource.Unknown;
@@ -69,6 +73,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _globalInputTriggerListener.ActivationRequested -= GlobalInputTriggerListener_ActivationRequested;
             _globalInputTriggerListener.ActivationUpdated -= GlobalInputTriggerListener_ActivationUpdated;
             _globalInputTriggerListener.ActivationReleased -= GlobalInputTriggerListener_ActivationReleased;
+            _globalInputTriggerListener.LauncherRequested -= GlobalInputTriggerListener_LauncherRequested;
+            _globalInputTriggerListener.HotkeyTriggered -= GlobalInputTriggerListener_HotkeyTriggered;
             _globalInputTriggerListener.Stop();
             _globalInputTriggerListener.Dispose();
         }
@@ -77,6 +83,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _globalInputTriggerListener.ActivationRequested += GlobalInputTriggerListener_ActivationRequested;
         _globalInputTriggerListener.ActivationUpdated += GlobalInputTriggerListener_ActivationUpdated;
         _globalInputTriggerListener.ActivationReleased += GlobalInputTriggerListener_ActivationReleased;
+        _globalInputTriggerListener.LauncherRequested += GlobalInputTriggerListener_LauncherRequested;
+        _globalInputTriggerListener.HotkeyTriggered += GlobalInputTriggerListener_HotkeyTriggered;
 
         if (shouldStart)
         {
@@ -179,7 +187,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _inputTriggerSettings = new GlobalInputTriggerSettings
         {
-            LongPressThresholdMs = 500,
+            LongPressThresholdMs = 400,
             DragThresholdPixels = 30,
             EnableSecondaryButtonLongPress = true,
             EnableSecondaryButtonDrag = true,
@@ -195,6 +203,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
 
         _radialMenuService = new RadialMenuService(GetDefaultCommands, _radialSettings);
+        _quickPanel = new QuickPanelWindow(_radialSettings, _commandActionExecutor, this);
+        
+        // Instantiate and start background Clipboard monitoring
+        ClipboardMonitor = new ClipboardMonitorService(this);
+        ClipboardMonitor.Start();
+        
+        _launcherWindow = new LauncherWindow(_commandActionExecutor, this);
+        RefreshSnippetAbbreviations();
         
         DataContext = this;
 
@@ -207,9 +223,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _globalInputTriggerListener.ActivationRequested += GlobalInputTriggerListener_ActivationRequested;
         _globalInputTriggerListener.ActivationUpdated += GlobalInputTriggerListener_ActivationUpdated;
         _globalInputTriggerListener.ActivationReleased += GlobalInputTriggerListener_ActivationReleased;
+        _globalInputTriggerListener.LauncherRequested += GlobalInputTriggerListener_LauncherRequested;
+        _globalInputTriggerListener.HotkeyTriggered += GlobalInputTriggerListener_HotkeyTriggered;
         _globalInputTriggerListener.Start();
 
         Closed += MainWindow_Closed;
+        Closed += (s, e) => {
+            ClipboardMonitor.Stop();
+            _quickPanel?.Close();
+            _launcherWindow?.Close();
+        };
     }
 
     private void InitializeComponent()
@@ -229,6 +252,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _globalInputTriggerListener.ActivationRequested -= GlobalInputTriggerListener_ActivationRequested;
             _globalInputTriggerListener.ActivationUpdated -= GlobalInputTriggerListener_ActivationUpdated;
             _globalInputTriggerListener.ActivationReleased -= GlobalInputTriggerListener_ActivationReleased;
+            _globalInputTriggerListener.LauncherRequested -= GlobalInputTriggerListener_LauncherRequested;
         }
 
         _globalInputTriggerListener?.Stop();
@@ -291,19 +315,154 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
     }
 
+    public void ShowQuickPanelFromTray()
+    {
+        _quickPanel?.ShowPanel(null);
+    }
+
+    public void ShowLauncherFromTray()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(ShowLauncherFromTray);
+            return;
+        }
+
+        if (_launcherWindow != null)
+        {
+            _launcherWindow.Show();
+            _launcherWindow.Activate();
+            _launcherWindow.FindControl<TextBox>("SearchInput")?.Focus();
+        }
+    }
+
+    private void GlobalInputTriggerListener_LauncherRequested(object? sender, EventArgs e)
+    {
+        ShowLauncher();
+    }
+
+    private void GlobalInputTriggerListener_HotkeyTriggered(object? sender, HotkeyTriggeredEventArgs e)
+    {
+        if (string.IsNullOrEmpty(e.Hotkey))
+            return;
+
+        var normalizedPressed = NormalizeHotkey(e.Hotkey);
+
+        // Gather all default and custom command items
+        var commands = new List<CommandItem>();
+        
+        if (_launcherWindow != null)
+        {
+            commands.AddRange(_launcherWindow.GetCustomExtensions());
+        }
+
+        commands.AddRange(GetRadialMenuCommandCandidates(string.Empty));
+
+        var match = commands.FirstOrDefault(cmd => 
+            !string.IsNullOrEmpty(cmd.GlobalHotkey) && 
+            NormalizeHotkey(cmd.GlobalHotkey) == normalizedPressed);
+
+        if (match != null)
+        {
+            e.Handled = true;
+            
+            // Execute on background task so we do not block event tap thread
+            Task.Run(() =>
+            {
+                try
+                {
+                    _commandActionExecutor.Execute(match);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Global hotkey execution failed: {ex.Message}");
+                }
+            });
+        }
+    }
+
+    private static string NormalizeHotkey(string hotkey)
+    {
+        var parts = hotkey.Trim().ToLowerInvariant().Split('+');
+        var modifiers = new HashSet<string>();
+        string key = string.Empty;
+
+        foreach (var p in parts)
+        {
+            if (p == "cmd" || p == "command" || p == "⌘") modifiers.Add("cmd");
+            else if (p == "alt" || p == "opt" || p == "option" || p == "⌥") modifiers.Add("alt");
+            else if (p == "ctrl" || p == "control" || p == "⌃") modifiers.Add("ctrl");
+            else if (p == "shift" || p == "⇧") modifiers.Add("shift");
+            else key = p;
+        }
+
+        var sorted = new List<string>();
+        if (modifiers.Contains("cmd")) sorted.Add("cmd");
+        if (modifiers.Contains("ctrl")) sorted.Add("ctrl");
+        if (modifiers.Contains("alt")) sorted.Add("alt");
+        if (modifiers.Contains("shift")) sorted.Add("shift");
+        if (!string.IsNullOrEmpty(key)) sorted.Add(key);
+
+        return string.Join("+", sorted);
+    }
+
+    public void ShowLauncher()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(ShowLauncher);
+            return;
+        }
+
+        if (_launcherWindow == null)
+            return;
+
+        if (_launcherWindow.IsVisible)
+        {
+            _launcherWindow.Hide();
+        }
+        else
+        {
+            _launcherWindow.Show();
+            _launcherWindow.Activate();
+            _launcherWindow.FindControl<TextBox>("SearchInput")?.Focus();
+        }
+    }
+
     private void GlobalInputTriggerListener_ActivationRequested(object? sender, RadialMenuActivationEventArgs e)
     {
-        ShowRadialMenu(e);
+        if (e.IsLongPress)
+        {
+            _quickPanel?.ShowPanel(e);
+        }
+        else
+        {
+            ShowRadialMenu(e);
+        }
     }
 
     private void GlobalInputTriggerListener_ActivationReleased(object? sender, RadialMenuActivationEventArgs e)
     {
-        ExecuteSelectedFromHoldRelease(e);
+        if (_quickPanel != null && _quickPanel.IsVisible)
+        {
+            // Do not close the quick panel when releasing right click hold
+        }
+        else
+        {
+            ExecuteSelectedFromHoldRelease(e);
+        }
     }
 
     private void GlobalInputTriggerListener_ActivationUpdated(object? sender, RadialMenuActivationEventArgs e)
     {
-        UpdateSelectionFromActivation(e);
+        if (_quickPanel != null && _quickPanel.IsVisible)
+        {
+            _quickPanel.UpdateSelectionFromActivation(e);
+        }
+        else
+        {
+            UpdateSelectionFromActivation(e);
+        }
     }
 
     private void ShowRadialMenu(RadialMenuActivationEventArgs? activation = null)
@@ -1086,6 +1245,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var normalized = degrees % 360;
         return normalized < 0 ? normalized + 360 : normalized;
+    }
+
+    public void RefreshSnippetAbbreviations()
+    {
+        if (_globalInputTriggerListener == null)
+            return;
+
+        var abbreviations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (_launcherWindow != null)
+        {
+            var customExts = _launcherWindow.GetCustomExtensions();
+            foreach (var ext in customExts)
+            {
+                if (!string.IsNullOrEmpty(ext.Abbreviation) && !string.IsNullOrEmpty(ext.SnippetText))
+                {
+                    abbreviations[ext.Abbreviation.Trim()] = ext.SnippetText;
+                }
+            }
+        }
+
+        _globalInputTriggerListener.UpdateAbbreviations(abbreviations);
+        Console.WriteLine($"[snippet] Refreshed {abbreviations.Count} abbreviation mappings globally.");
     }
 }
 

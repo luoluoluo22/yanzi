@@ -50,6 +50,26 @@
                         </DockPanel>
                     </Border>
                     
+                    <!-- Launcher Hotkey Settings -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="主启动器快捷键" Foreground="White" FontSize="14" FontWeight="Medium"/>
+                            <TextBlock Text="设置全局唤醒主启动器的快捷键" Foreground="#80FFFFFF" FontSize="10"/>
+                            <TextBlock x:Name="AccessibilityWarning" 
+                                       Text="⚠️ 燕子启动器未获得 macOS 辅助功能 (Accessibility) 权限，快捷键可能不起作用。请在系统设置 -> 隐私与安全 -> 辅助功能 中启用它。" 
+                                       Foreground="#FFF87171" 
+                                       FontSize="10" 
+                                       TextWrapping="Wrap" 
+                                       Margin="0,4,0,0" 
+                                       IsVisible="False"/>
+                            
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBox x:Name="LauncherHotkeyInput" Grid.Column="0" Watermark="例如: alt+space, cmd+space" Foreground="White" Background="#20000000" BorderBrush="#30FFFFFF" BorderThickness="1" CornerRadius="6" VerticalAlignment="Center" Padding="8,6"/>
+                                <Button x:Name="RecordButton" Grid.Column="1" Content="录制" Click="RecordHotkey_Click" Margin="8,0,0,0" Width="60" HorizontalContentAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Mouse Settings -->
                     <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
                         <StackPanel Spacing="12">

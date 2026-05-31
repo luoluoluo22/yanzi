@@ -39,8 +39,23 @@ internal sealed class MacPrivateMultitouchInputTriggerListener : IGlobalInputTri
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationRequested;
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationUpdated;
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationReleased;
+    public event EventHandler? LauncherRequested
+    {
+        add { }
+        remove { }
+    }
+
+    public event EventHandler<HotkeyTriggeredEventArgs>? HotkeyTriggered
+    {
+        add { }
+        remove { }
+    }
 
     public bool IsAvailable => OperatingSystem.IsMacOS() && File.Exists(FrameworkPath);
+
+    public void UpdateAbbreviations(Dictionary<string, string> abbreviations)
+    {
+    }
 
     public void Start()
     {

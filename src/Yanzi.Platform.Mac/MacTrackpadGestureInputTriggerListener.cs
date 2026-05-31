@@ -38,6 +38,21 @@ internal sealed class MacTrackpadGestureInputTriggerListener : IGlobalInputTrigg
         add { }
         remove { }
     }
+    public event EventHandler? LauncherRequested
+    {
+        add { }
+        remove { }
+    }
+
+    public event EventHandler<HotkeyTriggeredEventArgs>? HotkeyTriggered
+    {
+        add { }
+        remove { }
+    }
+
+    public void UpdateAbbreviations(Dictionary<string, string> abbreviations)
+    {
+    }
 
     public void Start()
     {

@@ -15,6 +15,7 @@
         ExtendClientAreaToDecorationsHint="True"
         ShowInTaskbar="False"
         ShowActivated="False"
+        IsVisible="False"
         Topmost="True"
         Focusable="False"
         PointerPressed="Window_PointerPressed"

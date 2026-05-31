@@ -16,6 +16,32 @@ public sealed class MacCommandActionExecutor : ICommandActionExecutor
             case CommandActionKind.LaunchApplication:
                 LaunchApplication(command.ApplicationName);
                 break;
+            case CommandActionKind.AppleScript:
+                RunAppleScript(command.ScriptSource);
+                break;
+        }
+    }
+
+    private static void RunAppleScript(string? scriptSource)
+    {
+        if (string.IsNullOrWhiteSpace(scriptSource))
+            return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "/usr/bin/osascript",
+                ArgumentList = { "-e", scriptSource },
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to run AppleScript: {ex}");
         }
     }
 
