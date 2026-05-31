@@ -71,9 +71,8 @@ public partial class App : Application
         WriteLog("CreateTrayIcon: Starting...");
         try
         {
-            bool isDarkMode = !System.OperatingSystem.IsMacOS() || IsMacSystemDarkMode();
-            string iconName = isDarkMode ? "logo.png" : "logo_dark.png";
-            WriteLog($"CreateTrayIcon: isDarkMode={isDarkMode}, iconName={iconName}");
+            string iconName = "logo.png";
+            WriteLog($"CreateTrayIcon: Using static white iconName={iconName}");
             
             var logoUri = new Uri($"avares://Yanzi.Avalonia/Assets/{iconName}");
             WriteLog($"CreateTrayIcon: loading Uri={logoUri}");
@@ -142,75 +141,11 @@ public partial class App : Application
             
             UpdateTrayMenuState();
             WriteLog("CreateTrayIcon: UpdateTrayMenuState completed");
-
-            // Start auto theme detection timer on macOS
-            if (System.OperatingSystem.IsMacOS())
-            {
-                WriteLog("CreateTrayIcon: Starting macOS Themevariant auto detection timer...");
-                var timer = new global::Avalonia.Threading.DispatcherTimer
-                {
-                    Interval = TimeSpan.FromSeconds(2.5)
-                };
-                bool lastMode = isDarkMode;
-                timer.Tick += (s, e) =>
-                {
-                    bool currentMode = IsMacSystemDarkMode();
-                    if (currentMode != lastMode)
-                    {
-                        WriteLog($"CreateTrayIcon Timer: Theme variant changed from {lastMode} to {currentMode}");
-                        lastMode = currentMode;
-                        UpdateTrayIcon(currentMode);
-                    }
-                };
-                timer.Start();
-                WriteLog("CreateTrayIcon: Themevariant auto detection timer started successfully");
-            }
         }
         catch (Exception ex)
         {
             WriteLog($"CreateTrayIcon ERROR: {ex.GetType().Name} - {ex.Message}\nStack Trace:\n{ex.StackTrace}");
             Console.WriteLine($"Failed to create TrayIcon: {ex.Message}");
-        }
-    }
-
-    private void UpdateTrayIcon(bool isDarkMode)
-    {
-        if (_trayIcon == null) return;
-        try
-        {
-            WriteLog($"UpdateTrayIcon: Updating tray icon to isDarkMode={isDarkMode}...");
-            string iconName = isDarkMode ? "logo.png" : "logo_dark.png";
-            var logoUri = new Uri($"avares://Yanzi.Avalonia/Assets/{iconName}");
-            using var stream = AssetLoader.Open(logoUri);
-            var bitmap = new global::Avalonia.Media.Imaging.Bitmap(stream);
-            _trayIcon.Icon = new WindowIcon(bitmap);
-            WriteLog("UpdateTrayIcon: TrayIcon updated successfully");
-        }
-        catch (Exception ex)
-        {
-            WriteLog($"UpdateTrayIcon ERROR: {ex.GetType().Name} - {ex.Message}\nStack:{ex.StackTrace}");
-            Console.WriteLine($"Failed to update tray icon: {ex.Message}");
-        }
-    }
-
-    private static bool IsMacSystemDarkMode()
-    {
-        try
-        {
-            using var process = new System.Diagnostics.Process();
-            process.StartInfo.FileName = "defaults";
-            process.StartInfo.Arguments = "read -g AppleInterfaceStyle";
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.CreateNoWindow = true;
-            process.Start();
-            string output = process.StandardOutput.ReadToEnd().Trim();
-            process.WaitForExit();
-            return output.Equals("Dark", StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return false;
         }
     }
 
