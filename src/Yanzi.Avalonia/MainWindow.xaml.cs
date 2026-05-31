@@ -523,6 +523,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void GlobalInputTriggerListener_ActivationReleased(object? sender, RadialMenuActivationEventArgs e)
     {
+        global::Yanzi.Avalonia.App.WriteLog($"GlobalInputTriggerListener_ActivationReleased received: Source={e.Source}, _quickPanelIsVisible={_quickPanel?.IsVisible}");
         if (_quickPanel != null && _quickPanel.IsVisible)
         {
             // Do not close the quick panel when releasing right click hold
@@ -597,12 +598,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        global::Yanzi.Avalonia.App.WriteLog($"ExecuteSelectedFromHoldRelease entered: _isExecuting={_isExecuting}, _activeItem={_activeItem?.Title ?? "null"}, IsEmpty={_activeItem?.IsEmpty}, HasCommand={_activeItem?.Command != null}");
+
         if (_isExecuting)
             return;
 
         _isExecuting = true;
         if (_activeItem?.HasChildPage == true)
         {
+            global::Yanzi.Avalonia.App.WriteLog("ExecuteSelectedFromHoldRelease: Child Page match!");
             BuildNestedRingForItem(_activeItem);
             NotifyRadialBindings();
             _isExecuting = false;
@@ -611,17 +615,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (_activeItem?.Command != null)
         {
+            global::Yanzi.Avalonia.App.WriteLog($"ExecuteSelectedFromHoldRelease: Executing command {_activeItem.Command.Title}");
             ExecuteCommand(_activeItem.Command);
             return;
         }
 
         if (_activeItem != null && _activeItem.IsEmpty)
         {
+            global::Yanzi.Avalonia.App.WriteLog("ExecuteSelectedFromHoldRelease: Empty slot match!");
             OpenSlotActionWindow(_activeItem);
             _isExecuting = false;
             return;
         }
 
+        global::Yanzi.Avalonia.App.WriteLog("ExecuteSelectedFromHoldRelease: No match, hiding radial menu");
         HideRadialMenu();
         
         ActiveTitle = "取消";
