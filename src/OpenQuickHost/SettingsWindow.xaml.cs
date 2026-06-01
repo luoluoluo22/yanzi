@@ -391,7 +391,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"SettingsWindow: AutoCheckUpdateOnAboutOpen failed: {ex.Message}");
+            HostAssets.AppendLog($"SettingsWindow: AutoCheckUpdateOnAboutOpen failed: {ex}");
         }
         finally
         {
@@ -425,7 +425,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show($"检测更新发生异常: {ex.Message}", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            HostAssets.AppendLog($"SettingsWindow: ManualCheckForUpdates failed: {ex}");
+            System.Windows.MessageBox.Show(
+                $"检测更新发生异常: {ex.Message}\n\n详细诊断日志已记录至:\n{HostAssets.HostLogPath}\n\n如需反馈，请将该日志文件一并发送给开发者。",
+                "更新提示",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
         }
         finally
         {
@@ -456,7 +461,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show($"更新包下载发生异常: {ex.Message}", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            HostAssets.AppendLog($"SettingsWindow: DownloadUpdates failed: {ex}");
+            System.Windows.MessageBox.Show(
+                $"更新包下载发生异常: {ex.Message}\n\n详细诊断日志已记录至:\n{HostAssets.HostLogPath}\n\n如需反馈，请将该日志文件一并发送给开发者。",
+                "更新提示",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
         }
         finally
         {
