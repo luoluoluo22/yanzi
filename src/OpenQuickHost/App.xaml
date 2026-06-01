@@ -1,4 +1,4 @@
-﻿<Application x:Class="OpenQuickHost.App"
+<Application x:Class="OpenQuickHost.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:OpenQuickHost"
@@ -174,7 +174,7 @@
                         <shell:WindowChrome CaptionHeight="0"
                                             ResizeBorderThickness="6"
                                             CornerRadius="12"
-                                            GlassFrameThickness="0" />
+                                            GlassFrameThickness="1" />
                     </Setter.Value>
                 </Setter>
             </Style>

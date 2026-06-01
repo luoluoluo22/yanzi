@@ -1,4 +1,4 @@
-﻿<Window x:Class="OpenQuickHost.SettingsWindow"
+<Window x:Class="OpenQuickHost.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -22,7 +22,7 @@
         <shell:WindowChrome CaptionHeight="0"
                             ResizeBorderThickness="6"
                             CornerRadius="12"
-                            GlassFrameThickness="0" />
+                            GlassFrameThickness="1" />
     </shell:WindowChrome.WindowChrome>
     
     <Window.Resources>
@@ -403,7 +403,7 @@
             Margin="1"
             CornerRadius="12"
             Background="{DynamicResource BrushBG}"
-            BorderBrush="#22FFFFFF"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1"
             PreviewMouseLeftButtonDown="WindowFrame_PreviewMouseLeftButtonDown">
         <Grid>
