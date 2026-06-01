@@ -456,17 +456,51 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             else
             {
                 UpdateDownloaded = false;
-                System.Windows.MessageBox.Show("增量文件下载合并失败，可能是由于网络连接异常，您可以重试下载或前往下载页下载完整安装包。", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                var result = System.Windows.MessageBox.Show(
+                    "增量文件下载合并失败，可能是由于网络连接异常。\n\n是否需要手动前往浏览器发布页面下载最新完整安装包？", 
+                    "更新提示", 
+                    System.Windows.MessageBoxButton.YesNo, 
+                    System.Windows.MessageBoxImage.Warning);
+                if (result == System.Windows.MessageBoxResult.Yes)
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "https://github.com/luoluoluo22/yanzi/releases",
+                            UseShellExecute = true
+                        });
+                    }
+                    catch (Exception exLaunch)
+                    {
+                        HostAssets.AppendLog($"SettingsWindow: Failed to launch release URL: {exLaunch.Message}");
+                    }
+                }
             }
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog($"SettingsWindow: DownloadUpdates failed: {ex}");
-            System.Windows.MessageBox.Show(
-                $"更新包下载发生异常: {ex.Message}\n\n详细诊断日志已记录至:\n{HostAssets.HostLogPath}\n\n如需反馈，请将该日志文件一并发送给开发者。",
+            var result = System.Windows.MessageBox.Show(
+                $"更新包下载发生异常: {ex.Message}\n\n是否需要手动前往浏览器发布页面下载最新完整安装包？",
                 "更新提示",
-                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxButton.YesNo,
                 System.Windows.MessageBoxImage.Warning);
+            if (result == System.Windows.MessageBoxResult.Yes)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "https://github.com/luoluoluo22/yanzi/releases",
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception exLaunch)
+                {
+                    HostAssets.AppendLog($"SettingsWindow: Failed to launch release URL: {exLaunch.Message}");
+                }
+            }
         }
         finally
         {
