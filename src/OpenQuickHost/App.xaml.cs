@@ -20,23 +20,15 @@ public partial class App : WpfApplication
     private LocalAgentApiServer? _agentApiServer;
     private SingleInstanceService? _singleInstanceService;
     private bool _listenerServicesPaused;
+    private bool _isAppFullyInitialized;
 
     protected override void OnStartup(WpfStartupEventArgs e)
     {
-        // 必须最先执行，拦截 Velopack 的命令行钩子（如快捷方式生成、升级更新等）
+        // 1. 必须最先执行，拦截 Velopack 的命令行钩子（如快捷方式生成、升级更新等）
         Velopack.VelopackApp.Build().Run();
 
-        TrySetProcessDpiAwareness();
-        base.OnStartup(e);
-        DispatcherUnhandledException += App_DispatcherUnhandledException;
-        AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
-        TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
-        SyncConfigLoader.EnsureExampleFile();
-        var settings = AppSettingsStore.Load();
-        ApplyTheme(settings.ThemeMode);
-        SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
-        StartupRegistrationService.Apply(settings.LaunchAtStartup);
-        EverythingRuntimeService.EnsureStartedInBackground();
+        // 2. 立即执行单实例拦截，拒绝任何多开开销与初始化异常。
+        // 将此逻辑提到最前，不仅大幅降低了多实例点击时的 CPU/IO 损耗，更避免了多个进程并发做环境初始化（如读写配置、加载 Everything）所产生的死锁和异常崩溃。
         _singleInstanceService = new SingleInstanceService(SingleInstanceAppId);
         if (!_singleInstanceService.TryAcquirePrimaryInstance())
         {
@@ -64,6 +56,22 @@ public partial class App : WpfApplication
             return;
         }
 
+        // 3. 只有抢占到 Mutex 的唯一主实例，才进行后续复杂的环境配置初始化
+        TrySetProcessDpiAwareness();
+        base.OnStartup(e);
+        
+        // 绑定未处理异常捕获，开始进入核心初始化阶段
+        DispatcherUnhandledException += App_DispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
+
+        SyncConfigLoader.EnsureExampleFile();
+        var settings = AppSettingsStore.Load();
+        ApplyTheme(settings.ThemeMode);
+        SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
+        StartupRegistrationService.Apply(settings.LaunchAtStartup);
+        EverythingRuntimeService.EnsureStartedInBackground();
+
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
         try
@@ -86,6 +94,9 @@ public partial class App : WpfApplication
             StartLocalAgentApi(window, settings);
             _singleInstanceService.StartServer(message => HandleSecondaryLaunchMessageAsync(window, message));
             _ = HandleLaunchArgumentsAsync(window, e.Args);
+
+            // 4. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
+            _isAppFullyInitialized = true;
         }
         catch (Exception ex)
         {
@@ -222,7 +233,32 @@ public partial class App : WpfApplication
     private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
         HostAssets.AppendLog($"DispatcherUnhandledException: {e.Exception}");
-        e.Handled = true;
+        
+        if (!_isAppFullyInitialized)
+        {
+            // 如果在启动初始化阶段发生任何致命异常，我们绝对不能吞掉异常并任由其变成后台无窗口常驻僵尸进程，必须立刻退出
+            try
+            {
+                System.Windows.MessageBox.Show(
+                    $"燕子启动失败。\n\n错误原因: {e.Exception.Message}\n\n详细异常堆栈已记录至日志中，您可以通过查看以下文件进行排查：\n{HostAssets.HostLogPath}",
+                    "燕子 - 启动致命错误",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Error);
+            }
+            catch
+            {
+                // 忽略弹出本身的二次崩溃
+            }
+            finally
+            {
+                System.Environment.Exit(1);
+            }
+        }
+        else
+        {
+            // 只有当程序已经成功初始化并在运行状态时，我们才采取柔性容错机制，将异常标记为 Handled，以防程序闪退影响用户体验
+            e.Handled = true;
+        }
     }
 
     private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)

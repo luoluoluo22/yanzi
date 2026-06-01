@@ -20,14 +20,31 @@ public sealed class SingleInstanceService : IDisposable
 
     public bool TryAcquirePrimaryInstance()
     {
-        _mutex = new Mutex(initiallyOwned: true, _mutexName, out var createdNew);
-        if (!createdNew)
+        try
         {
-            _mutex.Dispose();
-            _mutex = null;
-        }
+            _mutex = new Mutex(initiallyOwned: true, _mutexName, out var createdNew);
+            if (!createdNew)
+            {
+                _mutex.Dispose();
+                _mutex = null;
+            }
 
-        return createdNew;
+            return createdNew;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // 如果已经被高权限（如以管理员身份运行）的实例创建了 Global Mutex，
+            // 当前非管理员的低权限实例在 new Mutex 时会抛出 UnauthorizedAccessException。
+            // 这明确意味着主实例已经在运行了，因此当前实例必然是次要实例。
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // 防御性拦截任何其他可能的系统互斥锁异常（例如 WaitHandleCannotBeOpenedException、IOException 等），
+            // 确保发生此类非致命异常时安全退火为次要实例，决不向上抛出导致生命周期腰斩。
+            HostAssets.AppendLog($"Mutex acquisition encountered unexpected exception: {ex.Message}");
+            return false;
+        }
     }
 
     public void StartServer(Func<string, Task> onMessageAsync)
