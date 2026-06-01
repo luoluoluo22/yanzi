@@ -39,12 +39,13 @@
                     Height="34"
                     CornerRadius="10"
                     HorizontalAlignment="Center"
-                    Background="{Binding AccentBrush}">
+                    ClipToBounds="True">
                 <Border.Effect>
                     <DropShadowEffect Color="#000000" BlurRadius="8" ShadowDepth="2" Opacity="0.32" />
                 </Border.Effect>
                 <Border.Style>
                     <Style TargetType="Border">
+                        <Setter Property="Background" Value="{Binding AccentBrush}" />
                         <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
                         <Setter Property="RenderTransform">
                             <Setter.Value>
@@ -59,13 +60,15 @@
                                     </Setter.Value>
                                 </Setter>
                             </DataTrigger>
+                            <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                <Setter Property="Background" Value="Transparent" />
+                            </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
                 <Grid>
                     <Image Source="{Binding IconSource}"
-                           Margin="3"
-                           Stretch="Uniform"
+                           Stretch="UniformToFill"
                            RenderOptions.BitmapScalingMode="HighQuality"
                            SnapsToDevicePixels="True"
                            Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />

@@ -668,9 +668,19 @@ public partial class AddJsonExtensionWindow
         SimpleModePanel.Visibility = Visibility.Collapsed;
         AdvancedModePanel.Visibility = Visibility.Visible;
         if (_isInitializing) return;
-        // 从简单表单刷新一遍 JSON
-        TryRefreshJsonFromHiddenForm();
+
+        if (!ShouldKeepCurrentAdvancedJson())
+        {
+            // 从简单表单刷新一遍 JSON。自定义协议 JSON 不能走这里，否则会丢掉简单表单不认识的字段。
+            TryRefreshJsonFromHiddenForm();
+        }
+
         UpdatePreview();
+    }
+
+    private bool ShouldKeepCurrentAdvancedJson()
+    {
+        return _isEditMode && ShouldOpenAdvancedEditorForExistingJson(ManualJsonInputBox.Text);
     }
 
     private async void HeaderTestButton_Click(object sender, RoutedEventArgs e)
@@ -1726,19 +1736,10 @@ public partial class AddJsonExtensionWindow
             _suppressPreviewSync = false;
         }
 
-        // 主题色应用到预览图标背景
-        var hex = AccentHexBox.Text?.Trim();
-        if (!string.IsNullOrWhiteSpace(hex))
+        // 图片图标需要铺满透明底；只有矢量/文字图标使用主题色底。
+        if (IconPreviewImage?.Visibility != Visibility.Visible)
         {
-            try
-            {
-                var color = (WpfColor)WpfColorConverter.ConvertFromString(NormalizeAccentHexOrDefault(hex));
-                PreviewIconHost.Background = new WpfSolidColorBrush(color);
-            }
-            catch
-            {
-                // ignore parse failure
-            }
+            IconPreviewHostBackgroundToAccent();
         }
     }
 

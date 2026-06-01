@@ -6,6 +6,7 @@
 - C# 动作扩展
 - PowerShell 脚本扩展
 - 宿主视图扩展
+- 应用型 WebView 扩展
 
 脚本扩展又分两种入口模式：
 
@@ -175,6 +176,74 @@ Extensions/
   }
 }
 ```
+
+## 应用型 WebView 扩展
+
+复杂、小应用型扩展优先使用 `app.type = webview`。它会打开独立 WebView2 窗口，加载扩展目录内的 HTML，并注入 `window.yanzi` 桥接对象。是否本地优先、是否同步，由 `app.storage` 描述。
+
+适合：
+
+- 笔记、待办、书签、代码片段、阅读列表
+- 需要漂亮界面、富文本、复杂列表、快捷键和前端生态的应用
+- 本地优先、后台坚果云 / WebDAV 同步的小应用
+
+目录结构示例：
+
+```text
+Extensions/
+  notion-like-notes/
+    manifest.json
+    app/
+      index.html
+      app.js
+      styles.css
+```
+
+最小 manifest：
+
+```json
+{
+  "id": "notion-like-notes",
+  "name": "独立笔记",
+  "version": "0.1.0",
+  "category": "应用",
+  "description": "local-first WebView 笔记应用。",
+  "keywords": ["笔记", "note", "notion"],
+  "icon": "mdi:note-text-outline",
+  "runtime": "web-app",
+  "app": {
+    "type": "webview",
+    "entry": "app/index.html",
+    "window": {
+      "width": 1180,
+      "height": 760,
+      "minWidth": 900,
+      "minHeight": 600
+    },
+    "storage": {
+      "mode": "local-first",
+      "engine": "files",
+      "sync": "webdav",
+      "namespace": "notes"
+    },
+    "bridge": {
+      "apis": ["storage", "sync", "env"]
+    }
+  },
+  "permissions": ["storage", "sync"]
+}
+```
+
+前端可用桥接 API：
+
+```js
+const page = await window.yanzi.storage.get("pages/page-1.json");
+await window.yanzi.storage.put("pages/page-1.json", JSON.stringify({ title: "首页" }));
+const files = await window.yanzi.storage.list("pages/");
+const notionToken = await window.yanzi.env.get("NOTION_TOKEN");
+```
+
+当前 `storage.put` 会先写本地，并在 WebDAV 开启时按 `scope=both` 入队同步。启动时建议优先读取本地数据，远端刷新放到后台做。
 
 ## 字段说明
 

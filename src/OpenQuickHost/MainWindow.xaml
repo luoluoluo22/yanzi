@@ -684,13 +684,21 @@
                                         Height="32"
                                         CornerRadius="8"
                                         ClipToBounds="True"
-                                        Background="{Binding AccentBrush}"
                                         VerticalAlignment="Center"
                                         Margin="0,0,12,0">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{Binding AccentBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <Grid>
                                         <Image Source="{Binding IconSource}"
-                                               Margin="3"
-                                               Stretch="Uniform"
+                                               Stretch="UniformToFill"
                                                RenderOptions.BitmapScalingMode="HighQuality"
                                                SnapsToDevicePixels="True"
                                                Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />

@@ -980,10 +980,13 @@ public static class ScriptExtensionRunner
 
     private static Dictionary<string, string?> CaptureRuntimeEnvironmentSnapshot()
     {
-        return RuntimeEnvironmentKeys.ToDictionary(
-            static key => key,
-            static key => Environment.GetEnvironmentVariable(key),
-            StringComparer.OrdinalIgnoreCase);
+        return RuntimeEnvironmentKeys
+            .Concat(AppEnvironmentVariableStore.GetEnvironmentNames())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                static key => key,
+                static key => Environment.GetEnvironmentVariable(key),
+                StringComparer.OrdinalIgnoreCase);
     }
 
     private static void RestoreRuntimeEnvironmentSnapshot(IReadOnlyDictionary<string, string?> snapshot)
@@ -1107,6 +1110,7 @@ public static class ScriptExtensionRunner
             : string.Empty);
         Environment.SetEnvironmentVariable("YANZI_AGENT_API_TOKEN", settings.AgentApiToken ?? string.Empty);
         Environment.SetEnvironmentVariable("YANZI_HOST_LOG_PATH", HostAssets.HostLogPath);
+        AppEnvironmentVariableStore.ApplyToEnvironment(Environment.SetEnvironmentVariable);
     }
 
     private static void ApplyRuntimeEnvironment(
@@ -1135,6 +1139,7 @@ public static class ScriptExtensionRunner
             : string.Empty;
         startInfo.Environment["YANZI_AGENT_API_TOKEN"] = settings.AgentApiToken ?? string.Empty;
         startInfo.Environment["YANZI_HOST_LOG_PATH"] = HostAssets.HostLogPath;
+        AppEnvironmentVariableStore.ApplyToEnvironment((name, value) => startInfo.Environment[name] = value ?? string.Empty);
     }
 
     private static string Quote(string value)

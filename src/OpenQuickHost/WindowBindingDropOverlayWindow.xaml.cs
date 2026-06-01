@@ -262,7 +262,9 @@ public partial class WindowBindingDropOverlayWindow : Window
             PreviewIconVector.Visibility = Visibility.Collapsed;
         }
 
-        PreviewIcon.Background = _command.AccentBrush ?? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x80, 0x3B, 0x82, 0xF6));
+        PreviewIcon.Background = _command.IconSource != null
+            ? System.Windows.Media.Brushes.Transparent
+            : _command.AccentBrush ?? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x80, 0x3B, 0x82, 0xF6));
 
         Canvas.SetLeft(PreviewIcon, Math.Clamp(placement.LeftDip - Left, 0, Math.Max(0, Width - 34)));
         Canvas.SetTop(PreviewIcon, Math.Clamp(placement.TopDip - Top, 0, Math.Max(0, Height - 34)));

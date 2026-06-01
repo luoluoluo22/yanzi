@@ -71,6 +71,7 @@ public static class ExtensionRecycleBinService
         var index = LoadIndex();
         index.Items.Add(recycleEntry);
         SaveIndex(index);
+        HostAssets.AppendLog($"Extension moved to recycle bin: id={recycleEntry.ExtensionId}, itemId={recycleEntry.ItemId}, title={recycleEntry.Title}");
         return recycleEntry;
     }
 

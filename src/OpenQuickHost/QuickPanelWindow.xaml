@@ -92,12 +92,20 @@
                     Height="16"
                     Margin="1"
                     CornerRadius="5"
-                    Background="{Binding AccentBrush}"
                     ClipToBounds="True">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{Binding AccentBrush}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                <Setter Property="Background" Value="Transparent" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Grid>
                     <Image Source="{Binding IconSource}"
                            Stretch="UniformToFill"
-                           Margin="1"
                            Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     <Viewbox Width="10"
                              Height="10"
@@ -453,6 +461,9 @@
                                                                     </Setter.Value>
                                                                 </Setter>
                                                             </DataTrigger>
+                                                            <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                                <Setter Property="Background" Value="Transparent"/>
+                                                            </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
                                                 </Border.Style>
@@ -489,7 +500,7 @@
                                                                 <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
                                                             </ItemsControl.ItemTemplate>
                                                         </ItemsControl>
-                                                        <Image Source="{Binding Icon}" Stretch="UniformToFill" Margin="2"
+                                                        <Image Source="{Binding Icon}" Stretch="UniformToFill"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         <Viewbox Width="20" Height="20"
@@ -687,6 +698,9 @@
                                                                     </Setter.Value>
                                                                 </Setter>
                                                             </DataTrigger>
+                                                            <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                                <Setter Property="Background" Value="Transparent"/>
+                                                            </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
                                                 </Border.Style>
@@ -721,7 +735,7 @@
                                                                 <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
                                                             </ItemsControl.ItemTemplate>
                                                         </ItemsControl>
-                                                        <Image Source="{Binding Icon}" Stretch="UniformToFill" Margin="2"
+                                                        <Image Source="{Binding Icon}" Stretch="UniformToFill"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         <Viewbox Width="20" Height="20"
@@ -997,6 +1011,9 @@
                                                                 </Setter.Value>
                                                             </Setter>
                                                         </DataTrigger>
+                                                        <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                            <Setter Property="Background" Value="Transparent"/>
+                                                        </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
@@ -1029,7 +1046,7 @@
                                                         <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
-                                                <Image Source="{Binding Icon}" Stretch="UniformToFill" Margin="2"
+                                                <Image Source="{Binding Icon}" Stretch="UniformToFill"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                                        Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                 <Viewbox Width="20" Height="20"

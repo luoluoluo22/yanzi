@@ -80,6 +80,16 @@ Hosted view fields:
 - `hostedView.actionType`
 - `hostedView.emptyState`
 
+Web app fields:
+
+- `app.type`
+- `app.entry`
+- `app.singleInstance`
+- `app.window.width`
+- `app.window.height`
+- `app.window.minWidth`
+- `app.window.minHeight`
+
 Read [references/manifest.md](references/manifest.md) when editing manifests.
 
 ## Script Execution

@@ -41,7 +41,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const uint ModNoRepeat = 0x4000;
     private const int WmHotKey = 0x0312;
     private const int WmDpiChanged = 0x02E0;
-    private const string CloudWebDavConfigId = "yanzi-webdav-settings";
+    private const string CloudPersonalSyncConfigId = "yanzi-personal-sync-settings";
+    private const string CloudLegacyWebDavConfigId = "yanzi-webdav-settings";
     private const string CloudQuickPanelConfigId = "yanzi-quickpanel-settings";
     private const string SearchScopeAll = "all";
     private const string SearchScopeExtension = "extension";
@@ -78,6 +79,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly WindowBoundExtensionsService _windowBoundExtensionsService;
     private readonly WindowSnapAssistService _windowSnapAssistService;
     private readonly DispatcherTimer _backgroundWebDavSyncTimer;
+    private readonly DispatcherTimer _backgroundWebDavSyncDelayTimer;
     private readonly DispatcherTimer _cloudReconnectTimer;
     private readonly DispatcherTimer _mobileMessagePollTimer;
     private readonly DispatcherTimer _fileSearchDebounceTimer;
@@ -85,6 +87,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private DateTimeOffset _lastFileSearchManualInitPromptAt = DateTimeOffset.MinValue;
     private bool _backgroundWebDavSyncRunning;
     private bool _backgroundWebDavSyncRequested;
+    private string? _pendingBackgroundWebDavSyncReason;
     private bool _cloudReconnectInProgress;
     private bool _mobileMessagePollRunning;
     private CancellationTokenSource? _mobileMessageBridgeCts;
@@ -145,6 +148,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Interval = TimeSpan.FromHours(6)
         };
         _backgroundWebDavSyncTimer.Tick += (_, _) => QueueBackgroundWebDavSync("timer");
+
+        _backgroundWebDavSyncDelayTimer = new DispatcherTimer();
+        _backgroundWebDavSyncDelayTimer.Tick += (_, _) =>
+        {
+            _backgroundWebDavSyncDelayTimer.Stop();
+            var reason = _pendingBackgroundWebDavSyncReason ?? "delayed";
+            _pendingBackgroundWebDavSyncReason = null;
+            QueueBackgroundWebDavSync($"delayed-{reason}", forceImmediate: true);
+        };
 
         _cloudReconnectTimer = new DispatcherTimer();
         _cloudReconnectTimer.Tick += CloudReconnectTimer_Tick;
@@ -1936,6 +1948,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task ExecuteCommandAsync(CommandItem runnable, string? explicitInput = null, string launchSource = "launcher")
     {
         var hasExternalInput = !string.IsNullOrWhiteSpace(explicitInput);
+        if (runnable.App != null)
+        {
+            RecordCommandUsage(runnable);
+            if (AppExtensionWindow.TryActivateExisting(runnable))
+            {
+                HostAssets.AppendRecent(runnable.Title);
+                LastRunMessage = $"已激活应用扩展：{runnable.Title}";
+                return;
+            }
+
+            var window = new AppExtensionWindow(runnable, explicitInput, launchSource)
+            {
+                ShowInTaskbar = true
+            };
+            window.Show();
+            HostAssets.AppendRecent(runnable.Title);
+            LastRunMessage = $"已打开应用扩展：{runnable.Title}";
+            return;
+        }
+
         if (runnable.HostedView != null)
         {
             RecordCommandUsage(runnable);
@@ -2908,6 +2940,7 @@ public sealed class CommandItem : INotifyPropertyChanged
         string? extensionId = null,
         string? declaredVersion = null,
         string? extensionDirectoryPath = null,
+        AppExtensionDefinition? app = null,
         IEnumerable<string>? queryPrefixes = null,
         string? queryTargetTemplate = null,
         HostedPluginViewDefinition? hostedView = null,
@@ -2941,6 +2974,7 @@ public sealed class CommandItem : INotifyPropertyChanged
             : extensionId;
         DeclaredVersion = string.IsNullOrWhiteSpace(declaredVersion) ? "0.1.0" : declaredVersion;
         ExtensionDirectoryPath = extensionDirectoryPath;
+        App = app;
         QueryPrefixes = queryPrefixes?.ToArray() ?? [];
         QueryTargetTemplate = queryTargetTemplate;
         HostedView = hostedView;
@@ -3005,6 +3039,8 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public string? ExtensionDirectoryPath { get; }
 
+    public AppExtensionDefinition? App { get; }
+
     public IReadOnlyList<string> QueryPrefixes { get; }
 
     public string? QueryTargetTemplate { get; }
@@ -3047,6 +3083,8 @@ public sealed class CommandItem : INotifyPropertyChanged
     public bool HasSearchProvider => SearchProvider != null;
 
     public bool HasHostedView => HostedView != null;
+
+    public bool HasApp => App != null;
 
     public bool HasScriptEntry =>
         !string.IsNullOrWhiteSpace(Runtime) &&
@@ -3236,6 +3274,21 @@ public sealed class CommandItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LocalPackagePath)));
     }
 }
+
+public sealed record AppExtensionDefinition(
+    string Type,
+    string Entry,
+    bool SingleInstance,
+    double? WindowWidth,
+    double? WindowHeight,
+    double? MinWindowWidth,
+    double? MinWindowHeight,
+    bool HideTitleBar,
+    string StorageMode,
+    string StorageEngine,
+    string Sync,
+    string? Namespace,
+    IReadOnlyList<string> BridgeApis);
 
 public enum CommandSource
 {

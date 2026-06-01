@@ -1097,8 +1097,8 @@
                                                     CornerRadius="10" Background="{StaticResource AccentBrush}"
                                                     ClipToBounds="True">
                                                 <Grid>
-                                                    <Image x:Name="IconPreviewImage" Width="28" Height="28"
-                                                           Stretch="Uniform"
+                                                    <Image x:Name="IconPreviewImage" Width="40" Height="40"
+                                                           Stretch="UniformToFill"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
                                                            Visibility="Collapsed" />
                                                     <Viewbox x:Name="IconPreviewVectorHost" Width="22" Height="22"

@@ -39,6 +39,14 @@ public static class ExtensionStorageService
                 return new ExtensionStorageReadResult(true, localValue, "local", localPath);
             }
 
+            var cloudValue = await TryReadCloudTextAsync(extensionId, normalizedKey, cancellationToken);
+            if (cloudValue != null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                await File.WriteAllTextAsync(localPath, cloudValue, Encoding.UTF8, cancellationToken);
+                return new ExtensionStorageReadResult(true, cloudValue, "cloud", localPath);
+            }
+
             return new ExtensionStorageReadResult(false, null, "none", localPath);
         }
 
@@ -156,34 +164,24 @@ public static class ExtensionStorageService
     private static async Task<string?> TryReadCloudTextAsync(string extensionId, string key, CancellationToken cancellationToken)
     {
         var settings = AppSettingsStore.Load();
-        if (!settings.EnableWebDavSync || string.IsNullOrWhiteSpace(settings.WebDavServerUrl))
+        if (!PersonalSyncBackendFactory.IsConfigured(settings))
         {
             return null;
         }
 
-        var service = new WebDavSyncService(settings);
-        if (!service.IsConfigured)
-        {
-            return null;
-        }
-
+        var service = new PersonalSyncService(settings);
         return await service.TryReadExtensionDataTextAsync(extensionId, key, cancellationToken);
     }
 
     private static async Task WriteCloudTextAsync(string extensionId, string key, string content, CancellationToken cancellationToken)
     {
         var settings = AppSettingsStore.Load();
-        if (!settings.EnableWebDavSync || string.IsNullOrWhiteSpace(settings.WebDavServerUrl))
+        if (!PersonalSyncBackendFactory.IsConfigured(settings))
         {
-            throw new InvalidOperationException("坚果云 / WebDAV 未完整配置，无法写入云端存储。");
+            throw new InvalidOperationException("个人同步未完整配置，无法写入云端存储。");
         }
 
-        var service = new WebDavSyncService(settings);
-        if (!service.IsConfigured)
-        {
-            throw new InvalidOperationException("坚果云 / WebDAV 未完整配置，无法写入云端存储。");
-        }
-
+        var service = new PersonalSyncService(settings);
         await service.WriteExtensionDataTextAsync(extensionId, key, content, cancellationToken);
     }
 

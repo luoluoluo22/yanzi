@@ -153,6 +153,25 @@
             <Setter Property="FontWeight" Value="Medium" />
         </Style>
 
+        <Style x:Key="InlineLinkButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF60A5FA" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock Text="{TemplateBinding Content}"
+                                   Foreground="{TemplateBinding Foreground}"
+                                   TextDecorations="Underline" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <DataTemplate x:Key="MouseTriggerOptionLabelTemplate">
             <TextBlock Text="{Binding Label}" Foreground="White" />
         </DataTemplate>
@@ -705,6 +724,67 @@
                             </Border>
                         </StackPanel>
 
+                        <StackPanel Visibility="{Binding IsEnvironmentSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="环境变量" Foreground="#FF888888" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
+                            <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="16">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="用户环境变量" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                            <TextBlock Text="供脚本扩展和 WebView 应用读取。适合保存 NOTION_TOKEN、NOTION_DATABASE_ID 等第三方服务 Key。" Foreground="#FF8E8E8E" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="添加变量" Style="{StaticResource SecondaryBtn}" Height="30" Padding="12,0" Click="AddEnvironmentVariableButton_Click"/>
+                                    </Grid>
+
+                                    <ItemsControl ItemsSource="{Binding EnvironmentVariables}" Margin="0,16,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#FF181818" BorderBrush="#FF2A2A2A" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                                                    <Grid>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="1.2*"/>
+                                                            <ColumnDefinition Width="14"/>
+                                                            <ColumnDefinition Width="1.8*"/>
+                                                            <ColumnDefinition Width="14"/>
+                                                            <ColumnDefinition Width="1.5*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <TextBlock Text="名称" Foreground="#FF8E8E8E" FontSize="11"/>
+                                                        <TextBlock Grid.Column="2" Text="值" Foreground="#FF8E8E8E" FontSize="11"/>
+                                                        <TextBlock Grid.Column="4" Text="说明" Foreground="#FF8E8E8E" FontSize="11"/>
+
+                                                        <TextBox Grid.Row="1" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,6,0,0" Padding="10,7" VerticalContentAlignment="Center"/>
+                                                        <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,6,0,0" Padding="10,7" VerticalContentAlignment="Center"/>
+                                                        <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,6,0,0" Padding="10,7" VerticalContentAlignment="Center"/>
+                                                        <Button Grid.Row="1" Grid.Column="5" Content="删除" Style="{StaticResource SecondaryBtn}" Height="34" Padding="10,0" Margin="12,6,0,0" Click="RemoveEnvironmentVariableButton_Click"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding EnvironmentStatusText}" Foreground="#FF8E8E8E" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Content="保存环境变量" Style="{StaticResource PrimaryBtn}" Height="32" Padding="14,0" Click="SaveEnvironmentVariablesButton_Click"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
                         <!-- Sync View -->
                         <StackPanel Visibility="{Binding IsSyncSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <!-- Header with Status Badge -->
@@ -726,7 +806,7 @@
                                 </Border>
                             </Grid>
 
-                            <!-- WebDAV Configuration Card -->
+                            <!-- Personal Sync Configuration Card -->
                             <Border Background="#FF1E1E1E" CornerRadius="10" BorderBrush="#FF2A2A2A" BorderThickness="1" Margin="0,0,0,16">
                                 <!-- Card Header -->
                                 <Grid>
@@ -739,55 +819,306 @@
                                     <!-- Header with Toggle -->
                                     <Border Grid.Row="0" Background="#0AFFFFFF" BorderBrush="#FF2A2A2A" BorderThickness="0,0,0,1" Padding="20,16">
                                         <Grid>
-                                            <TextBlock Text="个人扩展同步 (WebDAV)" Foreground="White" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock Text="个人同步平台" Foreground="White" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                                 <TextBlock Text="启用同步" Foreground="#FF8E8E8E" FontSize="12" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                                                <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableWebDavSync, Mode=TwoWay}" Click="SaveWebDavSettingsButton_Click" VerticalAlignment="Center"/>
+                                                <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnablePersonalSync, Mode=TwoWay}" Click="SaveWebDavSettingsButton_Click" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Grid>
                                     </Border>
 
                                     <!-- Configuration Fields -->
-                                    <Grid Grid.Row="1" Margin="20,20,20,16">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="16"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Row="1" Margin="20,20,20,16">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="220"/>
+                                                <ColumnDefinition Width="16"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="同步平台" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <ComboBox ItemsSource="{Binding PersonalSyncProviderOptions}"
+                                                          SelectedValuePath="Value"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValue="{Binding SelectedPersonalSyncProvider, Mode=TwoWay}"
+                                                          Style="{StaticResource DarkComboBoxStyle}"
+                                                          Height="36"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Bottom">
+                                                <TextBlock Text="按笔记项目的方式，个人同步现在支持 GitHub、Gitee、GitLab、Gitea、S3 和 WebDAV。当前同步扩展包、燕幕状态和主配置。"
+                                                           Foreground="#FF8E8E8E"
+                                                           FontSize="11"
+                                                           TextWrapping="Wrap"/>
+                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                    <Button Content="{Binding SelectedPersonalSyncProviderQuickLinkText}"
+                                                            Tag="{Binding SelectedPersonalSyncProviderQuickLinkUrl}"
+                                                            Style="{StaticResource InlineLinkButtonStyle}"
+                                                            HorizontalAlignment="Left"
+                                                            Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                            Click="OpenSyncProviderLinkButton_Click"/>
+                                                    <Button Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
+                                                            Style="{StaticResource SecondaryBtn}"
+                                                            Height="24"
+                                                            Padding="10,0"
+                                                            Margin="12,0,0,0"
+                                                            Click="TogglePersonalSyncAdvancedOptionsButton_Click"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
 
-                                        <!-- Row 1: Server URL (spans 2 columns) -->
-                                        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3">
-                                            <TextBlock Text="服务地址" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
-                                            <TextBox Text="{Binding WebDavServerUrl, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
-                                        </StackPanel>
-
-                                        <!-- Row 2: Root Path and Username -->
-                                        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,14,0,0">
-                                            <TextBlock Text="同步根目录" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
-                                            <TextBox Text="{Binding WebDavRootPath, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
-                                        </StackPanel>
-
-                                        <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,14,0,0">
-                                            <TextBlock Text="用户名" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
-                                            <TextBox Text="{Binding WebDavUsername, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
-                                        </StackPanel>
-
-                                        <!-- Row 3: Password (spans 2 columns) -->
-                                        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,14,0,0">
-                                            <TextBlock Text="应用密码" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
-                                            <PasswordBox x:Name="WebDavPasswordBox" Height="36" Padding="12,8" VerticalContentAlignment="Center" PasswordChanged="WebDavPasswordBox_PasswordChanged"/>
-                                            <TextBlock Text="应用密码会使用 Windows DPAPI 本机加密保存，并自动同步到当前账号配置。" 
-                                                       Foreground="#FF666666" 
-                                                       FontSize="10" 
-                                                       Margin="0,6,0,0" 
+                                        <Grid Margin="0,14,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="220"/>
+                                                <ColumnDefinition Width="16"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="修改后自动同步" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <ComboBox ItemsSource="{Binding PersonalSyncAutoSyncDelayOptions}"
+                                                          SelectedValuePath="Value"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValue="{Binding PersonalSyncAutoSyncDelaySeconds, Mode=TwoWay}"
+                                                          Style="{StaticResource DarkComboBoxStyle}"
+                                                          Height="36"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2"
+                                                       Text="扩展或配置发生变更后，等待这段时间再自动同步；手动“立即同步”不受影响。"
+                                                       Foreground="#FF8E8E8E"
+                                                       FontSize="11"
+                                                       VerticalAlignment="Bottom"
                                                        TextWrapping="Wrap"/>
+                                        </Grid>
+
+                                        <StackPanel Margin="0,16,0,0"
+                                                    Visibility="{Binding IsSyncProviderGitHub, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <StackPanel>
+                                                <TextBlock Text="仓库名" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <TextBox Text="{Binding GitHubSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <TextBlock Text="默认读取当前 GitHub Token 账号下的仓库；如果仓库在组织下，再打开高级配置填写组织名。"
+                                                       Foreground="#FF6B7280"
+                                                       FontSize="10"
+                                                       Margin="0,8,0,0"
+                                                       TextWrapping="Wrap"/>
+                                            <StackPanel Margin="0,14,0,0">
+                                                <TextBlock Text="Token" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <PasswordBox x:Name="GitHubTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0"
+                                                        Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="仓库所有者 / 组织" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GitHubSyncOwner, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="分支" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GitHubSyncBranch, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <StackPanel Margin="0,14,0,0">
+                                                    <TextBlock Text="目录前缀" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                    <TextBox Text="{Binding GitHubSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                </StackPanel>
+                                            </StackPanel>
                                         </StackPanel>
-                                    </Grid>
+
+                                        <StackPanel Margin="0,16,0,0"
+                                                    Visibility="{Binding IsSyncProviderGitee, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <StackPanel>
+                                                <TextBlock Text="仓库名" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <TextBox Text="{Binding GiteeSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0">
+                                                <TextBlock Text="Token" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <PasswordBox x:Name="GiteeTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0"
+                                                        Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="仓库所有者" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GiteeSyncUsername, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="分支" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GiteeSyncBranch, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <StackPanel Margin="0,14,0,0">
+                                                    <TextBlock Text="目录前缀" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                    <TextBox Text="{Binding GiteeSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="0,16,0,0"
+                                                    Visibility="{Binding IsSyncProviderGitLab, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <StackPanel>
+                                                <TextBlock Text="项目路径" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <TextBox Text="{Binding GitLabSyncProjectPath, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0">
+                                                <TextBlock Text="Token" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <PasswordBox x:Name="GitLabTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0"
+                                                        Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="实例地址" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GitLabSyncBaseUrl, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="分支" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GitLabSyncBranch, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <StackPanel Margin="0,14,0,0">
+                                                    <TextBlock Text="目录前缀" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                    <TextBox Text="{Binding GitLabSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="0,16,0,0"
+                                                    Visibility="{Binding IsSyncProviderGitea, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <StackPanel>
+                                                <TextBlock Text="仓库名" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <TextBox Text="{Binding GiteaSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0">
+                                                <TextBlock Text="Token" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <PasswordBox x:Name="GiteaTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0"
+                                                        Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="实例地址" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GiteaSyncBaseUrl, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="仓库所有者" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GiteaSyncUsername, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <Grid Margin="0,14,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="分支" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GiteaSyncBranch, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="目录前缀" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding GiteaSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="0,16,0,0"
+                                                    Visibility="{Binding IsSyncProviderS3, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Access Key ID" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                    <TextBox Text="{Binding S3SyncAccessKeyId, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="Region" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                    <TextBox Text="{Binding S3SyncRegion, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Grid Margin="0,14,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Bucket" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                    <TextBox Text="{Binding S3SyncBucket, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <StackPanel Margin="0,14,0,0">
+                                                <TextBlock Text="Secret Access Key" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <PasswordBox x:Name="S3SecretAccessKeyBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0"
+                                                        Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Endpoint" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding S3SyncEndpoint, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="目录前缀" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding S3SyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="0,16,0,0"
+                                                    Visibility="{Binding IsSyncProviderWebDav, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <StackPanel>
+                                                <TextBlock Text="服务地址" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <TextBox Text="{Binding WebDavServerUrl, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0">
+                                                <TextBlock Text="用户名" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <TextBox Text="{Binding WebDavUsername, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0">
+                                                <TextBlock Text="密码" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <PasswordBox x:Name="WebDavPasswordBox" Height="36" Padding="12,8" VerticalContentAlignment="Center" PasswordChanged="WebDavPasswordBox_PasswordChanged"/>
+                                                <TextBlock Text="敏感信息会使用 Windows DPAPI 本机加密保存。"
+                                                           Foreground="#FF666666"
+                                                           FontSize="10"
+                                                           Margin="0,6,0,0"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <StackPanel Margin="0,14,0,0"
+                                                        Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <TextBlock Text="同步根目录" Foreground="#FF8E8E8E" FontSize="11" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <TextBox Text="{Binding WebDavRootPath, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </StackPanel>
 
                                     <!-- Footer with Actions -->
                                     <Border Grid.Row="2" Background="#0AFFFFFF" BorderBrush="#FF2A2A2A" BorderThickness="0,1,0,0" Padding="20,14">
@@ -803,14 +1134,63 @@
                                                        VerticalAlignment="Center" 
                                                        TextWrapping="Wrap"/>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button Content="保存配置" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="SaveWebDavSettingsButton_Click"/>
-                                                <Button Content="测试连接" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="TestWebDavButton_Click"/>
-                                                <Button Content="清空云端" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="ClearCloudButton_Click" Foreground="#FFEF4444"/>
-                                                <Button Content="立即同步" Style="{StaticResource PrimaryBtn}" Height="32" Padding="20,0" Click="SyncWebDavButton_Click"/>
+                                                <Button x:Name="SavePersonalSyncButton" Content="保存配置" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="SaveWebDavSettingsButton_Click"/>
+                                                <Button x:Name="TestPersonalSyncButton" Content="测试连接" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="TestWebDavButton_Click"/>
+                                                <Button x:Name="ClearPersonalSyncButton" Content="清空云端" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="ClearCloudButton_Click" Foreground="#FFEF4444"/>
+                                                <Button x:Name="SyncPersonalSyncButton" Content="立即同步" Style="{StaticResource PrimaryBtn}" Height="32" Padding="20,0" Click="SyncWebDavButton_Click"/>
                                             </StackPanel>
                                         </Grid>
                                     </Border>
                                 </Grid>
+                            </Border>
+
+                            <!-- Git Commit History Card -->
+                            <Border Background="#FF1E1E1E" CornerRadius="10" BorderBrush="#FF2A2A2A" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <Border Padding="20,16" BorderBrush="#FF2A2A2A" BorderThickness="0,0,0,1">
+                                        <Grid>
+                                            <StackPanel>
+                                                <TextBlock Text="Git 提交记录" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding PersonalSyncCommitStatusText}" Foreground="#FF8E8E8E" FontSize="11" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                            <Button Content="刷新提交"
+                                                    Style="{StaticResource SecondaryBtn}"
+                                                    Height="28"
+                                                    Padding="12,0"
+                                                    HorizontalAlignment="Right"
+                                                    Click="RefreshPersonalSyncCommitsButton_Click"/>
+                                        </Grid>
+                                    </Border>
+                                    <Border Padding="20,14">
+                                        <ItemsControl ItemsSource="{Binding PersonalSyncCommitItems}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="#FF151515" BorderBrush="#FF2A2A2A" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,8">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <StackPanel>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="{Binding ShortSha}" Foreground="#FF9CA3AF" FontSize="11" FontFamily="Consolas"/>
+                                                                    <Button Content="打开"
+                                                                            Tag="{Binding Url}"
+                                                                            Style="{StaticResource InlineLinkButtonStyle}"
+                                                                            Margin="8,-3,0,0"
+                                                                            Click="OpenPersonalSyncCommitButton_Click"/>
+                                                                </StackPanel>
+                                                                <TextBlock Text="{Binding Message}" Foreground="White" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                                <TextBlock Text="{Binding Author}" Foreground="#FF8E8E8E" FontSize="11" Margin="0,6,0,0"/>
+                                                            </StackPanel>
+                                                            <TextBlock Grid.Column="1" Text="{Binding LocalTimeLabel}" Foreground="#FF8E8E8E" FontSize="11" Margin="12,0,0,0"/>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Border>
+                                </StackPanel>
                             </Border>
 
                             <!-- Sync Log Card -->
@@ -2516,9 +2896,9 @@
                                               HorizontalScrollBarVisibility="Disabled"
                                               MaxHeight="600"
                                               SizeChanged="ExtensionCardsScrollViewer_SizeChanged">
+                                    <Grid Width="{Binding ViewportWidth, ElementName=ExtensionCardsScrollViewer}">
                                     <ItemsControl ItemsSource="{Binding ExtensionItems}"
-                                                  Visibility="{Binding ExtensionsListVisibility}"
-                                                  Width="{Binding ViewportWidth, ElementName=ExtensionCardsScrollViewer}">
+                                                  Visibility="{Binding ExtensionsListVisibility}">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
                                                 <WrapPanel Orientation="Horizontal" />
@@ -2674,10 +3054,21 @@
                                                                     </Button>
                                                                     <Button Style="{StaticResource IconButtonStyle}" 
                                                                             Width="24" Height="24"
+                                                                            Margin="0,0,4,0"
                                                                             Click="OpenExtensionDirectoryButton_Click"
                                                                             ToolTip="打开目录">
                                                                         <Viewbox Width="12" Height="12">
                                                                             <Path Data="{local:IconGeometry folder}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform"/>
+                                                                        </Viewbox>
+                                                                    </Button>
+                                                                    <Button Style="{StaticResource IconButtonStyle}"
+                                                                            Width="24" Height="24"
+                                                                            Foreground="#FFEF4444"
+                                                                            IsEnabled="{Binding DeleteButtonEnabled}"
+                                                                            Click="DeleteExtensionButton_Click"
+                                                                            ToolTip="删除扩展并移入回收站">
+                                                                        <Viewbox Width="12" Height="12">
+                                                                            <Path Data="{local:IconGeometry trash}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform"/>
                                                                         </Viewbox>
                                                                     </Button>
                                                                 </StackPanel>
@@ -2688,6 +3079,54 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    <ItemsControl ItemsSource="{Binding RecycleBinItems}"
+                                                  Visibility="{Binding RecycleBinListVisibility}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#FF1E1E1E"
+                                                        BorderBrush="#FF2A2A2A"
+                                                        BorderThickness="1"
+                                                        CornerRadius="12"
+                                                        Padding="14"
+                                                        Margin="0,0,14,10">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Width="36" Height="36" Background="#1AEF4444" CornerRadius="9" VerticalAlignment="Center">
+                                                            <Viewbox Width="16" Height="16">
+                                                                <Path Data="{local:IconGeometry trash}" Fill="#FFEF4444" Stretch="Uniform"/>
+                                                            </Viewbox>
+                                                        </Border>
+                                                        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding ExtensionId}" Foreground="#FF6B7280" FontSize="11" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding DeletedAtLabel}" Foreground="#FF8E8E8E" FontSize="11" Margin="0,6,0,0"/>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                                            <Button Content="{Binding RestoreButtonText}"
+                                                                    Style="{StaticResource SecondaryBtn}"
+                                                                    Height="30"
+                                                                    Padding="12,0"
+                                                                    Margin="0,0,8,0"
+                                                                    IsEnabled="{Binding RestoreButtonEnabled}"
+                                                                    Click="RestoreRecycleBinExtensionButton_Click"/>
+                                                            <Button Content="{Binding DeleteButtonText}"
+                                                                    Style="{StaticResource SecondaryBtn}"
+                                                                    Height="30"
+                                                                    Padding="12,0"
+                                                                    Foreground="#FFEF4444"
+                                                                    IsEnabled="{Binding DeleteButtonEnabled}"
+                                                                    Click="DeleteRecycleBinExtensionButton_Click"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    </Grid>
                                 </ScrollViewer>
                             </StackPanel>
 

@@ -461,29 +461,18 @@ public partial class App : WpfApplication
         try
         {
             HostAssets.AppendLog($"Settings window open requested: section={sectionKey ?? "default"}, existing={_settingsWindow != null && _settingsWindow.IsLoaded}.");
-            var useMainWindowOwner = CanUseMainWindowAsSettingsOwner(mainWindow);
-
             if (_settingsWindow == null || !_settingsWindow.IsLoaded)
             {
                 _settingsWindow = new SettingsWindow(mainWindow);
-                if (useMainWindowOwner)
-                {
-                    _settingsWindow.Owner = mainWindow;
-                    HostAssets.AppendLog("Settings window owner set to visible main window.");
-                }
-                else
-                {
-                    _settingsWindow.ShowInTaskbar = true;
-                    HostAssets.AppendLog("Settings window opened without main window owner.");
-                }
+                _settingsWindow.ShowInTaskbar = true;
+                HostAssets.AppendLog("Settings window opened as independent top-level window.");
 
                 _settingsWindow.Closed += (_, _) => _settingsWindow = null;
                 HostAssets.AppendLog("Settings window created.");
             }
             else if (!_settingsWindow.IsVisible)
             {
-                _settingsWindow.Owner = useMainWindowOwner ? mainWindow : null;
-                _settingsWindow.ShowInTaskbar = !useMainWindowOwner;
+                _settingsWindow.ShowInTaskbar = true;
             }
 
             if (!_settingsWindow.IsVisible)
@@ -507,9 +496,6 @@ public partial class App : WpfApplication
             HostAssets.AppendLog($"Settings window open failed: {ex}");
         }
     }
-
-    private static bool CanUseMainWindowAsSettingsOwner(MainWindow mainWindow) =>
-        mainWindow.IsVisible && mainWindow.WindowState != System.Windows.WindowState.Minimized;
 
     public void OpenRunningExtensionsWindow()
     {

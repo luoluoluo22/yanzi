@@ -1,0 +1,71 @@
+<Window x:Class="OpenQuickHost.AppExtensionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Yanzi App"
+        Width="1180"
+        Height="760"
+        MinWidth="720"
+        MinHeight="480"
+        WindowStartupLocation="CenterScreen"
+        Background="#FF111111">
+    <Grid>
+        <Border x:Name="LoadingPanel" Background="#FF111111">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock x:Name="LoadingTitle"
+                           Text="正在打开应用"
+                           Foreground="White"
+                           FontSize="16"
+                           FontWeight="SemiBold"
+                           TextAlignment="Center"/>
+                <TextBlock Text="正在加载本地界面"
+                           Foreground="#FF9CA3AF"
+                           FontSize="12"
+                           Margin="0,8,0,0"
+                           TextAlignment="Center"/>
+            </StackPanel>
+        </Border>
+        <wv2:WebView2 x:Name="Browser" Visibility="Hidden" />
+        <Border x:Name="ErrorPanel"
+                Visibility="Collapsed"
+                Background="#FF18181B"
+                Padding="24">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560">
+                <TextBlock Text="应用扩展加载失败"
+                           Foreground="White"
+                           FontSize="20"
+                           FontWeight="SemiBold"
+                           TextAlignment="Center"/>
+                <TextBlock x:Name="ErrorTextBlock"
+                           Foreground="#FFA1A1AA"
+                           FontSize="13"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           Margin="0,12,0,0"/>
+            </StackPanel>
+        </Border>
+        <Grid x:Name="ResizeOverlay" Visibility="Collapsed" Panel.ZIndex="20" IsHitTestVisible="False">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="8"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Row="0" Grid.Column="0" Background="Transparent" Cursor="SizeNWSE" Tag="13" MouseLeftButtonDown="ResizeGrip_MouseLeftButtonDown"/>
+            <Border Grid.Row="0" Grid.Column="1" Background="Transparent" Cursor="SizeNS" Tag="12" MouseLeftButtonDown="ResizeGrip_MouseLeftButtonDown"/>
+            <Border Grid.Row="0" Grid.Column="2" Background="Transparent" Cursor="SizeNESW" Tag="14" MouseLeftButtonDown="ResizeGrip_MouseLeftButtonDown"/>
+
+            <Border Grid.Row="1" Grid.Column="0" Background="Transparent" Cursor="SizeWE" Tag="10" MouseLeftButtonDown="ResizeGrip_MouseLeftButtonDown"/>
+            <Border Grid.Row="1" Grid.Column="2" Background="Transparent" Cursor="SizeWE" Tag="11" MouseLeftButtonDown="ResizeGrip_MouseLeftButtonDown"/>
+
+            <Border Grid.Row="2" Grid.Column="0" Background="Transparent" Cursor="SizeNESW" Tag="16" MouseLeftButtonDown="ResizeGrip_MouseLeftButtonDown"/>
+            <Border Grid.Row="2" Grid.Column="1" Background="Transparent" Cursor="SizeNS" Tag="15" MouseLeftButtonDown="ResizeGrip_MouseLeftButtonDown"/>
+            <Border Grid.Row="2" Grid.Column="2" Background="Transparent" Cursor="SizeNWSE" Tag="17" MouseLeftButtonDown="ResizeGrip_MouseLeftButtonDown"/>
+        </Grid>
+    </Grid>
+</Window>

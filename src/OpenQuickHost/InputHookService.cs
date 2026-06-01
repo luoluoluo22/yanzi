@@ -142,7 +142,7 @@ public class InputHookService
         }
         
         _longPressTimer = new DispatcherTimer();
-        _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 150, 2000));
+        _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 120, 1500));
         _longPressTimer.Tick += (s, e) =>
         {
             _longPressTimer.Stop();
@@ -206,7 +206,7 @@ public class InputHookService
         _windowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(appSettings.WindowSnapAssistMouseTriggerMode);
         if (_longPressTimer != null)
         {
-            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 150, 2000));
+            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 120, 1500));
         }
 
         ResetTransientMouseState();
@@ -536,11 +536,11 @@ public class InputHookService
 
         if (_longPressTimer != null)
         {
-            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 150, 2000));
+            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 120, 1500));
         }
 
         _longPressTimer?.Start();
-        HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={Math.Clamp(_settings.LongPressMilliseconds, 150, 2000)}ms.");
+        HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={Math.Clamp(_settings.LongPressMilliseconds, 120, 1500)}ms.");
     }
 
     private static void HandleMouseMove(POINT point)

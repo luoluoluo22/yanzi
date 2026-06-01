@@ -14,6 +14,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace OpenQuickHost;
 
@@ -64,6 +65,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private string _folderPreviewTitle = string.Empty;
     private bool _isFolderPreviewVisible;
     private DateTimeOffset _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.MinValue;
+    private DateTimeOffset _suspendOutsideClickHideUntilUtc = DateTimeOffset.MinValue;
 
     public QuickPanelWindow(MainWindow mainWindow)
     {
@@ -1692,6 +1694,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             Topmost = true;
             Show();
             NativeMethods.ShowWithoutActivation(new WindowInteropHelper(this).Handle);
+            _suspendOutsideClickHideUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(250);
             _releaseTargetTimer.Start();
         }
         catch (Exception ex)
@@ -2669,7 +2672,35 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (ShouldHideForOutsidePointerDown())
+        {
+            HidePanelIfAllowed();
+            return;
+        }
+
         _ = ResolveSlotUnderCursor(occupiedOnly: true, updateTarget: true);
+    }
+
+    private bool ShouldHideForOutsidePointerDown()
+    {
+        if (DateTimeOffset.UtcNow < _suspendOutsideClickHideUntilUtc)
+        {
+            return false;
+        }
+
+        if (OwnedWindows.OfType<Window>().Any(static window => window.IsVisible))
+        {
+            return false;
+        }
+
+        if (_isDraggingSlot || IsCursorInsideQuickPanel())
+        {
+            return false;
+        }
+
+        return IsMouseButtonDown(VkLeftButton) ||
+               IsMouseButtonDown(VkRightButton) ||
+               IsMouseButtonDown(VkMiddleButton);
     }
 
     private SlotViewModel? ResolveSlotUnderCursor(bool occupiedOnly = false, bool updateTarget = true)
@@ -2767,6 +2798,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) => 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private static bool IsMouseButtonDown(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+
+    private const int VkLeftButton = 0x01;
+    private const int VkRightButton = 0x02;
+    private const int VkMiddleButton = 0x04;
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
 }
 
 public class QuickPanelGroupItem : INotifyPropertyChanged

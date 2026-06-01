@@ -414,7 +414,7 @@ public partial class MainWindow
                 "拖拽导入"
             }.Where(static value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             OpenTarget = fullPath,
-            Icon = fullPath
+            Icon = isDirectory ? "mdi:folder" : "mdi:file"
         };
 
         var json = JsonSerializer.Serialize(manifest, new JsonSerializerOptions

@@ -41,6 +41,7 @@ public partial class AddJsonExtensionWindow : Window
 
     private readonly IReadOnlyList<ExtensionIconOption> _builtInIcons = ExtensionIconLibrary.GetBuiltInOptions();
     private readonly bool _isEditMode;
+    private readonly string _initialJson;
     private AppSettings _settings;
     private string _aiGuidePrompt = string.Empty;
     private WizardStep _currentStep = WizardStep.Describe;
@@ -69,13 +70,21 @@ public partial class AddJsonExtensionWindow : Window
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(TextBoxClipboard_PreviewKeyDown), true);
         BuiltInIconsList.ItemsSource = _builtInIcons;
         _isEditMode = isEditMode;
+        _initialJson = initialJson ?? string.Empty;
         _settings = AppSettingsStore.Load();
         _manualMode = true;
 
-        ConfigureMode(initialJson);
+        ConfigureMode(_initialJson);
 
         Loaded += (_, _) =>
         {
+            if (_isEditMode && ShouldOpenAdvancedEditorForExistingJson(_initialJson))
+            {
+                AdvancedModeTab.IsChecked = true;
+                SimpleModePanel.Visibility = Visibility.Collapsed;
+                AdvancedModePanel.Visibility = Visibility.Visible;
+            }
+
             // 确保 AI 编辑模式下 JSON 输入框为空（新增模式）
             if (!_isEditMode && !_manualMode)
             {
@@ -103,9 +112,37 @@ public partial class AddJsonExtensionWindow : Window
             
             // 初始化简单模式：根据已加载的 manifest 推断类型并把字段同步到简单控件
             InitializeSimpleMode();
+            if (_isEditMode && ShouldOpenAdvancedEditorForExistingJson(_initialJson))
+            {
+                AdvancedModeTab.IsChecked = true;
+                SimpleModePanel.Visibility = Visibility.Collapsed;
+                AdvancedModePanel.Visibility = Visibility.Visible;
+            }
             // 初始化完成，允许同步
             _isInitializing = false;
         };
+    }
+
+    private static bool ShouldOpenAdvancedEditorForExistingJson(string initialJson)
+    {
+        if (string.IsNullOrWhiteSpace(initialJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(initialJson);
+            var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object &&
+                   (root.TryGetProperty("app", out _) ||
+                    root.TryGetProperty("hostedViewXaml", out _) ||
+                    root.TryGetProperty("hostedViewV2", out _));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public string JsonContent => ExtractJsonPayload(GetCurrentJsonText());
@@ -1298,6 +1335,7 @@ public partial class AddJsonExtensionWindow : Window
         var runtime = NullIfEmpty(RuntimeBox.Text);
         var entryMode = NullIfEmpty(EntryModeBox.Text);
         var scriptSource = NullIfEmpty(ScriptSourceBox.Text);
+        var preservedManifest = TryParsePreservedManifest();
 
         return new LocalExtensionManifest
         {
@@ -1312,7 +1350,10 @@ public partial class AddJsonExtensionWindow : Window
             QueryTargetTemplate = NullIfEmpty(QueryTargetTemplateBox.Text),
             Icon = NullIfEmpty(IconBox.Text),
             AccentHex = NormalizeAccentHexOrNull(AccentHexBox.Text),
-            HostedView = _manualHostedView,
+            HostedView = _manualHostedView ?? preservedManifest?.HostedView,
+            HostedViewV2 = preservedManifest?.HostedViewV2,
+            HostedViewXaml = preservedManifest?.HostedViewXaml,
+            App = preservedManifest?.App,
             GlobalShortcut = NullIfEmpty(GlobalShortcutBox.Text),
             HotkeyBehavior = NullIfEmpty(HotkeyBehaviorBox.Text),
             Runtime = runtime,
@@ -1334,6 +1375,42 @@ public partial class AddJsonExtensionWindow : Window
             SearchProvider = _manualSearchProvider,
             MouseGesture = NormalizeMouseGestureForManifest(_manualMouseGesture)
         };
+    }
+
+    private LocalExtensionManifest? TryParsePreservedManifest()
+    {
+        if (!_isEditMode)
+        {
+            return null;
+        }
+
+        foreach (var candidate in new[] { ManualJsonInputBox.Text, _initialJson })
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            try
+            {
+                var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(
+                    ExtractJsonPayload(candidate),
+                    CreateJsonOptions());
+                if (manifest?.App != null ||
+                    manifest?.HostedView != null ||
+                    manifest?.HostedViewV2 != null ||
+                    manifest?.HostedViewXaml != null)
+                {
+                    return manifest;
+                }
+            }
+            catch
+            {
+                // Preserve is a best-effort guard for custom protocols; normal validation reports malformed JSON elsewhere.
+            }
+        }
+
+        return null;
     }
 
     private LocalExtensionMouseGestureManifest? NormalizeMouseGestureForManifest(LocalExtensionMouseGestureManifest? gesture)
@@ -1399,6 +1476,7 @@ public partial class AddJsonExtensionWindow : Window
         {
             IconPreviewImage.Source = imageSource;
             IconPreviewImage.Visibility = Visibility.Visible;
+            IconPreviewHostBackgroundToImage();
             IconPreviewHintText.Text = "当前使用图片图标或本地图标路径。";
             HighlightSelectedBuiltInButton(null);
             return;
@@ -1409,6 +1487,7 @@ public partial class AddJsonExtensionWindow : Window
         {
             IconPreviewVector.Data = vectorIcon;
             IconPreviewVectorHost.Visibility = Visibility.Visible;
+            IconPreviewHostBackgroundToAccent();
             IconPreviewHintText.Text = $"当前使用内置图标：{iconReference}";
             HighlightSelectedBuiltInButton(iconReference);
             return;
@@ -1416,10 +1495,29 @@ public partial class AddJsonExtensionWindow : Window
 
         IconPreviewGlyph.Text = InferFallbackGlyph();
         IconPreviewGlyph.Visibility = Visibility.Visible;
+        IconPreviewHostBackgroundToAccent();
         IconPreviewHintText.Text = string.IsNullOrWhiteSpace(iconReference)
             ? "未设置图标时会回退为字母标识。"
             : $"当前 icon 值未解析成功：{iconReference}";
         HighlightSelectedBuiltInButton(null);
+    }
+
+    private void IconPreviewHostBackgroundToImage()
+    {
+        PreviewIconHost.Background = MediaBrushes.Transparent;
+    }
+
+    private void IconPreviewHostBackgroundToAccent()
+    {
+        var hex = AccentHexBox.Text?.Trim();
+        try
+        {
+            PreviewIconHost.Background = CreateBrush(NormalizeAccentHexOrDefault(hex));
+        }
+        catch
+        {
+            PreviewIconHost.Background = AccentBrush;
+        }
     }
 
     private void SafeRefreshIconPreview()

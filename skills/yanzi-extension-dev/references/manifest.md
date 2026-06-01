@@ -111,3 +111,23 @@ Hosted C# action example:
   }
 }
 ```
+
+Web app extension example:
+
+```json
+{
+  "id": "notes-app",
+  "name": "笔记应用",
+  "icon": "app/favicon.ico",
+  "runtime": "web-app",
+  "app": {
+    "type": "webview",
+    "entry": "app/index.html",
+    "singleInstance": true,
+    "window": {
+      "width": 1180,
+      "height": 760
+    }
+  }
+}
+```

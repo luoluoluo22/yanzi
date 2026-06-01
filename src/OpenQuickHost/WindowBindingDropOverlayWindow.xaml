@@ -57,13 +57,13 @@
                 Height="34"
                 CornerRadius="10"
                 Background="#803B82F6"
+                ClipToBounds="True"
                 IsHitTestVisible="False"
                 Opacity="0.5"
                 Visibility="Collapsed">
             <Grid>
                 <Image x:Name="PreviewIconImage"
-                       Margin="3"
-                       Stretch="Uniform"
+                       Stretch="UniformToFill"
                        RenderOptions.BitmapScalingMode="HighQuality"
                        Visibility="Collapsed" />
                 <Viewbox x:Name="PreviewIconVector"
