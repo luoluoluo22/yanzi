@@ -154,6 +154,58 @@ internal abstract class PersonalSyncBackendBase : IPersonalSyncBackend
             ? []
             : Convert.FromBase64String(normalized);
     }
+
+    protected static string GetBusinessCommitMessage(string path)
+    {
+        var normalized = (path ?? string.Empty).Replace('\\', '/').Trim('/');
+        if (normalized.EndsWith("state/launcher-config.json", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步配置：更新快捷菜单与系统主设置";
+        }
+        if (normalized.EndsWith("state/yanm-state.json", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步状态：更新燕幕组件状态";
+        }
+        if (normalized.EndsWith("index.json", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步目录：更新个人扩展索引";
+        }
+        if (normalized.Contains("packages/", StringComparison.OrdinalIgnoreCase) && normalized.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步扩展：上传个人扩展包";
+        }
+        if (normalized.Contains("appdata/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步数据：备份扩展专属应用数据";
+        }
+        return $"同步：更新 {path}";
+    }
+
+    protected static string GetBusinessDeleteMessage(string path)
+    {
+        var normalized = (path ?? string.Empty).Replace('\\', '/').Trim('/');
+        if (normalized.EndsWith("state/launcher-config.json", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步配置：清除快捷菜单与系统主设置";
+        }
+        if (normalized.EndsWith("state/yanm-state.json", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步状态：清除燕幕组件状态";
+        }
+        if (normalized.EndsWith("index.json", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步目录：清除个人扩展索引";
+        }
+        if (normalized.Contains("packages/", StringComparison.OrdinalIgnoreCase) && normalized.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步扩展：删除个人扩展包";
+        }
+        if (normalized.Contains("appdata/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步数据：清除扩展专属应用数据";
+        }
+        return $"同步：删除 {path}";
+    }
 }
 
 internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
@@ -270,7 +322,7 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
         {
             Content = JsonContent.Create(new GitHubDeletePayload
             {
-                Message = $"Yanzi sync delete: {path}",
+                Message = GetBusinessDeleteMessage(path),
                 Sha = sha,
                 Branch = ResolveBranch()
             }, options: JsonOptions)
@@ -304,7 +356,7 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
     {
         var body = new GitHubWritePayload
         {
-            Message = $"Yanzi sync: {path}",
+            Message = GetBusinessCommitMessage(path),
             Content = Convert.ToBase64String(content),
             Branch = ResolveBranch(),
             Sha = sha
@@ -335,7 +387,7 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
         var currentCommit = await GetGitCommitAsync(owner, currentRef.Object.Sha, cancellationToken);
         var blob = await CreateGitBlobAsync(owner, content, cancellationToken);
         var tree = await CreateGitTreeAsync(owner, currentCommit.Tree.Sha, path, blob.Sha, cancellationToken);
-        var commit = await CreateGitCommitAsync(owner, $"Yanzi sync: {path}", tree.Sha, currentRef.Object.Sha, cancellationToken);
+        var commit = await CreateGitCommitAsync(owner, GetBusinessCommitMessage(path), tree.Sha, currentRef.Object.Sha, cancellationToken);
         await UpdateGitRefAsync(owner, branch, commit.Sha, cancellationToken);
     }
 
@@ -606,7 +658,7 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             {
                 AccessToken = _secrets.GiteeToken.Trim(),
                 Content = Convert.ToBase64String(content),
-                Message = $"Yanzi sync: {path}",
+                Message = GetBusinessCommitMessage(path),
                 Branch = ResolveBranch(),
                 Sha = sha
             }, options: JsonOptions)
@@ -633,7 +685,7 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             Content = JsonContent.Create(new GiteeDeletePayload
             {
                 AccessToken = _secrets.GiteeToken.Trim(),
-                Message = $"Yanzi sync delete: {path}",
+                Message = GetBusinessDeleteMessage(path),
                 Sha = sha,
                 Branch = ResolveBranch()
             }, options: JsonOptions)
@@ -755,7 +807,7 @@ internal sealed class GitLabPersonalSyncBackend : PersonalSyncBackendBase
         {
             Branch = ResolveBranch(),
             Content = Convert.ToBase64String(content),
-            CommitMessage = $"Yanzi sync: {path}",
+            CommitMessage = GetBusinessCommitMessage(path),
             Encoding = "base64"
         };
         var method = exists ? HttpMethod.Put : HttpMethod.Post;
@@ -778,7 +830,7 @@ internal sealed class GitLabPersonalSyncBackend : PersonalSyncBackendBase
             Content = JsonContent.Create(new GitLabDeletePayload
             {
                 Branch = ResolveBranch(),
-                CommitMessage = $"Yanzi sync delete: {path}"
+                CommitMessage = GetBusinessDeleteMessage(path)
             }, options: JsonOptions)
         };
         using var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -859,7 +911,7 @@ internal sealed class GiteaPersonalSyncBackend : PersonalSyncBackendBase
         {
             Branch = ResolveBranch(),
             Content = Convert.ToBase64String(content),
-            Message = $"Yanzi sync: {path}",
+            Message = GetBusinessCommitMessage(path),
             Sha = sha
         };
         var method = string.IsNullOrWhiteSpace(sha) ? HttpMethod.Post : HttpMethod.Put;
@@ -889,7 +941,7 @@ internal sealed class GiteaPersonalSyncBackend : PersonalSyncBackendBase
             Content = JsonContent.Create(new GiteaDeletePayload
             {
                 Branch = ResolveBranch(),
-                Message = $"Yanzi sync delete: {path}",
+                Message = GetBusinessDeleteMessage(path),
                 Sha = sha
             }, options: JsonOptions)
         };

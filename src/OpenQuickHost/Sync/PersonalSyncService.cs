@@ -243,10 +243,23 @@ public sealed class PersonalSyncService
         }
 
         var remoteUpdatedAtUtc = TryParseUtc(remote.UpdatedAtUtc) ?? DateTime.MinValue;
+
+        // 排除 UpdatedAtUtc 时间戳在配置完全等价性检测中的虚假干扰
+        var localTime = localConfig.UpdatedAtUtc;
+        var remoteTime = remote.Config.UpdatedAtUtc;
+        localConfig.UpdatedAtUtc = null;
+        remote.Config.UpdatedAtUtc = null;
+
         var equivalent = AreJsonPayloadsEqual(localConfig, remote.Config);
+
+        // 还原时间戳以保证后续时间戳判断逻辑正确
+        localConfig.UpdatedAtUtc = localTime;
+        remote.Config.UpdatedAtUtc = remoteTime;
+
         if (equivalent)
         {
-            if (explicitLocalUpdatedAtUtc == null && remoteUpdatedAtUtc > DateTime.MinValue)
+            // 如果内容完全等价，但本地时间戳与云端存在偏差，则直接将本地时间戳同步为云端时间戳，以防以后再次触发多余的重复判断
+            if (localSettings.LauncherConfigUpdatedAtUtc != remote.UpdatedAtUtc)
             {
                 SaveLauncherConfigUpdatedAtUtc(remoteUpdatedAtUtc);
             }
