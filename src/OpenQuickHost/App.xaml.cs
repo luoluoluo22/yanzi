@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
+using Microsoft.Win32;
 using OpenQuickHost.Sync;
 using Forms = System.Windows.Forms;
 using WpfApplication = System.Windows.Application;
@@ -29,6 +30,8 @@ public partial class App : WpfApplication
         TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
         SyncConfigLoader.EnsureExampleFile();
         var settings = AppSettingsStore.Load();
+        ApplyTheme(settings.ThemeMode);
+        SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
         StartupRegistrationService.Apply(settings.LaunchAtStartup);
         EverythingRuntimeService.EnsureStartedInBackground();
         _singleInstanceService = new SingleInstanceService(SingleInstanceAppId);
@@ -40,24 +43,32 @@ public partial class App : WpfApplication
 
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
-        var window = new MainWindow();
-        MainWindow = window;
-        TryRegisterUriProtocol();
-        _notifyIcon = BuildNotifyIcon(window);
-        HostAssets.AppendLog($"App startup: version={AppVersionInfo.Version}, build={AppVersionInfo.BuildStamp}, baseDir={AppDomain.CurrentDomain.BaseDirectory}");
-        window.Show();
-        if (ShouldStartHidden(e.Args))
+        try
         {
-            window.HideToTray();
-        }
-        else
-        {
-            window.ShowPanel();
-        }
+            var window = new MainWindow();
+            MainWindow = window;
+            TryRegisterUriProtocol();
+            _notifyIcon = BuildNotifyIcon(window);
+            HostAssets.AppendLog($"App startup: version={AppVersionInfo.Version}, build={AppVersionInfo.BuildStamp}, baseDir={AppDomain.CurrentDomain.BaseDirectory}");
+            window.Show();
+            if (ShouldStartHidden(e.Args))
+            {
+                window.HideToTray();
+            }
+            else
+            {
+                window.ShowPanel();
+            }
 
-        StartLocalAgentApi(window, settings);
-        _singleInstanceService.StartServer(message => HandleSecondaryLaunchMessageAsync(window, message));
-        _ = HandleLaunchArgumentsAsync(window, e.Args);
+            StartLocalAgentApi(window, settings);
+            _singleInstanceService.StartServer(message => HandleSecondaryLaunchMessageAsync(window, message));
+            _ = HandleLaunchArgumentsAsync(window, e.Args);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"MainWindow startup crash: {ex.ToString()}");
+            throw;
+        }
     }
 
     private static bool ShouldStartHidden(string[] args)
@@ -125,6 +136,7 @@ public partial class App : WpfApplication
         DispatcherUnhandledException -= App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
         TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
+        SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
 
         try
         {
@@ -517,5 +529,66 @@ public partial class App : WpfApplication
 
         _runningExtensionsWindow.Activate();
         _runningExtensionsWindow.Focus();
+    }
+
+    private static string _currentThemeMode = "Dark";
+
+    public static void ApplyTheme(string themeMode)
+    {
+        _currentThemeMode = themeMode;
+        
+        bool useLightTheme = false;
+        if (string.Equals(themeMode, "System", StringComparison.OrdinalIgnoreCase))
+        {
+            useLightTheme = IsSystemLightTheme();
+        }
+        else if (string.Equals(themeMode, "Light", StringComparison.OrdinalIgnoreCase))
+        {
+            useLightTheme = true;
+        }
+
+        string themeUri = useLightTheme 
+            ? "/Themes/LightTheme.xaml"
+            : "/Themes/DarkTheme.xaml";
+
+        var mergedDicts = Current.Resources.MergedDictionaries;
+        
+        var existingThemeDict = mergedDicts.FirstOrDefault(static d => 
+            d.Source != null && d.Source.OriginalString.Contains("Theme.xaml"));
+
+        if (existingThemeDict != null)
+        {
+            if (existingThemeDict.Source.OriginalString == themeUri)
+                return;
+
+            mergedDicts.Remove(existingThemeDict);
+        }
+
+        mergedDicts.Insert(0, new ResourceDictionary { Source = new Uri(themeUri, UriKind.Relative) });
+    }
+
+    private static bool IsSystemLightTheme()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            var value = key?.GetValue("AppsUseLightTheme");
+            return value is int i && i == 1;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void SystemEvents_UserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category == UserPreferenceCategory.General)
+        {
+            if (string.Equals(_currentThemeMode, "System", StringComparison.OrdinalIgnoreCase))
+            {
+                Dispatcher.Invoke(() => ApplyTheme("System"));
+            }
+        }
     }
 }

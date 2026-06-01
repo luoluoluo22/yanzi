@@ -12,7 +12,7 @@
         ResizeMode="NoResize"
         ShowInTaskbar="True"
         Topmost="False"
-        Background="#FF0F0F12"
+        Background="{DynamicResource BrushBG}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display"
@@ -39,8 +39,8 @@
 
         <Style x:Key="GhostButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="{StaticResource Text2Brush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushStrong}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="14,7" />
             <Setter Property="FontSize" Value="13" />
@@ -59,8 +59,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="{StaticResource Surface2Brush}" />
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Root" Property="Opacity" Value="0.4" />
@@ -73,8 +73,8 @@
 
         <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}">
             <Setter Property="Foreground" Value="White" />
-            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Background" Value="{DynamicResource BrushAccent}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="Padding" Value="20,10" />
             <Style.Triggers>
@@ -86,8 +86,8 @@
         </Style>
 
         <Style x:Key="TypeCardStyle" TargetType="RadioButton">
-            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+            <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Margin" Value="3" />
@@ -107,10 +107,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource BorderBrushStrong}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
                                 <Setter TargetName="Root" Property="Background" Value="#0D3B82F6" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -121,7 +121,7 @@
 
         <Style x:Key="ModeTabStyle" TargetType="RadioButton">
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Foreground" Value="{StaticResource Text2Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
             <Setter Property="Padding" Value="14,7" />
             <Setter Property="FontSize" Value="12.5" />
             <Setter Property="Template">
@@ -132,10 +132,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushAccent}" />
                                 <Setter Property="Foreground" Value="White" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -145,15 +145,15 @@
         </Style>
 
         <Style x:Key="FormTextBoxStyle" TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+            <Setter Property="Background" Value="{DynamicResource BrushInputBG}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="10,0" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Height" Value="32" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource BrushAccent}" />
             <Setter Property="SelectionBrush" Value="{StaticResource AccentGlowBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -170,7 +170,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -191,7 +191,7 @@
 
         <!-- 暗色 ComboBox：30px、与输入框同风格 -->
         <Style x:Key="DarkComboBoxItemStyle" TargetType="ComboBoxItem">
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Padding" Value="10,6" />
             <Setter Property="FontSize" Value="13" />
@@ -204,7 +204,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="{StaticResource Surface2Brush}" />
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentGlowBrush}" />
@@ -216,9 +216,9 @@
         </Style>
 
         <Style x:Key="DarkComboBoxStyle" TargetType="ComboBox">
-            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSoft}" />
+            <Setter Property="Background" Value="{DynamicResource BrushInputBG}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Height" Value="32" />
             <Setter Property="Padding" Value="10,0" />
@@ -235,8 +235,8 @@
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
                                         <Border x:Name="Root"
-                                                Background="{StaticResource SurfaceBrush}"
-                                                BorderBrush="{StaticResource BorderBrushSoft}"
+                                                Background="{DynamicResource BrushInputBG}"
+                                                BorderBrush="{DynamicResource BrushBorder}"
                                                 BorderThickness="1" CornerRadius="6">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
@@ -252,15 +252,15 @@
                                                 <Path Grid.Column="1" Margin="0,0,10,0"
                                                       VerticalAlignment="Center" HorizontalAlignment="Center"
                                                       Data="M7,10L12,15L17,10H7Z"
-                                                      Fill="{StaticResource Text2Brush}" Width="12" Height="12" Stretch="Uniform" />
+                                                      Fill="{DynamicResource BrushTextSec}" Width="12" Height="12" Stretch="Uniform" />
                                             </Grid>
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource BorderBrushStrong}" />
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
                                             </Trigger>
                                             <Trigger Property="IsChecked" Value="True">
-                                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -273,8 +273,8 @@
                             <Popup x:Name="Popup" Placement="Bottom"
                                    IsOpen="{TemplateBinding IsDropDownOpen}"
                                    AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
-                                <Border Background="{StaticResource PanelBrush}"
-                                        BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1"
+                                <Border Background="{DynamicResource BrushSecondaryBtnBG}"
+                                        BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
                                         CornerRadius="8" Margin="0,4,0,0"
                                         MinWidth="{TemplateBinding ActualWidth}" MaxHeight="280">
                                     <ScrollViewer SnapsToDevicePixels="True">
@@ -294,13 +294,13 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Thumb">
-                        <Border x:Name="Root" Background="#3F3F46" CornerRadius="3" Margin="2" />
+                        <Border x:Name="Root" Background="{DynamicResource BrushBorder}" CornerRadius="3" Margin="2" />
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Root" Property="Background" Value="#52525B" />
                             </Trigger>
                             <Trigger Property="IsDragging" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushAccent}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -342,7 +342,7 @@
 
         <!-- 暗色 CheckBox -->
         <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="{StaticResource Text2Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
             <Setter Property="FontSize" Value="12.5" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -351,23 +351,23 @@
                     <ControlTemplate TargetType="CheckBox">
                         <StackPanel Orientation="Horizontal" Background="Transparent">
                             <Border x:Name="Box" Width="16" Height="16" CornerRadius="3"
-                                    Background="{StaticResource SurfaceBrush}"
-                                    BorderBrush="{StaticResource BorderBrushStrong}" BorderThickness="1"
+                                    Background="{DynamicResource BrushInputBG}"
+                                    BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
                                     VerticalAlignment="Center">
-                                <Path x:Name="Check" Data="M3,8 L7,12 L13,4" Stroke="White" StrokeThickness="2"
+                                <Path x:Name="Check" Data="M3,8 L7,12 L13,4" Stroke="{DynamicResource BrushTextMain}" StrokeThickness="2"
                                       Visibility="Collapsed" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                             </Border>
                             <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Box" Property="Background" Value="{StaticResource AccentBrush}" />
-                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Box" Property="Background" Value="{DynamicResource BrushAccent}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
                                 <Setter TargetName="Check" Property="Visibility" Value="Visible" />
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -376,20 +376,20 @@
         </Style>
 
         <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Text2Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Margin" Value="0,0,0,6" />
         </Style>
 
         <Style x:Key="HintTextStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Text3Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="Margin" Value="0,5,0,0" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
 
         <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource Text3Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,10" />
@@ -398,8 +398,8 @@
 
 
     <Border Margin="1"
-            Background="{StaticResource BgBrush}"
-            BorderBrush="#22FFFFFF"
+            Background="{DynamicResource BrushBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1"
             CornerRadius="14"
             SnapsToDevicePixels="True">
@@ -412,7 +412,7 @@
 
             <!-- 顶栏：只放标题 + 模式切换 + 关闭按钮，整条作为拖动区 -->
             <Border Grid.Row="0"
-                    BorderBrush="{StaticResource BorderBrushSoft}"
+                    BorderBrush="{DynamicResource BrushBorder}"
                     BorderThickness="0,0,0,1"
                     Padding="22,14"
                     Background="Transparent"
@@ -427,14 +427,14 @@
                     <!-- 左：标题 -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="HeaderTitleText" Text="新建扩展" VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" />
+                                   Foreground="{DynamicResource BrushTextMain}" FontSize="15" FontWeight="SemiBold" />
                     </StackPanel>
 
                     <!-- 中：模式切换 -->
                     <Border Grid.Column="1" CornerRadius="9" Padding="3"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                            Background="{StaticResource PanelBrush}"
-                            BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1">
+                            Background="{DynamicResource BrushSecondaryBtnBG}"
+                            BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
                             <RadioButton x:Name="SimpleModeTab" Style="{StaticResource ModeTabStyle}"
                                          GroupName="EditorMode" IsChecked="True"
@@ -481,10 +481,10 @@
                     <StackPanel HorizontalAlignment="Stretch">
 
                         <StackPanel Margin="0,0,0,18">
-                            <TextBlock Text="这个扩展要做什么？" Foreground="{StaticResource TextBrush}"
+                            <TextBlock Text="这个扩展要做什么？" Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="15" FontWeight="SemiBold" />
                             <TextBlock Text="选一个最匹配的类型，下面的表单会跟着变。"
-                                       Foreground="{StaticResource Text3Brush}" FontSize="12"
+                                       Foreground="{DynamicResource BrushTextSec}" FontSize="12"
                                        Margin="0,4,0,0" />
                         </StackPanel>
 
@@ -499,9 +499,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="打开网址 / 程序" Margin="0,10,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock Text="打开链接、文件、文件夹或系统协议"
-                                               Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -516,9 +516,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="网页搜索" Margin="0,10,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock Text="把输入拼到搜索 URL 模板里"
-                                               Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -533,9 +533,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="粘贴文本" Margin="0,10,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock Text="向当前光标处粘贴一段固定内容"
-                                               Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -550,9 +550,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="模拟按键" Margin="0,10,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock Text="向当前窗口发送一组快捷键"
-                                               Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -567,9 +567,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="PowerShell 脚本" Margin="0,10,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock Text="跑一段 PowerShell，处理输入和输出"
-                                               Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -584,9 +584,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="C# 脚本" Margin="0,10,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock Text="复杂逻辑、独立窗口、应用级工具"
-                                               Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -601,9 +601,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="双栏工作区" Margin="0,10,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock Text="左输入右输出的工作面板，比如翻译"
-                                               Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -618,9 +618,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="文件夹搜索" Margin="0,10,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock Text="在指定目录里搜文件 / 子文件夹"
-                                               Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -631,11 +631,11 @@
 
                             <StackPanel x:Name="OpenTargetForm">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="White"
+                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="{DynamicResource BrushTextMain}"
                                           Data="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M4,12A8,8 0 0,1 12,4C10.44,6.22 9.5,8.97 9.5,12C9.5,15.03 10.44,17.78 12,20A8,8 0 0,1 4,12M12,20C13.56,17.78 14.5,15.03 14.5,12C14.5,8.97 13.56,6.22 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20M11.5,6.05C10.54,7.85 10,9.86 10,12C10,14.14 10.54,16.15 11.5,17.95C12.46,16.15 13,14.14 13,12C13,9.86 12.46,7.85 11.5,6.05Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="打开网址 / 程序" Margin="8,0,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="目标地址" Style="{StaticResource FieldLabelStyle}" />
@@ -654,9 +654,9 @@
                                 </Grid>
                                 <TextBlock Style="{StaticResource HintTextStyle}">
                                     <Run Text="支持网址（https://）、可执行文件、文件夹路径或系统协议（如 " />
-                                    <Run Text="shell:Desktop" Foreground="{StaticResource AccentBrush}" />
+                                    <Run Text="shell:Desktop" Foreground="{DynamicResource BrushAccent}" />
                                     <Run Text="、" />
-                                    <Run Text="ms-settings:" Foreground="{StaticResource AccentBrush}" />
+                                    <Run Text="ms-settings:" Foreground="{DynamicResource BrushAccent}" />
                                     <Run Text="）。" />
                                 </TextBlock>
                                 <TextBlock Text="常用快捷选择" Style="{StaticResource FieldLabelStyle}" Margin="0,18,0,6" />
@@ -676,11 +676,11 @@
 
                             <StackPanel x:Name="SearchForm" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="White"
+                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="{DynamicResource BrushTextMain}"
                                           Data="M15.5,14H14.71L14.43,13.73C15.41,12.59 16,11.11 16,9.5A6.5,6.5 0 1,0 9.5,16C11.11,16 12.59,15.41 13.73,14.43L14,14.71V15.5L19,20.5L20.5,19L15.5,14M9.5,14C7.01,14 5,11.99 5,9.5C5,7.01 7.01,5 9.5,5C11.99,5 14,7.01 14,9.5C14,11.99 11.99,14 9.5,14Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="网页搜索" Margin="8,0,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="搜索引擎模板" Style="{StaticResource FieldLabelStyle}" />
@@ -704,7 +704,7 @@
                                          TextChanged="SearchTemplateSimpleBox_TextChanged" />
                                 <TextBlock Style="{StaticResource HintTextStyle}">
                                     <Run Text="必须包含 " />
-                                    <Run Text="{}{query}" Foreground="{StaticResource AccentBrush}" />
+                                    <Run Text="{}{query}" Foreground="{DynamicResource BrushAccent}" />
                                     <Run Text="，启动器输入的内容会替换进去。" />
                                 </TextBlock>
                                 <TextBlock Text="触发前缀（多个用逗号分隔，如 b, baidu）"
@@ -714,18 +714,18 @@
                                          TextChanged="SearchPrefixesSimpleBox_TextChanged" />
                                 <TextBlock Style="{StaticResource HintTextStyle}">
                                     <Run Text="设置后用户输入 " />
-                                    <Run Text="b 燕子" Foreground="{StaticResource AccentBrush}" />
+                                    <Run Text="b 燕子" Foreground="{DynamicResource BrushAccent}" />
                                     <Run Text=" 就会用这个搜索。" />
                                 </TextBlock>
                             </StackPanel>
 
                             <StackPanel x:Name="PasteTextForm" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="White"
+                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="{DynamicResource BrushTextMain}"
                                           Data="M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M12,3A1,1 0 0,1 13,4A1,1 0 0,1 12,5A1,1 0 0,1 11,4A1,1 0 0,1 12,3M19,19H5V5H19V19Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="粘贴文本" Margin="8,0,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="要粘贴的内容" Style="{StaticResource FieldLabelStyle}" />
@@ -739,11 +739,11 @@
 
                             <StackPanel x:Name="HotkeyForm" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="White"
+                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="{DynamicResource BrushTextMain}"
                                           Data="M19,10H17V8H19M19,13H17V11H19M16,10H14V8H16M16,13H14V11H16M16,17H8V15H16M7,10H5V8H7M7,13H5V11H7M8,11H10V13H8M8,8H10V10H8M11,11H13V13H11M11,8H13V10H11M20,5H4C2.89,5 2,5.89 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7C22,5.89 21.1,5 20,5Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="模拟按键" Margin="8,0,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="要发送的按键组合" Style="{StaticResource FieldLabelStyle}" />
@@ -785,11 +785,11 @@
 
                             <StackPanel x:Name="PowerShellForm" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="White"
+                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="{DynamicResource BrushTextMain}"
                                           Data="M4,5H20A2,2 0 0,1 22,7V17A2,2 0 0,1 20,19H4A2,2 0 0,1 2,17V7A2,2 0 0,1 4,5M7.5,10L10.5,12L7.5,14L6.5,13L8.5,12L6.5,11L7.5,10M11,14H14V13H11V14Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="PowerShell 脚本" Margin="8,0,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="脚本内容" Style="{StaticResource FieldLabelStyle}" />
@@ -799,25 +799,25 @@
                                          TextChanged="ScriptSimpleBox_TextChanged" />
                                 <TextBlock Style="{StaticResource HintTextStyle}">
                                     <Run Text="可用参数 " />
-                                    <Run Text="$InputText" Foreground="{StaticResource AccentBrush}" />
+                                    <Run Text="$InputText" Foreground="{DynamicResource BrushAccent}" />
                                     <Run Text=" 和 " />
-                                    <Run Text="$ContextPath" Foreground="{StaticResource AccentBrush}" />
+                                    <Run Text="$ContextPath" Foreground="{DynamicResource BrushAccent}" />
                                     <Run Text="；脚本输出会回到宿主显示或处理。" />
                                 </TextBlock>
                             </StackPanel>
 
                             <StackPanel x:Name="CSharpForm" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="White"
+                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="{DynamicResource BrushTextMain}"
                                           Data="M8.59,16.59L4,12L8.59,7.41L10,8.83L6.83,12L10,15.17L8.59,16.59M15.41,16.59L14,15.17L17.17,12L14,8.83L15.41,7.41L20,12L15.41,16.59Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="C# 脚本" Margin="8,0,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <CheckBox x:Name="CSharpUseNativeWindowCheck"
                                           Content="使用独立原生窗口（uiMode = native-window）"
-                                          Foreground="{StaticResource Text2Brush}" FontSize="12"
+                                          Foreground="{DynamicResource BrushTextSec}" FontSize="12"
                                           Margin="0,0,0,12"
                                           Checked="CSharpNativeWindow_Toggled"
                                           Unchecked="CSharpNativeWindow_Toggled" />
@@ -828,18 +828,18 @@
                                          TextChanged="ScriptSimpleBox_TextChanged" />
                                 <TextBlock Style="{StaticResource HintTextStyle}">
                                     <Run Text="实现静态类 " />
-                                    <Run Text="YanziAction.RunAsync(YanziActionContext context)" Foreground="{StaticResource AccentBrush}" />
+                                    <Run Text="YanziAction.RunAsync(YanziActionContext context)" Foreground="{DynamicResource BrushAccent}" />
                                     <Run Text="，返回的字符串会显示给用户。" />
                                 </TextBlock>
                             </StackPanel>
 
                             <StackPanel x:Name="WorkbenchForm" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="White"
+                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="{DynamicResource BrushTextMain}"
                                           Data="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,8V18H20V8H4Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="双栏工作区" Margin="8,0,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <Grid>
@@ -876,11 +876,11 @@
 
                             <StackPanel x:Name="FolderSearchForm" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="White"
+                                    <Path Width="14" Height="14" Stretch="Uniform" Fill="{DynamicResource BrushTextMain}"
                                           Data="M10,4H2C0.89,4 0,4.89 0,6V18A2,2 0 0,0 2,20H22A2,2 0 0,0 24,18V8C24,6.89 23.1,6 22,6H12L10,4Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="文件夹搜索" Margin="8,0,0,0"
-                                               Foreground="{StaticResource TextBrush}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="搜索根目录" Style="{StaticResource FieldLabelStyle}" />
@@ -910,13 +910,13 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <CheckBox x:Name="FolderSearchIncludeFilesCheck" Content="包含文件" IsChecked="True"
-                                              Foreground="{StaticResource Text2Brush}" VerticalAlignment="Center"
+                                              Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center"
                                               Checked="FolderSearchSimple_Toggled" Unchecked="FolderSearchSimple_Toggled" />
                                     <CheckBox Grid.Column="2" x:Name="FolderSearchIncludeDirsCheck" Content="包含子文件夹"
-                                              Foreground="{StaticResource Text2Brush}" VerticalAlignment="Center"
+                                              Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center"
                                               Checked="FolderSearchSimple_Toggled" Unchecked="FolderSearchSimple_Toggled" />
                                     <CheckBox Grid.Column="4" x:Name="FolderSearchSubdirsCheck" Content="递归子目录" IsChecked="True"
-                                              Foreground="{StaticResource Text2Brush}" VerticalAlignment="Center"
+                                              Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center"
                                               Checked="FolderSearchSimple_Toggled" Unchecked="FolderSearchSimple_Toggled" />
                                 </Grid>
                             </StackPanel>
@@ -925,8 +925,8 @@
 
                         <Expander x:Name="AdvancedSimpleExpander"
                                   Header="更多高级选项 · ID、版本、关键词、权限"
-                                  Foreground="{StaticResource Text2Brush}"
-                                  Background="{StaticResource PanelBrush}"
+                                  Foreground="{DynamicResource BrushTextSec}"
+                                  Background="{DynamicResource BrushSecondaryBtnBG}"
                                   Margin="0,12,0,0" Padding="6" FontSize="12.5">
                             <StackPanel Margin="6,10,6,4">
                                 <Grid Margin="0,0,0,12">
@@ -987,10 +987,10 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel>
-                            <TextBlock Text="编辑扩展 JSON" Foreground="{StaticResource TextBrush}"
+                            <TextBlock Text="编辑扩展 JSON" Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="16" FontWeight="SemiBold" />
                             <TextBlock Text="直接修改代码，与简单扩展实时同步。"
-                                       Foreground="{StaticResource Text3Brush}" FontSize="12"
+                                       Foreground="{DynamicResource BrushTextSec}" FontSize="12"
                                        Margin="0,3,0,0" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -1006,8 +1006,8 @@
                     </Grid>
 
                     <Border Grid.Row="1" Margin="28,0,18,12"
-                            Background="{StaticResource PanelBrush}"
-                            BorderBrush="{StaticResource BorderBrushSoft}"
+                            Background="{DynamicResource BrushSecondaryBtnBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1" CornerRadius="10" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -1041,8 +1041,8 @@
                     </Border>
 
                     <Border Grid.Row="2" Margin="28,0,18,18"
-                            Background="{StaticResource PanelBrush}"
-                            BorderBrush="{StaticResource BorderBrushStrong}"
+                            Background="{DynamicResource BrushSecondaryBtnBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1.4" CornerRadius="10">
                         <Grid>
                             <TextBox x:Name="ManualJsonInputBox"
@@ -1051,19 +1051,19 @@
                                      VerticalScrollBarVisibility="Auto"
                                      HorizontalScrollBarVisibility="Auto"
                                      Background="Transparent" BorderThickness="0"
-                                     Foreground="{StaticResource TextBrush}"
+                                     Foreground="{DynamicResource BrushTextMain}"
                                      FontFamily="Consolas" FontSize="13.5"
-                                     CaretBrush="{StaticResource AccentBrush}"
+                                     CaretBrush="{DynamicResource BrushAccent}"
                                      SelectionBrush="{StaticResource AccentGlowBrush}"
                                      TextChanged="ManualJsonInputBox_TextChanged" />
                             <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
                                     Margin="0,0,16,16" Padding="10,5" CornerRadius="12"
-                                    Background="#AA111111" BorderThickness="1">
+                                    Background="{DynamicResource BrushDialogBG}" BorderThickness="1">
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse x:Name="ManualJsonStatusDot" Width="7" Height="7"
-                                             Fill="{StaticResource Text3Brush}" VerticalAlignment="Center" />
+                                             Fill="{DynamicResource BrushTextSec}" VerticalAlignment="Center" />
                                     <TextBlock x:Name="ManualJsonStatusText" Margin="8,0,0,0"
-                                               Text="等待输入" Foreground="{StaticResource Text3Brush}"
+                                               Text="等待输入" Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Border>
@@ -1073,20 +1073,20 @@
 
 
                 <Border Grid.Column="1"
-                        Background="#FF111116"
-                        BorderBrush="{StaticResource BorderBrushSoft}"
+                        Background="{DynamicResource BrushSecondaryBtnBG}"
+                        BorderBrush="{DynamicResource BrushBorder}"
                         BorderThickness="1,0,0,0">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="22,24">
                         <StackPanel>
                             <TextBlock Text="实时预览" Style="{StaticResource SectionTitleStyle}" />
-                            <Border Background="{StaticResource PanelBrush}"
-                                    BorderBrush="{StaticResource BorderBrushSoft}"
+                            <Border Background="{DynamicResource BrushSecondaryBtnBG}"
+                                    BorderBrush="{DynamicResource BrushBorder}"
                                     BorderThickness="1" CornerRadius="12" Padding="12">
                                 <StackPanel>
                                     <TextBlock Text="在启动器中显示为"
-                                               Foreground="{StaticResource Text3Brush}"
+                                               Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="10" Margin="2,0,0,8" />
-                                    <Border Background="#1AFFFFFF" CornerRadius="9" Padding="10">
+                                    <Border Background="{DynamicResource BrushListViewItemMouseOver}" CornerRadius="9" Padding="10">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
@@ -1094,7 +1094,7 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <Border x:Name="PreviewIconHost" Width="40" Height="40"
-                                                    CornerRadius="10" Background="{StaticResource AccentBrush}"
+                                                    CornerRadius="10" Background="{DynamicResource BrushAccent}"
                                                     ClipToBounds="True">
                                                 <Grid>
                                                     <Image x:Name="IconPreviewImage" Width="40" Height="40"
@@ -1105,9 +1105,9 @@
                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
                                                              Visibility="Collapsed">
                                                         <Path x:Name="IconPreviewVector" Width="24" Height="24"
-                                                              Fill="White" Stretch="Uniform" />
+                                                              Fill="{DynamicResource BrushTextMain}" Stretch="Uniform" />
                                                     </Viewbox>
-                                                    <TextBlock x:Name="IconPreviewGlyph" Text="E" Foreground="White"
+                                                    <TextBlock x:Name="IconPreviewGlyph" Text="E" Foreground="{DynamicResource BrushTextMain}"
                                                                FontSize="18" FontWeight="Bold"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                Visibility="Collapsed" />
@@ -1115,18 +1115,18 @@
                                             </Border>
                                             <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                                 <TextBox x:Name="PreviewNameText" Text="未命名扩展"
-                                                         Foreground="{StaticResource TextBrush}"
+                                                         Foreground="{DynamicResource BrushTextMain}"
                                                          FontSize="13" FontWeight="SemiBold"
                                                          Background="Transparent" BorderThickness="0"
-                                                         Padding="0" CaretBrush="{StaticResource AccentBrush}"
+                                                         Padding="0" CaretBrush="{DynamicResource BrushAccent}"
                                                          SelectionBrush="{StaticResource AccentGlowBrush}"
                                                          ToolTip="点击直接修改名称"
                                                          TextChanged="PreviewNameText_TextChanged" />
                                                 <TextBox x:Name="PreviewDescText" Text="选择类型并填写信息以预览"
-                                                         Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                                         Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                          Background="Transparent" BorderThickness="0"
                                                          Padding="0" Margin="0,2,0,0"
-                                                         CaretBrush="{StaticResource AccentBrush}"
+                                                         CaretBrush="{DynamicResource BrushAccent}"
                                                          SelectionBrush="{StaticResource AccentGlowBrush}"
                                                          ToolTip="点击直接修改描述"
                                                          TextChanged="PreviewDescText_TextChanged" />
@@ -1134,7 +1134,7 @@
                                         </Grid>
                                     </Border>
                                     <TextBlock x:Name="IconPreviewHintText" Margin="2,8,0,0"
-                                               Foreground="{StaticResource Text3Brush}"
+                                               Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="10.5" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>
@@ -1190,8 +1190,8 @@
                             <TextBlock Text="触发方式" Style="{StaticResource SectionTitleStyle}" Margin="0,22,0,10" />
 
                             <!-- 开机自启 段卡 -->
-                            <Border Background="{StaticResource PanelBrush}" CornerRadius="10"
-                                    BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1"
+                            <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="10"
+                                    BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
                                     Margin="0,0,0,10">
                                 <Grid Margin="14,12">
                                     <Grid.ColumnDefinitions>
@@ -1205,9 +1205,9 @@
                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                                        <TextBlock Text="开机自启" Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                        <TextBlock Text="开机自启" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                         <TextBlock Text="主程序启动后自动运行此扩展"
-                                                   Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                    Margin="0,2,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                     <CheckBox x:Name="TriggerStartupSwitch" Grid.Column="2"
@@ -1217,8 +1217,8 @@
                             </Border>
 
                             <!-- 定时运行 段卡（暂仅展示，配置入口） -->
-                            <Border Background="{StaticResource PanelBrush}" CornerRadius="10"
-                                    BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1"
+                            <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="10"
+                                    BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
                                     Margin="0,0,0,10">
                                 <Grid Margin="14,12">
                                     <Grid.ColumnDefinitions>
@@ -1232,9 +1232,9 @@
                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                                        <TextBlock Text="定时运行" Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                        <TextBlock Text="定时运行" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                         <TextBlock x:Name="TriggerScheduleLabel" Text="未配置 · 点击设置 cron"
-                                                   Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                    Margin="0,2,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                     <Button Grid.Column="2" Content="配置"
@@ -1246,8 +1246,8 @@
                             </Border>
 
                             <!-- 全局快捷键 段卡 -->
-                            <Border Background="{StaticResource PanelBrush}" CornerRadius="10"
-                                    BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1"
+                            <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="10"
+                                    BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
                                     Margin="0,0,0,10">
                                 <Grid Margin="14,12">
                                     <Grid.ColumnDefinitions>
@@ -1261,9 +1261,9 @@
                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                                        <TextBlock Text="全局快捷键" Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                        <TextBlock Text="全局快捷键" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                         <TextBlock x:Name="TriggerShortcutLabel" Text="未设置 · 点击录制"
-                                                   Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                    Margin="0,2,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                     <Button Grid.Column="2" Content="设置"
@@ -1275,8 +1275,8 @@
                             </Border>
 
                             <!-- 鼠标手势 段卡 -->
-                            <Border Background="{StaticResource PanelBrush}" CornerRadius="10"
-                                    BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1"
+                            <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="10"
+                                    BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
                                     Margin="0,0,0,4">
                                 <StackPanel>
                                     <Grid Margin="14,12,14,8">
@@ -1291,14 +1291,14 @@
                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                                            <TextBlock Text="鼠标手势" Foreground="{StaticResource TextBrush}" FontSize="13" FontWeight="SemiBold" />
+                                            <TextBlock Text="鼠标手势" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
                                             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                                 <TextBlock x:Name="TriggerGestureSequenceText"
                                                            FontFamily="Consolas" FontSize="13" FontWeight="Bold"
                                                            Foreground="#FFFB923C"
                                                            Visibility="Collapsed" />
                                                 <TextBlock x:Name="TriggerGestureLabel" Text="未设置 · 点击录制"
-                                                           Foreground="{StaticResource Text3Brush}" FontSize="11"
+                                                           Foreground="{DynamicResource BrushTextSec}" FontSize="11"
                                                            VerticalAlignment="Bottom" />
                                             </StackPanel>
                                         </StackPanel>
@@ -1314,13 +1314,13 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <Border Background="#0AFFFFFF"
-                                                    BorderBrush="{StaticResource BorderBrushSoft}"
+                                            <Border Background="{DynamicResource BrushListViewItemMouseOver}"
+                                                    BorderBrush="{DynamicResource BrushBorder}"
                                                     BorderThickness="1"
                                                     CornerRadius="8"
                                                     Padding="10,7">
                                                 <TextBlock Text="触发方式使用设置页的全局鼠标手势触发"
-                                                           Foreground="{StaticResource Text3Brush}"
+                                                           Foreground="{DynamicResource BrushTextSec}"
                                                            FontSize="11"
                                                            TextWrapping="Wrap" />
                                             </Border>
@@ -1331,7 +1331,7 @@
                                         </Grid>
 
                                         <TextBlock Text="常用手势"
-                                                   Foreground="{StaticResource Text3Brush}"
+                                                   Foreground="{DynamicResource BrushTextSec}"
                                                    FontSize="11"
                                                    Margin="0,10,0,6" />
                                         <WrapPanel x:Name="GesturePresetPanel" ItemHeight="28" ItemWidth="Auto">
@@ -1365,7 +1365,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="最小距离（像素）"
-                                                           Foreground="{StaticResource Text3Brush}"
+                                                           Foreground="{DynamicResource BrushTextSec}"
                                                            FontSize="11"
                                                            Margin="0,0,0,4" />
                                                 <TextBox x:Name="GestureMinDistanceBox"
@@ -1374,7 +1374,7 @@
                                             </StackPanel>
                                             <StackPanel Grid.Column="2">
                                                 <TextBlock Text="容差（度，可选）"
-                                                           Foreground="{StaticResource Text3Brush}"
+                                                           Foreground="{DynamicResource BrushTextSec}"
                                                            FontSize="11"
                                                            Margin="0,0,0,4" />
                                                 <TextBox x:Name="GestureToleranceBox"
@@ -1385,7 +1385,7 @@
 
                                         <TextBlock x:Name="GestureConflictHintText"
                                                    Margin="0,8,0,0"
-                                                   Foreground="{StaticResource Text3Brush}"
+                                                   Foreground="{DynamicResource BrushTextSec}"
                                                    FontSize="11"
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
@@ -1400,11 +1400,11 @@
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="✨" FontSize="13" VerticalAlignment="Center" />
                                         <TextBlock Text="让 AI 帮你写完整 JSON" Margin="6,0,0,0"
-                                                   Foreground="{StaticResource TextBrush}"
+                                                   Foreground="{DynamicResource BrushTextMain}"
                                                    FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     </StackPanel>
                                     <TextBlock Text="复制提示词到任意 AI 对话，得到 JSON 后切到「高级模式」粘贴即可。"
-                                               Foreground="{StaticResource Text2Brush}"
+                                               Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="11" TextWrapping="Wrap"
                                                Margin="0,8,0,10" />
                                     <Button x:Name="SidePanelCopyPromptButton" Content="复制提示词"
@@ -1424,8 +1424,8 @@
             <Border x:Name="ManualTestResultPanel" Grid.Row="1"
                     VerticalAlignment="Bottom"
                     Margin="28,0,28,16"
-                    Background="{StaticResource PanelBrush}"
-                    BorderBrush="{StaticResource BorderBrushSoft}"
+                    Background="{DynamicResource BrushSecondaryBtnBG}"
+                    BorderBrush="{DynamicResource BrushBorder}"
                     BorderThickness="1" CornerRadius="10" Padding="16"
                     Visibility="Collapsed">
                 <StackPanel>
@@ -1434,7 +1434,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="测试日志" Foreground="{StaticResource TextBrush}"
+                        <TextBlock Text="测试日志" Foreground="{DynamicResource BrushTextMain}"
                                    FontSize="13" FontWeight="SemiBold" />
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button x:Name="ManualCopyTestFailureButton" Content="复制日志"
@@ -1448,20 +1448,20 @@
                         </StackPanel>
                     </Grid>
                     <TextBlock x:Name="ManualTestSummaryText"
-                               Foreground="{StaticResource Text2Brush}"
+                               Foreground="{DynamicResource BrushTextSec}"
                                FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
                     <TextBox x:Name="ManualTestLogTextBox"
                              Height="160" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                              VerticalScrollBarVisibility="Auto"
-                             Background="#FF101014" BorderThickness="0"
-                             Foreground="{StaticResource Text2Brush}"
+                             Background="{DynamicResource BrushBG}" BorderThickness="0"
+                             Foreground="{DynamicResource BrushTextSec}"
                              FontFamily="Consolas" FontSize="12" />
                 </StackPanel>
             </Border>
 
             <!-- 底栏：错误提示 + 试运行 / 保存 -->
-            <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="0,1,0,0"
-                    Padding="22,12" Background="#FF111116">
+            <Border Grid.Row="2" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0"
+                    Padding="22,12" Background="{DynamicResource BrushSecondaryBtnBG}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -1473,7 +1473,7 @@
                                    Visibility="Collapsed" VerticalAlignment="Center" />
                         <TextBlock x:Name="HeaderDescription"
                                    Text="选好类型，填几项关键信息就能保存。"
-                                   Foreground="{StaticResource Text3Brush}" FontSize="11.5"
+                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11.5"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">

@@ -4,343 +4,334 @@
              xmlns:local="clr-namespace:OpenQuickHost"
              xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework">
     <Application.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/DarkTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
 
-        <!-- Premium Dark Theme Colors -->
-        <Color x:Key="ColorBG">#FF161616</Color>
-        <Color x:Key="ColorBorder">#FF2A2A2A</Color>
-        <Color x:Key="ColorAccent">#FF3B82F6</Color>
-        <Color x:Key="ColorTextMain">#FFFFFFFF</Color>
-        <Color x:Key="ColorTextSec">#FF8E8E8E</Color>
-        <Color x:Key="ColorInputBG">#FF1E1E1E</Color>
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
-        <SolidColorBrush x:Key="BrushBG" Color="{StaticResource ColorBG}"/>
-        <SolidColorBrush x:Key="BrushBorder" Color="{StaticResource ColorBorder}"/>
-        <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource ColorAccent}"/>
-        <SolidColorBrush x:Key="BrushTextMain" Color="{StaticResource ColorTextMain}"/>
-        <SolidColorBrush x:Key="BrushTextSec" Color="{StaticResource ColorTextSec}"/>
-        <SolidColorBrush x:Key="BrushInputBG" Color="{StaticResource ColorInputBG}"/>
+            <!-- Global Text Styles -->
+            <Style x:Key="TitleText" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                <Setter Property="FontSize" Value="18"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+            </Style>
 
-        <!-- Global Text Styles -->
-        <Style x:Key="TitleText" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="FontSize" Value="18"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-        </Style>
+            <Style x:Key="DescriptionText" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
 
-        <Style x:Key="DescriptionText" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#FF8E8E8E"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-        </Style>
+            <!-- Global Button Styles -->
+            <Style x:Key="BaseButton" TargetType="Button">
+                <Setter Property="Height" Value="34"/>
+                <Setter Property="MinWidth" Value="80"/>
+                <Setter Property="Padding" Value="24,0"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="8" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="border" Property="Opacity" Value="0.9"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="border" Property="Opacity" Value="0.7"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="border" Property="Opacity" Value="0.4"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
 
-        <!-- Global Button Styles -->
-        <Style x:Key="BaseButton" TargetType="Button">
-            <Setter Property="Height" Value="34"/>
-            <Setter Property="MinWidth" Value="80"/>
-            <Setter Property="Padding" Value="24,0"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="8" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Opacity" Value="0.9"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Opacity" Value="0.7"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="border" Property="Opacity" Value="0.4"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+            <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+                <Setter Property="Background" Value="{DynamicResource BrushAccent}"/>
+                <Setter Property="Foreground" Value="{DynamicResource BrushAccentText}"/>
+                <Setter Property="BorderThickness" Value="0"/>
+            </Style>
 
-        <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource BaseButton}">
-            <Setter Property="Background" Value="#FF3B82F6"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-        </Style>
+            <Style x:Key="SecondaryBtn" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+                <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BrushSecondaryBtnBorder}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Foreground" Value="{DynamicResource BrushSecondaryBtnText}"/>
+            </Style>
 
-        <Style x:Key="SecondaryBtn" TargetType="Button" BasedOn="{StaticResource BaseButton}">
-            <Setter Property="Background" Value="#FF252525"/>
-            <Setter Property="BorderBrush" Value="#FF333333"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Foreground" Value="#FFAAAAAA"/>
-        </Style>
+            <!-- Global Input Style -->
+            <Style x:Key="BaseInput" TargetType="Control">
+                <Setter Property="Background" Value="{DynamicResource BrushInputBG}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                <Setter Property="Padding" Value="10,8"/>
+            </Style>
 
-        <!-- Global Input Style -->
-        <Style x:Key="BaseInput" TargetType="Control">
-            <Setter Property="Background" Value="#FF1E1E1E"/>
-            <Setter Property="BorderBrush" Value="#FF2A2A2A"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Padding" Value="10,8"/>
-        </Style>
+            <Style TargetType="TextBox" BasedOn="{StaticResource BaseInput}">
+                <Setter Property="CaretBrush" Value="{DynamicResource BrushTextMain}"/>
+                <Setter Property="SelectionBrush" Value="{DynamicResource BrushAccent}"/>
+                <Setter Property="SelectionOpacity" Value="0.35"/>
+            </Style>
 
-        <Style TargetType="TextBox" BasedOn="{StaticResource BaseInput}">
-            <Setter Property="CaretBrush" Value="White"/>
-            <Setter Property="SelectionBrush" Value="#FF3B82F6"/>
-            <Setter Property="SelectionOpacity" Value="0.35"/>
-        </Style>
+            <Style TargetType="PasswordBox" BasedOn="{StaticResource BaseInput}">
+                <Setter Property="CaretBrush" Value="{DynamicResource BrushTextMain}"/>
+                <Setter Property="FontSize" Value="14"/>
+            </Style>
 
-        <Style TargetType="PasswordBox" BasedOn="{StaticResource BaseInput}">
-            <Setter Property="CaretBrush" Value="White"/>
-            <Setter Property="FontSize" Value="14"/>
-        </Style>
+            <Style TargetType="CheckBox">
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                <Setter Property="FontSize" Value="13"/>
+            </Style>
 
-        <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="#FFE5E5E5"/>
-            <Setter Property="FontSize" Value="13"/>
-        </Style>
+            <Style TargetType="ListView">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                <Setter Property="BorderThickness" Value="0"/>
+            </Style>
 
-        <Style TargetType="ListView">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-        </Style>
-
-        <Style TargetType="GridViewColumnHeader">
-            <Setter Property="Background" Value="#FF252525"/>
-            <Setter Property="Foreground" Value="#FFB8B8B8"/>
-            <Setter Property="BorderBrush" Value="#FF2A2A2A"/>
-            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-            <Setter Property="Padding" Value="12,10"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="GridViewColumnHeader">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              VerticalAlignment="Center"
-                                              Margin="0"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style TargetType="ListViewItem">
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="8,10"/>
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ListViewItem">
-                        <Border x:Name="Root"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="8"
-                                Padding="{TemplateBinding Padding}"
-                                Margin="0,2">
-                            <GridViewRowPresenter Content="{TemplateBinding Content}"
-                                                  Columns="{Binding View.Columns, RelativeSource={RelativeSource AncestorType=ListView}}"
-                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#14FFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#1F3B82F6"/>
-                                <Setter TargetName="Root" Property="BorderBrush" Value="#403B82F6"/>
-                                <Setter TargetName="Root" Property="BorderThickness" Value="1"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.55"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Global Window Style for Dialogs -->
-        <Style x:Key="DialogWindow" TargetType="Window">
-            <Setter Property="Background" Value="#FF1A1A1A"/>
-            <Setter Property="WindowStyle" Value="None"/>
-            <Setter Property="UseLayoutRounding" Value="True"/>
-            <Setter Property="SnapsToDevicePixels" Value="True"/>
-            <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
-            <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
-            <Setter Property="shell:WindowChrome.WindowChrome">
-                <Setter.Value>
-                    <shell:WindowChrome CaptionHeight="0"
-                                        ResizeBorderThickness="6"
-                                        CornerRadius="12"
-                                        GlassFrameThickness="0" />
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Modern Dark ContextMenu Style -->
-        <Style TargetType="ContextMenu">
-            <Setter Property="Background" Value="#F21A1A1A"/>
-            <Setter Property="BorderBrush" Value="#25FFFFFF"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Padding" Value="4"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ContextMenu">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="10">
-                            <Border.Effect>
-                                <DropShadowEffect BlurRadius="15" Direction="270" ShadowDepth="2" Opacity="0.5"/>
-                            </Border.Effect>
-                            <ScrollViewer x:Name="ContextMenuScrollViewer" 
-                                          Margin="1"
-                                          VerticalScrollBarVisibility="Disabled"
-                                          HorizontalScrollBarVisibility="Disabled">
-                                <ItemsPresenter />
-                            </ScrollViewer>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style TargetType="Separator">
-            <Setter Property="Background" Value="#15FFFFFF"/>
-            <Setter Property="Margin" Value="4,4"/>
-            <Setter Property="Height" Value="1"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Separator">
-                        <Border Height="{TemplateBinding Height}" 
-                                Background="{TemplateBinding Background}" 
-                                SnapsToDevicePixels="true"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style TargetType="MenuItem">
-            <Setter Property="Height" Value="40"/>
-            <Setter Property="Padding" Value="12,0"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="MenuItem">
-                        <Border x:Name="border"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                CornerRadius="8"
-                                Margin="4,1">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="36" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <!-- Icon -->
-                                <ContentPresenter x:Name="Icon" 
-                                                 ContentSource="Icon"
-                                                 HorizontalAlignment="Center"
-                                                 VerticalAlignment="Center"
-                                                 Width="18" Height="18"
-                                                 Opacity="0.9"/>
-                                
-                                <ContentPresenter Grid.Column="1"
-                                                  ContentSource="Header"
+            <Style TargetType="GridViewColumnHeader">
+                <Setter Property="Background" Value="{DynamicResource BrushListViewItemHeaderBG}"/>
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}"/>
+                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                <Setter Property="Padding" Value="12,10"/>
+                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="GridViewColumnHeader">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                                   VerticalAlignment="Center"
-                                                  Margin="6,0,25,0">
-                                    <ContentPresenter.Resources>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}"/>
-                                        </Style>
-                                    </ContentPresenter.Resources>
-                                </ContentPresenter>
+                                                  Margin="0"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
 
-                                <TextBlock Grid.Column="2"
-                                           x:Name="InputGestureText"
-                                           Text="{TemplateBinding InputGestureText}"
-                                           Foreground="#80FFFFFF"
-                                           FontSize="11"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,12,0"/>
-                            </Grid>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#26FFFFFF"/>
-                                <Setter Property="Foreground" Value="White"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="#40FFFFFF"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+            <Style TargetType="ListViewItem">
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderBrush" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Padding" Value="8,10"/>
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListViewItem">
+                            <Border x:Name="Root"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="8"
+                                    Padding="{TemplateBinding Padding}"
+                                    Margin="0,2">
+                                <GridViewRowPresenter Content="{TemplateBinding Content}"
+                                                      Columns="{Binding View.Columns, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}"/>
+                                    <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushListViewItemSelectedBorder}"/>
+                                    <Setter TargetName="Root" Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.55"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
 
-        <!-- Tray Context Menu Resource -->
-        <ContextMenu x:Key="TrayContextMenu">
-            <MenuItem Header="显示主面板" Click="TrayShow_Click">
-                <MenuItem.Icon>
-                    <Path Data="{local:IconGeometry show-main}" Fill="#A0FFFFFF" Stretch="Uniform" />
-                </MenuItem.Icon>
-            </MenuItem>
-            <MenuItem Header="显示鼠标面板" Tag="mouse-panel" Click="TrayMousePanel_Click">
-                <MenuItem.Icon>
-                    <Path Data="{local:IconGeometry mouse-panel}" Fill="#A0FFFFFF" Stretch="Uniform" />
-                </MenuItem.Icon>
-            </MenuItem>
-            <MenuItem Header="暂停全部服务" Tag="service-toggle" Click="TrayToggleMousePanelService_Click">
-                <MenuItem.Icon>
-                    <Path Data="{local:IconGeometry pause}" Fill="#A0FFFFFF" Stretch="Uniform" />
-                </MenuItem.Icon>
-            </MenuItem>
-            <MenuItem Header="隐藏主面板" Click="TrayHide_Click">
-                <MenuItem.Icon>
-                    <Path Data="{local:IconGeometry pin-off}" Fill="#60FFFFFF" Stretch="Uniform" Opacity="0.6"/>
-                </MenuItem.Icon>
-            </MenuItem>
-            <MenuItem Header="正在运行的扩展" Tag="running-extensions" Click="TrayRunningExtensions_Click">
-                <MenuItem.Icon>
-                    <Path Data="{local:IconGeometry running}" Fill="#A0FFFFFF" Stretch="Uniform" />
-                </MenuItem.Icon>
-            </MenuItem>
-            <Separator />
-            <MenuItem Header="查看输入状态" Click="TrayInputState_Click">
-                <MenuItem.Icon>
-                    <Path Data="{local:IconGeometry mouse-panel}" Fill="#80FFFFFF" Stretch="Uniform" />
-                </MenuItem.Icon>
-            </MenuItem>
-            <MenuItem Header="重置键盘和鼠标状态" Click="TrayResetInputState_Click">
-                <MenuItem.Icon>
-                    <Path Data="{local:IconGeometry shortcut}" Fill="#A0FFFFFF" Stretch="Uniform" />
-                </MenuItem.Icon>
-            </MenuItem>
-            <MenuItem Header="设置" Click="TraySettings_Click">
-                <MenuItem.Icon>
-                    <Path Data="{local:IconGeometry settings}" Fill="#A0FFFFFF" Stretch="Uniform" />
-                </MenuItem.Icon>
-            </MenuItem>
-            <Separator />
-            <MenuItem Header="退出" Click="TrayExit_Click">
-                <MenuItem.Icon>
-                    <Path Data="{local:IconGeometry logout}" Fill="#EF4444" Stretch="Uniform" />
-                </MenuItem.Icon>
-            </MenuItem>
-        </ContextMenu>
+            <!-- Global Window Style for Dialogs -->
+            <Style x:Key="DialogWindow" TargetType="Window">
+                <Setter Property="Background" Value="{DynamicResource BrushDialogBG}"/>
+                <Setter Property="WindowStyle" Value="None"/>
+                <Setter Property="UseLayoutRounding" Value="True"/>
+                <Setter Property="SnapsToDevicePixels" Value="True"/>
+                <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
+                <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+                <Setter Property="shell:WindowChrome.WindowChrome">
+                    <Setter.Value>
+                        <shell:WindowChrome CaptionHeight="0"
+                                            ResizeBorderThickness="6"
+                                            CornerRadius="12"
+                                            GlassFrameThickness="0" />
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Modern ContextMenu Style -->
+            <Style TargetType="ContextMenu">
+                <Setter Property="Background" Value="{DynamicResource BrushContextMenuBG}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource BrushContextMenuBorder}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                <Setter Property="Padding" Value="4"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ContextMenu">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="10">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="15" Direction="270" ShadowDepth="2" Opacity="0.5"/>
+                                </Border.Effect>
+                                <ScrollViewer x:Name="ContextMenuScrollViewer" 
+                                              Margin="1"
+                                              VerticalScrollBarVisibility="Disabled"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsPresenter />
+                                </ScrollViewer>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="Separator">
+                <Setter Property="Background" Value="{DynamicResource BrushSeparator}"/>
+                <Setter Property="Margin" Value="4,4"/>
+                <Setter Property="Height" Value="1"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Separator">
+                            <Border Height="{TemplateBinding Height}" 
+                                    Background="{TemplateBinding Background}" 
+                                    SnapsToDevicePixels="true"/>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="MenuItem">
+                <Setter Property="Height" Value="40"/>
+                <Setter Property="Padding" Value="12,0"/>
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="border"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    CornerRadius="8"
+                                    Margin="4,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="36" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Icon -->
+                                    <ContentPresenter x:Name="Icon" 
+                                                     ContentSource="Icon"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center"
+                                                     Width="18" Height="18"
+                                                     Opacity="0.9"/>
+                                    
+                                    <ContentPresenter Grid.Column="1"
+                                                      ContentSource="Header"
+                                                      VerticalAlignment="Center"
+                                                      Margin="6,0,25,0">
+                                        <ContentPresenter.Resources>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}"/>
+                                            </Style>
+                                        </ContentPresenter.Resources>
+                                    </ContentPresenter>
+
+                                    <TextBlock Grid.Column="2"
+                                               x:Name="InputGestureText"
+                                               Text="{TemplateBinding InputGestureText}"
+                                               Foreground="{DynamicResource BrushMenuItemGestureText}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,12,0"/>
+                                </Grid>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="{DynamicResource BrushMenuItemHighlightBG}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource BrushMenuItemDisabledText}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Tray Context Menu Resource -->
+            <ContextMenu x:Key="TrayContextMenu">
+                <MenuItem Header="显示主面板" Click="TrayShow_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry show-main}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="显示鼠标面板" Tag="mouse-panel" Click="TrayMousePanel_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry mouse-panel}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="暂停全部服务" Tag="service-toggle" Click="TrayToggleMousePanelService_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry pause}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="隐藏主面板" Click="TrayHide_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry pin-off}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Opacity="0.6"/>
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="正在运行的扩展" Tag="running-extensions" Click="TrayRunningExtensions_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry running}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="查看输入状态" Click="TrayInputState_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry mouse-panel}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="重置键盘和鼠标状态" Click="TrayResetInputState_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry shortcut}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="设置" Click="TraySettings_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry settings}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="退出" Click="TrayExit_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry logout}" Fill="#EF4444" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+            </ContextMenu>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

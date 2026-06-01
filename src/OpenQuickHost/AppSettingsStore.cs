@@ -43,6 +43,13 @@ public static class AppSettingsStore
 
     private static AppSettings Normalize(AppSettings settings)
     {
+        settings.ThemeMode = settings.ThemeMode?.Trim() switch
+        {
+            "Light" => "Light",
+            "System" => "System",
+            _ => "Dark"
+        };
+
         settings.QuickPanelGlobalGroups ??= [];
         if (settings.QuickPanelGlobalGroups.Count == 0)
         {
@@ -523,6 +530,8 @@ public static class AppSettingsStore
 
 public sealed record AppSettings
 {
+    public string ThemeMode { get; set; } = "Dark";
+
     public string LauncherHotkey { get; set; } = "Alt+Space";
 
     public bool LaunchAtStartup { get; set; } = true;

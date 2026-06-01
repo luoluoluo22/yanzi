@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
@@ -382,6 +382,22 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             _extensionCardWidth = value;
             OnPropertyChanged();
+        }
+    }
+
+    public new string ThemeMode
+    {
+        get => _settings.ThemeMode;
+        set
+        {
+            if (string.Equals(value, _settings.ThemeMode, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _settings = _settings with { ThemeMode = value };
+            OnPropertyChanged();
+            App.ApplyTheme(value);
         }
     }
 
@@ -2027,6 +2043,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void ThemeModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        AppSettingsStore.Save(_settings);
+        _mainWindow.RefreshAppSettings();
+    }
+
     private void SaveSettingsToggle_Click(object sender, RoutedEventArgs e)
     {
         AppSettingsStore.Save(_settings);
@@ -2650,9 +2672,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             "WindowSnap" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xA0, 0x38, 0xBD, 0xF8)),
                              new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x14, 0x38, 0xBD, 0xF8)),
                              new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x38, 0xBD, 0xF8))),
-            _ => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x27, 0x27, 0x2A)), // Gray border
-                  new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x18, 0x18, 0x18)), // Gray background
-                  new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x52, 0x52, 0x5B))) // Gray highlight
+            _ => (null, null, null)
         };
 
         card.BorderBrush = borderBrush;
@@ -2696,13 +2716,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 // Active button - colored background
                 var activeBrush = target switch
                 {
-                    "None" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x3F, 0x3F, 0x46)), // Gray
+                    "None" => null,
                     "Panel" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x25, 0x63, 0xEB)), // Blue
                     "Radial" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x93, 0x33, 0xEA)), // Purple
                     "Yanm" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x05, 0x96, 0x69)), // Green
                     "WindowSnap" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x02, 0x84, 0xC7)),
                     "Gesture" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0xEA, 0x58, 0x0C)),
-                    _ => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x3F, 0x3F, 0x46))
+                    _ => null
                 };
                 button.Background = activeBrush;
                 button.Foreground = new SolidColorBrush(System.Windows.Media.Colors.White);
