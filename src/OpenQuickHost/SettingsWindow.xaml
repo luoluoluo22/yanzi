@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.SettingsWindow"
+﻿<Window x:Class="OpenQuickHost.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -672,7 +672,7 @@
                                     <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="4" Padding="8,4" VerticalAlignment="Center" Margin="0,0,8,0">
                                         <TextBlock Text="{Binding WindowSnapAssistHotkey, TargetNullValue='未设置'}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}"/>
                                     </Border>
-                                    <Button Content="设置" Style="{StaticResource SecondaryBtn}" Height="26" Padding="10,0" Click="EditSnapAssistHotkeyButton_Click"/>
+                                    <Button Content="设置" Style="{StaticResource SecondaryBtn}" Height="26" Padding="14,0" Click="EditSnapAssistHotkeyButton_Click"/>
                                 </StackPanel>
                             </Grid>
                             <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12"/>
@@ -693,8 +693,8 @@
                                         </Border>
                                     </Grid>
                                     <StackPanel Orientation="Horizontal">
-                                        <Button Content="修改快捷键" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="EditLauncherHotkeyButton_Click"/>
-                                        <Button Content="重置为 Alt+Space" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="ResetLauncherHotkeyButton_Click"/>
+                                        <Button Content="修改快捷键" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,0,8,0" Click="EditLauncherHotkeyButton_Click"/>
+                                        <Button Content="重置为 Alt+Space" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="ResetLauncherHotkeyButton_Click"/>
                                     </StackPanel>
                                     <TextBlock Text="主程序快捷键修改后会立即重新注册。支持常规组合键，也支持录制 DoubleCtrl / DoubleAlt。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,12,0,0"/>
                                 </StackPanel>
@@ -780,7 +780,7 @@
                                                         <TextBox Grid.Row="1" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,6,0,0" Padding="10,7" VerticalContentAlignment="Center"/>
                                                         <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,6,0,0" Padding="10,7" VerticalContentAlignment="Center"/>
                                                         <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,6,0,0" Padding="10,7" VerticalContentAlignment="Center"/>
-                                                        <Button Grid.Row="1" Grid.Column="5" Content="删除" Style="{StaticResource SecondaryBtn}" Height="34" Padding="10,0" Margin="12,6,0,0" Click="RemoveEnvironmentVariableButton_Click"/>
+                                                        <Button Grid.Row="1" Grid.Column="5" Content="删除" Style="{StaticResource SecondaryBtn}" Height="34" Padding="14,0" Margin="12,6,0,0" Click="RemoveEnvironmentVariableButton_Click"/>
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
@@ -873,7 +873,7 @@
                                                     <Button Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
                                                             Style="{StaticResource SecondaryBtn}"
                                                             Height="24"
-                                                            Padding="10,0"
+                                                            Padding="14,0"
                                                             Margin="12,0,0,0"
                                                             Click="TogglePersonalSyncAdvancedOptionsButton_Click"/>
                                                 </StackPanel>
@@ -1287,7 +1287,7 @@
                                                     Content="录制快捷键"
                                                     Style="{StaticResource SecondaryBtn}"
                                                     Height="28"
-                                                    Padding="10,0"
+                                                    Padding="14,0"
                                                     Click="EditYanmHotkeyButton_Click"/>
                                         </Grid>
                                         <TextBox Text="{Binding YanmCustomShortcut, Mode=TwoWay}"
@@ -1353,8 +1353,8 @@
                                                  TextWrapping="Wrap"
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="PickYanmWhitelistProcessButton_Click"/>
-                                            <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,8,0,0" Click="SaveYanmSettings_Click"/>
+                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickYanmWhitelistProcessButton_Click"/>
+                                            <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveYanmSettings_Click"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -1375,8 +1375,8 @@
                                                  TextWrapping="Wrap"
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="PickYanmBlacklistProcessButton_Click"/>
-                                            <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,8,0,0" Click="SaveYanmSettings_Click"/>
+                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickYanmBlacklistProcessButton_Click"/>
+                                            <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveYanmSettings_Click"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -2316,8 +2316,8 @@
                                                     </StackPanel>
                                                     <TextBlock Text="{Binding DetailText}" Foreground="#FF777777" FontSize="{DynamicResource FontSizeTiny}" Margin="0,8,0,0" TextTrimming="CharacterEllipsis"/>
                                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                                                        <Button Content="编辑轨迹" Style="{StaticResource SecondaryBtn}" Height="26" Padding="10,0" Margin="0,0,8,0" Click="EditMouseGestureExtensionButton_Click"/>
-                                                        <Button Content="清除" Style="{StaticResource SecondaryBtn}" Height="26" Padding="10,0" Click="ClearMouseGestureButton_Click"/>
+                                                        <Button Content="编辑轨迹" Style="{StaticResource SecondaryBtn}" Height="26" Padding="14,0" Margin="0,0,8,0" Click="EditMouseGestureExtensionButton_Click"/>
+                                                        <Button Content="清除" Style="{StaticResource SecondaryBtn}" Height="26" Padding="14,0" Click="ClearMouseGestureButton_Click"/>
                                                     </StackPanel>
                                                 </StackPanel>
                                             </Grid>
@@ -2412,7 +2412,7 @@
                                                             Content="录制快捷键"
                                                             Style="{StaticResource SecondaryBtn}"
                                                             Height="28"
-                                                            Padding="10,0"
+                                                            Padding="14,0"
                                                             Click="EditRadialHotkeyButton_Click"/>
                                                 </Grid>
                                                 <TextBox Text="{Binding RadialCustomShortcut, Mode=TwoWay}"
@@ -2471,8 +2471,8 @@
                                                  TextWrapping="Wrap"
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="PickRadialWhitelistProcessButton_Click"/>
-                                            <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
+                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialWhitelistProcessButton_Click"/>
+                                            <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -2493,8 +2493,8 @@
                                                  TextWrapping="Wrap"
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="PickRadialBlacklistProcessButton_Click"/>
-                                            <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
+                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialBlacklistProcessButton_Click"/>
+                                            <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -2522,8 +2522,8 @@
                                                       ToolTip="滚轮会在这些轮盘页面之间切换"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                            <Button Content="新增页面" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="AddRadialMenuPageButton_Click"/>
-                                            <Button Content="删除页面" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="DeleteRadialMenuPageButton_Click"/>
+                                            <Button Content="新增页面" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,0,8,0" Click="AddRadialMenuPageButton_Click"/>
+                                            <Button Content="删除页面" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="DeleteRadialMenuPageButton_Click"/>
                                         </StackPanel>
                                     </Grid>
 
@@ -2871,8 +2871,8 @@
                                     <Grid Margin="0,0,0,10">
                                         <TextBlock Text="规则列表" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <Button Content="新增规则" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="0,0,8,0" Click="AddYarnSelectRuleButton_Click"/>
-                                            <Button Content="恢复默认" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Click="ResetYarnSelectRulesButton_Click"/>
+                                            <Button Content="新增规则" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,0,8,0" Click="AddYarnSelectRuleButton_Click"/>
+                                            <Button Content="恢复默认" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="ResetYarnSelectRulesButton_Click"/>
                                         </StackPanel>
                                     </Grid>
                                     <ItemsControl ItemsSource="{Binding YarnSelectRules}">
@@ -2968,7 +2968,7 @@
                                                                 Content="删除"
                                                                 Style="{StaticResource SecondaryBtn}"
                                                                 Height="28"
-                                                                Padding="10,0"
+                                                                Padding="14,0"
                                                                 Click="DeleteYarnSelectRuleButton_Click"/>
                                                     </Grid>
                                                 </Border>
