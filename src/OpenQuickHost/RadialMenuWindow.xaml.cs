@@ -559,6 +559,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         var angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
+        if (distance > 196)
+        {
+            SetSelectedItem(null);
+            ClearChildRing();
+            ActiveTitle = _editModeLocked ? "点击中心 X 关闭" : "取消";
+            return;
+        }
+
         if (distance > 135)
         {
             var outerIndex = ((int)Math.Round((angle + 90) / 22.5) % RadialMenuSettings.OuterSlotCount + RadialMenuSettings.OuterSlotCount) % RadialMenuSettings.OuterSlotCount;
