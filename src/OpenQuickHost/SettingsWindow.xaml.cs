@@ -284,6 +284,198 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new("→↓←↑", "S", "适合搜索、选择类动作")
     ];
 
+
+    // ==========================================
+    //            Velopack 自动更新集成
+    // ==========================================
+    private string _updateCheckStatusText = "未检测";
+    private bool _hasNewVersion;
+    private bool _isCheckingUpdate;
+    private bool _isDownloadingUpdate;
+    private int _updateProgressValue;
+    private bool _updateDownloaded;
+    private string _newVersionInfo = "";
+    private Velopack.UpdateInfo? _newVersionUpdateInfo;
+    private bool _updateEventsSubscribed;
+
+    public string UpdateCheckStatusText
+    {
+        get => _updateCheckStatusText;
+        set { _updateCheckStatusText = value; OnPropertyChanged(); }
+    }
+
+    public bool HasNewVersion
+    {
+        get => _hasNewVersion;
+        set { _hasNewVersion = value; OnPropertyChanged(); }
+    }
+
+    public bool IsCheckingUpdate
+    {
+        get => _isCheckingUpdate;
+        set { _isCheckingUpdate = value; OnPropertyChanged(); }
+    }
+
+    public bool IsDownloadingUpdate
+    {
+        get => _isDownloadingUpdate;
+        set { _isDownloadingUpdate = value; OnPropertyChanged(); }
+    }
+
+    public int UpdateProgressValue
+    {
+        get => _updateProgressValue;
+        set { _updateProgressValue = value; OnPropertyChanged(); }
+    }
+
+    public bool UpdateDownloaded
+    {
+        get => _updateDownloaded;
+        set { _updateDownloaded = value; OnPropertyChanged(); }
+    }
+
+    public string NewVersionInfo
+    {
+        get => _newVersionInfo;
+        set { _newVersionInfo = value; OnPropertyChanged(); }
+    }
+
+    private void SubscribeUpdateEvents()
+    {
+        if (_updateEventsSubscribed) return;
+        _updateEventsSubscribed = true;
+
+        VelopackUpdateService.Instance.UpdateStatusChanged += status =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                UpdateCheckStatusText = status;
+            });
+        };
+
+        VelopackUpdateService.Instance.DownloadProgressChanged += progress =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                UpdateProgressValue = progress;
+                if (progress >= 100)
+                {
+                    IsDownloadingUpdate = false;
+                    UpdateDownloaded = true;
+                }
+            });
+        };
+    }
+
+    private async Task AutoCheckUpdateOnAboutOpenAsync()
+    {
+        SubscribeUpdateEvents();
+        
+        if (UpdateDownloaded) return;
+        if (IsCheckingUpdate || IsDownloadingUpdate) return;
+
+        IsCheckingUpdate = true;
+        try
+        {
+            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync();
+            if (updateInfo != null)
+            {
+                _newVersionUpdateInfo = updateInfo;
+                NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
+                HasNewVersion = true;
+            }
+            else
+            {
+                HasNewVersion = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SettingsWindow: AutoCheckUpdateOnAboutOpen failed: {ex.Message}");
+        }
+        finally
+        {
+            IsCheckingUpdate = false;
+        }
+    }
+
+    private async void CheckForUpdatesManualButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        SubscribeUpdateEvents();
+
+        if (IsCheckingUpdate || IsDownloadingUpdate) return;
+        
+        UpdateDownloaded = false;
+        HasNewVersion = false;
+        IsCheckingUpdate = true;
+        
+        try
+        {
+            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync();
+            if (updateInfo != null)
+            {
+                _newVersionUpdateInfo = updateInfo;
+                NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
+                HasNewVersion = true;
+            }
+            else
+            {
+                HasNewVersion = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"检测更新发生异常: {ex.Message}", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+        finally
+        {
+            IsCheckingUpdate = false;
+        }
+    }
+
+    private async void DownloadUpdatesButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (_newVersionUpdateInfo == null) return;
+        
+        IsDownloadingUpdate = true;
+        UpdateProgressValue = 0;
+        UpdateDownloaded = false;
+
+        try
+        {
+            var success = await VelopackUpdateService.Instance.DownloadUpdatesAsync(_newVersionUpdateInfo);
+            if (success)
+            {
+                UpdateDownloaded = true;
+            }
+            else
+            {
+                UpdateDownloaded = false;
+                System.Windows.MessageBox.Show("增量文件下载合并失败，可能是由于网络连接异常，您可以重试下载或前往下载页下载完整安装包。", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"更新包下载发生异常: {ex.Message}", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+        finally
+        {
+            IsDownloadingUpdate = false;
+        }
+    }
+
+    private void ApplyUpdatesAndRestartButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (_newVersionUpdateInfo == null) return;
+        try
+        {
+            VelopackUpdateService.Instance.ApplyAndRestart(_newVersionUpdateInfo);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"应用更新并重启失败: {ex.Message}。您可以重试，或者手动重启软件完成更新。", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+    }
     public SettingsNavigationItem? SelectedNavigation
     {
         get => _selectedNavigation;
@@ -331,6 +523,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             else if (IsMouseGesturesSelected)
             {
                 RefreshMouseGestureManagement();
+            }
+            else if (IsAboutSelected)
+            {
+                _ = AutoCheckUpdateOnAboutOpenAsync();
             }
 
             if (!IsExtensionsSelected)
