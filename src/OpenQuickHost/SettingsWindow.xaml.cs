@@ -2391,7 +2391,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 ItemsSource = GetMouseTriggerTargetOptions(gesture),
                 DisplayMemberPath = nameof(MouseTriggerOption.Label),
                 SelectedValuePath = nameof(MouseTriggerOption.Value),
-                Style = TryFindResource("DarkComboBoxStyle") as Style
+                Style = TryFindResource("GlobalComboBoxStyle") as Style
             };
             combo.SelectionChanged += MouseTriggerTargetCombo_SelectionChanged;
             grid.Children.Add(combo);

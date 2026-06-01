@@ -1325,13 +1325,13 @@
                                     <Rectangle Height="1" Fill="{DynamicResource BrushTextMain}" Margin="0,14,0,12"/>
 
                                     <CheckBox Content="按住触发键时临时显示，松开隐藏"
-                                              Foreground="#FFE5E5E5"
+                                              Foreground="{DynamicResource BrushTextMain}"
                                               FontSize="{DynamicResource FontSizeNormal}"
                                               Margin="0,0,0,10"
                                               IsChecked="{Binding YanmTriggerHold, Mode=TwoWay}"
                                               Click="SaveYanmSettings_Click"/>
                                     <CheckBox Content="双击触发键固定显示 / 取消固定"
-                                              Foreground="#FFE5E5E5"
+                                              Foreground="{DynamicResource BrushTextMain}"
                                               FontSize="{DynamicResource FontSizeNormal}"
                                               IsChecked="{Binding YanmTriggerDoubleTap, Mode=TwoWay}"
                                               Click="SaveYanmSettings_Click"/>
@@ -2219,10 +2219,10 @@
                             <TextBlock Text="配置指南" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,20,0,10"/>
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15">
                                 <StackPanel>
-                                    <TextBlock Text="1. 在主界面搜索您需要的扩展。" Foreground="#FFE5E5E5" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
-                                    <TextBlock Text="2. 在搜索结果上点击右键，选择“添加到鼠标面板”。" Foreground="#FFE5E5E5" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
-                                    <TextBlock Text="3. 面板将自动占用第一个可用槽位（共 28 个）。" Foreground="#FFE5E5E5" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
-                                    <TextBlock Text="4. 长按或拖动触发时，如果启用“松开后执行”，移动到扩展上松开即可自动运行。" Foreground="#FFE5E5E5" FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="1. 在主界面搜索您需要的扩展。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="2. 在搜索结果上点击右键，选择“添加到鼠标面板”。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="3. 面板将自动占用第一个可用槽位（共 28 个）。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="4. 长按或拖动触发时，如果启用“松开后执行”，移动到扩展上松开即可自动运行。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -2243,7 +2243,7 @@
                                         <TextBlock Text="扩展编辑里负责录制具体轨迹；这里用于查看、清除和快速绑定常用手势。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,18,0" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="全局触发方式" Foreground="#FFE5E5E5" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,0,0,6"/>
+                                        <TextBlock Text="全局触发方式" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,0,0,6"/>
                                         <ComboBox ItemsSource="{Binding MouseGestureTriggerOptions}"
                                                   DisplayMemberPath="Label"
                                                   SelectedValuePath="Value"
@@ -2391,7 +2391,7 @@
                                             <TextBlock Text="启用燕环" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                             <TextBlock Text="鼠标触发统一在“鼠标触发”页分配；本页负责燕环本身的开关、键盘触发和轮盘内容。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                             <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                                <TextBlock Text="键盘触发" Foreground="#FFE5E5E5" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                                <TextBlock Text="键盘触发" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,10,0"/>
                                                 <ComboBox ItemsSource="{Binding RadialActivationKeyOptions}"
                                                           DisplayMemberPath="Label"
                                                           SelectedValuePath="Value"
@@ -2425,7 +2425,7 @@
                                                          Padding="10,6"/>
                                             </StackPanel>
                                             <CheckBox Content="按住触发键呼出燕环，松开执行"
-                                                      Foreground="#FFE5E5E5"
+                                                      Foreground="{DynamicResource BrushTextMain}"
                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
                                                       Margin="0,8,0,0"
                                                       IsChecked="{Binding EnableRadialCapsLockHold, Mode=TwoWay}"
@@ -2754,7 +2754,7 @@
                                                                                 </TextBlock.Style>
                                                                             </TextBlock>
                                                                             <TextBlock Text="{Binding ExtensionTitle}"
-                                                                                       Foreground="#FFE5E5E5"
+                                                                                       Foreground="{DynamicResource BrushTextMain}"
                                                                                        FontSize="{DynamicResource FontSizeTiny}"
                                                                                        Margin="0,5,0,0"
                                                                                        TextAlignment="Center"
