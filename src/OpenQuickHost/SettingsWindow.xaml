@@ -814,7 +814,7 @@
                                         Padding="10,6">
                                     <StackPanel Orientation="Horizontal">
                                         <Ellipse Width="8" Height="8" Fill="#FF22C55E" VerticalAlignment="Center"/>
-                                        <TextBlock Text="上次同步: 刚刚" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="LastSyncStatusTextBlock" Text="上次同步: 刚刚" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="300" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>

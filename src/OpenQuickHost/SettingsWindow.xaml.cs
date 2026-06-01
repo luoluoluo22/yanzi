@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
@@ -3012,6 +3012,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             PersonalSyncCommitItems.Clear();
             PersonalSyncCommitStatusText = "提交记录当前仅支持 GitHub 同步仓库。";
+            if (LastSyncStatusTextBlock != null)
+            {
+                LastSyncStatusTextBlock.Text = "上次同步: 成功";
+                LastSyncStatusTextBlock.ToolTip = "同步已成功完成 (WebDav/其他模式)";
+            }
             return;
         }
 
@@ -3037,11 +3042,31 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             PersonalSyncCommitStatusText = PersonalSyncCommitItems.Count == 0
                 ? "仓库暂无提交记录。"
                 : $"最近 {PersonalSyncCommitItems.Count} 条提交，可点击打开 GitHub 详情。";
+
+            if (LastSyncStatusTextBlock != null)
+            {
+                if (PersonalSyncCommitItems.Count > 0)
+                {
+                    var latest = PersonalSyncCommitItems[0];
+                    LastSyncStatusTextBlock.Text = $"上次同步: {latest.Message}";
+                    LastSyncStatusTextBlock.ToolTip = $"最新提交: {latest.Message}\n作者: {latest.Author}\n时间: {latest.LocalTimeLabel}\nSHA: {latest.ShortSha}";
+                }
+                else
+                {
+                    LastSyncStatusTextBlock.Text = "上次同步: 成功";
+                    LastSyncStatusTextBlock.ToolTip = "暂无提交记录";
+                }
+            }
         }
         catch (Exception ex)
         {
             PersonalSyncCommitItems.Clear();
             PersonalSyncCommitStatusText = $"读取提交记录失败：{ex.Message}";
+            if (LastSyncStatusTextBlock != null)
+            {
+                LastSyncStatusTextBlock.Text = "上次同步: 失败";
+                LastSyncStatusTextBlock.ToolTip = $"读取记录失败：{ex.Message}";
+            }
         }
     }
 
