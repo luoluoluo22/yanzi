@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Text.Json;
@@ -155,16 +155,14 @@ public partial class MainWindow
 
     private static ImageSource? GetYanyuRuleLogoIcon()
     {
-        if (_yanyuRuleLogoIcon != null)
-        {
-            return _yanyuRuleLogoIcon;
-        }
-
         try
         {
+            var isLight = OpenQuickHost.AppSettingsStore.Load().ThemeMode == "Light";
+            var logoUri = isLight ? "pack://application:,,,/logo-black.png" : "pack://application:,,,/logo-white.png";
+            
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
-            bitmap.UriSource = new Uri("pack://application:,,,/logo-white.png", UriKind.Absolute);
+            bitmap.UriSource = new Uri(logoUri, UriKind.Absolute);
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
             bitmap.EndInit();
             if (bitmap.CanFreeze)
@@ -184,11 +182,6 @@ public partial class MainWindow
 
     private static ImageSource? GetYanyuCreateIcon()
     {
-        if (_yanyuCreateIcon != null)
-        {
-            return _yanyuCreateIcon;
-        }
-
         try
         {
             var geometry = Geometry.Parse("M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z");
@@ -197,8 +190,9 @@ public partial class MainWindow
                 geometry.Freeze();
             }
 
+            var brush = System.Windows.Application.Current.Resources["BrushTextMain"] as System.Windows.Media.SolidColorBrush ?? System.Windows.Media.Brushes.White;
             var drawing = new GeometryDrawing(
-                System.Windows.Media.Brushes.White,
+                brush,
                 null,
                 geometry);
             if (drawing.CanFreeze)

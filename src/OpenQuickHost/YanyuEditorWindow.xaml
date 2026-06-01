@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.YanyuEditorWindow"
+﻿<Window x:Class="OpenQuickHost.YanyuEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="燕语编辑"
@@ -267,7 +267,7 @@
                     <TextBlock Text="绑定进程可选，例如 code 或 notepad；多个进程用逗号分隔。留空表示所有应用生效。"
                                Margin="2,8,0,0"
                                Foreground="#FF8E8E8E"
-                               FontSize="12"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                TextWrapping="Wrap" />
 
                     <Border x:Name="TextContentPanel"
@@ -284,7 +284,7 @@
                             <TextBlock Text="正则捕获可用 {0}、{1}、{name} 占位符。"
                                        Margin="0,6,0,0"
                                        Foreground="#FF8E8E8E"
-                                       FontSize="12" />
+                                       FontSize="{DynamicResource FontSizeSmallPlus}" />
                             <TextBox x:Name="TextContentBox"
                                      Margin="0,10,0,0"
                                      MinHeight="160"
@@ -339,7 +339,7 @@
                                         </Viewbox>
                                         <TextBlock Text="{Binding DisplayGlyph}"
                                                    Foreground="White"
-                                                   FontSize="13"
+                                                   FontSize="{DynamicResource FontSizeNormal}"
                                                    FontWeight="SemiBold"
                                                    HorizontalAlignment="Center"
                                                    VerticalAlignment="Center"
@@ -392,7 +392,7 @@
                                                     </Viewbox>
                                                     <TextBlock Text="{Binding DisplayGlyph}"
                                                                Foreground="White"
-                                                               FontSize="13"
+                                                               FontSize="{DynamicResource FontSizeNormal}"
                                                                FontWeight="SemiBold"
                                                                HorizontalAlignment="Center"
                                                                VerticalAlignment="Center"
@@ -403,10 +403,10 @@
                                             <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Label}"
                                                            Foreground="White"
-                                                           FontSize="13" />
+                                                           FontSize="{DynamicResource FontSizeNormal}" />
                                                 <TextBlock Text="{Binding Detail}"
                                                            Foreground="#FF8E8E8E"
-                                                           FontSize="11"
+                                                           FontSize="{DynamicResource FontSizeSmall}"
                                                            Margin="0,3,0,0"
                                                            TextTrimming="CharacterEllipsis" />
                                             </StackPanel>
@@ -443,7 +443,7 @@
                 <TextBlock x:Name="ErrorText"
                            VerticalAlignment="Center"
                            Foreground="#FFEF4444"
-                           FontSize="12"
+                           FontSize="{DynamicResource FontSizeSmallPlus}"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
 

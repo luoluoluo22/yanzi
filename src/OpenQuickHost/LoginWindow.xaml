@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.LoginWindow"
+﻿<Window x:Class="OpenQuickHost.LoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="登录燕子云同步"
@@ -58,7 +58,7 @@
                     <TextBlock x:Name="PrimaryFieldLabel"
                                Text="邮箱"
                                Foreground="#FFB8B8B8"
-                               FontSize="12"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
                     <TextBox x:Name="PrimaryInputBox"
@@ -69,7 +69,7 @@
                 <StackPanel x:Name="EmailPanel" Grid.Row="3" Margin="0,14,0,0">
                     <TextBlock Text="邮箱"
                                Foreground="#FFB8B8B8"
-                               FontSize="12"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
                     <TextBox x:Name="EmailBox"
@@ -80,7 +80,7 @@
                 <StackPanel Grid.Row="4" Margin="0,14,0,0">
                     <TextBlock Text="密码"
                                Foreground="#FFB8B8B8"
-                               FontSize="12"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
                     <PasswordBox x:Name="PasswordBox"
@@ -96,7 +96,7 @@
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="邮箱验证码"
                                    Foreground="#FFB8B8B8"
-                                   FontSize="12"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
                                    Margin="2,0,0,6"
                                    FontWeight="SemiBold" />
                         <TextBox x:Name="CodeBox"
@@ -117,7 +117,7 @@
                               IsChecked="True"
                               Foreground="#FFB8B8B8"
                               Content="记住登录信息（本机加密保存）"
-                              FontSize="12" />
+                              FontSize="{DynamicResource FontSizeSmallPlus}" />
                     <Button x:Name="ForgotPasswordButton"
                             Margin="0,10,0,0"
                             HorizontalAlignment="Left"
@@ -127,7 +127,7 @@
                     <TextBlock x:Name="StatusText"
                                Margin="0,10,0,0"
                                Foreground="#FFEF4444"
-                               FontSize="12"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                TextWrapping="Wrap"
                                Visibility="Collapsed" />
                 </StackPanel>

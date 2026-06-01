@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.WindowBoundExtensionOverlayWindow"
+﻿<Window x:Class="OpenQuickHost.WindowBoundExtensionOverlayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="窗口绑定扩展"
@@ -81,7 +81,7 @@
                               Stretch="Uniform" />
                     </Viewbox>
                     <TextBlock Text="{Binding DisplayGlyph}"
-                               FontSize="14"
+                               FontSize="{DynamicResource FontSizeNormalPlus}"
                                Foreground="White"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"

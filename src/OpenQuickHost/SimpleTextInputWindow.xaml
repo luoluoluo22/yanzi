@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.SimpleTextInputWindow"
+﻿<Window x:Class="OpenQuickHost.SimpleTextInputWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="输入"
@@ -44,7 +44,7 @@
                            Grid.Column="0"
                            VerticalAlignment="Center"
                            Foreground="#FFEF4444"
-                           FontSize="12"
+                           FontSize="{DynamicResource FontSizeSmallPlus}"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
                 <Button Grid.Column="1"

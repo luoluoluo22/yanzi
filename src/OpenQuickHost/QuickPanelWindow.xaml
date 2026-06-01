@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.QuickPanelWindow"
+﻿<Window x:Class="OpenQuickHost.QuickPanelWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -185,7 +185,7 @@
                                         </Button.Background>
                                         <TextBlock Text="{Binding ShortName}"
                                                    Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF6EA8FF|#FFFFFFFF'}"
-                                                   FontSize="11"
+                                                   FontSize="{DynamicResource FontSizeSmall}"
                                                    FontWeight="SemiBold"/>
                                     </Button>
                                 </DataTemplate>
@@ -231,7 +231,7 @@
                                         </Button.Background>
                                         <TextBlock Text="{Binding ShortName}"
                                                    Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF4ADE80|#FFFFFFFF'}"
-                                                   FontSize="11"
+                                                   FontSize="{DynamicResource FontSizeSmall}"
                                                    FontWeight="SemiBold"/>
                                     </Button>
                                 </DataTemplate>
@@ -285,7 +285,7 @@
                     <TextBlock Grid.Column="1"
                                Text="{Binding EditModeHintText}"
                                Foreground="White"
-                               FontSize="13"
+                               FontSize="{DynamicResource FontSizeNormal}"
                                FontWeight="SemiBold"
                                VerticalAlignment="Center"
                                Margin="10,0,0,0"
@@ -318,7 +318,7 @@
                                          Background="Transparent"
                                          BorderThickness="0"
                                          Foreground="White"
-                                         FontSize="11"
+                                         FontSize="{DynamicResource FontSizeSmall}"
                                          Margin="18,0,0,0"
                                          VerticalAlignment="Center"
                                          CaretBrush="#FF3B82F6"
@@ -326,7 +326,7 @@
                                 <TextBlock Text="搜索..." 
                                            IsHitTestVisible="False"
                                            Foreground="#FF555555" 
-                                           FontSize="11" 
+                                           FontSize="{DynamicResource FontSizeSmall}" 
                                            Margin="20,0,0,0" 
                                            VerticalAlignment="Center">
                                     <TextBlock.Style>
@@ -509,7 +509,7 @@
                                                                  Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                             <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                                         </Viewbox>
-                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="16" FontWeight="SemiBold"
+                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                    Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"
@@ -578,7 +578,7 @@
                 <StackPanel>
                     <TextBlock Text="{Binding ContextSectionTitle}"
                                Foreground="#FFAAAAAA"
-                               FontSize="12"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                FontWeight="SemiBold"
                                HorizontalAlignment="Center"
                                Margin="0,0,0,6"
@@ -744,7 +744,7 @@
                                                                  Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                             <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                                         </Viewbox>
-                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="16" FontWeight="SemiBold"
+                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                    Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"
@@ -850,7 +850,7 @@
                 <StackPanel>
                     <TextBlock Text="{Binding FolderPreviewTitle}"
                                Foreground="White"
-                               FontSize="11"
+                               FontSize="{DynamicResource FontSizeSmall}"
                                FontWeight="SemiBold"
                                TextTrimming="CharacterEllipsis" />
                     <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
@@ -894,7 +894,7 @@
                         <TextBlock Text="{Binding ActiveFolderTitle}"
                                    Margin="12,0,0,0"
                                    Foreground="White"
-                                   FontSize="14"
+                                   FontSize="{DynamicResource FontSizeNormalPlus}"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center"
                                    MouseLeftButtonDown="ActiveFolderTitle_MouseLeftButtonDown" />
@@ -1055,7 +1055,7 @@
                                                          Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                                 </Viewbox>
-                                                <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="16" FontWeight="SemiBold"
+                                                <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
                                                            Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                 <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"

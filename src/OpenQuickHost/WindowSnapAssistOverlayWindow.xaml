@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.WindowSnapAssistOverlayWindow"
+﻿<Window x:Class="OpenQuickHost.WindowSnapAssistOverlayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="窗口排列"
@@ -113,7 +113,7 @@
             <TextBlock x:Name="HintText"
                        Text="拖动选择布局"
                        Foreground="#88FFFFFF"
-                       FontSize="10"
+                       FontSize="{DynamicResource FontSizeTiny}"
                        HorizontalAlignment="Center"
                        Canvas.Left="144" Canvas.Top="344"
                        IsHitTestVisible="False"/>

@@ -71,7 +71,7 @@
             </Setter>
         </Style>
 
-        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}">
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{DynamicResource GhostButtonStyle}">
             <Setter Property="Foreground" Value="White" />
             <Setter Property="Background" Value="{DynamicResource BrushAccent}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
@@ -427,7 +427,7 @@
                     <!-- 左：标题 -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="HeaderTitleText" Text="新建扩展" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource BrushTextMain}" FontSize="15" FontWeight="SemiBold" />
+                                   Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeLarge}" FontWeight="SemiBold" />
                     </StackPanel>
 
                     <!-- 中：模式切换 -->
@@ -440,7 +440,7 @@
                                          GroupName="EditorMode" IsChecked="True"
                                          Checked="SimpleModeTab_Checked">
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="✨" FontSize="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="✨" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" />
                                     <TextBlock Text="简单扩展" Margin="6,0,0,0" VerticalAlignment="Center" />
                                 </StackPanel>
                             </RadioButton>
@@ -448,7 +448,7 @@
                                          GroupName="EditorMode"
                                          Checked="AdvancedModeTab_Checked">
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="🤖" FontSize="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="🤖" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" />
                                     <TextBlock Text="AI 生成" Margin="6,0,0,0" VerticalAlignment="Center" />
                                 </StackPanel>
                             </RadioButton>
@@ -459,9 +459,9 @@
                     <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
                                 shell:WindowChrome.IsHitTestVisibleInChrome="True">
                         <Button x:Name="CloseButton" Width="34" Height="34"
-                                Style="{StaticResource GhostButtonStyle}" Padding="0"
+                                Style="{DynamicResource GhostButtonStyle}" Padding="0"
                                 Click="CancelButton_Click">
-                            <TextBlock Text="✕" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBlock Text="✕" FontSize="{DynamicResource FontSizeNormalPlus}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Button>
                     </StackPanel>
                 </Grid>
@@ -482,9 +482,9 @@
 
                         <StackPanel Margin="0,0,0,18">
                             <TextBlock Text="这个扩展要做什么？" Foreground="{DynamicResource BrushTextMain}"
-                                       FontSize="15" FontWeight="SemiBold" />
+                                       FontSize="{DynamicResource FontSizeLarge}" FontWeight="SemiBold" />
                             <TextBlock Text="选一个最匹配的类型，下面的表单会跟着变。"
-                                       Foreground="{DynamicResource BrushTextSec}" FontSize="12"
+                                       Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}"
                                        Margin="0,4,0,0" />
                         </StackPanel>
 
@@ -499,9 +499,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="打开网址 / 程序" Margin="0,10,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                     <TextBlock Text="打开链接、文件、文件夹或系统协议"
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -516,9 +516,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="网页搜索" Margin="0,10,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                     <TextBlock Text="把输入拼到搜索 URL 模板里"
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -533,9 +533,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="粘贴文本" Margin="0,10,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                     <TextBlock Text="向当前光标处粘贴一段固定内容"
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -550,9 +550,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="模拟按键" Margin="0,10,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                     <TextBlock Text="向当前窗口发送一组快捷键"
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -567,9 +567,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="PowerShell 脚本" Margin="0,10,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                     <TextBlock Text="跑一段 PowerShell，处理输入和输出"
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -584,9 +584,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="C# 脚本" Margin="0,10,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                     <TextBlock Text="复杂逻辑、独立窗口、应用级工具"
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -601,9 +601,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="双栏工作区" Margin="0,10,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                     <TextBlock Text="左输入右输出的工作面板，比如翻译"
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -618,9 +618,9 @@
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="文件夹搜索" Margin="0,10,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                     <TextBlock Text="在指定目录里搜文件 / 子文件夹"
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </RadioButton>
@@ -635,7 +635,7 @@
                                           Data="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M4,12A8,8 0 0,1 12,4C10.44,6.22 9.5,8.97 9.5,12C9.5,15.03 10.44,17.78 12,20A8,8 0 0,1 4,12M12,20C13.56,17.78 14.5,15.03 14.5,12C14.5,8.97 13.56,6.22 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20M11.5,6.05C10.54,7.85 10,9.86 10,12C10,14.14 10.54,16.15 11.5,17.95C12.46,16.15 13,14.14 13,12C13,9.86 12.46,7.85 11.5,6.05Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="打开网址 / 程序" Margin="8,0,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="目标地址" Style="{StaticResource FieldLabelStyle}" />
@@ -648,7 +648,7 @@
                                              Style="{StaticResource FormTextBoxStyle}"
                                              TextChanged="OpenTargetSimpleBox_TextChanged" />
                                     <Button Grid.Column="1" Content="浏览…"
-                                            Style="{StaticResource GhostButtonStyle}"
+                                            Style="{DynamicResource GhostButtonStyle}"
                                             Height="32" Margin="8,0,0,0"
                                             Click="OpenTargetBrowse_Click" />
                                 </Grid>
@@ -661,15 +661,15 @@
                                 </TextBlock>
                                 <TextBlock Text="常用快捷选择" Style="{StaticResource FieldLabelStyle}" Margin="0,18,0,6" />
                                 <WrapPanel>
-                                    <Button Content="桌面" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="桌面" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="shell:Desktop" Click="OpenTargetPreset_Click" />
-                                    <Button Content="下载" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="下载" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="shell:Downloads" Click="OpenTargetPreset_Click" />
-                                    <Button Content="设置" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="设置" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="ms-settings:" Click="OpenTargetPreset_Click" />
-                                    <Button Content="记事本" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="记事本" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="notepad.exe" Click="OpenTargetPreset_Click" />
-                                    <Button Content="计算器" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="计算器" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="calc.exe" Click="OpenTargetPreset_Click" />
                                 </WrapPanel>
                             </StackPanel>
@@ -680,22 +680,22 @@
                                           Data="M15.5,14H14.71L14.43,13.73C15.41,12.59 16,11.11 16,9.5A6.5,6.5 0 1,0 9.5,16C11.11,16 12.59,15.41 13.73,14.43L14,14.71V15.5L19,20.5L20.5,19L15.5,14M9.5,14C7.01,14 5,11.99 5,9.5C5,7.01 7.01,5 9.5,5C11.99,5 14,7.01 14,9.5C14,11.99 11.99,14 9.5,14Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="网页搜索" Margin="8,0,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="搜索引擎模板" Style="{StaticResource FieldLabelStyle}" />
                                 <WrapPanel Margin="0,0,0,8">
-                                    <Button Content="百度" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="百度" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="https://www.baidu.com/s?wd={query}" Click="SearchPreset_Click" />
-                                    <Button Content="Google" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="Google" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="https://www.google.com/search?q={query}" Click="SearchPreset_Click" />
-                                    <Button Content="Bing" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="Bing" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="https://www.bing.com/search?q={query}" Click="SearchPreset_Click" />
-                                    <Button Content="GitHub" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="GitHub" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="https://github.com/search?q={query}" Click="SearchPreset_Click" />
-                                    <Button Content="掘金" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="掘金" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="https://juejin.cn/search?query={query}" Click="SearchPreset_Click" />
-                                    <Button Content="MDN" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="MDN" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="https://developer.mozilla.org/zh-CN/search?q={query}" Click="SearchPreset_Click" />
                                 </WrapPanel>
                                 <TextBlock Text="搜索 URL 模板" Style="{StaticResource FieldLabelStyle}" />
@@ -725,7 +725,7 @@
                                           Data="M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M12,3A1,1 0 0,1 13,4A1,1 0 0,1 12,5A1,1 0 0,1 11,4A1,1 0 0,1 12,3M19,19H5V5H19V19Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="粘贴文本" Margin="8,0,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="要粘贴的内容" Style="{StaticResource FieldLabelStyle}" />
@@ -743,7 +743,7 @@
                                           Data="M19,10H17V8H19M19,13H17V11H19M16,10H14V8H16M16,13H14V11H16M16,17H8V15H16M7,10H5V8H7M7,13H5V11H7M8,11H10V13H8M8,8H10V10H8M11,11H13V13H11M11,8H13V10H11M20,5H4C2.89,5 2,5.89 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7C22,5.89 21.1,5 20,5Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="模拟按键" Margin="8,0,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="要发送的按键组合" Style="{StaticResource FieldLabelStyle}" />
@@ -759,7 +759,7 @@
                                              TextChanged="HotkeySequenceBox_TextChanged" />
                                     <Button Grid.Column="1"
                                             Content="录制按键"
-                                            Style="{StaticResource GhostButtonStyle}"
+                                            Style="{DynamicResource GhostButtonStyle}"
                                             Height="32"
                                             Padding="12,0"
                                             Margin="8,0,0,0"
@@ -770,15 +770,15 @@
                                 </TextBlock>
                                 <TextBlock Text="常用快捷选择" Style="{StaticResource FieldLabelStyle}" Margin="0,18,0,6" />
                                 <WrapPanel>
-                                    <Button Content="复制 Ctrl+C" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="复制 Ctrl+C" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="Ctrl+C" Click="HotkeyPreset_Click" />
-                                    <Button Content="粘贴 Ctrl+V" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="粘贴 Ctrl+V" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="Ctrl+V" Click="HotkeyPreset_Click" />
-                                    <Button Content="保存 Ctrl+S" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="保存 Ctrl+S" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="Ctrl+S" Click="HotkeyPreset_Click" />
-                                    <Button Content="撤销 Ctrl+Z" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="撤销 Ctrl+Z" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="Ctrl+Z" Click="HotkeyPreset_Click" />
-                                    <Button Content="命令面板 Ctrl+Shift+P" Style="{StaticResource GhostButtonStyle}" Margin="0,0,6,6"
+                                    <Button Content="命令面板 Ctrl+Shift+P" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="Ctrl+Shift+P" Click="HotkeyPreset_Click" />
                                 </WrapPanel>
                             </StackPanel>
@@ -789,7 +789,7 @@
                                           Data="M4,5H20A2,2 0 0,1 22,7V17A2,2 0 0,1 20,19H4A2,2 0 0,1 2,17V7A2,2 0 0,1 4,5M7.5,10L10.5,12L7.5,14L6.5,13L8.5,12L6.5,11L7.5,10M11,14H14V13H11V14Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="PowerShell 脚本" Margin="8,0,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="脚本内容" Style="{StaticResource FieldLabelStyle}" />
@@ -812,12 +812,12 @@
                                           Data="M8.59,16.59L4,12L8.59,7.41L10,8.83L6.83,12L10,15.17L8.59,16.59M15.41,16.59L14,15.17L17.17,12L14,8.83L15.41,7.41L20,12L15.41,16.59Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="C# 脚本" Margin="8,0,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <CheckBox x:Name="CSharpUseNativeWindowCheck"
                                           Content="使用独立原生窗口（uiMode = native-window）"
-                                          Foreground="{DynamicResource BrushTextSec}" FontSize="12"
+                                          Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}"
                                           Margin="0,0,0,12"
                                           Checked="CSharpNativeWindow_Toggled"
                                           Unchecked="CSharpNativeWindow_Toggled" />
@@ -839,7 +839,7 @@
                                           Data="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,8V18H20V8H4Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="双栏工作区" Margin="8,0,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <Grid>
@@ -880,7 +880,7 @@
                                           Data="M10,4H2C0.89,4 0,4.89 0,6V18A2,2 0 0,0 2,20H22A2,2 0 0,0 24,18V8C24,6.89 23.1,6 22,6H12L10,4Z"
                                           VerticalAlignment="Center" />
                                     <TextBlock Text="文件夹搜索" Margin="8,0,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="14"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}"
                                                FontWeight="SemiBold" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBlock Text="搜索根目录" Style="{StaticResource FieldLabelStyle}" />
@@ -893,7 +893,7 @@
                                              Style="{StaticResource FormTextBoxStyle}"
                                              TextChanged="FolderSearchSimple_TextChanged" />
                                     <Button Grid.Column="1" Content="浏览…"
-                                            Style="{StaticResource GhostButtonStyle}"
+                                            Style="{DynamicResource GhostButtonStyle}"
                                             Height="32" Margin="8,0,0,0"
                                             Click="FolderSearchBrowse_Click" />
                                 </Grid>
@@ -988,18 +988,18 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock Text="编辑扩展 JSON" Foreground="{DynamicResource BrushTextMain}"
-                                       FontSize="16" FontWeight="SemiBold" />
+                                       FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold" />
                             <TextBlock Text="直接修改代码，与简单扩展实时同步。"
-                                       Foreground="{DynamicResource BrushTextSec}" FontSize="12"
+                                       Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}"
                                        Margin="0,3,0,0" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button x:Name="ManualCopyJsonButton" Content="复制 JSON"
-                                    Style="{StaticResource GhostButtonStyle}"
+                                    Style="{DynamicResource GhostButtonStyle}"
                                     Height="32" Padding="14,0"
                                     Click="ManualCopyJsonButton_Click" />
                             <Button x:Name="ManualCopyPromptButton" Content="复制提示词"
-                                    Style="{StaticResource GhostButtonStyle}"
+                                    Style="{DynamicResource GhostButtonStyle}"
                                     Height="32" Padding="14,0" Margin="8,0,0,0"
                                     Click="ManualCopyPromptButton_Click" />
                         </StackPanel>
@@ -1018,7 +1018,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Button Content="格式化" Style="{StaticResource GhostButtonStyle}"
+                            <Button Content="格式化" Style="{DynamicResource GhostButtonStyle}"
                                     Height="30" Padding="12,0"
                                     Click="FormatManualJsonButton_Click" />
                             <TextBox x:Name="ManualJsonFindBox" Grid.Column="2"
@@ -1028,12 +1028,12 @@
                                      Style="{StaticResource FormTextBoxStyle}" Height="30"
                                      FontFamily="Consolas" ToolTip="替换为" />
                             <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="8,0,0,0">
-                                <Button Content="查找" Style="{StaticResource GhostButtonStyle}"
+                                <Button Content="查找" Style="{DynamicResource GhostButtonStyle}"
                                         Height="30" Padding="10,0" Click="FindManualJsonButton_Click" />
-                                <Button Content="替换" Style="{StaticResource GhostButtonStyle}"
+                                <Button Content="替换" Style="{DynamicResource GhostButtonStyle}"
                                         Height="30" Padding="10,0" Margin="6,0,0,0"
                                         Click="ReplaceManualJsonButton_Click" />
-                                <Button Content="全部替换" Style="{StaticResource GhostButtonStyle}"
+                                <Button Content="全部替换" Style="{DynamicResource GhostButtonStyle}"
                                         Height="30" Padding="10,0" Margin="6,0,0,0"
                                         Click="ReplaceAllManualJsonButton_Click" />
                             </StackPanel>
@@ -1085,7 +1085,7 @@
                                 <StackPanel>
                                     <TextBlock Text="在启动器中显示为"
                                                Foreground="{DynamicResource BrushTextSec}"
-                                               FontSize="10" Margin="2,0,0,8" />
+                                               FontSize="{DynamicResource FontSizeTiny}" Margin="2,0,0,8" />
                                     <Border Background="{DynamicResource BrushListViewItemMouseOver}" CornerRadius="9" Padding="10">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -1108,7 +1108,7 @@
                                                               Fill="{DynamicResource BrushTextMain}" Stretch="Uniform" />
                                                     </Viewbox>
                                                     <TextBlock x:Name="IconPreviewGlyph" Text="E" Foreground="{DynamicResource BrushTextMain}"
-                                                               FontSize="18" FontWeight="Bold"
+                                                               FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="Bold"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                Visibility="Collapsed" />
                                                 </Grid>
@@ -1116,14 +1116,14 @@
                                             <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                                 <TextBox x:Name="PreviewNameText" Text="未命名扩展"
                                                          Foreground="{DynamicResource BrushTextMain}"
-                                                         FontSize="13" FontWeight="SemiBold"
+                                                         FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"
                                                          Background="Transparent" BorderThickness="0"
                                                          Padding="0" CaretBrush="{DynamicResource BrushAccent}"
                                                          SelectionBrush="{StaticResource AccentGlowBrush}"
                                                          ToolTip="点击直接修改名称"
                                                          TextChanged="PreviewNameText_TextChanged" />
                                                 <TextBox x:Name="PreviewDescText" Text="选择类型并填写信息以预览"
-                                                         Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                                         Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                          Background="Transparent" BorderThickness="0"
                                                          Padding="0" Margin="0,2,0,0"
                                                          CaretBrush="{DynamicResource BrushAccent}"
@@ -1154,10 +1154,10 @@
                             <TextBox x:Name="IconSimpleBox" Style="{StaticResource FormTextBoxStyle}"
                                      TextChanged="IconSimpleBox_TextChanged" />
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button Content="选图片" Style="{StaticResource GhostButtonStyle}"
+                                <Button Content="选图片" Style="{DynamicResource GhostButtonStyle}"
                                         Height="30" Padding="12,0"
                                         Click="PickIconImageButton_Click" />
-                                <Button Content="清空" Style="{StaticResource GhostButtonStyle}"
+                                <Button Content="清空" Style="{DynamicResource GhostButtonStyle}"
                                         Height="30" Padding="12,0" Margin="8,0,0,0"
                                         Click="ClearIconButton_Click" />
                             </StackPanel>
@@ -1205,9 +1205,9 @@
                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                                        <TextBlock Text="开机自启" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                        <TextBlock Text="开机自启" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                         <TextBlock Text="主程序启动后自动运行此扩展"
-                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                    Margin="0,2,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                     <CheckBox x:Name="TriggerStartupSwitch" Grid.Column="2"
@@ -1232,13 +1232,13 @@
                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                                        <TextBlock Text="定时运行" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                        <TextBlock Text="定时运行" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                         <TextBlock x:Name="TriggerScheduleLabel" Text="未配置 · 点击设置 cron"
-                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                    Margin="0,2,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                     <Button Grid.Column="2" Content="配置"
-                                            Style="{StaticResource GhostButtonStyle}"
+                                            Style="{DynamicResource GhostButtonStyle}"
                                             Height="28" Padding="12,0"
                                             VerticalAlignment="Center"
                                             Click="TriggerScheduleConfigure_Click" />
@@ -1261,13 +1261,13 @@
                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                                        <TextBlock Text="全局快捷键" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                        <TextBlock Text="全局快捷键" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                         <TextBlock x:Name="TriggerShortcutLabel" Text="未设置 · 点击录制"
-                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                    Margin="0,2,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                     <Button Grid.Column="2" Content="设置"
-                                            Style="{StaticResource GhostButtonStyle}"
+                                            Style="{DynamicResource GhostButtonStyle}"
                                             Height="28" Padding="12,0"
                                             VerticalAlignment="Center"
                                             Click="TriggerShortcutEdit_Click" />
@@ -1291,19 +1291,19 @@
                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                                            <TextBlock Text="鼠标手势" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" />
+                                            <TextBlock Text="鼠标手势" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                                             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                                 <TextBlock x:Name="TriggerGestureSequenceText"
-                                                           FontFamily="Consolas" FontSize="13" FontWeight="Bold"
+                                                           FontFamily="Consolas" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Bold"
                                                            Foreground="#FFFB923C"
                                                            Visibility="Collapsed" />
                                                 <TextBlock x:Name="TriggerGestureLabel" Text="未设置 · 点击录制"
-                                                           Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                                           Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                            VerticalAlignment="Bottom" />
                                             </StackPanel>
                                         </StackPanel>
                                         <Button Grid.Column="2" Content="录制"
-                                                Style="{StaticResource GhostButtonStyle}"
+                                                Style="{DynamicResource GhostButtonStyle}"
                                                 Height="28" Padding="12,0"
                                                 VerticalAlignment="Center"
                                                 Click="TriggerGestureRecord_Click" />
@@ -1321,40 +1321,40 @@
                                                     Padding="10,7">
                                                 <TextBlock Text="触发方式使用设置页的全局鼠标手势触发"
                                                            Foreground="{DynamicResource BrushTextSec}"
-                                                           FontSize="11"
+                                                           FontSize="{DynamicResource FontSizeSmall}"
                                                            TextWrapping="Wrap" />
                                             </Border>
                                             <Button Grid.Column="1" Content="清除"
-                                                    Style="{StaticResource GhostButtonStyle}"
+                                                    Style="{DynamicResource GhostButtonStyle}"
                                                     Height="32" Padding="12,0" Margin="8,0,0,0"
                                                     Click="TriggerGestureClear_Click" />
                                         </Grid>
 
                                         <TextBlock Text="常用手势"
                                                    Foreground="{DynamicResource BrushTextSec}"
-                                                   FontSize="11"
+                                                   FontSize="{DynamicResource FontSizeSmall}"
                                                    Margin="0,10,0,6" />
                                         <WrapPanel x:Name="GesturePresetPanel" ItemHeight="28" ItemWidth="Auto">
-                                            <Button Content="↑" Tag="↑" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↓" Tag="↓" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="←" Tag="←" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="→" Tag="→" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↖" Tag="↖" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↘" Tag="↘" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↗" Tag="↗" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↙" Tag="↙" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↑↓" Tag="↑↓" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↓↑" Tag="↓↑" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="←→" Tag="←→" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="→←" Tag="→←" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↑←" Tag="↑←" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↑→" Tag="↑→" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↓←" Tag="↓←" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="↓→" Tag="↓→" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="←↑" Tag="←↑" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="←↓" Tag="←↓" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="→↑" Tag="→↑" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
-                                            <Button Content="→↓" Tag="→↓" Style="{StaticResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↑" Tag="↑" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↓" Tag="↓" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="←" Tag="←" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="→" Tag="→" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↖" Tag="↖" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↘" Tag="↘" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↗" Tag="↗" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↙" Tag="↙" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↑↓" Tag="↑↓" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↓↑" Tag="↓↑" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="←→" Tag="←→" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="→←" Tag="→←" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↑←" Tag="↑←" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↑→" Tag="↑→" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↓←" Tag="↓←" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="↓→" Tag="↓→" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="←↑" Tag="←↑" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="←↓" Tag="←↓" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="→↑" Tag="→↑" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
+                                            <Button Content="→↓" Tag="→↓" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" Margin="0,0,6,6" Click="GesturePreset_Click" />
                                         </WrapPanel>
 
                                         <Grid Margin="0,4,0,0">
@@ -1366,7 +1366,7 @@
                                             <StackPanel>
                                                 <TextBlock Text="最小距离（像素）"
                                                            Foreground="{DynamicResource BrushTextSec}"
-                                                           FontSize="11"
+                                                           FontSize="{DynamicResource FontSizeSmall}"
                                                            Margin="0,0,0,4" />
                                                 <TextBox x:Name="GestureMinDistanceBox"
                                                          Style="{StaticResource FormTextBoxStyle}"
@@ -1375,7 +1375,7 @@
                                             <StackPanel Grid.Column="2">
                                                 <TextBlock Text="容差（度，可选）"
                                                            Foreground="{DynamicResource BrushTextSec}"
-                                                           FontSize="11"
+                                                           FontSize="{DynamicResource FontSizeSmall}"
                                                            Margin="0,0,0,4" />
                                                 <TextBox x:Name="GestureToleranceBox"
                                                          Style="{StaticResource FormTextBoxStyle}"
@@ -1386,7 +1386,7 @@
                                         <TextBlock x:Name="GestureConflictHintText"
                                                    Margin="0,8,0,0"
                                                    Foreground="{DynamicResource BrushTextSec}"
-                                                   FontSize="11"
+                                                   FontSize="{DynamicResource FontSizeSmall}"
                                                    TextWrapping="Wrap" />
                                     </StackPanel>
                                 </StackPanel>
@@ -1398,19 +1398,19 @@
                                     BorderThickness="1" CornerRadius="10">
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="✨" FontSize="13" VerticalAlignment="Center" />
+                                        <TextBlock Text="✨" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" />
                                         <TextBlock Text="让 AI 帮你写完整 JSON" Margin="6,0,0,0"
                                                    Foreground="{DynamicResource BrushTextMain}"
                                                    FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     </StackPanel>
                                     <TextBlock Text="复制提示词到任意 AI 对话，得到 JSON 后切到「高级模式」粘贴即可。"
                                                Foreground="{DynamicResource BrushTextSec}"
-                                               FontSize="11" TextWrapping="Wrap"
+                                               FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap"
                                                Margin="0,8,0,10" />
                                     <Button x:Name="SidePanelCopyPromptButton" Content="复制提示词"
-                                            Style="{StaticResource GhostButtonStyle}"
+                                            Style="{DynamicResource GhostButtonStyle}"
                                             HorizontalAlignment="Left"
-                                            Height="30" Padding="14,0" FontSize="12"
+                                            Height="30" Padding="14,0" FontSize="{DynamicResource FontSizeSmallPlus}"
                                             Click="ManualCopyPromptButton_Click" />
                                 </StackPanel>
                             </Border>
@@ -1435,27 +1435,27 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="测试日志" Foreground="{DynamicResource BrushTextMain}"
-                                   FontSize="13" FontWeight="SemiBold" />
+                                   FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button x:Name="ManualCopyTestFailureButton" Content="复制日志"
-                                    Style="{StaticResource GhostButtonStyle}"
-                                    Height="28" Padding="10,0" FontSize="11"
+                                    Style="{DynamicResource GhostButtonStyle}"
+                                    Height="28" Padding="10,0" FontSize="{DynamicResource FontSizeSmall}"
                                     Visibility="Collapsed"
                                     Click="ManualCopyTestFailureButton_Click" />
-                            <Button Content="关闭" Style="{StaticResource GhostButtonStyle}"
-                                    Height="28" Padding="10,0" FontSize="11" Margin="6,0,0,0"
+                            <Button Content="关闭" Style="{DynamicResource GhostButtonStyle}"
+                                    Height="28" Padding="10,0" FontSize="{DynamicResource FontSizeSmall}" Margin="6,0,0,0"
                                     Click="CloseTestResultPanel_Click" />
                         </StackPanel>
                     </Grid>
                     <TextBlock x:Name="ManualTestSummaryText"
                                Foreground="{DynamicResource BrushTextSec}"
-                               FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
+                               FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,0,0,8" TextWrapping="Wrap" />
                     <TextBox x:Name="ManualTestLogTextBox"
                              Height="160" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                              VerticalScrollBarVisibility="Auto"
                              Background="{DynamicResource BrushBG}" BorderThickness="0"
                              Foreground="{DynamicResource BrushTextSec}"
-                             FontFamily="Consolas" FontSize="12" />
+                             FontFamily="Consolas" FontSize="{DynamicResource FontSizeSmallPlus}" />
                 </StackPanel>
             </Border>
 
@@ -1482,7 +1482,7 @@
                                   Margin="0,0,12,0"
                                   ToolTip="测试前等待 3 秒，方便切到目标窗口（如模拟按键）" />
                         <Button x:Name="HeaderTestButton" Content="试运行"
-                                Style="{StaticResource GhostButtonStyle}"
+                                Style="{DynamicResource GhostButtonStyle}"
                                 Height="36" Padding="18,0"
                                 Click="HeaderTestButton_Click" />
                         <Button x:Name="SaveButton" Content="保存并添加"
