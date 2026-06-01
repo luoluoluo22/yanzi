@@ -23,6 +23,9 @@ public partial class App : WpfApplication
 
     protected override void OnStartup(WpfStartupEventArgs e)
     {
+        // 必须最先执行，拦截 Velopack 的命令行钩子（如快捷方式生成、升级更新等）
+        Velopack.VelopackApp.Build().Run();
+
         TrySetProcessDpiAwareness();
         base.OnStartup(e);
         DispatcherUnhandledException += App_DispatcherUnhandledException;
@@ -37,7 +40,27 @@ public partial class App : WpfApplication
         _singleInstanceService = new SingleInstanceService(SingleInstanceAppId);
         if (!_singleInstanceService.TryAcquirePrimaryInstance())
         {
-            _ = ForwardToPrimaryInstanceAndExitAsync(e.Args);
+            try
+            {
+                var protocolArgument = e.Args.FirstOrDefault(static arg =>
+                    arg.StartsWith("yanzi://", StringComparison.OrdinalIgnoreCase));
+                var message = string.IsNullOrWhiteSpace(protocolArgument)
+                    ? "__show__"
+                    : protocolArgument;
+                
+                // 同步等待 Named Pipe 通信（至多 300 毫秒），超时自动断开
+                using var cts = new CancellationTokenSource(300);
+                _ = _singleInstanceService.SendToPrimaryInstanceAsync(message, cts.Token).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // 忽略任何发送侧异常，以闪退为第一核心纪律
+            }
+            finally
+            {
+                // 极其彻底、闪瞬地秒杀当前冗余进程，在内存中绝不容许留下半个字节
+                System.Environment.Exit(0);
+            }
             return;
         }
 
@@ -182,29 +205,7 @@ public partial class App : WpfApplication
         base.OnExit(e);
     }
 
-    private async Task ForwardToPrimaryInstanceAndExitAsync(string[] args)
-    {
-        try
-        {
-            if (_singleInstanceService != null)
-            {
-                var protocolArgument = args.FirstOrDefault(static arg =>
-                    arg.StartsWith("yanzi://", StringComparison.OrdinalIgnoreCase));
-                var message = string.IsNullOrWhiteSpace(protocolArgument)
-                    ? "__show__"
-                    : protocolArgument;
-                await _singleInstanceService.SendToPrimaryInstanceAsync(message);
-            }
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Forward to primary instance failed: {ex.Message}");
-        }
-        finally
-        {
-            Shutdown();
-        }
-    }
+
 
     private static async Task HandleSecondaryLaunchMessageAsync(MainWindow window, string message)
     {

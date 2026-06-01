@@ -14,7 +14,7 @@ public sealed class SingleInstanceService : IDisposable
 
     public SingleInstanceService(string appId)
     {
-        _mutexName = $@"Local\{appId}.Singleton";
+        _mutexName = $@"Global\{appId}.Singleton";
         _pipeName = $"{appId}.Pipe";
     }
 
@@ -45,7 +45,7 @@ public sealed class SingleInstanceService : IDisposable
                 _pipeName,
                 PipeDirection.Out,
                 PipeOptions.Asynchronous);
-            await client.ConnectAsync(1500, cancellationToken);
+            await client.ConnectAsync(200, cancellationToken);
             await using var writer = new StreamWriter(client);
             await writer.WriteAsync(message);
             await writer.FlushAsync();
