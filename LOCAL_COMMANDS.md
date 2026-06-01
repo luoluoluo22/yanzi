@@ -9,60 +9,61 @@ dotnet build
 ```
 
 
-## 生成发布包
-
-生成自包含单文件和 Inno Setup 一键安装包：
+## 生成自包含单文件和 Velopack 一键安装包及升级资产：
 
 ```powershell
-.\scripts\publish-installer.ps1 -Version 0.1.0
+# 打包命令，vpk 工具需要事先全局安装（dotnet tool install -g vpk）
+.\scripts\publish-installer.ps1 -Version 0.2.0
 ```
 
-只生成便携版 `Yanzi.exe`，不生成安装包：
+只生成便携版 Payload 目录，不进行打包：
 
 ```powershell
-.\scripts\publish-installer.ps1 -Version 0.1.0 -SkipInstaller
+.\scripts\publish-installer.ps1 -Version 0.2.0 -SkipInstaller
 ```
 
 输出位置：
 
 ```text
-.artifacts\publish\win-x64\Yanzi.exe
-.artifacts\installer\YanziSetup-0.1.0.exe
+.artifacts\publish\win-x64\      (便携 Payload 目录，包含主 Yanzi.exe 及依赖 DLL)
+.artifacts\installer\Yanzi-win-Setup.exe  (一键极速安装程序，已规避乱码)
+.artifacts\installer\Yanzi-0.2.0-full.nupkg (全量自更新包)
+.artifacts\installer\releases.win.json    (自更新索引核心文件)
 ```
 
 ## 上传安装包到 GitHub Release
 
-默认上传 `.artifacts\installer\YanziSetup-版本号.exe` 到 `luoluoluo22/yanzi` 的 `v版本号` Release。脚本会先创建或更新 Release，再上传安装包，最后发布 Release。
+默认遍历并批量上传 `.artifacts\installer` 下的 `Setup.exe`、`full.nupkg` 升级包以及 `releases.win.json` 元数据至 `luoluoluo22/yanzi` 仓库的 `v版本号` Release 附件下，打通远端自更新。
 
 ```powershell
-.\scripts\upload-release-installer.ps1 -Version 0.1.0
+# 必须先配置 GITHUB_TOKEN 环境变量，随后执行上传
+$env:GITHUB_TOKEN = "你的 GitHub Token"
+.\scripts\upload-release-installer.ps1 -Version 0.2.0
 ```
 
 只创建/更新草稿 Release，不正式发布：
 
 ```powershell
-.\scripts\upload-release-installer.ps1 -Version 0.1.0 -Draft
+.\scripts\upload-release-installer.ps1 -Version 0.2.0 -Draft
 ```
 
-指定安装包路径：
+【核心推荐】当前机器代理对 `uploads.github.com` 大文件上传极其依赖系统代理。上传脚本内部已完美集成了防卡死静默重定向设计，且强烈建议在上传时**追加 -KeepProxy 参数**以完美使用您本机的系统翻墙代理（Clash 等默认 http://127.0.0.1:7890 端口）进行几秒钟内的闪电式秒级上传：
 
 ```powershell
-.\scripts\upload-release-installer.ps1 -Version 0.1.0 -InstallerPath .\.artifacts\installer\YanziSetup-0.1.0.exe
+$env:GITHUB_TOKEN = "你的 GitHub Token"
+.\scripts\upload-release-installer.ps1 -Version 0.2.0 -KeepProxy
 ```
 
-当前机器代理对 `uploads.github.com` 大文件上传不稳定。上传脚本默认会在当前 PowerShell 进程内清空 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY`，让系统网络/TUN 接管。如果以后代理已稳定，可以保留代理：
-
 ```powershell
-.\scripts\upload-release-installer.ps1 -Version 0.1.0 -KeepProxy
-```
-
-## 完整发布流程
-
-```powershell
+# 1. 确保代码通过编译
 dotnet build OpenQuickHost.sln
-.\scripts\verify-extension-package.ps1
-.\scripts\publish-installer.ps1 -Version 0.1.0
-.\scripts\upload-release-installer.ps1 -Version 0.1.0
+
+# 2. 生成最新版 Velopack 原生发布包与更新元数据
+.\scripts\publish-installer.ps1 -Version 0.2.0
+
+# 3. 设置 Token 并通过高速代理一键发布并上传至 GitHub
+$env:GITHUB_TOKEN = "你的 GitHub Token"
+.\scripts\upload-release-installer.ps1 -Version 0.2.0 -KeepProxy
 ```
 
 ## 更新官网
