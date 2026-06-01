@@ -77,7 +77,12 @@ public sealed class VelopackUpdateService
         catch (Exception ex)
         {
             HostAssets.AppendLog($"VelopackUpdateService: update check failed: {ex.Message}");
-            UpdateStatusChanged?.Invoke($"检测失败: {ex.Message}");
+            var friendlyMsg = ex.Message;
+            if (ex.Message != null && ex.Message.Contains("not installed", StringComparison.OrdinalIgnoreCase))
+            {
+                friendlyMsg = "当前运行为非安装模式，自动更新仅在打包安装版中可用。";
+            }
+            UpdateStatusChanged?.Invoke($"检测失败: {friendlyMsg}");
             return null;
         }
     }
@@ -116,7 +121,12 @@ public sealed class VelopackUpdateService
         catch (Exception ex)
         {
             HostAssets.AppendLog($"VelopackUpdateService: download failed: {ex.Message}");
-            UpdateStatusChanged?.Invoke($"下载失败: {ex.Message}");
+            var friendlyMsg = ex.Message;
+            if (ex.Message != null && ex.Message.Contains("not installed", StringComparison.OrdinalIgnoreCase))
+            {
+                friendlyMsg = "当前运行为非安装模式，自动下载仅在打包安装版中可用。";
+            }
+            UpdateStatusChanged?.Invoke($"下载失败: {friendlyMsg}");
             return false;
         }
         finally

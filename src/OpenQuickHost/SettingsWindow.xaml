@@ -1597,8 +1597,8 @@
                                         <TextBlock Text="https://yanzi.luoluoluo.cc.cd/" Foreground="#FF555555" HorizontalAlignment="Right" FontSize="{DynamicResource FontSizeSmall}" IsHitTestVisible="False"/>
                                     </Grid>
                                     <Rectangle Height="1" Fill="{DynamicResource BrushTextMain}" Margin="15,0"/>
-                                    <Grid Margin="15,12" Cursor="Hand" Background="Transparent" ToolTip="点击联系开发者" Tag="tencent://Message/?Uin=1137583371&amp;websiteName=qzone.qq.com&amp;Menu=yes" MouseLeftButtonDown="ExternalLink_Click">
-                                        <TextBlock Text="QQ 反馈 (1137583371)" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" IsHitTestVisible="False"/>
+                                    <Grid Margin="15,12" Cursor="Hand" Background="Transparent" ToolTip="点击直接在 QQ 中申请加入官方交流群" Tag="tencent://groupwpa/?subcmd=all&amp;param=7B2267726F757055696E223A313130343531373137327D" MouseLeftButtonDown="ExternalLink_Click">
+                                        <TextBlock Text="加入QQ交流群: 1104517172" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" IsHitTestVisible="False"/>
                                         <TextBlock Text="↗" Foreground="#FF555555" HorizontalAlignment="Right" IsHitTestVisible="False"/>
                                     </Grid>
                                     <Rectangle Height="1" Fill="{DynamicResource BrushTextMain}" Margin="15,0"/>
