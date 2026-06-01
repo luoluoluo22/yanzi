@@ -628,7 +628,8 @@
                             
                             <Grid Margin="0,5">
                                 <TextBlock Text="主题模式" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
-                                <ComboBox Width="120" HorizontalAlignment="Right" 
+                                <ComboBox Width="120" Height="36" HorizontalAlignment="Right" 
+                                          Style="{DynamicResource GlobalComboBoxStyle}"
                                           SelectedValue="{Binding ThemeMode, Mode=TwoWay}" 
                                           SelectedValuePath="Tag"
                                           SelectionChanged="ThemeModeComboBox_SelectionChanged">
@@ -1591,17 +1592,17 @@
                                         <TextBlock Text="软件更新" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" IsHitTestVisible="False"/>
                                         <TextBlock Text="打开下载页" Foreground="#FF555555" HorizontalAlignment="Right" FontSize="{DynamicResource FontSizeSmall}" IsHitTestVisible="False"/>
                                     </Grid>
-                                    <Rectangle Height="1" Fill="{DynamicResource BrushTextMain}" Margin="15,0"/>
+                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="15,0"/>
                                     <Grid Margin="15,12" Cursor="Hand" Background="Transparent" ToolTip="点击访问官网" Tag="https://yanzi.luoluoluo.cc.cd/" MouseLeftButtonDown="ExternalLink_Click">
                                         <TextBlock Text="官方网站" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" IsHitTestVisible="False"/>
                                         <TextBlock Text="https://yanzi.luoluoluo.cc.cd/" Foreground="#FF555555" HorizontalAlignment="Right" FontSize="{DynamicResource FontSizeSmall}" IsHitTestVisible="False"/>
                                     </Grid>
-                                    <Rectangle Height="1" Fill="{DynamicResource BrushTextMain}" Margin="15,0"/>
+                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="15,0"/>
                                     <Grid Margin="15,12" Cursor="Hand" Background="Transparent" ToolTip="点击直接在 QQ 中申请加入官方交流群" Tag="tencent://groupwpa/?subcmd=all&amp;param=7B2267726F757055696E223A313130343531373137327D" MouseLeftButtonDown="ExternalLink_Click">
                                         <TextBlock Text="加入QQ交流群: 1104517172" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" IsHitTestVisible="False"/>
                                         <TextBlock Text="↗" Foreground="#FF555555" HorizontalAlignment="Right" IsHitTestVisible="False"/>
                                     </Grid>
-                                    <Rectangle Height="1" Fill="{DynamicResource BrushTextMain}" Margin="15,0"/>
+                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="15,0"/>
                                     <Grid Margin="15,12" Cursor="Hand" Background="Transparent" ToolTip="访问 GitHub 仓库" Tag="https://github.com/luoluoluo22/yanzi" MouseLeftButtonDown="ExternalLink_Click">
                                         <TextBlock Text="GitHub 仓库" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" IsHitTestVisible="False"/>
                                         <TextBlock Text="https://github.com/luoluoluo22/yanzi" Foreground="#FF555555" HorizontalAlignment="Right" FontSize="{DynamicResource FontSizeSmall}" IsHitTestVisible="False"/>
