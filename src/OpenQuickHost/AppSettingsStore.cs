@@ -375,6 +375,7 @@ public static class AppSettingsStore
             .OrderBy(static slot => slot.SlotIndex)
             .ToList();
         settings.WindowBindings = NormalizeWindowBindings(settings.WindowBindings);
+        settings.LastTestArgument = string.IsNullOrWhiteSpace(settings.LastTestArgument) ? "示例参数" : settings.LastTestArgument.Trim();
 
         return settings;
     }
@@ -618,6 +619,8 @@ public sealed record AppSettings
 
     public WindowBindingSettings WindowBindings { get; set; } = new();
 
+    public bool LegacyCleanupDismissed { get; set; } = false;
+
     public string LauncherConfigUpdatedAtUtc { get; set; } = string.Empty;
 
     public double? SettingsWindowLeft { get; set; }
@@ -627,6 +630,8 @@ public sealed record AppSettings
     public double? SettingsWindowWidth { get; set; }
 
     public double? SettingsWindowHeight { get; set; }
+
+    public string LastTestArgument { get; set; } = "示例参数";
 }
 
 public sealed class WindowSnapAssistCustomLayoutSettings

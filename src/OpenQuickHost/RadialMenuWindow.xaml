@@ -105,19 +105,28 @@
 
         <Ellipse Width="58"
                  Height="58"
-                 Fill="#F2161616"
                  Stroke="#33FFFFFF"
                  StrokeThickness="1"
                  HorizontalAlignment="Center"
-                 VerticalAlignment="Center"/>
+                 VerticalAlignment="Center">
+            <Ellipse.Style>
+                <Style TargetType="Ellipse">
+                    <Setter Property="Fill" Value="#F2161616" />
+                    <Style.Triggers>
+                        <!-- 悬浮鼠标才是红底高亮 -->
+                        <DataTrigger Binding="{Binding IsCenterHovered}" Value="True">
+                            <Setter Property="Fill" Value="#D0B91C1C" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Ellipse.Style>
+        </Ellipse>
 
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-            <TextBlock Text="{Binding CenterPrimaryText}"
-                       Foreground="White"
-                       FontSize="{DynamicResource FontSizeLargePlus}"
-                       FontWeight="SemiBold"
-                       HorizontalAlignment="Center"/>
-        </StackPanel>
+        <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Viewbox Width="24" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Path Data="{local:IconGeometry close}" Fill="White" Stretch="Uniform" /> 
+            </Viewbox>
+        </Grid>
 
         <TextBlock Text="{Binding ActiveTitle}"
                    Foreground="#FF8E8E8E"
@@ -192,6 +201,7 @@
                             Drop="RadialSlot_Drop"
                             MouseEnter="RadialSlot_MouseEnter"
                             MouseLeave="RadialSlot_MouseLeave"
+                            Cursor="Hand"
                             RenderTransformOrigin="0.5,0.5">
                         <Border.RenderTransform>
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
@@ -264,6 +274,7 @@
                             Drop="RadialSlot_Drop"
                             MouseEnter="RadialSlot_MouseEnter"
                             MouseLeave="RadialSlot_MouseLeave"
+                            Cursor="Hand"
                             RenderTransformOrigin="0.5,0.5">
                         <Border.RenderTransform>
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
@@ -404,6 +415,7 @@
                                 Drop="RadialSlot_Drop"
                                 MouseEnter="RadialSlot_MouseEnter"
                                 MouseLeave="RadialSlot_MouseLeave"
+                                Cursor="Hand"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
@@ -545,6 +557,7 @@
                                 Drop="RadialSlot_Drop"
                                 MouseEnter="RadialSlot_MouseEnter"
                                 MouseLeave="RadialSlot_MouseLeave"
+                                Cursor="Hand"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>

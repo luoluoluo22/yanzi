@@ -24,8 +24,82 @@ public partial class App : WpfApplication
 
     protected override void OnStartup(WpfStartupEventArgs e)
     {
+        // 0. 将工作目录切换到临时目录，防止进程被强杀后工作目录句柄锁住安装目录
+        //    导致 Velopack 覆盖安装时 "Failed to remove existing application directory" 错误
+        try { System.IO.Directory.SetCurrentDirectory(System.IO.Path.GetTempPath()); } catch { /* ignore */ }
+
         // 1. 必须最先执行，拦截 Velopack 的命令行钩子（如快捷方式生成、升级更新等）
-        Velopack.VelopackApp.Build().Run();
+        Velopack.VelopackApp.Build()
+            .WithAfterInstallFastCallback(v =>
+            {
+                try
+                {
+                    // 在安装过程中，如果检测到旧版（C:\Program Files\Yanzi），直接静默卸载清理
+                    LegacyCleanupService.SilentUninstallOldVersion();
+
+                    // 注册 yanzi:// URI 协议到 HKCU
+                    var exePath = System.Environment.ProcessPath;
+                    if (!string.IsNullOrWhiteSpace(exePath))
+                    {
+                        UriProtocolRegistrationService.EnsureRegistered(exePath);
+                    }
+
+                    // 注册开机自启
+                    var settings = AppSettingsStore.Load();
+                    StartupRegistrationService.Apply(settings.LaunchAtStartup);
+                }
+                catch (System.Exception ex)
+                {
+                    HostAssets.AppendLog($"Velopack AfterInstall Hook error: {ex.Message}");
+                }
+            })
+            .WithBeforeUninstallFastCallback(v =>
+            {
+                try
+                {
+                    // 清理 URI 协议注册
+                    UriProtocolRegistrationService.Unregister();
+
+                    // 清理开机自启注册
+                    StartupRegistrationService.Apply(false);
+
+                    // 停止所有关联的 Everything 进程，防止目录被占用无法删除
+                    EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                }
+                catch (System.Exception ex)
+                {
+                    HostAssets.AppendLog($"Velopack BeforeUninstall Hook error: {ex.Message}");
+                }
+            })
+            .WithBeforeUpdateFastCallback(v =>
+            {
+                try
+                {
+                    // 停止所有关联的 Everything 进程，防止旧目录被占用无法清理或覆盖
+                    EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                }
+                catch (System.Exception ex)
+                {
+                    HostAssets.AppendLog($"Velopack BeforeUpdate Hook error: {ex.Message}");
+                }
+            })
+            .WithAfterUpdateFastCallback(v =>
+            {
+                try
+                {
+                    // 更新后重新注册 URI 协议（路径可能变化）
+                    var exePath = System.Environment.ProcessPath;
+                    if (!string.IsNullOrWhiteSpace(exePath))
+                    {
+                        UriProtocolRegistrationService.EnsureRegistered(exePath);
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    HostAssets.AppendLog($"Velopack AfterUpdate Hook error: {ex.Message}");
+                }
+            })
+            .Run();
 
         // 2. 立即执行单实例拦截，拒绝任何多开开销与初始化异常。
         // 将此逻辑提到最前，不仅大幅降低了多实例点击时的 CPU/IO 损耗，更避免了多个进程并发做环境初始化（如读写配置、加载 Everything）所产生的死锁和异常崩溃。

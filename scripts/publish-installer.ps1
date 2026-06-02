@@ -12,7 +12,7 @@ $project = Join-Path $root "src\OpenQuickHost\OpenQuickHost.csproj"
 $publishDir = Join-Path $root ".artifacts\publish\$Runtime"
 $installerOutDir = Join-Path $root ".artifacts\installer"
 $issPath = Join-Path $root "installer\yanzi.iss"
-$installerFileName = "YanziSetup-$Version.exe"
+$installerFileName = "YanziSetup.exe"
 $installerPath = Join-Path $installerOutDir $installerFileName
 
 function Assert-PayloadFile {
@@ -43,7 +43,7 @@ if (Test-Path $publishDir) {
     Remove-Item -Path $publishDir -Recurse -Force
 }
 if (Test-Path $installerOutDir) {
-    Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "$installerOutDir\*" -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
@@ -91,31 +91,39 @@ Write-Host "Published installer payload:"
 Write-Host "  $publishDir"
 
 if (-not $SkipInstaller) {
-    $iscc = Get-Command iscc -ErrorAction SilentlyContinue
-    if (-not $iscc) {
-        $candidatePaths = @(
-            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
-            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-        )
-        $isccPath = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $vpk = Get-Command vpk -ErrorAction SilentlyContinue
+    if (-not $vpk) {
+        $vpkPath = "vpk"
     } else {
-        $isccPath = $iscc.Source
+        $vpkPath = $vpk.Source
     }
 
-    if (-not $isccPath) {
-        Write-Warning "Inno Setup 6 was not found. Install it to build the one-click installer, or distribute the portable Yanzi.exe above."
-    } else {
-        & $isccPath `
-            "/DAppVersion=$Version" `
-            "/DPublishDir=$publishDir" `
-            "/DOutputDir=$installerOutDir" `
-            $issPath
+    Write-Host "Building Velopack installer package..."
+    & $vpkPath pack `
+        --packId "Yanzi" `
+        --packTitle "Yanzi" `
+        --packVersion $Version `
+        --packDir $publishDir `
+        --mainExe "Yanzi.exe" `
+        --icon "$root\src\OpenQuickHost\yanzi.ico" `
+        --outputDir $installerOutDir `
+        --shortcuts "Desktop,StartMenuRoot"
 
-        if ($LASTEXITCODE -ne 0) {
-            throw "Inno Setup failed to build the installer."
-        }
-        Write-Host "Installer output:"
-        Write-Host "  $installerPath"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Velopack pack failed to build the installer."
     }
+
+    $setupFile = Join-Path $installerOutDir "Yanzi-win-Setup.exe"
+    if (Test-Path $setupFile) {
+        Rename-Item -Path $setupFile -NewName "Yanzi-win-Setup-$Version.exe" -Force
+    }
+
+    $zipFile = Join-Path $installerOutDir "Yanzi-win-Portable.zip"
+    if (Test-Path $zipFile) {
+        Rename-Item -Path $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
+    }
+
+    Write-Host "Velopack packaging completed successfully."
+    Write-Host "Installer output directory:"
+    Write-Host "  $installerOutDir"
 }

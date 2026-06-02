@@ -90,7 +90,11 @@ public static class EverythingRuntimeService
                 };
 
                 var process = Process.Start(startInfo);
-                _launchedProcessId = process?.Id;
+                if (process != null)
+                {
+                    _launchedProcessId = process.Id;
+                    ChildProcessTracker.AddProcess(process);
+                }
                 HostAssets.AppendLog($"Everything runtime launch requested: path={runtimeExecutablePath}, args={startInfo.Arguments}");
             }
             catch (Exception ex)
@@ -134,6 +138,36 @@ public static class EverythingRuntimeService
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Everything runtime stop failed: pid={processId.Value}, error={ex.Message}");
+        }
+    }
+
+    public static void KillAllYanziEverythingProcesses()
+    {
+        try
+        {
+            var processes = Process.GetProcessesByName("Everything");
+            foreach (var process in processes)
+            {
+                try
+                {
+                    var path = process.MainModule?.FileName;
+                    if (path != null && (path.Contains("Yanzi", StringComparison.OrdinalIgnoreCase) || 
+                                         path.Contains("OpenQuickHost", StringComparison.OrdinalIgnoreCase) || 
+                                         path.Contains("EverythingRuntime", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        process.Kill();
+                        HostAssets.AppendLog($"Killed lingering Everything process: pid={process.Id}");
+                    }
+                }
+                catch
+                {
+                    // Ignore access denied on processes we don't own
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to kill lingering Everything processes: {ex.Message}");
         }
     }
 

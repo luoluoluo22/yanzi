@@ -13,14 +13,16 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $tag = if ($Version.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) { $Version } else { "v$Version" }
 $plainVersion = $tag.TrimStart("v")
 
-if ([string]::IsNullOrWhiteSpace($InstallerPath)) {
-    $InstallerPath = Join-Path $root ".artifacts\installer\YanziSetup-$plainVersion.exe"
+$installerOutDir = Join-Path $root ".artifacts\installer"
+if (!(Test-Path $installerOutDir)) {
+    throw "Installer directory not found: $installerOutDir. Run scripts\publish-installer.ps1 first."
 }
 
-if (!(Test-Path -LiteralPath $InstallerPath)) {
-    throw "Installer not found: $InstallerPath. Run scripts\publish-installer.ps1 first."
+$fileName = "Yanzi-win-Setup-$plainVersion.exe"
+$installerSetupPath = Join-Path $installerOutDir $fileName
+if (!(Test-Path -LiteralPath $installerSetupPath)) {
+    throw "$fileName not found under $installerOutDir. Run scripts\publish-installer.ps1 first."
 }
-$InstallerPath = (Resolve-Path $InstallerPath).Path
 
 if (-not $KeepProxy) {
     $env:HTTP_PROXY = ""
@@ -36,8 +38,7 @@ if (-not $gh) {
 
 gh api user --jq .login | Out-Host
 
-$hash = (Get-FileHash -LiteralPath $InstallerPath -Algorithm SHA256).Hash.ToLowerInvariant()
-$fileName = Split-Path $InstallerPath -Leaf
+$hash = (Get-FileHash -LiteralPath $installerSetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $notesPath = Join-Path ([IO.Path]::GetTempPath()) "yanzi-release-$plainVersion.md"
 
 @"
@@ -47,10 +48,13 @@ SHA256: $hash
 "@ | Set-Content -LiteralPath $notesPath -Encoding UTF8
 
 $releaseExists = $true
+$oldEAP = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
 gh release view $tag --repo $Repo *> $null
 if ($LASTEXITCODE -ne 0) {
     $releaseExists = $false
 }
+$ErrorActionPreference = $oldEAP
 
 if (-not $releaseExists) {
     gh release create $tag `
@@ -66,7 +70,12 @@ if (-not $releaseExists) {
         --notes-file $notesPath | Out-Host
 }
 
-gh release upload $tag $InstallerPath --repo $Repo --clobber | Out-Host
+$filesToUpload = Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match "nupkg|releases\.win\.json|Setup.*\.exe|Portable.*\.zip" }
+foreach ($file in $filesToUpload) {
+    Write-Host "Uploading $($file.Name) to Release $tag..."
+    gh release upload $tag $file.FullName --repo $Repo --clobber *> $null
+    Write-Host "Successfully uploaded $($file.Name)."
+}
 
 if (-not $Draft) {
     gh release edit $tag --repo $Repo --draft=false | Out-Host

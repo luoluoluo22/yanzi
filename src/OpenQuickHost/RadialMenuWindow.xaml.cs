@@ -42,6 +42,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private bool _isPinned;
     private bool _isPinHoverActive;
     private string _centerPrimaryText = "燕环";
+    private bool _isCenterCloseMode;
+    private bool _isCenterHovered;
     private RadialSlotPayload? _cutSlotPayload;
     private RadialMenuItemViewModel? _dragSourceItem;
     private int _lastRadiusPixels = 96;
@@ -218,6 +220,36 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             }
 
             _centerPrimaryText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsCenterCloseMode
+    {
+        get => _isCenterCloseMode;
+        private set
+        {
+            if (value == _isCenterCloseMode)
+            {
+                return;
+            }
+
+            _isCenterCloseMode = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsCenterHovered
+    {
+        get => _isCenterHovered;
+        private set
+        {
+            if (value == _isCenterHovered)
+            {
+                return;
+            }
+
+            _isCenterHovered = value;
             OnPropertyChanged();
         }
     }
@@ -531,16 +563,22 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var cursorPoint = GetCursorWindowPoint();
         if (UpdatePinHoverState(cursorPoint))
         {
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
             return;
         }
 
         if (HasGrandChildRing && TryUpdateGrandChildSelection(cursorPoint))
         {
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
             return;
         }
 
         if (HasChildRing && TryUpdateChildSelection(cursorPoint))
         {
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
             return;
         }
 
@@ -555,8 +593,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             SetSelectedItem(null);
             ClearChildRing();
             ActiveTitle = _editModeLocked ? "点击中心 X 关闭" : "取消";
+            IsCenterHovered = true;
+            Cursor = System.Windows.Input.Cursors.Hand;
             return;
         }
+
+        IsCenterHovered = false;
 
         var angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
         if (distance > 196)
@@ -564,8 +606,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             SetSelectedItem(null);
             ClearChildRing();
             ActiveTitle = _editModeLocked ? "点击中心 X 关闭" : "取消";
+            Cursor = System.Windows.Input.Cursors.Arrow;
             return;
         }
+
+        Cursor = System.Windows.Input.Cursors.Hand;
 
         if (distance > 135)
         {
@@ -1237,15 +1282,18 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         if (!_editModeLocked && !Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             CenterPrimaryText = PageTitle;
+            IsCenterCloseMode = false;
             return;
         }
 
         CenterPrimaryText = "X";
+        IsCenterCloseMode = true;
     }
 
     private void UpdateCenterText()
     {
         CenterPrimaryText = _editModeLocked ? "X" : PageTitle;
+        IsCenterCloseMode = _editModeLocked;
     }
 
     private string ResolveActiveTitle(string? commandTitle, bool isEmptySlot, bool isChildRing = false, bool isGrandChildRing = false)

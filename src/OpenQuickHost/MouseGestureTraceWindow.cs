@@ -21,7 +21,7 @@ internal sealed class MouseGestureTraceWindow : Window
     private Border? _previewIconHost;
     private HwndSource? _source;
     private Point? _lastPoint;
-    private int _segmentCount;
+    private Polyline? _gestureLine;
 
     public MouseGestureTraceWindow()
     {
@@ -76,11 +76,24 @@ internal sealed class MouseGestureTraceWindow : Window
         var localPoint = ToLocal(screenPoint);
         _lastPoint = localPoint;
         AddDot(localPoint, 12, Color.FromRgb(0xFB, 0x92, 0x3C));
+
+        _gestureLine = new Polyline
+        {
+            Stroke = new SolidColorBrush(Color.FromArgb(220, 0xFB, 0x92, 0x3C)),
+            StrokeThickness = 6,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            IsHitTestVisible = false
+        };
+        Canvas.SetZIndex(_gestureLine, 1);
+        _canvas.Children.Add(_gestureLine);
+        _gestureLine.Points.Add(localPoint);
     }
 
     public void AddPoint(Point screenPoint)
     {
-        if (!IsVisible)
+        if (!IsVisible || _gestureLine == null)
         {
             return;
         }
@@ -89,15 +102,16 @@ internal sealed class MouseGestureTraceWindow : Window
         if (_lastPoint is not { } last)
         {
             _lastPoint = point;
+            _gestureLine.Points.Add(point);
             return;
         }
 
-        if ((point - last).Length < 2)
+        if ((point - last).Length < 4)
         {
             return;
         }
 
-        DrawSegment(last, point);
+        _gestureLine.Points.Add(point);
         _lastPoint = point;
     }
 
@@ -168,29 +182,15 @@ internal sealed class MouseGestureTraceWindow : Window
 
     private Point ToLocal(Point screenPoint)
     {
+        var source = PresentationSource.FromVisual(this);
+        if (source?.CompositionTarget != null)
+        {
+            var logicalPoint = source.CompositionTarget.TransformFromDevice.Transform(screenPoint);
+            return new Point(logicalPoint.X - Left, logicalPoint.Y - Top);
+        }
         return new Point(screenPoint.X - Left, screenPoint.Y - Top);
     }
 
-    private void DrawSegment(Point from, Point to)
-    {
-        _segmentCount++;
-        var t = Math.Min(1.0, _segmentCount / 80.0);
-        var alpha = (byte)Math.Clamp(112 + 143 * t, 112, 255);
-        var line = new Line
-        {
-            X1 = from.X,
-            Y1 = from.Y,
-            X2 = to.X,
-            Y2 = to.Y,
-            Stroke = new SolidColorBrush(Color.FromArgb(alpha, 0xFB, 0x92, 0x3C)),
-            StrokeThickness = 4 + (2 * t),
-            StrokeStartLineCap = PenLineCap.Round,
-            StrokeEndLineCap = PenLineCap.Round,
-            IsHitTestVisible = false
-        };
-        Canvas.SetZIndex(line, 1);
-        _canvas.Children.Add(line);
-    }
 
     private void AddDot(Point point, double size, Color color)
     {
@@ -259,7 +259,7 @@ internal sealed class MouseGestureTraceWindow : Window
         _previewDetailText = null;
         _previewIconHost = null;
         _lastPoint = null;
-        _segmentCount = 0;
+        _gestureLine = null;
     }
 
     private Grid CreatePreviewContent(MouseGesturePreviewInfo? preview, string prefix)

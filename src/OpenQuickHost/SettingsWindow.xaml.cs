@@ -3439,6 +3439,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         });
     }
 
+    private void OpenExtensionLogMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SettingsExtensionItem item })
+        {
+            return;
+        }
+
+        if (!File.Exists(HostAssets.HostLogPath))
+        {
+            System.Windows.MessageBox.Show(this, "暂无运行日志。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = HostAssets.HostLogPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, $"打开运行日志失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private void ExtensionCard_Click(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is DependencyObject source &&

@@ -12,23 +12,14 @@ dotnet build
 ## 生成自包含单文件和 Velopack 一键安装包及升级资产：
 
 ```powershell
-# 打包命令，vpk 工具需要事先全局安装（dotnet tool install -g vpk）
 .\scripts\publish-installer.ps1 -Version 0.2.0
 ```
 
-只生成便携版 Payload 目录，不进行打包：
-
-```powershell
-.\scripts\publish-installer.ps1 -Version 0.2.0 -SkipInstaller
-```
 
 输出位置：
 
 ```text
-.artifacts\publish\win-x64\      (便携 Payload 目录，包含主 Yanzi.exe 及依赖 DLL)
-.artifacts\installer\Yanzi-win-Setup.exe  (一键极速安装程序，已规避乱码)
-.artifacts\installer\Yanzi-0.2.0-full.nupkg (全量自更新包)
-.artifacts\installer\releases.win.json    (自更新索引核心文件)
+.artifacts\publish\win-x64\
 ```
 
 ## 上传安装包到 GitHub Release
@@ -39,12 +30,6 @@ dotnet build
 # 必须先配置 GITHUB_TOKEN 环境变量，随后执行上传
 $env:GITHUB_TOKEN = "你的 GitHub Token"
 .\scripts\upload-release-installer.ps1 -Version 0.2.0
-```
-
-只创建/更新草稿 Release，不正式发布：
-
-```powershell
-.\scripts\upload-release-installer.ps1 -Version 0.2.0 -Draft
 ```
 
 【核心推荐】当前机器代理对 `uploads.github.com` 大文件上传极其依赖系统代理。上传脚本内部已完美集成了防卡死静默重定向设计，且强烈建议在上传时**追加 -KeepProxy 参数**以完美使用您本机的系统翻墙代理（Clash 等默认 http://127.0.0.1:7890 端口）进行几秒钟内的闪电式秒级上传：

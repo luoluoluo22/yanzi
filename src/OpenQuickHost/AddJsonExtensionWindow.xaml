@@ -3,13 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:OpenQuickHost"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Width="1240"
         Height="880"
         MinWidth="1100"
         MinHeight="760"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
-        ResizeMode="NoResize"
+        ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="True"
         Topmost="False"
         Background="{DynamicResource BrushBG}"
@@ -19,7 +20,7 @@
         TextOptions.TextRenderingMode="ClearType"
         Style="{StaticResource DialogWindow}">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" GlassFrameThickness="1" CornerRadius="0" ResizeBorderThickness="0" />
+        <shell:WindowChrome CaptionHeight="0" GlassFrameThickness="1" CornerRadius="0" ResizeBorderThickness="8" />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
         <SolidColorBrush x:Key="BgBrush" Color="#FF0F0F12" />
@@ -71,7 +72,7 @@
             </Setter>
         </Style>
 
-        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{DynamicResource GhostButtonStyle}">
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}">
             <Setter Property="Foreground" Value="White" />
             <Setter Property="Background" Value="{DynamicResource BrushAccent}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
@@ -1040,35 +1041,106 @@
                         </Grid>
                     </Border>
 
-                    <Border Grid.Row="2" Margin="28,0,18,18"
-                            Background="{DynamicResource BrushSecondaryBtnBG}"
-                            BorderBrush="{DynamicResource BrushBorder}"
-                            BorderThickness="1.4" CornerRadius="10">
-                        <Grid>
-                            <TextBox x:Name="ManualJsonInputBox"
-                                     Padding="18" AcceptsReturn="True" AcceptsTab="True"
-                                     TextWrapping="NoWrap"
-                                     VerticalScrollBarVisibility="Auto"
-                                     HorizontalScrollBarVisibility="Auto"
-                                     Background="Transparent" BorderThickness="0"
-                                     Foreground="{DynamicResource BrushTextMain}"
-                                     FontFamily="Consolas" FontSize="13.5"
-                                     CaretBrush="{DynamicResource BrushAccent}"
-                                     SelectionBrush="{StaticResource AccentGlowBrush}"
-                                     TextChanged="ManualJsonInputBox_TextChanged" />
-                            <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
-                                    Margin="0,0,16,16" Padding="10,5" CornerRadius="12"
-                                    Background="{DynamicResource BrushDialogBG}" BorderThickness="1">
-                                <StackPanel Orientation="Horizontal">
-                                    <Ellipse x:Name="ManualJsonStatusDot" Width="7" Height="7"
-                                             Fill="{DynamicResource BrushTextSec}" VerticalAlignment="Center" />
-                                    <TextBlock x:Name="ManualJsonStatusText" Margin="8,0,0,0"
-                                               Text="等待输入" Foreground="{DynamicResource BrushTextSec}"
-                                               FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Border>
-                        </Grid>
-                    </Border>
+                    <Grid Grid.Row="2" Margin="28,0,18,18">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" x:Name="JsonEditorRow" />
+                            <RowDefinition Height="Auto" x:Name="InlineScriptSplitterRow" />
+                            <RowDefinition Height="0" x:Name="InlineScriptRow" />
+                        </Grid.RowDefinitions>
+
+                        <!-- 上方：JSON 编辑器 -->
+                        <Border Grid.Row="0"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
+                                BorderBrush="{DynamicResource BrushBorder}"
+                                BorderThickness="1.4" CornerRadius="10" Margin="0,0,0,4">
+                            <Grid>
+                                <!-- WebView2 高级编辑器（首选） -->
+                                <wv2:WebView2 x:Name="JsonWebViewEditor"
+                                              Visibility="Collapsed" />
+
+                                <!-- 原生 TextBox（离线降级 Fallback） -->
+                                <TextBox x:Name="ManualJsonInputBox"
+                                         Padding="18" AcceptsReturn="True" AcceptsTab="True"
+                                         TextWrapping="NoWrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         Background="Transparent" BorderThickness="0"
+                                         Foreground="{DynamicResource BrushTextMain}"
+                                         FontFamily="Consolas" FontSize="13.5"
+                                         CaretBrush="{DynamicResource BrushAccent}"
+                                         SelectionBrush="{StaticResource AccentGlowBrush}"
+                                         TextChanged="ManualJsonInputBox_TextChanged" />
+
+                                <!-- 双击跳转状态栏 -->
+                                <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                                        Margin="0,0,16,16" Padding="10,5" CornerRadius="12"
+                                        Background="{DynamicResource BrushDialogBG}" BorderThickness="1"
+                                        Cursor="Hand"
+                                        PreviewMouseLeftButtonDown="ManualJsonStatusText_MouseLeftButtonDown"
+                                        ToolTip="双击可自动跳转到错误所在的行或列">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse x:Name="ManualJsonStatusDot" Width="7" Height="7"
+                                                 Fill="{DynamicResource BrushTextSec}" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ManualJsonStatusText" Margin="8,0,0,0"
+                                                   Text="等待输入" Foreground="{DynamicResource BrushTextSec}"
+                                                   FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <!-- 中间：分割线 (GridSplitter) -->
+                        <GridSplitter Grid.Row="1" Height="4" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" Visibility="Collapsed" x:Name="InlineScriptSplitter" />
+
+                        <!-- 下方：内联脚本独立编辑器 -->
+                        <Border Grid.Row="2" x:Name="InlineScriptPanel"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
+                                BorderBrush="{DynamicResource BrushBorder}"
+                                BorderThickness="1.4" CornerRadius="10" Margin="0,4,0,0"
+                                Visibility="Collapsed">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                
+                                <!-- 顶部：脚本语言指示与同步状态 -->
+                                <Border Grid.Row="0" Background="#14FFFFFF" CornerRadius="8,8,0,0" Padding="12,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="⚡" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="InlineScriptTitle" Text="内联脚本代码编辑器" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <Border x:Name="InlineScriptLanguageBadgeHost" Background="#1A3B82F6" CornerRadius="4" Margin="8,0,0,0" Padding="6,2" VerticalAlignment="Center">
+                                                <TextBlock x:Name="InlineScriptLanguageBadge" Text="C#" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="与上方 JSON 实时双向同步" Foreground="{DynamicResource BrushTextSec}" FontSize="11" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+
+                                <Grid Grid.Row="1">
+                                    <wv2:WebView2 x:Name="ScriptWebViewEditor"
+                                                  Visibility="Collapsed" />
+                                    
+                                    <TextBox x:Name="InlineScriptInputBox"
+                                             Padding="16" AcceptsReturn="True" AcceptsTab="True"
+                                             TextWrapping="NoWrap"
+                                             VerticalScrollBarVisibility="Auto"
+                                             HorizontalScrollBarVisibility="Auto"
+                                             Background="Transparent" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BrushBorder}"
+                                             Foreground="{DynamicResource BrushTextMain}"
+                                             FontFamily="Consolas" FontSize="13.5"
+                                             CaretBrush="{DynamicResource BrushAccent}"
+                                             SelectionBrush="{StaticResource AccentGlowBrush}"
+                                             TextChanged="InlineScriptInputBox_TextChanged" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Grid>
 
 
@@ -1477,6 +1549,26 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Grid VerticalAlignment="Center">
+                            <TextBox x:Name="TestArgumentBox"
+                                     Width="180" Height="32" Margin="0,0,12,0"
+                                     VerticalAlignment="Center" Padding="8,0"
+                                     VerticalContentAlignment="Center"
+                                     Style="{StaticResource FormTextBoxStyle}"
+                                     ToolTip="临时传入测试的参数"
+                                     GotFocus="TestArgumentBox_GotFocus"
+                                     LostFocus="TestArgumentBox_LostFocus"
+                                     TextChanged="TestArgumentBox_TextChanged" />
+                            <TextBlock x:Name="TestArgumentPlaceholder"
+                                       Text="输入测试参数..."
+                                       Foreground="{DynamicResource BrushTextSec}"
+                                       FontSize="12"
+                                       IsHitTestVisible="False"
+                                       Margin="8,0,20,0"
+                                       VerticalAlignment="Center"
+                                       HorizontalAlignment="Left"
+                                       Visibility="Collapsed" />
+                        </Grid>
                         <CheckBox x:Name="TestDelayCheck" Content="延迟 3 秒"
                                   VerticalAlignment="Center"
                                   Margin="0,0,12,0"
