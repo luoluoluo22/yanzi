@@ -142,6 +142,7 @@ public partial class App : WpfApplication
         SyncConfigLoader.EnsureExampleFile();
         var settings = AppSettingsStore.Load();
         ApplyTheme(settings.ThemeMode);
+        EventManager.RegisterClassHandler(typeof(Window), Window.LoadedEvent, new RoutedEventHandler(Window_GlobalLoaded));
         SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
         StartupRegistrationService.Apply(settings.LaunchAtStartup);
         EverythingRuntimeService.EnsureStartedInBackground();
@@ -202,6 +203,71 @@ public partial class App : WpfApplication
 
     [DllImport("user32.dll")]
     private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr hwndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+    private const int DwmwaUseImmersiveDarkMode = 20;
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_FRAMECHANGED = 0x0020;
+
+    private static void Window_GlobalLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Window window)
+        {
+            return;
+        }
+
+        UpdateWindowDwmTheme(window);
+    }
+
+    private static void UpdateWindowDwmTheme(Window window)
+    {
+        var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        bool useLightTheme = false;
+        if (string.Equals(_currentThemeMode, "System", StringComparison.OrdinalIgnoreCase))
+        {
+            useLightTheme = IsSystemLightTheme();
+        }
+        else if (string.Equals(_currentThemeMode, "Light", StringComparison.OrdinalIgnoreCase))
+        {
+            useLightTheme = true;
+        }
+
+        var useDarkMode = useLightTheme ? 0 : 1;
+        _ = DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref useDarkMode, sizeof(int));
+        
+        // Force the OS to redraw the non-client area immediately
+        SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
+
+    private static void UpdateAllWindowDwmThemes()
+    {
+        if (Current == null) return;
+        foreach (Window window in Current.Windows)
+        {
+            UpdateWindowDwmTheme(window);
+        }
+
+        // Force Tray Context Menu to update its dynamic resources by toggling its style
+        if (Current.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu menu)
+        {
+            var currentStyle = menu.Style;
+            menu.Style = null;
+            menu.Style = currentStyle;
+        }
+    }
 
     private static void TryRegisterUriProtocol()
     {
@@ -676,6 +742,7 @@ public partial class App : WpfApplication
         }
 
         mergedDicts.Insert(0, new ResourceDictionary { Source = new Uri(themeUri, UriKind.Relative) });
+        UpdateAllWindowDwmThemes();
     }
 
     private static bool IsSystemLightTheme()

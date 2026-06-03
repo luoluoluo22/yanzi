@@ -22,9 +22,6 @@
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType"
         Style="{StaticResource DialogWindow}">
-    <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="50" GlassFrameThickness="1" CornerRadius="0" ResizeBorderThickness="8" />
-    </shell:WindowChrome.WindowChrome>
     <Window.Resources>
         <SolidColorBrush x:Key="BgBrush" Color="#FF0F0F12" />
         <SolidColorBrush x:Key="PanelBrush" Color="#FF16161B" />

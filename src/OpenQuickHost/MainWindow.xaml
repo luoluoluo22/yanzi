@@ -162,7 +162,7 @@
                              VerticalAlignment="Center"
                              Margin="5,0,15,0">
                         <Path Data="{local:IconGeometry search}"
-                              Fill="#FFAAAAAA"
+                              Fill="{DynamicResource BrushTextSec}"
                               Stretch="Uniform"/>
                     </Viewbox>
 
@@ -170,7 +170,7 @@
                         <TextBlock IsHitTestVisible="False"
                                    VerticalAlignment="Center"
                                    FontSize="{DynamicResource FontSizeTitle}"
-                                   Foreground="#FF5F6368"
+                                   Foreground="{DynamicResource BrushTextMuted}"
                                    Visibility="{Binding SearchInlineCompletionVisibility}"
                                    Text="{Binding SearchInlineCompletionSuffix}">
                             <TextBlock.RenderTransform>
@@ -199,7 +199,7 @@
                         <TextBlock IsHitTestVisible="False"
                                    Text="搜索应用、扩展、系统项，或输入 @应用 / @系统 ..."
                                    VerticalAlignment="Center"
-                                   Foreground="#FF555555"
+                                   Foreground="{DynamicResource BrushTextMuted}"
                                    FontSize="{DynamicResource FontSizeTitle}"
                                    Margin="2,0,0,0">
                             <TextBlock.Style>
@@ -313,7 +313,7 @@
                                                 Width="34"
                                                 Height="34"
                                                 CornerRadius="8"
-                                                Background="#FF2B2F36"
+                                                Background="{DynamicResource BrushSecondaryBtnBG}"
                                                 VerticalAlignment="Center">
                                             <Grid>
                                                 <Image Source="{Binding IconSource}"
@@ -356,7 +356,7 @@
                                                 Content="复制路径"
                                                 Padding="10,5"
                                                 FontSize="{DynamicResource FontSizeSmall}"
-                                                Foreground="#FFE5E7EB"
+                                                Foreground="{DynamicResource BrushTextMain}"
                                                 Click="CopyAttachedFilePathButton_Click"
                                                 Style="{DynamicResource GhostButtonStyle}" />
                                     </Grid>
@@ -405,9 +405,9 @@
                                     </Button.ContextMenu>
                                     <Button.Style>
                                         <Style TargetType="Button">
-                                            <Setter Property="Background" Value="#E012151B" />
-                                            <Setter Property="BorderBrush" Value="#48516172" />
-                                            <Setter Property="Foreground" Value="#FFE5E7EB" />
+                                            <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}" />
+                                            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                             <Setter Property="Template">
                                                 <Setter.Value>
                                                     <ControlTemplate TargetType="Button">
@@ -429,8 +429,8 @@
                                                         <ControlTemplate.Triggers>
                                                             <Trigger Property="IsMouseOver" Value="True">
                                                                 <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
-                                                                <Setter TargetName="Root" Property="BorderBrush" Value="#6D7B8BA3" />
-                                                                <Setter Property="Foreground" Value="White" />
+                                                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                                             </Trigger>
                                                         </ControlTemplate.Triggers>
                                                     </ControlTemplate>
@@ -440,7 +440,7 @@
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                     <Setter Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
                                                     <Setter Property="BorderBrush" Value="{DynamicResource BrushListViewItemSelectedBorder}" />
-                                                    <Setter Property="Foreground" Value="White" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTagSelectedText}" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -460,9 +460,9 @@
                             Cursor="Hand">
                         <Button.Style>
                             <Style TargetType="Button">
-                                <Setter Property="Background" Value="#E012151B" />
-                                <Setter Property="BorderBrush" Value="#48516172" />
-                                <Setter Property="Foreground" Value="#FFE5E7EB" />
+                                <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="Button">
@@ -501,7 +501,7 @@
             <!-- Separator -->
             <Rectangle Grid.Row="0"
                        Height="1"
-                       Fill="#FF2A2A2A"
+                       Fill="{DynamicResource BrushSecondaryBtnBG}"
                        VerticalAlignment="Bottom"
                        Margin="0,5,0,0"
                        Visibility="{Binding NormalLauncherVisibility}"/>
@@ -735,7 +735,7 @@
                                                  VerticalAlignment="Center"
                                                  Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <Path Data="{local:IconGeometry sync}"
-                                                  Fill="#FFE5E7EB"
+                                                  Fill="{DynamicResource BrushTextMain}"
                                                   Stretch="Uniform"
                                                   RenderTransformOrigin="0.5,0.5">
                                                 <Path.RenderTransform>
@@ -784,14 +784,14 @@
                                             VerticalAlignment="Center"
                                             Margin="8,0,5,0">
                                     <Border Background="{DynamicResource BrushBG}"
-                                            BorderBrush="#FF3A3A3A"
+                                            BorderBrush="{DynamicResource BrushBorderStrong}"
                                             BorderThickness="1"
                                             CornerRadius="6"
                                             Padding="8,4"
                                             Margin="0,0,8,0"
                                             Visibility="{Binding HasGlobalShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <TextBlock Text="{Binding ShortcutLabel}"
-                                                   Foreground="#FFACACAC"
+                                                   Foreground="{DynamicResource BrushTextSec}"
                                                    FontSize="{DynamicResource FontSizeTiny}"
                                                    FontWeight="SemiBold" />
                                     </Border>
@@ -848,18 +848,18 @@
                                                FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding AiChatModelDisplayText}"
                                                Margin="0,5,0,0"
-                                               Foreground="#FF8E8E93"
+                                               Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="{DynamicResource FontSizeSmall}" />
                                 </StackPanel>
                                 <Border Grid.Column="1"
                                         Background="{DynamicResource BrushSecondaryBtnBG}"
-                                        BorderBrush="#FF3A3A3A"
+                                        BorderBrush="{DynamicResource BrushBorderStrong}"
                                         BorderThickness="1"
                                         CornerRadius="8"
                                         Padding="10,6"
                                         VerticalAlignment="Center">
                                     <TextBlock Text="Esc 返回"
-                                               Foreground="#FFB6B6B6"
+                                               Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="{DynamicResource FontSizeSmall}" />
                                 </Border>
                             </Grid>
@@ -890,14 +890,14 @@
                                                            TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{Binding PreviewText}"
                                                            Margin="0,7,0,0"
-                                                           Foreground="#FF9CA3AF"
+                                                           Foreground="{DynamicResource BrushTextSec}"
                                                            FontSize="{DynamicResource FontSizeSmallPlus}"
                                                            TextWrapping="Wrap"
                                                            MaxHeight="36"
                                                            TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{Binding UpdatedAt, StringFormat={}{0:MM-dd HH:mm}}"
                                                            Margin="0,8,0,0"
-                                                           Foreground="#FF6B7280"
+                                                           Foreground="{DynamicResource BrushTextMuted}"
                                                            FontSize="{DynamicResource FontSizeSmall}" />
                                             </StackPanel>
                                         </Border>
@@ -921,7 +921,7 @@
                                 BorderThickness="0,1,0,0">
                             <Button Height="42"
                                     Background="{DynamicResource BrushSecondaryBtnBG}"
-                                    BorderBrush="#FF3A3A3A"
+                                    BorderBrush="{DynamicResource BrushBorderStrong}"
                                     BorderThickness="1"
                                     Foreground="{DynamicResource BrushTextMain}"
                                     HorizontalContentAlignment="Center"
@@ -962,7 +962,7 @@
                                        FontWeight="SemiBold" />
                             <TextBlock Text="{Binding AiChatModelDisplayText}"
                                        Margin="0,5,0,0"
-                                       Foreground="#FF8E8E93"
+                                       Foreground="{DynamicResource BrushTextSec}"
                                        FontSize="{DynamicResource FontSizeSmall}" />
                         </StackPanel>
 
@@ -970,7 +970,7 @@
                                 Margin="0,0,10,0"
                                 Padding="18,8"
                                 Background="{DynamicResource BrushSecondaryBtnBG}"
-                                BorderBrush="#FF3A3A3A"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
                                 BorderThickness="1"
                                 Foreground="{DynamicResource BrushTextMain}"
                                 HorizontalContentAlignment="Center"
@@ -1085,7 +1085,7 @@
                                                                 <DataTemplate DataType="{x:Type local:AiChatMessageAttachment}">
                                                                     <Border Margin="0,10,0,0"
                                                                             Padding="10,8"
-                                                                            Background="#33000000"
+                                                                            Background="{DynamicResource BrushSecondaryBtnBG}"
                                                                             BorderBrush="#33FFFFFF"
                                                                             BorderThickness="1"
                                                                             CornerRadius="10">
@@ -1097,7 +1097,7 @@
                                                                                        TextTrimming="CharacterEllipsis" />
                                                                             <TextBlock Text="{Binding FileSizeText}"
                                                                                        Margin="0,4,0,0"
-                                                                                       Foreground="#FFD1D5DB"
+                                                                                       Foreground="{DynamicResource BrushTextMain}"
                                                                                        FontSize="{DynamicResource FontSizeSmall}" />
                                                                         </StackPanel>
                                                                     </Border>
@@ -1109,7 +1109,7 @@
                                                 <TextBlock x:Name="TimeStamp"
                                                            Text="{Binding Timestamp, StringFormat={}{0:HH:mm}}"
                                                            Margin="12,6,0,0"
-                                                           Foreground="#FF6B7280"
+                                                           Foreground="{DynamicResource BrushTextMuted}"
                                                            FontSize="{DynamicResource FontSizeSmall}" />
                                             </StackPanel>
                                             <DataTemplate.Triggers>
@@ -1127,7 +1127,7 @@
 
                             <Grid Visibility="{Binding NoTopicVisibility}">
                                 <TextBlock Text="选择左侧话题，或创建一个新对话。"
-                                           Foreground="#FF6B7280"
+                                           Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeLarge}"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center" />
@@ -1139,7 +1139,7 @@
                     <Border Grid.Row="2"
                             Margin="0,0,0,12"
                             Background="{DynamicResource BrushSecondaryBtnBG}"
-                            BorderBrush="#FF343434"
+                            BorderBrush="{DynamicResource BrushBorderStrong}"
                             BorderThickness="1"
                             CornerRadius="12"
                             Padding="12"
@@ -1150,7 +1150,7 @@
                                     <Border Margin="0,0,0,8"
                                             Padding="12,10"
                                             Background="{DynamicResource BrushSecondaryBtnBG}"
-                                            BorderBrush="#FF363636"
+                                            BorderBrush="{DynamicResource BrushBorderStrong}"
                                             BorderThickness="1"
                                             CornerRadius="10">
                                         <Grid>
@@ -1166,13 +1166,13 @@
                                                            TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{Binding FileSizeText}"
                                                            Margin="0,5,0,0"
-                                                           Foreground="#FF9CA3AF"
+                                                           Foreground="{DynamicResource BrushTextSec}"
                                                            FontSize="{DynamicResource FontSizeSmall}" />
                                             </StackPanel>
                                             <TextBlock Grid.Column="1"
                                                        Margin="12,0"
                                                        VerticalAlignment="Center"
-                                                       Foreground="#FF6B7280"
+                                                       Foreground="{DynamicResource BrushTextMuted}"
                                                        FontSize="{DynamicResource FontSizeSmall}"
                                                        Text="已附加" />
                                             <Button Grid.Column="2"
@@ -1183,7 +1183,7 @@
                                                     BorderThickness="0"
                                                     Click="AiChatRemoveAttachmentButton_Click">
                                                 <TextBlock Text="×"
-                                                           Foreground="#FFE5E7EB"
+                                                           Foreground="{DynamicResource BrushTextMain}"
                                                            FontSize="{DynamicResource FontSizeSubtitle}"
                                                            HorizontalAlignment="Center"
                                                            VerticalAlignment="Center" />
@@ -1219,8 +1219,8 @@
                                     Width="36"
                                     Height="36"
                                     Margin="0,0,12,0"
-                                    Background="#FF2A2440"
-                                    BorderBrush="#554C1D95"
+                                    Background="{DynamicResource BrushSecondaryBtnBG}"
+                                    BorderBrush="{DynamicResource BrushBorderStrong}"
                                     BorderThickness="1"
                                     Cursor="Hand"
                                     ToolTip="添加附件"
@@ -1237,7 +1237,7 @@
                                     </ControlTemplate>
                                 </Button.Template>
                                 <TextBlock Text="+"
-                                           Foreground="#FFE9D5FF"
+                                           Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="22"
                                            FontWeight="Bold"
                                            HorizontalAlignment="Center"
@@ -1300,13 +1300,13 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Text="Tab 切换标签 · Shift+Enter 换行 · Esc 返回搜索"
-                                   Foreground="#FF7F7F7F"
+                                   Foreground="{DynamicResource BrushTextMuted}"
                                    FontSize="{DynamicResource FontSizeSmallPlus}"
                                    VerticalAlignment="Center" />
 
                         <TextBlock Grid.Column="1"
                                    Text="{Binding AiChatStatusText}"
-                                   Foreground="#FF7F7F7F"
+                                   Foreground="{DynamicResource BrushTextMuted}"
                                    FontSize="{DynamicResource FontSizeSmallPlus}"
                                    VerticalAlignment="Center" />
                     </Grid>
@@ -1340,7 +1340,7 @@
                                 Width="34"
                                 Height="34"
                                 Background="{DynamicResource BrushSecondaryBtnBG}"
-                                BorderBrush="#FF363636"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
                                 BorderThickness="1"
                                 Foreground="{DynamicResource BrushTextMain}"
                                 FontSize="{DynamicResource FontSizeNormalPlus}"
@@ -1363,13 +1363,13 @@
 
                         <Border Grid.Column="2"
                                 Background="{DynamicResource BrushSecondaryBtnBG}"
-                                BorderBrush="#FF363636"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
                                 BorderThickness="1"
                                 CornerRadius="8"
                                 Padding="10,5"
                                 VerticalAlignment="Center">
                             <TextBlock Text="{Binding HostedViewCommandLabel}"
-                                       Foreground="#FFB6B6B6"
+                                       Foreground="{DynamicResource BrushTextSec}"
                                        FontSize="{DynamicResource FontSizeSmall}" />
                         </Border>
                     </Grid>
@@ -1416,7 +1416,7 @@
                                     <TextBlock IsHitTestVisible="False"
                                                Margin="14,12,14,0"
                                                VerticalAlignment="Top"
-                                               Foreground="#FF555555"
+                                               Foreground="{DynamicResource BrushTextMuted}"
                                                Text="{Binding HostedViewInputPlaceholder}"
                                                TextWrapping="Wrap">
                                         <TextBlock.Style>

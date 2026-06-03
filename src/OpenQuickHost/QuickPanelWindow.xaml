@@ -183,16 +183,37 @@
                                             <Binding Path="IsSelected" Converter="{StaticResource BooleanToColorConverter}" ConverterParameter="Transparent|#1A3B82F6"/>
                                         </Button.Background>
                                         <TextBlock Text="{Binding ShortName}"
-                                                   Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF6EA8FF|#FFFFFFFF'}"
                                                    FontSize="{DynamicResource FontSizeSmall}"
-                                                   FontWeight="SemiBold"/>
+                                                   FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter Property="Foreground" Value="#FF6EA8FF"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建通用分组" Click="AddGlobalGroupButton_Click">
                             <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry plus}" Fill="#FFFFFFFF" Stretch="Uniform"/>
+                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Setter Property="Opacity" Value="0"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                    <Setter Property="Opacity" Value="1"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
                             </Viewbox>
                         </Button>
                         </StackPanel>
@@ -229,16 +250,37 @@
                                             <Binding Path="IsSelected" Converter="{StaticResource BooleanToColorConverter}" ConverterParameter="Transparent|#1A22C55E"/>
                                         </Button.Background>
                                         <TextBlock Text="{Binding ShortName}"
-                                                   Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF4ADE80|#FFFFFFFF'}"
                                                    FontSize="{DynamicResource FontSizeSmall}"
-                                                   FontWeight="SemiBold"/>
+                                                   FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter Property="Foreground" Value="#FF4ADE80"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建专属分组" Click="AddContextGroupButton_Click">
                             <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry plus}" Fill="#FFFFFFFF" Stretch="Uniform"/>
+                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Setter Property="Opacity" Value="0"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                    <Setter Property="Opacity" Value="1"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
                             </Viewbox>
                         </Button>
                         </StackPanel>
@@ -276,14 +318,23 @@
                             Click="EditModeButton_Click"
                             Style="{StaticResource SidebarButtonStyle}">
                         <Viewbox Width="14" Height="14">
-                            <Path Data="{local:IconGeometry pen}"
-                                  Fill="{Binding IsEditMode, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FFF59E0B|#FFFFFFFF'}"
-                                  Stretch="Uniform"/>
+                            <Path Data="{local:IconGeometry pen}" Stretch="Uniform">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Fill" Value="{DynamicResource BrushTextMain}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsEditMode}" Value="True">
+                                                <Setter Property="Fill" Value="#FFF59E0B"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
                         </Viewbox>
                     </Button>
                     <TextBlock Grid.Column="1"
                                Text="{Binding EditModeHintText}"
-                               Foreground="White"
+                               Foreground="{DynamicResource BrushTextMain}"
                                FontSize="{DynamicResource FontSizeNormal}"
                                FontWeight="SemiBold"
                                VerticalAlignment="Center"
@@ -307,7 +358,7 @@
                     </Button>
                     
                     <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Border Background="#FF252525" CornerRadius="6" Padding="8,4" Width="112" Margin="0,0,4,0">
+                        <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="6" Padding="8,4" Width="112" Margin="0,0,4,0">
                             <Grid>
                                 <Viewbox Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <Path Data="{local:IconGeometry search}" 
@@ -316,7 +367,7 @@
                                 <TextBox x:Name="HubSearchBox"
                                          Background="Transparent"
                                          BorderThickness="0"
-                                         Foreground="White"
+                                         Foreground="{DynamicResource BrushTextMain}"
                                          FontSize="{DynamicResource FontSizeSmall}"
                                          Margin="18,0,0,0"
                                          VerticalAlignment="Center"
@@ -324,7 +375,7 @@
                                          TextChanged="HubSearchBox_TextChanged"/>
                                 <TextBlock Text="搜索..." 
                                            IsHitTestVisible="False"
-                                           Foreground="#FF555555" 
+                                           Foreground="{DynamicResource BrushTextMuted}" 
                                            FontSize="{DynamicResource FontSizeSmall}" 
                                            Margin="20,0,0,0" 
                                            VerticalAlignment="Center">
@@ -447,6 +498,9 @@
                                                             </Setter.Value>
                                                         </Setter>
                                                         <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
                                                                 <Setter Property="Background" Value="#FF3B82F6"/>
                                                             </DataTrigger>
@@ -471,7 +525,19 @@
                                                     <Viewbox Width="18" Height="18"
                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
                                                              Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry plus}" Fill="#22FFFFFF" Stretch="Uniform"/>
+                                                        <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform">
+                                                            <Path.Style>
+                                                                <Style TargetType="Path">
+                                                                    <Setter Property="Opacity" Value="0"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                            <Setter Property="Opacity" Value="1"/>
+                                                                            <Setter Property="Fill" Value="White"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Path.Style>
+                                                        </Path>
                                                     </Viewbox>
                                                     
                                                     <!-- Occupied -->
@@ -539,7 +605,7 @@
                                                              VerticalAlignment="Center"
                                                              Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                         <Path Data="{local:IconGeometry sync}"
-                                                              Fill="#FFE5E7EB"
+                                                              Fill="{DynamicResource BrushTextMain}"
                                                               Stretch="Uniform"
                                                               RenderTransformOrigin="0.5,0.5">
                                                             <Path.RenderTransform>
@@ -562,8 +628,18 @@
                                                 </Grid>
                                             </Border>
                                             <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}" 
-                                                       Foreground="{Binding IsEmpty, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF444444|White'}" 
-                                                       FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis"/>
+                                                       FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                         </StackPanel>
                                     </Button>
                                 </DataTemplate>
@@ -576,7 +652,7 @@
             <Grid Grid.Column="1" Grid.Row="3" Margin="6,6,6,8" MouseWheel="ContextPanel_MouseWheel">
                 <StackPanel>
                     <TextBlock Text="{Binding ContextSectionTitle}"
-                               Foreground="#FFAAAAAA"
+                               Foreground="{DynamicResource BrushTextMuted}"
                                FontSize="{DynamicResource FontSizeSmallPlus}"
                                FontWeight="SemiBold"
                                HorizontalAlignment="Center"
@@ -684,6 +760,9 @@
                                                             </Setter.Value>
                                                         </Setter>
                                                         <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
                                                                 <Setter Property="Background" Value="#FF3B82F6"/>
                                                             </DataTrigger>
@@ -707,7 +786,19 @@
                                                     <Viewbox Width="18" Height="18"
                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
                                                              Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry plus}" Fill="#14FFFFFF" Stretch="Uniform"/>
+                                                        <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform">
+                                                            <Path.Style>
+                                                                <Style TargetType="Path">
+                                                                    <Setter Property="Opacity" Value="0"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                            <Setter Property="Opacity" Value="1"/>
+                                                                            <Setter Property="Fill" Value="White"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Path.Style>
+                                                        </Path>
                                                     </Viewbox>
 
                                                     <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -773,7 +864,7 @@
                                                              VerticalAlignment="Center"
                                                              Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                         <Path Data="{local:IconGeometry sync}"
-                                                              Fill="#FFE5E7EB"
+                                                              Fill="{DynamicResource BrushTextMain}"
                                                               Stretch="Uniform"
                                                               RenderTransformOrigin="0.5,0.5">
                                                             <Path.RenderTransform>
@@ -796,8 +887,18 @@
                                                 </Grid>
                                             </Border>
                                             <TextBlock Text="{Binding DisplayTitle, FallbackValue='推荐位'}"
-                                                       Foreground="{Binding IsEmpty, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF444444|White'}"
-                                                       FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis"/>
+                                                       FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                         </StackPanel>
                                     </Button>
                                 </DataTemplate>
@@ -821,7 +922,7 @@
                     Visibility="{Binding IsDraggingSlot, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <StackPanel>
                     <TextBlock Text="普通拖放：放入 / 交换"
-                               Foreground="#FFE5E7EB"
+                               Foreground="{DynamicResource BrushTextMain}"
                                FontSize="10.5"
                                FontWeight="SemiBold" />
                     <TextBlock Text="按住 Ctrl：成组 / 加入分组"
@@ -872,7 +973,7 @@
                     Margin="8"
                     Background="#F21A1A1A"
                     CornerRadius="18"
-                    BorderBrush="#FF2A2A2A"
+                    BorderBrush="{DynamicResource BrushSecondaryBtnBG}"
                     BorderThickness="1"
                     MouseLeave="FolderOverlay_MouseLeave"
                     Visibility="{Binding IsFolderExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -997,6 +1098,9 @@
                                                         </Setter.Value>
                                                     </Setter>
                                                     <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+                                                        </DataTrigger>
                                                         <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
                                                             <Setter Property="Background" Value="#FF3B82F6"/>
                                                         </DataTrigger>
@@ -1030,7 +1134,19 @@
                                                 <Viewbox Width="18" Height="18"
                                                          HorizontalAlignment="Center" VerticalAlignment="Center"
                                                          Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <Path Data="{local:IconGeometry plus}" Fill="#14FFFFFF" Stretch="Uniform"/>
+                                                    <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform">
+                                                        <Path.Style>
+                                                            <Style TargetType="Path">
+                                                                <Setter Property="Opacity" Value="0"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                        <Setter Property="Opacity" Value="1"/>
+                                                                        <Setter Property="Fill" Value="White"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Path.Style>
+                                                    </Path>
                                                 </Viewbox>
                                                 <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
                                                               Width="36"
@@ -1080,7 +1196,7 @@
                                                          VerticalAlignment="Center"
                                                          Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <Path Data="{local:IconGeometry sync}"
-                                                          Fill="#FFE5E7EB"
+                                                          Fill="{DynamicResource BrushTextMain}"
                                                           Stretch="Uniform"
                                                           RenderTransformOrigin="0.5,0.5">
                                                         <Path.RenderTransform>
@@ -1103,8 +1219,18 @@
                                             </Grid>
                                         </Border>
                                         <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}"
-                                                   Foreground="{Binding IsEmpty, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF444444|White'}"
-                                                   FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis"/>
+                                                   FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </StackPanel>
                                 </Button>
                             </DataTemplate>

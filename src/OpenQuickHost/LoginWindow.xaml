@@ -9,8 +9,8 @@
         Style="{StaticResource DialogWindow}">
     <Border Margin="1"
             CornerRadius="0"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <Grid Margin="25">
@@ -57,7 +57,7 @@
                 <StackPanel Grid.Row="2" Margin="0,18,0,0">
                     <TextBlock x:Name="PrimaryFieldLabel"
                                Text="邮箱"
-                               Foreground="#FFB8B8B8"
+                               Foreground="{DynamicResource BrushTextSec}"
                                FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
@@ -68,7 +68,7 @@
 
                 <StackPanel x:Name="EmailPanel" Grid.Row="3" Margin="0,14,0,0">
                     <TextBlock Text="邮箱"
-                               Foreground="#FFB8B8B8"
+                               Foreground="{DynamicResource BrushTextSec}"
                                FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
@@ -79,7 +79,7 @@
 
                 <StackPanel Grid.Row="4" Margin="0,14,0,0">
                     <TextBlock Text="密码"
-                               Foreground="#FFB8B8B8"
+                               Foreground="{DynamicResource BrushTextSec}"
                                FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
@@ -95,7 +95,7 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="邮箱验证码"
-                                   Foreground="#FFB8B8B8"
+                                   Foreground="{DynamicResource BrushTextSec}"
                                    FontSize="{DynamicResource FontSizeSmallPlus}"
                                    Margin="2,0,0,6"
                                    FontWeight="SemiBold" />
@@ -115,7 +115,7 @@
                 <StackPanel Grid.Row="6" Margin="0,16,0,0">
                     <CheckBox x:Name="RememberCheckBox"
                               IsChecked="True"
-                              Foreground="#FFB8B8B8"
+                              Foreground="{DynamicResource BrushTextSec}"
                               Content="记住登录信息（本机加密保存）"
                               FontSize="{DynamicResource FontSizeSmallPlus}" />
                     <Button x:Name="ForgotPasswordButton"

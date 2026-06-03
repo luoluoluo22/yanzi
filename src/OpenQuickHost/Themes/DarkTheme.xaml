@@ -6,6 +6,7 @@
     <Color x:Key="ColorAccent">#FF3B82F6</Color>
     <Color x:Key="ColorTextMain">#FFFFFFFF</Color>
     <Color x:Key="ColorTextSec">#FF8E8E8E</Color>
+    <Color x:Key="ColorTextMuted">#FF6B7280</Color>
     <Color x:Key="ColorInputBG">#FF1E1E1E</Color>
 
     <SolidColorBrush x:Key="BrushBG" Color="{StaticResource ColorBG}"/>
@@ -13,10 +14,12 @@
     <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource ColorAccent}"/>
     <SolidColorBrush x:Key="BrushTextMain" Color="{StaticResource ColorTextMain}"/>
     <SolidColorBrush x:Key="BrushTextSec" Color="{StaticResource ColorTextSec}"/>
+    <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource ColorTextMuted}"/>
     <SolidColorBrush x:Key="BrushInputBG" Color="{StaticResource ColorInputBG}"/>
 
     <!-- Premium Button Theme Resources -->
     <SolidColorBrush x:Key="BrushAccentText" Color="White"/>
+    <SolidColorBrush x:Key="BrushTagSelectedText" Color="White"/>
     <SolidColorBrush x:Key="BrushSecondaryBtnBG" Color="#FF252525"/>
     <SolidColorBrush x:Key="BrushSecondaryBtnBorder" Color="#FF333333"/>
     <SolidColorBrush x:Key="BrushSecondaryBtnText" Color="#FFAAAAAA"/>

@@ -18,12 +18,7 @@
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType">
-    <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="44"
-                            ResizeBorderThickness="6"
-                            CornerRadius="0"
-                            GlassFrameThickness="1" />
-    </shell:WindowChrome.WindowChrome>
+    
     
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
