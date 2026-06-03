@@ -91,6 +91,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             if (e.Key == Key.Escape) Hide();
         };
+
+        InputHookService.OnGlobalMouseDown += InputHookService_OnGlobalMouseDown;
     }
 
     public ObservableCollection<SlotViewModel> GlobalSlots { get; } = new();
@@ -955,6 +957,31 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         return point.X >= 0 && point.Y >= 0 && point.X <= ActualWidth && point.Y <= ActualHeight;
     }
 
+    private void InputHookService_OnGlobalMouseDown()
+    {
+        if (!IsVisible)
+        {
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow < _suspendOutsideClickHideUntilUtc)
+        {
+            return;
+        }
+
+        if (OwnedWindows.OfType<Window>().Any(static window => window.IsVisible))
+        {
+            return;
+        }
+
+        if (_isDraggingSlot || IsCursorInsideQuickPanel())
+        {
+            return;
+        }
+
+        HidePanelIfAllowed();
+    }
+
     private void SlotButton_DragOver(object sender, System.Windows.DragEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: SlotViewModel target })
@@ -1275,7 +1302,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             _isExecutingSlot = false;
             ClearReleaseTarget();
-            if (_isPinned && IsVisible)
+            if (IsVisible)
             {
                 _releaseTargetTimer.Start();
             }

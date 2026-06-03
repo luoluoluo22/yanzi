@@ -1,3 +1,4 @@
+const mobilePollRateLimitMap = new Map();
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 const PASSWORD_ITERATIONS = 100000;
 const VERIFICATION_CODE_TTL_MINUTES = 10;
@@ -1271,6 +1272,23 @@ async function handleRequest(request, env) {
   if (url.pathname === "/v1/me/mobile/messages" && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
+
+    const now = Date.now();
+    const rateLimitKey = `${auth.userId}:${deviceId}`;
+    const lastRequestTime = mobilePollRateLimitMap.get(rateLimitKey) || 0;
+    mobilePollRateLimitMap.set(rateLimitKey, now);
+    if (mobilePollRateLimitMap.size > 5000) {
+      mobilePollRateLimitMap.clear();
+    }
+    if (now - lastRequestTime < 3000) {
+      return json({
+        ok: true,
+        userId: auth.userId,
+        deviceId,
+        items: []
+      });
+    }
+
     const limit = normalizeMessageLimit(url.searchParams.get("limit"));
     await ensureUser(env, auth.userId);
     const device = await ensureOwnedDevice(env, auth.userId, deviceId);

@@ -41,11 +41,13 @@ gh api user --jq .login | Out-Host
 $hash = (Get-FileHash -LiteralPath $installerSetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $notesPath = Join-Path ([IO.Path]::GetTempPath()) "yanzi-release-$plainVersion.md"
 
-@"
+$notesContent = @"
 一键安装包：$fileName
 
 SHA256: $hash
-"@ | Set-Content -LiteralPath $notesPath -Encoding UTF8
+"@
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($notesPath, $notesContent, $utf8NoBom)
 
 $releaseExists = $true
 $oldEAP = $ErrorActionPreference
@@ -70,11 +72,39 @@ if (-not $releaseExists) {
         --notes-file $notesPath | Out-Host
 }
 
-$filesToUpload = Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match "nupkg|releases\.win\.json|Setup.*\.exe|Portable.*\.zip" }
+$filesToUpload = Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match "nupkg|releases\.win\.json|Setup.*\.exe" }
 foreach ($file in $filesToUpload) {
-    Write-Host "Uploading $($file.Name) to Release $tag..."
-    gh release upload $tag $file.FullName --repo $Repo --clobber *> $null
-    Write-Host "Successfully uploaded $($file.Name)."
+    $maxRetries = 5
+    $retryCount = 0
+    $uploaded = $false
+
+    while (-not $uploaded -and $retryCount -lt $maxRetries) {
+        $retryCount++
+        try {
+            Write-Host "Uploading $($file.Name) to Release $tag... (Attempt $retryCount/$maxRetries)"
+            
+            $oldEAP = $ErrorActionPreference
+            $ErrorActionPreference = "Stop"
+            
+            & gh release upload $tag $file.FullName --repo $Repo --clobber
+            
+            $ErrorActionPreference = $oldEAP
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "Successfully uploaded $($file.Name)."
+                $uploaded = $true
+            } else {
+                throw "gh release upload returned non-zero exit code: $LASTEXITCODE"
+            }
+        } catch {
+            Write-Warning ("Failed to upload {0} on attempt {1}: {2}" -f $file.Name, $retryCount, $_)
+            if ($retryCount -lt $maxRetries) {
+                Write-Host "Waiting 5 seconds before retrying..."
+                Start-Sleep -Seconds 5
+            } else {
+                throw "Failed to upload $($file.Name) after $maxRetries attempts."
+            }
+        }
+    }
 }
 
 if (-not $Draft) {

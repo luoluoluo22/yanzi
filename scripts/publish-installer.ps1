@@ -2,7 +2,8 @@ param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$Version = "0.1.0",
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [string]$GithubToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -98,6 +99,19 @@ if (-not $SkipInstaller) {
         $vpkPath = $vpk.Source
     }
 
+    Write-Host "Downloading previous releases from GitHub for delta generation..."
+    $downloadArgs = @("download", "github", "--repoUrl", "https://github.com/luoluoluo22/yanzi", "--outputDir", $installerOutDir)
+    if ($GithubToken) {
+        $downloadArgs += @("--token", $GithubToken)
+    }
+
+    try {
+        & $vpkPath $downloadArgs
+        Write-Host "Successfully downloaded previous releases."
+    } catch {
+        Write-Warning "Could not download previous releases (this is normal for the very first release or offline builds): $_"
+    }
+
     Write-Host "Building Velopack installer package..."
     & $vpkPath pack `
         --packId "Yanzi" `
@@ -122,6 +136,13 @@ if (-not $SkipInstaller) {
     if (Test-Path $zipFile) {
         Rename-Item -Path $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
     }
+
+    # 打包并重命名完毕后，删除所有历史下载的、不是当前版本的旧 nupkg 包
+    Write-Host "Cleaning up historical packages in output directory..."
+    $cleanVersion = $Version.TrimStart("vV")
+    Get-ChildItem -Path $installerOutDir -File | Where-Object {
+        $_.Extension -eq ".nupkg" -and $_.Name -notmatch [regex]::Escape($cleanVersion)
+    } | Remove-Item -Force
 
     Write-Host "Velopack packaging completed successfully."
     Write-Host "Installer output directory:"

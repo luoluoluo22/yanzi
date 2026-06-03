@@ -598,6 +598,63 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StartMobileMessageBridge("startup-post-refresh");
         }
         StartStartupExtensions();
+
+        // 异步预热快捷菜单和面板窗口以消除首次显示时的卡顿
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            try
+            {
+                if (_radialMenu != null)
+                {
+                    var oLeft = _radialMenu.Left;
+                    var oTop = _radialMenu.Top;
+                    var oShowActivated = _radialMenu.ShowActivated;
+                    var oShowInTaskbar = _radialMenu.ShowInTaskbar;
+                    var oOpacity = _radialMenu.Opacity;
+
+                    _radialMenu.Left = -10000;
+                    _radialMenu.Top = -10000;
+                    _radialMenu.ShowActivated = false;
+                    _radialMenu.ShowInTaskbar = false;
+                    _radialMenu.Opacity = 0;
+                    _radialMenu.Show();
+                    _radialMenu.Hide();
+
+                    _radialMenu.Left = oLeft;
+                    _radialMenu.Top = oTop;
+                    _radialMenu.ShowActivated = oShowActivated;
+                    _radialMenu.ShowInTaskbar = oShowInTaskbar;
+                    _radialMenu.Opacity = oOpacity;
+                }
+
+                if (_quickPanel != null)
+                {
+                    var oLeft = _quickPanel.Left;
+                    var oTop = _quickPanel.Top;
+                    var oShowActivated = _quickPanel.ShowActivated;
+                    var oShowInTaskbar = _quickPanel.ShowInTaskbar;
+                    var oOpacity = _quickPanel.Opacity;
+
+                    _quickPanel.Left = -10000;
+                    _quickPanel.Top = -10000;
+                    _quickPanel.ShowActivated = false;
+                    _quickPanel.ShowInTaskbar = false;
+                    _quickPanel.Opacity = 0;
+                    _quickPanel.Show();
+                    _quickPanel.Hide();
+
+                    _quickPanel.Left = oLeft;
+                    _quickPanel.Top = oTop;
+                    _quickPanel.ShowActivated = oShowActivated;
+                    _quickPanel.ShowInTaskbar = oShowInTaskbar;
+                    _quickPanel.Opacity = oOpacity;
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Error warming up windows: {ex}");
+            }
+        }), DispatcherPriority.ApplicationIdle);
     }
 
     private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)

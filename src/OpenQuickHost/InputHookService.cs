@@ -43,6 +43,7 @@ public class InputHookService
     private static DispatcherTimer? _longPressTimer;
     private static Action? _onLongPressRelease;
     private static Action? _onRadialRelease;
+    public static event Action? OnGlobalMouseDown;
     private static Action? _onShowPanel;
     private static Action? _onShowRadial;
     private static Action? _onShowYanm;
@@ -142,7 +143,7 @@ public class InputHookService
         }
         
         _longPressTimer = new DispatcherTimer();
-        _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 120, 1500));
+        _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 50, 1500));
         _longPressTimer.Tick += (s, e) =>
         {
             _longPressTimer.Stop();
@@ -206,7 +207,7 @@ public class InputHookService
         _windowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(appSettings.WindowSnapAssistMouseTriggerMode);
         if (_longPressTimer != null)
         {
-            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 120, 1500));
+            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 50, 1500));
         }
 
         ResetTransientMouseState();
@@ -274,6 +275,21 @@ public class InputHookService
             if ((mouse.flags & LLMHF_INJECTED) != 0)
             {
                 return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
+            }
+
+            if (message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN)
+            {
+                System.Windows.Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        OnGlobalMouseDown?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Error in OnGlobalMouseDown: {ex.Message}");
+                    }
+                }));
             }
 
             if (message == WM_LBUTTONDOWN)
@@ -536,7 +552,7 @@ public class InputHookService
 
         if (_longPressTimer != null)
         {
-            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 120, 1500));
+            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 50, 1500));
         }
 
         _longPressTimer?.Start();

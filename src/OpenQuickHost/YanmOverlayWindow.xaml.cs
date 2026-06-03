@@ -261,10 +261,10 @@ public partial class YanmOverlayWindow : Window
         {
             var cloudResult = await _mainWindow.PullYanmStateFromCloudNowAsync();
             var currentSettings = AppSettingsStore.Load();
-            var hasWebDav = currentSettings.EnableWebDavSync && _mainWindow.HasWebDavCredential();
-            (bool ok, string message, bool uploaded, bool pulled, int payloadBytes) result = hasWebDav
+            var isPersonalSyncConfigured = OpenQuickHost.Sync.PersonalSyncBackendFactory.IsConfigured(currentSettings);
+            (bool ok, string message, bool uploaded, bool pulled, int payloadBytes) result = isPersonalSyncConfigured
                 ? await _mainWindow.SyncYanmStateNowAsync()
-                : (true, "未启用 WebDAV，已跳过坚果云同步。", false, false, 0);
+                : (true, "个人云端同步未启用或未配置，已跳过同步。", false, false, 0);
             if (cloudResult.ok || result.ok)
             {
                 if (Dispatcher.CheckAccess())
@@ -1154,7 +1154,7 @@ public partial class YanmOverlayWindow : Window
     private void QueueWebDavLocalChangeSync(string reason)
     {
         var currentSettings = AppSettingsStore.Load();
-        if (!currentSettings.EnableWebDavSync || !_mainWindow.HasWebDavCredential())
+        if (!OpenQuickHost.Sync.PersonalSyncBackendFactory.IsConfigured(currentSettings))
         {
             return;
         }

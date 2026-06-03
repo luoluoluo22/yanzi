@@ -12,6 +12,9 @@ namespace OpenQuickHost;
 
 public partial class MainWindow
 {
+    private DateTimeOffset _lastNetworkAddressChangedHandledAt = DateTimeOffset.MinValue;
+    private static readonly object MobileMessageBridgeLock = new();
+    private bool _deviceRegistered;
     private const string PublicStoreOrigin = "https://yanzi.luoluoluo.cc.cd";
 
     public static string BuildExtensionStoreUrl(string extensionId)
@@ -673,6 +676,14 @@ public partial class MainWindow
 
     private void NetworkChange_NetworkAddressChanged(object? sender, EventArgs e)
     {
+        var now = DateTimeOffset.UtcNow;
+        if (now - _lastNetworkAddressChangedHandledAt < TimeSpan.FromSeconds(5)) return;
+        _lastNetworkAddressChangedHandledAt = now;
+        NetworkChange_NetworkAddressChanged_Real(sender, e);
+    }
+
+    private void NetworkChange_NetworkAddressChanged_Real(object? sender, EventArgs e)
+    {
         Dispatcher.InvokeAsync(() =>
         {
             if (!NetworkInterface.GetIsNetworkAvailable())
@@ -784,11 +795,22 @@ public partial class MainWindow
         }
 
         _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
-        if (_mobileMessageBridgeTask is not { IsCompleted: false })
+        lock (MobileMessageBridgeLock)
         {
-            _mobileMessageBridgeCts?.Cancel();
-            _mobileMessageBridgeCts = new CancellationTokenSource();
-            _mobileMessageBridgeTask = Task.Run(() => MobileMessageBridgeLoopAsync(_mobileMessageBridgeCts.Token));
+            _deviceRegistered = false;
+            if (_mobileMessageBridgeTask is not { IsCompleted: false })
+            {
+                try
+                {
+                    _mobileMessageBridgeCts?.Cancel();
+                }
+                catch
+                {
+                    // Ignore cancel exceptions
+                }
+                _mobileMessageBridgeCts = new CancellationTokenSource();
+                _mobileMessageBridgeTask = Task.Run(() => MobileMessageBridgeLoopAsync(_mobileMessageBridgeCts.Token));
+            }
         }
 
         HostAssets.AppendLog($"Mobile bridge started: reason={reason}, deviceId={_desktopDeviceId}.");
@@ -797,13 +819,30 @@ public partial class MainWindow
 
     private async Task MobileMessageBridgeLoopAsync(CancellationToken cancellationToken)
     {
-        HostAssets.AppendLog("Mobile bridge background loop started.");
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        HostAssets.AppendLog("Mobile bridge background loop started with smart polling.");
+        var delaySeconds = 5;
+        var consecutiveEmptyCount = 0;
         try
         {
-            while (await timer.WaitForNextTickAsync(cancellationToken))
+            while (!cancellationToken.IsCancellationRequested)
             {
-                await PollMobileMessagesSafeAsync("background-loop");
+                var messagesCount = await PollMobileMessagesSafeAsync("background-loop");
+                
+                if (messagesCount > 0)
+                {
+                    consecutiveEmptyCount = 0;
+                    delaySeconds = 5;
+                }
+                else
+                {
+                    consecutiveEmptyCount++;
+                    if (consecutiveEmptyCount >= 6)
+                    {
+                        delaySeconds = Math.Min(delaySeconds + 5, 45);
+                    }
+                }
+                
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
             }
         }
         catch (OperationCanceledException)
@@ -821,7 +860,7 @@ public partial class MainWindow
         await PollMobileMessagesSafeAsync("timer");
     }
 
-    private async Task PollMobileMessagesSafeAsync(string reason)
+    private async Task<int> PollMobileMessagesSafeAsync(string reason)
     {
         if (_mobileMessagePollRunning || _cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
@@ -829,7 +868,7 @@ public partial class MainWindow
             {
                 HostAssets.AppendLog($"Mobile bridge poll skipped: reason={reason}, previous poll still running.");
             }
-            return;
+            return 0;
         }
 
         _mobileMessagePollRunning = true;
@@ -837,16 +876,21 @@ public partial class MainWindow
         {
             using var pollTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
-            await _cloudSyncClient.RegisterDeviceAsync(
-                _desktopDeviceId,
-                "desktop",
-                DeviceIdentityStore.GetDesktopDisplayName(),
-                new
-                {
-                    app = "yanzi-desktop",
-                    os = Environment.OSVersion.VersionString
-                },
-                cancellationToken: pollTimeout.Token);
+            
+            if (!_deviceRegistered)
+            {
+                await _cloudSyncClient.RegisterDeviceAsync(
+                    _desktopDeviceId,
+                    "desktop",
+                    DeviceIdentityStore.GetDesktopDisplayName(),
+                    new
+                    {
+                        app = "yanzi-desktop",
+                        os = Environment.OSVersion.VersionString
+                    },
+                    cancellationToken: pollTimeout.Token);
+                _deviceRegistered = true;
+            }
 
             var messages = await _cloudSyncClient.GetPendingDeviceMessagesAsync(_desktopDeviceId, limit: 20, cancellationToken: pollTimeout.Token);
             if (messages.Count > 0)
@@ -865,6 +909,7 @@ public partial class MainWindow
                 await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, pollTimeout.Token);
                 HostAssets.AppendLog($"Mobile bridge acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
             }
+            return messages.Count;
         }
         catch (OperationCanceledException ex)
         {
@@ -872,12 +917,14 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            _deviceRegistered = false;
             HostAssets.AppendLog($"Mobile bridge poll failed: reason={reason}, {FormatExceptionMessage(ex)}");
         }
         finally
         {
             _mobileMessagePollRunning = false;
         }
+        return 0;
     }
 
     private async Task HandleMobileDeviceMessageAsync(DeviceMessageRecord message)
