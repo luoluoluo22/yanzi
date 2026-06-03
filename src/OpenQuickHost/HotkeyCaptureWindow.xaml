@@ -9,7 +9,7 @@
         PreviewKeyDown="Window_PreviewKeyDown"
         PreviewKeyUp="Window_PreviewKeyUp">
     <Border Margin="1"
-            CornerRadius="12"
+            CornerRadius="0"
             Background="{DynamicResource BrushDialogBG}"
             BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1">

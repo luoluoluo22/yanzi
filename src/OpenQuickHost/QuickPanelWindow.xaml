@@ -19,7 +19,7 @@
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
                             ResizeBorderThickness="4"
-                            CornerRadius="16"
+                            CornerRadius="0"
                             GlassFrameThickness="1" />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
@@ -128,7 +128,7 @@
 
     <Border Margin="1"
             Background="{DynamicResource BrushDialogBG}"
-            CornerRadius="20"
+            CornerRadius="0"
             BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1"
             MouseLeftButtonDown="Window_MouseLeftButtonDown">

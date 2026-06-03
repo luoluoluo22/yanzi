@@ -21,7 +21,7 @@
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
                             ResizeBorderThickness="6"
-                            CornerRadius="12"
+                            CornerRadius="0"
                             GlassFrameThickness="1" />
     </shell:WindowChrome.WindowChrome>
     
@@ -401,7 +401,7 @@
 
     <Border x:Name="WindowFrame"
             Margin="1"
-            CornerRadius="12"
+            CornerRadius="0"
             Background="{DynamicResource BrushBG}"
             BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1"
@@ -415,7 +415,7 @@
             <!-- Sidebar (Left) -->
             <Border Grid.Column="0" 
                     Background="{DynamicResource BrushBG}" 
-                    CornerRadius="12,0,0,12"
+                    CornerRadius="0"
                     BorderBrush="{DynamicResource BrushBorder}"
                     BorderThickness="0,0,1,0">
                 <Grid>

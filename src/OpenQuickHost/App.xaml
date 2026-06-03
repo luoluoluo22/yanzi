@@ -172,7 +172,7 @@
                     <Setter.Value>
                         <shell:WindowChrome CaptionHeight="0"
                                             ResizeBorderThickness="6"
-                                            CornerRadius="12"
+                                            CornerRadius="0"
                                             GlassFrameThickness="1" />
                     </Setter.Value>
                 </Setter>

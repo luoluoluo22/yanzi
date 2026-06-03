@@ -25,7 +25,7 @@
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
                             ResizeBorderThickness="6"
-                            CornerRadius="16"
+                            CornerRadius="0"
                             GlassFrameThickness="1" />
     </shell:WindowChrome.WindowChrome>
     
@@ -125,7 +125,7 @@
     </Window.Resources>
 
     <Border Margin="1"
-            CornerRadius="16"
+            CornerRadius="0"
             Background="{DynamicResource BrushDialogBG}"
             BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1"
@@ -1509,7 +1509,7 @@
             <!-- 3. Footer -->
             <Border Grid.Row="2"
                     Background="{DynamicResource BrushBG}"
-                    CornerRadius="0,0,16,16"
+                    CornerRadius="0"
                     Padding="20,10"
                     Visibility="{Binding NormalLauncherVisibility}">
                 <Grid>

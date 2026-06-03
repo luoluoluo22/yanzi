@@ -402,7 +402,7 @@
             Background="{DynamicResource BrushBG}"
             BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1"
-            CornerRadius="14"
+            CornerRadius="0"
             SnapsToDevicePixels="True">
         <Grid>
             <Grid.RowDefinitions>
