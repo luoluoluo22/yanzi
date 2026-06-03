@@ -12,14 +12,13 @@
         MinWidth="900"
         MinHeight="620"
         WindowStartupLocation="CenterScreen"
-        WindowStyle="None"
         Background="{DynamicResource BrushBG}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0"
+        <shell:WindowChrome CaptionHeight="44"
                             ResizeBorderThickness="6"
                             CornerRadius="0"
                             GlassFrameThickness="1" />
@@ -584,10 +583,10 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="140" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" shell:WindowChrome.IsHitTestVisibleInChrome="True">
                         <Button Style="{DynamicResource GhostButtonStyle}" Margin="0,0,5,0">
                             <Viewbox Width="12" Height="12">
                                 <Path Data="{local:IconGeometry arrow-left}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform"/>
@@ -600,20 +599,6 @@
                                         <RotateTransform Angle="180"/>
                                     </Path.RenderTransform>
                                 </Path>
-                            </Viewbox>
-                        </Button>
-                    </StackPanel>
-
-                    <!-- Window Controls -->
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top">
-                        <Button Style="{DynamicResource GhostButtonStyle}" Click="CloseButton_Click" VerticalAlignment="Center">
-                            <Viewbox Width="12" Height="12">
-                                <Path Data="{local:IconGeometry minimize}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform"/>
-                            </Viewbox>
-                        </Button>
-                        <Button Style="{DynamicResource GhostButtonStyle}" Click="CloseButton_Click" Margin="5,0,0,0">
-                            <Viewbox Width="12" Height="12">
-                                <Path Data="{local:IconGeometry close}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform"/>
                             </Viewbox>
                         </Button>
                     </StackPanel>

@@ -4,13 +4,15 @@
         xmlns:local="clr-namespace:OpenQuickHost"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
         Width="1240"
         Height="880"
         MinWidth="1100"
         MinHeight="760"
         WindowStartupLocation="CenterOwner"
-        WindowStyle="None"
-        ResizeMode="CanResizeWithGrip"
+        ResizeMode="CanResize"
         ShowInTaskbar="True"
         Topmost="False"
         Background="{DynamicResource BrushBG}"
@@ -20,7 +22,7 @@
         TextOptions.TextRenderingMode="ClearType"
         Style="{StaticResource DialogWindow}">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" GlassFrameThickness="1" CornerRadius="0" ResizeBorderThickness="8" />
+        <shell:WindowChrome CaptionHeight="50" GlassFrameThickness="1" CornerRadius="0" ResizeBorderThickness="8" />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
         <SolidColorBrush x:Key="BgBrush" Color="#FF0F0F12" />
@@ -411,7 +413,6 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- 顶栏：只放标题 + 模式切换 + 关闭按钮，整条作为拖动区 -->
             <Border Grid.Row="0"
                     BorderBrush="{DynamicResource BrushBorder}"
                     BorderThickness="0,0,0,1"
@@ -422,7 +423,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="140" />
                     </Grid.ColumnDefinitions>
 
                     <!-- 左：标题 -->
@@ -455,16 +456,6 @@
                             </RadioButton>
                         </StackPanel>
                     </Border>
-
-                    <!-- 右：关闭按钮 -->
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                        <Button x:Name="CloseButton" Width="34" Height="34"
-                                Style="{DynamicResource GhostButtonStyle}" Padding="0"
-                                Click="CancelButton_Click">
-                            <TextBlock Text="✕" FontSize="{DynamicResource FontSizeNormalPlus}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Button>
-                    </StackPanel>
                 </Grid>
             </Border>
 

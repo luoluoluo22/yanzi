@@ -13,7 +13,7 @@
         MinHeight="450"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
-        ResizeMode="CanResizeWithGrip"
+        ResizeMode="CanResize"
         Background="{DynamicResource BrushBG}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
