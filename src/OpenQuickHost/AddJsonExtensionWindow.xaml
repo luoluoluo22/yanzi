@@ -12,6 +12,7 @@
         MinWidth="1100"
         MinHeight="760"
         WindowStartupLocation="CenterOwner"
+        WindowStyle="SingleBorderWindow"
         ResizeMode="CanResize"
         ShowInTaskbar="True"
         Topmost="False"

@@ -7,6 +7,7 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
         Title="Settings"
+        WindowStyle="SingleBorderWindow"
         Width="1024"
         Height="768"
         MinWidth="900"
@@ -3656,13 +3657,7 @@
                    DragDelta="ResizeBottomRightThumb_DragDelta">
                 <Thumb.Template>
                     <ControlTemplate TargetType="Thumb">
-                        <Grid Background="Transparent">
-                            <Path Data="M 4,14 L 14,4 M 8,14 L 14,8 M 12,14 L 14,12"
-                                  Stroke="#FF6B7280"
-                                  StrokeThickness="1.2"
-                                  StrokeStartLineCap="Round"
-                                  StrokeEndLineCap="Round"/>
-                        </Grid>
+                        <Grid Background="Transparent"/>
                     </ControlTemplate>
                 </Thumb.Template>
             </Thumb>
