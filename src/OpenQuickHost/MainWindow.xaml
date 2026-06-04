@@ -1547,7 +1547,7 @@
                                 BorderThickness="0"
                                 Click="FooterQuickMenuButton_Click"
                                 Style="{DynamicResource GhostButtonStyle}">
-                            <Path Data="{local:IconGeometry menu}" Fill="{DynamicResource BrushTextMain}" Height="14" Width="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Path Data="{local:IconGeometry dots-horizontal}" Fill="{DynamicResource BrushTextMain}" Height="14" Width="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
                     </StackPanel>
                     

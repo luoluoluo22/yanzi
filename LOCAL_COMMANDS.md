@@ -12,7 +12,7 @@ dotnet build
 ## 生成自包含单文件和 Velopack 一键安装包及升级资产：
 
 ```powershell
-.\scripts\publish-installer.ps1 -Version 0.2.0
+.\scripts\publish-installer.ps1 -Version 0.2.6
 ```
 
 
