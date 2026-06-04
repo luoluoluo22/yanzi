@@ -556,7 +556,7 @@ public class InputHookService
         }
 
         _longPressTimer?.Start();
-        HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={Math.Clamp(_settings.LongPressMilliseconds, 120, 1500)}ms.");
+        HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={Math.Clamp(_settings.LongPressMilliseconds, 50, 1500)}ms.");
     }
 
     private static void HandleMouseMove(POINT point)

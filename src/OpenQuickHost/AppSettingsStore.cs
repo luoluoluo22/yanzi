@@ -224,8 +224,8 @@ public static class AppSettingsStore
         settings.RadialMenu.DragThresholdPixels = Math.Clamp(settings.RadialMenu.DragThresholdPixels, 8, 120);
         settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
         settings.QuickPanelMouseTriggers.LongPressMilliseconds =
-            settings.QuickPanelMouseTriggers.LongPressMilliseconds == 500
-                ? 120
+            (settings.QuickPanelMouseTriggers.LongPressMilliseconds == 120 || settings.QuickPanelMouseTriggers.LongPressMilliseconds == 500)
+                ? 350
                 : Math.Clamp(settings.QuickPanelMouseTriggers.LongPressMilliseconds, 50, 1500);
         settings.QuickPanelMouseTriggers.DragThresholdPixels = Math.Clamp(settings.QuickPanelMouseTriggers.DragThresholdPixels, 8, 120);
         settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode);
@@ -721,7 +721,7 @@ public sealed record QuickPanelMouseTriggerSettings
 
     public bool ExecuteOnButtonRelease { get; set; } = true;
 
-    public int LongPressMilliseconds { get; set; } = 120;
+    public int LongPressMilliseconds { get; set; } = 350;
 
     public int DragThresholdPixels { get; set; } = 26;
 }
