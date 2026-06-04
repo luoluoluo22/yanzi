@@ -225,6 +225,9 @@ public partial class App : WpfApplication
         }
 
         UpdateWindowDwmTheme(window);
+
+        // 延迟异步再次更新，防止在窗口首次呈现时，DWM 设置被操作系统的默认绘制所覆盖
+        window.Dispatcher.BeginInvoke(new Action(() => UpdateWindowDwmTheme(window)), System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private static void UpdateWindowDwmTheme(Window window)
