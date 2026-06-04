@@ -117,9 +117,22 @@ public static class BackupService
                         continue;
                     }
 
-                    // 4. 过滤 Everything 运行时大数据库文件
-                    if (relativePath.Equals(@"EverythingRuntime\Everything-Yanzi.db", StringComparison.OrdinalIgnoreCase) ||
-                        relativePath.Equals(@"EverythingRuntime/Everything-Yanzi.db", StringComparison.OrdinalIgnoreCase))
+                    // 4. 过滤 WebView2 文件夹、Everything 运行时目录、回收站、图标缓存等无用/临时缓存文件
+                    bool shouldExclude = false;
+                    var pathParts = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    foreach (var part in pathParts)
+                    {
+                        if (part.EndsWith("WebView2", StringComparison.OrdinalIgnoreCase) ||
+                            part.Equals("icon-cache", StringComparison.OrdinalIgnoreCase) ||
+                            part.Equals("ExtensionRecycleBin", StringComparison.OrdinalIgnoreCase) ||
+                            part.Equals("EverythingRuntime", StringComparison.OrdinalIgnoreCase))
+                        {
+                            shouldExclude = true;
+                            break;
+                        }
+                    }
+
+                    if (shouldExclude)
                     {
                         continue;
                     }

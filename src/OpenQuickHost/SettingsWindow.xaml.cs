@@ -579,7 +579,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void CreateBackupButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    private async void CreateBackupButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
         var saveFileDialog = new Microsoft.Win32.SaveFileDialog
         {
@@ -591,19 +591,28 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         if (saveFileDialog.ShowDialog() == true)
         {
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn != null) btn.IsEnabled = false;
+
+            var savePath = saveFileDialog.FileName;
+
             try
             {
-                BackupService.CreateBackup(saveFileDialog.FileName);
+                await Task.Run(() => BackupService.CreateBackup(savePath));
                 System.Windows.MessageBox.Show("数据备份已成功导出！", "备份提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
                 System.Windows.MessageBox.Show($"导出备份失败: {ex.Message}", "备份提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
+            finally
+            {
+                if (btn != null) btn.IsEnabled = true;
+            }
         }
     }
 
-    private void ImportBackupButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    private async void ImportBackupButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
         var openFileDialog = new Microsoft.Win32.OpenFileDialog
         {
@@ -621,10 +630,15 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             if (result == System.Windows.MessageBoxResult.Yes)
             {
+                var btn = sender as System.Windows.Controls.Button;
+                if (btn != null) btn.IsEnabled = false;
+
+                var openPath = openFileDialog.FileName;
+
                 try
                 {
                     EverythingRuntimeService.KillAllYanziEverythingProcesses();
-                    BackupService.RestoreBackup(openFileDialog.FileName);
+                    await Task.Run(() => BackupService.RestoreBackup(openPath));
 
                     System.Windows.MessageBox.Show("数据恢复成功！程序将立即重启以加载新数据。", "导入成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
 
@@ -635,6 +649,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 {
                     System.Windows.MessageBox.Show($"导入失败: {ex.Message}", "导入失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
                     EverythingRuntimeService.EnsureStartedInBackground();
+                }
+                finally
+                {
+                    if (btn != null) btn.IsEnabled = true;
                 }
             }
         }
