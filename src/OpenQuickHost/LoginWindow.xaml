@@ -4,14 +4,17 @@
         Title="登录燕子云同步"
         Width="420"
         SizeToContent="Height"
-        MinHeight="420"
+        MinHeight="400"
         WindowStartupLocation="CenterScreen"
+        Background="{x:Null}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         Style="{StaticResource DialogWindow}">
-    <Border Margin="1"
+    <Border Margin="0"
             CornerRadius="0"
             Background="{DynamicResource BrushDialogBG}"
             BorderBrush="{DynamicResource BrushBorder}"
-            BorderThickness="1">
+            BorderThickness="0">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <Grid Margin="25">
                 <Grid.RowDefinitions>

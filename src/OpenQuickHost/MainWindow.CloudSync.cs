@@ -917,7 +917,6 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            _deviceRegistered = false;
             HostAssets.AppendLog($"Mobile bridge poll failed: reason={reason}, {FormatExceptionMessage(ex)}");
         }
         finally

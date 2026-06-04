@@ -17,6 +17,7 @@ public partial class LoginWindow : Window
     public LoginWindow(string? email = null)
     {
         InitializeComponent();
+        App.EnableSilentLoading(this);
         PrimaryInputBox.Text = email ?? string.Empty;
         UpdateMode(AuthDialogMode.SignIn);
         Loaded += (_, _) =>

@@ -66,6 +66,7 @@ public partial class AddJsonExtensionWindow : Window
     public AddJsonExtensionWindow(string initialJson, bool isEditMode = false)
     {
         InitializeComponent();
+        App.EnableSilentLoading(this);
         Topmost = false;
         ShowInTaskbar = true;
         AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler(AnyTextBox_TextChanged));

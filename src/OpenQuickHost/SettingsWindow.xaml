@@ -13,7 +13,7 @@
         MinWidth="900"
         MinHeight="620"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource BrushBG}"
+        Background="{x:Null}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display"
@@ -395,11 +395,11 @@
     </Window.Resources>
 
     <Border x:Name="WindowFrame"
-            Margin="1"
+            Margin="0"
             CornerRadius="0"
             Background="{DynamicResource BrushBG}"
             BorderBrush="{DynamicResource BrushBorder}"
-            BorderThickness="1"
+            BorderThickness="0"
             PreviewMouseLeftButtonDown="WindowFrame_PreviewMouseLeftButtonDown">
         <Grid>
             <Grid.ColumnDefinitions>

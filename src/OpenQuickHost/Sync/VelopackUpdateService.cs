@@ -37,8 +37,8 @@ public sealed class VelopackUpdateService
             // SimpleWebSource 会去请求 $url/RELEASES，所以我们把加速前缀注入进去
             _resolvedUpdateUrl = $"{_proxyUrlPrefix.TrimEnd('/')}/{_repoUrl.TrimEnd('/')}/releases/latest/download/";
             var source = new SimpleWebSource(_resolvedUpdateUrl);
-            _updateManager = new UpdateManager(source);
-
+            _updateManager = new UpdateManager(source, null, new HostVelopackLogger());
+            
             // 记录完整的诊断启动信息
             var isInstalled = _updateManager.IsInstalled;
             var currentVersion = _updateManager.IsInstalled ? _updateManager.CurrentVersion?.ToString() ?? "null" : "N/A (not installed)";

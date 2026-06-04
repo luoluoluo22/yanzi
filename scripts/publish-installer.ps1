@@ -43,12 +43,12 @@ function Assert-PayloadDirectory {
 if (Test-Path $publishDir) {
     Remove-Item -Path $publishDir -Recurse -Force
 }
-if (Test-Path $installerOutDir) {
-    Remove-Item -Path "$installerOutDir\*" -Recurse -Force -ErrorAction SilentlyContinue
+# 不再清空 installerOutDir，保留之前的完整包以便 Velopack 生成增量包 (Delta)
+if (-not (Test-Path $installerOutDir)) {
+    New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
 }
 
 New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
-New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
 
 dotnet publish $project `
     -c $Configuration `

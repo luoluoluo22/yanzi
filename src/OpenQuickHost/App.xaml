@@ -162,12 +162,17 @@
 
             <!-- Global Window Style for Dialogs -->
             <Style x:Key="DialogWindow" TargetType="Window">
-                <Setter Property="Background" Value="{DynamicResource BrushDialogBG}"/>
+                <Setter Property="Background" Value="{x:Null}"/>
                 <Setter Property="WindowStyle" Value="SingleBorderWindow"/>
                 <Setter Property="UseLayoutRounding" Value="True"/>
                 <Setter Property="SnapsToDevicePixels" Value="True"/>
                 <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
                 <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
+                <Setter Property="local:WindowDwmBehavior.Enable" Value="True"/>
+            </Style>
+
+            <Style TargetType="Window">
+                <Setter Property="local:WindowDwmBehavior.Enable" Value="True"/>
             </Style>
 
             <!-- Modern ContextMenu Style -->
@@ -276,7 +281,7 @@
             </Style>
 
             <!-- Tray Context Menu Resource -->
-            <ContextMenu x:Key="TrayContextMenu">
+            <ContextMenu x:Key="TrayContextMenu" x:Shared="False">
                 <MenuItem Header="显示主面板" Click="TrayShow_Click">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry show-main}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />

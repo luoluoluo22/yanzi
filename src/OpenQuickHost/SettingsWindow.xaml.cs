@@ -152,6 +152,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         LoadLogoImage();
     }
 
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        HostAssets.AppendLog("SettingsWindow: OnSourceInitialized called. Updating DWM Theme.");
+        App.UpdateWindowDwmTheme(this);
+    }
+
     public ObservableCollection<SettingsNavigationItem> NavigationItems { get; }
 
     public ObservableCollection<SettingsShortcutItem> ShortcutItems { get; }

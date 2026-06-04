@@ -452,7 +452,7 @@ async function handleRequest(request, env) {
     }
 
     const updatedAtUtc = normalizeOptionalIsoDate(payload.updatedAtUtc) || isoNow();
-    const result = await writeYanmStateToCloudConfig(env, auth.userId, {
+    const result = await writeYanmStateForUser(env, auth.userId, {
       updatedAtUtc,
       yanm: payload.yanm
     });
@@ -460,7 +460,7 @@ async function handleRequest(request, env) {
     return json({
       ok: true,
       userId: auth.userId,
-      source: "cloud-config",
+      source: result.source,
       updatedAtUtc,
       bytes: result.bytes
     });
@@ -2236,23 +2236,42 @@ async function getUserWebDavConfig(env, userId) {
 
 async function readYanmStateForUser(env, userId) {
   try {
-    const config = await getUserWebDavConfig(env, userId);
+    const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    let result;
+    const provider = syncConfig.provider;
+    if (provider === "github") {
+      result = await readYanmStateFromGitHub(syncConfig);
+    } else if (provider === "gitee") {
+      result = await readYanmStateFromGitee(syncConfig);
+    } else if (provider === "gitlab") {
+      result = await readYanmStateFromGitLab(syncConfig);
+    } else if (provider === "gitea") {
+      result = await readYanmStateFromGitea(syncConfig);
+    } else if (provider === "s3") {
+      result = await readYanmStateFromS3(syncConfig);
+    } else if (provider === "webdav") {
+      const config = buildLegacyWebDavConfig(syncConfig);
+      result = await readYanmStateFromWebDav(config);
+    } else {
+      throw new HttpError(400, "unsupported_provider", `Provider ${provider} is not supported for web sync`);
+    }
+
     return {
-      ...(await readYanmStateFromWebDav(config)),
-      source: "webdav"
+      ...result,
+      source: provider
     };
   } catch (error) {
     const fallback = await readYanmStateFromCloudConfig(env, userId);
     if (fallback) {
       const diagnostics = buildSafeErrorDiagnostics(error);
-      console.warn("Yanm WebDAV read failed, falling back to cloud config", {
+      console.warn("Yanm sync read failed, falling back to cloud config", {
         userId,
         diagnostics
       });
       return {
         ...fallback,
         source: "cloud-config",
-        warning: error instanceof Error ? error.message : "WebDAV read failed",
+        warning: error instanceof Error ? error.message : "Sync read failed",
         diagnostics
       };
     }
@@ -2343,6 +2362,877 @@ async function writeYanmStateToCloudConfig(env, userId, snapshot) {
 
   return {
     bytes: textEncoder.encode(JSON.stringify(snapshot.yanm)).length
+  };
+}
+
+async function getUserPersonalSyncConfig(env, userId) {
+  const row = await env.DB.prepare(
+    `select settings_json
+     from user_extensions
+     where user_id = ? and extension_id = ?`
+  )
+    .bind(userId, "yanzi-personal-sync-settings")
+    .first();
+
+  if (!row?.settings_json) {
+    return getLegacyUserWebDavConfig(env, userId);
+  }
+
+  let snap;
+  try {
+    snap = JSON.parse(String(row.settings_json));
+  } catch {
+    throw new HttpError(500, "sync_config_invalid", "Stored personal sync config is invalid");
+  }
+
+  if (!snap.enabled) {
+    throw new HttpError(409, "sync_disabled", "Personal sync is disabled for this account");
+  }
+
+  const provider = String(snap.provider || "").toLowerCase().trim();
+  if (!provider || provider === "none") {
+    throw new HttpError(409, "sync_disabled", "Personal sync provider is set to none");
+  }
+
+  return {
+    provider,
+    settings: snap.settings || {},
+    secrets: snap.secrets || {}
+  };
+}
+
+async function getLegacyUserWebDavConfig(env, userId) {
+  const row = await env.DB.prepare(
+    `select settings_json
+     from user_extensions
+     where user_id = ? and extension_id = ?`
+  )
+    .bind(userId, "yanzi-webdav-settings")
+    .first();
+
+  if (!row?.settings_json) {
+    throw new HttpError(404, "sync_config_missing", "Sync config is not configured for this account");
+  }
+
+  let settings;
+  try {
+    settings = JSON.parse(String(row.settings_json));
+  } catch {
+    throw new HttpError(500, "webdav_config_invalid", "Stored WebDAV config is invalid");
+  }
+
+  const config = {
+    enabled: Boolean(readFirst(settings, ["enabled", "enableWebDavSync"])),
+    serverUrl: String(readFirst(settings, ["serverUrl", "webDavServerUrl"]) || "").trim(),
+    rootPath: String(readFirst(settings, ["rootPath", "webDavRootPath"]) || "/yanzi").trim(),
+    username: String(readFirst(settings, ["username", "webDavUsername"]) || "").trim(),
+    password: String(readFirst(settings, ["password", "webDavPassword"]) || "").trim()
+  };
+
+  if (!config.enabled) {
+    throw new HttpError(409, "webdav_disabled", "WebDAV sync is disabled for this account");
+  }
+
+  return {
+    provider: "webdav",
+    settings: {
+      webDav: {
+        url: config.serverUrl,
+        username: config.username,
+        pathPrefix: config.rootPath
+      }
+    },
+    secrets: {
+      webDavPassword: config.password
+    }
+  };
+}
+
+function buildLegacyWebDavConfig(syncConfig) {
+  const webDav = syncConfig.settings.WebDav || syncConfig.settings.webDav || {};
+  return {
+    enabled: true,
+    serverUrl: String(webDav.url || webDav.Url || "").trim(),
+    rootPath: String(webDav.pathPrefix || webDav.PathPrefix || "/yanzi").trim(),
+    username: String(webDav.username || webDav.Username || "").trim(),
+    password: String(syncConfig.secrets.WebDavPassword || syncConfig.secrets.webDavPassword || "").trim()
+  };
+}
+
+function base64ToUtf8(str) {
+  const binary = atob(str);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function utf8ToBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+async function readYanmStateFromGitHub(syncConfig) {
+  const github = syncConfig.settings.GitHub || syncConfig.settings.gitHub || {};
+  const token = (syncConfig.secrets.GitHubToken || syncConfig.secrets.gitHubToken || "").trim();
+  const repoRaw = String(github.repo || github.Repo || "yanzi-sync").trim();
+  const branch = String(github.branch || github.Branch || "main").trim();
+  const pathPrefix = String(github.pathPrefix || github.PathPrefix || "").trim();
+
+  let owner = String(github.username || "").trim();
+  let repo = repoRaw;
+  if (repoRaw.includes("/")) {
+    const parts = repoRaw.split("/");
+    owner = parts[0].trim();
+    repo = parts[1].trim();
+  }
+
+  if (!token || !owner || !repo) {
+    throw new HttpError(400, "github_config_incomplete", "GitHub token, owner, or repo is incomplete");
+  }
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "accept": "application/vnd.github+json",
+      "authorization": `Bearer ${token}`,
+      "user-agent": "YanziClient-Web"
+    }
+  });
+
+  if (response.status === 404) {
+    throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in GitHub");
+  }
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new HttpError(response.status || 502, "read_github_failed", `Failed to read Yanm state from GitHub (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const contentBase64 = data.content.replace(/\s/g, "");
+  const text = base64ToUtf8(contentBase64);
+  let snapshot;
+  try {
+    snapshot = JSON.parse(text);
+  } catch {
+    throw new HttpError(502, "yanm_state_invalid", "Yanm state JSON in GitHub is invalid");
+  }
+
+  return {
+    updatedAtUtc: snapshot.updatedAtUtc || snapshot.UpdatedAtUtc || "",
+    yanm: snapshot.yanm || snapshot.Yanm || null,
+    bytes: textEncoder.encode(text).length
+  };
+}
+
+async function writeYanmStateToGitHub(syncConfig, snapshot) {
+  const github = syncConfig.settings.GitHub || syncConfig.settings.gitHub || {};
+  const token = (syncConfig.secrets.GitHubToken || syncConfig.secrets.gitHubToken || "").trim();
+  const repoRaw = String(github.repo || github.Repo || "yanzi-sync").trim();
+  const branch = String(github.branch || github.Branch || "main").trim();
+  const pathPrefix = String(github.pathPrefix || github.PathPrefix || "").trim();
+
+  let owner = String(github.username || "").trim();
+  let repo = repoRaw;
+  if (repoRaw.includes("/")) {
+    const parts = repoRaw.split("/");
+    owner = parts[0].trim();
+    repo = parts[1].trim();
+  }
+
+  if (!token || !owner || !repo) {
+    throw new HttpError(400, "github_config_incomplete", "GitHub token, owner, or repo is incomplete");
+  }
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+  let existingSha = null;
+  try {
+    const getResp = await fetch(`${url}?ref=${branch}`, {
+      method: "GET",
+      headers: {
+        "accept": "application/vnd.github+json",
+        "authorization": `Bearer ${token}`,
+        "user-agent": "YanziClient-Web"
+      }
+    });
+    if (getResp.ok) {
+      const getData = await getResp.json();
+      existingSha = getData.sha;
+    }
+  } catch (e) {
+    console.warn("Failed to fetch GitHub sha", e);
+  }
+
+  const bodyObj = {
+    updatedAtUtc: snapshot.updatedAtUtc,
+    yanm: snapshot.yanm
+  };
+  const bodyText = JSON.stringify(bodyObj, null, 2);
+  const base64Content = utf8ToBase64(bodyText);
+
+  const putPayload = {
+    message: "Update yanm-state.json from Web",
+    content: base64Content,
+    branch
+  };
+  if (existingSha) {
+    putPayload.sha = existingSha;
+  }
+
+  const putResp = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "accept": "application/vnd.github+json",
+      "authorization": `Bearer ${token}`,
+      "content-type": "application/json",
+      "user-agent": "YanziClient-Web"
+    },
+    body: JSON.stringify(putPayload)
+  });
+
+  if (!putResp.ok) {
+    const errText = await putResp.text();
+    throw new HttpError(putResp.status || 502, "write_github_failed", `Failed to write Yanm state to GitHub (${putResp.status}): ${errText}`);
+  }
+
+  return {
+    bytes: textEncoder.encode(bodyText).length
+  };
+}
+
+async function hmacSha256Bytes(key, data) {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    typeof key === "string" ? new TextEncoder().encode(key) : key,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    cryptoKey,
+    typeof data === "string" ? new TextEncoder().encode(data) : data
+  );
+  return new Uint8Array(signature);
+}
+
+async function sha256(data) {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function awsV4Sign(method, urlStr, headers, bodyText, accessKeyId, secretAccessKey, region, service = "s3") {
+  const url = new URL(urlStr);
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]/g, "").split(".")[0] + "Z";
+  const dateStamp = amzDate.slice(0, 8);
+
+  const newHeaders = { ...headers };
+  newHeaders["host"] = url.host;
+  newHeaders["x-amz-date"] = amzDate;
+
+  const bodyHash = await sha256(bodyText || "");
+  newHeaders["x-amz-content-sha256"] = bodyHash;
+
+  const headerKeys = Object.keys(newHeaders).map(k => k.toLowerCase()).sort();
+  const canonicalHeaders = headerKeys.map(k => `${k}:${newHeaders[k].trim()}`).join("\n") + "\n";
+  const signedHeaders = headerKeys.join(";");
+
+  const canonicalUri = encodeURI(url.pathname);
+  const queryKeys = Array.from(url.searchParams.keys()).sort();
+  const canonicalQueryString = queryKeys.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(url.searchParams.get(k))}`).join("&");
+
+  const canonicalRequest = [
+    method.toUpperCase(),
+    canonicalUri,
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    bodyHash
+  ].join("\n");
+
+  const canonicalRequestHash = await sha256(canonicalRequest);
+  const credentialScope = [dateStamp, region, service, "aws4_request"].join("/");
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    canonicalRequestHash
+  ].join("\n");
+
+  const kDate = await hmacSha256Bytes(`AWS4${secretAccessKey}`, dateStamp);
+  const kRegion = await hmacSha256Bytes(kDate, region);
+  const kService = await hmacSha256Bytes(kRegion, service);
+  const kSigning = await hmacSha256Bytes(kService, "aws4_request");
+
+  const signatureBytes = await hmacSha256Bytes(kSigning, stringToSign);
+  const signature = Array.from(signatureBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  newHeaders["Authorization"] = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  return newHeaders;
+}
+
+async function readYanmStateFromGitee(syncConfig) {
+  const gitee = syncConfig.settings.Gitee || syncConfig.settings.gitee || {};
+  const token = (syncConfig.secrets.GiteeToken || syncConfig.secrets.giteeToken || "").trim();
+  const repoRaw = String(gitee.repo || gitee.Repo || "yanzi-sync").trim();
+  const branch = String(gitee.branch || gitee.Branch || "master").trim();
+  const pathPrefix = String(gitee.pathPrefix || gitee.PathPrefix || "").trim();
+
+  let owner = String(gitee.username || gitee.Username || "").trim();
+  let repo = repoRaw;
+  if (repoRaw.includes("/")) {
+    const parts = repoRaw.split("/");
+    owner = parts[0].trim();
+    repo = parts[1].trim();
+  }
+
+  if (!token || !owner || !repo) {
+    throw new HttpError(400, "gitee_config_incomplete", "Gitee token, owner, or repo is incomplete");
+  }
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+  const url = `https://gitee.com/api/v5/repos/${owner}/${repo}/contents/${path}?access_token=${token}&ref=${branch}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "user-agent": "YanziClient-Web"
+    }
+  });
+
+  if (response.status === 404) {
+    throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in Gitee");
+  }
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new HttpError(response.status || 502, "read_gitee_failed", `Failed to read Yanm state from Gitee (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const contentBase64 = data.content.replace(/\s/g, "");
+  const text = base64ToUtf8(contentBase64);
+  let snapshot = JSON.parse(text);
+
+  return {
+    updatedAtUtc: snapshot.updatedAtUtc || snapshot.UpdatedAtUtc || "",
+    yanm: snapshot.yanm || snapshot.Yanm || null,
+    bytes: textEncoder.encode(text).length
+  };
+}
+
+async function writeYanmStateToGitee(syncConfig, snapshot) {
+  const gitee = syncConfig.settings.Gitee || syncConfig.settings.gitee || {};
+  const token = (syncConfig.secrets.GiteeToken || syncConfig.secrets.giteeToken || "").trim();
+  const repoRaw = String(gitee.repo || gitee.Repo || "yanzi-sync").trim();
+  const branch = String(gitee.branch || gitee.Branch || "master").trim();
+  const pathPrefix = String(gitee.pathPrefix || gitee.PathPrefix || "").trim();
+
+  let owner = String(gitee.username || gitee.Username || "").trim();
+  let repo = repoRaw;
+  if (repoRaw.includes("/")) {
+    const parts = repoRaw.split("/");
+    owner = parts[0].trim();
+    repo = parts[1].trim();
+  }
+
+  if (!token || !owner || !repo) {
+    throw new HttpError(400, "gitee_config_incomplete", "Gitee token, owner, or repo is incomplete");
+  }
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+  const url = `https://gitee.com/api/v5/repos/${owner}/${repo}/contents/${path}`;
+
+  let existingSha = null;
+  try {
+    const getResp = await fetch(`${url}?access_token=${token}&ref=${branch}`, {
+      method: "GET",
+      headers: {
+        "user-agent": "YanziClient-Web"
+      }
+    });
+    if (getResp.ok) {
+      const getData = await getResp.json();
+      existingSha = getData.sha;
+    }
+  } catch (e) {
+    console.warn("Failed to fetch Gitee sha", e);
+  }
+
+  const bodyObj = {
+    updatedAtUtc: snapshot.updatedAtUtc,
+    yanm: snapshot.yanm
+  };
+  const bodyText = JSON.stringify(bodyObj, null, 2);
+  const base64Content = utf8ToBase64(bodyText);
+
+  const putPayload = {
+    access_token: token,
+    message: "Update yanm-state.json from Web",
+    content: base64Content,
+    branch
+  };
+  if (existingSha) {
+    putPayload.sha = existingSha;
+  }
+
+  const putResp = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "user-agent": "YanziClient-Web"
+    },
+    body: JSON.stringify(putPayload)
+  });
+
+  if (!putResp.ok) {
+    const errText = await putResp.text();
+    throw new HttpError(putResp.status || 502, "write_gitee_failed", `Failed to write Yanm state to Gitee (${putResp.status}): ${errText}`);
+  }
+
+  return {
+    bytes: textEncoder.encode(bodyText).length
+  };
+}
+
+async function readYanmStateFromGitLab(syncConfig) {
+  const gitlab = syncConfig.settings.GitLab || syncConfig.settings.gitlab || {};
+  const token = (syncConfig.secrets.GitLabToken || syncConfig.secrets.gitlabToken || "").trim();
+  const projectPath = String(gitlab.projectPath || gitlab.ProjectPath || "").trim();
+  const branch = String(gitlab.branch || gitlab.Branch || "main").trim();
+  const pathPrefix = String(gitlab.pathPrefix || gitlab.PathPrefix || "").trim();
+  let baseUrl = String(gitlab.baseUrl || gitlab.BaseUrl || "https://gitlab.com").trim();
+
+  if (!token || !projectPath) {
+    throw new HttpError(400, "gitlab_config_incomplete", "GitLab token or project path is incomplete");
+  }
+
+  if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+    baseUrl = "https://" + baseUrl;
+  }
+  baseUrl = baseUrl.replace(/\/+$/, "");
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+  const projectPathEnc = encodeURIComponent(projectPath);
+  const pathEnc = encodeURIComponent(path);
+  const url = `${baseUrl}/api/v4/projects/${projectPathEnc}/repository/files/${pathEnc}?ref=${branch}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "PRIVATE-TOKEN": token,
+      "user-agent": "YanziClient-Web"
+    }
+  });
+
+  if (response.status === 404) {
+    throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in GitLab");
+  }
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new HttpError(response.status || 502, "read_gitlab_failed", `Failed to read Yanm state from GitLab (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const contentBase64 = data.content.replace(/\s/g, "");
+  const text = base64ToUtf8(contentBase64);
+  let snapshot = JSON.parse(text);
+
+  return {
+    updatedAtUtc: snapshot.updatedAtUtc || snapshot.UpdatedAtUtc || "",
+    yanm: snapshot.yanm || snapshot.Yanm || null,
+    bytes: textEncoder.encode(text).length
+  };
+}
+
+async function writeYanmStateToGitLab(syncConfig, snapshot) {
+  const gitlab = syncConfig.settings.GitLab || syncConfig.settings.gitlab || {};
+  const token = (syncConfig.secrets.GitLabToken || syncConfig.secrets.gitlabToken || "").trim();
+  const projectPath = String(gitlab.projectPath || gitlab.ProjectPath || "").trim();
+  const branch = String(gitlab.branch || gitlab.Branch || "main").trim();
+  const pathPrefix = String(gitlab.pathPrefix || gitlab.PathPrefix || "").trim();
+  let baseUrl = String(gitlab.baseUrl || gitlab.BaseUrl || "https://gitlab.com").trim();
+
+  if (!token || !projectPath) {
+    throw new HttpError(400, "gitlab_config_incomplete", "GitLab token or project path is incomplete");
+  }
+
+  if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+    baseUrl = "https://" + baseUrl;
+  }
+  baseUrl = baseUrl.replace(/\/+$/, "");
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+  const projectPathEnc = encodeURIComponent(projectPath);
+  const pathEnc = encodeURIComponent(path);
+  const url = `${baseUrl}/api/v4/projects/${projectPathEnc}/repository/files/${pathEnc}`;
+
+  let exists = false;
+  try {
+    const checkResp = await fetch(`${url}?ref=${branch}`, {
+      method: "GET",
+      headers: {
+        "PRIVATE-TOKEN": token,
+        "user-agent": "YanziClient-Web"
+      }
+    });
+    if (checkResp.ok) {
+      exists = true;
+    }
+  } catch (e) {
+    console.warn("Failed to check file existence in GitLab", e);
+  }
+
+  const bodyObj = {
+    updatedAtUtc: snapshot.updatedAtUtc,
+    yanm: snapshot.yanm
+  };
+  const bodyText = JSON.stringify(bodyObj, null, 2);
+  const base64Content = utf8ToBase64(bodyText);
+
+  const payload = {
+    branch,
+    commit_message: "Update yanm-state.json from Web",
+    content: base64Content,
+    encoding: "base64"
+  };
+
+  const response = await fetch(url, {
+    method: exists ? "PUT" : "POST",
+    headers: {
+      "content-type": "application/json",
+      "PRIVATE-TOKEN": token,
+      "user-agent": "YanziClient-Web"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new HttpError(response.status || 502, "write_gitlab_failed", `Failed to write Yanm state to GitLab (${response.status}): ${errText}`);
+  }
+
+  return {
+    bytes: textEncoder.encode(bodyText).length
+  };
+}
+
+async function readYanmStateFromGitea(syncConfig) {
+  const gitea = syncConfig.settings.Gitea || syncConfig.settings.gitea || {};
+  const token = (syncConfig.secrets.GiteaToken || syncConfig.secrets.giteaToken || "").trim();
+  const repoRaw = String(gitea.repo || gitea.Repo || "yanzi-sync").trim();
+  const branch = String(gitea.branch || gitea.Branch || "main").trim();
+  const pathPrefix = String(gitea.pathPrefix || gitea.PathPrefix || "").trim();
+  let baseUrl = String(gitea.baseUrl || gitea.BaseUrl || "https://gitea.com").trim();
+
+  let owner = String(gitea.username || gitea.Username || "").trim();
+  let repo = repoRaw;
+  if (repoRaw.includes("/")) {
+    const parts = repoRaw.split("/");
+    owner = parts[0].trim();
+    repo = parts[1].trim();
+  }
+
+  if (!token || !owner || !repo) {
+    throw new HttpError(400, "gitea_config_incomplete", "Gitea token, owner, or repo is incomplete");
+  }
+
+  if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+    baseUrl = "https://" + baseUrl;
+  }
+  baseUrl = baseUrl.replace(/\/+$/, "");
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+  const url = `${baseUrl}/api/v1/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "accept": "application/json",
+      "authorization": `token ${token}`,
+      "user-agent": "YanziClient-Web"
+    }
+  });
+
+  if (response.status === 404) {
+    throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in Gitea");
+  }
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new HttpError(response.status || 502, "read_gitea_failed", `Failed to read Yanm state from Gitea (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const contentBase64 = data.content.replace(/\s/g, "");
+  const text = base64ToUtf8(contentBase64);
+  let snapshot = JSON.parse(text);
+
+  return {
+    updatedAtUtc: snapshot.updatedAtUtc || snapshot.UpdatedAtUtc || "",
+    yanm: snapshot.yanm || snapshot.Yanm || null,
+    bytes: textEncoder.encode(text).length
+  };
+}
+
+async function writeYanmStateToGitea(syncConfig, snapshot) {
+  const gitea = syncConfig.settings.Gitea || syncConfig.settings.gitea || {};
+  const token = (syncConfig.secrets.GiteaToken || syncConfig.secrets.giteaToken || "").trim();
+  const repoRaw = String(gitea.repo || gitea.Repo || "yanzi-sync").trim();
+  const branch = String(gitea.branch || gitea.Branch || "main").trim();
+  const pathPrefix = String(gitea.pathPrefix || gitea.PathPrefix || "").trim();
+  let baseUrl = String(gitea.baseUrl || gitea.BaseUrl || "https://gitea.com").trim();
+
+  let owner = String(gitea.username || gitea.Username || "").trim();
+  let repo = repoRaw;
+  if (repoRaw.includes("/")) {
+    const parts = repoRaw.split("/");
+    owner = parts[0].trim();
+    repo = parts[1].trim();
+  }
+
+  if (!token || !owner || !repo) {
+    throw new HttpError(400, "gitea_config_incomplete", "Gitea token, owner, or repo is incomplete");
+  }
+
+  if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+    baseUrl = "https://" + baseUrl;
+  }
+  baseUrl = baseUrl.replace(/\/+$/, "");
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+  const url = `${baseUrl}/api/v1/repos/${owner}/${repo}/contents/${path}`;
+
+  let existingSha = null;
+  try {
+    const getResp = await fetch(`${url}?ref=${branch}`, {
+      method: "GET",
+      headers: {
+        "accept": "application/json",
+        "authorization": `token ${token}`,
+        "user-agent": "YanziClient-Web"
+      }
+    });
+    if (getResp.ok) {
+      const getData = await getResp.json();
+      existingSha = getData.sha;
+    }
+  } catch (e) {
+    console.warn("Failed to fetch Gitea sha", e);
+  }
+
+  const bodyObj = {
+    updatedAtUtc: snapshot.updatedAtUtc,
+    yanm: snapshot.yanm
+  };
+  const bodyText = JSON.stringify(bodyObj, null, 2);
+  const base64Content = utf8ToBase64(bodyText);
+
+  const putPayload = {
+    message: "Update yanm-state.json from Web",
+    content: base64Content,
+    branch
+  };
+  if (existingSha) {
+    putPayload.sha = existingSha;
+  }
+
+  const putResp = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "authorization": `token ${token}`,
+      "user-agent": "YanziClient-Web"
+    },
+    body: JSON.stringify(putPayload)
+  });
+
+  if (!putResp.ok) {
+    const errText = await putResp.text();
+    throw new HttpError(putResp.status || 502, "write_gitea_failed", `Failed to write Yanm state to Gitea (${putResp.status}): ${errText}`);
+  }
+
+  return {
+    bytes: textEncoder.encode(bodyText).length
+  };
+}
+
+async function readYanmStateFromS3(syncConfig) {
+  const s3 = syncConfig.settings.S3 || syncConfig.settings.s3 || {};
+  const accessKeyId = (syncConfig.secrets.AccessKeyId || syncConfig.secrets.accessKeyId || "").trim();
+  const secretAccessKey = (syncConfig.secrets.S3SecretAccessKey || syncConfig.secrets.s3SecretAccessKey || "").trim();
+  const bucket = String(s3.bucket || s3.Bucket || "").trim();
+  const region = String(s3.region || s3.Region || "us-east-1").trim();
+  const pathPrefix = String(s3.pathPrefix || s3.PathPrefix || "").trim();
+  let endpoint = String(s3.endpoint || s3.Endpoint || "").trim();
+
+  if (!accessKeyId || !secretAccessKey || !bucket) {
+    throw new HttpError(400, "s3_config_incomplete", "S3 credentials or bucket is incomplete");
+  }
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+
+  let urlStr;
+  if (endpoint) {
+    if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
+      endpoint = "https://" + endpoint;
+    }
+    const epUrl = new URL(endpoint);
+    urlStr = `${epUrl.protocol}//${bucket}.${epUrl.host}/${path}`;
+  } else {
+    urlStr = `https://${bucket}.s3.${region}.amazonaws.com/${path}`;
+  }
+
+  const unsignedHeaders = {
+    "accept": "application/json"
+  };
+
+  const signedHeaders = await awsV4Sign("GET", urlStr, unsignedHeaders, "", accessKeyId, secretAccessKey, region, "s3");
+
+  const response = await fetch(urlStr, {
+    method: "GET",
+    headers: signedHeaders
+  });
+
+  if (response.status === 404) {
+    throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in S3 bucket");
+  }
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new HttpError(response.status || 502, "read_s3_failed", `Failed to read Yanm state from S3 (${response.status}): ${errText}`);
+  }
+
+  const text = await response.text();
+  let snapshot;
+  try {
+    snapshot = JSON.parse(text);
+  } catch {
+    throw new HttpError(502, "yanm_state_invalid", "Yanm state JSON in S3 is invalid");
+  }
+
+  return {
+    updatedAtUtc: snapshot.updatedAtUtc || snapshot.UpdatedAtUtc || "",
+    yanm: snapshot.yanm || snapshot.Yanm || null,
+    bytes: textEncoder.encode(text).length
+  };
+}
+
+async function writeYanmStateToS3(syncConfig, snapshot) {
+  const s3 = syncConfig.settings.S3 || syncConfig.settings.s3 || {};
+  const accessKeyId = (syncConfig.secrets.AccessKeyId || syncConfig.secrets.accessKeyId || "").trim();
+  const secretAccessKey = (syncConfig.secrets.S3SecretAccessKey || syncConfig.secrets.s3SecretAccessKey || "").trim();
+  const bucket = String(s3.bucket || s3.Bucket || "").trim();
+  const region = String(s3.region || s3.Region || "us-east-1").trim();
+  const pathPrefix = String(s3.pathPrefix || s3.PathPrefix || "").trim();
+  let endpoint = String(s3.endpoint || s3.Endpoint || "").trim();
+
+  if (!accessKeyId || !secretAccessKey || !bucket) {
+    throw new HttpError(400, "s3_config_incomplete", "S3 credentials or bucket is incomplete");
+  }
+
+  const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+
+  let urlStr;
+  if (endpoint) {
+    if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
+      endpoint = "https://" + endpoint;
+    }
+    const epUrl = new URL(endpoint);
+    urlStr = `${epUrl.protocol}//${bucket}.${epUrl.host}/${path}`;
+  } else {
+    urlStr = `https://${bucket}.s3.${region}.amazonaws.com/${path}`;
+  }
+
+  const bodyObj = {
+    updatedAtUtc: snapshot.updatedAtUtc,
+    yanm: snapshot.yanm
+  };
+  const bodyText = JSON.stringify(bodyObj, null, 2);
+
+  const unsignedHeaders = {
+    "content-type": "application/json; charset=utf-8"
+  };
+
+  const signedHeaders = await awsV4Sign("PUT", urlStr, unsignedHeaders, bodyText, accessKeyId, secretAccessKey, region, "s3");
+
+  const response = await fetch(urlStr, {
+    method: "PUT",
+    headers: signedHeaders,
+    body: bodyText
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new HttpError(response.status || 502, "write_s3_failed", `Failed to write Yanm state to S3 (${response.status}): ${errText}`);
+  }
+
+  return {
+    bytes: textEncoder.encode(bodyText).length
+  };
+}
+
+async function writeYanmStateForUser(env, userId, snapshot) {
+  let isSyncWritten = false;
+  let syncProvider = "cloud-config";
+  let syncError = null;
+
+  try {
+    const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    syncProvider = syncConfig.provider;
+    if (syncConfig.provider === "github") {
+      await writeYanmStateToGitHub(syncConfig, snapshot);
+      isSyncWritten = true;
+    } else if (syncConfig.provider === "gitee") {
+      await writeYanmStateToGitee(syncConfig, snapshot);
+      isSyncWritten = true;
+    } else if (syncConfig.provider === "gitlab") {
+      await writeYanmStateToGitLab(syncConfig, snapshot);
+      isSyncWritten = true;
+    } else if (syncConfig.provider === "gitea") {
+      await writeYanmStateToGitea(syncConfig, snapshot);
+      isSyncWritten = true;
+    } else if (syncConfig.provider === "s3") {
+      await writeYanmStateToS3(syncConfig, snapshot);
+      isSyncWritten = true;
+    } else if (syncConfig.provider === "webdav") {
+      const config = buildLegacyWebDavConfig(syncConfig);
+      await writeYanmStateToWebDav(config, snapshot);
+      isSyncWritten = true;
+    } else {
+      throw new HttpError(400, "unsupported_provider", `Provider ${syncConfig.provider} is not supported for web sync`);
+    }
+  } catch (error) {
+    syncError = error;
+  }
+
+  const dbResult = await writeYanmStateToCloudConfig(env, userId, snapshot);
+
+  if (syncError) {
+    if (syncError instanceof HttpError && (syncError.status === 404 || syncError.status === 409)) {
+      // 忽略
+    } else {
+      throw syncError;
+    }
+  }
+
+  return {
+    source: isSyncWritten ? syncProvider : "cloud-config",
+    bytes: dbResult.bytes
   };
 }
 

@@ -125,6 +125,7 @@ public sealed class CloudSyncClient
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
         {
             ClearSession();
+            ClearCredential();
             throw new InvalidOperationException("邮箱或密码错误。");
         }
 
@@ -607,13 +608,15 @@ public sealed class CloudSyncClient
             UseProxy = useProxy
         };
 
-        return new HttpClient(handler)
+        var client = new HttpClient(handler)
         {
             BaseAddress = new Uri(baseUrl, UriKind.Absolute),
             Timeout = TimeSpan.FromSeconds(15),
             DefaultRequestVersion = HttpVersion.Version11,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
         };
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("YanziClient-Desktop", "0.2.3"));
+        return client;
     }
 
     private static bool IsRetryableTransportException(Exception ex)

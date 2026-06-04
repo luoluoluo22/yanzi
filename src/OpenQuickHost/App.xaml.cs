@@ -10,6 +10,32 @@ using WpfExitEventArgs = System.Windows.ExitEventArgs;
 
 namespace OpenQuickHost;
 
+public static class WindowDwmBehavior
+{
+    public static readonly DependencyProperty EnableProperty =
+        DependencyProperty.RegisterAttached("Enable", typeof(bool), typeof(WindowDwmBehavior), new PropertyMetadata(false, OnEnableChanged));
+
+    public static void SetEnable(DependencyObject d, bool value) => d.SetValue(EnableProperty, value);
+    public static bool GetEnable(DependencyObject d) => (bool)d.GetValue(EnableProperty);
+
+    private static void OnEnableChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is Window window && (bool)e.NewValue)
+        {
+            window.SourceInitialized -= Window_SourceInitialized;
+            window.SourceInitialized += Window_SourceInitialized;
+        }
+    }
+
+    private static void Window_SourceInitialized(object? sender, EventArgs e)
+    {
+        if (sender is Window window)
+        {
+            App.UpdateWindowDwmTheme(window);
+        }
+    }
+}
+
 public partial class App : WpfApplication
 {
     private const string SingleInstanceAppId = "Yanzi.OpenQuickHost";
@@ -230,11 +256,38 @@ public partial class App : WpfApplication
         window.Dispatcher.BeginInvoke(new Action(() => UpdateWindowDwmTheme(window)), System.Windows.Threading.DispatcherPriority.Background);
     }
 
-    private static void UpdateWindowDwmTheme(Window window)
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    
+    [DllImport("user32.dll", EntryPoint = "SetClassLongPtr", CharSet = CharSet.Auto)]
+    private static extern IntPtr SetClassLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll", EntryPoint = "SetClassLong", CharSet = CharSet.Auto)]
+    private static extern IntPtr SetClassLong32(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    private static IntPtr SetClassLong(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
+    {
+        if (IntPtr.Size == 8)
+            return SetClassLongPtr64(hWnd, nIndex, dwNewLong);
+        else
+            return SetClassLong32(hWnd, nIndex, dwNewLong);
+    }
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr GetStockObject(int fnObject);
+
+    private const int WM_NCACTIVATE = 0x0086;
+    private const int WM_ERASEBKGND = 0x0014;
+    private const int GCLP_HBRBACKGROUND = -10;
+    private const int WHITE_BRUSH = 0;
+    private const int BLACK_BRUSH = 4;
+
+    internal static void UpdateWindowDwmTheme(Window window)
     {
         var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
         if (handle == IntPtr.Zero)
         {
+            HostAssets.AppendLog($"UpdateWindowDwmTheme: Handle is Zero for {window.GetType().Name}. Skipping.");
             return;
         }
 
@@ -249,10 +302,20 @@ public partial class App : WpfApplication
         }
 
         var useDarkMode = useLightTheme ? 0 : 1;
+        HostAssets.AppendLog($"UpdateWindowDwmTheme: Applying DarkMode={useDarkMode} to {window.GetType().Name} (Handle: {handle}).");
+        
+        // 修改 WPF 窗口类的背景画刷，防止 WPF DirectX 渲染首帧前的瞬间闪烁白底或黑底
+        var hBrush = GetStockObject(useDarkMode == 1 ? BLACK_BRUSH : WHITE_BRUSH);
+        SetClassLong(handle, GCLP_HBRBACKGROUND, hBrush);
+
         _ = DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref useDarkMode, sizeof(int));
         
         // Force the OS to redraw the non-client area immediately
         SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        
+        // 额外发送 WM_NCACTIVATE 消息，强制非客户区（标题栏）立刻重绘，解决主题切换时标题栏变色不瞬间的问题
+        SendMessage(handle, WM_NCACTIVATE, IntPtr.Zero, IntPtr.Zero);
+        SendMessage(handle, WM_NCACTIVATE, new IntPtr(1), IntPtr.Zero);
     }
 
     private static void UpdateAllWindowDwmThemes()
@@ -641,6 +704,55 @@ public partial class App : WpfApplication
         }
     }
 
+    public static void EnableSilentLoading(Window window)
+    {
+        var startupLocation = window.WindowStartupLocation;
+        bool isFirstRender = true;
+
+        window.WindowState = WindowState.Minimized;
+        window.ShowInTaskbar = false;
+
+        window.ContentRendered += (s, e) =>
+        {
+            if (!isFirstRender) return;
+            isFirstRender = false;
+
+            var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            if (handle != IntPtr.Zero)
+            {
+                int disableTransitions = 1;
+                DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
+            }
+
+            window.WindowState = WindowState.Normal;
+
+            if (startupLocation == WindowStartupLocation.CenterOwner && window.Owner != null)
+            {
+                window.Left = window.Owner.Left + (window.Owner.Width - window.Width) / 2;
+                window.Top = window.Owner.Top + (window.Owner.Height - window.Height) / 2;
+            }
+            else if (startupLocation == WindowStartupLocation.CenterScreen)
+            {
+                var screenWidth = SystemParameters.PrimaryScreenWidth;
+                var screenHeight = SystemParameters.PrimaryScreenHeight;
+                window.Left = (screenWidth - window.Width) / 2;
+                window.Top = (screenHeight - window.Height) / 2;
+            }
+
+            window.ShowInTaskbar = true;
+            window.Activate();
+            window.Focus();
+
+            if (handle != IntPtr.Zero)
+            {
+                int disableTransitions = 0;
+                DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
+            }
+        };
+    }
+
+    public new static App? Current => System.Windows.Application.Current as App;
+
     private static App? CurrentApp => Current as App;
 
     public void OpenSettingsWindow(string? sectionKey = null)
@@ -653,18 +765,95 @@ public partial class App : WpfApplication
         try
         {
             HostAssets.AppendLog($"Settings window open requested: section={sectionKey ?? "default"}, existing={_settingsWindow != null && _settingsWindow.IsLoaded}.");
-            if (_settingsWindow == null || !_settingsWindow.IsLoaded)
+            if (_settingsWindow == null)
             {
                 _settingsWindow = new SettingsWindow(mainWindow);
-                _settingsWindow.ShowInTaskbar = true;
-                HostAssets.AppendLog("Settings window opened as independent top-level window.");
+                
+                // 离屏渲染大法：使用 Minimized 静默加载，等待 WPF 渲染完毕后再恢复
+                double targetLeft = _settingsWindow.Left;
+                double targetTop = _settingsWindow.Top;
+                var startupLocation = _settingsWindow.WindowStartupLocation;
+                bool isFirstRender = true;
 
-                _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+                _settingsWindow.WindowState = WindowState.Minimized;
+                _settingsWindow.ShowInTaskbar = false;
+
+                _settingsWindow.ContentRendered += (s, e) =>
+                {
+                    if (!isFirstRender) return;
+                    isFirstRender = false;
+
+                    var handle = new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Handle;
+                    if (handle != IntPtr.Zero)
+                    {
+                        int disableTransitions = 1;
+                        DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
+                    }
+
+                    _settingsWindow.WindowState = WindowState.Normal;
+
+                    if (!double.IsNaN(targetLeft) && !double.IsNaN(targetTop))
+                    {
+                        _settingsWindow.Left = targetLeft;
+                        _settingsWindow.Top = targetTop;
+                    }
+                    else if (startupLocation == WindowStartupLocation.CenterScreen)
+                    {
+                        var screenWidth = SystemParameters.PrimaryScreenWidth;
+                        var screenHeight = SystemParameters.PrimaryScreenHeight;
+                        _settingsWindow.Left = (screenWidth - _settingsWindow.Width) / 2;
+                        _settingsWindow.Top = (screenHeight - _settingsWindow.Height) / 2;
+                    }
+
+                    _settingsWindow.ShowInTaskbar = true;
+                    _settingsWindow.Activate();
+                    _settingsWindow.Focus();
+
+                    if (handle != IntPtr.Zero)
+                    {
+                        int disableTransitions = 0;
+                        DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
+                    }
+                };
+
+                // 拦截关闭事件，改为伪隐藏（最小化），保留 GPU 表面，彻底解决二次闪白
+                _settingsWindow.Closing += (s, e) =>
+                {
+                    e.Cancel = true;
+                    var handle = new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Handle;
+                    if (handle != IntPtr.Zero)
+                    {
+                        int disableTransitions = 1;
+                        DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
+                    }
+                    _settingsWindow.ShowInTaskbar = false;
+                    _settingsWindow.WindowState = WindowState.Minimized;
+                    if (handle != IntPtr.Zero)
+                    {
+                        int disableTransitions = 0;
+                        DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
+                    }
+                };
+                
                 HostAssets.AppendLog("Settings window created.");
             }
-            else if (!_settingsWindow.IsVisible)
+            else if (_settingsWindow.WindowState == WindowState.Minimized || !_settingsWindow.IsVisible)
             {
+                var handle = new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Handle;
+                if (handle != IntPtr.Zero)
+                {
+                    int disableTransitions = 1;
+                    DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
+                }
+                
                 _settingsWindow.ShowInTaskbar = true;
+                _settingsWindow.WindowState = WindowState.Normal;
+                
+                if (handle != IntPtr.Zero)
+                {
+                    int disableTransitions = 0;
+                    DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
+                }
             }
 
             if (!_settingsWindow.IsVisible)
