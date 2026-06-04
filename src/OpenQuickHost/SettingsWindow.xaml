@@ -831,7 +831,7 @@
                             <!-- Header with Status Badge -->
                             <Grid Margin="0,0,0,20">
                                 <StackPanel>
-                                    <TextBlock Text="同步设置" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="Bold"/>
+                                    <TextBlock Text="同步与备份" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="Bold"/>
                                     <TextBlock Text="管理您的数据备份与多设备同步配置" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
                                 </StackPanel>
                                 <Border HorizontalAlignment="Right" 
@@ -1262,6 +1262,93 @@
                                                  FontFamily="Consolas"
                                                  FontSize="{DynamicResource FontSizeSmall}"
                                                  Padding="12" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Local Backup & Restore Card -->
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,16,0,0">
+                                <StackPanel>
+                                    <!-- Card Header -->
+                                    <Border Padding="20,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                        <TextBlock Text="本地备份与还原" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                    </Border>
+                                    
+                                    <!-- Card Body -->
+                                    <Border Padding="20,16">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="220"/>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="自动备份频率" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                    <ComboBox SelectedValuePath="Tag"
+                                                              SelectedValue="{Binding AutoBackupFrequency, Mode=TwoWay}"
+                                                              Style="{DynamicResource GlobalComboBoxStyle}"
+                                                              Height="36"
+                                                              SelectionChanged="AutoBackupFrequencyComboBox_SelectionChanged">
+                                                        <ComboBoxItem Content="关闭自动备份" Tag="None"/>
+                                                        <ComboBoxItem Content="每日备份一次" Tag="Daily"/>
+                                                        <ComboBoxItem Content="每周备份一次" Tag="Weekly"/>
+                                                        <ComboBoxItem Content="每月备份一次" Tag="Monthly"/>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2"
+                                                           Text="开启后，应用将在启动时根据设定的频率自动在后台备份您的完整数据（配置和插件扩展，日志除外）。最多保留 5 个自动备份文件，避免占用过多磁盘空间。"
+                                                           Foreground="{DynamicResource BrushTextSec}"
+                                                           FontSize="{DynamicResource FontSizeSmall}"
+                                                           VerticalAlignment="Bottom"
+                                                           TextWrapping="Wrap"/>
+                                            </Grid>
+
+                                            <Grid Margin="0,16,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="80"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="自动备份目录" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                    <TextBox Text="{Binding CustomBackupDirectory, Mode=TwoWay}" 
+                                                             Height="36" 
+                                                             Padding="12,8" 
+                                                             IsReadOnly="True"
+                                                             VerticalContentAlignment="Center" 
+                                                             Background="Transparent" 
+                                                             BorderBrush="{DynamicResource BrushBorder}" 
+                                                             BorderThickness="1" 
+                                                             Foreground="{DynamicResource BrushTextMain}"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="1" 
+                                                        Content="选择..." 
+                                                        Style="{StaticResource SecondaryBtn}" 
+                                                        Height="36" 
+                                                        Margin="8,22,0,0" 
+                                                        VerticalAlignment="Bottom"
+                                                        Click="BrowseBackupDirectoryButton_Click"/>
+                                            </Grid>
+
+                                            <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,16"/>
+
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding BackupStatusText}" 
+                                                               Foreground="{DynamicResource BrushTextSec}" 
+                                                               FontSize="{DynamicResource FontSizeSmall}" 
+                                                               TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Button Content="导入备份" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="ImportBackupButton_Click"/>
+                                                    <Button Content="立即备份" Style="{StaticResource PrimaryBtn}" Height="32" Padding="20,0" Click="CreateBackupButton_Click"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
                                     </Border>
                                 </StackPanel>
                             </Border>

@@ -211,6 +211,19 @@ public partial class App : WpfApplication
                     HostAssets.AppendLog($"App silent update worker error: {ex.Message}");
                 }
             }, TaskScheduler.Default);
+
+            // 启动 8 秒后在后台静默发起自动备份检测
+            _ = Task.Delay(8000).ContinueWith(_ =>
+            {
+                try
+                {
+                    BackupService.RunAutoBackupIfNeeded();
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"App auto backup worker error: {ex.Message}");
+                }
+            }, TaskScheduler.Default);
         }
         catch (Exception ex)
         {

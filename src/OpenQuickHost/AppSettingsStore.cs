@@ -377,6 +377,12 @@ public static class AppSettingsStore
         settings.WindowBindings = NormalizeWindowBindings(settings.WindowBindings);
         settings.LastTestArgument = string.IsNullOrWhiteSpace(settings.LastTestArgument) ? "示例参数" : settings.LastTestArgument.Trim();
 
+        settings.AutoBackupFrequency = string.IsNullOrWhiteSpace(settings.AutoBackupFrequency)
+            ? "Weekly"
+            : settings.AutoBackupFrequency.Trim();
+        settings.LastAutoBackupTime = (settings.LastAutoBackupTime ?? string.Empty).Trim();
+        settings.CustomBackupDirectory = (settings.CustomBackupDirectory ?? string.Empty).Trim();
+
         return settings;
     }
 
@@ -542,6 +548,12 @@ public sealed record AppSettings
     public bool CloseToTray { get; set; } = true;
 
     public bool EnableAutoUpdate { get; set; } = true;
+
+    public string AutoBackupFrequency { get; set; } = "Weekly";
+
+    public string LastAutoBackupTime { get; set; } = string.Empty;
+
+    public string CustomBackupDirectory { get; set; } = string.Empty;
 
     public List<string?> QuickPanelSlots { get; set; } = Enumerable.Repeat<string?>(null, 28).ToList();
 

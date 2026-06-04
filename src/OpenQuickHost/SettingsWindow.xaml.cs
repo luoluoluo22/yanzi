@@ -99,7 +99,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             new SettingsNavigationItem("general", "mdi:settings", "常规", "#FF3B82F6"),
             new SettingsNavigationItem("ai", "mdi:ai", "AI", "#FF8B5CF6"),
             new SettingsNavigationItem("environment", "mdi:key", "环境变量", "#FF14B8A6"),
-            new SettingsNavigationItem("sync", "mdi:sync", "同步", "#FF22C55E"),
+            new SettingsNavigationItem("sync", "mdi:sync", "同步与备份", "#FF22C55E"),
             new SettingsNavigationItem("extensions", "mdi:dashboard", "扩展", "#FFF97316"),
             new SettingsNavigationItem("quickpanel", "mdi:mouse-panel", "鼠标触发", "#FFEC4899"),
             new SettingsNavigationItem("mousegestures", "mdi:gesture-tap", "鼠标手势", "#FFFB923C"),
@@ -143,6 +143,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MouseGestureItems = new ObservableCollection<SettingsMouseGestureItem>();
         MouseGestureQuickBindItems = new ObservableCollection<MouseGestureQuickBindItem>();
         MouseGestureExtensionOptions = new ObservableCollection<MouseGestureExtensionOption>();
+        UpdateBackupStatusText();
         DataContext = this;
         // 延迟到Loaded事件中执行，避免构造函数卡顿
         // RefreshRadialMenuSlots();
@@ -557,6 +558,95 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             System.Windows.MessageBox.Show($"应用更新并重启失败: {ex.Message}。您可以重试，或者手动重启软件完成更新。", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
+
+    private void BrowseBackupDirectoryButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var currentDir = string.IsNullOrWhiteSpace(_settings.CustomBackupDirectory)
+            ? Path.Combine(HostAssets.DataRootPath, "Backups")
+            : _settings.CustomBackupDirectory;
+
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择自动备份文件保存目录",
+            InitialDirectory = Directory.Exists(currentDir) ? currentDir : HostAssets.DataRootPath
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            CustomBackupDirectory = dialog.FolderName;
+            AppSettingsStore.Save(_settings);
+            _mainWindow.RefreshAppSettings();
+        }
+    }
+
+    private void CreateBackupButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var saveFileDialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "导出本地完整数据备份",
+            Filter = "Swallow Backup File (*.zip)|*.zip",
+            FileName = $"manual_backup_{DateTime.Now:yyyyMMdd_HHmmss}.zip",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+        };
+
+        if (saveFileDialog.ShowDialog() == true)
+        {
+            try
+            {
+                BackupService.CreateBackup(saveFileDialog.FileName);
+                System.Windows.MessageBox.Show("数据备份已成功导出！", "备份提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"导出备份失败: {ex.Message}", "备份提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+    }
+
+    private void ImportBackupButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var openFileDialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "导入本地完整数据备份",
+            Filter = "Swallow Backup File (*.zip)|*.zip"
+        };
+
+        if (openFileDialog.ShowDialog() == true)
+        {
+            var result = System.Windows.MessageBox.Show(
+                "导入备份会覆盖您当前所有的配置和扩展插件！此操作无法撤销。\n\n在导入前，我们会自动关闭 Everything 引擎。导入成功后应用将自动重启。\n\n是否确定要导入该备份？",
+                "导入提示",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+
+            if (result == System.Windows.MessageBoxResult.Yes)
+            {
+                try
+                {
+                    EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                    BackupService.RestoreBackup(openFileDialog.FileName);
+
+                    System.Windows.MessageBox.Show("数据恢复成功！程序将立即重启以加载新数据。", "导入成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+
+                    System.Diagnostics.Process.Start(System.Environment.ProcessPath!);
+                    System.Windows.Application.Current.Shutdown();
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"导入失败: {ex.Message}", "导入失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                    EverythingRuntimeService.EnsureStartedInBackground();
+                }
+            }
+        }
+    }
+
+    private void AutoBackupFrequencyComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_settings == null) return;
+        AppSettingsStore.Save(_settings);
+        _mainWindow.RefreshAppSettings();
+    }
+
     public SettingsNavigationItem? SelectedNavigation
     {
         get => _selectedNavigation;
@@ -732,6 +822,56 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             _settings = _settings with { EnableAutoUpdate = value };
             OnPropertyChanged();
+        }
+    }
+
+    private string _backupStatusText = string.Empty;
+
+    public string AutoBackupFrequency
+    {
+        get => _settings.AutoBackupFrequency;
+        set
+        {
+            if (value == _settings.AutoBackupFrequency) return;
+            _settings = _settings with { AutoBackupFrequency = value };
+            OnPropertyChanged();
+        }
+    }
+
+    public string CustomBackupDirectory
+    {
+        get => string.IsNullOrWhiteSpace(_settings.CustomBackupDirectory) 
+            ? "默认 (数据根目录\\Backups)" 
+            : _settings.CustomBackupDirectory;
+        set
+        {
+            if (value == _settings.CustomBackupDirectory) return;
+            _settings = _settings with { CustomBackupDirectory = value };
+            OnPropertyChanged();
+            UpdateBackupStatusText();
+        }
+    }
+
+    public string BackupStatusText
+    {
+        get => _backupStatusText;
+        private set
+        {
+            if (value == _backupStatusText) return;
+            _backupStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void UpdateBackupStatusText()
+    {
+        if (string.IsNullOrWhiteSpace(_settings.LastAutoBackupTime))
+        {
+            BackupStatusText = "自动备份就绪。当前尚无最近备份记录。";
+        }
+        else
+        {
+            BackupStatusText = $"上次自动备份时间: {_settings.LastAutoBackupTime}";
         }
     }
 
