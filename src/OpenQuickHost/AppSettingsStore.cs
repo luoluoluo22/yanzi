@@ -541,6 +541,8 @@ public sealed record AppSettings
 
     public bool CloseToTray { get; set; } = true;
 
+    public bool EnableAutoUpdate { get; set; } = true;
+
     public List<string?> QuickPanelSlots { get; set; } = Enumerable.Repeat<string?>(null, 28).ToList();
 
     public List<QuickPanelGroupSettings> QuickPanelGlobalGroups { get; set; } = [];

@@ -598,6 +598,46 @@
                             </Viewbox>
                         </Button>
                     </StackPanel>
+
+                    <Button Grid.Column="2"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Margin="0,0,10,0"
+                            Padding="16,6"
+                            Content="重启更新"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Click="RestartToUpdateButton_Click"
+                            Visibility="{Binding IsUpdateReadyToRestart, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#FF3B82F6" />
+                                <Setter Property="Foreground" Value="White" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="FontSize" Value="12" />
+                                <Setter Property="Cursor" Value="Hand" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="Root" 
+                                                    Background="{TemplateBinding Background}" 
+                                                    CornerRadius="14" 
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Root" Property="Background" Value="#FF2563EB" />
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter TargetName="Root" Property="Background" Value="#FF1D4ED8" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </Grid>
 
                 <ScrollViewer x:Name="MainContentScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -624,6 +664,12 @@
                             <Grid Margin="0,5">
                                 <TextBlock Text="开机启动" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
                                 <CheckBox HorizontalAlignment="Right" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding LaunchAtStartup, Mode=TwoWay}" Click="SaveSettingsToggle_Click"/>
+                            </Grid>
+                            <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12"/>
+
+                            <Grid Margin="0,5">
+                                <TextBlock Text="启动时自动检测和下载更新" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
+                                <CheckBox HorizontalAlignment="Right" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableAutoUpdate, Mode=TwoWay}" Click="SaveSettingsToggle_Click"/>
                             </Grid>
                             <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12"/>
 

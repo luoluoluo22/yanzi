@@ -112,12 +112,15 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         LaunchAtStartup = _settings.LaunchAtStartup;
         RefreshCloudOnStartup = _settings.RefreshCloudOnStartup;
         CloseToTray = _settings.CloseToTray;
+        EnableAutoUpdate = _settings.EnableAutoUpdate;
         EnableWindowSnapAssist = _settings.EnableWindowSnapAssist;
         LauncherHotkey = _settings.LauncherHotkey;
         LoadPersonalSyncStateFromSettings();
         AiBaseUrl = _settings.AiBaseUrl;
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
+
+        SubscribeUpdateEvents();
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
         EnvironmentVariables = new ObservableCollection<EnvironmentVariableEditorItem>(
             AppEnvironmentVariableStore.Load().Select(static item => new EnvironmentVariableEditorItem(item.Name, item.Value, item.Description)));
@@ -372,6 +375,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 }
             });
         };
+
+        VelopackUpdateService.Instance.UpdateReadyChanged += () =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                OnPropertyChanged(nameof(IsUpdateReadyToRestart));
+            });
+        };
     }
 
     private async Task AutoCheckUpdateOnAboutOpenAsync()
@@ -521,6 +532,25 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         try
         {
             VelopackUpdateService.Instance.ApplyAndRestart(_newVersionUpdateInfo);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"应用更新并重启失败: {ex.Message}。您可以重试，或者手动重启软件完成更新。", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
+    private void RestartToUpdateButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var updateInfo = VelopackUpdateService.Instance.ReadyUpdateInfo ?? _newVersionUpdateInfo;
+        if (updateInfo == null)
+        {
+            System.Windows.MessageBox.Show("更新信息不存在，无法执行重启。请前往关于面板手动检测并下载更新。", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            VelopackUpdateService.Instance.ApplyAndRestart(updateInfo);
         }
         catch (Exception ex)
         {
@@ -689,6 +719,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             // Ignore logo load failures so settings can still open in published builds.
         }
     }
+
+    public bool EnableAutoUpdate
+    {
+        get => _settings.EnableAutoUpdate;
+        set
+        {
+            if (value == _settings.EnableAutoUpdate)
+            {
+                return;
+            }
+
+            _settings = _settings with { EnableAutoUpdate = value };
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsUpdateReadyToRestart => VelopackUpdateService.Instance.IsUpdateReady;
 
     public bool CloseToTray
     {

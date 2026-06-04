@@ -198,6 +198,19 @@ public partial class App : WpfApplication
 
             // 4. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
             _isAppFullyInitialized = true;
+
+            // 启动 5 秒后在后台静默发起更新流程
+            _ = Task.Delay(5000).ContinueWith(async _ =>
+            {
+                try
+                {
+                    await VelopackUpdateService.Instance.StartSilentUpdateCheckAndDownloadAsync();
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"App silent update worker error: {ex.Message}");
+                }
+            }, TaskScheduler.Default);
         }
         catch (Exception ex)
         {

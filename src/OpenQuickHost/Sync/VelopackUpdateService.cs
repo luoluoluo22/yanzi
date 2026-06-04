@@ -22,6 +22,13 @@ public sealed class VelopackUpdateService
     public event Action<int>? DownloadProgressChanged;
     public event Action<string>? UpdateStatusChanged;
 
+    public UpdateInfo? ReadyUpdateInfo { get; private set; }
+    public bool IsUpdateReady { get; private set; }
+    public event Action? UpdateReadyChanged;
+
+    private int _silentCheckFailureCount = 0;
+    private const int MaxSilentCheckFailures = 3;
+
     private VelopackUpdateService()
     {
         InitializeManager();
@@ -151,6 +158,11 @@ public sealed class VelopackUpdateService
             DownloadProgressChanged?.Invoke(100);
             HostAssets.AppendLog($"VelopackUpdateService: download completed for v{targetVer}");
             UpdateStatusChanged?.Invoke("更新包已下载完成，重启即可生效！");
+
+            ReadyUpdateInfo = updateInfo;
+            IsUpdateReady = true;
+            UpdateReadyChanged?.Invoke();
+
             return true;
         }
         catch (Exception ex)
@@ -187,6 +199,80 @@ public sealed class VelopackUpdateService
         {
             LogUpdateException("ApplyAndRestart", ex);
             UpdateStatusChanged?.Invoke($"重启失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 启动应用后的静默检测更新和下载逻辑（有失败重试、避免重复下载和最大失败上限保护）
+    /// </summary>
+    public async Task StartSilentUpdateCheckAndDownloadAsync()
+    {
+        // 1. 用户配置检查
+        var settings = AppSettingsStore.Load();
+        if (!settings.EnableAutoUpdate)
+        {
+            HostAssets.AppendLog("VelopackUpdateService: auto update is disabled by user settings.");
+            return;
+        }
+
+        // 2. 重复任务规避：是否已就绪
+        if (IsUpdateReady)
+        {
+            HostAssets.AppendLog("VelopackUpdateService: an update is already ready, skipping silent check.");
+            return;
+        }
+
+        // 3. 保护机制：累计失败达到上限则规避，不进行死循环重试
+        if (_silentCheckFailureCount >= MaxSilentCheckFailures)
+        {
+            HostAssets.AppendLog($"VelopackUpdateService: silent update check skipped due to too many failures ({_silentCheckFailureCount}).");
+            return;
+        }
+
+        try
+        {
+            var updateInfo = await CheckForUpdatesAsync();
+            if (updateInfo == null)
+            {
+                return;
+            }
+
+            int downloadAttempts = 0;
+            bool downloadSuccess = false;
+
+            // 4. 重试机制：若异常中断，最多重试 3 次，每次间隔 5 秒
+            while (downloadAttempts < 3 && !downloadSuccess)
+            {
+                downloadAttempts++;
+                HostAssets.AppendLog($"VelopackUpdateService: silent download attempt {downloadAttempts} of 3...");
+                downloadSuccess = await DownloadUpdatesAsync(updateInfo);
+                if (downloadSuccess)
+                {
+                    break;
+                }
+
+                if (downloadAttempts < 3)
+                {
+                    HostAssets.AppendLog("VelopackUpdateService: silent download failed, retrying in 5 seconds...");
+                    await Task.Delay(5000);
+                }
+            }
+
+            if (downloadSuccess)
+            {
+                _silentCheckFailureCount = 0; // 成功后清空连续失败记录
+                HostAssets.AppendLog($"VelopackUpdateService: silent update check and download completed. Ready to update to v{updateInfo.TargetFullRelease.Version}.");
+            }
+            else
+            {
+                _silentCheckFailureCount++;
+                HostAssets.AppendLog($"VelopackUpdateService: silent update download failed after 3 attempts. Failure count={_silentCheckFailureCount}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _silentCheckFailureCount++;
+            HostAssets.AppendLog($"VelopackUpdateService: silent update process exception (fail count={_silentCheckFailureCount}): {ex.Message}");
         }
     }
 
