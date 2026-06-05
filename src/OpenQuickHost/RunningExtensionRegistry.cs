@@ -19,18 +19,30 @@ public static class RunningExtensionRegistry
             snapshot = [];
             foreach (var pair in Entries)
             {
-                if (!IsAlive(pair.Value.Process))
+                if (pair.Value.Process != null)
                 {
-                    staleIds ??= [];
-                    staleIds.Add(pair.Key);
-                    continue;
+                    if (!IsAlive(pair.Value.Process))
+                    {
+                        staleIds ??= [];
+                        staleIds.Add(pair.Key);
+                        continue;
+                    }
+                }
+                else if (pair.Value.IsAliveFunc != null)
+                {
+                    if (!pair.Value.IsAliveFunc())
+                    {
+                        staleIds ??= [];
+                        staleIds.Add(pair.Key);
+                        continue;
+                    }
                 }
 
                 snapshot.Add(new RunningExtensionInfo(
                     pair.Value.InstanceId,
                     pair.Value.ExtensionId,
                     pair.Value.Title,
-                    pair.Value.Process.Id,
+                    pair.Value.Process?.Id ?? -1,
                     pair.Value.Runtime,
                     pair.Value.LaunchSource,
                     pair.Value.StartedAt));
@@ -70,7 +82,9 @@ public static class RunningExtensionRegistry
             string.IsNullOrWhiteSpace(command.Runtime) ? "csharp" : command.Runtime,
             string.IsNullOrWhiteSpace(launchSource) ? "unknown" : launchSource,
             DateTimeOffset.Now,
-            process);
+            process,
+            IsAliveFunc: null,
+            AbortAction: null);
 
         try
         {
@@ -92,6 +106,38 @@ public static class RunningExtensionRegistry
         RaiseChanged();
     }
 
+    public static void RegisterManagedExtension(
+        string extensionId,
+        string title,
+        string runtime,
+        string launchSource,
+        Func<bool> isAliveFunc,
+        Action abortAction,
+        out Guid instanceId)
+    {
+        var id = Guid.NewGuid();
+        instanceId = id;
+
+        var entry = new RunningExtensionEntry(
+            id,
+            extensionId,
+            title,
+            runtime,
+            launchSource,
+            DateTimeOffset.Now,
+            Process: null,
+            IsAliveFunc: isAliveFunc,
+            AbortAction: abortAction);
+
+        lock (Gate)
+        {
+            Entries[id] = entry;
+        }
+
+        HostAssets.AppendLog($"RunningExtensionRegistry registered managed: id={extensionId}, title={title}, launchSource={launchSource}");
+        RaiseChanged();
+    }
+
     public static bool TryTerminate(Guid instanceId, out string message)
     {
         RunningExtensionEntry? entry;
@@ -108,23 +154,44 @@ public static class RunningExtensionRegistry
 
         try
         {
-            if (!IsAlive(entry.Process))
+            if (entry.Process != null)
             {
-                Remove(instanceId, "terminate cleanup");
-                message = "该扩展已经结束。";
-                return false;
+                if (!IsAlive(entry.Process))
+                {
+                    Remove(instanceId, "terminate cleanup");
+                    message = "该扩展已经结束。";
+                    return false;
+                }
+
+                entry.Process.Kill(entireProcessTree: true);
+                Remove(instanceId, "terminated by user");
+                message = $"已结束扩展：{entry.Title}";
+                HostAssets.AppendLog($"RunningExtensionRegistry terminated process: id={entry.ExtensionId}, title={entry.Title}, pid={TryGetProcessId(entry.Process)}");
+                return true;
+            }
+            else if (entry.AbortAction != null)
+            {
+                if (entry.IsAliveFunc != null && !entry.IsAliveFunc())
+                {
+                    Remove(instanceId, "terminate cleanup");
+                    message = "该扩展已经结束。";
+                    return false;
+                }
+
+                entry.AbortAction();
+                Remove(instanceId, "terminated by user");
+                message = $"已结束扩展：{entry.Title}";
+                HostAssets.AppendLog($"RunningExtensionRegistry terminated managed: id={entry.ExtensionId}, title={entry.Title}");
+                return true;
             }
 
-            entry.Process.Kill(entireProcessTree: true);
-            Remove(instanceId, "terminated by user");
-            message = $"已结束扩展：{entry.Title}";
-            HostAssets.AppendLog($"RunningExtensionRegistry terminated: id={entry.ExtensionId}, title={entry.Title}, pid={TryGetProcessId(entry.Process)}");
-            return true;
+            message = "无法结束该扩展。";
+            return false;
         }
         catch (Exception ex)
         {
             message = $"结束扩展失败：{ex.Message}";
-            HostAssets.AppendLog($"RunningExtensionRegistry terminate failed: id={entry.ExtensionId}, title={entry.Title}, pid={TryGetProcessId(entry.Process)}, error={ex.Message}");
+            HostAssets.AppendLog($"RunningExtensionRegistry terminate failed: id={entry.ExtensionId}, title={entry.Title}, error={ex.Message}");
             return false;
         }
     }
@@ -142,27 +209,43 @@ public static class RunningExtensionRegistry
         {
             try
             {
-                if (!IsAlive(entry.Process))
+                if (entry.Process != null)
                 {
-                    Remove(entry.InstanceId, "terminate all cleanup");
-                    continue;
-                }
+                    if (!IsAlive(entry.Process))
+                    {
+                        Remove(entry.InstanceId, "terminate all cleanup");
+                        continue;
+                    }
 
-                entry.Process.Kill(entireProcessTree: true);
-                Remove(entry.InstanceId, "terminated on app shutdown");
-                terminatedCount++;
-                HostAssets.AppendLog($"RunningExtensionRegistry terminated on shutdown: id={entry.ExtensionId}, title={entry.Title}, pid={TryGetProcessId(entry.Process)}");
+                    entry.Process.Kill(entireProcessTree: true);
+                    Remove(entry.InstanceId, "terminated on app shutdown");
+                    terminatedCount++;
+                    HostAssets.AppendLog($"RunningExtensionRegistry terminated on shutdown: id={entry.ExtensionId}, title={entry.Title}, pid={TryGetProcessId(entry.Process)}");
+                }
+                else if (entry.AbortAction != null)
+                {
+                    if (entry.IsAliveFunc != null && !entry.IsAliveFunc())
+                    {
+                        Remove(entry.InstanceId, "terminate all cleanup");
+                        continue;
+                    }
+
+                    entry.AbortAction();
+                    Remove(entry.InstanceId, "terminated on app shutdown");
+                    terminatedCount++;
+                    HostAssets.AppendLog($"RunningExtensionRegistry terminated managed on shutdown: id={entry.ExtensionId}, title={entry.Title}");
+                }
             }
             catch (Exception ex)
             {
-                HostAssets.AppendLog($"RunningExtensionRegistry shutdown terminate failed: id={entry.ExtensionId}, title={entry.Title}, pid={TryGetProcessId(entry.Process)}, error={ex.Message}");
+                HostAssets.AppendLog($"RunningExtensionRegistry shutdown terminate failed: id={entry.ExtensionId}, title={entry.Title}, error={ex.Message}");
             }
         }
 
         return terminatedCount;
     }
 
-    private static void Remove(Guid instanceId, string reason)
+    public static void Remove(Guid instanceId, string reason)
     {
         var removed = false;
         lock (Gate)
@@ -213,7 +296,9 @@ public static class RunningExtensionRegistry
         string Runtime,
         string LaunchSource,
         DateTimeOffset StartedAt,
-        Process Process);
+        Process? Process,
+        Func<bool>? IsAliveFunc,
+        Action? AbortAction);
 }
 
 public sealed record RunningExtensionInfo(

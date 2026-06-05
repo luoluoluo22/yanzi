@@ -38,7 +38,8 @@ public static class AppSettingsStore
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
     };
 
     private static AppSettings Normalize(AppSettings settings)
@@ -691,6 +692,8 @@ public sealed class QuickPanelSlotItem
     public List<QuickPanelSlotItem?> FolderSlotItems { get; set; } = [];
 
     public bool IsFolder => string.Equals(ItemType, "folder", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsShortcut { get; set; } = false;
 }
 
 public sealed record QuickPanelMouseTriggerSettings

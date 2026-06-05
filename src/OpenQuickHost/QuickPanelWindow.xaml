@@ -418,7 +418,7 @@
                                             AllowDrop="True"
                                             Tag="{Binding}">
                                         <Button.ContextMenu>
-                                            <ContextMenu>
+                                            <ContextMenu Opened="SlotContextMenu_Opened">
                                                 <MenuItem Header="{Binding FavoriteLabel}" Click="ToggleFavorite_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
@@ -437,9 +437,19 @@
                                                         <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                                <MenuItem Tag="PasteNormal" Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Tag="PasteShortcut" Header="粘贴为快捷方式" Click="PasteShortcut_Click" CommandParameter="{Binding}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry shortcut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Tag="PasteCopy" Header="粘贴为副本" Click="PasteCopy_Click" CommandParameter="{Binding}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
@@ -596,6 +606,12 @@
                                                             <Path Data="M18,0 L18,18 L0,18 Z" Fill="#FF1D4ED8" Stretch="Fill"/>
                                                             <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="7.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,1"/>
                                                         </Grid>
+                                                        <!-- Shortcut indicator -->
+                                                        <Border Background="#CC1E293B" CornerRadius="4" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="2.5" Width="14" Height="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2,0,0,2" IsHitTestVisible="False" Visibility="{Binding IsShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Viewbox Width="9" Height="9">
+                                                                <Path Data="M19,15V19H5V5H11V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V15H19M16.5,3L14.79,4.79L18.5,8.5H13A5,5 0 0,0 8,13.5V17H10V13.5A3,3 0 0,1 13,10.5H18.5L14.79,14.21L16.5,16L23,9.5L16.5,3Z" Fill="White"/>
+                                                            </Viewbox>
+                                                        </Border>
                                                     </Grid>
                                                     <Border Background="#C0181818"
                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
@@ -680,7 +696,7 @@
                                             AllowDrop="True"
                                             Tag="{Binding}">
                                         <Button.ContextMenu>
-                                            <ContextMenu>
+                                            <ContextMenu Opened="SlotContextMenu_Opened">
                                                 <MenuItem Header="{Binding FavoriteLabel}" Click="ToggleFavorite_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
@@ -699,9 +715,19 @@
                                                         <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                                <MenuItem Tag="PasteNormal" Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Tag="PasteShortcut" Header="粘贴为快捷方式" Click="PasteShortcut_Click" CommandParameter="{Binding}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry shortcut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Tag="PasteCopy" Header="粘贴为副本" Click="PasteCopy_Click" CommandParameter="{Binding}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
@@ -1021,7 +1047,7 @@
                                         AllowDrop="True"
                                         Tag="{Binding}">
                                     <Button.ContextMenu>
-                                        <ContextMenu>
+                                        <ContextMenu Opened="SlotContextMenu_Opened">
                                             <MenuItem Header="{Binding FavoriteLabel}" Click="ToggleFavorite_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
@@ -1040,9 +1066,19 @@
                                                     <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                            <MenuItem Tag="PasteNormal" Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Tag="PasteShortcut" Header="粘贴为快捷方式" Click="PasteShortcut_Click" CommandParameter="{Binding}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry shortcut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Tag="PasteCopy" Header="粘贴为副本" Click="PasteCopy_Click" CommandParameter="{Binding}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
@@ -1188,6 +1224,12 @@
                                                     <Path Data="M18,0 L18,18 L0,18 Z" Fill="#FF1D4ED8" Stretch="Fill"/>
                                                     <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="7.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,1"/>
                                                 </Grid>
+                                                <!-- Shortcut indicator -->
+                                                <Border Background="#CC1E293B" CornerRadius="4" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="2.5" Width="14" Height="14" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2,0,0,2" IsHitTestVisible="False" Visibility="{Binding IsShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Viewbox Width="9" Height="9">
+                                                        <Path Data="M19,15V19H5V5H11V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V15H19M16.5,3L14.79,4.79L18.5,8.5H13A5,5 0 0,0 8,13.5V17H10V13.5A3,3 0 0,1 13,10.5H18.5L14.79,14.21L16.5,16L23,9.5L16.5,3Z" Fill="White"/>
+                                                    </Viewbox>
+                                                </Border>
                                                 <Border Background="#C0181818"
                                                         Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                 <Viewbox Width="20"

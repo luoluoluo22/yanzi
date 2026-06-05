@@ -472,10 +472,18 @@ public static class ScriptExtensionRunner
             references.AddRange(runtimeReferences);
         }
 
-        return references
+        var finalReferences = references
             .GroupBy(static reference => reference.Display, StringComparer.OrdinalIgnoreCase)
             .Select(static group => group.First())
-            .ToArray();
+            .ToList();
+
+        bool hasPrivateXml = finalReferences.Any(r => r.Display != null && r.Display.Contains("System.Private.Xml", StringComparison.OrdinalIgnoreCase));
+        if (hasPrivateXml)
+        {
+            finalReferences.RemoveAll(r => r.Display != null && r.Display.Contains("System.Xml.XmlSerializer", StringComparison.OrdinalIgnoreCase));
+        }
+
+        return finalReferences.ToArray();
     }
 
     private static string GetBundledNativeWindowReferenceDirectory()
@@ -846,7 +854,41 @@ public static class ScriptExtensionRunner
                 }
             }
 
-            _ = ObserveInProcessNativeWindowAsync(command, completed.Task, stateUpdatePath, executionStopwatch);
+            Guid? registryId = null;
+            try
+            {
+                Action abortAction = () =>
+                {
+                    try
+                    {
+                        if (HostObjectRegistry.TryGetObject("clipboard-history-window", out var win) && win != null)
+                        {
+                            var quitMethod = win.GetType().GetMethod("Quit", BindingFlags.Public | BindingFlags.Instance);
+                            quitMethod?.Invoke(win, null);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Error aborting managed extension {command.ExtensionId}: {ex.Message}");
+                    }
+                };
+
+                RunningExtensionRegistry.RegisterManagedExtension(
+                    command.ExtensionId ?? "csharp",
+                    command.Title ?? "未命名扩展",
+                    "csharp",
+                    launchSource,
+                    isAliveFunc: () => thread.IsAlive,
+                    abortAction: abortAction,
+                    out var instanceId);
+                registryId = instanceId;
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to register managed extension in registry: {ex.Message}");
+            }
+
+            _ = ObserveInProcessNativeWindowAsync(command, completed.Task, stateUpdatePath, executionStopwatch, registryId);
             return new ScriptExecutionResult(true, "native-window-started", "原生窗口已启动。", 0);
         }
 
@@ -914,7 +956,8 @@ public static class ScriptExtensionRunner
         CommandItem command,
         Task<ScriptExecutionResult> completionTask,
         string stateUpdatePath,
-        Stopwatch executionStopwatch)
+        Stopwatch executionStopwatch,
+        Guid? registryId)
     {
         try
         {
@@ -929,6 +972,10 @@ public static class ScriptExtensionRunner
         finally
         {
             TryDeleteTempFile(stateUpdatePath);
+            if (registryId.HasValue)
+            {
+                RunningExtensionRegistry.Remove(registryId.Value, "managed thread completed");
+            }
         }
     }
 
@@ -964,6 +1011,16 @@ public static class ScriptExtensionRunner
         {
             Action<string, object> proxyDelegate = HostObjectRegistry.Register;
             registerProperty.SetValue(runtimeContext, proxyDelegate);
+        }
+
+        var getRegisteredProperty = contextType.GetProperty("GetRegisteredObject", BindingFlags.Instance | BindingFlags.Public);
+        if (getRegisteredProperty?.CanWrite == true)
+        {
+            Func<string, object?> proxyGetDelegate = id => {
+                HostObjectRegistry.TryGetObject(id, out var obj);
+                return obj;
+            };
+            getRegisteredProperty.SetValue(runtimeContext, proxyGetDelegate);
         }
 
         return runtimeContext;
@@ -1304,6 +1361,7 @@ public static class ScriptExtensionRunner
             public HostedViewStateProxy ViewState => _viewState ??= new HostedViewStateProxy(this);
             public string StateUpdatePath { get; set; } = Environment.GetEnvironmentVariable("YANZI_STATE_UPDATES_PATH") ?? string.Empty;
             public Action<string, object>? RegisterObject { get; set; }
+            public Func<string, object?>? GetRegisteredObject { get; set; }
 
             public void Log(string message)
             {
