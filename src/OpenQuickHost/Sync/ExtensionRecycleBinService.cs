@@ -32,7 +32,7 @@ public static class ExtensionRecycleBinService
             .ToList();
     }
 
-    public static RecycledExtensionEntry MoveToRecycleBin(string extensionId)
+    public static RecycledExtensionEntry MoveToRecycleBin(string extensionId, string? extensionDirectoryPath = null)
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
@@ -40,14 +40,33 @@ public static class ExtensionRecycleBinService
         }
 
         EnsureStorage();
-        var entry = LocalExtensionCatalog.LoadEntries()
-            .FirstOrDefault(item => item.Manifest.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
-        if (entry == null)
+
+        string? sourceDirectory = null;
+        LocalExtensionCatalogEntry? entry = null;
+
+        if (!string.IsNullOrWhiteSpace(extensionDirectoryPath) && Directory.Exists(extensionDirectoryPath))
         {
-            throw new DirectoryNotFoundException("没有找到对应扩展目录。");
+            var targetFullPath = Path.GetFullPath(extensionDirectoryPath);
+            sourceDirectory = targetFullPath;
+            entry = LocalExtensionCatalog.LoadEntries()
+                .FirstOrDefault(item => 
+                {
+                    var dir = Path.GetDirectoryName(item.ManifestPath);
+                    return !string.IsNullOrWhiteSpace(dir) && Path.GetFullPath(dir).Equals(targetFullPath, StringComparison.OrdinalIgnoreCase);
+                });
         }
 
-        var sourceDirectory = Path.GetDirectoryName(entry.ManifestPath);
+        if (sourceDirectory == null)
+        {
+            entry = LocalExtensionCatalog.LoadEntries()
+                .FirstOrDefault(item => item.Manifest.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+            if (entry == null)
+            {
+                throw new DirectoryNotFoundException("没有找到对应扩展目录。");
+            }
+            sourceDirectory = Path.GetDirectoryName(entry.ManifestPath);
+        }
+
         if (string.IsNullOrWhiteSpace(sourceDirectory) || !Directory.Exists(sourceDirectory))
         {
             throw new DirectoryNotFoundException("没有找到对应扩展目录。");
@@ -60,10 +79,10 @@ public static class ExtensionRecycleBinService
         var recycleEntry = new RecycledExtensionEntry
         {
             ItemId = itemId,
-            ExtensionId = entry.Manifest.Id,
-            Title = entry.Manifest.Name,
-            Category = entry.Manifest.Category ?? "扩展",
-            Version = entry.Manifest.Version ?? "0.1.0",
+            ExtensionId = entry?.Manifest.Id ?? extensionId,
+            Title = entry?.Manifest.Name ?? Path.GetFileName(sourceDirectory) ?? extensionId,
+            Category = entry?.Manifest.Category ?? "扩展",
+            Version = entry?.Manifest.Version ?? "0.1.0",
             DeletedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
             OriginalDirectoryPath = sourceDirectory
         };
@@ -154,6 +173,42 @@ public static class ExtensionRecycleBinService
 
         SaveIndex(index);
         return matched.Count;
+    }
+
+    public static int PurgeExpiredItems(int retentionDays = 30)
+    {
+        var index = LoadIndex();
+        var now = DateTimeOffset.UtcNow;
+        var expiredItems = index.Items
+            .Where(item => (now - ParseTimestamp(item.DeletedAtUtc)).TotalDays >= retentionDays)
+            .ToList();
+
+        if (expiredItems.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (var item in expiredItems)
+        {
+            var sourceDirectory = GetRecycleDirectoryPath(item.ItemId);
+            if (Directory.Exists(sourceDirectory))
+            {
+                try
+                {
+                    Directory.Delete(sourceDirectory, recursive: true);
+                }
+                catch
+                {
+                    // Ignore locked files or access errors during purge
+                }
+            }
+
+            index.Items.Remove(item);
+            HostAssets.AppendLog($"Extension recycle bin auto-purged expired item: {item.ItemId}");
+        }
+
+        SaveIndex(index);
+        return expiredItems.Count;
     }
 
     private static ExtensionRecycleBinIndex LoadIndex()

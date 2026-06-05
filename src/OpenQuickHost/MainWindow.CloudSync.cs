@@ -22,6 +22,28 @@ public partial class MainWindow
         return $"{PublicStoreOrigin}/store.html?id={Uri.EscapeDataString(extensionId ?? string.Empty)}";
     }
 
+    public CloudSyncClient? CloudSyncClient => _cloudSyncClient;
+
+    public async Task<(bool ok, string message)> InstallStoreExtensionAsync(string extensionId)
+    {
+        if (_cloudSyncClient == null)
+        {
+            return (false, "云同步未配置");
+        }
+
+        try
+        {
+            var packageBytes = await _cloudSyncClient.DownloadExtensionArchiveAsync(extensionId);
+            var result = await ExtensionInstallService.InstallPackageAsync(packageBytes, extensionId);
+            ReloadLocalExtensionsFromExternal();
+            return (true, $"已成功安装：{result.Name}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"安装失败：{ex.Message}");
+        }
+    }
+
     public (bool ok, string message) CopyExtensionStoreLink(string extensionId)
     {
         if (string.IsNullOrWhiteSpace(extensionId))
@@ -469,8 +491,8 @@ public partial class MainWindow
         }
 
         var confirm = System.Windows.MessageBox.Show(
-            $"确认将扩展“{deletable.Title}”移入回收站吗？\n如果已启用坚果云/WebDAV，同步器会在后台把这次删除同步到其他设备。",
-            "移入扩展回收站",
+            $"确认删除扩展“{deletable.Title}”吗？",
+            "确认删除",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)
@@ -481,7 +503,7 @@ public partial class MainWindow
         try
         {
             WebDavSyncService.MarkExtensionDeletedLocally(deletable.ExtensionId, deletable.DeclaredVersion);
-            ExtensionRecycleBinService.MoveToRecycleBin(deletable.ExtensionId);
+            ExtensionRecycleBinService.MoveToRecycleBin(deletable.ExtensionId, deletable.ExtensionDirectoryPath);
             RemoveLocalExtensionCommand(deletable.ExtensionId);
             ApplyFilter(SearchBox.Text);
             SelectedCommand = FilteredCommands.FirstOrDefault();
@@ -1174,7 +1196,7 @@ public partial class MainWindow
         }
     }
 
-    private void QueueBackgroundWebDavSync(string reason, bool forceImmediate = false)
+    internal void QueueBackgroundWebDavSync(string reason, bool forceImmediate = false)
     {
         var settings = AppSettingsStore.Load();
         if (!PersonalSyncBackendFactory.IsConfigured(settings))
