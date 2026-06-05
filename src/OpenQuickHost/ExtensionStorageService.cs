@@ -185,6 +185,35 @@ public static class ExtensionStorageService
         await service.WriteExtensionDataTextAsync(extensionId, key, content, cancellationToken);
     }
 
+    public static async Task SyncLocalDirectoryToCloudAsync(string extensionId, CancellationToken cancellationToken = default)
+    {
+        var settings = AppSettingsStore.Load();
+        if (!PersonalSyncBackendFactory.IsConfigured(settings))
+        {
+            return;
+        }
+
+        var dir = GetExtensionStorageDirectoryPath(extensionId);
+        if (!Directory.Exists(dir))
+        {
+            return;
+        }
+
+        var service = new PersonalSyncService(settings);
+        foreach (var file in Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories))
+        {
+            var key = Path.GetRelativePath(dir, file).Replace('\\', '/');
+            if (key.StartsWith("EBWebView/", StringComparison.OrdinalIgnoreCase) || 
+                key.StartsWith(@"EBWebView\", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "EBWebView", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            var content = await File.ReadAllTextAsync(file, Encoding.UTF8, cancellationToken);
+            await service.WriteExtensionDataTextAsync(extensionId, key, content, cancellationToken);
+        }
+    }
+
     private static string ResolveLocalFilePath(string extensionId, string key)
     {
         var extensionDirectory = GetExtensionStorageDirectoryPath(extensionId);

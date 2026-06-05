@@ -403,6 +403,16 @@ public static class ScriptExtensionRunner
         var error = diagnostics.Length == 0
             ? "C# 扩展编译失败。"
             : string.Join(Environment.NewLine, diagnostics);
+            
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath))
+            {
+                File.WriteAllText(Path.Combine(command.ExtensionDirectoryPath, "debug.log"), $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] COMPILATION ERROR:{Environment.NewLine}{error}");
+            }
+        }
+        catch { }
+
         if (useNativeWindowMode)
         {
             HostAssets.AppendLog("ScriptRunner native-window reference diagnostics:" + Environment.NewLine + BuildNativeWindowReferenceDebugInfo());
@@ -428,6 +438,7 @@ public static class ScriptExtensionRunner
     {
         var references = new List<MetadataReference>(
             global::Basic.Reference.Assemblies.Net90.ReferenceInfos.All
+                .Where(info => !info.FileName.Contains(".Private."))
                 .Select(static info => (MetadataReference)info.Reference));
 
         var bundledDirectory = GetBundledNativeWindowReferenceDirectory();
@@ -543,6 +554,7 @@ public static class ScriptExtensionRunner
 
             var location = assembly.Location;
             var assemblyName = assembly.GetName().Name;
+
             if (string.Equals(assemblyName, "YanziExtension", StringComparison.OrdinalIgnoreCase) ||
                 IsGeneratedExtensionAssemblyPath(location))
             {
@@ -786,6 +798,15 @@ public static class ScriptExtensionRunner
             }
             catch (Exception ex)
             {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath))
+                    {
+                        File.AppendAllText(Path.Combine(command.ExtensionDirectoryPath, "debug.log"), $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] RUNTIME EXCEPTION:{Environment.NewLine}{ex}{Environment.NewLine}");
+                    }
+                }
+                catch { }
+
                 var result = new ScriptExecutionResult(false, string.Empty, ex.ToString(), -1);
                 ready.TrySetResult(result);
                 completed.TrySetResult(result);
@@ -936,6 +957,13 @@ public static class ScriptExtensionRunner
         if (stateUpdateProperty?.CanWrite == true)
         {
             stateUpdateProperty.SetValue(runtimeContext, stateUpdatePath);
+        }
+
+        var registerProperty = contextType.GetProperty("RegisterObject", BindingFlags.Instance | BindingFlags.Public);
+        if (registerProperty?.CanWrite == true)
+        {
+            Action<string, object> proxyDelegate = HostObjectRegistry.Register;
+            registerProperty.SetValue(runtimeContext, proxyDelegate);
         }
 
         return runtimeContext;
@@ -1275,6 +1303,31 @@ public static class ScriptExtensionRunner
             public YanziStorageClient Storage => _storage ??= new YanziStorageClient(this);
             public HostedViewStateProxy ViewState => _viewState ??= new HostedViewStateProxy(this);
             public string StateUpdatePath { get; set; } = Environment.GetEnvironmentVariable("YANZI_STATE_UPDATES_PATH") ?? string.Empty;
+            public Action<string, object>? RegisterObject { get; set; }
+
+            public void Log(string message)
+            {
+                var logPath = Path.Combine(ExtensionDirectory, "debug.log");
+                try
+                {
+                    File.AppendAllText(logPath, $"[{Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+                }
+                catch { }
+            }
+
+            public async Task ShowNotificationAsync(string title, string message)
+            {
+                if (string.IsNullOrWhiteSpace(AgentApiBaseUrl) || string.IsNullOrWhiteSpace(AgentApiToken)) return;
+                try
+                {
+                    using var client = new System.Net.Http.HttpClient();
+                    client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", AgentApiToken);
+                    var payload = JsonSerializer.Serialize(new { title, message });
+                    var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                    await client.PostAsync($"{AgentApiBaseUrl}/v1/app/notify", content);
+                }
+                catch { }
+            }
 
             public async Task SetStateAsync(object values)
             {

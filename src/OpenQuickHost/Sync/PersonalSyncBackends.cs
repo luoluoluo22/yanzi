@@ -155,7 +155,46 @@ internal abstract class PersonalSyncBackendBase : IPersonalSyncBackend
             : Convert.FromBase64String(normalized);
     }
 
-    protected static string GetBusinessCommitMessage(string path)
+    private static string GetExtensionTitle(string extensionId)
+    {
+        try
+        {
+            var manifestJson = LocalExtensionCatalog.LoadManifestJson(extensionId);
+            using var doc = System.Text.Json.JsonDocument.Parse(manifestJson);
+            if (doc.RootElement.TryGetProperty("name", out var nameProp))
+            {
+                var name = nameProp.GetString();
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    return name;
+                }
+            }
+        }
+        catch
+        {
+        }
+        return extensionId;
+    }
+
+    protected virtual string GenerateWebUrl(string path)
+    {
+        var root = DisplayRoot ?? string.Empty;
+        var m = System.Text.RegularExpressions.Regex.Match(root, @"^(github|gitee|gitlab|gitea)://([^/]+)/([^@]+)@(.+)$");
+        if (m.Success)
+        {
+            var provider = m.Groups[1].Value;
+            var owner = m.Groups[2].Value;
+            var repo = m.Groups[3].Value;
+            var branch = m.Groups[4].Value;
+            var normalizedPath = (path ?? string.Empty).Replace('\\', '/').Trim('/');
+            
+            if (provider == "github") return $"https://github.com/{owner}/{repo}/blob/{branch}/{normalizedPath}";
+            if (provider == "gitee") return $"https://gitee.com/{owner}/{repo}/blob/{branch}/{normalizedPath}";
+        }
+        return string.Empty;
+    }
+
+    protected string GetBusinessCommitMessage(string path)
     {
         var normalized = (path ?? string.Empty).Replace('\\', '/').Trim('/');
         if (normalized.EndsWith("state/launcher-config.json", StringComparison.OrdinalIgnoreCase))
@@ -174,14 +213,26 @@ internal abstract class PersonalSyncBackendBase : IPersonalSyncBackend
         {
             return "同步扩展：上传个人扩展包";
         }
-        if (normalized.Contains("appdata/", StringComparison.OrdinalIgnoreCase))
+        var appdataIndex = normalized.IndexOf("appdata/", StringComparison.OrdinalIgnoreCase);
+        if (appdataIndex >= 0)
         {
-            return "同步数据：备份扩展专属应用数据";
+            var subPath = normalized.Substring(appdataIndex + "appdata/".Length);
+            var parts = subPath.Split('/');
+            if (parts.Length >= 2)
+            {
+                var extensionId = parts[0];
+                var fileName = parts[^1];
+                var extName = GetExtensionTitle(extensionId);
+                var webUrl = GenerateWebUrl(path);
+                var linkText = string.IsNullOrWhiteSpace(webUrl) ? fileName : $"{webUrl}";
+                return $"上传数据：备份 【{extName}】 的 {linkText}";
+            }
+            return "上传数据：备份扩展专属应用数据";
         }
-        return $"同步：更新 {path}";
+        return $"上传数据：更新 {path}";
     }
 
-    protected static string GetBusinessDeleteMessage(string path)
+    protected string GetBusinessDeleteMessage(string path)
     {
         var normalized = (path ?? string.Empty).Replace('\\', '/').Trim('/');
         if (normalized.EndsWith("state/launcher-config.json", StringComparison.OrdinalIgnoreCase))
@@ -200,11 +251,23 @@ internal abstract class PersonalSyncBackendBase : IPersonalSyncBackend
         {
             return "同步扩展：删除个人扩展包";
         }
-        if (normalized.Contains("appdata/", StringComparison.OrdinalIgnoreCase))
+        var appdataIndex = normalized.IndexOf("appdata/", StringComparison.OrdinalIgnoreCase);
+        if (appdataIndex >= 0)
         {
-            return "同步数据：清除扩展专属应用数据";
+            var subPath = normalized.Substring(appdataIndex + "appdata/".Length);
+            var parts = subPath.Split('/');
+            if (parts.Length >= 2)
+            {
+                var extensionId = parts[0];
+                var fileName = parts[^1];
+                var extName = GetExtensionTitle(extensionId);
+                var webUrl = GenerateWebUrl(path);
+                var linkText = string.IsNullOrWhiteSpace(webUrl) ? fileName : $"{webUrl}";
+                return $"上传数据：清除 【{extName}】 的 {linkText}";
+            }
+            return "上传数据：清除扩展专属应用数据";
         }
-        return $"同步：删除 {path}";
+        return $"上传数据：删除 {path}";
     }
 }
 

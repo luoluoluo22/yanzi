@@ -173,6 +173,8 @@ public partial class App : WpfApplication
         StartupRegistrationService.Apply(settings.LaunchAtStartup);
         EverythingRuntimeService.EnsureStartedInBackground();
 
+        _ = Task.Run(() => OpenQuickHost.Sync.ExtensionRecycleBinService.PurgeExpiredItems(30));
+
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
         try
@@ -519,6 +521,44 @@ public partial class App : WpfApplication
                 () =>
                 {
                     window.Dispatcher.Invoke(() => window.ReloadLocalExtensionsFromExternal());
+                },
+                () =>
+                {
+                    window.Dispatcher.Invoke(() => window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true));
+                },
+                (id) =>
+                {
+                    var tcs = new TaskCompletionSource<(bool ok, string message)>();
+                    window.Dispatcher.Invoke(async () => tcs.SetResult(await window.PublishExtensionFromSettingsAsync(id)));
+                    return tcs.Task;
+                },
+                (id) =>
+                {
+                    var tcs = new TaskCompletionSource<(bool ok, string message)>();
+                    window.Dispatcher.Invoke(async () => tcs.SetResult(await window.UnpublishExtensionFromSettingsAsync(id)));
+                    return tcs.Task;
+                },
+                (id) =>
+                {
+                    var tcs = new TaskCompletionSource<(bool ok, string message)>();
+                    window.Dispatcher.Invoke(async () => tcs.SetResult(await window.InstallStoreExtensionAsync(id)));
+                    return tcs.Task;
+                },
+                () =>
+                {
+                    var tcs = new TaskCompletionSource<OpenQuickHost.Sync.AuthMeResponse?>();
+                    window.Dispatcher.Invoke(async () =>
+                    {
+                        var client = window.CloudSyncClient;
+                        if (client == null) tcs.SetResult(null);
+                        else tcs.SetResult(await client.GetMeAsync());
+                    });
+                    return tcs.Task;
+                },
+                (title, message) =>
+                {
+                    window.Dispatcher.Invoke(() => System.Windows.MessageBox.Show(message, title));
+                    return Task.CompletedTask;
                 });
             _agentApiServer.Start();
         }
@@ -804,6 +844,11 @@ public partial class App : WpfApplication
                 _settingsWindow.WindowState = WindowState.Minimized;
                 _settingsWindow.ShowInTaskbar = false;
 
+                _settingsWindow.Closed += (s, e) =>
+                {
+                    _settingsWindow = null;
+                };
+
                 _settingsWindow.ContentRendered += (s, e) =>
                 {
                     if (!isFirstRender) return;
@@ -842,24 +887,7 @@ public partial class App : WpfApplication
                     }
                 };
 
-                // 拦截关闭事件，改为伪隐藏（最小化），保留 GPU 表面，彻底解决二次闪白
-                _settingsWindow.Closing += (s, e) =>
-                {
-                    e.Cancel = true;
-                    var handle = new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Handle;
-                    if (handle != IntPtr.Zero)
-                    {
-                        int disableTransitions = 1;
-                        DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
-                    }
-                    _settingsWindow.ShowInTaskbar = false;
-                    _settingsWindow.WindowState = WindowState.Minimized;
-                    if (handle != IntPtr.Zero)
-                    {
-                        int disableTransitions = 0;
-                        DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
-                    }
-                };
+
                 
                 HostAssets.AppendLog("Settings window created.");
             }
