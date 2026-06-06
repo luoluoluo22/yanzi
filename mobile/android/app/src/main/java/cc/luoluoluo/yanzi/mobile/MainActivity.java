@@ -2823,7 +2823,7 @@ public class MainActivity extends Activity {
                 int[] yanmWidgetIds = appWidgetManager.getAppWidgetIds(
                         new android.content.ComponentName(context, cc.luoluoluo.yanzi.mobile.widget.YanmWidgetProvider.class));
                 if (yanmWidgetIds.length > 0) {
-                    appWidgetManager.notifyAppWidgetViewDataChanged(yanmWidgetIds, R.id.widget_yanm_list);
+
                     
                     android.content.Intent updateYanmIntent = new android.content.Intent(context, cc.luoluoluo.yanzi.mobile.widget.YanmWidgetProvider.class);
                     updateYanmIntent.setAction(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE);

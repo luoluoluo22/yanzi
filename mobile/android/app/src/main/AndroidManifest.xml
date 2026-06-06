@@ -77,10 +77,7 @@
                 android:resource="@xml/widget_yanm_info" />
         </receiver>
 
-        <!-- Yanm Widget Service -->
-        <service android:name=".widget.YanmWidgetService"
-            android:permission="android.permission.BIND_REMOTEVIEWS"
-            android:exported="false" />
+
 
     </application>
 </manifest>
