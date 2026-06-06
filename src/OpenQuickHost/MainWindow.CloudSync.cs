@@ -842,40 +842,98 @@ public partial class MainWindow
 
     private async Task MobileMessageBridgeLoopAsync(CancellationToken cancellationToken)
     {
-        HostAssets.AppendLog("Mobile bridge background loop started with smart polling.");
-        var delaySeconds = 5;
-        var consecutiveEmptyCount = 0;
+        HostAssets.AppendLog("Mobile bridge background loop started with SSE streaming.");
+        _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                var messagesCount = await PollMobileMessagesSafeAsync("background-loop");
-                
-                if (messagesCount > 0)
-                {
-                    consecutiveEmptyCount = 0;
-                    delaySeconds = 5;
-                }
-                else
-                {
-                    consecutiveEmptyCount++;
-                    if (consecutiveEmptyCount >= 6)
-                    {
-                        delaySeconds = Math.Min(delaySeconds + 5, 45);
-                    }
-                }
-                
-                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            HostAssets.AppendLog("Mobile bridge background loop stopped.");
+            await PollMobileMessagesSafeAsync("sse-sync");
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Mobile bridge background loop crashed: {FormatExceptionMessage(ex)}");
+            HostAssets.AppendLog($"Mobile bridge SSE sync error during startup: {ex.Message}");
         }
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                HostAssets.AppendLog("Mobile bridge establishing SSE connection to cloud...");
+                using var response = await _cloudSyncClient!.GetMobileMessagesEventsStreamAsync(_desktopDeviceId, cancellationToken);
+                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
+
+                HostAssets.AppendLog("Mobile bridge SSE connection established successfully.");
+
+                while (!cancellationToken.IsCancellationRequested && !reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync(cancellationToken);
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var dataJson = line["data:".Length..].Trim();
+                        try
+                        {
+                            using var doc = System.Text.Json.JsonDocument.Parse(dataJson);
+                            var root = doc.RootElement;
+                            if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "messages")
+                            {
+                                if (root.TryGetProperty("items", out var itemsProp) && itemsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+                                {
+                                    var itemsText = itemsProp.GetRawText();
+                                    var messages = System.Text.Json.JsonSerializer.Deserialize<List<DeviceMessageRecord>>(itemsText, new System.Text.Json.JsonSerializerOptions
+                                    {
+                                        PropertyNameCaseInsensitive = true
+                                    });
+
+                                    if (messages != null && messages.Count > 0)
+                                    {
+                                        HostAssets.AppendLog($"Mobile bridge SSE pushed messages: count={messages.Count}.");
+                                        
+                                        foreach (var message in messages)
+                                        {
+                                            await HandleMobileDeviceMessageAsync(message);
+                                            await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken);
+                                            HostAssets.AppendLog($"Mobile bridge SSE acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception parseEx)
+                        {
+                            HostAssets.AppendLog($"Mobile bridge SSE message parse failed: {parseEx.Message}");
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Mobile bridge SSE connection error: {FormatExceptionMessage(ex)}");
+            }
+
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                HostAssets.AppendLog("Mobile bridge SSE disconnected. Retrying in 5 seconds...");
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+        HostAssets.AppendLog("Mobile bridge background loop stopped.");
     }
 
     private async void MobileMessagePollTimer_Tick(object? sender, EventArgs e)

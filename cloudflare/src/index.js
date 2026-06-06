@@ -1269,6 +1269,103 @@ async function handleRequest(request, env) {
     });
   }
 
+  if (url.pathname === "/v1/me/mobile/messages/events" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
+    await ensureUser(env, auth.userId);
+    const device = await ensureOwnedDevice(env, auth.userId, deviceId);
+    await touchDevice(env, auth.userId, deviceId);
+
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+
+    let isClosed = false;
+
+    request.signal.addEventListener("abort", () => {
+      isClosed = true;
+    });
+
+    const sendSseMessage = async (data) => {
+      try {
+        await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      } catch (err) {
+        isClosed = true;
+      }
+    };
+
+    (async () => {
+      try {
+        await sendSseMessage({ type: "connected" });
+
+        while (!isClosed) {
+          const rows = await env.DB.prepare(
+            `select
+              message_id,
+              source_device_id,
+              target_device_id,
+              target_platform,
+              kind,
+              title,
+              body_text,
+              payload_json,
+              status,
+              created_at,
+              delivered_at,
+              acked_at,
+              expires_at
+            from device_messages
+            where user_id = ?
+              and status = 'pending'
+              and (expires_at is null or expires_at > ?)
+              and (
+                target_device_id = ?
+                or (
+                  target_device_id is null
+                  and target_platform = ?
+                )
+              )
+            order by created_at asc`
+          )
+            .bind(auth.userId, isoNow(), deviceId, device.platform)
+            .all();
+
+          const items = (rows.results ?? []).map(serializeDeviceMessageRecord);
+          if (items.length > 0) {
+            await sendSseMessage({ type: "messages", items });
+
+            const deliveredAt = isoNow();
+            await env.DB.prepare(
+              `update device_messages
+               set delivered_at = coalesce(delivered_at, ?)
+               where user_id = ?
+                 and message_id in (${items.map(() => "?").join(",")})`
+            )
+              .bind(deliveredAt, auth.userId, ...items.map((item) => item.messageId))
+              .run();
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (err) {
+        // SSE loop exception
+      } finally {
+        try {
+          await writer.close();
+        } catch (e) {}
+      }
+    })();
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*"
+      }
+    });
+  }
+
   if (url.pathname === "/v1/me/mobile/messages" && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));

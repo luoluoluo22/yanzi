@@ -436,6 +436,52 @@ public sealed class CloudSyncClient
         return payload?.Items ?? [];
     }
 
+    public async Task<HttpResponseMessage> GetMobileMessagesEventsStreamAsync(string deviceId, CancellationToken cancellationToken)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/me/mobile/messages/events?deviceId={Uri.EscapeDataString(deviceId)}");
+        request.Version = HttpVersion.Version11;
+        request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        if (HasValidSession())
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session!.AccessToken);
+        }
+
+        Exception? lastError = null;
+        var attempts = new (HttpClient client, string label)[]
+        {
+            (_httpClient, "proxy"),
+            (_directHttpClient, "direct"),
+            (_httpClient, "proxy-retry")
+        };
+
+        for (var index = 0; index < attempts.Length; index++)
+        {
+            try
+            {
+                var response = await attempts[index].client.SendAsync(CloneRequest(request), HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                return response;
+            }
+            catch (Exception ex) when (IsRetryableTransportException(ex) && index < attempts.Length - 1)
+            {
+                lastError = ex;
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                if (index == attempts.Length - 1)
+                {
+                    throw new InvalidOperationException($"Failed to establish SSE connection: {ex.Message}", lastError);
+                }
+            }
+        }
+        throw new InvalidOperationException("Failed to establish SSE connection.", lastError);
+    }
+
     public async Task AckDeviceMessageAsync(string messageId, string deviceId, CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
