@@ -1297,12 +1297,23 @@ public class MainActivity extends Activity {
             cardParams.setMargins(dp(3), dp(6), dp(3), dp(6));
             card.setLayoutParams(cardParams);
 
-            TextView icon = textView(extension.iconText(), 20, Color.WHITE, true);
-            icon.setGravity(Gravity.CENTER);
-            icon.setBackgroundColor(Color.rgb(21, 94, 117));
+            View iconView;
+            android.graphics.Path path = MobileIconLibrary.resolve(extension.icon);
+            if (path != null) {
+                ImageView img = new ImageView(this);
+                img.setBackgroundColor(Color.rgb(21, 94, 117));
+                img.setImageDrawable(new PathDrawable(path, Color.WHITE));
+                img.setPadding(dp(8), dp(8), dp(8), dp(8));
+                iconView = img;
+            } else {
+                TextView textIcon = textView(extension.iconText(), 20, Color.WHITE, true);
+                textIcon.setGravity(Gravity.CENTER);
+                textIcon.setBackgroundColor(Color.rgb(21, 94, 117));
+                iconView = textIcon;
+            }
             LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(54), dp(54));
             iconParams.setMargins(0, 0, 0, dp(6));
-            card.addView(icon, iconParams);
+            card.addView(iconView, iconParams);
 
             TextView name = textView(extension.name, 11, Color.WHITE, false);
             name.setGravity(Gravity.CENTER);
