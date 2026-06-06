@@ -46,14 +46,15 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
 
         SharedPreferences prefs = context.getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
         String extensionsJson = prefs.getString("cacheRemoteExtensionsJson", "[]");
+        String widgetOrderJson = prefs.getString("widgetExtensionsOrder", "[]");
 
-        List<RemoteExtensionItem> items = new ArrayList<>();
+        List<RemoteExtensionItem> allExtensions = new ArrayList<>();
         try {
             JSONArray array = new JSONArray(extensionsJson);
             for (int i = 0; i < array.length(); i++) {
                 JSONObject obj = array.optJSONObject(i);
                 if (obj != null) {
-                    items.add(new RemoteExtensionItem(
+                    allExtensions.add(new RemoteExtensionItem(
                             obj.optString("extensionId"),
                             obj.optString("name"),
                             obj.optString("icon"),
@@ -62,6 +63,55 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
                 }
             }
         } catch (Exception ignored) {}
+
+        List<String> orderedIds = new ArrayList<>();
+        try {
+            JSONArray orderArray = new JSONArray(widgetOrderJson);
+            for (int i = 0; i < orderArray.length(); i++) {
+                orderedIds.add(orderArray.optString(i, ""));
+            }
+        } catch (Exception ignored) {}
+
+        // 创建 4 个槽位
+        RemoteExtensionItem[] slots = new RemoteExtensionItem[4];
+        java.util.Set<String> assignedIds = new java.util.HashSet<>();
+
+        // 1. 第一步：优先把用户指定的扩展放到对应槽位
+        for (int i = 0; i < Math.min(4, orderedIds.size()); i++) {
+            String targetId = orderedIds.get(i);
+            if (targetId != null && !targetId.trim().isEmpty()) {
+                for (RemoteExtensionItem ext : allExtensions) {
+                    if (ext.id.equals(targetId)) {
+                        slots[i] = ext;
+                        assignedIds.add(targetId);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 2. 第二步：剩下的空槽位由其它没有被指定的扩展按默认顺序填满
+        int extIndex = 0;
+        for (int i = 0; i < 4; i++) {
+            if (slots[i] == null) {
+                while (extIndex < allExtensions.size()) {
+                    RemoteExtensionItem candidate = allExtensions.get(extIndex++);
+                    if (!assignedIds.contains(candidate.id)) {
+                        slots[i] = candidate;
+                        assignedIds.add(candidate.id);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 整理最终用来展示的列表
+        List<RemoteExtensionItem> items = new ArrayList<>();
+        for (RemoteExtensionItem slot : slots) {
+            if (slot != null) {
+                items.add(slot);
+            }
+        }
 
         for (int appWidgetId : appWidgetIds) {
             RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_extensions);
@@ -128,10 +178,8 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
                         PendingIntent runPI = PendingIntent.getBroadcast(
                                 context, i + 1, runIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
                         
-                        // 将 PendingIntent 同时绑定到容器底座、图标和名称上，保证多层点击灵敏度
+                        // 仅绑定到外层 Item 容器，子控件不设点击，事件自然穿透到底座触发
                         views.setOnClickPendingIntent(itemLayoutId, runPI);
-                        views.setOnClickPendingIntent(iconLayoutId, runPI);
-                        views.setOnClickPendingIntent(nameLayoutId, runPI);
                     } else {
                         // 如果没有足够的扩展，隐藏多余卡片
                         views.setViewVisibility(itemLayoutId, android.view.View.INVISIBLE);
