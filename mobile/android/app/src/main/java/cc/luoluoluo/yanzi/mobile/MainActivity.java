@@ -1244,7 +1244,8 @@ public class MainActivity extends Activity {
                     .put("extensionId", extension.extensionId)
                     .put("name", extension.name)
                     .put("description", extension.description)
-                    .put("icon", extension.icon));
+                    .put("icon", extension.icon)
+                    .put("accentHex", extension.accentHex));
             }
             prefs.edit().putString(CACHE_REMOTE_EXTENSIONS, array.toString()).apply();
         } catch (Exception ignored) {
@@ -1268,11 +1269,16 @@ public class MainActivity extends Activity {
                 if (extensionId.isEmpty()) {
                     continue;
                 }
+                String accentHex = firstNonEmpty(
+                    item.optString("accentHex"),
+                    item.optString("accent_hex"),
+                    item.optString("AccentHex"));
                 items.add(new RemoteExtension(
                     extensionId,
                     firstNonEmpty(item.optString("name"), item.optString("Name"), extensionId),
                     firstNonEmpty(item.optString("description"), item.optString("Description")),
-                    firstNonEmpty(item.optString("icon"), item.optString("Icon"))));
+                    firstNonEmpty(item.optString("icon"), item.optString("Icon")),
+                    accentHex));
             }
         } catch (Exception ignored) {
         }
@@ -1306,7 +1312,18 @@ public class MainActivity extends Activity {
             android.graphics.Path path = MobileIconLibrary.resolveOrDefault(extension.icon);
             ImageView img = new ImageView(this);
             android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
-            gd.setColor(Color.rgb(45, 45, 45)); // 与电脑端一致的暗灰色 #2D2D2D
+            int baseColor = Color.rgb(45, 45, 45); // 与电脑端一致的暗灰色 #2D2D2D
+            if (extension.accentHex != null && !extension.accentHex.trim().isEmpty()) {
+                try {
+                    String colorStr = extension.accentHex.trim();
+                    if (!colorStr.startsWith("#")) {
+                        colorStr = "#" + colorStr;
+                    }
+                    baseColor = Color.parseColor(colorStr);
+                } catch (Exception ignored) {
+                }
+            }
+            gd.setColor(baseColor);
             gd.setCornerRadius(dp(10)); // 圆角半径 10dp
             img.setBackground(gd);
             img.setImageDrawable(new PathDrawable(path, Color.WHITE));
@@ -2288,12 +2305,18 @@ public class MainActivity extends Activity {
         final String name;
         final String description;
         final String icon;
+        final String accentHex;
 
-        RemoteExtension(String extensionId, String name, String description, String icon) {
+        RemoteExtension(String extensionId, String name, String description, String icon, String accentHex) {
             this.extensionId = extensionId;
             this.name = name;
             this.description = description;
             this.icon = icon == null ? "" : icon;
+            this.accentHex = accentHex == null ? "" : accentHex;
+        }
+
+        RemoteExtension(String extensionId, String name, String description, String icon) {
+            this(extensionId, name, description, icon, "");
         }
 
         String iconText() {
@@ -2479,7 +2502,13 @@ public class MainActivity extends Activity {
                 if ("yanzi-webdav-settings".equals(extensionId) || 
                     "yanzi-webdav-setting".equals(extensionId) || 
                     "yanzi-quickpanel-settings".equals(extensionId) || 
-                    "yanzi-quickpanel-setting".equals(extensionId)) {
+                    "yanzi-quickpanel-setting".equals(extensionId) ||
+                    "yanzi-personal-sync-settings".equals(extensionId) ||
+                    "yanzi-personal-sync-setting".equals(extensionId) ||
+                    "yanzi-ai-settings".equals(extensionId) ||
+                    "yanzi-ai-setting".equals(extensionId) ||
+                    "yanzi-general-settings".equals(extensionId) ||
+                    "yanzi-general-setting".equals(extensionId)) {
                     continue;
                 }
 
@@ -2511,9 +2540,17 @@ public class MainActivity extends Activity {
                         manifest == null ? "" : manifest.optString("icon"),
                         manifest == null ? "" : manifest.optString("Icon")
                     );
-                    result.add(new RemoteExtension(extensionId, name, description, icon));
+                    String accentHex = firstNonEmpty(
+                        detail.optString("accent_hex"),
+                        detail.optString("accentHex"),
+                        detail.optString("AccentHex"),
+                        manifest == null ? "" : manifest.optString("accent_hex"),
+                        manifest == null ? "" : manifest.optString("accentHex"),
+                        manifest == null ? "" : manifest.optString("AccentHex")
+                    );
+                    result.add(new RemoteExtension(extensionId, name, description, icon, accentHex));
                 } catch (Exception ignored) {
-                    result.add(new RemoteExtension(extensionId, extensionId, "扩展详情暂不可用，仍可尝试远程执行。", ""));
+                    result.add(new RemoteExtension(extensionId, extensionId, "扩展详情暂不可用，仍可尝试远程执行。", "", ""));
                 }
             }
             return result;
