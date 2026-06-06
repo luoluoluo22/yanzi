@@ -912,7 +912,7 @@ public static class ScriptExtensionRunner
 
         var environmentSnapshot = CaptureRuntimeEnvironmentSnapshot();
         var originalDirectory = Directory.GetCurrentDirectory();
-        var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: true);
+        var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: false);
         try
         {
             ApplyRuntimeEnvironment(command, contextPath, stateUpdatePath, launchSource);

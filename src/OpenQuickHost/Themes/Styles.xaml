@@ -204,4 +204,56 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- 全局隐式滚动条样式，替换原生亮色粗滚动条 -->
+    <Style x:Key="GlobalScrollBarThumbStyle" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="Root" Background="{DynamicResource BrushBorder}" CornerRadius="3" Margin="2" />
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushTextSec}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushAccent}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid>
+                        <Track x:Name="PART_Track" IsDirectionReversed="true">
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource GlobalScrollBarThumbStyle}" />
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Background="Transparent" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Background="Transparent" />
+                            </Track.DecreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Height" Value="10" />
+            </Trigger>
+            <Trigger Property="Orientation" Value="Vertical">
+                <Setter Property="Width" Value="10" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
 </ResourceDictionary>

@@ -8,8 +8,13 @@ public static class HostObjectRegistry
 
     public static void Register(string id, object obj)
     {
-        if (string.IsNullOrWhiteSpace(id) || obj == null)
+        if (string.IsNullOrWhiteSpace(id))
         {
+            return;
+        }
+        if (obj == null)
+        {
+            Remove(id);
             return;
         }
         _registry[id] = obj;

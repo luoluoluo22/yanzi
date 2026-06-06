@@ -23,6 +23,7 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
 import android.widget.HorizontalScrollView;
@@ -30,6 +31,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -79,17 +81,20 @@ public class MainActivity extends Activity {
     private TextView mobileExtensionTestResult;
     private LinearLayout mobileExtensionManagerList;
     private LinearLayout extensionList;
-    private LinearLayout yanmList;
+    private GridLayout yanmList;
     private LinearLayout yanmTabPage;
     private LinearLayout mobileExtensionTabPage;
     private LinearLayout desktopExtensionTabPage;
     private LinearLayout profileTabPage;
-    private Button yanmTabButton;
-    private Button mobileExtensionTabButton;
-    private Button desktopExtensionTabButton;
-    private Button profileTabButton;
-    private WebView activeYanmPreview;
-    private LinearLayout activeYanmPreviewHost;
+    private View yanmTabButton;
+    private View mobileExtensionTabButton;
+    private View desktopExtensionTabButton;
+    private View profileTabButton;
+    private Button loginButton;
+    private SwipeRefreshLayout swipeRefresh;
+    private final java.util.Set<String> expandedComponentIds = new java.util.HashSet<>();
+    private final java.util.List<String> sortedComponentIds = new java.util.ArrayList<>();
+    private final java.util.Map<String, WebView> activeYanmWebViews = new java.util.HashMap<>();
     private WebView activeMobileScriptRunner;
     private View photoProgressView;
     private final android.os.Handler yanmSyncHandler = new android.os.Handler(android.os.Looper.getMainLooper());
@@ -111,6 +116,27 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
         deviceId = getOrCreateDeviceId();
+
+        // 还原组件展开状态
+        String expandedJson = prefs.getString("expandedComponentIds", "[]");
+        try {
+            JSONArray arr = new JSONArray(expandedJson);
+            expandedComponentIds.clear();
+            for (int i = 0; i < arr.length(); i++) {
+                expandedComponentIds.add(arr.getString(i));
+            }
+        } catch (Exception ignored) {}
+
+        // 还原组件自定义排序
+        String sortedJson = prefs.getString("sortedComponentIds", "[]");
+        try {
+            JSONArray arr = new JSONArray(sortedJson);
+            sortedComponentIds.clear();
+            for (int i = 0; i < arr.length(); i++) {
+                sortedComponentIds.add(arr.getString(i));
+            }
+        } catch (Exception ignored) {}
+
         buildUi(extractSharedText(getIntent()));
         handleExternalAction(getIntent());
         startFloatingWheelIfPermitted();
@@ -201,6 +227,20 @@ public class MainActivity extends Activity {
         root.setPadding(dp(20), dp(24), dp(20), dp(24));
         scrollView.addView(root);
 
+        swipeRefresh = new SwipeRefreshLayout(this);
+        swipeRefresh.addView(scrollView);
+        swipeRefresh.setColorSchemeColors(Color.rgb(34, 211, 238));
+        swipeRefresh.setProgressBackgroundColorSchemeColor(Color.rgb(13, 31, 49));
+        swipeRefresh.setOnRefreshListener(() -> {
+            if (yanmTabPage != null && yanmTabPage.getVisibility() == View.VISIBLE) {
+                refreshYanm();
+            } else if (desktopExtensionTabPage != null && desktopExtensionTabPage.getVisibility() == View.VISIBLE) {
+                refreshExtensions();
+            } else {
+                swipeRefresh.setRefreshing(false);
+            }
+        });
+
         yanmTabPage = createTabPage();
         mobileExtensionTabPage = createTabPage();
         desktopExtensionTabPage = createTabPage();
@@ -214,11 +254,13 @@ public class MainActivity extends Activity {
         TextView yanmTitle = textView("燕幕", 28, Color.WHITE, true);
         yanmTabPage.addView(yanmTitle);
         yanmTabPage.addView(textView("查看和操作电脑端同步的燕幕组件。", 14, Color.rgb(182, 194, 214), false));
-        Button refreshYanmButton = button("刷新燕幕");
+        Button refreshYanmButton = button("刷新");
         yanmTabPage.addView(refreshYanmButton, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
-        yanmList = new LinearLayout(this);
-        yanmList.setOrientation(LinearLayout.VERTICAL);
-        yanmTabPage.addView(yanmList);
+        yanmList = new GridLayout(this);
+        yanmList.setColumnCount(2);
+        yanmList.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
+        yanmList.setUseDefaultMargins(false);
+        yanmTabPage.addView(yanmList, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         mobileExtensionTabPage.addView(textView("手机扩展", 28, Color.WHITE, true));
         mobileExtensionTabPage.addView(textView("管理和测试只在手机端运行的 mobile-js 扩展。", 14, Color.rgb(182, 194, 214), false));
@@ -226,7 +268,7 @@ public class MainActivity extends Activity {
 
         desktopExtensionTabPage.addView(textView("电脑扩展", 28, Color.WHITE, true));
         desktopExtensionTabPage.addView(textView("从手机触发同账号电脑端已同步的扩展。", 14, Color.rgb(182, 194, 214), false));
-        Button refreshExtensionsButton = button("刷新扩展列表");
+        Button refreshExtensionsButton = button("刷新");
         desktopExtensionTabPage.addView(refreshExtensionsButton, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
         extensionList = new LinearLayout(this);
         extensionList.setOrientation(LinearLayout.VERTICAL);
@@ -237,6 +279,7 @@ public class MainActivity extends Activity {
         profileTabPage.addView(textView("登录、发送消息、悬浮轮盘和诊断信息。", 14, Color.rgb(182, 194, 214), false));
 
         baseUrlInput = input("云端地址", prefs.getString("baseUrl", DEFAULT_BASE_URL));
+        baseUrlInput.setVisibility(View.GONE); // 隐藏后端请求的地址，不展示出来
         emailInput = input("邮箱", prefs.getString("email", ""));
         passwordInput = input("密码", prefs.getString("password", ""));
         passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -253,21 +296,21 @@ public class MainActivity extends Activity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.setGravity(Gravity.CENTER_VERTICAL);
-        Button loginButton = button("登录并注册设备");
+        loginButton = button("登录"); // 赋值给类成员变量，文案精简为“登录”
         Button logoutButton = button("退出");
         buttons.addView(loginButton, new LinearLayout.LayoutParams(0, dp(44), 1));
         buttons.addView(logoutButton, new LinearLayout.LayoutParams(0, dp(44), 1));
         profileTabPage.addView(buttons);
 
         profileTabPage.addView(textInput);
-        Button sendButton = button("发送到电脑");
+        Button sendButton = button("发送");
         profileTabPage.addView(sendButton, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
 
         profileTabPage.addView(sectionTitle("全局轮盘"));
         LinearLayout wheelButtons = new LinearLayout(this);
         wheelButtons.setOrientation(LinearLayout.VERTICAL);
-        Button overlayButton = button("开启悬浮轮盘");
-        Button accessibilityButton = button("开启无障碍能力");
+        Button overlayButton = button("悬浮轮盘");
+        Button accessibilityButton = button("无障碍服务");
         wheelButtons.addView(overlayButton, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
         wheelButtons.addView(accessibilityButton, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
         profileTabPage.addView(wheelButtons);
@@ -276,8 +319,8 @@ public class MainActivity extends Activity {
 
         LinearLayout logButtons = new LinearLayout(this);
         logButtons.setOrientation(LinearLayout.HORIZONTAL);
-        Button copyLogButton = button("复制日志");
-        Button clearLogButton = button("清空日志");
+        Button copyLogButton = button("复制");
+        Button clearLogButton = button("清空");
         logButtons.addView(copyLogButton, new LinearLayout.LayoutParams(0, dp(44), 1));
         logButtons.addView(clearLogButton, new LinearLayout.LayoutParams(0, dp(44), 1));
         profileTabPage.addView(logButtons);
@@ -287,6 +330,9 @@ public class MainActivity extends Activity {
         logoutButton.setOnClickListener(v -> {
             prefs.edit().putString("token", "").apply();
             setStatus("已清除本地登录态。");
+            if (loginButton != null) {
+                loginButton.setEnabled(true);
+            }
         });
         sendButton.setOnClickListener(v -> sendToDesktop());
         overlayButton.setOnClickListener(v -> startFloatingWheel());
@@ -301,13 +347,16 @@ public class MainActivity extends Activity {
             setStatus("日志已清空。");
         });
 
-        shell.addView(scrollView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        shell.addView(swipeRefresh, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         shell.addView(buildBottomTabs(), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64)));
         setContentView(shell);
         selectTab("yanm");
         setStatus(prefs.getString("token", "").trim().isEmpty() ? "请先登录燕子账号。" : "已加载本地登录态。");
         renderCachedYanm();
         if (!prefs.getString("token", "").trim().isEmpty()) {
+            if (loginButton != null) {
+                loginButton.setEnabled(false); // 自动登录状态下置灰登录按钮，防止手动重复触发
+            }
             refreshExtensions(true);
             refreshYanm(true);
         }
@@ -323,14 +372,14 @@ public class MainActivity extends Activity {
     private LinearLayout buildBottomTabs() {
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
-        tabs.setGravity(Gravity.CENTER);
-        tabs.setPadding(dp(8), dp(6), dp(8), dp(8));
+        tabs.setGravity(Gravity.CENTER_VERTICAL);
+        tabs.setPadding(dp(4), dp(2), dp(4), dp(2));
         tabs.setBackgroundColor(Color.rgb(5, 12, 23));
 
-        yanmTabButton = tabButton("燕幕", "yanm");
-        mobileExtensionTabButton = tabButton("手机扩展", "mobile");
-        desktopExtensionTabButton = tabButton("电脑扩展", "desktop");
-        profileTabButton = tabButton("我的", "profile");
+        yanmTabButton = tabButton("燕幕", android.R.drawable.ic_menu_view, "yanm");
+        mobileExtensionTabButton = tabButton("手机扩展", android.R.drawable.ic_menu_edit, "mobile");
+        desktopExtensionTabButton = tabButton("电脑扩展", android.R.drawable.ic_menu_share, "desktop");
+        profileTabButton = tabButton("我的", android.R.drawable.ic_menu_preferences, "profile");
 
         tabs.addView(yanmTabButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1));
         tabs.addView(mobileExtensionTabButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1));
@@ -339,12 +388,35 @@ public class MainActivity extends Activity {
         return tabs;
     }
 
-    private Button tabButton(String text, String key) {
-        Button button = button(text);
-        button.setAllCaps(false);
-        button.setTextSize(12);
-        button.setOnClickListener(v -> selectTab(key));
-        return button;
+    private View tabButton(String text, int iconResId, String key) {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setGravity(Gravity.CENTER);
+        container.setPadding(0, dp(6), 0, dp(6));
+        container.setClickable(true);
+        container.setFocusable(true);
+
+        ImageView iconView = new ImageView(this);
+        iconView.setImageResource(iconResId);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(22), dp(22));
+        iconView.setLayoutParams(iconParams);
+
+        TextView textView = new TextView(this);
+        textView.setText(text);
+        textView.setTextSize(10);
+        textView.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        textParams.setMargins(0, dp(3), 0, 0);
+        textView.setLayoutParams(textParams);
+
+        container.addView(iconView);
+        container.addView(textView);
+
+        container.setTag(new View[]{iconView, textView});
+        container.setOnClickListener(v -> selectTab(key));
+        return container;
     }
 
     private void selectTab(String key) {
@@ -372,17 +444,24 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void styleTabButton(Button button, boolean selected) {
-        if (button == null) {
+    private void styleTabButton(View tabView, boolean selected) {
+        if (tabView == null) {
             return;
         }
 
+        int color = selected ? Color.rgb(34, 211, 238) : Color.rgb(100, 116, 139);
+        View[] tag = (View[]) tabView.getTag();
+        if (tag != null && tag.length == 2) {
+            ImageView iconView = (ImageView) tag[0];
+            TextView textView = (TextView) tag[1];
+            iconView.setColorFilter(color);
+            textView.setTextColor(color);
+        }
+
         GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(14));
-        background.setColor(selected ? Color.rgb(14, 116, 144) : Color.rgb(13, 31, 49));
-        background.setStroke(dp(1), selected ? Color.rgb(103, 232, 249) : Color.rgb(30, 48, 72));
-        button.setTextColor(selected ? Color.WHITE : Color.rgb(148, 163, 184));
-        button.setBackground(background);
+        background.setCornerRadius(dp(12));
+        background.setColor(selected ? Color.argb(20, 34, 211, 238) : Color.TRANSPARENT);
+        tabView.setBackground(background);
     }
 
     private void focusTextComposer(String status) {
@@ -925,6 +1004,9 @@ public class MainActivity extends Activity {
     }
 
     private void loginAndRegister() {
+        if (loginButton != null) {
+            loginButton.setEnabled(false);
+        }
         setStatus("正在登录...");
         executor.execute(() -> {
             String baseUrl = normalizedBaseUrl();
@@ -933,7 +1015,12 @@ public class MainActivity extends Activity {
             try {
                 token = YanziApiClient.login(baseUrl, email, passwordInput.getText().toString());
             } catch (Exception ex) {
-                runOnUiThread(() -> setStatus("登录失败：" + ex.getMessage()));
+                runOnUiThread(() -> {
+                    setStatus("登录失败：" + ex.getMessage());
+                    if (loginButton != null) {
+                        loginButton.setEnabled(true);
+                    }
+                });
                 return;
             }
 
@@ -948,6 +1035,9 @@ public class MainActivity extends Activity {
                     .apply();
                 runOnUiThread(() -> {
                     setStatus("登录成功，设备已注册。");
+                    if (loginButton != null) {
+                        loginButton.setEnabled(true);
+                    }
                     refreshExtensions();
                     refreshYanm();
                 });
@@ -958,7 +1048,12 @@ public class MainActivity extends Activity {
                     .putString("password", passwordInput.getText().toString())
                     .putString("token", token)
                     .apply();
-                runOnUiThread(() -> setStatus("登录成功，但设备注册失败：" + ex.getMessage()));
+                runOnUiThread(() -> {
+                    setStatus("登录成功，但设备注册失败：" + ex.getMessage());
+                    if (loginButton != null) {
+                        loginButton.setEnabled(true);
+                    }
+                });
             }
         });
     }
@@ -1109,6 +1204,9 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     cacheRemoteExtensions(loadedExtensions);
                     renderExtensions(loadedExtensions);
+                    if (swipeRefresh != null) {
+                        swipeRefresh.setRefreshing(false);
+                    }
                 });
             } catch (Exception ex) {
                 runOnUiThread(() -> {
@@ -1117,6 +1215,9 @@ public class MainActivity extends Activity {
                         extensionList.addView(textView("扩展列表读取失败。", 13, Color.rgb(248, 113, 113), false));
                     }
                     setStatus("扩展列表读取失败：" + ex.getMessage());
+                    if (swipeRefresh != null) {
+                        swipeRefresh.setRefreshing(false);
+                    }
                 });
             }
         });
@@ -1240,7 +1341,7 @@ public class MainActivity extends Activity {
                         textInput.getText().toString());
                 }
                 String sentMessageId = messageId;
-                runOnUiThread(() -> setStatus("扩展执行请求已发送，messageId=" + sentMessageId + "，扩展=" + extension.name));
+                runOnUiThread(() -> setStatus("扩展执行请求已发送，messageId=" + sentMessageId + "，扩展：" + extension.name));
             } catch (Exception ex) {
                 runOnUiThread(() -> setStatus("扩展执行请求失败：" + ex.getMessage()));
             }
@@ -1276,6 +1377,9 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     prefs.edit().putString(CACHE_YANM, loadedYanm.toString()).apply();
                     renderYanm(loadedYanm);
+                    if (swipeRefresh != null) {
+                        swipeRefresh.setRefreshing(false);
+                    }
                 });
             } catch (Exception ex) {
                 runOnUiThread(() -> {
@@ -1284,6 +1388,9 @@ public class MainActivity extends Activity {
                         yanmList.addView(textView("燕幕读取失败。", 13, Color.rgb(248, 113, 113), false));
                     }
                     setStatus("燕幕读取失败：" + ex.getMessage());
+                    if (swipeRefresh != null) {
+                        swipeRefresh.setRefreshing(false);
+                    }
                 });
             }
         });
@@ -1293,7 +1400,7 @@ public class MainActivity extends Activity {
         String cached = prefs.getString(CACHE_YANM, "");
         if (cached == null || cached.trim().isEmpty()) {
             yanmList.removeAllViews();
-            yanmList.addView(textView("暂无燕幕缓存。进入后会后台拉取，也可点击“刷新燕幕”。", 13, Color.rgb(148, 163, 184), false));
+            yanmList.addView(textView("暂无燕幕缓存。进入后会自动后台拉取，也可点击“刷新”。", 13, Color.rgb(148, 163, 184), false));
             return;
         }
 
@@ -1306,6 +1413,68 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void saveSortedState() {
+        try {
+            JSONArray arr = new JSONArray();
+            for (String id : sortedComponentIds) {
+                arr.put(id);
+            }
+            prefs.edit().putString("sortedComponentIds", arr.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void saveExpandedState() {
+        try {
+            JSONArray arr = new JSONArray();
+            for (String id : expandedComponentIds) {
+                arr.put(id);
+            }
+            prefs.edit().putString("expandedComponentIds", arr.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void showSortDialog(String componentId, int currentIndex, List<JSONObject> components) {
+        if (components.size() <= 1) {
+            return;
+        }
+
+        String[] options = new String[]{"置顶", "上移", "下移", "置底"};
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("调整组件顺序")
+            .setItems(options, (dialog, which) -> {
+                List<String> list = new ArrayList<>();
+                for (JSONObject comp : components) {
+                    String id = firstNonEmpty(comp.optString("id"), comp.optString("Id"),
+                        comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"));
+                    list.add(id);
+                }
+
+                String target = list.remove(currentIndex);
+                if (which == 0) { // 置顶
+                    list.add(0, target);
+                } else if (which == 1) { // 上移
+                    int newIndex = Math.max(0, currentIndex - 1);
+                    list.add(newIndex, target);
+                } else if (which == 2) { // 下移
+                    int newIndex = Math.min(list.size(), currentIndex + 1);
+                    list.add(newIndex, target);
+                } else if (which == 3) { // 置底
+                    list.add(target);
+                }
+
+                sortedComponentIds.clear();
+                sortedComponentIds.addAll(list);
+                saveSortedState();
+
+                if (currentYanmSnapshot != null) {
+                    renderYanm(currentYanmSnapshot);
+                }
+            })
+            .show();
+    }
+
     private void renderYanm(JSONObject yanm) {
         currentYanmSnapshot = yanm;
         currentYanmState = firstObject(yanm, "componentState", "ComponentState");
@@ -1316,19 +1485,55 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {
             }
         }
+
+        // 清空列表前销毁所有的 WebView 防止内存泄露
+        for (WebView webView : activeYanmWebViews.values()) {
+            if (webView != null) {
+                try {
+                    webView.destroy();
+                } catch (Exception ignored) {}
+            }
+        }
+        activeYanmWebViews.clear();
         yanmList.removeAllViews();
+
         JSONArray components = firstArray(yanm, "components", "Components");
         if (components == null || components.length() == 0) {
             yanmList.addView(textView("暂无燕幕组件。", 13, Color.rgb(148, 163, 184), false));
             return;
         }
 
+        // 运用用户自定义排序列表进行排序
+        List<JSONObject> sortedList = new ArrayList<>();
+        List<JSONObject> remainingList = new ArrayList<>();
         for (int i = 0; i < components.length(); i++) {
-            JSONObject component = components.optJSONObject(i);
-            if (component == null) {
-                continue;
+            JSONObject comp = components.optJSONObject(i);
+            if (comp != null) {
+                String compId = firstNonEmpty(comp.optString("id"), comp.optString("Id"),
+                    comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"), "comp_" + i);
+                int sortedIndex = sortedComponentIds.indexOf(compId);
+                if (sortedIndex >= 0) {
+                    sortedList.add(comp);
+                } else {
+                    remainingList.add(comp);
+                }
             }
+        }
 
+        // 对已自定义排序的组件按照其相对顺序排序
+        sortedList.sort((c1, c2) -> {
+            String id1 = firstNonEmpty(c1.optString("id"), c1.optString("Id"),
+                c1.optString("title"), c1.optString("Title"), c1.optString("name"), c1.optString("Name"));
+            String id2 = firstNonEmpty(c2.optString("id"), c2.optString("Id"),
+                c2.optString("title"), c2.optString("Title"), c2.optString("name"), c2.optString("Name"));
+            return Integer.compare(sortedComponentIds.indexOf(id1), sortedComponentIds.indexOf(id2));
+        });
+
+        List<JSONObject> finalComponents = new ArrayList<>(sortedList);
+        finalComponents.addAll(remainingList);
+
+        for (int i = 0; i < finalComponents.size(); i++) {
+            JSONObject component = finalComponents.get(i);
             String title = firstNonEmpty(
                 component.optString("title"),
                 component.optString("Title"),
@@ -1341,9 +1546,25 @@ public class MainActivity extends Activity {
                 component.optString("kind"),
                 component.optString("Kind"),
                 "component");
+            String componentId = firstNonEmpty(component.optString("id"), component.optString("Id"), title);
+
             LinearLayout card = card();
-            card.addView(textView(title, 16, Color.WHITE, true));
-            card.addView(textView(type, 11, Color.rgb(94, 234, 212), false));
+            // 改回单列布局，宽度填充父级
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            cardParams.setMargins(0, dp(8), 0, dp(8));
+            card.setLayoutParams(cardParams);
+
+            // 卡片头部布局（水平）：左侧放标题，右侧放下拉折叠箭头
+            LinearLayout headerLayout = new LinearLayout(this);
+            headerLayout.setOrientation(LinearLayout.HORIZONTAL);
+            headerLayout.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView titleView = textView(title, 16, Color.WHITE, true);
+            headerLayout.addView(titleView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
             String html = firstNonEmpty(
                 component.optString("html"),
                 component.optString("Html"),
@@ -1351,44 +1572,88 @@ public class MainActivity extends Activity {
                 component.optString("Markup"),
                 component.optString("contentHtml"),
                 component.optString("ContentHtml"));
+
+            TextView arrowView = null;
             if (!html.isEmpty()) {
-                TextView hint = textView("点击预览组件界面", 12, Color.rgb(182, 194, 214), false);
-                card.addView(hint);
+                boolean isExpanded = expandedComponentIds.contains(componentId);
+                arrowView = textView(isExpanded ? "▲" : "▼", 14, Color.rgb(34, 211, 238), false);
+                arrowView.setPadding(dp(8), dp(4), dp(8), dp(4));
+                headerLayout.addView(arrowView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            }
+            card.addView(headerLayout);
+
+            // 移除非 "component" 类型的多余中间显示
+            if (!type.isEmpty() && !type.equalsIgnoreCase("component")) {
+                card.addView(textView(type, 11, Color.rgb(94, 234, 212), false));
+            }
+
+            if (!html.isEmpty()) {
                 LinearLayout previewHost = new LinearLayout(this);
                 previewHost.setOrientation(LinearLayout.VERTICAL);
                 card.addView(previewHost);
                 String htmlForPreview = html;
-                String componentId = firstNonEmpty(component.optString("id"), component.optString("Id"), title);
-                card.setOnClickListener(v -> toggleYanmPreview(previewHost, htmlForPreview, componentId, title));
+                final TextView finalArrow = arrowView;
+
+                // 还原展开状态
+                if (expandedComponentIds.contains(componentId)) {
+                    toggleYanmPreview(previewHost, htmlForPreview, componentId, title, finalArrow, true);
+                }
+
+                card.setOnClickListener(v -> toggleYanmPreview(previewHost, htmlForPreview, componentId, title, finalArrow, false));
             } else {
                 String summary = summarizeYanmComponent(component);
                 card.addView(textView(summary, 12, Color.rgb(182, 194, 214), false));
             }
+
+            // 长按进行位置重排
+            final int index = i;
+            final List<JSONObject> finalCompsRef = finalComponents;
+            card.setOnLongClickListener(v -> {
+                showSortDialog(componentId, index, finalCompsRef);
+                return true;
+            });
+
             yanmList.addView(card);
         }
 
-        setStatus("燕幕已加载：" + components.length() + " 个组件。");
+        setStatus("燕幕已加载：" + finalComponents.size() + " 个组件。");
     }
 
-    private void toggleYanmPreview(LinearLayout previewHost, String html, String componentId, String componentTitle) {
-        if (activeYanmPreviewHost == previewHost && activeYanmPreview != null) {
+    private void toggleYanmPreview(LinearLayout previewHost, String html, String componentId, String componentTitle, TextView arrowView, boolean forceExpand) {
+        WebView existingWebView = activeYanmWebViews.get(componentId);
+        boolean isCurrentlyExpanded = (existingWebView != null && previewHost.getChildCount() > 0);
+
+        if (isCurrentlyExpanded && !forceExpand) {
+            // 折叠逻辑
             previewHost.removeAllViews();
-            activeYanmPreview.destroy();
-            activeYanmPreview = null;
-            activeYanmPreviewHost = null;
+            try {
+                existingWebView.destroy();
+            } catch (Exception ignored) {}
+            activeYanmWebViews.remove(componentId);
+            expandedComponentIds.remove(componentId);
+            saveExpandedState();
+            if (arrowView != null) {
+                arrowView.setText("▼");
+            }
             return;
         }
 
-        if (activeYanmPreviewHost != null) {
-            activeYanmPreviewHost.removeAllViews();
-        }
-        if (activeYanmPreview != null) {
-            activeYanmPreview.destroy();
+        if (existingWebView != null) {
+            previewHost.removeAllViews();
+            try {
+                existingWebView.destroy();
+            } catch (Exception ignored) {}
+            activeYanmWebViews.remove(componentId);
         }
 
         WebView webView = new WebView(this);
-        activeYanmPreview = webView;
-        activeYanmPreviewHost = previewHost;
+        activeYanmWebViews.put(componentId, webView);
+        expandedComponentIds.add(componentId);
+        saveExpandedState();
+        if (arrowView != null) {
+            arrowView.setText("▲");
+        }
+
         webView.setBackgroundColor(Color.TRANSPARENT);
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);
@@ -2144,6 +2409,7 @@ public class MainActivity extends Activity {
             }
             URL url = new URL(server + path.substring(1));
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
             String userpass = (config.username == null ? "" : config.username) + ":" + (config.password == null ? "" : config.password);
             String encoded = android.util.Base64.encodeToString(userpass.getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP);
             connection.setRequestProperty("Authorization", "Basic " + encoded);
@@ -2227,6 +2493,7 @@ public class MainActivity extends Activity {
             connection.setConnectTimeout(15000);
             connection.setReadTimeout(15000);
             connection.setDoOutput(true);
+            connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Accept", "application/json");
             if (token != null && !token.trim().isEmpty()) {
@@ -2256,6 +2523,7 @@ public class MainActivity extends Activity {
             connection.setConnectTimeout(15000);
             connection.setReadTimeout(15000);
             connection.setDoOutput(true);
+            connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Accept", "application/json");
             if (token != null && !token.trim().isEmpty()) {
@@ -2284,6 +2552,7 @@ public class MainActivity extends Activity {
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(15000);
             connection.setReadTimeout(15000);
+            connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
             connection.setRequestProperty("Accept", "application/json");
             if (token != null && !token.trim().isEmpty()) {
                 connection.setRequestProperty("Authorization", "Bearer " + token);
