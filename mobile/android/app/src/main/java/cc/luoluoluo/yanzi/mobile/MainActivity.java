@@ -2461,7 +2461,15 @@ public class MainActivity extends Activity {
                     continue;
                 }
 
-                String extensionId = item.optString("extension_id");
+                String extensionId = firstNonEmpty(
+                    item.optString("extension_id"),
+                    item.optString("extensionId"),
+                    item.optString("ExtensionId"),
+                    item.optString("Extension_id")
+                );
+                if (extensionId.isEmpty()) {
+                    continue;
+                }
                 if (extensionId.startsWith("yanzi-")) {
                     continue;
                 }
@@ -2469,9 +2477,31 @@ public class MainActivity extends Activity {
                 try {
                     JSONObject detail = getJson(baseUrl, "/v1/extensions/" + encodePath(extensionId), token, "读取扩展详情");
                     JSONObject manifest = detail.optJSONObject("manifest");
-                    String name = firstNonEmpty(detail.optString("display_name"), manifest == null ? "" : manifest.optString("name"), extensionId);
-                    String description = firstNonEmpty(detail.optString("description"), manifest == null ? "" : manifest.optString("description"));
-                    String icon = firstNonEmpty(detail.optString("icon"), manifest == null ? "" : manifest.optString("icon"));
+                    String name = firstNonEmpty(
+                        detail.optString("display_name"),
+                        detail.optString("displayName"),
+                        detail.optString("DisplayName"),
+                        detail.optString("name"),
+                        detail.optString("Name"),
+                        manifest == null ? "" : manifest.optString("name"),
+                        manifest == null ? "" : manifest.optString("Name"),
+                        manifest == null ? "" : manifest.optString("display_name"),
+                        manifest == null ? "" : manifest.optString("displayName"),
+                        manifest == null ? "" : manifest.optString("DisplayName"),
+                        extensionId
+                    );
+                    String description = firstNonEmpty(
+                        detail.optString("description"),
+                        detail.optString("Description"),
+                        manifest == null ? "" : manifest.optString("description"),
+                        manifest == null ? "" : manifest.optString("Description")
+                    );
+                    String icon = firstNonEmpty(
+                        detail.optString("icon"),
+                        detail.optString("Icon"),
+                        manifest == null ? "" : manifest.optString("icon"),
+                        manifest == null ? "" : manifest.optString("Icon")
+                    );
                     result.add(new RemoteExtension(extensionId, name, description, icon));
                 } catch (Exception ignored) {
                     result.add(new RemoteExtension(extensionId, extensionId, "扩展详情暂不可用，仍可尝试远程执行。", ""));
