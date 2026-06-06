@@ -1305,10 +1305,6 @@ public class MainActivity extends Activity {
             View iconView;
             android.graphics.Path path = MobileIconLibrary.resolveOrDefault(extension.icon);
             ImageView img = new ImageView(this);
-            android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
-            gd.setColor(Color.rgb(45, 45, 45)); // 与电脑端一致的暗灰色 #2D2D2D
-            gd.setCornerRadius(dp(10)); // 圆角半径 10dp
-            img.setBackground(gd);
             img.setImageDrawable(new PathDrawable(path, Color.WHITE));
             img.setPadding(dp(8), dp(8), dp(8), dp(8));
             iconView = img;
@@ -1892,7 +1888,13 @@ public class MainActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
         card.setPadding(dp(6), dp(8), dp(6), dp(8));
-        card.setBackgroundColor(Color.rgb(30, 30, 30));
+        
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setColor(Color.rgb(22, 24, 28)); // 电脑端卡片背景色 #16181C
+        gd.setCornerRadius(dp(12)); // 电脑端卡片圆角 12dp
+        gd.setStroke(dp(1), Color.rgb(42, 42, 42)); // 电脑端卡片微弱边框 #2A2A2A
+        card.setBackground(gd);
+        
         return card;
     }
 
@@ -2475,9 +2477,6 @@ public class MainActivity extends Activity {
                     item.optString("Extension_id")
                 );
                 if (extensionId.isEmpty()) {
-                    continue;
-                }
-                if (extensionId.startsWith("yanzi-")) {
                     continue;
                 }
 
