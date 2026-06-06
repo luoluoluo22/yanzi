@@ -1294,7 +1294,7 @@ public class MainActivity extends Activity {
         int cellWidth = Math.max(dp(72), (screenWidth - dp(56)) / 4);
         for (RemoteExtension extension : extensions) {
             LinearLayout card = iconCard();
-            card.setGravity(Gravity.CENTER_VERTICAL);
+            card.setGravity(Gravity.CENTER);
             card.setOnClickListener(v -> runRemoteExtension(extension));
             GridLayout.LayoutParams cardParams = new GridLayout.LayoutParams();
             cardParams.width = cellWidth;
@@ -1305,18 +1305,25 @@ public class MainActivity extends Activity {
             View iconView;
             android.graphics.Path path = MobileIconLibrary.resolveOrDefault(extension.icon);
             ImageView img = new ImageView(this);
-            img.setBackgroundColor(Color.rgb(59, 130, 246));
+            android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+            gd.setColor(Color.rgb(45, 45, 45)); // 与电脑端一致的暗灰色 #2D2D2D
+            gd.setCornerRadius(dp(10)); // 圆角半径 10dp
+            img.setBackground(gd);
             img.setImageDrawable(new PathDrawable(path, Color.WHITE));
             img.setPadding(dp(8), dp(8), dp(8), dp(8));
             iconView = img;
             LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(54), dp(54));
             iconParams.setMargins(0, 0, 0, dp(6));
+            iconParams.gravity = Gravity.CENTER_HORIZONTAL;
             card.addView(iconView, iconParams);
 
             TextView name = textView(extension.name, 11, Color.WHITE, false);
             name.setGravity(Gravity.CENTER);
             name.setMaxLines(2);
-            card.addView(name, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            nameParams.gravity = Gravity.CENTER_HORIZONTAL;
+            card.addView(name, nameParams);
             grid.addView(card);
         }
     }
