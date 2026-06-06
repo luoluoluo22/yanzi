@@ -49,5 +49,38 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/mobile_accessibility_service" />
         </service>
+
+        <!-- Extensions Widget Provider -->
+        <receiver android:name=".widget.ExtensionsWidgetProvider"
+            android:label="燕子快捷扩展 (2x2)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_RUN_EXT" />
+                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_EXT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_extensions_info" />
+        </receiver>
+
+        <!-- Yanm Widget Provider -->
+        <receiver android:name=".widget.YanmWidgetProvider"
+            android:label="燕幕组件列表 (2x4)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_YANM" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_yanm_info" />
+        </receiver>
+
+        <!-- Yanm Widget Service -->
+        <service android:name=".widget.YanmWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
     </application>
 </manifest>

@@ -605,12 +605,25 @@ public partial class AppExtensionWindow : Window
     private object EnvGet(JsonElement parameters)
     {
         var name = GetString(parameters, "name", required: true);
+        var value = AppEnvironmentVariableStore.GetValue(name);
+        if (string.IsNullOrEmpty(value))
+        {
+            if (string.Equals(name, "HOST_GITHUB_TOKEN", StringComparison.OrdinalIgnoreCase))
+            {
+                value = Sync.PersonalSyncSecretStore.Load()?.GitHubToken ?? string.Empty;
+            }
+            else if (string.Equals(name, "HOST_GITEE_TOKEN", StringComparison.OrdinalIgnoreCase))
+            {
+                value = Sync.PersonalSyncSecretStore.Load()?.GiteeToken ?? string.Empty;
+            }
+        }
         return new
         {
             name,
-            value = AppEnvironmentVariableStore.GetValue(name) ?? string.Empty
+            value = value ?? string.Empty
         };
     }
+
 
     private async Task<object?> WindowStartDragAsync()
     {

@@ -1248,6 +1248,7 @@ public class MainActivity extends Activity {
                     .put("accentHex", extension.accentHex));
             }
             prefs.edit().putString(CACHE_REMOTE_EXTENSIONS, array.toString()).apply();
+            updateAllAppWidgets();
         } catch (Exception ignored) {
         }
     }
@@ -1522,6 +1523,7 @@ public class MainActivity extends Activity {
                 JSONObject loadedYanm = yanm;
                 runOnUiThread(() -> {
                     prefs.edit().putString(CACHE_YANM, loadedYanm.toString()).apply();
+                    updateAllAppWidgets();
                     renderYanm(loadedYanm);
                     if (swipeRefresh != null) {
                         swipeRefresh.setRefreshing(false);
@@ -1566,6 +1568,7 @@ public class MainActivity extends Activity {
                 arr.put(id);
             }
             prefs.edit().putString("sortedComponentIds", arr.toString()).apply();
+            updateAllAppWidgets();
         } catch (Exception ignored) {
         }
     }
@@ -2444,7 +2447,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private static final class YanziApiClient {
+    public static final class YanziApiClient {
         static String login(String baseUrl, String email, String password) throws Exception {
             JSONObject payload = new JSONObject()
                 .put("email", email)
@@ -2574,7 +2577,7 @@ public class MainActivity extends Activity {
             String password;
         }
 
-        static String runExtensionOnDesktop(String baseUrl, String token, String sourceDeviceId, String sourceDeviceName, String extensionId, String inputText) throws Exception {
+        public static String runExtensionOnDesktop(String baseUrl, String token, String sourceDeviceId, String sourceDeviceName, String extensionId, String inputText) throws Exception {
             JSONObject payload = new JSONObject()
                 .put("sourceDeviceId", sourceDeviceId)
                 .put("targetPlatform", "desktop")
@@ -2589,7 +2592,7 @@ public class MainActivity extends Activity {
             return postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "执行扩展").optString("messageId", "unknown");
         }
 
-        static JSONObject fetchMessageDetail(String baseUrl, String token, String messageId) throws Exception {
+        public static JSONObject fetchMessageDetail(String baseUrl, String token, String messageId) throws Exception {
             return getJson(baseUrl, "/v1/me/mobile/messages/" + encodePath(messageId), token, "获取消息详情");
         }
 
@@ -2802,4 +2805,31 @@ public class MainActivity extends Activity {
             return builder.toString();
         }
     }
+
+        private void updateAllAppWidgets() {
+            try {
+                android.content.Context context = getApplicationContext();
+                android.appwidget.AppWidgetManager appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context);
+
+                int[] extWidgetIds = appWidgetManager.getAppWidgetIds(
+                        new android.content.ComponentName(context, cc.luoluoluo.yanzi.mobile.widget.ExtensionsWidgetProvider.class));
+                if (extWidgetIds.length > 0) {
+                    android.content.Intent updateExtIntent = new android.content.Intent(context, cc.luoluoluo.yanzi.mobile.widget.ExtensionsWidgetProvider.class);
+                    updateExtIntent.setAction(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE);
+                    updateExtIntent.putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, extWidgetIds);
+                    context.sendBroadcast(updateExtIntent);
+                }
+
+                int[] yanmWidgetIds = appWidgetManager.getAppWidgetIds(
+                        new android.content.ComponentName(context, cc.luoluoluo.yanzi.mobile.widget.YanmWidgetProvider.class));
+                if (yanmWidgetIds.length > 0) {
+                    appWidgetManager.notifyAppWidgetViewDataChanged(yanmWidgetIds, R.id.widget_yanm_list);
+                    
+                    android.content.Intent updateYanmIntent = new android.content.Intent(context, cc.luoluoluo.yanzi.mobile.widget.YanmWidgetProvider.class);
+                    updateYanmIntent.setAction(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE);
+                    updateYanmIntent.putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_IDS, yanmWidgetIds);
+                    context.sendBroadcast(updateYanmIntent);
+                }
+            } catch (Exception ignored) {}
+        }
 }
