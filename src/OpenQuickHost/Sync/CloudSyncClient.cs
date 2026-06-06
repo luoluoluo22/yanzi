@@ -215,6 +215,7 @@ public sealed class CloudSyncClient
                 version = command.DeclaredVersion,
                 category = command.Category,
                 description = command.Subtitle,
+                accentHex = command.AccentBrush?.ToString(),
                 keywords = command.Keywords,
                 icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride,
                 queryPrefixes = command.QueryPrefixes,

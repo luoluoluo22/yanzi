@@ -1279,6 +1279,30 @@ public partial class MainWindow
             ReloadLocalExtensionsFromWebDav();
         }
 
+        if (_cloudSyncClient != null && _cloudSyncClient.HasCredential)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var commands = LocalExtensionCatalog.LoadCommands();
+                    foreach (var cmd in commands)
+                    {
+                        if (cmd.Source == CommandSource.LocalExtension && !IsInternalCommand(cmd))
+                        {
+                            await _cloudSyncClient.UpsertExtensionAsync(cmd);
+                            await _cloudSyncClient.UpsertUserExtensionAsync(cmd);
+                        }
+                    }
+                    HostAssets.AppendLog("Auto synchronized local extensions metadata to cloud db successfully.");
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Failed to auto register local extensions to cloud db: {ex.Message}");
+                }
+            });
+        }
+
         if (!result.ConfigPulled)
         {
             return;
