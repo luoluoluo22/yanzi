@@ -96,6 +96,7 @@ public partial class MainWindow
             SyncStatus = $"已登录 {me?.Username ?? _cloudSyncClient.CurrentUserLabel}";
             ResetSilentCloudReconnect();
             StartMobileMessageBridge("cloud-refresh");
+            SyncLocalExtensionsToCloud();
             LastRunMessage = pulledConfig || pulledQuickPanelConfig
                 ? "已同步账号状态，并更新了云端配置。"
                 : "已同步账号状态。";
@@ -1279,29 +1280,7 @@ public partial class MainWindow
             ReloadLocalExtensionsFromWebDav();
         }
 
-        if (_cloudSyncClient != null && _cloudSyncClient.HasCredential)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var commands = LocalExtensionCatalog.LoadCommands();
-                    foreach (var cmd in commands)
-                    {
-                        if (cmd.Source == CommandSource.LocalExtension && !IsInternalCommand(cmd))
-                        {
-                            await _cloudSyncClient.UpsertExtensionAsync(cmd);
-                            await _cloudSyncClient.UpsertUserExtensionAsync(cmd);
-                        }
-                    }
-                    HostAssets.AppendLog("Auto synchronized local extensions metadata to cloud db successfully.");
-                }
-                catch (Exception ex)
-                {
-                    HostAssets.AppendLog($"Failed to auto register local extensions to cloud db: {ex.Message}");
-                }
-            });
-        }
+        SyncLocalExtensionsToCloud();
 
         if (!result.ConfigPulled)
         {
@@ -1313,6 +1292,47 @@ public partial class MainWindow
         NotifySettingsWindowAiConfigChanged();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
         ApplyFilter(SearchBox.Text);
+    }
+
+    public void SyncLocalExtensionsToCloud()
+    {
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var commands = LocalExtensionCatalog.LoadCommands();
+                int successCount = 0;
+                foreach (var cmd in commands)
+                {
+                    if (cmd.Source == CommandSource.LocalExtension && !IsInternalCommand(cmd))
+                    {
+                        string? publishedIcon = null;
+                        try
+                        {
+                            publishedIcon = await _cloudSyncClient.PublishIconAsync(cmd, cmd.DeclaredVersion);
+                        }
+                        catch (Exception iconEx)
+                        {
+                            HostAssets.AppendLog($"Failed to publish icon for {cmd.ExtensionId}: {iconEx.Message}");
+                        }
+
+                        await _cloudSyncClient.UpsertExtensionAsync(cmd, publishedIcon);
+                        await _cloudSyncClient.UpsertUserExtensionAsync(cmd);
+                        successCount++;
+                    }
+                }
+                HostAssets.AppendLog($"Auto synchronized {successCount} local extensions metadata to cloud db successfully.");
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to auto register local extensions to cloud db: {ex.Message}");
+            }
+        });
     }
 
     private async Task<bool> PullWebDavConfigFromCloudAsync()

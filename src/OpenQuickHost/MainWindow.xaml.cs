@@ -87,6 +87,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private DateTimeOffset _lastFileSearchManualInitPromptAt = DateTimeOffset.MinValue;
     private bool _backgroundWebDavSyncRunning;
     private bool _backgroundWebDavSyncRequested;
+    private bool _isReplacingLocalExtensions;
     private string? _pendingBackgroundWebDavSyncReason;
     private bool _cloudReconnectInProgress;
     private bool _mobileMessagePollRunning;

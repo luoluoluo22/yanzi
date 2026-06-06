@@ -38,6 +38,11 @@ public partial class MainWindow
         _localExtensionIndex[command.ExtensionId] = command;
         ApplyNewExtensionState(command);
         RefreshExtensionHotkeys();
+
+        if (!_isReplacingLocalExtensions)
+        {
+            SyncLocalExtensionsToCloud();
+        }
     }
 
     private void RemoveLocalExtensionCommand(string extensionId)
@@ -48,6 +53,8 @@ public partial class MainWindow
         _localExtensionIndex.Remove(extensionId);
         RemoveExtensionUiTracking(extensionId);
         RefreshExtensionHotkeys();
+
+        SyncLocalExtensionsToCloud();
     }
 
     public CommandItem PersistJsonExtensionFromDialog(string json, bool isEditMode)
@@ -2010,11 +2017,19 @@ public partial class MainWindow
 
     private void ReplaceLocalExtensions(IReadOnlyList<CommandItem> commands, string? statusText)
     {
-        _allCommands.RemoveAll(x => x.Source == CommandSource.LocalExtension);
-        _localExtensionIndex.Clear();
-        foreach (var command in commands.OrderBy(GetLocalExtensionDisplayOrder).ThenBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
+        _isReplacingLocalExtensions = true;
+        try
         {
-            UpsertLocalExtensionCommand(command);
+            _allCommands.RemoveAll(x => x.Source == CommandSource.LocalExtension);
+            _localExtensionIndex.Clear();
+            foreach (var command in commands.OrderBy(GetLocalExtensionDisplayOrder).ThenBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
+            {
+                UpsertLocalExtensionCommand(command);
+            }
+        }
+        finally
+        {
+            _isReplacingLocalExtensions = false;
         }
 
         StartMouseGestureService();
@@ -2023,6 +2038,7 @@ public partial class MainWindow
         {
             SyncStatus = statusText;
         }
+        SyncLocalExtensionsToCloud();
     }
 
     public IReadOnlyList<CommandItem> GetQuickPanelRecommendedCommands(ForegroundAppContext? context, IEnumerable<string> excludeExtensionIds, int maxCount = 8)
