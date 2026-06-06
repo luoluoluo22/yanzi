@@ -154,7 +154,7 @@ public final class YanmWidgetProvider extends AppWidgetProvider {
                         Intent clickIntent = new Intent(context, MainActivity.class);
                         clickIntent.setAction("cc.luoluoluo.yanzi.mobile.yanm");
                         clickIntent.putExtra("target_component_id", componentId);
-                        clickIntent.setData(Uri.parse("yanzi://yanm_component/" + componentId));
+
                         // 使用唯一的 requestCode (100 + i)
                         PendingIntent runPI = PendingIntent.getActivity(
                                 context, 100 + i, clickIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

@@ -123,9 +123,7 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
                         runIntent.setAction(ACTION_RUN_EXT);
                         runIntent.putExtra("ext_id", ext.id);
                         runIntent.putExtra("ext_name", ext.name);
-                        // 加上唯一的 Data URI 保证 filterEquals() 能够准确区分不同扩展的 Intent，避免 Extra 被系统覆盖合并
-                        runIntent.setData(android.net.Uri.parse("yanzi://run_ext/" + ext.id));
-                        
+
                         // 对每一个 item 赋予唯一的 requestCode 防止 Intent Extra 被覆写
                         PendingIntent runPI = PendingIntent.getBroadcast(
                                 context, i + 1, runIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

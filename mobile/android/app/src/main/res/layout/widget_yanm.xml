@@ -29,7 +29,7 @@
             android:layout_height="16dp"
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:background="#00000000"
             android:src="@android:drawable/ic_menu_rotate"
             android:contentDescription="刷新" />
     </RelativeLayout>
@@ -68,15 +68,16 @@
                 android:padding="6dp"
                 android:clickable="true"
                 android:focusable="true"
-                android:background="?android:attr/selectableItemBackground"
+                android:background="#00000000"
                 android:layout_marginBottom="4dp">
 
-                <View
+                <ImageView
                     android:id="@+id/widget_item_accent_line_1"
                     android:layout_width="3dp"
                     android:layout_height="match_parent"
                     android:layout_marginEnd="6dp"
-                    android:background="#22D3EE" />
+                    android:background="#22D3EE"
+                    android:contentDescription="装饰条" />
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -117,12 +118,13 @@
             </LinearLayout>
 
             <!-- Divider 1 -->
-            <View
+            <ImageView
                 android:id="@+id/widget_yanm_divider_1"
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:background="#2D2D2D"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="4dp"
+                android:contentDescription="分割线" />
 
             <!-- Item 2 -->
             <LinearLayout
@@ -133,15 +135,16 @@
                 android:padding="6dp"
                 android:clickable="true"
                 android:focusable="true"
-                android:background="?android:attr/selectableItemBackground"
+                android:background="#00000000"
                 android:layout_marginBottom="4dp">
 
-                <View
+                <ImageView
                     android:id="@+id/widget_item_accent_line_2"
                     android:layout_width="3dp"
                     android:layout_height="match_parent"
                     android:layout_marginEnd="6dp"
-                    android:background="#22D3EE" />
+                    android:background="#22D3EE"
+                    android:contentDescription="装饰条" />
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -182,12 +185,13 @@
             </LinearLayout>
 
             <!-- Divider 2 -->
-            <View
+            <ImageView
                 android:id="@+id/widget_yanm_divider_2"
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:background="#2D2D2D"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="4dp"
+                android:contentDescription="分割线" />
 
             <!-- Item 3 -->
             <LinearLayout
@@ -198,14 +202,15 @@
                 android:padding="6dp"
                 android:clickable="true"
                 android:focusable="true"
-                android:background="?android:attr/selectableItemBackground">
+                android:background="#00000000">
 
-                <View
+                <ImageView
                     android:id="@+id/widget_item_accent_line_3"
                     android:layout_width="3dp"
                     android:layout_height="match_parent"
                     android:layout_marginEnd="6dp"
-                    android:background="#22D3EE" />
+                    android:background="#22D3EE"
+                    android:contentDescription="装饰条" />
 
                 <LinearLayout
                     android:layout_width="0dp"
