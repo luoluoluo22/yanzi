@@ -1454,16 +1454,60 @@ async function handleRequest(request, env) {
     await ensureOwnedDevice(env, auth.userId, deviceId);
     await touchDevice(env, auth.userId, deviceId);
 
-    const result = await env.DB.prepare(
-      `update device_messages
-       set status = 'acked',
-           acked_at = ?
-       where user_id = ?
-         and message_id = ?
-         and status = 'pending'`
-    )
-      .bind(isoNow(), auth.userId, messageId)
-      .run();
+    const success = payload.success;
+    const resultText = payload.result || "";
+
+    let newStatus = "acked";
+    let updatedPayloadJson = null;
+
+    if (success !== undefined) {
+      newStatus = success ? "completed" : "failed";
+      const msgRow = await env.DB.prepare(
+        "select payload_json from device_messages where user_id = ? and message_id = ?"
+      )
+        .bind(auth.userId, messageId)
+        .first();
+
+      let originPayload = {};
+      try {
+        if (msgRow && msgRow.payload_json) {
+          originPayload = JSON.parse(msgRow.payload_json);
+        }
+      } catch (e) {}
+
+      originPayload.executionResult = {
+        success: !!success,
+        output: resultText,
+        time: isoNow()
+      };
+      updatedPayloadJson = JSON.stringify(originPayload);
+    }
+
+    let result;
+    if (updatedPayloadJson) {
+      result = await env.DB.prepare(
+        `update device_messages
+         set status = ?,
+             acked_at = ?,
+             payload_json = ?
+         where user_id = ?
+           and message_id = ?
+           and status = 'pending'`
+      )
+        .bind(newStatus, isoNow(), updatedPayloadJson, auth.userId, messageId)
+        .run();
+    } else {
+      result = await env.DB.prepare(
+        `update device_messages
+         set status = 'acked',
+             acked_at = ?
+         where user_id = ?
+           and message_id = ?
+           and status = 'pending'`
+      )
+        .bind(isoNow(), auth.userId, messageId)
+        .run();
+    }
 
     return json({
       ok: true,
@@ -1471,6 +1515,41 @@ async function handleRequest(request, env) {
       messageId,
       acked: Number(result.meta?.changes ?? 0) > 0
     });
+  }
+
+  const singleMessageMatch = url.pathname.match(/^\/v1\/me\/mobile\/messages\/([^/]+)$/);
+  if (singleMessageMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const messageId = normalizeMessageId(decodeURIComponent(singleMessageMatch[1]));
+    await ensureUser(env, auth.userId);
+
+    const row = await env.DB.prepare(
+      `select
+        message_id,
+        source_device_id,
+        target_device_id,
+        target_platform,
+        kind,
+        title,
+        body_text,
+        payload_json,
+        status,
+        created_at,
+        delivered_at,
+        acked_at,
+        expires_at
+      from device_messages
+      where user_id = ?
+        and message_id = ?`
+    )
+      .bind(auth.userId, messageId)
+      .first();
+
+    if (!row) {
+      throw new HttpError(404, "message_not_found", "Message not found");
+    }
+
+    return json(serializeDeviceMessageRecord(row));
   }
 
   const myExtensionMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)$/);

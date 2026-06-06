@@ -482,10 +482,31 @@ public sealed class CloudSyncClient
         throw new InvalidOperationException("Failed to establish SSE connection.", lastError);
     }
 
-    public async Task AckDeviceMessageAsync(string messageId, string deviceId, CancellationToken cancellationToken = default)
+    public async Task AckDeviceMessageAsync(
+        string messageId,
+        string deviceId,
+        bool? success = null,
+        string? result = null,
+        CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
-        var body = JsonSerializer.Serialize(new { deviceId });
+        
+        object bodyObj;
+        if (success.HasValue)
+        {
+            bodyObj = new
+            {
+                deviceId,
+                success = success.Value,
+                result = result ?? string.Empty
+            };
+        }
+        else
+        {
+            bodyObj = new { deviceId };
+        }
+
+        var body = JsonSerializer.Serialize(bodyObj);
         using var request = CreateJsonRequest(
             HttpMethod.Post,
             $"/v1/me/mobile/messages/{Uri.EscapeDataString(messageId)}/ack",
