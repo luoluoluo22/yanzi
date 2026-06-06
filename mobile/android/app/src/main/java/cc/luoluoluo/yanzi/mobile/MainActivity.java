@@ -1405,7 +1405,6 @@ public class MainActivity extends Activity {
                 String execOutput = "";
 
                 while (System.currentTimeMillis() - startTime < timeout) {
-                    Thread.sleep(1000);
                     try {
                         JSONObject msgDetail = YanziApiClient.fetchMessageDetail(baseUrl, token, sentMessageId);
                         String status = msgDetail.optString("status", "pending");
@@ -1437,6 +1436,11 @@ public class MainActivity extends Activity {
                             break;
                         }
                     } catch (Exception pollEx) {
+                    }
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        break;
                     }
                 }
 
