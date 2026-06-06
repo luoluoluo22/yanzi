@@ -948,7 +948,10 @@ public static class ScriptExtensionRunner
 
             Directory.SetCurrentDirectory(originalDirectory);
             RestoreRuntimeEnvironmentSnapshot(environmentSnapshot);
-            loadContext.Unload();
+            if (loadContext.IsCollectible)
+            {
+                loadContext.Unload();
+            }
         }
     }
 

@@ -1,7 +1,12 @@
 package cc.luoluoluo.yanzi.mobile;
 
+import android.content.Context;
 import android.graphics.Path;
+import android.util.JsonReader;
 import androidx.core.graphics.PathParser;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -10,6 +15,16 @@ public final class MobileIconLibrary {
     private static final Map<String, String> ICONS = new HashMap<>();
     private static final Map<String, String> ALIASES = new HashMap<>();
     private static final Map<String, Path> CACHE = new HashMap<>();
+    
+    private static Context appContext = null;
+    private static final Map<String, String> LARGE_ICONS = new HashMap<>();
+    private static boolean largeLibraryLoaded = false;
+
+    public static void init(Context context) {
+        if (context != null) {
+            appContext = context.getApplicationContext();
+        }
+    }
 
     static {
         ICONS.put("chat", "M4,4H20A2,2 0,0 1,22 6V15A2,2 0,0 1,20 17H7L3,21V6A2,2 0,0 1,4 4Z");
@@ -31,6 +46,9 @@ public final class MobileIconLibrary {
         ICONS.put("shortcut", "M19,13V19H5V5H11V3H5C3.89,3 3,3.9 3,5V19C3,20.1 3.89,21 5,21H19C20.1,21 21,20.1 21,19V13H19M21,3H13L16.29,6.29L11.3,11.29L12.71,12.71L17.71,7.71L21,11V3Z");
         ICONS.put("counter", "M12,2A10,10 0,0,0,2,12A10,10 0,0,0,12,22A10,10 0,0,0,22,12A10,10 0,0,0,12,2M12,4A8,8 0,0,1,20,12A8,8 0,0,1,12,20A8,8 0,0,1,4,12A8,8 0,0,1,12,4M12,6A6,6 0,0,0,6,12A6,6 0,0,0,12,18A6,6 0,0,0,18,12A6,6 0,0,0,12,6M12,8A4,4 0,0,1,16,12A4,4 0,0,1,12,16A4,4 0,0,1,8,12A4,4 0,0,1,12,8Z");
         ICONS.put("terminal", "M20,4H4A2,2 0,0,0,2,6V18A2,2 0,0,0,4,20H20A2,2 0,0,0,22,18V6A2,2 0,0,0,20,4M20,18H4V6H20V18M18,16H12V14H18V16M8.5,13L6,10.5L8.5,8L9.9,9.4L8.8,10.5L9.9,11.6L8.5,13Z");
+        ICONS.put("search", "M9.5,3A6.5,6.5 0,0,1,16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0,0,1,3,9.5A6.5,6.5 0,0,1,9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z");
+        ICONS.put("recycle", "M12,2A10,10 0,0,0,2,12A10,10 0,0,0,12,22A10,10 0,0,0,22,12A10,10 0,0,0,12,2M12,4A8,8 0,0,1,20,12A8,8 0,0,1,12,20A8,8 0,0,1,4,12A8,8 0,0,1,12,4M15,14V17H11V14H8L12,10L16,14H15M16,8H8V10H16V8Z");
+        ICONS.put("compass", "M12,2A10,10 0,0,0,2,12A10,10 0,0,0,12,22A10,10 0,0,0,22,12A10,10 0,0,0,12,2M12,4A8,8 0,0,1,20,12A8,8 0,0,1,12,20A8,8 0,0,1,4,12A8,8 0,0,1,12,4M12,6L14,10L18,12L14,14L12,18L10,14L6,12L10,10L12,6Z");
 
         ALIASES.put("web", "globe");
         ALIASES.put("content-copy", "clipboard");
@@ -45,6 +63,12 @@ public final class MobileIconLibrary {
         ALIASES.put("code-json", "code");
         ALIASES.put("cog-outline", "settings");
         ALIASES.put("puzzle-outline", "puzzle");
+        ALIASES.put("folder-search", "folder");
+        ALIASES.put("note-text", "file");
+        ALIASES.put("folder-cog", "folder");
+        ALIASES.put("text-box-edit", "file");
+        ALIASES.put("text-box-search", "file");
+        ALIASES.put("compass-outline", "compass");
     }
 
     public static Path resolve(String reference) {
@@ -58,6 +82,9 @@ public final class MobileIconLibrary {
             }
             String pathData = ICONS.get(key);
             if (pathData == null) {
+                pathData = getFromLargeLibrary(key);
+            }
+            if (pathData == null) {
                 return null;
             }
             try {
@@ -67,6 +94,32 @@ public final class MobileIconLibrary {
             } catch (Exception ignored) {
                 return null;
             }
+        }
+    }
+
+    private static synchronized String getFromLargeLibrary(String key) {
+        if (!largeLibraryLoaded) {
+            loadLargeLibrary();
+        }
+        return LARGE_ICONS.get(key);
+    }
+
+    private static void loadLargeLibrary() {
+        largeLibraryLoaded = true;
+        if (appContext == null) {
+            return;
+        }
+        try (InputStream is = appContext.getAssets().open("mdi-icons.json");
+             JsonReader reader = new JsonReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+            reader.beginObject();
+            while (reader.hasNext()) {
+                String name = reader.nextName().toLowerCase(Locale.ROOT);
+                String path = reader.nextString();
+                LARGE_ICONS.put(name, path);
+            }
+            reader.endObject();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -87,6 +140,10 @@ public final class MobileIconLibrary {
             value = value.substring(4);
         }
         value = value.toLowerCase(Locale.ROOT);
+        // 去除 MDI 中空心图标常用的后缀 -outline 以最大化复用已有图标路径
+        if (value.endsWith("-outline")) {
+            value = value.substring(0, value.length() - 8);
+        }
         return ALIASES.containsKey(value) ? ALIASES.get(value) : value;
     }
 }

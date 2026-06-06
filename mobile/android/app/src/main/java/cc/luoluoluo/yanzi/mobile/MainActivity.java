@@ -115,6 +115,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
+        MobileIconLibrary.init(this);
         deviceId = getOrCreateDeviceId();
 
         // 还原组件展开状态
@@ -1259,15 +1260,19 @@ public class MainActivity extends Activity {
                 if (item == null) {
                     continue;
                 }
-                String extensionId = firstNonEmpty(item.optString("extensionId"), item.optString("extension_id"));
+                String extensionId = firstNonEmpty(
+                    item.optString("extensionId"),
+                    item.optString("extension_id"),
+                    item.optString("ExtensionId"),
+                    item.optString("Extension_id"));
                 if (extensionId.isEmpty()) {
                     continue;
                 }
                 items.add(new RemoteExtension(
                     extensionId,
-                    firstNonEmpty(item.optString("name"), extensionId),
-                    item.optString("description"),
-                    item.optString("icon")));
+                    firstNonEmpty(item.optString("name"), item.optString("Name"), extensionId),
+                    firstNonEmpty(item.optString("description"), item.optString("Description")),
+                    firstNonEmpty(item.optString("icon"), item.optString("Icon"))));
             }
         } catch (Exception ignored) {
         }
