@@ -218,7 +218,7 @@ public class MainActivity extends Activity {
     private void buildUi(String sharedText) {
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
-        shell.setBackgroundColor(Color.rgb(6, 17, 31));
+        shell.setBackgroundColor(Color.rgb(22, 22, 22));
 
         ScrollView scrollView = new ScrollView(this);
         mainScrollView = scrollView;
@@ -229,8 +229,8 @@ public class MainActivity extends Activity {
 
         swipeRefresh = new SwipeRefreshLayout(this);
         swipeRefresh.addView(scrollView);
-        swipeRefresh.setColorSchemeColors(Color.rgb(34, 211, 238));
-        swipeRefresh.setProgressBackgroundColorSchemeColor(Color.rgb(13, 31, 49));
+        swipeRefresh.setColorSchemeColors(Color.rgb(59, 130, 246));
+        swipeRefresh.setProgressBackgroundColorSchemeColor(Color.rgb(30, 30, 30));
         swipeRefresh.setOnRefreshListener(() -> {
             if (yanmTabPage != null && yanmTabPage.getVisibility() == View.VISIBLE) {
                 refreshYanm();
@@ -374,7 +374,7 @@ public class MainActivity extends Activity {
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         tabs.setGravity(Gravity.CENTER_VERTICAL);
         tabs.setPadding(dp(4), dp(2), dp(4), dp(2));
-        tabs.setBackgroundColor(Color.rgb(5, 12, 23));
+        tabs.setBackgroundColor(Color.rgb(17, 17, 17));
 
         yanmTabButton = tabButton("燕幕", android.R.drawable.ic_menu_view, "yanm");
         mobileExtensionTabButton = tabButton("手机扩展", android.R.drawable.ic_menu_edit, "mobile");
@@ -542,7 +542,7 @@ public class MainActivity extends Activity {
         mobileExtensionTestResult = textView("测试结果会显示在这里。", 12, Color.rgb(148, 163, 184), false);
         mobileExtensionTestResult.setTextIsSelectable(true);
         mobileExtensionTestResult.setPadding(dp(10), dp(10), dp(10), dp(10));
-        mobileExtensionTestResult.setBackgroundColor(Color.rgb(9, 18, 32));
+        mobileExtensionTestResult.setBackgroundColor(Color.rgb(22, 22, 22));
         codePanel.addView(mobileExtensionTestResult);
 
         editorRow.addView(helperPanel);
@@ -1298,19 +1298,12 @@ public class MainActivity extends Activity {
             card.setLayoutParams(cardParams);
 
             View iconView;
-            android.graphics.Path path = MobileIconLibrary.resolve(extension.icon);
-            if (path != null) {
-                ImageView img = new ImageView(this);
-                img.setBackgroundColor(Color.rgb(21, 94, 117));
-                img.setImageDrawable(new PathDrawable(path, Color.WHITE));
-                img.setPadding(dp(8), dp(8), dp(8), dp(8));
-                iconView = img;
-            } else {
-                TextView textIcon = textView(extension.iconText(), 20, Color.WHITE, true);
-                textIcon.setGravity(Gravity.CENTER);
-                textIcon.setBackgroundColor(Color.rgb(21, 94, 117));
-                iconView = textIcon;
-            }
+            android.graphics.Path path = MobileIconLibrary.resolveOrDefault(extension.icon);
+            ImageView img = new ImageView(this);
+            img.setBackgroundColor(Color.rgb(59, 130, 246));
+            img.setImageDrawable(new PathDrawable(path, Color.WHITE));
+            img.setPadding(dp(8), dp(8), dp(8), dp(8));
+            iconView = img;
             LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(54), dp(54));
             iconParams.setMargins(0, 0, 0, dp(6));
             card.addView(iconView, iconParams);
@@ -1873,7 +1866,7 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackgroundColor(Color.rgb(13, 31, 49));
+        card.setBackgroundColor(Color.rgb(30, 30, 30));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -1887,7 +1880,7 @@ public class MainActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
         card.setPadding(dp(6), dp(8), dp(6), dp(8));
-        card.setBackgroundColor(Color.rgb(13, 31, 49));
+        card.setBackgroundColor(Color.rgb(30, 30, 30));
         return card;
     }
 
