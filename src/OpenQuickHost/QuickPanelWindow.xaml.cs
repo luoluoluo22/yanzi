@@ -104,6 +104,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         };
 
         InputHookService.OnGlobalMouseDown += InputHookService_OnGlobalMouseDown;
+
+        RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
+        Closed += (s, e) =>
+        {
+            RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
+        };
     }
 
     public ObservableCollection<SlotViewModel> GlobalSlots { get; } = new();
@@ -1464,6 +1470,66 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             }
         }
         return count;
+    }
+
+    private void RunningExtensionRegistry_Changed(object? sender, System.EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new System.Action(() =>
+        {
+            foreach (var slot in _allGlobalSlots)
+            {
+                slot.RefreshRunningState();
+            }
+            foreach (var slot in _allContextSlots)
+            {
+                slot.RefreshRunningState();
+            }
+            if (ActiveFolderSlots != null)
+            {
+                foreach (var slot in ActiveFolderSlots)
+                {
+                    slot.RefreshRunningState();
+                }
+            }
+        }));
+    }
+
+    private void TerminateExtension_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (sender is MenuItem mi && mi.CommandParameter is SlotViewModel vm)
+        {
+            if (vm.IsFolder || vm.Command == null || string.IsNullOrEmpty(vm.Command.ExtensionId))
+            {
+                return;
+            }
+
+            var extensionId = vm.Command.ExtensionId;
+            var runningInstances = RunningExtensionRegistry.GetSnapshot()
+                .Where(x => string.Equals(x.ExtensionId, extensionId, System.StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (runningInstances.Count == 0)
+            {
+                System.Windows.MessageBox.Show(this, "该扩展当前没有在运行。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var failedMessages = new System.Collections.Generic.List<string>();
+
+            foreach (var instance in runningInstances)
+            {
+                if (!RunningExtensionRegistry.TryTerminate(instance.InstanceId, out var msg))
+                {
+                    failedMessages.Add(msg);
+                }
+            }
+
+            if (failedMessages.Count > 0)
+            {
+                var errorMsg = string.Join("\n", failedMessages);
+                System.Windows.MessageBox.Show(this, $"结束部分实例失败：\n{errorMsg}", "停止运行失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            }
+        }
     }
 
     private async void RemoveExtension_Click(object sender, RoutedEventArgs e)
@@ -3338,6 +3404,23 @@ public class SlotViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool IsRunning
+    {
+        get
+        {
+            if (IsFolder || IsEmpty || _command == null || string.IsNullOrEmpty(_command.ExtensionId))
+            {
+                return false;
+            }
+            return RunningExtensionRegistry.GetSnapshot().Any(x => string.Equals(x.ExtensionId, _command.ExtensionId, System.StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public void RefreshRunningState()
+    {
+        OnPropertyChanged(nameof(IsRunning));
+    }
+
     public QuickPanelSlotItem? CloneSlotItem()
     {
         return CloneSlotItem(_item);
@@ -3394,6 +3477,7 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsShortcut));
         OnPropertyChanged(nameof(SourceFolderIndex));
         OnPropertyChanged(nameof(SourceFolderItemIndex));
+        OnPropertyChanged(nameof(IsRunning));
     }
 
     private void AttachCommandEvents()
