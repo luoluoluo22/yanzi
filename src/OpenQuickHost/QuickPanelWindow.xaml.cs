@@ -60,6 +60,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private bool _isShowingGlobalFavorites;
     private bool _isShowingContextFavorites;
     private DateTime _suppressAutoHideUntilUtc = DateTime.MinValue;
+    private DateTime _lastContextMenuClosedAt = DateTime.MinValue;
     private bool _isEditMode;
     private System.Windows.Point? _dragStartPoint;
     private SlotViewModel? _dragSourceSlot;
@@ -986,6 +987,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             _currentContextMenu = menu;
             HostAssets.AppendLog("QuickPanel: ContextMenu opened.");
+            try
+            {
+                Activate();
+                Focus();
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"QuickPanel ContextMenu_Opened Activate error: {ex.Message}");
+            }
         }
     }
 
@@ -994,6 +1004,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (sender is ContextMenu menu && _currentContextMenu == menu)
         {
             _currentContextMenu = null;
+            _lastContextMenuClosedAt = DateTime.UtcNow;
             HostAssets.AppendLog("QuickPanel: ContextMenu closed.");
         }
     }
