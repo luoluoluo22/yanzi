@@ -105,6 +105,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         };
 
         InputHookService.OnGlobalMouseDown += InputHookService_OnGlobalMouseDown;
+        AddHandler(ContextMenuService.ContextMenuOpeningEvent, new ContextMenuEventHandler(QuickPanelWindow_ContextMenuOpening));
 
         RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
         Closed += (s, e) =>
@@ -987,15 +988,20 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             _currentContextMenu = menu;
             HostAssets.AppendLog("QuickPanel: ContextMenu opened.");
-            try
-            {
-                Activate();
-                Focus();
-            }
-            catch (Exception ex)
-            {
-                HostAssets.AppendLog($"QuickPanel ContextMenu_Opened Activate error: {ex.Message}");
-            }
+        }
+    }
+
+    private void QuickPanelWindow_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        HostAssets.AppendLog("QuickPanel: ContextMenu opening.");
+        try
+        {
+            Activate();
+            Focus();
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"QuickPanel ContextMenuOpening Activate error: {ex.Message}");
         }
     }
 
