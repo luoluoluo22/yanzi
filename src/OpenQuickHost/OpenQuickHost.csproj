@@ -100,4 +100,8 @@
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\copy-native-window-refs.ps1&quot; -OutputDir &quot;$(PublishDir)NativeWindowRefs&quot;" />
   </Target>
 
+  <Target Name="KillProcessBeforeBuild" BeforeTargets="BeforeBuild;Clean">
+    <Exec Command="taskkill /f /im Yanzi.exe /t 2&gt;nul" IgnoreExitCode="true" />
+  </Target>
+
 </Project>
