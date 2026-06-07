@@ -583,6 +583,20 @@
                                     <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem x:Name="TerminateExtensionMenuItem"
+                                      Header="停止运行"
+                                      Click="TerminateExtensionMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry stop}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem x:Name="OpenExtensionDirectoryMenuItem"
+                                      Header="打开扩展目录"
+                                      Click="OpenExtensionDirectoryMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
                             <MenuItem x:Name="ToggleYanyuEnabledMenuItem"
                                       Header="启用燕语"
                                       Click="ToggleYanyuEnabledMenuItem_Click">
@@ -680,83 +694,95 @@
                                 </Grid.ColumnDefinitions>
 
                                 <!-- Icon Area -->
-                                <Border Width="32"
-                                        Height="32"
-                                        CornerRadius="8"
-                                        ClipToBounds="True"
-                                        VerticalAlignment="Center"
-                                        Margin="0,0,12,0">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="Background" Value="{Binding AccentBrush}" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
-                                                    <Setter Property="Background" Value="Transparent" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <Grid>
-                                        <Image Source="{Binding IconSource}"
-                                               Stretch="UniformToFill"
-                                               RenderOptions.BitmapScalingMode="HighQuality"
-                                               SnapsToDevicePixels="True"
-                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <Viewbox Margin="6"
-                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Width="24"
-                                                  Height="24"
-                                                  Data="{Binding VectorIcon}"
-                                                  Fill="White"
-                                                  Stretch="Uniform" />
-                                        </Viewbox>
-                                        <TextBlock Text="{Binding DisplayGlyph}"
-                                               FontSize="{DynamicResource FontSizeNormalPlus}"
-                                               Foreground="{DynamicResource BrushTextMain}"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Center"
-                                               FontWeight="Bold"
-                                               Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <Border Width="9"
-                                                Height="9"
-                                                CornerRadius="4.5"
-                                                Background="#FFFF5A7A"
-                                                BorderBrush="#CCFFFFFF"
-                                                BorderThickness="1"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Top"
-                                                Margin="0,1,1,0"
-                                                Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <Border Background="{DynamicResource BrushDialogBG}"
-                                                Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <Viewbox Width="18"
-                                                 Height="18"
-                                                 HorizontalAlignment="Center"
-                                                 VerticalAlignment="Center"
-                                                 Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Data="{local:IconGeometry sync}"
-                                                  Fill="{DynamicResource BrushTextMain}"
-                                                  Stretch="Uniform"
-                                                  RenderTransformOrigin="0.5,0.5">
-                                                <Path.RenderTransform>
-                                                    <RotateTransform Angle="0" />
-                                                </Path.RenderTransform>
-                                                <Path.Triggers>
-                                                    <EventTrigger RoutedEvent="Loaded">
-                                                        <BeginStoryboard>
-                                                            <Storyboard RepeatBehavior="Forever">
-                                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                 From="0"
-                                                                                 To="360"
-                                                                                 Duration="0:0:0.9" />
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </EventTrigger>
-                                                </Path.Triggers>
-                                            </Path>
-                                        </Viewbox>
-                                    </Grid>
-                                </Border>
+                                <Grid VerticalAlignment="Center" Margin="0,0,12,0">
+                                    <Border Width="32"
+                                            Height="32"
+                                            CornerRadius="8"
+                                            ClipToBounds="True">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{Binding AccentBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Image Source="{Binding IconSource}"
+                                                   Stretch="UniformToFill"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                   SnapsToDevicePixels="True"
+                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Viewbox Margin="6"
+                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Width="24"
+                                                      Height="24"
+                                                      Data="{Binding VectorIcon}"
+                                                      Fill="White"
+                                                      Stretch="Uniform" />
+                                            </Viewbox>
+                                            <TextBlock Text="{Binding DisplayGlyph}"
+                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontWeight="Bold"
+                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Border Width="9"
+                                                    Height="9"
+                                                    CornerRadius="4.5"
+                                                    Background="#FFFF5A7A"
+                                                    BorderBrush="#CCFFFFFF"
+                                                    BorderThickness="1"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    Margin="0,1,1,0"
+                                                    Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Border Background="{DynamicResource BrushDialogBG}"
+                                                    Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Viewbox Width="18"
+                                                     Height="18"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center"
+                                                     Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Data="{local:IconGeometry sync}"
+                                                      Fill="{DynamicResource BrushTextMain}"
+                                                      Stretch="Uniform"
+                                                      RenderTransformOrigin="0.5,0.5">
+                                                    <Path.RenderTransform>
+                                                        <RotateTransform Angle="0" />
+                                                    </Path.RenderTransform>
+                                                    <Path.Triggers>
+                                                        <EventTrigger RoutedEvent="Loaded">
+                                                            <BeginStoryboard>
+                                                                <Storyboard RepeatBehavior="Forever">
+                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                     From="0"
+                                                                                     To="360"
+                                                                                     Duration="0:0:0.9" />
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </EventTrigger>
+                                                    </Path.Triggers>
+                                                </Path>
+                                            </Viewbox>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Running indicator (Green Dot) -->
+                                    <Border Width="9"
+                                            Height="9"
+                                            CornerRadius="4.5"
+                                            Background="#FF10B981"
+                                            BorderBrush="#CCFFFFFF"
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Bottom"
+                                            Margin="-2,0,0,-2"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                </Grid>
 
                                 <!-- Text Area -->
                                 <Grid Grid.Column="1" VerticalAlignment="Center">

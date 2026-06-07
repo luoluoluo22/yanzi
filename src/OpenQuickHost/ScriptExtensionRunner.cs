@@ -861,7 +861,8 @@ public static class ScriptExtensionRunner
                 {
                     try
                     {
-                        if (HostObjectRegistry.TryGetObject("clipboard-history-window", out var win) && win != null)
+                        string windowKey = $"{command.ExtensionId}-window";
+                        if (HostObjectRegistry.TryGetObject(windowKey, out var win) && win != null)
                         {
                             var quitMethod = win.GetType().GetMethod("Quit", BindingFlags.Public | BindingFlags.Instance);
                             quitMethod?.Invoke(win, null);

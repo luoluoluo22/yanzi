@@ -362,10 +362,31 @@ public sealed class LocalAgentApiServer : IDisposable
             if (request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/stop", StringComparison.Ordinal))
             {
                 var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/stop".Length]);
+                var stoppedAny = false;
+
+                // 1. 尝试停止轻量级后台Task
                 if (_runningTasks.TryGetValue(id, out var cts))
                 {
                     try { cts.Cancel(); } catch { }
                     _runningTasks.TryRemove(id, out _);
+                    stoppedAny = true;
+                }
+
+                // 2. 尝试停止常驻的托管扩展或进程 (来自 RunningExtensionRegistry)
+                var runningInstances = RunningExtensionRegistry.GetSnapshot()
+                    .Where(x => string.Equals(x.ExtensionId, id, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                foreach (var instance in runningInstances)
+                {
+                    if (RunningExtensionRegistry.TryTerminate(instance.InstanceId, out _))
+                    {
+                        stoppedAny = true;
+                    }
+                }
+
+                if (stoppedAny)
+                {
                     await WriteJsonAsync(response, 200, new { ok = true, stopped = true });
                 }
                 else

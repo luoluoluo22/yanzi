@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Media;
+using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
@@ -74,10 +76,12 @@ public partial class RunningExtensionsWindow : Window
     private void RefreshItems()
     {
         var snapshot = RunningExtensionRegistry.GetSnapshot();
+        var commands = LocalExtensionCatalog.LoadCommands();
         _items.Clear();
         foreach (var item in snapshot)
         {
-            _items.Add(new RunningExtensionItemViewModel(item));
+            var matchedCommand = commands.FirstOrDefault(c => string.Equals(c.ExtensionId, item.ExtensionId, StringComparison.OrdinalIgnoreCase));
+            _items.Add(new RunningExtensionItemViewModel(item, matchedCommand));
         }
 
         SummaryTextBlock.Text = $"当前共 {_items.Count} 个正在运行的独立窗口扩展";
@@ -86,7 +90,7 @@ public partial class RunningExtensionsWindow : Window
 
     private sealed class RunningExtensionItemViewModel
     {
-        public RunningExtensionItemViewModel(RunningExtensionInfo info)
+        public RunningExtensionItemViewModel(RunningExtensionInfo info, CommandItem? command)
         {
             InstanceId = info.InstanceId;
             Title = info.Title;
@@ -95,6 +99,7 @@ public partial class RunningExtensionsWindow : Window
             Runtime = info.Runtime;
             LaunchSource = info.LaunchSource;
             StartedAtText = info.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            Command = command;
         }
 
         public Guid InstanceId { get; }
@@ -110,5 +115,21 @@ public partial class RunningExtensionsWindow : Window
         public string LaunchSource { get; }
 
         public string StartedAtText { get; }
+
+        public CommandItem? Command { get; }
+
+        public ImageSource? IconSource => Command?.IconSource;
+
+        public Geometry? VectorIcon => Command?.VectorIcon;
+
+        public string DisplayGlyph => Command?.DisplayGlyph ?? "E";
+
+        public bool HasImageIcon => Command?.HasImageIcon ?? false;
+
+        public bool HasVectorIcon => Command?.HasVectorIcon ?? false;
+
+        public bool UseGlyphIcon => Command == null || Command.UseGlyphIcon;
+
+        public System.Windows.Media.Brush AccentBrush => Command?.AccentBrush ?? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF4B5563")!;
     }
 }

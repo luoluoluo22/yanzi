@@ -978,6 +978,96 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         return point.X >= 0 && point.Y >= 0 && point.X <= ActualWidth && point.Y <= ActualHeight;
     }
 
+    private ContextMenu? _currentContextMenu;
+
+    private void ContextMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContextMenu menu)
+        {
+            _currentContextMenu = menu;
+            HostAssets.AppendLog("QuickPanel: ContextMenu opened.");
+        }
+    }
+
+    private void ContextMenu_Closed(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContextMenu menu && _currentContextMenu == menu)
+        {
+            _currentContextMenu = null;
+            HostAssets.AppendLog("QuickPanel: ContextMenu closed.");
+        }
+    }
+
+    private bool IsCursorInsideContextMenu()
+    {
+        if (_currentContextMenu == null || !_currentContextMenu.IsOpen)
+        {
+            return false;
+        }
+        try
+        {
+            var cursor = System.Windows.Forms.Cursor.Position;
+            var point = new NativeMethods.POINT { X = cursor.X, Y = cursor.Y };
+            var hwndAtCursor = NativeMethods.WindowFromPoint(point);
+            if (hwndAtCursor != IntPtr.Zero)
+            {
+                _ = NativeMethods.GetWindowThreadProcessId(hwndAtCursor, out var processId);
+                var currentPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+                if (processId == currentPid)
+                {
+                    var classBuilder = new StringBuilder(256);
+                    if (NativeMethods.GetClassName(hwndAtCursor, classBuilder, classBuilder.Capacity) > 0)
+                    {
+                        var className = classBuilder.ToString();
+                        if (className.StartsWith("HwndWrapper", StringComparison.OrdinalIgnoreCase))
+                        {
+                            HostAssets.AppendLog($"IsCursorInsideContextMenu: cursor is inside a WPF Popup Window ({className}) of this process.");
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            // Check all WPF PopupRoots
+            foreach (PresentationSource currentSource in PresentationSource.CurrentSources)
+            {
+                if (currentSource is System.Windows.Interop.HwndSource hSource)
+                {
+                    if (hSource.RootVisual != null && hSource.RootVisual.GetType().Name == "PopupRoot")
+                    {
+                        if (NativeMethods.GetWindowRect(hSource.Handle, out var r))
+                        {
+                            if (cursor.X >= r.left && cursor.X <= r.right &&
+                                cursor.Y >= r.top && cursor.Y <= r.bottom)
+                            {
+                                HostAssets.AppendLog($"IsCursorInsideContextMenu: cursor is inside PopupRoot rect=({r.left},{r.top},{r.right},{r.bottom})");
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            var source = PresentationSource.FromVisual(_currentContextMenu);
+            if (source is System.Windows.Interop.HwndSource hwndSource)
+            {
+                var hwnd = hwndSource.Handle;
+                if (NativeMethods.GetWindowRect(hwnd, out var rect))
+                {
+                    bool inside = cursor.X >= rect.left && cursor.X <= rect.right &&
+                                  cursor.Y >= rect.top && cursor.Y <= rect.bottom;
+                    HostAssets.AppendLog($"IsCursorInsideContextMenu: fallback rect=({rect.left},{rect.top},{rect.right},{rect.bottom}), cursor=({cursor.X},{cursor.Y}), inside={inside}");
+                    return inside;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"IsCursorInsideContextMenu error: {ex.Message}");
+        }
+        return false;
+    }
+
     private void InputHookService_OnGlobalMouseDown()
     {
         if (!IsVisible)
@@ -995,7 +1085,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (_isDraggingSlot || IsCursorInsideQuickPanel())
+        if (_isDraggingSlot || IsCursorInsideQuickPanel() || IsCursorInsideContextMenu())
         {
             return;
         }
@@ -1496,39 +1586,60 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void TerminateExtension_Click(object sender, System.Windows.RoutedEventArgs e)
     {
-        if (sender is MenuItem mi && mi.CommandParameter is SlotViewModel vm)
+        HostAssets.AppendLog("QuickPanel TerminateExtension_Click called.");
+        if (sender is MenuItem mi)
         {
-            if (vm.IsFolder || vm.Command == null || string.IsNullOrEmpty(vm.Command.ExtensionId))
+            if (mi.CommandParameter is SlotViewModel vm)
             {
-                return;
-            }
-
-            var extensionId = vm.Command.ExtensionId;
-            var runningInstances = RunningExtensionRegistry.GetSnapshot()
-                .Where(x => string.Equals(x.ExtensionId, extensionId, System.StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            if (runningInstances.Count == 0)
-            {
-                System.Windows.MessageBox.Show(this, "该扩展当前没有在运行。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            var failedMessages = new System.Collections.Generic.List<string>();
-
-            foreach (var instance in runningInstances)
-            {
-                if (!RunningExtensionRegistry.TryTerminate(instance.InstanceId, out var msg))
+                HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: vm={vm.Title}, IsFolder={vm.IsFolder}, CommandNull={vm.Command == null}");
+                if (vm.IsFolder || vm.Command == null || string.IsNullOrEmpty(vm.Command.ExtensionId))
                 {
-                    failedMessages.Add(msg);
+                    HostAssets.AppendLog("QuickPanel TerminateExtension_Click: ignored because folder or command extensionId is empty.");
+                    return;
+                }
+
+                var extensionId = vm.Command.ExtensionId;
+                var runningInstances = RunningExtensionRegistry.GetSnapshot()
+                    .Where(x => string.Equals(x.ExtensionId, extensionId, System.StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: runningInstances count={runningInstances.Count}");
+                if (runningInstances.Count == 0)
+                {
+                    System.Windows.MessageBox.Show(this, "该扩展当前没有在运行。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    return;
+                }
+
+                var failedMessages = new System.Collections.Generic.List<string>();
+
+                foreach (var instance in runningInstances)
+                {
+                    HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: attempting to terminate instance={instance.InstanceId}");
+                    if (!RunningExtensionRegistry.TryTerminate(instance.InstanceId, out var msg))
+                    {
+                        failedMessages.Add(msg);
+                        HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: terminate failed: {msg}");
+                    }
+                    else
+                    {
+                        HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: terminate success: {msg}");
+                    }
+                }
+
+                if (failedMessages.Count > 0)
+                {
+                    var errorMsg = string.Join("\n", failedMessages);
+                    System.Windows.MessageBox.Show(this, $"结束部分实例失败：\n{errorMsg}", "停止运行失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                 }
             }
-
-            if (failedMessages.Count > 0)
+            else
             {
-                var errorMsg = string.Join("\n", failedMessages);
-                System.Windows.MessageBox.Show(this, $"结束部分实例失败：\n{errorMsg}", "停止运行失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: mi.CommandParameter is not SlotViewModel, but {mi.CommandParameter?.GetType().FullName}");
             }
+        }
+        else
+        {
+            HostAssets.AppendLog("QuickPanel TerminateExtension_Click: sender is not MenuItem.");
         }
     }
 
@@ -1633,6 +1744,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private void SlotContextMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not ContextMenu menu) return;
+        _currentContextMenu = menu;
 
         var clipboard = _mainWindow.GetQuickPanelClipboard();
         
@@ -2029,6 +2141,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     {
         if (DateTime.UtcNow <= _suppressAutoHideUntilUtc)
         {
+            return;
+        }
+
+        if (_currentContextMenu != null)
+        {
+            HostAssets.AppendLog("Window_Deactivated: ignored because ContextMenu is open.");
             return;
         }
 
@@ -3574,6 +3692,12 @@ internal static class NativeMethods
     private static extern bool GetCursorPos(out POINT lpPoint);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT point);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
@@ -3611,8 +3735,14 @@ internal static class NativeMethods
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
 
+
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    private struct POINT
+    public struct POINT
     {
         public int X;
         public int Y;
@@ -3633,7 +3763,7 @@ internal static class NativeMethods
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    private struct RECT
+    public struct RECT
     {
         public int left;
         public int top;

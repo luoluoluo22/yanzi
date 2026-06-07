@@ -23,6 +23,10 @@
                             GlassFrameThickness="1" />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
+        <Style TargetType="ContextMenu" BasedOn="{StaticResource {x:Type ContextMenu}}">
+            <EventSetter Event="Opened" Handler="ContextMenu_Opened"/>
+            <EventSetter Event="Closed" Handler="ContextMenu_Closed"/>
+        </Style>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <local:BooleanToColorConverter x:Key="BooleanToColorConverter" />
         <local:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />

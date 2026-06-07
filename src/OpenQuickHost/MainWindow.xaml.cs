@@ -232,6 +232,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
+
+        RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
+        Closed += (s, e) =>
+        {
+            RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
+        };
+    }
+
+    private void RunningExtensionRegistry_Changed(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            foreach (var command in _allCommands)
+            {
+                command.RefreshRunningState();
+            }
+        }));
     }
 
     private void ApplyWindowIcon()
@@ -1199,6 +1216,83 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await DeleteSelectedExtensionAsync();
     }
 
+    private void TerminateExtensionMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        HostAssets.AppendLog("MainWindow TerminateExtensionMenuItem_Click called.");
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null)
+        {
+            HostAssets.AppendLog("MainWindow TerminateExtensionMenuItem_Click: command is null.");
+        }
+        else
+        {
+            HostAssets.AppendLog($"MainWindow TerminateExtensionMenuItem_Click: command Title={command.Title}, ExtId={command.ExtensionId}");
+        }
+
+        var resolved = command == null ? null : ResolveRunnableCommand(command);
+        if (resolved == null)
+        {
+            HostAssets.AppendLog("MainWindow TerminateExtensionMenuItem_Click: resolved is null.");
+            return;
+        }
+        HostAssets.AppendLog($"MainWindow TerminateExtensionMenuItem_Click: resolved Title={resolved.Title}, ExtId={resolved.ExtensionId}, IsRunning={resolved.IsRunning}");
+
+        if (string.IsNullOrEmpty(resolved.ExtensionId))
+        {
+            HostAssets.AppendLog("MainWindow TerminateExtensionMenuItem_Click: resolved.ExtensionId is empty.");
+            return;
+        }
+
+        var extensionId = resolved.ExtensionId;
+        var runningInstances = RunningExtensionRegistry.GetSnapshot()
+            .Where(x => string.Equals(x.ExtensionId, extensionId, System.StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        HostAssets.AppendLog($"MainWindow TerminateExtensionMenuItem_Click: runningInstances count={runningInstances.Count}");
+        if (runningInstances.Count == 0)
+        {
+            System.Windows.MessageBox.Show(this, "该扩展当前没有在运行。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var failedMessages = new System.Collections.Generic.List<string>();
+        foreach (var instance in runningInstances)
+        {
+            HostAssets.AppendLog($"MainWindow TerminateExtensionMenuItem_Click: attempting to terminate instance={instance.InstanceId}, title={instance.Title}");
+            if (!RunningExtensionRegistry.TryTerminate(instance.InstanceId, out var msg))
+            {
+                failedMessages.Add(msg);
+                HostAssets.AppendLog($"MainWindow TerminateExtensionMenuItem_Click: terminate failed: {msg}");
+            }
+            else
+            {
+                HostAssets.AppendLog($"MainWindow TerminateExtensionMenuItem_Click: terminate success: {msg}");
+            }
+        }
+
+        if (failedMessages.Count > 0)
+        {
+            var errorMsg = string.Join("\n", failedMessages);
+            System.Windows.MessageBox.Show(this, $"结束部分实例失败：\n{errorMsg}", "停止运行失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
+    private void OpenExtensionDirectoryMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        var resolved = command == null ? null : ResolveRunnableCommand(command);
+        if (resolved == null || resolved.Source != CommandSource.LocalExtension || string.IsNullOrEmpty(resolved.ExtensionId))
+        {
+            return;
+        }
+
+        if (!TryOpenExtensionDirectory(resolved.ExtensionId, out var message) &&
+            !string.IsNullOrWhiteSpace(message))
+        {
+            System.Windows.MessageBox.Show(this, message, "打开目录失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void ToggleYanyuEnabledMenuItem_Click(object sender, RoutedEventArgs e)
     {
         ToggleYanyuRuleForCommand(GetCommandFromMenuItem(sender) ?? SelectedCommand);
@@ -1590,6 +1684,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OpenExtensionStoreLinkMenuItem.Visibility = isYanyuRule ? Visibility.Collapsed : Visibility.Visible;
         DeleteExtensionMenuItem.IsEnabled = canManageLocalExtension || isYanyuRule;
         DeleteExtensionMenuItem.Header = isYanyuRule ? "删除燕语" : "删除";
+        
+        // 停止运行
+        TerminateExtensionMenuItem.IsEnabled = resolved.IsRunning;
+        TerminateExtensionMenuItem.Visibility = resolved.IsRunning ? Visibility.Visible : Visibility.Collapsed;
+
+        // 打开扩展目录
+        OpenExtensionDirectoryMenuItem.IsEnabled = canManageLocalExtension;
+        OpenExtensionDirectoryMenuItem.Visibility = canManageLocalExtension ? Visibility.Visible : Visibility.Collapsed;
+
         ToggleYanyuEnabledMenuItem.Visibility = isYanyuRule ? Visibility.Visible : Visibility.Collapsed;
         ToggleYanyuEnabledMenuItem.IsEnabled = isYanyuRule;
         ToggleYanyuEnabledMenuItem.Header = isYanyuRule && IsYanyuRuleEnabled(current) ? "停用燕语" : "启用燕语";
@@ -1610,6 +1713,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CopyExtensionStoreLinkMenuItem.CommandParameter = command;
         OpenExtensionStoreLinkMenuItem.CommandParameter = command;
         DeleteExtensionMenuItem.CommandParameter = command;
+        TerminateExtensionMenuItem.CommandParameter = command;
+        OpenExtensionDirectoryMenuItem.CommandParameter = command;
         ToggleYanyuEnabledMenuItem.CommandParameter = command;
         CopyExtensionMenuItem.CommandParameter = command;
         CutExtensionMenuItem.CommandParameter = command;
@@ -3164,6 +3269,23 @@ public sealed class CommandItem : INotifyPropertyChanged
     public bool HasNewBadge => _hasNewBadge;
 
     public bool IsCSharpPrebuilding => _isCSharpPrebuilding;
+
+    public bool IsRunning
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(ExtensionId))
+            {
+                return false;
+            }
+            return RunningExtensionRegistry.GetSnapshot().Any(x => string.Equals(x.ExtensionId, ExtensionId, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public void RefreshRunningState()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsRunning)));
+    }
 
     public bool IsFileSystemResult => ResultKind is ResultItemKind.File or ResultItemKind.Folder;
 

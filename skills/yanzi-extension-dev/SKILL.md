@@ -9,7 +9,7 @@ Use this skill when working on local extensions for Yanzi.
 
 ## Quick Start
 
-Yanzi stores runtime extensions under the app's `Extensions/` directory. Each extension lives in its own folder.
+Yanzi stores runtime extensions under the app's `Extensions/` directory. On Windows development/runtime environment, the actual path is `%LOCALAPPDATA%\OpenQuickHost\Extensions\` (and configuration/storage files under `%LOCALAPPDATA%\OpenQuickHost\`). The Local Agent API authentication Token is located in `%LOCALAPPDATA%\OpenQuickHost\appsettings.local.json` under the `"agentApiToken"` field. Each extension lives in its own folder.
 
 Two extension shapes are supported:
 
@@ -191,6 +191,7 @@ Read [references/local-agent-api.md](references/local-agent-api.md) for request 
 
 - Prefer editing extension folders through the local API when you are acting as an external agent.
 - When working inside the Yanzi codebase, update both the runtime behavior and the bundled skill docs if behavior changes.
-- Prefer C# inline actions for new extensions unless the task is specifically Windows shell automation.
+- Prefer C# inline actions for new extensions unless the task is specifically Windows shell automation. For complex or large extensions, prefer multi-file format (e.g. `entryMode = entry` pointing to `main.cs`) over inline source to maintain code clarity.
 - For PowerShell extensions, keep files ASCII unless non-ASCII output is required; when Chinese text is required, ensure the file is written with BOM-compatible UTF-8 handling.
-- When debugging inline scripts, prefer using the editor test flow first, then inspect `logs/host.log` and `logs/dev-debug.log` on the development machine.
+- When debugging inline scripts, prefer using the editor test flow first, then inspect `logs/host.log` and `dev-debug.log` on the development machine.
+- C# extensions loaded via in-process AssemblyLoadContext persist in memory. If your extension registers global event hooks (e.g. keyboard/mouse hooks via Win32 `SetWindowsHookEx`), use a `static` manager to keep the hook alive and running in the background even after `RunAsync` completes or the setting window closes.

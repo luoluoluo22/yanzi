@@ -1328,6 +1328,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         _editInteractionActive = true;
         var menu = BuildEditContextMenu(target);
+        menu.PlacementTarget = this;
         menu.Closed += (_, _) =>
         {
             _editInteractionActive = false;
@@ -1866,6 +1867,17 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
         AngleDegrees = angleDegrees;
         Ring = ring;
         SectorGeometry = sectorGeometry;
+
+        if (Command != null)
+        {
+            Command.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(CommandItem.IsRunning))
+                {
+                    OnPropertyChanged(nameof(IsRunning));
+                }
+            };
+        }
     }
 
     public string OwnerPageId { get; }
@@ -1889,6 +1901,8 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
     public double Y { get; }
 
     public Geometry? SectorGeometry { get; }
+
+    public bool IsRunning => Command?.IsRunning == true;
 
     public string Title => !string.IsNullOrWhiteSpace(ChildPageId) ? ChildPageTitle : Command?.Title ?? string.Empty;
 

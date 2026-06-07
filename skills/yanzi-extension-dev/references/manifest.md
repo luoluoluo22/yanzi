@@ -112,6 +112,21 @@ Hosted C# action example:
 }
 ```
 
+C# multi-file extension example (with startup):
+
+```json
+{
+  "id": "keyboard-mapper",
+  "name": "按键修改器",
+  "runtime": "csharp",
+  "entryMode": "entry",
+  "entry": "main.cs",
+  "startup": {
+    "mode": "on_app_launch"
+  }
+}
+```
+
 Web app extension example:
 
 ```json
