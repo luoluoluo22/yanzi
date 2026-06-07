@@ -41,6 +41,12 @@ public static class AppVersionInfo
         {
             try
             {
+                var assemblyPath = typeof(AppVersionInfo).Assembly.Location;
+                if (!string.IsNullOrWhiteSpace(assemblyPath) && File.Exists(assemblyPath))
+                {
+                    return File.GetLastWriteTime(assemblyPath).ToString("yyyy-MM-dd HH:mm:ss");
+                }
+
                 var processPath = Environment.ProcessPath;
                 if (!string.IsNullOrWhiteSpace(processPath) && File.Exists(processPath))
                 {
