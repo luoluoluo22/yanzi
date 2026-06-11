@@ -847,6 +847,25 @@
                                 </Border>
                             </Grid>
 
+                            <!-- LAN Sync Configuration Card -->
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel Margin="20">
+                                    <Grid>
+                                        <TextBlock Text="局域网直连通信" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBlock Text="启用直连" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                            <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableLanSync, Mode=TwoWay}" Click="EnableLanSync_Click" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="允许手机在同一 Wi-Fi 下直接与电脑通信，大幅降低延迟。首次开启时需要管理员权限配置 Windows 防火墙。" 
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Visibility="{Binding EnableLanSync, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Ellipse Width="8" Height="8" Fill="#FF22C55E" VerticalAlignment="Center"/>
+                                        <TextBlock Text="直连服务运行中，正在监听局域网连接" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Personal Sync Configuration Card -->
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16">
                                 <!-- Card Header -->

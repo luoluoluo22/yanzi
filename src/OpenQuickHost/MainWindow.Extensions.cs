@@ -143,7 +143,7 @@ public partial class MainWindow
         return index < 0 ? int.MaxValue : index;
     }
 
-    private void TrackRecentlyAddedExtension(string extensionId)
+    public void TrackRecentlyAddedExtension(string extensionId)
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
@@ -297,7 +297,7 @@ public partial class MainWindow
                string.Equals(command.Runtime, "c#", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void QueueCSharpPrebuild(CommandItem command, string reason)
+    public static void QueueCSharpPrebuild(CommandItem command, string reason)
     {
         if (!IsCSharpRuntime(command))
         {
@@ -316,6 +316,30 @@ public partial class MainWindow
                 var result = await ScriptExtensionRunner.PreparePortableAssetsAsync(command).ConfigureAwait(false);
                 HostAssets.AppendLog(
                     $"CSharp prebuild completed: id={command.ExtensionId}, title={command.Title}, reason={reason}, success={result.Success}, elapsedMs={stopwatch.ElapsedMilliseconds}, exitCode={result.ExitCode}, error={result.Error}");
+                
+                if (result.Success)
+                {
+                    var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                    if (dispatcher != null)
+                    {
+                        _ = dispatcher.InvokeAsync(async () =>
+                        {
+                            var mainWin = System.Windows.Application.Current.MainWindow as MainWindow;
+                            if (mainWin != null)
+                            {
+                                try
+                                {
+                                    HostAssets.AppendLog($"CSharp prebuild auto-running extension after success: id={command.ExtensionId}");
+                                    await mainWin.ExecuteCommandAsync(command, "prebuild-auto-run");
+                                }
+                                catch (Exception ex)
+                                {
+                                    HostAssets.AppendLog($"Failed to auto-run extension after build: {ex.Message}");
+                                }
+                            }
+                        });
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -2039,6 +2063,7 @@ public partial class MainWindow
             SyncStatus = statusText;
         }
         SyncLocalExtensionsToCloud();
+        _yanmOverlay?.ReloadSettings();
     }
 
     public IReadOnlyList<CommandItem> GetQuickPanelRecommendedCommands(ForegroundAppContext? context, IEnumerable<string> excludeExtensionIds, int maxCount = 8)

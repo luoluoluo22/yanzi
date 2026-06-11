@@ -596,6 +596,8 @@ public sealed record AppSettings
 
     public string AgentApiToken { get; set; } = "yanzi-local-dev-token";
 
+    public bool EnableLanSync { get; set; } = false;
+
     public PersonalSyncSettings PersonalSync { get; set; } = new();
 
     public bool EnableWebDavSync { get; set; } = false;

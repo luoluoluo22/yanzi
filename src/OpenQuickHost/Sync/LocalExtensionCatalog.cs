@@ -86,9 +86,10 @@ public static class LocalExtensionCatalog
 
                 entries.Add(new LocalExtensionCatalogEntry(manifestPath, manifest));
             }
-            catch
+            catch (Exception ex)
             {
                 // Skip invalid manifests so one broken extension does not block the host.
+                HostAssets.AppendLog($"加载本地扩展失败: {manifestPath}, 异常: {ex.Message}");
             }
         }
 

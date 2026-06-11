@@ -44,6 +44,7 @@ public partial class App : WpfApplication
     private RunningExtensionsWindow? _runningExtensionsWindow;
     private InputStateWindow? _inputStateWindow;
     private LocalAgentApiServer? _agentApiServer;
+    private LanDiscoveryService? _lanDiscoveryService;
     private SingleInstanceService? _singleInstanceService;
     private bool _listenerServicesPaused;
     private bool _isAppFullyInitialized;
@@ -441,6 +442,12 @@ public partial class App : WpfApplication
             _agentApiServer = null;
         }
 
+        if (_lanDiscoveryService != null)
+        {
+            _lanDiscoveryService.Dispose();
+            _lanDiscoveryService = null;
+        }
+
         if (_singleInstanceService != null)
         {
             _singleInstanceService.Dispose();
@@ -514,14 +521,27 @@ public partial class App : WpfApplication
 
         try
         {
-            var prefix = $"http://127.0.0.1:{settings.AgentApiPort}/";
+            var prefix = settings.EnableLanSync
+                ? $"http://*:{settings.AgentApiPort}/"
+                : $"http://127.0.0.1:{settings.AgentApiPort}/";
             _agentApiServer = new LocalAgentApiServer(
                 prefix,
                 settings.AgentApiToken,
-                () =>
-                {
-                    window.Dispatcher.Invoke(() => window.ReloadLocalExtensionsFromExternal());
-                },
+                 (extensionId) =>
+                 {
+                     window.Dispatcher.Invoke(() =>
+                     {
+                         if (!string.IsNullOrEmpty(extensionId))
+                         {
+                             window.TrackRecentlyAddedExtension(extensionId);
+                         }
+                         window.ReloadLocalExtensionsFromExternal();
+                         if (_settingsWindow != null && _settingsWindow.IsLoaded)
+                         {
+                             _settingsWindow.RefreshExtensionsFromExternal();
+                         }
+                     });
+                 },
                 () =>
                 {
                     window.Dispatcher.Invoke(() => window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true));
@@ -559,8 +579,35 @@ public partial class App : WpfApplication
                 {
                     window.Dispatcher.Invoke(() => System.Windows.MessageBox.Show(message, title));
                     return Task.CompletedTask;
+                },
+                (message) =>
+                {
+                    var tcs = new TaskCompletionSource<(bool success, string output)>();
+                    window.Dispatcher.Invoke(async () =>
+                    {
+                        try
+                        {
+                            var result = await window.HandleMobileDeviceMessageAsync(message);
+                            tcs.SetResult((result.success, result.output));
+                        }
+                        catch (Exception ex)
+                        {
+                            tcs.SetResult((false, ex.Message));
+                        }
+                    });
+                    return tcs.Task;
+                },
+                (reason, refreshYanmOverlay) =>
+                {
+                    window.Dispatcher.Invoke(() => window.NotifyQuickPanelSettingsChanged(reason, refreshYanmOverlay));
                 });
             _agentApiServer.Start();
+
+            if (settings.EnableLanSync)
+            {
+                _lanDiscoveryService = new LanDiscoveryService(settings.AgentApiPort, settings.AgentApiToken);
+                _lanDiscoveryService.Start();
+            }
         }
         catch (Exception ex)
         {

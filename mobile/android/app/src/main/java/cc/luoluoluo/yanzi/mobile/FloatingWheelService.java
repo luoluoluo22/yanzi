@@ -64,9 +64,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class FloatingWheelService extends Service {
+    private static Context sContext;
+
     private static final String TAG = "YanziFloatingWheel";
     private static final String YANZI_SITE_URL = "https://yanzi.luoluoluo.cc.cd";
     private static final String DEFAULT_BASE_URL = "https://sync.luoluoluo.cc.cd";
+    private static final String CLOUD_USER_AGENT = "YanziClient-Mobile/0.1.0";
     public static final String ACTION_OPEN_WHEEL_FROM_GESTURE = "cc.luoluoluo.yanzi.mobile.OPEN_WHEEL_FROM_GESTURE";
     private static final int BUBBLE_SIZE_DP = 58;
     private static final int BUBBLE_PADDING_DP = 12;
@@ -145,6 +148,8 @@ public class FloatingWheelService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        sContext = this;
+
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         showBubble();
@@ -1310,30 +1315,25 @@ public class FloatingWheelService extends Service {
     private void sendScreenshotPayloadToDesktop(String jpegBase64, int width, int height) {
         executor.execute(() -> {
             try {
+                String baseUrl = normalizedBaseUrl();
                 String token = requireToken();
                 String deviceId = getOrCreateDeviceId();
                 byte[] imageBytes = Base64.getDecoder().decode(jpegBase64);
-                log("截图：准备上传 WebDAV，bytes=" + imageBytes.length + "。");
+                String cleanBase64 = jpegBase64.replaceAll("[\\s\\v]", "");
+                String screenshotDataUrl = "base64," + cleanBase64;
+                log("截图：准备发送，bytes=" + imageBytes.length + "。");
                 String messageId;
                 try {
-                    registerDevice(normalizedBaseUrl(), token, deviceId, buildDeviceName());
-                    log("截图：设备注册完成，正在读取 WebDAV 配置。");
-                    WebDavConfig webDav = fetchWebDavConfig(normalizedBaseUrl(), token);
-                    log("截图：WebDAV 配置读取完成，开始上传。");
-                    String remotePath = uploadScreenshotToWebDav(webDav, imageBytes);
-                    log("截图：WebDAV 上传完成，path=" + remotePath + "。");
-                    messageId = postScreenshotWebDavMessage(normalizedBaseUrl(), token, deviceId, remotePath, imageBytes.length, width, height);
+                    registerDevice(baseUrl, token, deviceId, buildDeviceName());
+                    messageId = sendScreenshotMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes, width, height);
                 } catch (Exception ex) {
                     if (!isUnauthorized(ex)) {
                         throw ex;
                     }
                     log("截图：Token 过期，刷新后重试。");
                     token = refreshToken();
-                    registerDevice(normalizedBaseUrl(), token, deviceId, buildDeviceName());
-                    WebDavConfig webDav = fetchWebDavConfig(normalizedBaseUrl(), token);
-                    String remotePath = uploadScreenshotToWebDav(webDav, imageBytes);
-                    log("截图：WebDAV 重试上传完成，path=" + remotePath + "。");
-                    messageId = postScreenshotWebDavMessage(normalizedBaseUrl(), token, deviceId, remotePath, imageBytes.length, width, height);
+                    registerDevice(baseUrl, token, deviceId, buildDeviceName());
+                    messageId = sendScreenshotMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes, width, height);
                 }
                 log("截图：消息已发送到云端，messageId=" + messageId + "。");
                 toast("截图已发送到电脑：" + messageId);
@@ -1344,6 +1344,10 @@ public class FloatingWheelService extends Service {
                 hideProgress();
             }
         });
+    }
+
+    private String sendScreenshotMessage(String baseUrl, String token, String deviceId, String screenshotDataUrl, byte[] imageBytes, int width, int height) throws Exception {
+        return postScreenshotDirectMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes.length, width, height);
     }
 
     private void openMain(String action) {
@@ -1474,6 +1478,12 @@ public class FloatingWheelService extends Service {
         int v1Index = value.indexOf("/v1/");
         if (v1Index >= 0) {
             value = value.substring(0, v1Index);
+        }
+        if (value.endsWith("/health")) {
+            value = value.substring(0, value.length() - "/health".length());
+        }
+        if (value.contains("yanzi.luoluoluo.cc.cd")) {
+            value = DEFAULT_BASE_URL;
         }
         while (value.endsWith("/")) {
             value = value.substring(0, value.length() - 1);
@@ -1610,6 +1620,26 @@ public class FloatingWheelService extends Service {
         return postJson(baseUrl, "/v1/me/mobile/messages", payload, token).optString("messageId", "unknown");
     }
 
+    private static String postScreenshotDirectMessage(String baseUrl, String token, String sourceDeviceId, String screenshotDataUrl, int bytes, int width, int height) throws Exception {
+        JSONObject payload = new JSONObject()
+            .put("sourceDeviceId", sourceDeviceId)
+            .put("targetPlatform", "desktop")
+            .put("kind", "screenshot")
+            .put("title", "手机截图")
+            .put("text", "手机截图：" + width + "x" + height)
+            .put("payload", new JSONObject()
+                .put("source", "android-floating-wheel")
+                .put("sourceDeviceName", buildDeviceDisplayName())
+                .put("screenshotMime", "image/jpeg")
+                .put("screenshotWidth", width)
+                .put("screenshotHeight", height)
+                .put("screenshotBytes", bytes)
+                .put("screenshotDataUrl", screenshotDataUrl)
+                .put("expiresAt", System.currentTimeMillis() + 30L * 24L * 60L * 60L * 1000L)
+                .put("createdAt", System.currentTimeMillis()));
+        return postJson(baseUrl, "/v1/me/mobile/messages", payload, token).optString("messageId", "unknown");
+    }
+
     private static String postScreenshotWebDavMessage(String baseUrl, String token, String sourceDeviceId, String webDavPath, int bytes, int width, int height) throws Exception {
         JSONObject payload = new JSONObject()
             .put("sourceDeviceId", sourceDeviceId)
@@ -1638,7 +1668,7 @@ public class FloatingWheelService extends Service {
         config.username = json.optString("username", "");
         config.password = json.optString("password", "");
         if (!json.optBoolean("enabled", false) || config.username.trim().isEmpty() || config.password.trim().isEmpty()) {
-            throw new IllegalStateException("账号未配置可用的坚果云 WebDAV。");
+            throw new IllegalStateException("账号未配置可用的 WebDAV。");
         }
         return config;
     }
@@ -1708,37 +1738,85 @@ public class FloatingWheelService extends Service {
     }
 
     private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token) throws Exception {
-        URL url = new URL(baseUrl + path);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("POST");
-        connection.setConnectTimeout(15000);
-        connection.setReadTimeout(15000);
-        connection.setDoOutput(true);
-        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-        if (token != null && !token.trim().isEmpty()) {
-            connection.setRequestProperty("Authorization", "Bearer " + token);
+        if (shouldUseLan(path)) {
+            String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
+            if (lanBaseUrl != null) {
+                try {
+                    String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
+                    JSONObject result = doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, "POST", payload, 1500);
+                    handleLanSuccess("POST " + path);
+                    return result;
+                } catch (Exception e) {
+                    handleLanFailure("POST " + path, e);
+                }
+            }
         }
-        try (OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8)) {
-            writer.write(payload.toString());
-        }
-        int status = connection.getResponseCode();
-        String body = readBody(status >= 400 ? connection.getErrorStream() : connection.getInputStream());
-        if (status < 200 || status >= 300) {
-            throw new IllegalStateException("HTTP " + status + ": " + body);
-        }
-        return body.trim().isEmpty() ? new JSONObject() : new JSONObject(body);
+        return doRequest(baseUrl, path, token, "POST", payload, 15000);
     }
 
     private static JSONObject getJson(String baseUrl, String path, String token) throws Exception {
+        if (shouldUseLan(path)) {
+            String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
+            if (lanBaseUrl != null) {
+                try {
+                    String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
+                    JSONObject result = doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, "GET", null, 1500);
+                    handleLanSuccess("GET " + path);
+                    return result;
+                } catch (Exception e) {
+                    handleLanFailure("GET " + path, e);
+                }
+            }
+        }
+        return doRequest(baseUrl, path, token, "GET", null, 15000);
+    }
+
+    private static boolean shouldUseLan(String path) {
+        return !path.startsWith("/v1/auth/login");
+    }
+
+    private static void handleLanSuccess(String action) {
+        if (sContext != null) {
+            MobileDiagnostics.append(sContext, "局域网直连成功(" + action + ")");
+        }
+    }
+
+    private static void handleLanFailure(String action, Exception e) {
+        String message = e.getMessage() == null ? e.toString() : e.getMessage();
+        android.util.Log.w("FloatingWheelService", "LAN fallback failed: " + message);
+        if (sContext != null) {
+            MobileDiagnostics.append(sContext, "局域网直连失败(" + action + ")，已回退公网：" + message);
+            LanDiscoveryManager.clearLanBaseUrl(sContext);
+        } else {
+            LanDiscoveryManager.cachedLanBaseUrl = null;
+            LanDiscoveryManager.cachedLanApiToken = null;
+        }
+    }
+
+    private static JSONObject doRequest(String baseUrl, String path, String token, String method, JSONObject payload, int timeoutMs) throws Exception {
         URL url = new URL(baseUrl + path);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("GET");
-        connection.setConnectTimeout(15000);
-        connection.setReadTimeout(15000);
+        connection.setRequestMethod(method);
+        connection.setConnectTimeout(timeoutMs);
+        connection.setReadTimeout(timeoutMs);
+        connection.setRequestProperty("User-Agent", CLOUD_USER_AGENT);
         connection.setRequestProperty("Accept", "application/json");
+
+        if (payload != null) {
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        }
+
         if (token != null && !token.trim().isEmpty()) {
             connection.setRequestProperty("Authorization", "Bearer " + token);
         }
+
+        if (payload != null) {
+            try (OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8)) {
+                writer.write(payload.toString());
+            }
+        }
+
         int status = connection.getResponseCode();
         String body = readBody(status >= 400 ? connection.getErrorStream() : connection.getInputStream());
         if (status < 200 || status >= 300) {
@@ -1812,6 +1890,7 @@ public class FloatingWheelService extends Service {
         String auth = Base64.getEncoder().encodeToString((config.username + ":" + config.password).getBytes(StandardCharsets.UTF_8));
         connection.setRequestProperty("Authorization", "Basic " + auth);
         connection.setRequestProperty("Accept", "*/*");
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
         return connection;
     }
 

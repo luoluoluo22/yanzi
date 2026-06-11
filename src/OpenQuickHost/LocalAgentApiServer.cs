@@ -11,13 +11,15 @@ public sealed class LocalAgentApiServer : IDisposable
 {
     private readonly string _prefix;
     private readonly string _token;
-    private readonly Action _onMutated;
+    private readonly Action<string?> _onMutated;
     private readonly Action? _onTriggerSync;
     private readonly Func<string, Task<(bool ok, string message)>>? _onPublishExtension;
     private readonly Func<string, Task<(bool ok, string message)>>? _onUnpublishExtension;
     private readonly Func<string, Task<(bool ok, string message)>>? _onInstallExtension;
     private readonly Func<Task<AuthMeResponse?>>? _onGetMe;
     private readonly Func<string, string, Task>? _onShowNotification;
+    private readonly Func<DeviceMessageRecord, Task<(bool success, string output)>>? _onMobileMessage;
+    private readonly Action<string, bool>? _onSettingsChanged;
     private readonly HttpListener _listener = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _loopTask;
@@ -26,13 +28,15 @@ public sealed class LocalAgentApiServer : IDisposable
     public LocalAgentApiServer(
         string prefix, 
         string token, 
-        Action onMutated, 
+        Action<string?> onMutated,
         Action? onTriggerSync = null,
         Func<string, Task<(bool ok, string message)>>? onPublishExtension = null,
         Func<string, Task<(bool ok, string message)>>? onUnpublishExtension = null,
         Func<string, Task<(bool ok, string message)>>? onInstallExtension = null,
         Func<Task<AuthMeResponse?>>? onGetMe = null,
-        Func<string, string, Task>? onShowNotification = null)
+        Func<string, string, Task>? onShowNotification = null,
+        Func<DeviceMessageRecord, Task<(bool success, string output)>>? onMobileMessage = null,
+        Action<string, bool>? onSettingsChanged = null)
     {
         _prefix = prefix.EndsWith("/", StringComparison.Ordinal) ? prefix : prefix + "/";
         _token = token;
@@ -43,6 +47,8 @@ public sealed class LocalAgentApiServer : IDisposable
         _onInstallExtension = onInstallExtension;
         _onGetMe = onGetMe;
         _onShowNotification = onShowNotification;
+        _onMobileMessage = onMobileMessage;
+        _onSettingsChanged = onSettingsChanged;
         _listener.Prefixes.Add(_prefix);
     }
 
@@ -163,6 +169,19 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "POST" && path == "/v1/me/devices")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                var deviceId = GetString(payload, "deviceId") ?? "android-lan";
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    source = "local-agent-api",
+                    deviceId
+                });
+                return;
+            }
+
             if (request.HttpMethod == "GET" && path == "/v1/logs")
             {
                 var maxLinesStr = request.QueryString["maxLines"];
@@ -185,6 +204,34 @@ public sealed class LocalAgentApiServer : IDisposable
             {
                 var items = LocalExtensionCatalog.LoadCommands().Select(ToDto).ToList();
                 await WriteJsonAsync(response, 200, new { items });
+                return;
+            }
+
+            if (request.HttpMethod == "GET" && path == "/v1/me/extensions")
+            {
+                var items = LocalExtensionCatalog.LoadCommands()
+                    .Select(command => new
+                    {
+                        user_id = "local",
+                        userId = "local",
+                        extension_id = command.ExtensionId,
+                        extensionId = command.ExtensionId,
+                        installed_version = command.DeclaredVersion,
+                        installedVersion = command.DeclaredVersion,
+                        enabled = 1,
+                        settings_json = string.Empty,
+                        settingsJson = string.Empty,
+                        updated_at = string.Empty,
+                        updatedAt = string.Empty
+                    })
+                    .ToList();
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    userId = "local",
+                    source = "local-agent-api",
+                    items
+                });
                 return;
             }
 
@@ -218,7 +265,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     SlotItems = Enumerable.Repeat<QuickPanelSlotItem?>(null, 12).ToList()
                 });
                 AppSettingsStore.Save(settings);
-                _onMutated();
+                _onMutated(null);
                 await WriteJsonAsync(response, 200, new { ok = true, id });
                 return;
             }
@@ -278,7 +325,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     }
 
                     AppSettingsStore.Save(settings);
-                    _onMutated();
+                    _onMutated(null);
                     await WriteJsonAsync(response, 200, new { ok = true, index, groupId = group.Id });
                     return;
                 }
@@ -299,6 +346,40 @@ public sealed class LocalAgentApiServer : IDisposable
                 }
 
                 await WriteJsonAsync(response, 200, new { ok = true });
+                return;
+            }
+
+            if (request.HttpMethod == "POST" && path == "/v1/me/mobile/messages")
+            {
+                if (_onMobileMessage == null)
+                {
+                    await WriteJsonAsync(response, 400, new { error = "not_supported" });
+                    return;
+                }
+                var payload = await ReadJsonBodyAsync(request);
+                var messageId = Guid.NewGuid().ToString("N");
+                var message = new DeviceMessageRecord
+                {
+                    MessageId = messageId,
+                    SourceDeviceId = GetString(payload, "sourceDeviceId") ?? "lan",
+                    TargetPlatform = GetString(payload, "targetPlatform") ?? "desktop",
+                    Kind = GetString(payload, "kind") ?? "text",
+                    Title = GetString(payload, "title") ?? "局域网消息",
+                    Text = GetString(payload, "text") ?? "",
+                    CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
+                    Payload = new Dictionary<string, JsonElement>()
+                };
+
+                if (payload.TryGetProperty("payload", out var payloadObj) && payloadObj.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var prop in payloadObj.EnumerateObject())
+                    {
+                        message.Payload[prop.Name] = prop.Value;
+                    }
+                }
+
+                var result = await _onMobileMessage(message);
+                await WriteJsonAsync(response, 200, new { ok = true, messageId, success = result.success, output = result.output });
                 return;
             }
 
@@ -483,7 +564,26 @@ public sealed class LocalAgentApiServer : IDisposable
             {
                 var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..]);
                 var manifest = LocalExtensionCatalog.LoadManifestJson(id);
-                await WriteJsonAsync(response, 200, new { id, manifest });
+                var command = LocalExtensionCatalog.LoadCommands()
+                    .FirstOrDefault(item => string.Equals(item.ExtensionId, id, StringComparison.OrdinalIgnoreCase));
+                var accentHex = command?.AccentBrush is System.Windows.Media.SolidColorBrush accentBrush
+                    ? accentBrush.Color.ToString()
+                    : string.Empty;
+                await WriteJsonAsync(response, 200, new
+                {
+                    id,
+                    extension_id = id,
+                    extensionId = id,
+                    manifest,
+                    display_name = command?.Title ?? id,
+                    displayName = command?.Title ?? id,
+                    name = command?.Title ?? id,
+                    description = command?.Subtitle ?? string.Empty,
+                    icon = command?.IconReference ?? string.Empty,
+                    accent_hex = accentHex,
+                    accentHex = accentHex,
+                    version = command?.DeclaredVersion ?? string.Empty
+                });
                 return;
             }
 
@@ -498,7 +598,8 @@ public sealed class LocalAgentApiServer : IDisposable
                 }
 
                 var command = LocalExtensionCatalog.SaveJsonExtension(manifest);
-                _onMutated();
+                _onMutated(command.ExtensionId);
+                MainWindow.QueueCSharpPrebuild(command, "api-add");
                 await WriteJsonAsync(response, 201, new { item = ToDto(command) });
                 return;
             }
@@ -556,7 +657,8 @@ public sealed class LocalAgentApiServer : IDisposable
                 }
 
                 var command = LocalExtensionCatalog.SaveJsonExtension(manifest);
-                _onMutated();
+                _onMutated(command.ExtensionId);
+                MainWindow.QueueCSharpPrebuild(command, "api-edit");
                 await WriteJsonAsync(response, 200, new { item = ToDto(command) });
                 return;
             }
@@ -573,7 +675,7 @@ public sealed class LocalAgentApiServer : IDisposable
                 }
 
                 var command = LocalExtensionCatalog.RenameExtension(id, name);
-                _onMutated();
+                _onMutated(command.ExtensionId);
                 await WriteJsonAsync(response, 200, new { item = ToDto(command) });
                 return;
             }
@@ -584,7 +686,7 @@ public sealed class LocalAgentApiServer : IDisposable
                 var payload = await ReadJsonBodyAsync(request);
                 var shortcut = GetString(payload, "shortcut");
                 var command = LocalExtensionCatalog.SetGlobalShortcut(id, shortcut);
-                _onMutated();
+                _onMutated(command.ExtensionId);
                 await WriteJsonAsync(response, 200, new { item = ToDto(command) });
                 return;
             }
@@ -595,7 +697,7 @@ public sealed class LocalAgentApiServer : IDisposable
                 var commands = LocalExtensionCatalog.LoadCommands();
                 var command = commands.FirstOrDefault(c => string.Equals(c.ExtensionId, id, StringComparison.OrdinalIgnoreCase));
                 ExtensionRecycleBinService.MoveToRecycleBin(id, command?.ExtensionDirectoryPath);
-                _onMutated();
+                _onMutated(id);
                 await WriteJsonAsync(response, 200, new { ok = true, id });
                 return;
             }
@@ -660,7 +762,7 @@ public sealed class LocalAgentApiServer : IDisposable
             {
                 var id = Uri.UnescapeDataString(path["/v1/extensions/recycle-bin/".Length..^"/restore".Length]);
                 var restored = ExtensionRecycleBinService.RestoreFromRecycleBin(id);
-                _onMutated();
+                _onMutated(null);
                 await WriteJsonAsync(response, 200, new { ok = true, id });
                 return;
             }
@@ -669,7 +771,7 @@ public sealed class LocalAgentApiServer : IDisposable
             {
                 var id = Uri.UnescapeDataString(path["/v1/extensions/recycle-bin/".Length..]);
                 var deleted = ExtensionRecycleBinService.DeletePermanently(id);
-                _onMutated();
+                _onMutated(null);
                 await WriteJsonAsync(response, 200, new { ok = true, id });
                 return;
             }
@@ -714,6 +816,34 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "GET" && path == "/v1/me/yanm-state")
+            {
+                await WriteYanmStateAsync(response, AppSettingsStore.Load());
+                return;
+            }
+
+            if (request.HttpMethod == "PUT" && path == "/v1/me/yanm-state")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                if (!payload.TryGetProperty("yanm", out var yanmElement) || yanmElement.ValueKind != JsonValueKind.Object)
+                {
+                    await WriteJsonAsync(response, 400, new { error = "yanm_required" });
+                    return;
+                }
+
+                var yanm = JsonSerializer.Deserialize<YanmSettings>(yanmElement.GetRawText(), JsonOptions) ?? new YanmSettings();
+                var settings = AppSettingsStore.Load();
+                settings.Yanm = yanm;
+                var updatedAtUtc = GetString(payload, "updatedAtUtc");
+                settings.LauncherConfigUpdatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
+                    ? DateTime.UtcNow.ToString("O")
+                    : updatedAtUtc;
+                AppSettingsStore.Save(settings);
+                _onSettingsChanged?.Invoke("api-yanm-state-updated", true);
+                await WriteYanmStateAsync(response, AppSettingsStore.Load());
+                return;
+            }
+
             if (request.HttpMethod == "PATCH" && path == "/v1/settings")
             {
                 var payload = await ReadJsonBodyAsync(request);
@@ -727,7 +857,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     settings.LaunchAtStartup = launchEl.GetBoolean();
                 }
                 AppSettingsStore.Save(settings);
-                _onMutated();
+                _onMutated(null);
                 await WriteJsonAsync(response, 200, new { ok = true, settings });
                 return;
             }
@@ -764,7 +894,7 @@ public sealed class LocalAgentApiServer : IDisposable
                 if (removed)
                 {
                     AppSettingsStore.Save(settings);
-                    _onMutated();
+                    _onMutated(null);
                 }
                 await WriteJsonAsync(response, 200, new { ok = true, removed });
                 return;
@@ -791,7 +921,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     group.Slots = items.Select(x => string.IsNullOrEmpty(x) ? null : x).ToList();
                     group.SlotItems = new List<QuickPanelSlotItem?>(new QuickPanelSlotItem?[group.Slots.Count]);
                     AppSettingsStore.Save(settings);
-                    _onMutated();
+                    _onMutated(null);
                     await WriteJsonAsync(response, 200, new { ok = true });
                 }
                 else
@@ -841,14 +971,36 @@ public sealed class LocalAgentApiServer : IDisposable
         return string.Equals(incoming, _token, StringComparison.Ordinal);
     }
 
+    private static Task WriteYanmStateAsync(HttpListenerResponse response, AppSettings settings)
+    {
+        settings.Yanm ??= new YanmSettings();
+        settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var updatedAtUtc = string.IsNullOrWhiteSpace(settings.LauncherConfigUpdatedAtUtc)
+            ? DateTime.UtcNow.ToString("O")
+            : settings.LauncherConfigUpdatedAtUtc;
+        var bytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(settings.Yanm, JsonOptions));
+        return WriteJsonAsync(response, 200, new
+        {
+            ok = true,
+            source = "local-agent-api",
+            updatedAtUtc,
+            yanm = settings.Yanm,
+            bytes
+        });
+    }
+
     private static WebDavConfigDto GetWebDavConfigDto()
     {
         var settings = AppSettingsStore.Load();
         var credential = WebDavCredentialStore.Load();
 
+        bool hasCredentials = !string.IsNullOrWhiteSpace(settings.WebDavServerUrl) &&
+                             !string.IsNullOrWhiteSpace(settings.WebDavUsername) &&
+                             !string.IsNullOrWhiteSpace(credential?.Password);
+
         return new WebDavConfigDto
         {
-            Enabled = settings.EnableWebDavSync,
+            Enabled = settings.EnableWebDavSync || hasCredentials,
             ServerUrl = settings.WebDavServerUrl,
             RootPath = settings.WebDavRootPath,
             Username = settings.WebDavUsername,
@@ -875,7 +1027,21 @@ public sealed class LocalAgentApiServer : IDisposable
 
     private static async Task<JsonElement> ReadJsonBodyAsync(HttpListenerRequest request)
     {
-        using var reader = new StreamReader(request.InputStream, request.ContentEncoding ?? Encoding.UTF8);
+        var encoding = Encoding.UTF8;
+        var contentType = request.ContentType;
+        if (!string.IsNullOrEmpty(contentType) && contentType.Contains("charset=", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                encoding = request.ContentEncoding ?? Encoding.UTF8;
+            }
+            catch
+            {
+                encoding = Encoding.UTF8;
+            }
+        }
+
+        using var reader = new StreamReader(request.InputStream, encoding);
         var text = await reader.ReadToEndAsync();
         if (string.IsNullOrWhiteSpace(text))
         {

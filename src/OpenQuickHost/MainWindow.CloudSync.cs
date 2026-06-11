@@ -1021,7 +1021,7 @@ public partial class MainWindow
         return 0;
     }
 
-    private async Task<(bool hasResult, bool success, string output)> HandleMobileDeviceMessageAsync(DeviceMessageRecord message)
+    internal async Task<(bool hasResult, bool success, string output)> HandleMobileDeviceMessageAsync(DeviceMessageRecord message)
     {
         var title = string.IsNullOrWhiteSpace(message.Title) ? "手机发来消息" : message.Title.Trim();
         var text = string.IsNullOrWhiteSpace(message.Text) ? $"消息类型：{message.Kind}" : message.Text.Trim();
@@ -1171,7 +1171,11 @@ public partial class MainWindow
         {
             var settings = AppSettingsStore.Load();
             var service = new WebDavSyncService(settings);
-            if (!service.IsConfigured)
+            var credential = WebDavCredentialStore.Load();
+            bool hasCredentials = Uri.TryCreate(settings.WebDavServerUrl, UriKind.Absolute, out _) &&
+                                 !string.IsNullOrWhiteSpace(settings.WebDavUsername) &&
+                                 !string.IsNullOrWhiteSpace(credential?.Password);
+            if (!hasCredentials)
             {
                 HostAssets.AppendLog($"Mobile screenshot WebDAV skipped: not configured, path={remotePath}.");
                 return null;

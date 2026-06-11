@@ -115,7 +115,7 @@ import java.util.concurrent.Executors;
 
 
 public class MainActivity extends Activity {
-
+    public static Context sContext;
     private static final String DEFAULT_BASE_URL = "https://sync.luoluoluo.cc.cd";
 
     private static final String CACHE_REMOTE_EXTENSIONS = "cacheRemoteExtensionsJson";
@@ -229,7 +229,8 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
 
         super.onCreate(savedInstanceState);
-
+        sContext = this;
+        LanDiscoveryManager.discover(this);
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
 
         MobileIconLibrary.init(this);
@@ -293,6 +294,8 @@ public class MainActivity extends Activity {
     protected void onResume() {
 
         super.onResume();
+
+        LanDiscoveryManager.discover(this);
 
         refreshDiagnosticLogFromStore();
 
@@ -411,15 +414,17 @@ public class MainActivity extends Activity {
             focusTextComposer("从悬浮轮盘进入文本发送。输入内容后点击“发送到电脑”。");
 
         } else if (action.endsWith(".yanm")) {
-
             selectTab("yanm");
-
-            setStatus("已从悬浮轮盘进入手机燕幕。");
-
-            refreshYanm(true);
-
-            scrollToView(yanmList);
-
+            String targetId = intent.getStringExtra("target_component_id");
+            if (targetId != null && !targetId.isEmpty()) {
+                setStatus("已从桌面小部件进入手机燕幕，正在定位...");
+                refreshYanm(true);
+                mainScrollView.postDelayed(() -> scrollToYanmComponent(targetId), 300);
+            } else {
+                setStatus("已从桌面进入手机燕幕。");
+                refreshYanm(true);
+                scrollToView(yanmList);
+            }
         } else if (action.endsWith(".refresh")) {
 
             setStatus("正在刷新移动端数据...");
@@ -432,7 +437,40 @@ public class MainActivity extends Activity {
 
     }
 
+    private void scrollToYanmComponent(String componentId) {
+        if (yanmList == null || mainScrollView == null) return;
+        String targetTag = "yanm_comp_" + componentId;
+        for (int i = 0; i < yanmList.getChildCount(); i++) {
+            View child = yanmList.getChildAt(i);
+            if (targetTag.equals(child.getTag())) {
+                if (!expandedComponentIds.contains(componentId)) {
+                    expandedComponentIds.add(componentId);
+                    prefs.edit().putString("expandedComponentIds", new JSONArray(expandedComponentIds).toString()).apply();
+                    if (currentYanmSnapshot != null) {
+                        renderYanm(currentYanmSnapshot);
+                    } else {
+                        renderCachedYanm();
+                    }
+                    // Wait for layout to settle
+                    mainScrollView.postDelayed(() -> scrollToYanmComponent(componentId), 150);
+                    return;
+                }
+                child.post(() -> {
+                    int[] location = new int[2];
+                    child.getLocationOnScreen(location);
+                    int[] scrollLocation = new int[2];
+                    mainScrollView.getLocationOnScreen(scrollLocation);
+                    int offset = location[1] - scrollLocation[1] + mainScrollView.getScrollY() - dp(20);
+                    mainScrollView.smoothScrollTo(0, Math.max(0, offset));
 
+                    // Add a brief highlight effect
+                    child.setBackgroundColor(Color.rgb(40, 50, 70));
+                    child.postDelayed(() -> child.setBackgroundColor(Color.rgb(30, 32, 34)), 800);
+                });
+                break;
+            }
+        }
+    }
 
     private void buildUi(String sharedText) {
 
@@ -653,6 +691,14 @@ public class MainActivity extends Activity {
         profileTabPage.addView(logButtons);
 
         profileTabPage.addView(textView("设备 ID：" + deviceId, 11, Color.rgb(100, 116, 139), false));
+        long installTime = 0;
+        try {
+            installTime = getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime;
+        } catch (Exception e) {}
+        if (installTime > 0) {
+            String timeStr = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date(installTime));
+            profileTabPage.addView(textView("编译安装：" + timeStr, 11, Color.rgb(100, 116, 139), false));
+        }
 
 
 
@@ -3175,81 +3221,43 @@ public class MainActivity extends Activity {
 
 
     private void showSortDialog(String componentId, int currentIndex, List<JSONObject> components) {
-
         if (components.size() <= 1) {
-
             return;
-
         }
 
-
-
         String[] options = new String[]{"置顶", "上移", "下移", "置底"};
-
         new android.app.AlertDialog.Builder(this)
-
             .setTitle("调整组件顺序")
-
             .setItems(options, (dialog, which) -> {
-
                 List<String> list = new ArrayList<>();
-
                 for (JSONObject comp : components) {
-
                     String id = firstNonEmpty(comp.optString("id"), comp.optString("Id"),
-
                         comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"));
-
                     list.add(id);
-
                 }
-
-
 
                 String target = list.remove(currentIndex);
-
                 if (which == 0) { // 置顶
-
                     list.add(0, target);
-
                 } else if (which == 1) { // 上移
-
                     int newIndex = Math.max(0, currentIndex - 1);
-
                     list.add(newIndex, target);
-
                 } else if (which == 2) { // 下移
-
                     int newIndex = Math.min(list.size(), currentIndex + 1);
-
                     list.add(newIndex, target);
-
                 } else if (which == 3) { // 置底
-
                     list.add(target);
-
                 }
-
-
 
                 sortedComponentIds.clear();
-
                 sortedComponentIds.addAll(list);
-
                 saveSortedState();
 
-
-
                 if (currentYanmSnapshot != null) {
-
                     renderYanm(currentYanmSnapshot);
-
                 }
-
             })
-
             .show();
-
     }
 
 
@@ -3401,6 +3409,7 @@ public class MainActivity extends Activity {
 
 
             LinearLayout card = card();
+            card.setTag("yanm_comp_" + componentId);
 
             // 改回单列布局，宽度填充父级
 
@@ -4256,36 +4265,64 @@ public class MainActivity extends Activity {
 
 
 
+    private static String stripHtml(String html) {
+        if (html == null) return "";
+        // 0. 先将 &lt; 和 &gt; 还原为括号，防止 HTML 被转义存储
+        String text = html.replaceAll("(?i)&lt;", "<")
+                          .replaceAll("(?i)&gt;", ">");
+        // 0.1 彻底剥离 <style>...</style> 和 <script>...</script> 标签及其中间包含的所有样式和脚本内容
+        text = text.replaceAll("(?is)<style[^>]*>.*?</style>", "");
+        text = text.replaceAll("(?is)<script[^>]*>.*?</script>", "");
+
+        // 1. 将 <br> 替换为换行
+        text = text.replaceAll("(?i)<br\\s*/?>", "\n");
+        // 2. 将段落及块级元素闭合或开头替换为换行
+        text = text.replaceAll("(?i)</?(p|div|li|h[1-6]|tr)[^>]*>", "\n");
+        // 3. 剥离所有 HTML 标签
+        text = text.replaceAll("<[^>]*>", "");
+        // 4. 替换常见的 HTML 实体
+        text = text.replaceAll("&nbsp;", " ")
+                   .replaceAll("&amp;", "&")
+                   .replaceAll("&quot;", "\"")
+                   .replaceAll("&#39;", "'");
+        text = text.replaceAll("(?m)^[ \t]*\r?\n", "");
+        return text.trim();
+    }
+
     private static String summarizeYanmComponent(JSONObject component) {
-
         String text = firstNonEmpty(
-
+            component.optString("html"),
+            component.optString("Html"),
+            component.optString("markup"),
+            component.optString("Markup"),
+            component.optString("contentHtml"),
+            component.optString("ContentHtml"),
             component.optString("text"),
-
             component.optString("Text"),
-
             component.optString("content"),
-
             component.optString("Content"),
-
             component.optString("note"),
-
             component.optString("Note"),
-
             component.optString("description"),
-
             component.optString("Description"));
 
         if (text.isEmpty()) {
-
-            text = component.toString();
-
+            text = firstNonEmpty(
+                component.optString("title"),
+                component.optString("Title"),
+                component.optString("name"),
+                component.optString("Name"),
+                ""
+            );
+            if (text.isEmpty()) {
+                text = "无可用内容";
+            }
         }
 
+        text = stripHtml(text);
+
         text = text.replaceAll("\\s+", " ").trim();
-
         return text.length() > 140 ? text.substring(0, 140) + "..." : text;
-
     }
 
 
@@ -4970,17 +5007,17 @@ public class MainActivity extends Activity {
 
         static String sendPhotoToDesktop(String baseUrl, String token, String sourceDeviceId, byte[] jpegBytes, int width, int height) throws Exception {
 
-            WebDavConfig webDav = fetchWebDavConfig(baseUrl, token);
+            String base64 = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP);
 
-            String remotePath = uploadMobilePhotoToWebDav(webDav, jpegBytes);
+            String screenshotDataUrl = "base64," + base64;
 
-            return postScreenshotWebDavMessage(baseUrl, token, sourceDeviceId, remotePath, jpegBytes.length, width, height);
+            return postScreenshotDirectMessage(baseUrl, token, sourceDeviceId, screenshotDataUrl, jpegBytes.length, width, height);
 
         }
 
 
 
-        private static String postScreenshotWebDavMessage(String baseUrl, String token, String sourceDeviceId, String webDavPath, int bytes, int width, int height) throws Exception {
+        private static String postScreenshotDirectMessage(String baseUrl, String token, String sourceDeviceId, String screenshotDataUrl, int bytes, int width, int height) throws Exception {
 
             JSONObject payload = new JSONObject()
 
@@ -5008,7 +5045,7 @@ public class MainActivity extends Activity {
 
                     .put("screenshotBytes", bytes)
 
-                    .put("webDavPath", webDavPath)
+                    .put("screenshotDataUrl", screenshotDataUrl)
 
                     .put("expiresAt", System.currentTimeMillis() + 30L * 24L * 60L * 60L * 1000L)
 
@@ -5035,9 +5072,7 @@ public class MainActivity extends Activity {
             config.password = json.optString("password", "");
 
             if (!json.optBoolean("enabled", false) || config.username.trim().isEmpty() || config.password.trim().isEmpty()) {
-
-                throw new IllegalStateException("账号未配置可用的坚果云 WebDAV。");
-
+                throw new IllegalStateException("账号未配置可用的 WebDAV。");
             }
 
             return config;
@@ -5132,7 +5167,7 @@ public class MainActivity extends Activity {
 
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
-            connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
 
             String userpass = (config.username == null ? "" : config.username) + ":" + (config.password == null ? "" : config.password);
 
@@ -5391,169 +5426,112 @@ public class MainActivity extends Activity {
 
 
         private static JSONObject putJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
-
-            HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + path).openConnection();
-
-            connection.setRequestMethod("PUT");
-
-            connection.setConnectTimeout(15000);
-
-            connection.setReadTimeout(15000);
-
-            connection.setDoOutput(true);
-
-            connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
-
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-
-            connection.setRequestProperty("Accept", "application/json");
-
-            if (token != null && !token.trim().isEmpty()) {
-
-                connection.setRequestProperty("Authorization", "Bearer " + token);
-
-            }
-
-
-
-            try (OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8)) {
-
-                writer.write(payload.toString());
-
-            }
-
-
-
-            String body = readBody(connection);
-
-            if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) {
-
-                String message = body;
-
-                try {
-
-                    message = new JSONObject(body).optString("message", body);
-
-                } catch (Exception ignored) {
-
+            if (shouldUseLan(path)) {
+                String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
+                if (lanBaseUrl != null) {
+                    try {
+                        String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
+                        JSONObject result = doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, "PUT", payload, 1500);
+                        handleLanSuccess(action, path);
+                        return result;
+                    } catch (Exception e) {
+                        handleLanFailure(action, e);
+                    }
                 }
-
-                throw new IllegalStateException(formatError(action, path, connection.getResponseCode(), message));
-
             }
-
-
-
-            return body.trim().isEmpty() ? new JSONObject() : new JSONObject(body);
-
+            return doRequest(baseUrl, path, token, action, "PUT", payload, 15000);
         }
-
-
 
         private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
-
-            HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + path).openConnection();
-
-            connection.setRequestMethod("POST");
-
-            connection.setConnectTimeout(15000);
-
-            connection.setReadTimeout(15000);
-
-            connection.setDoOutput(true);
-
-            connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
-
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-
-            connection.setRequestProperty("Accept", "application/json");
-
-            if (token != null && !token.trim().isEmpty()) {
-
-                connection.setRequestProperty("Authorization", "Bearer " + token);
-
-            }
-
-
-
-            try (OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8)) {
-
-                writer.write(payload.toString());
-
-            }
-
-
-
-            String body = readBody(connection);
-
-            if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) {
-
-                String message = body;
-
-                try {
-
-                    message = new JSONObject(body).optString("message", body);
-
-                } catch (Exception ignored) {
-
+            if (shouldUseLan(path)) {
+                String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
+                if (lanBaseUrl != null) {
+                    try {
+                        String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
+                        JSONObject result = doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, "POST", payload, 1500);
+                        handleLanSuccess(action, path);
+                        return result;
+                    } catch (Exception e) {
+                        handleLanFailure(action, e);
+                    }
                 }
-
-                throw new IllegalStateException(formatError(action, path, connection.getResponseCode(), message));
-
             }
-
-
-
-            return new JSONObject(body);
-
+            return doRequest(baseUrl, path, token, action, "POST", payload, 15000);
         }
 
-
-
         private static JSONObject getJson(String baseUrl, String path, String token, String action) throws Exception {
+            if (shouldUseLan(path)) {
+                String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
+                if (lanBaseUrl != null) {
+                    try {
+                        String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
+                        JSONObject result = doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, "GET", null, 1500);
+                        handleLanSuccess(action, path);
+                        return result;
+                    } catch (Exception e) {
+                        handleLanFailure(action, e);
+                    }
+                }
+            }
+            return doRequest(baseUrl, path, token, action, "GET", null, 15000);
+        }
 
+        private static boolean shouldUseLan(String path) {
+            return !path.startsWith("/v1/auth/login");
+        }
+
+        private static void handleLanSuccess(String action, String path) {
+            if (sContext != null) {
+                MobileDiagnostics.append(sContext, "局域网直连成功(" + action + "): " + path);
+            }
+        }
+
+        private static void handleLanFailure(String action, Exception e) {
+            String message = e.getMessage() == null ? e.toString() : e.getMessage();
+            android.util.Log.w("ApiClient", "LAN fallback failed: " + message);
+            if (sContext != null) {
+                MobileDiagnostics.append(sContext, "局域网直连失败(" + action + ")，已回退公网：" + message);
+                LanDiscoveryManager.clearLanBaseUrl(sContext);
+            } else {
+                LanDiscoveryManager.cachedLanBaseUrl = null;
+                LanDiscoveryManager.cachedLanApiToken = null;
+            }
+        }
+
+        private static JSONObject doRequest(String baseUrl, String path, String token, String action, String method, JSONObject payload, int timeoutMs) throws Exception {
             HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + path).openConnection();
-
-            connection.setRequestMethod("GET");
-
-            connection.setConnectTimeout(15000);
-
-            connection.setReadTimeout(15000);
-
+            connection.setRequestMethod(method);
+            connection.setConnectTimeout(timeoutMs);
+            connection.setReadTimeout(timeoutMs);
             connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
-
             connection.setRequestProperty("Accept", "application/json");
 
-            if (token != null && !token.trim().isEmpty()) {
-
-                connection.setRequestProperty("Authorization", "Bearer " + token);
-
+            if (payload != null) {
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             }
 
+            if (token != null && !token.trim().isEmpty()) {
+                connection.setRequestProperty("Authorization", "Bearer " + token);
+            }
 
+            if (payload != null) {
+                try (OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8)) {
+                    writer.write(payload.toString());
+                }
+            }
 
             String body = readBody(connection);
-
             if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) {
-
                 String message = body;
-
                 try {
-
                     message = new JSONObject(body).optString("message", body);
-
                 } catch (Exception ignored) {
-
                 }
-
                 throw new IllegalStateException(formatError(action, path, connection.getResponseCode(), message));
-
             }
 
-
-
-            return new JSONObject(body);
-
+            return body.trim().isEmpty() ? new JSONObject() : new JSONObject(body);
         }
 
 

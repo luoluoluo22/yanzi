@@ -524,7 +524,7 @@
                          PreviewMouseRightButtonUp="CommandList_PreviewMouseRightButtonUp"
                          PreviewKeyDown="CommandList_PreviewKeyDown"
                          SelectionChanged="CommandList_SelectionChanged"
-                         ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     
                     <ListBox.ContextMenu>

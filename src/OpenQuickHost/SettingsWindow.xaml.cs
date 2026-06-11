@@ -1048,6 +1048,75 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool EnableLanSync
+    {
+        get => _settings.EnableLanSync;
+        set
+        {
+            if (value == _settings.EnableLanSync) return;
+            _settings = _settings with { EnableLanSync = value };
+            OnPropertyChanged();
+            AppSettingsStore.Save(_settings);
+        }
+    }
+
+    private void EnableLanSync_Click(object sender, RoutedEventArgs e)
+    {
+        if (EnableLanSync)
+        {
+            var result = System.Windows.MessageBox.Show(
+                "开启局域网直连需要向 Windows 防火墙添加例外，并允许 HTTP 端口监听。\n系统将弹出一个 UAC 管理员权限请求。\n\n是否继续？",
+                "局域网直连提权说明",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Information);
+
+            if (result != System.Windows.MessageBoxResult.Yes)
+            {
+                EnableLanSync = false;
+                return;
+            }
+
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c netsh http add urlacl url=http://*:{_settings.AgentApiPort}/ user=Everyone & netsh advfirewall firewall add rule name=\"Yanzi Agent API\" dir=in action=allow protocol=TCP localport={_settings.AgentApiPort} & netsh advfirewall firewall add rule name=\"Yanzi Discovery\" dir=in action=allow protocol=UDP localport=42980",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                Process.Start(psi)?.WaitForExit();
+                
+                System.Windows.MessageBox.Show("配置完成！请重启应用使设置生效。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"提权失败或被取消：{ex.Message}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                EnableLanSync = false;
+            }
+        }
+        else
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c netsh http delete urlacl url=http://*:{_settings.AgentApiPort}/ & netsh advfirewall firewall delete rule name=\"Yanzi Agent API\" & netsh advfirewall firewall delete rule name=\"Yanzi Discovery\"",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                Process.Start(psi)?.WaitForExit();
+            }
+            catch
+            {
+                // Ignore if user cancels removal
+            }
+        }
+    }
+
     public string WebDavServerUrl
     {
         get => _personalSyncSettings.WebDav.Url;
@@ -4015,6 +4084,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             item.IsUnpublishing = false;
         }
+    }
+
+    public void RefreshExtensionsFromExternal()
+    {
+        _ = Dispatcher.InvokeAsync(async () => await RefreshExtensionsFromDiskAsync());
     }
 
     private async Task RefreshExtensionsFromDiskAsync()
