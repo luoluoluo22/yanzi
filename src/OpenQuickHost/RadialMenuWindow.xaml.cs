@@ -332,38 +332,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private void PositionAroundCursor()
     {
         var source = PresentationSource.FromVisual(this) ?? PresentationSource.FromVisual(_mainWindow);
-        double dpiX = 1.0;
-        double dpiY = 1.0;
-        if (source?.CompositionTarget != null)
-        {
-            dpiX = source.CompositionTarget.TransformToDevice.M11;
-            dpiY = source.CompositionTarget.TransformToDevice.M22;
-        }
-
-        var screen = Forms.Screen.FromPoint(_centerPixels);
-        var workingArea = screen.WorkingArea;
-
+        var centerDips = source?.CompositionTarget?.TransformFromDevice.Transform(
+            new System.Windows.Point(_centerPixels.X, _centerPixels.Y)) ?? new System.Windows.Point(_centerPixels.X, _centerPixels.Y);
         var size = GetMenuSize();
-        double widthPixels = size.Width * dpiX;
-        double heightPixels = size.Height * dpiY;
-
-        double leftPixel = _centerPixels.X - widthPixels / 2;
-        double topPixel = _centerPixels.Y - heightPixels / 2;
-
-        double clampedLeftPixel = Math.Clamp(leftPixel, workingArea.Left, workingArea.Right - widthPixels);
-        double clampedTopPixel = Math.Clamp(topPixel, workingArea.Top, workingArea.Bottom - heightPixels);
-
-        double newCenterPixelsX = clampedLeftPixel + widthPixels / 2;
-        double newCenterPixelsY = clampedTopPixel + heightPixels / 2;
-
-        if (Math.Abs(newCenterPixelsX - _centerPixels.X) > 1 || Math.Abs(newCenterPixelsY - _centerPixels.Y) > 1)
-        {
-            _centerPixels = new System.Drawing.Point((int)newCenterPixelsX, (int)newCenterPixelsY);
-            Forms.Cursor.Position = _centerPixels;
-        }
-
-        Left = clampedLeftPixel / dpiX;
-        Top = clampedTopPixel / dpiY;
+        Left = centerDips.X - size.Width / 2;
+        Top = centerDips.Y - size.Height / 2;
     }
 
     private System.Windows.Size GetMenuSize()
