@@ -2008,6 +2008,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- C# 适合复杂逻辑、JSON/HTTP/文件处理、P/Invoke、强类型 .NET API、System.Drawing/System.Management、原生 WPF 窗口。");
         builder.AppendLine("- hostedViewXaml 可做宿主内工作区；C# 加 uiMode=native-window 可做独立 WPF 窗口。");
         builder.AppendLine("- 宿主 context 只提供管家能力：InputText、LaunchSource、ExtensionDirectory、ExtensionDataDirectory、Now、Permissions、State、SetStateAsync、Storage、ViewState、UpdateView。其它功能请用 C# / PowerShell / Windows 原生能力实现。");
+        builder.AppendLine("- 如果需要向绑定的手机端发送横幅通知，请向本机的燕子服务发送 HTTP POST 请求到 http://127.0.0.1:{端口}/v1/notify（默认端口 53919，Header 需携带 Authorization: Bearer yanzi-local-dev-token），Body 格式为 {\"title\":\"标题\",\"body\":\"内容\"}，且必须使用绝对标准的 UTF-8 编码字节流发送，否则手机上会显示 ??? 乱码。");
         builder.AppendLine();
         builder.AppendLine("选择策略：");
         builder.AppendLine("- 能用 openTarget 或 queryTargetTemplate 完成就不要写脚本。");

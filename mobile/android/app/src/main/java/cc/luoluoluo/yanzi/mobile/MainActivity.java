@@ -228,6 +228,21 @@ public class MainActivity extends Activity {
 
     protected void onCreate(Bundle savedInstanceState) {
 
+        if (getIntent() != null && getIntent().hasExtra("run_remote_extension_id")) {
+            super.onCreate(savedInstanceState);
+            sContext = this;
+            prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
+            deviceId = getOrCreateDeviceId();
+            
+            String extId = getIntent().getStringExtra("run_remote_extension_id");
+            String extName = getIntent().getStringExtra("run_remote_extension_name");
+            if (extId != null && !extId.isEmpty()) {
+                runRemoteExtensionSilently(extId, extName != null ? extName : extId);
+            }
+            finish();
+            return;
+        }
+
         super.onCreate(savedInstanceState);
         sContext = this;
         LanDiscoveryManager.discover(this);
@@ -432,6 +447,22 @@ public class MainActivity extends Activity {
             refreshExtensions();
 
             refreshYanm();
+
+        } else if (action.endsWith(".run-remote-extension") || intent.hasExtra("run_remote_extension_id")) {
+
+            String extId = intent.getStringExtra("run_remote_extension_id");
+
+            String extName = intent.getStringExtra("run_remote_extension_name");
+
+            if (extId != null && !extId.isEmpty()) {
+
+                selectTab("desktop");
+
+                RemoteExtension tempExt = new RemoteExtension(extId, extName != null ? extName : extId, "", "", "");
+
+                runRemoteExtension(tempExt, null);
+
+            }
 
         }
 
@@ -2746,27 +2777,35 @@ public class MainActivity extends Activity {
 
     private void runRemoteExtension(RemoteExtension extension, final View cardView) {
 
-        cardView.setEnabled(false);
+        if (cardView != null) {
+            cardView.setEnabled(false);
+        }
 
 
 
-        final android.view.ViewGroup cardGroup = (android.view.ViewGroup) cardView;
+        final android.view.ViewGroup cardGroup = cardView != null ? (android.view.ViewGroup) cardView : null;
 
-        final View originalIcon = cardGroup.getChildAt(0);
+        final View originalIcon = cardGroup != null ? cardGroup.getChildAt(0) : null;
 
 
 
         final android.widget.ProgressBar progressBar = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleSmall);
 
-        progressBar.setLayoutParams(originalIcon.getLayoutParams());
+        if (originalIcon != null) {
+            progressBar.setLayoutParams(originalIcon.getLayoutParams());
+        }
 
         progressBar.setPadding(dp(12), dp(12), dp(12), dp(12));
 
 
 
-        originalIcon.setVisibility(View.GONE);
+        if (originalIcon != null) {
+            originalIcon.setVisibility(View.GONE);
+        }
 
-        cardGroup.addView(progressBar, 0);
+        if (cardGroup != null) {
+            cardGroup.addView(progressBar, 0);
+        }
 
 
 
@@ -2778,11 +2817,17 @@ public class MainActivity extends Activity {
 
             runOnUiThread(() -> {
 
-                cardGroup.removeView(progressBar);
+                if (cardGroup != null) {
+                    cardGroup.removeView(progressBar);
+                }
 
-                originalIcon.setVisibility(View.VISIBLE);
+                if (originalIcon != null) {
+                    originalIcon.setVisibility(View.VISIBLE);
+                }
 
-                cardView.setEnabled(true);
+                if (cardView != null) {
+                    cardView.setEnabled(true);
+                }
 
             });
 
@@ -3719,9 +3764,14 @@ public class MainActivity extends Activity {
 
     private String normalizedBaseUrl() {
 
-        String value = baseUrlInput.getText().toString().trim();
+        String value;
+        if (baseUrlInput != null) {
+            value = baseUrlInput.getText().toString().trim();
+        } else {
+            value = prefs != null ? prefs.getString("baseUrl", DEFAULT_BASE_URL) : DEFAULT_BASE_URL;
+        }
 
-        if (value.trim().isEmpty()) {
+        if (value == null || value.trim().isEmpty()) {
 
             return DEFAULT_BASE_URL;
 
@@ -5651,7 +5701,7 @@ public class MainActivity extends Activity {
 
 
     private void showSetWidgetExtensionDialog(final RemoteExtension extension) {
-        String[] options = {"设为桌面磁贴 1", "设为桌面磁贴 2", "设为桌面磁贴 3", "设为桌面磁贴 4", "取消置顶/清除绑定"};
+        String[] options = {"设为桌面磁贴 1", "设为桌面磁贴 2", "设为桌面磁贴 3", "设为桌面磁贴 4", "创建桌面快捷图标", "取消置顶/清除绑定", "复制扩展 ID"};
         new android.app.AlertDialog.Builder(this)
             .setTitle("配置桌面小部件快捷扩展")
             .setItems(options, (dialog, which) -> {
@@ -5673,18 +5723,248 @@ public class MainActivity extends Activity {
                         array.put(which, extension.extensionId);
                         setStatus("已将扩展 " + extension.name + " 设为小部件快捷键 " + (which + 1));
                     } else if (which == 4) {
+                        createRemoteExtensionShortcut(extension);
+                    } else if (which == 5) {
                         for (int i = 0; i < 4; i++) {
                             if (array.optString(i).equals(extension.extensionId)) {
                                 array.put(i, "");
                             }
                         }
                         setStatus("已取消扩展 " + extension.name + " 在桌面小部件的绑定");
+                    } else if (which == 6) {
+                        android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                        if (clipboard != null) {
+                            android.content.ClipData clip = android.content.ClipData.newPlainText("Extension ID", extension.extensionId);
+                            clipboard.setPrimaryClip(clip);
+                            Toast.makeText(this, "已复制扩展 ID: " + extension.extensionId, Toast.LENGTH_SHORT).show();
+                            setStatus("已复制扩展 ID: " + extension.extensionId);
+                        }
                     }
                     
                     prefs.edit().putString(prefsKey, array.toString()).apply();
                     updateAllAppWidgets();
-                } catch (Exception ignored) {}
+                } catch (Exception ex) {
+                    setStatus("快捷键设置失败：" + ex.getMessage());
+                    Toast.makeText(this, "设置失败：" + ex.getMessage(), Toast.LENGTH_SHORT).show();
+                }
             })
             .show();
+    }
+
+    private void createRemoteExtensionShortcut(final RemoteExtension extension) {
+        boolean hasShown = prefs.getBoolean("hasShownShortcutPermissionGuide", false);
+        if (!hasShown) {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("添加桌面图标提示")
+                .setMessage("创建桌面快捷图标需要手机系统的【桌面快捷方式】权限。\n\n部分系统（如小米、红米、澎湃OS、华为等）默认会禁用此权限。\n\n如果创建后桌面上没有生成图标，请点击【去设置】开启该权限。")
+                .setPositiveButton("去设置", (dialog, which) -> {
+                    prefs.edit().putBoolean("hasShownShortcutPermissionGuide", true).apply();
+                    try {
+                        Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                    } catch (Exception ex) {
+                        Toast.makeText(this, "无法自动打开设置，请手动为“燕子移动端”开启快捷方式权限", Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("我知道了", (dialog, which) -> {
+                    prefs.edit().putBoolean("hasShownShortcutPermissionGuide", true).apply();
+                    performShortcutCreation(extension);
+                })
+                .show();
+        } else {
+            performShortcutCreation(extension);
+        }
+    }
+
+    private void performShortcutCreation(final RemoteExtension extension) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                android.content.pm.ShortcutManager shortcutManager = getSystemService(android.content.pm.ShortcutManager.class);
+                if (shortcutManager != null && shortcutManager.isRequestPinShortcutSupported()) {
+                    Intent shortcutIntent = new Intent(this, MainActivity.class);
+                    shortcutIntent.setAction(Intent.ACTION_VIEW);
+                    shortcutIntent.putExtra("run_remote_extension_id", extension.extensionId);
+                    shortcutIntent.putExtra("run_remote_extension_name", extension.name);
+                    shortcutIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+                    // 1. 动态绘制圆角主题色扩展图标
+                    int size = 192;
+                    android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888);
+                    android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+
+                    // 1.1 绘制背景圆角矩形
+                    android.graphics.Paint bgPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                    bgPaint.setStyle(android.graphics.Paint.Style.FILL);
+                    int baseColor = Color.rgb(45, 45, 45); // 默认暗灰色
+                    if (extension.accentHex != null && !extension.accentHex.trim().isEmpty()) {
+                        try {
+                            String colorStr = extension.accentHex.trim();
+                            if (!colorStr.startsWith("#")) colorStr = "#" + colorStr;
+                            baseColor = Color.parseColor(colorStr);
+                        } catch (Exception ignored) {}
+                    }
+                    bgPaint.setColor(baseColor);
+                    float radius = size * 0.22f; // 圆角半径
+                    canvas.drawRoundRect(new android.graphics.RectF(0, 0, size, size), radius, radius, bgPaint);
+
+                    // 1.2 绘制白色矢量图案
+                    android.graphics.Path iconPath = MobileIconLibrary.resolveOrDefault(extension.icon);
+                    if (iconPath != null) {
+                        android.graphics.Path path = new android.graphics.Path(iconPath);
+                        android.graphics.RectF bounds = new android.graphics.RectF();
+                        path.computeBounds(bounds, true);
+                        if (bounds.width() > 0 && bounds.height() > 0) {
+                            float targetSize = size * 0.52f; // 占背景的 52% 空间
+                            float scale = targetSize / Math.max(bounds.width(), bounds.height());
+                            android.graphics.Matrix matrix = new android.graphics.Matrix();
+                            matrix.postTranslate(-bounds.centerX(), -bounds.centerY());
+                            matrix.postScale(scale, scale);
+                            matrix.postTranslate(size / 2f, size / 2f);
+                            path.transform(matrix);
+
+                            android.graphics.Paint iconPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                            iconPaint.setStyle(android.graphics.Paint.Style.FILL);
+                            iconPaint.setColor(Color.WHITE);
+                            canvas.drawPath(path, iconPaint);
+                        }
+                    }
+
+                    // 2. 转换为 Icon 并关联
+                    android.graphics.drawable.Icon icon = android.graphics.drawable.Icon.createWithBitmap(bitmap);
+
+                    android.content.pm.ShortcutInfo shortcutInfo = new android.content.pm.ShortcutInfo.Builder(this, "ext_" + extension.extensionId)
+                        .setShortLabel(extension.name)
+                        .setLongLabel(extension.name)
+                        .setIcon(icon)
+                        .setIntent(shortcutIntent)
+                        .build();
+
+                    boolean success = shortcutManager.requestPinShortcut(shortcutInfo, null);
+                    if (success) {
+                        setStatus("已向系统发送创建请求：" + extension.name);
+                        Toast.makeText(this, "已向系统发送创建请求：" + extension.name, Toast.LENGTH_SHORT).show();
+                    } else {
+                        setStatus("系统拒绝了快捷方式创建请求");
+                        Toast.makeText(this, "系统拒绝了快捷方式创建请求(请检查快捷方式权限)", Toast.LENGTH_LONG).show();
+                    }
+                } else {
+                    setStatus("当前系统或桌面不支持创建快捷方式");
+                    Toast.makeText(this, "当前系统或桌面不支持创建快捷方式", Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                setStatus("当前系统版本较低，不支持创建快捷方式");
+                Toast.makeText(this, "当前系统版本较低，不支持创建快捷方式", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception ex) {
+            setStatus("创建快捷方式失败：" + ex.getMessage());
+            Toast.makeText(this, "创建失败：" + ex.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void runRemoteExtensionSilently(final String extensionId, final String extensionName) {
+        Toast.makeText(getApplicationContext(), "燕子：正在执行 [" + extensionName + "]...", Toast.LENGTH_SHORT).show();
+
+        executor.execute(() -> {
+            try {
+                String baseUrl = normalizedBaseUrl();
+                String token = requireToken();
+                String messageId;
+                try {
+                    messageId = YanziApiClient.runExtensionOnDesktop(
+                        baseUrl,
+                        token,
+                        deviceId,
+                        buildDeviceName(),
+                        extensionId,
+                        "");
+                } catch (Exception ex) {
+                    if (!isUnauthorized(ex)) {
+                        throw ex;
+                    }
+                    token = refreshToken();
+                    messageId = YanziApiClient.runExtensionOnDesktop(
+                        baseUrl,
+                        token,
+                        deviceId,
+                        buildDeviceName(),
+                        extensionId,
+                        "");
+                }
+
+                final String sentMessageId = messageId;
+                
+                boolean finished = false;
+                long startTime = System.currentTimeMillis();
+                long timeout = 20000;
+                String statusResult = "timeout";
+                String execOutput = "";
+
+                while (System.currentTimeMillis() - startTime < timeout) {
+                    try {
+                        JSONObject msgDetail = YanziApiClient.fetchMessageDetail(baseUrl, token, sentMessageId);
+                        String status = msgDetail.optString("status", "pending");
+                        if ("completed".equals(status)) {
+                            statusResult = "completed";
+                            JSONObject payloadObj = msgDetail.optJSONObject("payload");
+                            if (payloadObj != null) {
+                                JSONObject execRes = payloadObj.optJSONObject("executionResult");
+                                if (execRes != null) {
+                                    execOutput = execRes.optString("output", "");
+                                }
+                            }
+                            finished = true;
+                            break;
+                        } else if ("failed".equals(status)) {
+                            statusResult = "failed";
+                            JSONObject payloadObj = msgDetail.optJSONObject("payload");
+                            if (payloadObj != null) {
+                                JSONObject execRes = payloadObj.optJSONObject("executionResult");
+                                if (execRes != null) {
+                                    execOutput = execRes.optString("output", "");
+                                }
+                            }
+                            finished = true;
+                            break;
+                        } else if ("acked".equals(status)) {
+                            statusResult = "acked";
+                            finished = true;
+                            break;
+                        }
+                    } catch (Exception pollEx) {
+                    }
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                }
+
+                final String finalStatus = statusResult;
+                final String finalOutput = execOutput;
+
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    if ("completed".equals(finalStatus)) {
+                        String cleanOut = finalOutput.trim();
+                        String showMsg = "扩展 [" + extensionName + "] 执行成功！";
+                        if (!cleanOut.isEmpty()) {
+                            showMsg += "\n结果: " + (cleanOut.length() > 60 ? cleanOut.substring(0, 60) + "..." : cleanOut);
+                        }
+                        Toast.makeText(getApplicationContext(), showMsg, Toast.LENGTH_LONG).show();
+                    } else if ("failed".equals(finalStatus)) {
+                        Toast.makeText(getApplicationContext(), "扩展 [" + extensionName + "] 执行失败！\n错误: " + finalOutput, Toast.LENGTH_LONG).show();
+                    } else if ("acked".equals(finalStatus)) {
+                        Toast.makeText(getApplicationContext(), "扩展 [" + extensionName + "] 已执行完成", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(getApplicationContext(), "扩展 [" + extensionName + "] 执行超时，请在电脑端确认", Toast.LENGTH_LONG).show();
+                    }
+                });
+
+            } catch (Exception ex) {
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    Toast.makeText(getApplicationContext(), "执行失败：" + ex.getMessage(), Toast.LENGTH_LONG).show();
+                });
+            }
+        });
     }
 }

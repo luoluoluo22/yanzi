@@ -4,6 +4,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <supports-screens
         android:anyDensity="true"
@@ -36,6 +37,16 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".YanmComponentWidgetConfigActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".YanmComponentEditActivity"
+            android:exported="false" />
         <service
             android:name=".FloatingWheelService"
             android:exported="false" />
@@ -82,6 +93,19 @@
         <service android:name=".widget.YanmWidgetService"
             android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="true" />
+
+        <!-- Single Yanm Component Widget Provider -->
+        <receiver android:name=".widget.YanmComponentWidgetProvider"
+            android:label="燕幕单组件"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_YANM_COMPONENT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_yanm_component_info" />
+        </receiver>
 
     </application>
 </manifest>

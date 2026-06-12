@@ -18,12 +18,14 @@ public sealed class LocalAgentApiServer : IDisposable
     private readonly Func<string, Task<(bool ok, string message)>>? _onInstallExtension;
     private readonly Func<Task<AuthMeResponse?>>? _onGetMe;
     private readonly Func<string, string, Task>? _onShowNotification;
+    private readonly Func<string, string, Task>? _onPushToMobile;
     private readonly Func<DeviceMessageRecord, Task<(bool success, string output)>>? _onMobileMessage;
     private readonly Action<string, bool>? _onSettingsChanged;
     private readonly HttpListener _listener = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _loopTask;
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _runningTasks = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, LocalMobileMessageDetail> _localMobileMessages = new(StringComparer.OrdinalIgnoreCase);
 
     public LocalAgentApiServer(
         string prefix, 
@@ -35,6 +37,7 @@ public sealed class LocalAgentApiServer : IDisposable
         Func<string, Task<(bool ok, string message)>>? onInstallExtension = null,
         Func<Task<AuthMeResponse?>>? onGetMe = null,
         Func<string, string, Task>? onShowNotification = null,
+        Func<string, string, Task>? onPushToMobile = null,
         Func<DeviceMessageRecord, Task<(bool success, string output)>>? onMobileMessage = null,
         Action<string, bool>? onSettingsChanged = null)
     {
@@ -47,6 +50,7 @@ public sealed class LocalAgentApiServer : IDisposable
         _onInstallExtension = onInstallExtension;
         _onGetMe = onGetMe;
         _onShowNotification = onShowNotification;
+        _onPushToMobile = onPushToMobile;
         _onMobileMessage = onMobileMessage;
         _onSettingsChanged = onSettingsChanged;
         _listener.Prefixes.Add(_prefix);
@@ -133,6 +137,39 @@ public sealed class LocalAgentApiServer : IDisposable
             {
                 response.StatusCode = 204;
                 response.Close();
+                return;
+            }
+
+            if (request.HttpMethod == "POST" && path == "/v1/notify")
+            {
+                if (!IsAuthorized(request))
+                {
+                    await WriteJsonAsync(response, 401, new { error = "unauthorized" });
+                    return;
+                }
+                
+                string body;
+                using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                {
+                    body = await reader.ReadToEndAsync();
+                }
+                
+                string title = "Yanzi 通知";
+                string text = "";
+                
+                try 
+                {
+                    var json = JsonDocument.Parse(body).RootElement;
+                    if (json.TryGetProperty("title", out var t)) title = t.GetString() ?? title;
+                    if (json.TryGetProperty("body", out var b)) text = b.GetString() ?? text;
+                } catch {}
+
+                if (_onPushToMobile != null && !string.IsNullOrEmpty(text))
+                {
+                    _ = Task.Run(() => _onPushToMobile(title, text));
+                }
+                
+                await WriteJsonAsync(response, 200, new { success = true });
                 return;
             }
 
@@ -379,7 +416,23 @@ public sealed class LocalAgentApiServer : IDisposable
                 }
 
                 var result = await _onMobileMessage(message);
+                var completedMessage = CreateLocalMobileMessageDetail(message, result.success, result.output);
+                _localMobileMessages[messageId] = completedMessage;
+                TrimLocalMobileMessages();
                 await WriteJsonAsync(response, 200, new { ok = true, messageId, success = result.success, output = result.output });
+                return;
+            }
+
+            if (request.HttpMethod == "GET" && path.StartsWith("/v1/me/mobile/messages/", StringComparison.Ordinal))
+            {
+                var messageId = Uri.UnescapeDataString(path["/v1/me/mobile/messages/".Length..]);
+                if (_localMobileMessages.TryGetValue(messageId, out var message))
+                {
+                    await WriteJsonAsync(response, 200, message);
+                    return;
+                }
+
+                await WriteJsonAsync(response, 404, new { error = "not_found" });
                 return;
             }
 
@@ -1063,6 +1116,55 @@ public sealed class LocalAgentApiServer : IDisposable
         return value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     }
 
+    private static LocalMobileMessageDetail CreateLocalMobileMessageDetail(DeviceMessageRecord message, bool success, string output)
+    {
+        var payload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in message.Payload)
+        {
+            payload[item.Key] = item.Value.Clone();
+        }
+
+        payload["executionResult"] = new
+        {
+            success,
+            output,
+            error = success ? string.Empty : output
+        };
+
+        return new LocalMobileMessageDetail
+        {
+            Ok = true,
+            MessageId = message.MessageId,
+            SourceDeviceId = message.SourceDeviceId,
+            TargetPlatform = message.TargetPlatform,
+            Kind = message.Kind,
+            Title = message.Title,
+            Text = message.Text,
+            Payload = payload,
+            Status = success ? "completed" : "failed",
+            CreatedAt = message.CreatedAt,
+            DeliveredAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
+            AckedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
+        };
+    }
+
+    private static void TrimLocalMobileMessages()
+    {
+        if (_localMobileMessages.Count <= 100)
+        {
+            return;
+        }
+
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-30).ToUnixTimeMilliseconds();
+        foreach (var item in _localMobileMessages)
+        {
+            if (long.TryParse(item.Value.CreatedAt, out var createdAt) && createdAt < cutoff)
+            {
+                _localMobileMessages.TryRemove(item.Key, out _);
+            }
+        }
+    }
+
     private static string? GetQueryString(HttpListenerRequest request, string key)
     {
         return request.QueryString[key];
@@ -1096,4 +1198,31 @@ public sealed class LocalAgentApiServer : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true
     };
+
+    private sealed class LocalMobileMessageDetail
+    {
+        public bool Ok { get; set; }
+
+        public string MessageId { get; set; } = string.Empty;
+
+        public string? SourceDeviceId { get; set; }
+
+        public string? TargetPlatform { get; set; }
+
+        public string Kind { get; set; } = "text";
+
+        public string Title { get; set; } = string.Empty;
+
+        public string Text { get; set; } = string.Empty;
+
+        public Dictionary<string, object?> Payload { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public string Status { get; set; } = string.Empty;
+
+        public string CreatedAt { get; set; } = string.Empty;
+
+        public string? DeliveredAt { get; set; }
+
+        public string? AckedAt { get; set; }
+    }
 }

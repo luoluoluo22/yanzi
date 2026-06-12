@@ -1,9 +1,0 @@
-﻿=====================================================
-       Yanzi Auto Update Multi-Endpoint Benchmark
-       Test Time: 2026-06-01 15:35:41
-=====================================================
-[-] [GHFast_Top_CDN] : TIMEOUT / FAILED (Exception calling "GetResponse" with "0" argument(s): "操作超时")
-[-] [Mirror_GHProxy] : TIMEOUT / FAILED (Exception calling "GetResponse" with "0" argument(s): "操作超时")
-[-] [CF_GHProxy_CC] : TIMEOUT / FAILED (Exception calling "GetResponse" with "0" argument(s): "The underlying connection was closed: Could not establish trust relationship for the SSL/TLS secure channel.")
-[-] [GitHub_Direct] : TIMEOUT / FAILED (Exception calling "GetResponse" with "0" argument(s): "操作超时")
-=====================================================

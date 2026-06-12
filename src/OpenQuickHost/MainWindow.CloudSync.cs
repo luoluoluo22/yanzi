@@ -1,10 +1,12 @@
-using System.IO;
+using System.IO;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.NetworkInformation;
 using System.Text.Json;
-using System.Windows;
+using System.Windows;
+using System.Windows.Media.Imaging;
 using OpenQuickHost.Sync;
 using Forms = System.Windows.Forms;
 
@@ -1027,14 +1029,20 @@ public partial class MainWindow
         var text = string.IsNullOrWhiteSpace(message.Text) ? $"消息类型：{message.Kind}" : message.Text.Trim();
         var sourceLabel = GetMobileSourceLabel(message);
         var screenshotDataUrl = GetPayloadString(message, "screenshotDataUrl");
-        var screenshotFilePath = await TryDownloadMobileScreenshotFromWebDavAsync(message);
+        var mobileAttachmentFilePath = await TryDownloadMobileScreenshotFromWebDavAsync(message);
+
+        var screenshotFilePath = IsMobileScreenshotMessage(message)
+
+            ? mobileAttachmentFilePath
+
+            : null;
         if (string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase))
         {
             var payloadKeys = message.Payload.Count == 0
                 ? "(empty)"
                 : string.Join(",", message.Payload.Keys.OrderBy(static key => key, StringComparer.OrdinalIgnoreCase));
             HostAssets.AppendLog(
-                $"Mobile screenshot payload: id={message.MessageId}, keys={payloadKeys}, hasDataUrl={!string.IsNullOrWhiteSpace(screenshotDataUrl)}, webDavPath={GetPayloadString(message, "webDavPath") ?? "(none)"}, localFile={screenshotFilePath ?? "(none)"}.");
+                $"Mobile screenshot payload: id={message.MessageId}, keys={payloadKeys}, hasDataUrl={!string.IsNullOrWhiteSpace(screenshotDataUrl)}, webDavPath={GetPayloadString(message, "webDavPath") ?? "(none)"}, localFile={mobileAttachmentFilePath ?? "(none)"}.");
         }
         HostAssets.AppendLog(
             $"Mobile bridge message: id={message.MessageId}, source={sourceLabel}, kind={message.Kind}, text={trimForLog(text)}");
@@ -1067,7 +1075,13 @@ public partial class MainWindow
         await Dispatcher.InvokeAsync(() =>
         {
             LastRunMessage = $"{title}：{text}";
-            SyncStatus = "已收到手机端消息。";
+            var clipboardMessage = CopyMobileMessageToClipboard(message, text, screenshotDataUrl, mobileAttachmentFilePath);
+
+            SyncStatus = string.IsNullOrWhiteSpace(clipboardMessage)
+
+                ? "已收到手机端消息。"
+
+                : $"已收到手机端消息，{clipboardMessage}。";
             SaveMobileInboxMessage(message, title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
             ShowMobileMessageToast(title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
         });
@@ -1075,7 +1089,377 @@ public partial class MainWindow
         return (false, true, string.Empty);
     }
 
-    private async Task<(bool success, string output)> RunMobileExtensionAsync(CommandItem runnable, string inputText)
+    private static string CopyMobileMessageToClipboard(DeviceMessageRecord message, string text, string? screenshotDataUrl, string? localFilePath)
+
+    {
+
+        try
+
+        {
+
+            if (IsMobileScreenshotMessage(message))
+
+            {
+
+                var bitmap = TryCreateClipboardBitmap(screenshotDataUrl, localFilePath);
+
+                if (bitmap != null)
+
+                {
+
+                    var dataObject = new System.Windows.DataObject();
+
+                    dataObject.SetImage(bitmap);
+
+                    ClipboardService.SetDataObject(dataObject, true);
+
+                    HostAssets.AppendLog($"Mobile bridge clipboard copied image: id={message.MessageId}.");
+
+                    return "已复制图片到剪贴板";
+
+                }
+
+            }
+
+
+
+            var filePaths = ResolveMobileClipboardFilePaths(message, localFilePath);
+
+            if (filePaths.Count > 0)
+
+            {
+
+                CopyFileDropListToClipboard(filePaths);
+
+                HostAssets.AppendLog($"Mobile bridge clipboard copied files: id={message.MessageId}, count={filePaths.Count}.");
+
+                return filePaths.Count == 1 ? "已复制文件到剪贴板" : $"已复制 {filePaths.Count} 个文件到剪贴板";
+
+            }
+
+
+
+            if (!string.IsNullOrWhiteSpace(text))
+
+            {
+
+                ClipboardService.SetText(text);
+
+                HostAssets.AppendLog($"Mobile bridge clipboard copied text: id={message.MessageId}, length={text.Length}.");
+
+                return "已复制文本到剪贴板";
+
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            HostAssets.AppendLog($"Mobile bridge clipboard copy failed: id={message.MessageId}, {FormatExceptionMessage(ex)}");
+
+            return "剪贴板写入失败";
+
+        }
+
+
+
+        return string.Empty;
+
+    }
+
+
+
+    private static BitmapSource? TryCreateClipboardBitmap(string? dataUrl, string? localFilePath)
+
+    {
+
+        byte[] bytes;
+
+        if (!string.IsNullOrWhiteSpace(localFilePath) && File.Exists(localFilePath))
+
+        {
+
+            bytes = File.ReadAllBytes(localFilePath);
+
+        }
+
+        else if (!TryDecodeDataUrl(dataUrl, out bytes))
+
+        {
+
+            return null;
+
+        }
+
+
+
+        var bitmap = new BitmapImage();
+
+        bitmap.BeginInit();
+
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+
+        bitmap.StreamSource = new MemoryStream(bytes);
+
+        bitmap.EndInit();
+
+        bitmap.Freeze();
+
+        return bitmap;
+
+    }
+
+
+
+    private static bool TryDecodeDataUrl(string? dataUrl, out byte[] bytes)
+
+    {
+
+        bytes = [];
+
+        if (string.IsNullOrWhiteSpace(dataUrl))
+
+        {
+
+            return false;
+
+        }
+
+
+
+        const string marker = "base64,";
+
+        var index = dataUrl.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+
+        if (index < 0)
+
+        {
+
+            return false;
+
+        }
+
+
+
+        bytes = Convert.FromBase64String(dataUrl[(index + marker.Length)..]);
+
+        return bytes.Length > 0;
+
+    }
+
+
+
+    private static IReadOnlyList<string> ResolveMobileClipboardFilePaths(DeviceMessageRecord message, string? localFilePath)
+
+    {
+
+        var paths = new List<string>();
+
+        AddClipboardFilePath(paths, localFilePath);
+
+
+
+        foreach (var key in new[] { "localFilePath", "filePath", "path", "downloadedFilePath", "attachmentPath" })
+
+        {
+
+            AddClipboardFilePath(paths, GetPayloadString(message, key));
+
+        }
+
+
+
+        foreach (var key in new[] { "localFilePaths", "filePaths", "paths", "attachments", "files" })
+
+        {
+
+            AddPayloadFilePaths(paths, message, key);
+
+        }
+
+
+
+        return paths
+
+            .Where(static path => File.Exists(path) || Directory.Exists(path))
+
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+
+            .ToArray();
+
+    }
+
+
+
+    private static void AddPayloadFilePaths(List<string> paths, DeviceMessageRecord message, string key)
+
+    {
+
+        if (!message.Payload.TryGetValue(key, out var element))
+
+        {
+
+            return;
+
+        }
+
+
+
+        if (element.ValueKind == JsonValueKind.String)
+
+        {
+
+            AddClipboardFilePath(paths, element.GetString());
+
+            return;
+
+        }
+
+
+
+        if (element.ValueKind == JsonValueKind.Array)
+
+        {
+
+            foreach (var item in element.EnumerateArray())
+
+            {
+
+                if (item.ValueKind == JsonValueKind.String)
+
+                {
+
+                    AddClipboardFilePath(paths, item.GetString());
+
+                }
+
+                else if (item.ValueKind == JsonValueKind.Object)
+
+                {
+
+                    AddClipboardFilePath(paths, ReadPayloadObjectString(item, "localFilePath"));
+
+                    AddClipboardFilePath(paths, ReadPayloadObjectString(item, "filePath"));
+
+                    AddClipboardFilePath(paths, ReadPayloadObjectString(item, "path"));
+
+                }
+
+            }
+
+            return;
+
+        }
+
+
+
+        if (element.ValueKind == JsonValueKind.Object)
+
+        {
+
+            AddClipboardFilePath(paths, ReadPayloadObjectString(element, "localFilePath"));
+
+            AddClipboardFilePath(paths, ReadPayloadObjectString(element, "filePath"));
+
+            AddClipboardFilePath(paths, ReadPayloadObjectString(element, "path"));
+
+        }
+
+    }
+
+
+
+    private static string? ReadPayloadObjectString(JsonElement element, string key)
+
+    {
+
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(key, out var value))
+
+        {
+
+            return null;
+
+        }
+
+
+
+        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+
+    }
+
+
+
+    private static void AddClipboardFilePath(List<string> paths, string? path)
+
+    {
+
+        if (string.IsNullOrWhiteSpace(path))
+
+        {
+
+            return;
+
+        }
+
+
+
+        var normalized = path.Trim().Trim('"');
+
+        if (!string.IsNullOrWhiteSpace(normalized))
+
+        {
+
+            paths.Add(normalized);
+
+        }
+
+    }
+
+
+
+    private static void CopyFileDropListToClipboard(IReadOnlyList<string> filePaths)
+
+    {
+
+        var files = new StringCollection();
+
+        foreach (var filePath in filePaths)
+
+        {
+
+            files.Add(filePath);
+
+        }
+
+
+
+        var dataObject = new System.Windows.DataObject();
+
+        dataObject.SetFileDropList(files);
+
+        using var stream = new MemoryStream(new byte[] { 5, 0, 0, 0 });
+
+        dataObject.SetData("Preferred DropEffect", stream);
+
+        ClipboardService.SetDataObject(dataObject, true);
+
+    }
+
+
+
+    private static bool IsMobileScreenshotMessage(DeviceMessageRecord message)
+
+    {
+
+        return string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase);
+
+    }
+
+
+
+    private async Task<(bool success, string output)> RunMobileExtensionAsync(CommandItem runnable, string inputText)
     {
         var hasExternalInput = !string.IsNullOrWhiteSpace(inputText);
         var command = ResolveRunnableCommand(runnable);
@@ -1189,11 +1573,10 @@ public partial class MainWindow
                 return null;
             }
 
-            var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-            Directory.CreateDirectory(downloads);
-            var filePath = Path.Combine(downloads, $"yanzi-mobile-screenshot-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}.jpg");
+            var filePath = BuildMobileAttachmentDownloadPath(message, remotePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
             await File.WriteAllBytesAsync(filePath, bytes, timeout.Token);
-            HostAssets.AppendLog($"Mobile screenshot WebDAV downloaded: path={remotePath}, local={filePath}, bytes={bytes.Length}.");
+            HostAssets.AppendLog($"Mobile attachment WebDAV downloaded: kind={message.Kind}, path={remotePath}, local={filePath}, bytes={bytes.Length}.");
             return filePath;
         }
         catch (Exception ex)
@@ -1203,7 +1586,75 @@ public partial class MainWindow
         }
     }
 
-    private static string? GetPayloadString(DeviceMessageRecord message, string key)
+    private static string BuildMobileAttachmentDownloadPath(DeviceMessageRecord message, string remotePath)
+
+    {
+
+        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+
+        var fileName = FirstNonEmpty(
+
+            GetPayloadString(message, "fileName"),
+
+            GetPayloadString(message, "name"),
+
+            Path.GetFileName(remotePath.Replace('/', Path.DirectorySeparatorChar)));
+
+
+
+        if (string.IsNullOrWhiteSpace(fileName))
+
+        {
+
+            fileName = IsMobileScreenshotMessage(message)
+
+                ? $"yanzi-mobile-screenshot-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}.jpg"
+
+                : $"yanzi-mobile-file-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}";
+
+        }
+
+
+
+        fileName = SanitizeFileName(fileName);
+
+        var path = Path.Combine(downloads, fileName);
+
+        if (!File.Exists(path) && !Directory.Exists(path))
+
+        {
+
+            return path;
+
+        }
+
+
+
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+
+        var extension = Path.GetExtension(fileName);
+
+        return Path.Combine(downloads, $"{stem}-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}{extension}");
+
+    }
+
+
+
+    private static string SanitizeFileName(string fileName)
+
+    {
+
+        var invalidChars = Path.GetInvalidFileNameChars();
+
+        var sanitized = new string(fileName.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray()).Trim();
+
+        return string.IsNullOrWhiteSpace(sanitized) ? $"yanzi-mobile-file-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}" : sanitized;
+
+    }
+
+
+
+    private static string? GetPayloadString(DeviceMessageRecord message, string key)
     {
         if (!message.Payload.TryGetValue(key, out var element))
         {

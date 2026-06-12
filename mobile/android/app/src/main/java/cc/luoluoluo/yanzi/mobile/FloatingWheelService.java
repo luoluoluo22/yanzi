@@ -63,6 +63,18 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import java.net.ServerSocket;
+import java.net.Socket;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+
+import java.net.ServerSocket;
+import java.net.Socket;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+
 public class FloatingWheelService extends Service {
     private static Context sContext;
 
@@ -97,6 +109,8 @@ public class FloatingWheelService extends Service {
     private boolean bubbleDragging;
     private boolean bubbleMoveMode;
     private boolean wheelTracking;
+    private ServerSocket notificationServerSocket;
+    private Thread notificationThread;
     private boolean ignoreBubbleGestureUntilUp;
     private Runnable pendingLongPress;
     private Runnable pendingSlotMenu;
@@ -152,6 +166,7 @@ public class FloatingWheelService extends Service {
 
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        startNotificationServer();
         showBubble();
     }
 
@@ -173,6 +188,10 @@ public class FloatingWheelService extends Service {
 
     @Override
     public void onDestroy() {
+        try {
+            if (notificationServerSocket != null) notificationServerSocket.close();
+            if (notificationThread != null) notificationThread.interrupt();
+        } catch (Exception e) {}
         removeView(wheelView);
         removeView(panelView);
         removeView(progressView);
@@ -1945,5 +1964,78 @@ public class FloatingWheelService extends Service {
         String rootPath;
         String username;
         String password;
+    }
+
+    private void startNotificationServer() {
+        notificationThread = new Thread(() -> {
+            try {
+                notificationServerSocket = new ServerSocket(42981);
+                while (!Thread.currentThread().isInterrupted()) {
+                    Socket client = notificationServerSocket.accept();
+                    handleNotificationClient(client);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Notification server error", e);
+            }
+        });
+        notificationThread.start();
+    }
+
+    private void handleNotificationClient(Socket client) {
+        try {
+            BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
+            String line = in.readLine();
+            if (line == null) return;
+            
+            int contentLength = 0;
+            while ((line = in.readLine()) != null && !line.isEmpty()) {
+                if (line.toLowerCase().startsWith("content-length:")) {
+                    contentLength = Integer.parseInt(line.substring(15).trim());
+                }
+            }
+            
+            if (contentLength > 0) {
+                char[] bodyChars = new char[contentLength];
+                int read = in.read(bodyChars, 0, contentLength);
+                if (read > 0) {
+                    String body = new String(bodyChars, 0, read);
+                    JSONObject json = new JSONObject(body);
+                    String title = json.optString("title", "Yanzi 通知");
+                    String text = json.optString("body", "");
+                    
+                    showNotification(title, text);
+                }
+            }
+            
+            OutputStreamWriter out = new OutputStreamWriter(client.getOutputStream(), StandardCharsets.UTF_8);
+            out.write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+            out.flush();
+            client.close();
+        } catch (Exception e) {
+            Log.e(TAG, "Handle client error", e);
+        }
+    }
+
+    private void showNotification(String title, String text) {
+        mainHandler.post(() -> {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    NotificationChannel channel = new NotificationChannel("yanzi_push", "燕子电脑推送", NotificationManager.IMPORTANCE_HIGH);
+                    nm.createNotificationChannel(channel);
+                }
+                Notification.Builder builder;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    builder = new Notification.Builder(this, "yanzi_push");
+                } else {
+                    builder = new Notification.Builder(this);
+                }
+                builder.setSmallIcon(android.R.drawable.stat_notify_chat)
+                       .setContentTitle(title)
+                       .setContentText(text)
+                       .setAutoCancel(true);
+                nm.notify((int) System.currentTimeMillis(), builder.build());
+            }
+        });
     }
 }

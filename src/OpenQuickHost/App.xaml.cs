@@ -580,6 +580,21 @@ public partial class App : WpfApplication
                     window.Dispatcher.Invoke(() => System.Windows.MessageBox.Show(message, title));
                     return Task.CompletedTask;
                 },
+                async (title, message) =>
+                {
+                    var mobileIp = LanDiscoveryService.LastKnownMobileIp;
+                    if (mobileIp != null)
+                    {
+                        try
+                        {
+                            using var client = new System.Net.Http.HttpClient();
+                            client.Timeout = TimeSpan.FromSeconds(3);
+                            var payload = System.Text.Json.JsonSerializer.Serialize(new { title, message });
+                            var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                            await client.PostAsync($"http://{mobileIp}:42981/", content);
+                        } catch {}
+                    }
+                },
                 (message) =>
                 {
                     var tcs = new TaskCompletionSource<(bool success, string output)>();

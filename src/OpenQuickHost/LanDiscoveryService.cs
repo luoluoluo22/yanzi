@@ -18,6 +18,7 @@ public sealed class LanDiscoveryService : IDisposable
     private readonly int _agentApiPort;
     private readonly string _agentApiToken;
     private CancellationTokenSource? _cts;
+    public static IPAddress? LastKnownMobileIp { get; private set; }
 
     public LanDiscoveryService(int agentApiPort, string agentApiToken)
     {
@@ -53,6 +54,7 @@ public sealed class LanDiscoveryService : IDisposable
                 
                 if (requestText == DiscoverRequest)
                 {
+                    LastKnownMobileIp = result.RemoteEndPoint.Address;
                     var ip = GetLocalIpForRemote(result.RemoteEndPoint.Address);
                     if (!string.IsNullOrEmpty(ip))
                     {
