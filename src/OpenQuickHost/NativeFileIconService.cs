@@ -1,8 +1,11 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Xml.Linq;
+using Microsoft.Win32;
 
 namespace OpenQuickHost;
 
@@ -31,6 +34,11 @@ public static class NativeFileIconService
         if (string.IsNullOrWhiteSpace(path))
         {
             return null;
+        }
+
+        if (path.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+        {
+            return IconCache.GetOrAdd(path, _ => LoadUwpIcon(path));
         }
 
         var cacheKey = BuildCacheKey(path, isFolder);
@@ -366,5 +374,150 @@ public static class NativeFileIconService
 
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)]
         public string szTypeName;
+    }
+
+    private static ImageSource? LoadUwpIcon(string path)
+    {
+        try
+        {
+            string? logoPath = GetUwpLogoPath(path);
+            if (!string.IsNullOrEmpty(logoPath) && File.Exists(logoPath))
+            {
+                var image = new System.Windows.Media.Imaging.BitmapImage();
+                image.BeginInit();
+                image.UriSource = new Uri(logoPath);
+                image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                image.EndInit();
+                image.Freeze();
+                return image;
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+        return null;
+    }
+
+    private static string? GetUwpLogoPath(string appUserModelId)
+    {
+        try
+        {
+            string aumid = appUserModelId;
+            if (aumid.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+            {
+                aumid = aumid["shell:AppsFolder\\".Length..];
+            }
+            string familyName = aumid;
+            int exclamationIndex = aumid.IndexOf('!');
+            if (exclamationIndex >= 0)
+            {
+                familyName = aumid[..exclamationIndex];
+            }
+
+            string? packageRootFolder = null;
+            string familyKeyPath = $@"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Families\{familyName}";
+            using (var key = Registry.CurrentUser.OpenSubKey(familyKeyPath))
+            {
+                if (key != null)
+                {
+                    foreach (var subKeyName in key.GetSubKeyNames())
+                    {
+                        string packageKeyPath = $@"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages\{subKeyName}";
+                        using (var pkgKey = Registry.CurrentUser.OpenSubKey(packageKeyPath))
+                        {
+                            if (pkgKey != null)
+                            {
+                                var folder = pkgKey.GetValue("PackageRootFolder") as string;
+                                if (!string.IsNullOrEmpty(folder) && Directory.Exists(folder))
+                                {
+                                    if (File.Exists(Path.Combine(folder, "AppxManifest.xml")))
+                                    {
+                                        packageRootFolder = folder;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(packageRootFolder))
+            {
+                return null;
+            }
+
+            string manifestPath = Path.Combine(packageRootFolder, "AppxManifest.xml");
+            if (!File.Exists(manifestPath))
+            {
+                return null;
+            }
+
+            var doc = XDocument.Load(manifestPath);
+            var visualElements = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "VisualElements");
+            string? logoPath = null;
+            if (visualElements != null)
+            {
+                logoPath = visualElements.Attribute("Square44x44Logo")?.Value 
+                           ?? visualElements.Attribute("Square150x150Logo")?.Value
+                           ?? visualElements.Attribute("Logo")?.Value;
+            }
+            if (string.IsNullOrEmpty(logoPath))
+            {
+                var logoEl = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Logo");
+                if (logoEl != null)
+                {
+                    logoPath = logoEl.Value;
+                }
+            }
+
+            if (string.IsNullOrEmpty(logoPath))
+            {
+                return null;
+            }
+
+            string fullLogoPath = Path.Combine(packageRootFolder, logoPath);
+            if (File.Exists(fullLogoPath))
+            {
+                return fullLogoPath;
+            }
+
+            string dir = Path.GetDirectoryName(fullLogoPath) ?? string.Empty;
+            string filenameWithoutExt = Path.GetFileNameWithoutExtension(fullLogoPath);
+            string ext = Path.GetExtension(fullLogoPath);
+
+            if (Directory.Exists(dir))
+            {
+                var files = Directory.GetFiles(dir, filenameWithoutExt + "*" + ext);
+                if (files.Length > 0)
+                {
+                    var bestFile = files.OrderByDescending(ScoreUwpLogoFile).FirstOrDefault();
+                    if (!string.IsNullOrEmpty(bestFile) && File.Exists(bestFile))
+                    {
+                        return bestFile;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+        return null;
+    }
+
+    private static int ScoreUwpLogoFile(string filePath)
+    {
+        var fn = Path.GetFileNameWithoutExtension(filePath).ToLowerInvariant();
+        if (fn.Contains("scale-200")) return 100;
+        if (fn.Contains("scale-150")) return 90;
+        if (fn.Contains("scale-100")) return 80;
+        if (fn.Contains("targetsize-256")) return 75;
+        if (fn.Contains("targetsize-48")) return 70;
+        if (fn.Contains("targetsize-32")) return 60;
+        if (fn.Contains("targetsize-16")) return 50;
+        if (fn.Contains("targetsize")) return 40;
+        return 1;
     }
 }

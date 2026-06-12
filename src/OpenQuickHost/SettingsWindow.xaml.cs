@@ -5560,10 +5560,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _settings.RadialMenu.CustomShortcut = (_settings.RadialMenu.CustomShortcut ?? string.Empty).Trim();
         _settings.RadialMenu.WhitelistedProcesses = ParseProcessList(string.Join(", ", _settings.RadialMenu.WhitelistedProcesses ?? []));
         _settings.RadialMenu.BlacklistedProcesses = ParseProcessList(string.Join(", ", _settings.RadialMenu.BlacklistedProcesses ?? []));
-        ApplyMouseTriggerModeToRadialFlags(_settings.RadialMenu);
-        ApplyMouseTriggerModeToYanmFlags(_settings.Yanm);
         SyncRadialMouseTriggerModeFromFlags(_settings.RadialMenu);
         SyncYanmMouseTriggerModeFromFlags(_settings.Yanm);
+        ApplyMouseTriggerModeToRadialFlags(_settings.RadialMenu);
+        ApplyMouseTriggerModeToYanmFlags(_settings.Yanm);
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
         _mainWindow.NotifyQuickPanelSettingsChanged("quickpanel-trigger-settings-saved");

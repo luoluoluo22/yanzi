@@ -239,6 +239,20 @@ internal static class ExtensionIconLibrary
 
     public static ImageSource? ResolveImageSource(string? iconReference, string? extensionDirectoryPath)
     {
+        if (iconReference != null && iconReference.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+        {
+            if (ImageCache.TryGetValue(iconReference, out var cachedUwpImage))
+            {
+                return cachedUwpImage;
+            }
+            var uwpIcon = NativeFileIconService.GetIcon(iconReference, isFolder: false);
+            if (uwpIcon != null)
+            {
+                ImageCache[iconReference] = uwpIcon;
+                return uwpIcon;
+            }
+        }
+
         var resolvedPath = ResolveImagePath(iconReference, extensionDirectoryPath);
         if (string.IsNullOrWhiteSpace(resolvedPath))
         {

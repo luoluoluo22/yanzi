@@ -44,6 +44,8 @@ internal static class InstalledApplicationCatalog
                 $"InstalledApplicationCatalog root scanned: path={root}, recurse={scanRoot.Recurse}, files={scanResult.ScannedFiles}, skippedDirectories={scanResult.SkippedDirectories}, acceptedSoFar={results.Count}.");
         }
 
+        ScanAppsFolder(results, seen);
+
         HostAssets.AppendLog(
             $"InstalledApplicationCatalog load summary: roots={GetScanRoots().Count()}, scannedFiles={totalScannedFiles}, skippedDirectories={totalSkippedDirectories}, accepted={results.Count}.");
 
@@ -51,6 +53,68 @@ internal static class InstalledApplicationCatalog
             .OrderBy(static entry => entry.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    private static void ScanAppsFolder(List<InstalledApplicationEntry> results, HashSet<string> seen)
+    {
+        try
+        {
+            Type? shellType = Type.GetTypeFromProgID("Shell.Application");
+            if (shellType == null) return;
+
+            dynamic? shell = Activator.CreateInstance(shellType);
+            dynamic? folder = shell?.NameSpace("shell:AppsFolder");
+            if (folder == null) return;
+
+            foreach (dynamic item in folder.Items())
+            {
+                try
+                {
+                    string name = item.Name;
+                    string path = item.Path;
+                    if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(path))
+                    {
+                        continue;
+                    }
+
+                    if (ShouldExcludeTitle(name))
+                    {
+                        continue;
+                    }
+
+                    if (File.Exists(path) || Directory.Exists(path))
+                    {
+                        continue;
+                    }
+
+                    string launchTarget = $"shell:AppsFolder\\{path}";
+                    string iconPath = $"shell:AppsFolder\\{path}";
+                    string displayPath = $"shell:AppsFolder\\{path}";
+
+                    var entry = CreateEntry(
+                        title: name,
+                        launchTarget: launchTarget,
+                        displayPath: displayPath,
+                        iconPath: iconPath,
+                        sourcePath: path
+                    );
+
+                    var dedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedLaunchTarget}";
+                    if (seen.Add(dedupeKey))
+                    {
+                        results.Add(entry);
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"AppsFolder scan failed: {ex.Message}");
+        }
+    }
+
 
     private static ApplicationScanResult EnumerateSupportedFiles(string root, bool recurse)
     {
@@ -206,10 +270,15 @@ internal static class InstalledApplicationCatalog
                 return null;
             }
 
-            var targetPath = (string?)shortcut.TargetPath;
-            var arguments = (string?)shortcut.Arguments;
-            var workingDirectory = (string?)shortcut.WorkingDirectory;
-            var iconLocation = (string?)shortcut.IconLocation;
+            string? targetPath = null;
+            try { targetPath = (string?)shortcut.TargetPath; } catch {}
+            string? arguments = null;
+            try { arguments = (string?)shortcut.Arguments; } catch {}
+            string? workingDirectory = null;
+            try { workingDirectory = (string?)shortcut.WorkingDirectory; } catch {}
+            string? iconLocation = null;
+            try { iconLocation = (string?)shortcut.IconLocation; } catch {}
+
 
             var normalizedTargetPath = targetPath?.Trim();
             var launchTarget = !string.IsNullOrWhiteSpace(normalizedTargetPath) && File.Exists(normalizedTargetPath)
