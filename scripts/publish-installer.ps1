@@ -132,6 +132,13 @@ if (-not $SkipInstaller) {
         Rename-Item -Path $setupFile -NewName "Yanzi-win-Setup-$Version.exe" -Force
     }
 
+    Write-Host "Creating portable ZIP archive..."
+    $rawZip = Join-Path $installerOutDir "Yanzi-win-Portable.zip"
+    if (Test-Path $rawZip) {
+        Remove-Item -Path $rawZip -Force
+    }
+    Compress-Archive -Path "$publishDir\*" -DestinationPath $rawZip -Force
+
     $zipFile = Join-Path $installerOutDir "Yanzi-win-Portable.zip"
     if (Test-Path $zipFile) {
         Rename-Item -Path $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force

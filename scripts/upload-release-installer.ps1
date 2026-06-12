@@ -72,7 +72,7 @@ if (-not $releaseExists) {
         --notes-file $notesPath | Out-Host
 }
 
-$filesToUpload = Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match "nupkg|releases\.win\.json|Setup.*\.exe" }
+$filesToUpload = Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match "nupkg|releases\.win\.json|Setup.*\.exe|Portable.*\.zip" }
 foreach ($file in $filesToUpload) {
     $maxRetries = 5
     $retryCount = 0
