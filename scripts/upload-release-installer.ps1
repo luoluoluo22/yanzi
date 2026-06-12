@@ -46,8 +46,7 @@ $notesContent = @"
 
 SHA256: $hash
 "@
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($notesPath, $notesContent, $utf8NoBom)
+[System.IO.File]::WriteAllText($notesPath, $notesContent, [System.Text.Encoding]::UTF8)
 
 $releaseExists = $true
 $oldEAP = $ErrorActionPreference
