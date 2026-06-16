@@ -129,6 +129,8 @@ import android.view.Gravity;
 import android.graphics.Typeface;
 import android.text.Html;
 import android.text.TextUtils;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import java.util.ArrayList;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
@@ -148,6 +150,10 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import org.vosk.Model;
+import org.vosk.Recognizer;
+import org.vosk.android.SpeechService;
+import org.vosk.android.StorageService;
 import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -231,6 +237,14 @@ extends Activity {
     private String currentAiSessionId = null;
     private final Object aiHistoryLock = new Object();
     private static final long AI_TOOL_DEBOUNCE_MS = 10000L;
+    private static final int SPEECH_COMPLETE_SILENCE_MS = 3000;
+    private static final int SPEECH_POSSIBLY_COMPLETE_SILENCE_MS = 3000;
+    private static final int SPEECH_MINIMUM_LENGTH_MS = 15000;
+    private static final int SPEECH_MAX_RESULTS = 3;
+    private static final int SPEECH_MAX_CONTINUATION_COUNT = 20;
+    private static final String WAKE_MODEL_ASSET_NAME = "vosk-model-small-cn-0.22";
+    private static final String WAKE_MODEL_TARGET_NAME = "wake-model-cn";
+    private static final String WAKE_GRAMMAR = "[\"燕子 燕子\", \"[unk]\"]";
     private final Object aiToolCallLock = new Object();
     private final Map<String, Long> recentAiToolCalls = new HashMap<String, Long>();
     private final Set<String> runningAiToolCalls = new HashSet<String>();
@@ -271,6 +285,7 @@ extends Activity {
     private android.speech.tts.TextToSpeech textToSpeech;
     private boolean isTtsEnabled = false;
     private boolean isTtsInitialized = false;
+    private boolean isTtsSpeaking = false;
     private String pendingSpeakText = null;
     private android.speech.SpeechRecognizer speechRecognizer;
     private android.content.Intent speechRecognizerIntent;
@@ -279,6 +294,19 @@ extends Activity {
     private boolean pendingStopSpeech = false;
     private boolean isSpeechActionUp = false;
     private boolean isSpeechFinished = false;
+    private final Handler speechRestartHandler = new Handler(Looper.getMainLooper());
+    private Runnable pendingSpeechRestartRunnable;
+    private final StringBuilder speechAccumulatedText = new StringBuilder();
+    private int speechContinuationCount = 0;
+    private Model wakeModel;
+    private SpeechService wakeSpeechService;
+    private boolean isWakeListeningEnabled = false;
+    private boolean isWakeListeningActive = false;
+    private boolean isWakeModelLoading = false;
+    private boolean isWakeTriggeredSpeech = false;
+    private boolean isWakeTriggeredSpeechSessionActive = false;
+    private Button wakeToggleBtn;
+    private Button ttsStopButton;
     private android.widget.Button holdToSpeakBtn;
     private android.widget.Button voiceToggleBtn;
     private final Map<String, WebView> activeYanmWebViews = new HashMap<String, WebView>();
@@ -379,10 +407,14 @@ extends Activity {
         this.refreshDiagnosticLogFromStore();
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
         this.diagnosticRefreshHandler.postDelayed(this.diagnosticRefreshRunnable, 1000L);
+        if (this.isWakeListeningEnabled && !this.isWakeTriggeredSpeech) {
+            this.startWakeListening();
+        }
     }
 
     protected void onPause() {
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
+        this.stopWakeListening(false);
         super.onPause();
     }
 
@@ -399,6 +431,7 @@ extends Activity {
             this.textToSpeech = null;
         }
         this.destroySpeechRecognizer();
+        this.releaseWakeListening();
         super.onDestroy();
     }
 
@@ -448,6 +481,15 @@ extends Activity {
                 this.switchToVoiceInput();
             } else {
                 Toast.makeText(this, "需要麦克风录音权限才能使用语音输入", Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == 104) {
+            if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                this.isWakeListeningEnabled = true;
+                this.startWakeListening();
+            } else {
+                this.isWakeListeningEnabled = false;
+                this.updateWakeToggleButton();
+                Toast.makeText(this, "需要麦克风录音权限才能监听唤醒词", Toast.LENGTH_SHORT).show();
             }
         }
     }
@@ -879,6 +921,12 @@ extends Activity {
         speakBtn.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
         speakBtn.setOnClickListener(v -> this.toggleTtsStatus(speakBtn));
         topBar.addView((View)speakBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
+        this.wakeToggleBtn = this.button("燕");
+        this.wakeToggleBtn.setBackgroundColor(0);
+        this.wakeToggleBtn.setTextColor(Color.rgb(148, 163, 184));
+        this.wakeToggleBtn.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+        this.wakeToggleBtn.setOnClickListener(v -> this.toggleWakeListening());
+        topBar.addView((View)this.wakeToggleBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
         Button aiSettingsBtn = this.button("\u2699\ufe0f");
         aiSettingsBtn.setBackgroundColor(0);
         aiSettingsBtn.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
@@ -903,11 +951,27 @@ extends Activity {
         this.aiAttachmentScrollView.addView((View)this.aiAttachmentContainer, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -1));
         mainContent.addView((View)this.aiAttachmentScrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(76)));
 
+        LinearLayout bottomShell = new LinearLayout((Context)this);
+        bottomShell.setOrientation(1);
+        bottomShell.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
+        this.ttsStopButton = this.button("停止朗读");
+        this.ttsStopButton.setTextColor(Color.rgb((int)248, (int)250, (int)252));
+        GradientDrawable stopTtsBg = new GradientDrawable();
+        stopTtsBg.setColor(Color.rgb((int)127, (int)29, (int)29));
+        stopTtsBg.setCornerRadius((float)this.dp(8));
+        this.ttsStopButton.setBackground((Drawable)stopTtsBg);
+        this.ttsStopButton.setVisibility(View.GONE);
+        this.ttsStopButton.setOnClickListener(v -> this.stopTtsPlayback(true));
+        LinearLayout.LayoutParams stopTtsParams = new LinearLayout.LayoutParams(-1, this.dp(38));
+        stopTtsParams.leftMargin = this.dp(12);
+        stopTtsParams.rightMargin = this.dp(12);
+        stopTtsParams.topMargin = this.dp(8);
+        bottomShell.addView((View)this.ttsStopButton, (ViewGroup.LayoutParams)stopTtsParams);
+
         LinearLayout bottomArea = new LinearLayout((Context)this);
         bottomArea.setOrientation(0);
         bottomArea.setPadding(this.dp(12), this.dp(12), this.dp(12), this.dp(12));
         bottomArea.setGravity(80);
-        bottomArea.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
         Button attachBtn = this.button("+");
         attachBtn.setBackgroundColor(0);
         attachBtn.setTextColor(Color.rgb((int)200, (int)200, (int)200));
@@ -1015,7 +1079,8 @@ extends Activity {
         this.aiSendButtonDefaultBackground = this.aiSendButton.getBackground();
         this.aiSendButton.setOnClickListener(v -> this.handleAiSendButtonClick());
         bottomArea.addView((View)this.aiSendButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(48)));
-        mainContent.addView((View)bottomArea);
+        bottomShell.addView((View)bottomArea);
+        mainContent.addView((View)bottomShell);
         this.aiDrawerLayout.addView((View)mainContent, (ViewGroup.LayoutParams)new DrawerLayout.LayoutParams(-1, -1));
         LinearLayout drawerContent = new LinearLayout((Context)this);
         drawerContent.setOrientation(1);
@@ -5411,11 +5476,7 @@ extends Activity {
         this.prefs.edit().putBoolean("isTtsEnabled", this.isTtsEnabled).apply();
         speakBtn.setText(this.isTtsEnabled ? "🔊" : "🔇");
         if (!this.isTtsEnabled) {
-            if (this.textToSpeech != null) {
-                try {
-                    this.textToSpeech.stop();
-                } catch (Exception ignored) {}
-            }
+            this.stopTtsPlayback(true);
         } else {
             this.initTextToSpeech();
         }
@@ -5424,6 +5485,8 @@ extends Activity {
 
     private void switchToVoiceInput() {
         this.holdToSpeakBtn.setVisibility(0); // VISIBLE
+        this.holdToSpeakBtn.setText(this.isWakeTriggeredSpeechSessionActive ? "请开始说话" : "按住 说话");
+        this.updateSpeechVolumeWave(0.0f);
         this.aiChatInput.setVisibility(8);    // GONE
         this.voiceToggleBtn.setText("⌨️");
         this.hideKeyboard((View)this.aiChatInput);
@@ -5432,7 +5495,239 @@ extends Activity {
     private void switchToTextInput() {
         this.holdToSpeakBtn.setVisibility(8); // GONE
         this.aiChatInput.setVisibility(0);    // VISIBLE
+        this.updateSpeechVolumeWave(0.0f);
         this.voiceToggleBtn.setText("🎤");
+    }
+
+    private void updateSpeechVolumeWave(float rmsdB) {
+        if (this.holdToSpeakBtn == null) return;
+        float normalized = Math.max(0.0f, Math.min(1.0f, rmsdB / 10.0f));
+        int baseRed = this.isWakeTriggeredSpeechSessionActive ? 14 : 59;
+        int baseGreen = this.isWakeTriggeredSpeechSessionActive ? 165 : 130;
+        int baseBlue = this.isWakeTriggeredSpeechSessionActive ? 233 : 246;
+        int red = Math.min(255, baseRed + (int)(20.0f * normalized));
+        int green = Math.min(255, baseGreen + (int)(40.0f * normalized));
+        int blue = Math.min(255, baseBlue + (int)(9.0f * normalized));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(red, green, blue));
+        bg.setCornerRadius((float)this.dp(8 + (int)(8.0f * normalized)));
+        bg.setStroke(this.dp(1 + (int)(2.0f * normalized)), Color.argb(120 + (int)(90.0f * normalized), 125, 211, 252));
+        this.holdToSpeakBtn.setBackground((Drawable)bg);
+        float scale = 1.0f + 0.035f * normalized;
+        this.holdToSpeakBtn.setScaleX(scale);
+        this.holdToSpeakBtn.setScaleY(scale);
+    }
+
+    private void toggleWakeListening() {
+        if (this.isWakeListeningEnabled) {
+            this.isWakeListeningEnabled = false;
+            this.stopWakeListening(false);
+            this.updateWakeToggleButton();
+            return;
+        }
+        if (!this.checkWakeAudioPermission()) {
+            return;
+        }
+        this.isWakeListeningEnabled = true;
+        this.updateWakeToggleButton();
+        this.startWakeListening();
+    }
+
+    private boolean checkWakeAudioPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            this.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            this.requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, 104);
+            return false;
+        }
+        return true;
+    }
+
+    private void updateWakeToggleButton() {
+        if (this.wakeToggleBtn == null) return;
+        if (this.isWakeListeningEnabled) {
+            this.wakeToggleBtn.setText("燕");
+            this.wakeToggleBtn.setTextColor(Color.rgb(34, 211, 238));
+        } else {
+            this.wakeToggleBtn.setText("燕");
+            this.wakeToggleBtn.setTextColor(Color.rgb(148, 163, 184));
+        }
+    }
+
+    private void startWakeListening() {
+        if (!this.isWakeListeningEnabled || this.isWakeListeningActive || this.isWakeModelLoading || this.isWakeTriggeredSpeech || this.isWakeTriggeredSpeechSessionActive) {
+            return;
+        }
+        if (!this.checkWakeAudioPermission()) {
+            return;
+        }
+        if (this.wakeModel == null) {
+            this.isWakeModelLoading = true;
+            this.updateWakeToggleButton();
+            StorageService.unpack(this, WAKE_MODEL_ASSET_NAME, WAKE_MODEL_TARGET_NAME, model -> {
+                MainActivity.this.wakeModel = model;
+                MainActivity.this.isWakeModelLoading = false;
+                MainActivity.this.startWakeListening();
+            }, exception -> {
+                MainActivity.this.isWakeModelLoading = false;
+                MainActivity.this.isWakeListeningEnabled = false;
+                MainActivity.this.updateWakeToggleButton();
+                Log.e("YanziWake", "Failed to unpack wake model", exception);
+                Toast.makeText((Context)MainActivity.this, "本地唤醒模型加载失败", Toast.LENGTH_SHORT).show();
+            });
+            return;
+        }
+        try {
+            Recognizer recognizer = new Recognizer(this.wakeModel, 16000.0f, WAKE_GRAMMAR);
+            this.wakeSpeechService = new SpeechService(recognizer, 16000.0f);
+            this.isWakeListeningActive = true;
+            this.wakeSpeechService.startListening(new org.vosk.android.RecognitionListener() {
+                @Override
+                public void onPartialResult(String hypothesis) {
+                    MainActivity.this.handleWakeRecognitionText(hypothesis, false);
+                }
+
+                @Override
+                public void onResult(String hypothesis) {
+                    MainActivity.this.handleWakeRecognitionText(hypothesis, true);
+                }
+
+                @Override
+                public void onFinalResult(String hypothesis) {
+                    MainActivity.this.handleWakeRecognitionText(hypothesis, true);
+                }
+
+                @Override
+                public void onError(Exception exception) {
+                    Log.e("YanziWake", "Wake listening error", exception);
+                    MainActivity.this.isWakeListeningActive = false;
+                    MainActivity.this.wakeSpeechService = null;
+                    MainActivity.this.restartWakeListeningLater();
+                }
+
+                @Override
+                public void onTimeout() {
+                    Log.d("YanziWake", "Wake listening timeout");
+                    MainActivity.this.isWakeListeningActive = false;
+                    MainActivity.this.wakeSpeechService = null;
+                    MainActivity.this.restartWakeListeningLater();
+                }
+            });
+            this.updateWakeToggleButton();
+            Log.d("YanziWake", "Wake listening started");
+        } catch (Exception e) {
+            this.isWakeListeningActive = false;
+            this.wakeSpeechService = null;
+            Log.e("YanziWake", "Failed to start wake listening", e);
+            Toast.makeText((Context)this, "启动本地唤醒失败", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void stopWakeListening(boolean disable) {
+        if (disable) {
+            this.isWakeListeningEnabled = false;
+            this.isWakeTriggeredSpeech = false;
+            this.isWakeTriggeredSpeechSessionActive = false;
+        }
+        SpeechService service = this.wakeSpeechService;
+        this.wakeSpeechService = null;
+        this.isWakeListeningActive = false;
+        if (service != null) {
+            try {
+                service.stop();
+                service.shutdown();
+            } catch (Exception e) {
+                Log.e("YanziWake", "Failed to stop wake listening", e);
+            }
+        }
+        this.updateWakeToggleButton();
+    }
+
+    private void releaseWakeListening() {
+        this.stopWakeListening(true);
+        if (this.wakeModel != null) {
+            try {
+                this.wakeModel.close();
+            } catch (Exception ignored) {}
+            this.wakeModel = null;
+        }
+    }
+
+    private void restartWakeListeningLater() {
+        if (!this.isWakeListeningEnabled || this.isWakeTriggeredSpeech || this.isWakeTriggeredSpeechSessionActive) {
+            return;
+        }
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (MainActivity.this.isWakeListeningEnabled && !MainActivity.this.isWakeTriggeredSpeech && !MainActivity.this.isWakeTriggeredSpeechSessionActive) {
+                MainActivity.this.startWakeListening();
+            }
+        }, 800L);
+    }
+
+    private void handleWakeRecognitionText(String hypothesis, boolean finalResult) {
+        String text = this.extractVoskRecognitionText(hypothesis);
+        if (text.isEmpty()) {
+            return;
+        }
+        Log.d("YanziWake", (finalResult ? "result=" : "partial=") + text);
+        String normalized = text.replace(" ", "").replace("，", "").replace(",", "").replace("。", "").replace(".", "");
+        if (isWakePhraseMatched(normalized, finalResult)) {
+            this.handleWakeWordDetected();
+        }
+    }
+
+    private boolean isWakePhraseMatched(String normalizedText, boolean finalResult) {
+        if (normalizedText == null || normalizedText.isEmpty()) {
+            return false;
+        }
+        if ("燕子燕子".equals(normalizedText)) {
+            return true;
+        }
+        return finalResult && normalizedText.startsWith("燕子燕子") && normalizedText.length() <= 6;
+    }
+
+    private String extractVoskRecognitionText(String json) {
+        if (json == null || json.trim().isEmpty()) {
+            return "";
+        }
+        try {
+            JSONObject obj = new JSONObject(json);
+            String text = obj.optString("partial", "");
+            if (text == null || text.trim().isEmpty()) {
+                text = obj.optString("text", "");
+            }
+            return text == null ? "" : text.trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void handleWakeWordDetected() {
+        if (this.isWakeTriggeredSpeech || this.isWakeTriggeredSpeechSessionActive) {
+            return;
+        }
+        Log.d("YanziWake", "Wake word detected");
+        this.stopTtsPlayback(true);
+        this.playWakeReadyTone();
+        this.isWakeTriggeredSpeech = true;
+        this.isWakeTriggeredSpeechSessionActive = true;
+        this.stopWakeListening(false);
+        this.selectTab("ai");
+        this.switchToVoiceInput();
+        this.startSpeechRecognition(true);
+    }
+
+    private void playWakeReadyTone() {
+        try {
+            ToneGenerator toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, 70);
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_ACK, 120);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                try {
+                    toneGenerator.release();
+                } catch (Exception ignored) {}
+            }, 300L);
+        } catch (Exception e) {
+            Log.e("YanziWake", "Failed to play wake tone", e);
+        }
     }
 
     private boolean checkAudioPermission() {
@@ -5446,6 +5741,7 @@ extends Activity {
     }
 
     private void cancelSpeechRecognition() {
+        this.cancelPendingSpeechRestart();
         if (this.speechRecognizer != null) {
             try {
                 this.speechRecognizer.cancel();
@@ -5455,13 +5751,16 @@ extends Activity {
         }
         this.isSpeechListening = false;
         this.pendingStopSpeech = false;
+        this.updateSpeechVolumeWave(0.0f);
     }
 
     private void destroySpeechRecognizer() {
+        this.cancelPendingSpeechRestart();
         final android.speech.SpeechRecognizer recognizerToDestroy = this.speechRecognizer;
         this.speechRecognizer = null;
         this.isSpeechListening = false;
         this.pendingStopSpeech = false;
+        this.updateSpeechVolumeWave(0.0f);
         
         if (recognizerToDestroy != null) {
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
@@ -5477,11 +5776,21 @@ extends Activity {
     }
 
     private void startSpeechRecognition() {
+        this.startSpeechRecognition(true);
+    }
+
+    private void startSpeechRecognition(boolean resetAccumulatedText) {
         try {
             this.cancelSpeechRecognition(); // 仅重置状态，不物理注销服务连接
+            if (resetAccumulatedText) {
+                this.speechAccumulatedText.setLength(0);
+                this.speechContinuationCount = 0;
+            } else {
+                this.speechContinuationCount++;
+            }
             this.lastSpeechStartTime = System.currentTimeMillis();
             this.pendingStopSpeech = false;
-            this.isSpeechActionUp = false;
+            this.isSpeechActionUp = this.isWakeTriggeredSpeechSessionActive;
             this.isSpeechFinished = false;
             android.content.ComponentName comp = this.findAvailableSpeechService();
             if (comp != null) {
@@ -5506,13 +5815,16 @@ extends Activity {
 
     private void stopSpeechRecognition() {
         try {
+            this.cancelPendingSpeechRestart();
             this.isSpeechActionUp = true;
             long duration = System.currentTimeMillis() - this.lastSpeechStartTime;
             if (duration < 500) {
-                Log.d("YanziVoice", "Speech duration too short: " + duration + "ms, cancelling");
+                Log.d("YanziVoice", "Speech duration too short: " + duration + "ms, accumulatedLength=" + this.speechAccumulatedText.length());
                 this.cancelSpeechRecognition();
                 this.switchToTextInput();
-                Toast.makeText((Context)this, "说话时间太短", Toast.LENGTH_SHORT).show();
+                if (this.speechAccumulatedText.length() == 0) {
+                    Toast.makeText((Context)this, "说话时间太短", Toast.LENGTH_SHORT).show();
+                }
                 return;
             }
             if (this.isSpeechFinished) {
@@ -5537,11 +5849,16 @@ extends Activity {
         }
     }
 
+    private void cancelPendingSpeechRestart() {
+        if (this.pendingSpeechRestartRunnable != null) {
+            this.speechRestartHandler.removeCallbacks(this.pendingSpeechRestartRunnable);
+            this.pendingSpeechRestartRunnable = null;
+        }
+    }
+
     private void startSpeechIntent() {
         android.content.Intent intent = new android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
-        intent.putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "请说话...");
+        this.configureSpeechRecognizerIntent(intent);
         try {
             this.startActivityForResult(intent, 103);
         } catch (android.content.ActivityNotFoundException a) {
@@ -5642,14 +5959,13 @@ extends Activity {
         if (this.speechRecognizer != null) return; // 重点：常驻单一实例，避免频繁bind/unbind
         this.speechRecognizer = android.speech.SpeechRecognizer.createSpeechRecognizer((Context)this, comp);
         this.speechRecognizerIntent = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        this.speechRecognizerIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        this.speechRecognizerIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
-        this.speechRecognizerIntent.putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+        this.configureSpeechRecognizerIntent(this.speechRecognizerIntent);
         this.speechRecognizer.setRecognitionListener(new android.speech.RecognitionListener() {
             @Override
             public void onReadyForSpeech(Bundle params) {
                 Log.d("YanziVoice", "onReadyForSpeech");
                 MainActivity.this.isSpeechListening = true;
+                MainActivity.this.updateSpeechVolumeWave(0.0f);
                 if (MainActivity.this.pendingStopSpeech) {
                     Log.d("YanziVoice", "onReadyForSpeech: pendingStop is true, stopping now");
                     try {
@@ -5681,7 +5997,9 @@ extends Activity {
             }
 
             @Override
-            public void onRmsChanged(float rmsdB) {}
+            public void onRmsChanged(float rmsdB) {
+                MainActivity.this.updateSpeechVolumeWave(rmsdB);
+            }
 
             @Override
             public void onBufferReceived(byte[] buffer) {}
@@ -5690,13 +6008,30 @@ extends Activity {
             public void onEndOfSpeech() {
                 Log.d("YanziVoice", "onEndOfSpeech");
                 MainActivity.this.isSpeechListening = false;
+                MainActivity.this.updateSpeechVolumeWave(0.0f);
             }
 
             @Override
             public void onError(int error) {
                 Log.e("YanziVoice", "Speech recognition error: " + error);
                 MainActivity.this.isSpeechFinished = true;
+                MainActivity.this.updateSpeechVolumeWave(0.0f);
                 String msg = getSpeechErrorMsg(error);
+                if (MainActivity.this.isWakeTriggeredSpeech || MainActivity.this.isWakeTriggeredSpeechSessionActive) {
+                    MainActivity.this.isWakeTriggeredSpeech = false;
+                    MainActivity.this.isWakeTriggeredSpeechSessionActive = false;
+                    Toast.makeText((Context)MainActivity.this, "唤醒后识别失败: " + msg, Toast.LENGTH_SHORT).show();
+                    MainActivity.this.cancelSpeechRecognition();
+                    MainActivity.this.switchToTextInput();
+                    MainActivity.this.restartWakeListeningLater();
+                    return;
+                }
+                if (!MainActivity.this.isSpeechActionUp && MainActivity.this.speechContinuationCount < SPEECH_MAX_CONTINUATION_COUNT) {
+                    Log.d("YanziVoice", "Speech error before ActionUp, restarting recognition: " + msg);
+                    MainActivity.this.cancelSpeechRecognition();
+                    MainActivity.this.scheduleSpeechRecognitionRestart();
+                    return;
+                }
                 if (error == android.speech.SpeechRecognizer.ERROR_NO_MATCH) {
                     Toast.makeText((Context)MainActivity.this, "未检测到有效语音", Toast.LENGTH_SHORT).show();
                 } else {
@@ -5711,16 +6046,29 @@ extends Activity {
             @Override
             public void onResults(Bundle results) {
                 MainActivity.this.isSpeechFinished = true;
+                MainActivity.this.updateSpeechVolumeWave(0.0f);
                 ArrayList<String> matches = results.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
                     String text = matches.get(0);
                     Log.d("YanziVoice", "onResults: " + text);
-                    MainActivity.this.aiChatInput.setText((CharSequence)text);
-                    MainActivity.this.aiChatInput.setSelection(text.length());
+                    MainActivity.this.appendSpeechRecognitionText(text);
+                }
+                if (MainActivity.this.isWakeTriggeredSpeech || MainActivity.this.isWakeTriggeredSpeechSessionActive) {
+                    MainActivity.this.isWakeTriggeredSpeech = false;
+                    MainActivity.this.isWakeTriggeredSpeechSessionActive = false;
+                    MainActivity.this.cancelSpeechRecognition();
+                    MainActivity.this.switchToTextInput();
+                    if (MainActivity.this.aiChatInput != null && MainActivity.this.aiChatInput.getText() != null && MainActivity.this.aiChatInput.getText().toString().trim().length() > 0) {
+                        MainActivity.this.handleAiSendButtonClick();
+                    }
+                    MainActivity.this.restartWakeListeningLater();
+                    return;
                 }
                 MainActivity.this.cancelSpeechRecognition();
                 if (MainActivity.this.isSpeechActionUp) {
                     MainActivity.this.switchToTextInput();
+                } else if (MainActivity.this.speechContinuationCount < SPEECH_MAX_CONTINUATION_COUNT) {
+                    MainActivity.this.scheduleSpeechRecognitionRestart();
                 }
             }
 
@@ -5730,6 +6078,45 @@ extends Activity {
             @Override
             public void onEvent(int eventType, Bundle params) {}
         });
+    }
+
+    private void configureSpeechRecognizerIntent(android.content.Intent intent) {
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "请说话...");
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, SPEECH_MAX_RESULTS);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, SPEECH_COMPLETE_SILENCE_MS);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, SPEECH_POSSIBLY_COMPLETE_SILENCE_MS);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, SPEECH_MINIMUM_LENGTH_MS);
+    }
+
+    private void appendSpeechRecognitionText(String text) {
+        if (text == null) return;
+        String normalized = text.trim();
+        if (normalized.isEmpty()) return;
+        if (this.speechAccumulatedText.length() > 0) {
+            this.speechAccumulatedText.append(' ');
+        }
+        this.speechAccumulatedText.append(normalized);
+        String fullText = this.speechAccumulatedText.toString();
+        this.aiChatInput.setText((CharSequence)fullText);
+        this.aiChatInput.setSelection(fullText.length());
+    }
+
+    private void scheduleSpeechRecognitionRestart() {
+        if (this.isSpeechActionUp || this.speechContinuationCount >= SPEECH_MAX_CONTINUATION_COUNT) {
+            return;
+        }
+        this.cancelPendingSpeechRestart();
+        this.pendingSpeechRestartRunnable = () -> {
+            this.pendingSpeechRestartRunnable = null;
+            if (!this.isSpeechActionUp) {
+                Log.d("YanziVoice", "Restarting speech recognition for continuous hold, count=" + this.speechContinuationCount);
+                this.startSpeechRecognition(false);
+            }
+        };
+        this.speechRestartHandler.postDelayed(this.pendingSpeechRestartRunnable, 150L);
     }
 
     private String getSpeechErrorMsg(int error) {
@@ -5757,6 +6144,30 @@ extends Activity {
         }
     }
 
+    private void setTtsSpeaking(boolean speaking) {
+        this.isTtsSpeaking = speaking;
+        this.runOnUiThread(() -> this.updateTtsStopButton());
+    }
+
+    private void updateTtsStopButton() {
+        if (this.ttsStopButton == null) return;
+        this.ttsStopButton.setVisibility(this.isTtsSpeaking ? View.VISIBLE : View.GONE);
+    }
+
+    private void stopTtsPlayback(boolean clearPending) {
+        if (clearPending) {
+            this.pendingSpeakText = null;
+        }
+        if (this.textToSpeech != null) {
+            try {
+                this.textToSpeech.stop();
+            } catch (Exception e) {
+                Log.e("YanziTTS", "Stop failed", e);
+            }
+        }
+        this.setTtsSpeaking(false);
+    }
+
     private void initTextToSpeech() {
         if (this.textToSpeech != null) return;
         this.textToSpeech = new android.speech.tts.TextToSpeech((Context)this, status -> {
@@ -5769,6 +6180,22 @@ extends Activity {
                     }
                 }
                 this.isTtsInitialized = true;
+                this.textToSpeech.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
+                    @Override
+                    public void onStart(String utteranceId) {
+                        MainActivity.this.setTtsSpeaking(true);
+                    }
+
+                    @Override
+                    public void onDone(String utteranceId) {
+                        MainActivity.this.setTtsSpeaking(false);
+                    }
+
+                    @Override
+                    public void onError(String utteranceId) {
+                        MainActivity.this.setTtsSpeaking(false);
+                    }
+                });
                 Log.d("YanziTTS", "TTS Initialization Success");
                 if (this.pendingSpeakText != null) {
                     this.speakText(this.pendingSpeakText);
@@ -5793,7 +6220,6 @@ extends Activity {
         if (!this.isTtsInitialized) {
             this.pendingSpeakText = cleaned;
             Log.d("YanziTTS", "TTS not initialized yet, queueing text");
-            Toast.makeText((Context)this, "语音引擎正在初始化，请稍候...", Toast.LENGTH_SHORT).show();
             return;
         }
         try {
@@ -5804,11 +6230,13 @@ extends Activity {
                 result = this.textToSpeech.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null);
             }
             if (result == android.speech.tts.TextToSpeech.ERROR) {
+                this.setTtsSpeaking(false);
                 Toast.makeText((Context)this, "朗读失败：TTS 播放接口返回错误 (ERROR)", Toast.LENGTH_SHORT).show();
             } else {
-                Toast.makeText((Context)this, "开始朗读...", Toast.LENGTH_SHORT).show();
+                this.setTtsSpeaking(true);
             }
         } catch (Exception e) {
+            this.setTtsSpeaking(false);
             Log.e("YanziTTS", "Speak failed", e);
             Toast.makeText((Context)this, "朗读发生异常: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
