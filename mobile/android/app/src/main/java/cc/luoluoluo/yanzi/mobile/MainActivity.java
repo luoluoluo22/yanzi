@@ -274,6 +274,8 @@ extends Activity {
     private String pendingSpeakText = null;
     private android.speech.SpeechRecognizer speechRecognizer;
     private android.content.Intent speechRecognizerIntent;
+    private boolean isSpeechListening = false;
+    private long lastSpeechStartTime = 0;
     private android.widget.Button holdToSpeakBtn;
     private android.widget.Button voiceToggleBtn;
     private final Map<String, WebView> activeYanmWebViews = new HashMap<String, WebView>();
@@ -393,12 +395,7 @@ extends Activity {
             } catch (Exception ignored) {}
             this.textToSpeech = null;
         }
-        if (this.speechRecognizer != null) {
-            try {
-                this.speechRecognizer.destroy();
-            } catch (Exception ignored) {}
-            this.speechRecognizer = null;
-        }
+        this.destroySpeechRecognizer();
         super.onDestroy();
     }
 
@@ -5445,12 +5442,28 @@ extends Activity {
         return true;
     }
 
+    private void destroySpeechRecognizer() {
+        if (this.speechRecognizer != null) {
+            try {
+                this.speechRecognizer.cancel();
+                this.speechRecognizer.destroy();
+            } catch (Exception e) {
+                Log.e("YanziVoice", "Failed to destroy SpeechRecognizer", e);
+            }
+            this.speechRecognizer = null;
+        }
+        this.isSpeechListening = false;
+    }
+
     private void startSpeechRecognition() {
         try {
+            this.destroySpeechRecognizer(); // 确保重置状态
+            this.lastSpeechStartTime = System.currentTimeMillis();
             android.content.ComponentName comp = this.findAvailableSpeechService();
             if (comp != null) {
                 this.initSpeechRecognizer(comp);
                 if (this.speechRecognizer != null) {
+                    this.isSpeechListening = false;
                     this.speechRecognizer.startListening(this.speechRecognizerIntent);
                 } else {
                     this.startSpeechIntent();
@@ -5469,11 +5482,24 @@ extends Activity {
 
     private void stopSpeechRecognition() {
         try {
+            long duration = System.currentTimeMillis() - this.lastSpeechStartTime;
+            if (duration < 500) {
+                Log.d("YanziVoice", "Speech duration too short: " + duration + "ms, cancelling");
+                this.destroySpeechRecognizer();
+                Toast.makeText((Context)this, "说话时间太短", Toast.LENGTH_SHORT).show();
+                return;
+            }
             if (this.speechRecognizer != null) {
-                this.speechRecognizer.stopListening();
+                if (this.isSpeechListening) {
+                    this.speechRecognizer.stopListening();
+                } else {
+                    Log.d("YanziVoice", "Stop called before listener is ready, cancelling");
+                    this.destroySpeechRecognizer();
+                }
             }
         } catch (Exception e) {
             Log.e("YanziVoice", "Failed to stop speech recognition", e);
+            this.destroySpeechRecognizer();
         }
     }
 
@@ -5506,10 +5532,9 @@ extends Activity {
             Log.e("YanziVoice", "Error querying speech services", e);
         }
         return null;
-     }
+    }
 
     private void initSpeechRecognizer(android.content.ComponentName comp) {
-        if (this.speechRecognizer != null) return;
         this.speechRecognizer = android.speech.SpeechRecognizer.createSpeechRecognizer((Context)this, comp);
         this.speechRecognizerIntent = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         this.speechRecognizerIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
@@ -5519,11 +5544,13 @@ extends Activity {
             @Override
             public void onReadyForSpeech(Bundle params) {
                 Log.d("YanziVoice", "onReadyForSpeech");
+                MainActivity.this.isSpeechListening = true;
             }
 
             @Override
             public void onBeginningOfSpeech() {
                 Log.d("YanziVoice", "onBeginningOfSpeech");
+                MainActivity.this.isSpeechListening = true;
             }
 
             @Override
@@ -5535,14 +5562,20 @@ extends Activity {
             @Override
             public void onEndOfSpeech() {
                 Log.d("YanziVoice", "onEndOfSpeech");
+                MainActivity.this.isSpeechListening = false;
             }
 
             @Override
             public void onError(int error) {
                 Log.e("YanziVoice", "Speech recognition error: " + error);
                 String msg = getSpeechErrorMsg(error);
-                Toast.makeText((Context)MainActivity.this, "识别失败: " + msg, Toast.LENGTH_SHORT).show();
+                if (error == android.speech.SpeechRecognizer.ERROR_NO_MATCH) {
+                    Toast.makeText((Context)MainActivity.this, "未检测到有效语音", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText((Context)MainActivity.this, "识别失败: " + msg, Toast.LENGTH_SHORT).show();
+                }
                 MainActivity.this.switchToTextInput();
+                MainActivity.this.destroySpeechRecognizer();
             }
 
             @Override
@@ -5555,6 +5588,7 @@ extends Activity {
                     MainActivity.this.aiChatInput.setSelection(text.length());
                 }
                 MainActivity.this.switchToTextInput();
+                MainActivity.this.destroySpeechRecognizer();
             }
 
             @Override
