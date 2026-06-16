@@ -312,7 +312,14 @@ extends Activity {
             return;
         }
         super.onCreate(savedInstanceState);
-        this.registerReceiver(this.screenshotReceiver, new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS"));
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            this.registerReceiver(this.screenshotReceiver, 
+                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS"), 
+                Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            this.registerReceiver(this.screenshotReceiver, 
+                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS"));
+        }
         sContext = this;
         LanDiscoveryManager.discover((Context)this);
         this.prefs = this.getSharedPreferences("yanzi-mobile", 0);
