@@ -277,6 +277,8 @@ extends Activity {
     private boolean isSpeechListening = false;
     private long lastSpeechStartTime = 0;
     private boolean pendingStopSpeech = false;
+    private boolean isSpeechActionUp = false;
+    private boolean isSpeechFinished = false;
     private android.widget.Button holdToSpeakBtn;
     private android.widget.Button voiceToggleBtn;
     private final Map<String, WebView> activeYanmWebViews = new HashMap<String, WebView>();
@@ -5444,17 +5446,22 @@ extends Activity {
     }
 
     private void destroySpeechRecognizer() {
-        if (this.speechRecognizer != null) {
-            try {
-                this.speechRecognizer.cancel();
-                this.speechRecognizer.destroy();
-            } catch (Exception e) {
-                Log.e("YanziVoice", "Failed to destroy SpeechRecognizer", e);
-            }
-            this.speechRecognizer = null;
-        }
+        final android.speech.SpeechRecognizer recognizerToDestroy = this.speechRecognizer;
+        this.speechRecognizer = null;
         this.isSpeechListening = false;
         this.pendingStopSpeech = false;
+        
+        if (recognizerToDestroy != null) {
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                try {
+                    recognizerToDestroy.cancel();
+                    recognizerToDestroy.destroy();
+                    Log.d("YanziVoice", "SpeechRecognizer destroyed asynchronously");
+                } catch (Exception e) {
+                    Log.e("YanziVoice", "Failed to destroy SpeechRecognizer asynchronously", e);
+                }
+            }, 100L);
+        }
     }
 
     private void startSpeechRecognition() {
@@ -5462,6 +5469,8 @@ extends Activity {
             this.destroySpeechRecognizer(); // 确保重置状态
             this.lastSpeechStartTime = System.currentTimeMillis();
             this.pendingStopSpeech = false;
+            this.isSpeechActionUp = false;
+            this.isSpeechFinished = false;
             android.content.ComponentName comp = this.findAvailableSpeechService();
             if (comp != null) {
                 this.initSpeechRecognizer(comp);
@@ -5485,25 +5494,34 @@ extends Activity {
 
     private void stopSpeechRecognition() {
         try {
+            this.isSpeechActionUp = true;
             long duration = System.currentTimeMillis() - this.lastSpeechStartTime;
             if (duration < 500) {
                 Log.d("YanziVoice", "Speech duration too short: " + duration + "ms, cancelling");
                 this.destroySpeechRecognizer();
+                this.switchToTextInput();
                 Toast.makeText((Context)this, "说话时间太短", Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (this.speechRecognizer != null) {
-                if (this.isSpeechListening) {
-                    Log.d("YanziVoice", "Speech is listening, stopping immediately");
-                    this.speechRecognizer.stopListening();
-                    this.pendingStopSpeech = false;
-                } else {
-                    Log.d("YanziVoice", "Speech not listening yet, marking pendingStop");
-                    this.pendingStopSpeech = true;
+            if (this.isSpeechFinished) {
+                Log.d("YanziVoice", "Speech already finished when ActionUp, switching UI and destroying");
+                this.switchToTextInput();
+                this.destroySpeechRecognizer();
+            } else {
+                if (this.speechRecognizer != null) {
+                    if (this.isSpeechListening) {
+                        Log.d("YanziVoice", "Speech is listening, stopping immediately");
+                        this.speechRecognizer.stopListening();
+                        this.pendingStopSpeech = false;
+                    } else {
+                        Log.d("YanziVoice", "Speech not listening yet, marking pendingStop");
+                        this.pendingStopSpeech = true;
+                    }
                 }
             }
         } catch (Exception e) {
             Log.e("YanziVoice", "Failed to stop speech recognition", e);
+            this.switchToTextInput();
             this.destroySpeechRecognizer();
         }
     }
@@ -5665,18 +5683,22 @@ extends Activity {
             @Override
             public void onError(int error) {
                 Log.e("YanziVoice", "Speech recognition error: " + error);
+                MainActivity.this.isSpeechFinished = true;
                 String msg = getSpeechErrorMsg(error);
                 if (error == android.speech.SpeechRecognizer.ERROR_NO_MATCH) {
                     Toast.makeText((Context)MainActivity.this, "未检测到有效语音", Toast.LENGTH_SHORT).show();
                 } else {
                     Toast.makeText((Context)MainActivity.this, "识别失败: " + msg, Toast.LENGTH_SHORT).show();
                 }
-                MainActivity.this.switchToTextInput();
-                MainActivity.this.destroySpeechRecognizer();
+                if (MainActivity.this.isSpeechActionUp) {
+                    MainActivity.this.switchToTextInput();
+                    MainActivity.this.destroySpeechRecognizer();
+                }
             }
 
             @Override
             public void onResults(Bundle results) {
+                MainActivity.this.isSpeechFinished = true;
                 ArrayList<String> matches = results.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null && !matches.isEmpty()) {
                     String text = matches.get(0);
@@ -5684,8 +5706,10 @@ extends Activity {
                     MainActivity.this.aiChatInput.setText((CharSequence)text);
                     MainActivity.this.aiChatInput.setSelection(text.length());
                 }
-                MainActivity.this.switchToTextInput();
-                MainActivity.this.destroySpeechRecognizer();
+                if (MainActivity.this.isSpeechActionUp) {
+                    MainActivity.this.switchToTextInput();
+                    MainActivity.this.destroySpeechRecognizer();
+                }
             }
 
             @Override
