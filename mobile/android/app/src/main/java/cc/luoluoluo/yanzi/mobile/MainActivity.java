@@ -5086,6 +5086,7 @@ extends Activity {
         if (info.historyIndex != -1) {
             popup.getMenu().add(0, 6, 5, (CharSequence)"\u5220\u9664");
         }
+        popup.getMenu().add(0, 7, 6, (CharSequence)"朗读文本");
         
         popup.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
@@ -5141,6 +5142,9 @@ extends Activity {
                     break;
                 case 6:
                     this.deleteSingleAiMessage(info);
+                    break;
+                case 7:
+                    this.speakText(info.text);
                     break;
             }
             return true;
@@ -5443,8 +5447,9 @@ extends Activity {
 
     private void startSpeechRecognition() {
         try {
-            if (android.speech.SpeechRecognizer.isRecognitionAvailable((Context)this)) {
-                this.initSpeechRecognizer();
+            android.content.ComponentName comp = this.findAvailableSpeechService();
+            if (comp != null) {
+                this.initSpeechRecognizer(comp);
                 if (this.speechRecognizer != null) {
                     this.speechRecognizer.startListening(this.speechRecognizerIntent);
                 } else {
@@ -5484,12 +5489,28 @@ extends Activity {
         }
     }
 
-    private void initSpeechRecognizer() {
-        if (this.speechRecognizer != null) return;
-        if (!android.speech.SpeechRecognizer.isRecognitionAvailable((Context)this)) {
-            return;
+    private android.content.ComponentName findAvailableSpeechService() {
+        try {
+            android.content.Intent serviceIntent = new android.content.Intent("android.speech.RecognitionService");
+            List<android.content.pm.ResolveInfo> services = getPackageManager().queryIntentServices(serviceIntent, 0);
+            if (services != null && !services.isEmpty()) {
+                for (android.content.pm.ResolveInfo ri : services) {
+                    android.content.pm.ServiceInfo si = ri.serviceInfo;
+                    if (si != null) {
+                        Log.d("YanziVoice", "Found speech recognition service: " + si.packageName + "/" + si.name);
+                        return new android.content.ComponentName(si.packageName, si.name);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e("YanziVoice", "Error querying speech services", e);
         }
-        this.speechRecognizer = android.speech.SpeechRecognizer.createSpeechRecognizer((Context)this);
+        return null;
+     }
+
+    private void initSpeechRecognizer(android.content.ComponentName comp) {
+        if (this.speechRecognizer != null) return;
+        this.speechRecognizer = android.speech.SpeechRecognizer.createSpeechRecognizer((Context)this, comp);
         this.speechRecognizerIntent = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         this.speechRecognizerIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         this.speechRecognizerIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
@@ -5576,6 +5597,9 @@ extends Activity {
                 int result = this.textToSpeech.setLanguage(Locale.CHINA);
                 if (result == android.speech.tts.TextToSpeech.LANG_MISSING_DATA || result == android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED) {
                     this.textToSpeech.setLanguage(Locale.getDefault());
+                    if (this.textToSpeech.setLanguage(Locale.getDefault()) == android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED) {
+                        runOnUiThread(() -> Toast.makeText(this, "TTS 引擎不支持中文或缺省语言包", Toast.LENGTH_LONG).show());
+                    }
                 }
                 this.isTtsInitialized = true;
                 Log.d("YanziTTS", "TTS Initialization Success");
@@ -5586,6 +5610,7 @@ extends Activity {
             } else {
                 this.isTtsInitialized = false;
                 Log.e("YanziTTS", "TTS Initialization Failed");
+                runOnUiThread(() -> Toast.makeText(this, "TTS 初始化失败，状态码: " + status, Toast.LENGTH_LONG).show());
             }
         });
     }
@@ -5593,21 +5618,32 @@ extends Activity {
     private void speakText(String text) {
         if (text == null || text.trim().isEmpty()) return;
         this.initTextToSpeech();
-        if (this.textToSpeech == null) return;
+        if (this.textToSpeech == null) {
+            Toast.makeText((Context)this, "朗读失败：TTS 引擎未初始化或不可用", Toast.LENGTH_SHORT).show();
+            return;
+        }
         String cleaned = text.replaceAll("[\\*#`_~>\\[\\]\\(\\)-]", " ").trim();
         if (!this.isTtsInitialized) {
             this.pendingSpeakText = cleaned;
             Log.d("YanziTTS", "TTS not initialized yet, queueing text");
+            Toast.makeText((Context)this, "语音引擎正在初始化，请稍候...", Toast.LENGTH_SHORT).show();
             return;
         }
         try {
+            int result;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                this.textToSpeech.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "YanziTTSCall");
+                result = this.textToSpeech.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "YanziTTSCall");
             } else {
-                this.textToSpeech.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null);
+                result = this.textToSpeech.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null);
+            }
+            if (result == android.speech.tts.TextToSpeech.ERROR) {
+                Toast.makeText((Context)this, "朗读失败：TTS 播放接口返回错误 (ERROR)", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText((Context)this, "开始朗读...", Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {
             Log.e("YanziTTS", "Speak failed", e);
+            Toast.makeText((Context)this, "朗读发生异常: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
