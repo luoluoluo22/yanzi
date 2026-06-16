@@ -2676,7 +2676,7 @@ extends Activity {
                 String content = msg.optString("content");
                 
                 String toolName = this.parseToolName(content);
-                boolean isToolCall = "assistant".equals(role) && toolName != null;
+                boolean isToolCall = toolName != null;
                 
                 if (isToolCall) {
                     String feedbackText = "";
@@ -3065,7 +3065,8 @@ extends Activity {
         if (saveToHistory) {
             try {
                 JSONObject msg = new JSONObject();
-                msg.put("role", (Object)("\u6211".equals(sender) || isFeedback ? "user" : ("AI".equals(sender) ? "assistant" : "system")));
+                boolean isAiRole = "AI".equals(sender) || (sender != null && sender.startsWith("\u5de5\u5177\u8c03\u7528:"));
+                msg.put("role", (Object)("\u6211".equals(sender) || isFeedback ? "user" : (isAiRole ? "assistant" : "system")));
                 msg.put("content", (Object)text);
                 if ("\u6211".equals(sender)) {
                     msg.put("is_real_user", true);
