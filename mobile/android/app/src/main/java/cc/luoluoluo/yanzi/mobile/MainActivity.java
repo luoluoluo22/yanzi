@@ -502,7 +502,7 @@ extends Activity {
             }
         }
         if (!MobileAccessibilityService.isEnabled()) {
-            Toast.makeText(this, "共享失败：请先前往无障碍设置开启 燕子 辅助功能", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "截图失败：请先前往无障碍设置开启 燕子 辅助功能", Toast.LENGTH_LONG).show();
             return;
         }
         
@@ -526,7 +526,7 @@ extends Activity {
         this.runOnUiThread(() -> {
             Log.d("Yanzi", "addSharedAppScreenshot runOnUiThread running, pending size: " + this.pendingAttachments.size());
             this.refreshAttachmentCards();
-            Toast.makeText(this, "成功截取并共享应用画面", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "成功截取并添加屏幕截图", Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -881,7 +881,7 @@ extends Activity {
             popup.getMenu().add(0, 1, 0, "添加图片");
             popup.getMenu().add(0, 2, 1, "添加文件");
             popup.getMenu().add(0, 3, 2, "拍照");
-            popup.getMenu().add(0, 4, 3, "共享应用");
+            popup.getMenu().add(0, 4, 3, "屏幕截图");
             popup.setOnMenuItemClickListener(item -> {
                 if (item.getItemId() == 1) {
                     Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
