@@ -276,6 +276,7 @@ extends Activity {
     private android.content.Intent speechRecognizerIntent;
     private boolean isSpeechListening = false;
     private long lastSpeechStartTime = 0;
+    private boolean pendingStopSpeech = false;
     private android.widget.Button holdToSpeakBtn;
     private android.widget.Button voiceToggleBtn;
     private final Map<String, WebView> activeYanmWebViews = new HashMap<String, WebView>();
@@ -5453,12 +5454,14 @@ extends Activity {
             this.speechRecognizer = null;
         }
         this.isSpeechListening = false;
+        this.pendingStopSpeech = false;
     }
 
     private void startSpeechRecognition() {
         try {
             this.destroySpeechRecognizer(); // 确保重置状态
             this.lastSpeechStartTime = System.currentTimeMillis();
+            this.pendingStopSpeech = false;
             android.content.ComponentName comp = this.findAvailableSpeechService();
             if (comp != null) {
                 this.initSpeechRecognizer(comp);
@@ -5491,10 +5494,12 @@ extends Activity {
             }
             if (this.speechRecognizer != null) {
                 if (this.isSpeechListening) {
+                    Log.d("YanziVoice", "Speech is listening, stopping immediately");
                     this.speechRecognizer.stopListening();
+                    this.pendingStopSpeech = false;
                 } else {
-                    Log.d("YanziVoice", "Stop called before listener is ready, cancelling");
-                    this.destroySpeechRecognizer();
+                    Log.d("YanziVoice", "Speech not listening yet, marking pendingStop");
+                    this.pendingStopSpeech = true;
                 }
             }
         } catch (Exception e) {
@@ -5519,11 +5524,81 @@ extends Activity {
         try {
             android.content.Intent serviceIntent = new android.content.Intent("android.speech.RecognitionService");
             List<android.content.pm.ResolveInfo> services = getPackageManager().queryIntentServices(serviceIntent, 0);
-            if (services != null && !services.isEmpty()) {
+            if (services == null || services.isEmpty()) {
+                return null;
+            }
+
+            // 主流厂商推荐语音引擎包名关键字列表（按偏好排序）
+            String[] preferredPkgs = {
+                "com.miui.voiceassist",
+                "com.xiaomi.mibrain.speech",
+                "com.huawei.vassistant",
+                "com.huawei.speechservice",
+                "com.coloros.speechservice",
+                "com.heytap.speechservice",
+                "com.vivo.speechsuite",
+                "com.vivo.vassistant",
+                "com.iflytek.speechcloud",
+                "com.iflytek.speechsuite",
+                "com.iflytek.tts",
+                "com.baidu.speech",
+                "com.google.android.tts",
+                "com.google.android.googleassistant"
+            };
+
+            // 已知不是真实语音识别服务（会导致静默挂死）的黑名单
+            String[] blacklistPkgs = {
+                "com.arlosoft.macrodroid",
+                "net.dinglisch.android.taskerm"
+            };
+
+            // 1. 优先寻找大厂及主流引擎
+            for (String pref : preferredPkgs) {
                 for (android.content.pm.ResolveInfo ri : services) {
                     android.content.pm.ServiceInfo si = ri.serviceInfo;
-                    if (si != null) {
-                        Log.d("YanziVoice", "Found speech recognition service: " + si.packageName + "/" + si.name);
+                    if (si != null && si.packageName.equalsIgnoreCase(pref)) {
+                        Log.d("YanziVoice", "Found preferred speech service: " + si.packageName + "/" + si.name);
+                        return new android.content.ComponentName(si.packageName, si.name);
+                    }
+                }
+            }
+
+            // 2. 查找包含 speech/voice 等关键词且不在黑名单中的引擎
+            for (android.content.pm.ResolveInfo ri : services) {
+                android.content.pm.ServiceInfo si = ri.serviceInfo;
+                if (si != null) {
+                    boolean isBlacklisted = false;
+                    for (String black : blacklistPkgs) {
+                        if (si.packageName.toLowerCase().contains(black.toLowerCase())) {
+                            isBlacklisted = true;
+                            break;
+                        }
+                    }
+                    if (isBlacklisted) continue;
+
+                    String pkg = si.packageName.toLowerCase();
+                    String name = si.name.toLowerCase();
+                    if (pkg.contains("speech") || pkg.contains("voice") || pkg.contains("recogni") ||
+                        name.contains("speech") || name.contains("voice") || name.contains("recogni")) {
+                        Log.d("YanziVoice", "Found keyword-matched speech service: " + si.packageName + "/" + si.name);
+                        return new android.content.ComponentName(si.packageName, si.name);
+                    }
+                }
+            }
+
+            // 3. 兜底寻找第一个非黑名单中的引擎
+            for (android.content.pm.ResolveInfo ri : services) {
+                android.content.pm.ServiceInfo si = ri.serviceInfo;
+                if (si != null) {
+                    boolean isBlacklisted = false;
+                    for (String black : blacklistPkgs) {
+                        if (si.packageName.toLowerCase().contains(black.toLowerCase())) {
+                            isBlacklisted = true;
+                            break;
+                        }
+                    }
+                    if (!isBlacklisted) {
+                        Log.d("YanziVoice", "Fallback to first non-blacklisted speech service: " + si.packageName + "/" + si.name);
                         return new android.content.ComponentName(si.packageName, si.name);
                     }
                 }
@@ -5545,12 +5620,34 @@ extends Activity {
             public void onReadyForSpeech(Bundle params) {
                 Log.d("YanziVoice", "onReadyForSpeech");
                 MainActivity.this.isSpeechListening = true;
+                if (MainActivity.this.pendingStopSpeech) {
+                    Log.d("YanziVoice", "onReadyForSpeech: pendingStop is true, stopping now");
+                    try {
+                        if (MainActivity.this.speechRecognizer != null) {
+                            MainActivity.this.speechRecognizer.stopListening();
+                        }
+                    } catch (Exception e) {
+                        Log.e("YanziVoice", "Failed to stop pending speech", e);
+                    }
+                    MainActivity.this.pendingStopSpeech = false;
+                }
             }
 
             @Override
             public void onBeginningOfSpeech() {
                 Log.d("YanziVoice", "onBeginningOfSpeech");
                 MainActivity.this.isSpeechListening = true;
+                if (MainActivity.this.pendingStopSpeech) {
+                    Log.d("YanziVoice", "onBeginningOfSpeech: pendingStop is true, stopping now");
+                    try {
+                        if (MainActivity.this.speechRecognizer != null) {
+                            MainActivity.this.speechRecognizer.stopListening();
+                        }
+                    } catch (Exception e) {
+                        Log.e("YanziVoice", "Failed to stop pending speech", e);
+                    }
+                    MainActivity.this.pendingStopSpeech = false;
+                }
             }
 
             @Override
