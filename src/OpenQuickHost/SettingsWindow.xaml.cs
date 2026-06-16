@@ -770,6 +770,36 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool EnableAgentApi
+    {
+        get => _settings.EnableAgentApi;
+        set
+        {
+            if (value == _settings.EnableAgentApi)
+            {
+                return;
+            }
+
+            _settings = _settings with { EnableAgentApi = value };
+            OnPropertyChanged();
+        }
+    }
+
+    public int AgentApiPort
+    {
+        get => _settings.AgentApiPort;
+        set
+        {
+            if (value == _settings.AgentApiPort)
+            {
+                return;
+            }
+
+            _settings = _settings with { AgentApiPort = value };
+            OnPropertyChanged();
+        }
+    }
+
     public new string ThemeMode
     {
         get => _settings.ThemeMode;
@@ -1058,6 +1088,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             AppSettingsStore.Save(_settings);
         }
+    }
+
+    public string WanPushUuid
+    {
+        get => _settings.WanPushUuid;
+        set
+        {
+            if (value == _settings.WanPushUuid) return;
+            _settings = _settings with { WanPushUuid = value };
+            OnPropertyChanged();
+        }
+    }
+
+    private void SaveWanPushUuidButton_Click(object sender, RoutedEventArgs e)
+    {
+        AppSettingsStore.Save(_settings);
+        ShowToast("广域网推送配置已保存");
     }
 
     private void EnableLanSync_Click(object sender, RoutedEventArgs e)
@@ -2575,6 +2622,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
         StartupRegistrationService.Apply(_settings.LaunchAtStartup);
+    }
+
+    private void OpenApiDocsUrlButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var port = _settings.AgentApiPort;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = $"http://127.0.0.1:{port}/docs",
+                UseShellExecute = true
+            });
+        }
+        catch (System.Exception ex)
+        {
+            System.Windows.MessageBox.Show($"无法打开浏览器: {ex.Message}");
+        }
     }
 
     private void SaveQuickPanelTrigger_Click(object sender, RoutedEventArgs e)

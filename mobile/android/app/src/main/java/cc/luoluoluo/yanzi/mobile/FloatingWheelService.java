@@ -159,10 +159,13 @@ public class FloatingWheelService extends Service {
         }
     }
 
+    public static boolean isRunning = false;
+
     @Override
     public void onCreate() {
         super.onCreate();
         sContext = this;
+        isRunning = true;
 
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -188,6 +191,7 @@ public class FloatingWheelService extends Service {
 
     @Override
     public void onDestroy() {
+        isRunning = false;
         try {
             if (notificationServerSocket != null) notificationServerSocket.close();
             if (notificationThread != null) notificationThread.interrupt();
@@ -360,6 +364,7 @@ public class FloatingWheelService extends Service {
         wheelView = wheel;
         currentSectorWheel = wheel;
         windowManager.addView(wheelView, params);
+        if (bubbleView != null) bubbleView.setAlpha(0.0f);
         showWheelActionButtons(geometry);
     }
 
@@ -840,6 +845,8 @@ public class FloatingWheelService extends Service {
                 drawItem(canvas, items[i], iconX, iconY, i == selectedIndex);
             }
 
+            fillPaint.setColor(Color.argb(204, 4, 12, 24));
+            canvas.drawArc(inner, start, TOTAL_SWEEP, true, fillPaint);
             strokePaint.setColor(Color.argb(180, 34, 211, 238));
             strokePaint.setStrokeWidth(dp(1));
             canvas.drawArc(inner, start, TOTAL_SWEEP, false, strokePaint);
@@ -1447,6 +1454,7 @@ public class FloatingWheelService extends Service {
         cancelPendingSlotMenu();
         removeView(wheelView);
         wheelView = null;
+        if (bubbleView != null) bubbleView.setAlpha(1.0f);
         currentSectorWheel = null;
     }
 

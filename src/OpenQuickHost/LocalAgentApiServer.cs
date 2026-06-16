@@ -140,6 +140,18 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "GET" && (path == "/docs" || path == "/" || path == "/index.html"))
+            {
+                response.ContentType = "text/html; charset=utf-8";
+                response.StatusCode = 200;
+                var html = GetDocsHtml();
+                var buffer = Encoding.UTF8.GetBytes(html);
+                response.ContentLength64 = buffer.Length;
+                await response.OutputStream.WriteAsync(buffer, _cts.Token);
+                response.Close();
+                return;
+            }
+
             if (request.HttpMethod == "POST" && path == "/v1/notify")
             {
                 if (!IsAuthorized(request))
@@ -1224,5 +1236,645 @@ public sealed class LocalAgentApiServer : IDisposable
         public string? DeliveredAt { get; set; }
 
         public string? AckedAt { get; set; }
+    }
+
+    private string GetDocsHtml()
+    {
+        var html = """
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swallow (燕子) Local Agent API Console</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(22, 28, 45, 0.4);
+            --border-color: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-color: #38bdf8;
+            --accent-hover: #0ea5e9;
+            --accent-light: rgba(56, 189, 248, 0.1);
+            --success-color: #10b981;
+            --danger-color: #f43f5e;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+        .header {
+            background: rgba(13, 20, 35, 0.7);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .badge-service {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            padding: 4px 12px;
+            border-radius: 99px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: 1fr 480px;
+            gap: 30px;
+        }
+        .api-list {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        .api-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin: 0 0 12px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            transition: all 0.2s ease;
+        }
+        .card:hover {
+            border-color: #334155;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .card-header {
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .method {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 6px;
+            width: 65px;
+            text-align: center;
+            margin-right: 14px;
+            letter-spacing: 0.02em;
+        }
+        .method.get { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+        .method.post { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .method.put { background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.3); }
+        .method.delete { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+        
+        .path {
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            color: #f1f5f9;
+            font-weight: 500;
+            flex-grow: 1;
+        }
+        .desc {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-right: 8px;
+        }
+        .card-body {
+            padding: 0 16px 16px 16px;
+            border-top: 1px solid var(--border-color);
+            background: rgba(10, 15, 26, 0.4);
+            display: none;
+        }
+        .card.expanded .card-body {
+            display: block;
+        }
+        .form-group {
+            margin-top: 14px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .form-control {
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: #f1f5f9;
+            padding: 8px 12px;
+            width: 100%;
+            box-sizing: border-box;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            transition: border-color 0.2s;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+        textarea.form-control {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .btn-send {
+            background: linear-gradient(135deg, #38bdf8, #6366f1);
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 16px;
+            transition: opacity 0.2s;
+        }
+        .btn-send:hover {
+            opacity: 0.95;
+        }
+        .sidebar {
+            position: sticky;
+            top: 95px;
+            height: calc(100vh - 140px);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .panel {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-credentials {
+            flex-shrink: 0;
+        }
+        .panel-response {
+            flex-grow: 1;
+            min-height: 0;
+        }
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e2e8f0;
+            margin: 0 0 16px 0;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .token-container {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+        }
+        .btn-action {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #cbd5e1;
+            border-radius: 6px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-action:hover {
+            background: #334155;
+            color: #f8fafc;
+        }
+        .res-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+        .status-badge {
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        .status-ok { background: rgba(16, 185, 129, 0.15); color: var(--success-color); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .status-error { background: rgba(239, 68, 68, 0.15); color: var(--danger-color); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .res-container {
+            flex-grow: 1;
+            overflow: auto;
+            background: #050811;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin: 0;
+            box-sizing: border-box;
+        }
+        .res-container pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .res-container code {
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Swallow (燕子) Local Agent API Console</h1>
+        <div class="badge-service">API Online</div>
+    </div>
+    <div class="container">
+        <div class="api-list">
+            <!-- Diagnostics -->
+            <div class="api-section">
+                <h3 class="api-section-title">Diagnostics & Health</h3>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method get">GET</span>
+                        <span class="path">/health</span>
+                        <span class="desc">健康检查</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">检查 API 监听器是否运行正常。</p>
+                        <button class="btn-send" onclick="testHealth()">Send Request</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Extensions -->
+            <div class="api-section">
+                <h3 class="api-section-title">Extension Management</h3>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method get">GET</span>
+                        <span class="path">/v1/extensions</span>
+                        <span class="desc">获取已安装扩展列表</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">列出当前燕子启动器中加载的所有本地扩展信息。</p>
+                        <button class="btn-send" onclick="testListExtensions()">Send Request</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method post">POST</span>
+                        <span class="path">/v1/extensions/{id}/run</span>
+                        <span class="desc">执行扩展</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">触发执行指定 ID 的扩展脚本或可执行文件。</p>
+                        <div class="form-group">
+                            <label>Extension ID</label>
+                            <input type="text" class="form-control" id="run-ext-id" placeholder="例如: text-length-counter">
+                        </div>
+                        <div class="form-group">
+                            <label>Input Text (输入内容)</label>
+                            <textarea class="form-control" id="run-input" placeholder="作为参数传给扩展..."></textarea>
+                        </div>
+                        <button class="btn-send" onclick="testRunExtension()">Send Request</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method post">POST</span>
+                        <span class="path">/v1/extensions/{id}/stop</span>
+                        <span class="desc">停止扩展</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">中止或终止指定 ID 的运行中进程或后台任务。</p>
+                        <div class="form-group">
+                            <label>Extension ID</label>
+                            <input type="text" class="form-control" id="stop-ext-id" placeholder="例如: text-length-counter">
+                        </div>
+                        <button class="btn-send" onclick="testStopExtension()">Send Request</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method delete">DELETE</span>
+                        <span class="path">/v1/extensions/{id}</span>
+                        <span class="desc">将扩展移至回收站</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">将本地特定 ID 的扩展移动到回收站（软删除）。</p>
+                        <div class="form-group">
+                            <label>Extension ID</label>
+                            <input type="text" class="form-control" id="delete-ext-id" placeholder="例如: text-counter-pro">
+                        </div>
+                        <button class="btn-send" onclick="testDeleteExtension()">Send Request</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method delete">DELETE</span>
+                        <span class="path">/v1/extensions/recycle-bin/{id}</span>
+                        <span class="desc">彻底删除扩展</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">从回收站中永久清除特定 ID 的扩展，此操作不可逆。</p>
+                        <div class="form-group">
+                            <label>Extension ID</label>
+                            <input type="text" class="form-control" id="purge-ext-id" placeholder="例如: text-counter-pro">
+                        </div>
+                        <button class="btn-send" onclick="testPurgeExtension()">Send Request</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Storage -->
+            <div class="api-section">
+                <h3 class="api-section-title">Extension Storage</h3>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method get">GET</span>
+                        <span class="path">/v1/storage/{id}</span>
+                        <span class="desc">读取扩展存储数据</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">读取某个扩展存放在沙盒里的配置、笔记或其他文本数据。</p>
+                        <div class="form-group">
+                            <label>Extension ID</label>
+                            <input type="text" class="form-control" id="get-store-id" placeholder="例如: yanzi-notes">
+                        </div>
+                        <div class="form-group">
+                            <label>Storage Key (存储键/相对路径)</label>
+                            <input type="text" class="form-control" id="get-store-key" placeholder="例如: notes/index.json">
+                        </div>
+                        <button class="btn-send" onclick="testGetStorage()">Send Request</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method put">PUT</span>
+                        <span class="path">/v1/storage/{id}</span>
+                        <span class="desc">修改/写入扩展数据</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">覆写或创建某个扩展沙盒中的键值文件，支持本地和云端的自动更新。</p>
+                        <div class="form-group">
+                            <label>Extension ID</label>
+                            <input type="text" class="form-control" id="put-store-id" placeholder="例如: yanzi-notes">
+                        </div>
+                        <div class="form-group">
+                            <label>Storage Key</label>
+                            <input type="text" class="form-control" id="put-store-key" placeholder="例如: notes/index.json">
+                        </div>
+                        <div class="form-group">
+                            <label>Content (写入内容)</label>
+                            <textarea class="form-control" id="put-store-content" placeholder="写入的 JSON 或文本..."></textarea>
+                        </div>
+                        <button class="btn-send" onclick="testPutStorage()">Send Request</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Yanm Status -->
+            <div class="api-section">
+                <h3 class="api-section-title">Yanm Overlay Control</h3>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method get">GET</span>
+                        <span class="path">/v1/me/yanm-state</span>
+                        <span class="desc">获取燕幕状态与内容</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">获取当前燕幕的组件状态、便签内容和组件列表。</p>
+                        <button class="btn-send" onclick="testGetYanmState()">Send Request</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method put">PUT</span>
+                        <span class="path">/v1/me/yanm-state</span>
+                        <span class="desc">更新燕幕状态与内容</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">修改燕幕便签组件的内容或组件布局状态，立即反映在屏幕上。</p>
+                        <div class="form-group">
+                            <label>Yanm Settings Payload (JSON)</label>
+                            <textarea class="form-control" id="put-yanm-content" placeholder='例如: {"componentState": {"note": "新便签内容"}}'></textarea>
+                        </div>
+                        <button class="btn-send" onclick="testPutYanmState()">Send Request</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <!-- Credentials Panel -->
+            <div class="panel panel-credentials">
+                <h4 class="panel-title">Credentials Configuration</h4>
+                <div class="form-group" style="margin-top:0;">
+                    <label>Base URL</label>
+                    <input type="text" class="form-control" id="base-url" readonly>
+                </div>
+                <div class="form-group">
+                    <label>X-Yanzi-Token</label>
+                    <div class="token-container">
+                        <input type="password" class="form-control" id="api-token" value="__YANZI_TOKEN__">
+                        <button class="btn-action" onclick="toggleTokenVisibility()">Show</button>
+                        <button class="btn-action" onclick="copyToken()">Copy</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Response Panel -->
+            <div class="panel panel-response">
+                <h4 class="panel-title">Response Monitor</h4>
+                <div class="res-meta">
+                    <div>Status: <span id="res-status" class="status-badge" style="display:inline-block; min-width:40px; text-align:center;">-</span></div>
+                    <div>Latency: <span id="res-time">-</span></div>
+                </div>
+                <div class="res-container">
+                    <pre><code id="res-body" class="language-json">No requests sent yet.</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set dynamic base URL
+        document.getElementById('base-url').value = window.location.origin;
+
+        function toggleCard(header) {
+            const card = header.parentElement;
+            card.classList.toggle('expanded');
+        }
+
+        function toggleTokenVisibility() {
+            const tokenInput = document.getElementById('api-token');
+            const showBtn = event.target;
+            if (tokenInput.type === 'password') {
+                tokenInput.type = 'text';
+                showBtn.textContent = 'Hide';
+            } else {
+                tokenInput.type = 'password';
+                showBtn.textContent = 'Show';
+            }
+        }
+
+        function copyToken() {
+            const tokenInput = document.getElementById('api-token');
+            navigator.clipboard.writeText(tokenInput.value);
+            const copyBtn = event.target;
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+            }, 1500);
+        }
+
+        async function sendRequest(method, path, body = null) {
+            const origin = window.location.origin;
+            const token = document.getElementById('api-token').value;
+            const url = origin + path;
+            const startTime = performance.now();
+            const statusEl = document.getElementById('res-status');
+            const timeEl = document.getElementById('res-time');
+            const codeEl = document.getElementById('res-body');
+            
+            statusEl.textContent = 'Sending...';
+            timeEl.textContent = '-';
+            codeEl.textContent = 'Loading...';
+            codeEl.className = 'language-json';
+
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            if (token) {
+                headers['X-Yanzi-Token'] = token;
+            }
+
+            const options = {
+                method: method,
+                headers: headers
+            };
+            if (body && (method === 'POST' || method === 'PUT')) {
+                options.body = typeof body === 'string' ? body : JSON.stringify(body);
+            }
+
+            try {
+                const response = await fetch(url, options);
+                const duration = (performance.now() - startTime).toFixed(1);
+                statusEl.textContent = response.status + ' ' + response.statusText;
+                statusEl.className = 'status-badge ' + (response.status >= 200 && response.status < 300 ? 'status-ok' : 'status-error');
+                timeEl.textContent = duration + ' ms';
+                
+                let text = await response.text();
+                try {
+                    const parsed = JSON.parse(text);
+                    codeEl.textContent = JSON.stringify(parsed, null, 2);
+                } catch {
+                    codeEl.textContent = text;
+                }
+                hljs.highlightElement(codeEl);
+            } catch (err) {
+                const duration = (performance.now() - startTime).toFixed(1);
+                statusEl.textContent = 'Error';
+                statusEl.className = 'status-badge status-error';
+                timeEl.textContent = duration + ' ms';
+                codeEl.textContent = err.toString();
+            }
+        }
+
+        function testHealth() {
+            sendRequest('GET', '/health');
+        }
+
+        function testListExtensions() {
+            sendRequest('GET', '/v1/extensions');
+        }
+
+        function testRunExtension() {
+            const id = document.getElementById('run-ext-id').value.trim();
+            const input = document.getElementById('run-input').value;
+            if (!id) return alert('请输入 Extension ID');
+            sendRequest('POST', `/v1/extensions/${encodeURIComponent(id)}/run`, { input });
+        }
+
+        function testStopExtension() {
+            const id = document.getElementById('stop-ext-id').value.trim();
+            if (!id) return alert('请输入 Extension ID');
+            sendRequest('POST', `/v1/extensions/${encodeURIComponent(id)}/stop`);
+        }
+
+        function testDeleteExtension() {
+            const id = document.getElementById('delete-ext-id').value.trim();
+            if (!id) return alert('请输入 Extension ID');
+            sendRequest('DELETE', `/v1/extensions/${encodeURIComponent(id)}`);
+        }
+
+        function testPurgeExtension() {
+            const id = document.getElementById('purge-ext-id').value.trim();
+            if (!id) return alert('请输入 Extension ID');
+            sendRequest('DELETE', `/v1/extensions/recycle-bin/${encodeURIComponent(id)}`);
+        }
+
+        function testGetStorage() {
+            const id = document.getElementById('get-store-id').value.trim();
+            const key = document.getElementById('get-store-key').value.trim();
+            if (!id || !key) return alert('请输入 Extension ID 和 Storage Key');
+            sendRequest('GET', `/v1/storage/${encodeURIComponent(id)}?key=${encodeURIComponent(key)}`);
+        }
+
+        function testPutStorage() {
+            const id = document.getElementById('put-store-id').value.trim();
+            const key = document.getElementById('put-store-key').value.trim();
+            const content = document.getElementById('put-store-content').value;
+            if (!id || !key) return alert('请输入 Extension ID 和 Storage Key');
+            sendRequest('PUT', `/v1/storage/${encodeURIComponent(id)}`, { key, content });
+        }
+
+        function testGetYanmState() {
+            sendRequest('GET', '/v1/me/yanm-state');
+        }
+
+        function testPutYanmState() {
+            const content = document.getElementById('put-yanm-content').value.trim();
+            if (!content) return alert('请输入 Yanm Settings Payload JSON');
+            try {
+                const parsed = JSON.parse(content);
+                sendRequest('PUT', '/v1/me/yanm-state', parsed);
+            } catch (e) {
+                alert('JSON 格式错误: ' + e.message);
+            }
+        }
+    </script>
+</body>
+</html>
+""";
+        return html.Replace("__YANZI_TOKEN__", _token ?? string.Empty);
     }
 }

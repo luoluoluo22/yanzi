@@ -1021,53 +1021,21 @@
                         </Button>
 
                         <Button Grid.Column="3"
-                                Width="32"
-                                Height="32"
-                                Background="Transparent"
-                                BorderThickness="0"
+                                Margin="0,0,10,0"
+                                Padding="18,8"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
+                                BorderThickness="1"
+                                Foreground="{DynamicResource BrushTextMain}"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
                                 ToolTip="打开 AI 设置"
                                 Click="AiChatSettingsButton_Click"
                                 Style="{DynamicResource GhostButtonStyle}">
-                            <Viewbox Width="16" Height="16">
-                                <Canvas Width="16" Height="16">
-                                    <Rectangle Width="12"
-                                               Height="1.5"
-                                               RadiusX="0.75"
-                                               RadiusY="0.75"
-                                               Fill="#FFA1A1AA"
-                                               Canvas.Left="2"
-                                               Canvas.Top="3" />
-                                    <Rectangle Width="12"
-                                               Height="1.5"
-                                               RadiusX="0.75"
-                                               RadiusY="0.75"
-                                               Fill="#FFA1A1AA"
-                                               Canvas.Left="2"
-                                               Canvas.Top="7.25" />
-                                    <Rectangle Width="12"
-                                               Height="1.5"
-                                               RadiusX="0.75"
-                                               RadiusY="0.75"
-                                               Fill="#FFA1A1AA"
-                                               Canvas.Left="2"
-                                               Canvas.Top="11.5" />
-                                    <Ellipse Width="4"
-                                             Height="4"
-                                             Fill="#FF8B5CF6"
-                                             Canvas.Left="8.5"
-                                             Canvas.Top="1.75" />
-                                    <Ellipse Width="4"
-                                             Height="4"
-                                             Fill="#FF8B5CF6"
-                                             Canvas.Left="4"
-                                             Canvas.Top="6" />
-                                    <Ellipse Width="4"
-                                             Height="4"
-                                             Fill="#FF8B5CF6"
-                                             Canvas.Left="10"
-                                             Canvas.Top="10.25" />
-                                </Canvas>
-                            </Viewbox>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="⚙️" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,4,0" />
+                                <TextBlock Text="设置" FontSize="{DynamicResource FontSizeSmallPlus}" />
+                            </StackPanel>
                         </Button>
                     </Grid>
 

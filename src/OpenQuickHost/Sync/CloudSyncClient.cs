@@ -436,6 +436,35 @@ public sealed class CloudSyncClient
         return payload?.Items ?? [];
     }
 
+    public async Task<string> SendDeviceMessageAsync(
+        string sourceDeviceId,
+        string targetPlatform,
+        string kind,
+        string title,
+        string text,
+        string? targetDeviceId = null,
+        object? payload = null,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new
+        {
+            sourceDeviceId,
+            targetDeviceId,
+            targetPlatform,
+            kind,
+            title,
+            text,
+            payload = payload ?? new { }
+        });
+
+        using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/mobile/messages", body, includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var result = await ReadAsync<DeviceMessageCreateResponse>(response, cancellationToken);
+        return result?.MessageId ?? string.Empty;
+    }
+
     public async Task<HttpResponseMessage> GetMobileMessagesEventsStreamAsync(string deviceId, CancellationToken cancellationToken)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
@@ -828,6 +857,13 @@ public sealed class DeviceMessageListResponse
     public string? DeviceId { get; set; }
 
     public List<DeviceMessageRecord> Items { get; set; } = [];
+}
+
+public sealed class DeviceMessageCreateResponse
+{
+    public bool Ok { get; set; }
+
+    public string MessageId { get; set; } = string.Empty;
 }
 
 public sealed class DeviceMessageRecord

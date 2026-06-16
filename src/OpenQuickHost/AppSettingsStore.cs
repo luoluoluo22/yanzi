@@ -596,6 +596,8 @@ public sealed record AppSettings
 
     public string AgentApiToken { get; set; } = "yanzi-local-dev-token";
 
+    public string WanPushUuid { get; set; } = System.Guid.NewGuid().ToString("N");
+
     public bool EnableLanSync { get; set; } = false;
 
     public PersonalSyncSettings PersonalSync { get; set; } = new();

@@ -10,7 +10,7 @@ import java.util.Locale;
 public final class MobileDiagnostics {
     private static final String PREFS_NAME = "yanzi-mobile";
     private static final String KEY_LOG = "diagnosticLog";
-    private static final int MAX_LENGTH = 6000;
+    private static final int MAX_LENGTH = 30000;
 
     private MobileDiagnostics() {
     }

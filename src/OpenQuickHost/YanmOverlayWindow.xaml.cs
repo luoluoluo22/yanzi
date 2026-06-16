@@ -231,7 +231,7 @@ public partial class YanmOverlayWindow : Window
         QueueWebDavStateRefresh("visible-poll");
     }
 
-    private void QueueWebDavStateRefresh(string reason, bool force = false)
+    internal void QueueWebDavStateRefresh(string reason, bool force = false)
     {
         var now = DateTime.UtcNow;
         if (_webDavStateRefreshRunning)

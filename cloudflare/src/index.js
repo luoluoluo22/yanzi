@@ -45,6 +45,122 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
   .map((item) => `'${item.extension_id.replace(/'/g, "''")}'`)
   .join(", ");
 
+export class DeviceRelayRoom {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {
+      if (request.headers.get("Upgrade") !== "websocket") {
+        return json({ error: "upgrade_required", message: "WebSocket upgrade required" }, 426);
+      }
+
+      const auth = await requireAuth(request, this.env);
+      const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
+      await ensureUser(this.env, auth.userId);
+      const device = await ensureOwnedDevice(this.env, auth.userId, deviceId);
+      await touchDevice(this.env, auth.userId, deviceId);
+
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+      server.serializeAttachment({
+        userId: auth.userId,
+        deviceId,
+        platform: device.platform,
+        connectedAt: isoNow()
+      });
+      this.state.acceptWebSocket(server);
+
+      server.send(JSON.stringify({
+        type: "connected",
+        deviceId,
+        serverTime: isoNow()
+      }));
+      await this.pushPendingToSocket(server);
+
+      return new Response(null, {
+        status: 101,
+        webSocket: client
+      });
+    }
+
+    if (url.pathname === "/internal/device-relay/notify" && request.method === "POST") {
+      await this.broadcastPending();
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    return new Response("Not found", { status: 404 });
+  }
+
+  async webSocketMessage(ws, message) {
+    if (typeof message !== "string") {
+      return;
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(message);
+    } catch {
+      return;
+    }
+
+    if (payload.type === "ping") {
+      ws.send(JSON.stringify({ type: "pong", serverTime: isoNow() }));
+      return;
+    }
+
+    if (payload.type === "pull") {
+      await this.pushPendingToSocket(ws);
+    }
+  }
+
+  async webSocketClose(ws, code, reason) {
+    ws.close(code, reason);
+  }
+
+  async webSocketError(ws) {
+    ws.close(1011, "websocket error");
+  }
+
+  async broadcastPending() {
+    const sockets = this.state.getWebSockets();
+    for (const ws of sockets) {
+      await this.pushPendingToSocket(ws);
+    }
+  }
+
+  async pushPendingToSocket(ws) {
+    const attachment = ws.deserializeAttachment();
+    if (!attachment?.userId || !attachment?.deviceId || !attachment?.platform) {
+      return;
+    }
+
+    const items = await getPendingDeviceMessageItems(
+      this.env,
+      attachment.userId,
+      attachment.deviceId,
+      attachment.platform,
+      20
+    );
+    if (items.length === 0) {
+      return;
+    }
+
+    ws.send(JSON.stringify({
+      type: "messages",
+      items,
+      serverTime: isoNow()
+    }));
+    await markDeviceMessagesDelivered(this.env, attachment.userId, items);
+  }
+}
+
 export default {
   async fetch(request, env) {
     try {
@@ -1261,12 +1377,27 @@ async function handleRequest(request, env) {
       )
       .run();
 
+    await notifyDeviceRelay(env, auth.userId);
+
     return json({
       ok: true,
       userId: auth.userId,
       messageId,
       createdAt: now
     });
+  }
+
+  if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
+    await ensureUser(env, auth.userId);
+    await ensureOwnedDevice(env, auth.userId, deviceId);
+
+    if (!env.DEVICE_RELAY) {
+      throw new HttpError(503, "relay_unavailable", "Device relay is not configured");
+    }
+
+    return env.DEVICE_RELAY.getByName(auth.userId).fetch(request);
   }
 
   if (url.pathname === "/v1/me/mobile/messages/events" && request.method === "GET") {
@@ -1921,6 +2052,73 @@ async function touchDevice(env, userId, deviceId) {
   )
     .bind(isoNow(), isoNow(), userId, deviceId)
     .run();
+}
+
+async function getPendingDeviceMessageItems(env, userId, deviceId, platform, limit = 20) {
+  const rows = await env.DB.prepare(
+    `select
+      message_id,
+      source_device_id,
+      target_device_id,
+      target_platform,
+      kind,
+      title,
+      body_text,
+      payload_json,
+      status,
+      created_at,
+      delivered_at,
+      acked_at,
+      expires_at
+    from device_messages
+    where user_id = ?
+      and status = 'pending'
+      and (expires_at is null or expires_at > ?)
+      and (
+        target_device_id = ?
+        or (
+          target_device_id is null
+          and target_platform = ?
+        )
+      )
+    order by created_at asc
+    limit ?`
+  )
+    .bind(userId, isoNow(), deviceId, platform, limit)
+    .all();
+
+  return (rows.results ?? []).map(serializeDeviceMessageRecord);
+}
+
+async function markDeviceMessagesDelivered(env, userId, items) {
+  if (!items || items.length === 0) {
+    return;
+  }
+
+  await env.DB.prepare(
+    `update device_messages
+     set delivered_at = coalesce(delivered_at, ?)
+     where user_id = ?
+       and message_id in (${items.map(() => "?").join(",")})`
+  )
+    .bind(isoNow(), userId, ...items.map((item) => item.messageId))
+    .run();
+}
+
+async function notifyDeviceRelay(env, userId) {
+  if (!env.DEVICE_RELAY) {
+    return;
+  }
+
+  try {
+    await env.DEVICE_RELAY
+      .getByName(userId)
+      .fetch(new Request("https://device-relay.internal/internal/device-relay/notify", {
+        method: "POST"
+      }));
+  } catch {
+    // The HTTP polling fallback will pick up pending messages if the relay is unavailable.
+  }
 }
 
 function serializeDeviceRecord(row) {

@@ -582,6 +582,7 @@ public partial class App : WpfApplication
                 },
                 async (title, message) =>
                 {
+                    var sentByLan = false;
                     var mobileIp = LanDiscoveryService.LastKnownMobileIp;
                     if (mobileIp != null)
                     {
@@ -591,8 +592,52 @@ public partial class App : WpfApplication
                             client.Timeout = TimeSpan.FromSeconds(3);
                             var payload = System.Text.Json.JsonSerializer.Serialize(new { title, message });
                             var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-                            await client.PostAsync($"http://{mobileIp}:42981/", content);
-                        } catch {}
+                            using var response = await client.PostAsync($"http://{mobileIp}:42981/", content);
+                            response.EnsureSuccessStatusCode();
+                            sentByLan = true;
+                            HostAssets.AppendLog($"Push to mobile delivered by LAN: ip={mobileIp}, title={title}.");
+                        }
+                        catch (Exception ex)
+                        {
+                            HostAssets.AppendLog($"Push to mobile LAN failed: ip={mobileIp}, {ex.Message}");
+                        }
+                    }
+
+                    if (!sentByLan)
+                    {
+                        try
+                        {
+                            var cloudClient = window.CloudSyncClient;
+                            if (cloudClient == null || !cloudClient.HasCredential)
+                            {
+                                HostAssets.AppendLog("Push to mobile cloud fallback skipped: cloud client has no credential.");
+                                return;
+                            }
+
+                            var desktopDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+                            await cloudClient.RegisterDeviceAsync(
+                                desktopDeviceId,
+                                "desktop",
+                                Environment.MachineName,
+                                capabilities: new { receiveMobileMessages = true, pushToMobile = true });
+                            var messageId = await cloudClient.SendDeviceMessageAsync(
+                                desktopDeviceId,
+                                "android",
+                                "notify",
+                                title,
+                                message,
+                                payload: new
+                                {
+                                    source = "desktop",
+                                    sourceDeviceName = Environment.MachineName,
+                                    createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                                });
+                            HostAssets.AppendLog($"Push to mobile queued by cloud: messageId={messageId}, title={title}.");
+                        }
+                        catch (Exception ex)
+                        {
+                            HostAssets.AppendLog($"Push to mobile cloud fallback failed: {ex.Message}");
+                        }
                     }
                 },
                 (message) =>
@@ -837,6 +882,10 @@ public partial class App : WpfApplication
         var startupLocation = window.WindowStartupLocation;
         bool isFirstRender = true;
 
+        double originalWidth = window.Width;
+        double originalHeight = window.Height;
+        SizeToContent originalSizeToContent = window.SizeToContent;
+
         window.WindowState = WindowState.Minimized;
         window.ShowInTaskbar = false;
 
@@ -853,6 +902,10 @@ public partial class App : WpfApplication
             }
 
             window.WindowState = WindowState.Normal;
+
+            window.SizeToContent = originalSizeToContent;
+            if (!double.IsNaN(originalWidth)) window.Width = originalWidth;
+            if (!double.IsNaN(originalHeight)) window.Height = originalHeight;
 
             if (startupLocation == WindowStartupLocation.CenterOwner && window.Owner != null)
             {

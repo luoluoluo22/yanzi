@@ -727,6 +727,37 @@
                                 </StackPanel>
                             </Border>
 
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,18,0,0">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="本地 Agent API" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="允许外部 Agent 读取/修改扩展数据及控制启动器。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableAgentApi, Mode=TwoWay}" Click="SaveSettingsToggle_Click" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <StackPanel Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Ellipse Width="8" Height="8" Fill="#FF22C55E" VerticalAlignment="Center"/>
+                                                <TextBlock Text="本地 API 服务运行中，端口: " Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Medium" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding AgentApiPort}" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="打开 API 控制台" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="OpenApiDocsUrlButton_Click"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,18,0,0">
                                 <StackPanel>
                                     <TextBlock Text="说明" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
@@ -863,6 +894,25 @@
                                         <Ellipse Width="8" Height="8" Fill="#FF22C55E" VerticalAlignment="Center"/>
                                         <TextBlock Text="直连服务运行中，正在监听局域网连接" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                     </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- WAN Push Configuration Card -->
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel Margin="20">
+                                    <Grid>
+                                        <TextBlock Text="广域网跨网络推送" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <TextBlock Text="当手机和电脑不在同一局域网时，使用 MQTT 协议通过公网进行推送。请确保两端配置相同的值。" 
+                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,12"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Grid.Column="0" Style="{DynamicResource GlobalTextBoxStyle}" Text="{Binding WanPushUuid, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="36" Padding="12,0" Background="{DynamicResource BrushInputBG}" Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}"/>
+                                        <Button Grid.Column="1" Content="保存并应用" Style="{StaticResource SecondaryBtn}" Height="36" Margin="10,0,0,0" Padding="16,0" Click="SaveWanPushUuidButton_Click"/>
+                                    </Grid>
                                 </StackPanel>
                             </Border>
 

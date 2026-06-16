@@ -667,6 +667,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _quickPanel.ShowInTaskbar = oShowInTaskbar;
                     _quickPanel.Opacity = oOpacity;
                 }
+
+                var currentSettings = AppSettingsStore.Load();
+                if (currentSettings.Yanm != null && currentSettings.Yanm.Enabled)
+                {
+                    _yanmOverlay?.QueueWebDavStateRefresh("startup-preload", force: true);
+                }
             }
             catch (Exception ex)
             {
