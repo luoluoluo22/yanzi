@@ -270,6 +270,8 @@ extends Activity {
     private final List<String> sortedComponentIds = new ArrayList<String>();
     private android.speech.tts.TextToSpeech textToSpeech;
     private boolean isTtsEnabled = false;
+    private boolean isTtsInitialized = false;
+    private String pendingSpeakText = null;
     private android.speech.SpeechRecognizer speechRecognizer;
     private android.content.Intent speechRecognizerIntent;
     private android.widget.Button holdToSpeakBtn;
@@ -360,6 +362,7 @@ extends Activity {
         this.buildUi(MainActivity.extractSharedText(this.getIntent()));
         this.handleExternalAction(this.getIntent());
         this.startFloatingWheelIfPermitted();
+        this.initTextToSpeech();
     }
 
     protected void onResume() {
@@ -420,6 +423,13 @@ extends Activity {
         } else if (requestCode == REQUEST_CODE_TAKE_PHOTO && resultCode == -1) {
             if (this.cameraPhotoUri != null && this.cameraPhotoFile != null && this.cameraPhotoFile.exists()) {
                 this.handleCameraPhotoTaken(this.cameraPhotoUri, this.cameraPhotoFile.getName(), this.cameraPhotoFile.length());
+            }
+        } else if (requestCode == 103 && resultCode == -1 && data != null) {
+            ArrayList<String> matches = data.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS);
+            if (matches != null && !matches.isEmpty()) {
+                String text = matches.get(0);
+                this.aiChatInput.setText((CharSequence)text);
+                this.aiChatInput.setSelection(text.length());
             }
         }
     }
@@ -988,7 +998,12 @@ extends Activity {
         this.voiceToggleBtn.setOnClickListener(v -> {
             if (this.holdToSpeakBtn.getVisibility() == 8) {
                 if (this.checkAudioPermission()) {
-                    this.switchToVoiceInput();
+                    if (android.speech.SpeechRecognizer.isRecognitionAvailable((Context)this)) {
+                        this.switchToVoiceInput();
+                    } else {
+                        Toast.makeText((Context)this, "检测到系统后台语音服务未开启，已为您拉起系统语音输入面板", Toast.LENGTH_SHORT).show();
+                        this.startSpeechIntent();
+                    }
                 }
             } else {
                 this.switchToTextInput();
@@ -5393,8 +5408,12 @@ extends Activity {
         speakBtn.setText(this.isTtsEnabled ? "🔊" : "🔇");
         if (!this.isTtsEnabled) {
             if (this.textToSpeech != null) {
-                this.textToSpeech.stop();
+                try {
+                    this.textToSpeech.stop();
+                } catch (Exception ignored) {}
             }
+        } else {
+            this.initTextToSpeech();
         }
         Toast.makeText((Context)this, this.isTtsEnabled ? "已开启语音朗读" : "已关闭语音朗读", Toast.LENGTH_SHORT).show();
     }
@@ -5424,12 +5443,22 @@ extends Activity {
 
     private void startSpeechRecognition() {
         try {
-            this.initSpeechRecognizer();
-            if (this.speechRecognizer != null) {
-                this.speechRecognizer.startListening(this.speechRecognizerIntent);
+            if (android.speech.SpeechRecognizer.isRecognitionAvailable((Context)this)) {
+                this.initSpeechRecognizer();
+                if (this.speechRecognizer != null) {
+                    this.speechRecognizer.startListening(this.speechRecognizerIntent);
+                } else {
+                    this.startSpeechIntent();
+                    this.switchToTextInput();
+                }
+            } else {
+                this.startSpeechIntent();
+                this.switchToTextInput();
             }
         } catch (Exception e) {
             Log.e("YanziVoice", "Failed to start speech recognition", e);
+            this.startSpeechIntent();
+            this.switchToTextInput();
         }
     }
 
@@ -5443,11 +5472,21 @@ extends Activity {
         }
     }
 
+    private void startSpeechIntent() {
+        android.content.Intent intent = new android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "请说话...");
+        try {
+            this.startActivityForResult(intent, 103);
+        } catch (android.content.ActivityNotFoundException a) {
+            Toast.makeText((Context)this, "您的设备不支持语音识别输入", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void initSpeechRecognizer() {
         if (this.speechRecognizer != null) return;
         if (!android.speech.SpeechRecognizer.isRecognitionAvailable((Context)this)) {
-            Toast.makeText((Context)this, "当前设备不支持语音识别", Toast.LENGTH_SHORT).show();
-            this.switchToTextInput();
             return;
         }
         this.speechRecognizer = android.speech.SpeechRecognizer.createSpeechRecognizer((Context)this);
@@ -5534,13 +5573,18 @@ extends Activity {
         if (this.textToSpeech != null) return;
         this.textToSpeech = new android.speech.tts.TextToSpeech((Context)this, status -> {
             if (status == android.speech.tts.TextToSpeech.SUCCESS) {
-                int result = this.textToSpeech.setLanguage(Locale.getDefault());
+                int result = this.textToSpeech.setLanguage(Locale.CHINA);
                 if (result == android.speech.tts.TextToSpeech.LANG_MISSING_DATA || result == android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.e("YanziTTS", "Language not supported for TTS");
-                } else {
-                    Log.d("YanziTTS", "TTS Initialization Success");
+                    this.textToSpeech.setLanguage(Locale.getDefault());
+                }
+                this.isTtsInitialized = true;
+                Log.d("YanziTTS", "TTS Initialization Success");
+                if (this.pendingSpeakText != null) {
+                    this.speakText(this.pendingSpeakText);
+                    this.pendingSpeakText = null;
                 }
             } else {
+                this.isTtsInitialized = false;
                 Log.e("YanziTTS", "TTS Initialization Failed");
             }
         });
@@ -5551,10 +5595,19 @@ extends Activity {
         this.initTextToSpeech();
         if (this.textToSpeech == null) return;
         String cleaned = text.replaceAll("[\\*#`_~>\\[\\]\\(\\)-]", " ").trim();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            this.textToSpeech.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "YanziTTSCall");
-        } else {
-            this.textToSpeech.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null);
+        if (!this.isTtsInitialized) {
+            this.pendingSpeakText = cleaned;
+            Log.d("YanziTTS", "TTS not initialized yet, queueing text");
+            return;
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                this.textToSpeech.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "YanziTTSCall");
+            } else {
+                this.textToSpeech.speak(cleaned, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null);
+            }
+        } catch (Exception e) {
+            Log.e("YanziTTS", "Speak failed", e);
         }
     }
 
