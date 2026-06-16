@@ -285,6 +285,17 @@ extends Activity {
     private JSONObject currentYanmSnapshot;
     private Runnable pendingYanmSync;
     private final StringBuilder diagnosticLog = new StringBuilder();
+    private final android.content.BroadcastReceiver screenshotReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS".equals(intent.getAction())) {
+                String base64Data = intent.getStringExtra("image_base64");
+                if (base64Data != null) {
+                    MainActivity.this.addSharedAppScreenshot("float_capture", base64Data);
+                }
+            }
+        }
+    };
 
     protected void onCreate(Bundle savedInstanceState) {
         if (this.getIntent() != null && this.getIntent().hasExtra("run_remote_extension_id")) {
@@ -301,6 +312,7 @@ extends Activity {
             return;
         }
         super.onCreate(savedInstanceState);
+        this.registerReceiver(this.screenshotReceiver, new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS"));
         sContext = this;
         LanDiscoveryManager.discover((Context)this);
         this.prefs = this.getSharedPreferences("yanzi-mobile", 0);
@@ -348,6 +360,14 @@ extends Activity {
     protected void onPause() {
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
         super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        try {
+            this.unregisterReceiver(this.screenshotReceiver);
+        } catch (Exception e) {}
+        super.onDestroy();
     }
 
     protected void onNewIntent(Intent intent) {
@@ -458,77 +478,33 @@ extends Activity {
         this.runOnUiThread(this::refreshAttachmentCards);
     }
 
-    private void showAppShareDialog() {
-        Intent mainIntent = new Intent(Intent.ACTION_MAIN, null);
-        mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
-        List<android.content.pm.ResolveInfo> resolveInfos = this.getPackageManager().queryIntentActivities(mainIntent, 0);
-        
-        List<android.content.pm.ResolveInfo> apps = new ArrayList<>();
-        for (android.content.pm.ResolveInfo info : resolveInfos) {
-            if (info.activityInfo != null && info.activityInfo.packageName != null && !info.activityInfo.packageName.equals(this.getPackageName())) {
-                apps.add(info);
+    private void startFloatingScreenshot() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Toast.makeText(this, "需要悬浮窗权限，请先开启悬浮轮盘以获得授权", Toast.LENGTH_LONG).show();
+                try {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, 
+                            Uri.parse("package:" + this.getPackageName()));
+                    this.startActivity(intent);
+                } catch (Exception e) {
+                    Log.e("Yanzi", "Failed to start manage overlay settings", e);
+                }
+                return;
             }
         }
-        
-        if (apps.isEmpty()) {
-            Toast.makeText(this, "未找到其他可共享的应用", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        
-        CharSequence[] items = new CharSequence[apps.size()];
-        for (int i = 0; i < apps.size(); i++) {
-            items[i] = apps.get(i).loadLabel(this.getPackageManager());
-        }
-        
-        AlertDialog.Builder builder = new AlertDialog.Builder(this, 16974545);
-        builder.setTitle("选择要共享的应用");
-        builder.setItems(items, (dialog, which) -> {
-            android.content.pm.ResolveInfo selectedApp = apps.get(which);
-            this.shareAppScreenshot(selectedApp.activityInfo.packageName);
-        });
-        builder.show();
-    }
-
-    private void shareAppScreenshot(String packageName) {
         if (!MobileAccessibilityService.isEnabled()) {
             Toast.makeText(this, "共享失败：请先前往无障碍设置开启 燕子 辅助功能", Toast.LENGTH_LONG).show();
             return;
         }
         
-        Intent launchIntent = this.getPackageManager().getLaunchIntentForPackage(packageName);
-        if (launchIntent != null) {
-            try {
-                this.startActivity(launchIntent);
-            } catch (Exception e) {
-                Toast.makeText(this, "启动应用失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                return;
-            }
-            
-            Toast.makeText(this, "正在拉起应用，请稍候...", Toast.LENGTH_SHORT).show();
-            
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                MobileAccessibilityService.captureJpegBase64(new MobileAccessibilityService.ScreenshotCallback() {
-                    @Override
-                    public void onSuccess(String jpegBase64, int width, int height) {
-                        Intent backIntent = new Intent(MainActivity.this, MainActivity.class);
-                        backIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                        MainActivity.this.startActivity(backIntent);
-                        
-                        MainActivity.this.addSharedAppScreenshot(packageName, jpegBase64);
-                    }
-
-                    @Override
-                    public void onFailure(String message) {
-                        Intent backIntent = new Intent(MainActivity.this, MainActivity.class);
-                        backIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                        MainActivity.this.startActivity(backIntent);
-                        
-                        MainActivity.this.runOnUiThread(() -> Toast.makeText(MainActivity.this, "跨应用截图失败: " + message, Toast.LENGTH_LONG).show());
-                    }
-                });
-            }, 1200);
-        } else {
-            Toast.makeText(this, "无法启动选中的应用", Toast.LENGTH_SHORT).show();
+        try {
+            Intent intent = new Intent(this, FloatingScreenshotService.class);
+            this.startService(intent);
+            this.moveTaskToBack(true);
+            Toast.makeText(this, "已生成悬浮截图按钮，请切换到合适界面点击截图", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Log.e("Yanzi", "Failed to start FloatingScreenshotService", e);
+            Toast.makeText(this, "启动悬浮截图服务失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -537,8 +513,10 @@ extends Activity {
         long size = base64Data.length() * 3L / 4L;
         AttachmentInfo attach = new AttachmentInfo(name, size, "image/jpeg", null, base64Data, null, true);
         this.pendingAttachments.add(attach);
-        this.runOnUiThread(this::refreshAttachmentCards);
-        Toast.makeText(this, "成功截取并共享应用画面", Toast.LENGTH_SHORT).show();
+        this.runOnUiThread(() -> {
+            this.refreshAttachmentCards();
+            Toast.makeText(this, "成功截取并共享应用画面", Toast.LENGTH_SHORT).show();
+        });
     }
 
     private void handleAttachmentSelected(Uri uri, boolean isImage) {
@@ -905,7 +883,7 @@ extends Activity {
                 } else if (item.getItemId() == 3) {
                     this.takeCameraPhoto();
                 } else if (item.getItemId() == 4) {
-                    this.showAppShareDialog();
+                    this.startFloatingScreenshot();
                 }
                 return true;
             });
