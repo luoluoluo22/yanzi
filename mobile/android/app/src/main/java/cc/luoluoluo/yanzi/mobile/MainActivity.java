@@ -98,6 +98,8 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.provider.OpenableColumns;
+import android.database.Cursor;
 import android.text.Editable;
 import android.text.Selection;
 import android.text.Spannable;
@@ -173,6 +175,12 @@ extends Activity {
     private static final String CACHE_REMOTE_EXTENSIONS = "cacheRemoteExtensionsJson";
     private static final String CACHE_YANM = "cacheYanmJson";
     private static final int REQUEST_PICK_PHOTO = 4101;
+    private static final int REQUEST_CODE_SELECT_IMAGE = 8001;
+    private static final int REQUEST_CODE_SELECT_FILE = 8002;
+    private final ArrayList<AttachmentInfo> pendingAttachments = new ArrayList<>();
+    private final ArrayList<AttachmentInfo> activeImageAttachments = new ArrayList<>();
+    private HorizontalScrollView aiAttachmentScrollView;
+    private LinearLayout aiAttachmentContainer;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
     private String deviceId;
@@ -355,6 +363,188 @@ extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == 4101 && resultCode == -1 && data != null && (uri = data.getData()) != null) {
             this.sendPhotoToDesktop(uri);
+        } else if ((requestCode == REQUEST_CODE_SELECT_IMAGE || requestCode == REQUEST_CODE_SELECT_FILE) && resultCode == -1 && data != null && (uri = data.getData()) != null) {
+            this.handleAttachmentSelected(uri, requestCode == REQUEST_CODE_SELECT_IMAGE);
+        }
+    }
+
+    private void handleAttachmentSelected(Uri uri, boolean isImage) {
+        String name = "未知文件";
+        long size = 0;
+        String mimeType = this.getContentResolver().getType(uri);
+        
+        try (Cursor cursor = this.getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (nameIndex != -1) {
+                    name = cursor.getString(nameIndex);
+                }
+                int sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE);
+                if (sizeIndex != -1) {
+                    size = cursor.getLong(sizeIndex);
+                }
+            }
+        } catch (Exception e) {
+            Log.e("Yanzi", "Query uri failed", e);
+        }
+        
+        if (name == null || name.isEmpty()) {
+            name = uri.getLastPathSegment();
+        }
+        if (name == null || name.isEmpty()) {
+            name = "file_" + System.currentTimeMillis();
+        }
+
+        String base64Data = null;
+        String textContent = null;
+
+        if (isImage) {
+            try (InputStream is = this.getContentResolver().openInputStream(uri)) {
+                if (is != null) {
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inJustDecodeBounds = true;
+                    BitmapFactory.decodeStream(is, null, options);
+                    
+                    int width = options.outWidth;
+                    int height = options.outHeight;
+                    int maxDim = Math.max(width, height);
+                    int inSampleSize = 1;
+                    if (maxDim > 1024) {
+                        inSampleSize = maxDim / 1024;
+                    }
+                    
+                    options.inJustDecodeBounds = false;
+                    options.inSampleSize = inSampleSize;
+                    
+                    try (InputStream is2 = this.getContentResolver().openInputStream(uri)) {
+                        Bitmap bmp = BitmapFactory.decodeStream(is2, null, options);
+                        if (bmp != null) {
+                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                            bmp.compress(Bitmap.CompressFormat.JPEG, 80, baos);
+                            byte[] bytes = baos.toByteArray();
+                            base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("Yanzi", "Failed to process image attachment", e);
+                this.setStatus("无法加载图片: " + e.getMessage());
+                return;
+            }
+        } else {
+            if (size < 1024 * 1024) {
+                try (InputStream is = this.getContentResolver().openInputStream(uri);
+                     BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line).append("\n");
+                    }
+                    textContent = sb.toString();
+                } catch (Exception e) {
+                    Log.e("Yanzi", "Failed to read file attachment as text", e);
+                }
+            }
+        }
+
+        AttachmentInfo attach = new AttachmentInfo(name, size, mimeType, uri, base64Data, textContent, isImage);
+        this.pendingAttachments.add(attach);
+        this.runOnUiThread(this::refreshAttachmentCards);
+    }
+
+    private void refreshAttachmentCards() {
+        if (this.aiAttachmentContainer == null || this.aiAttachmentScrollView == null) {
+            return;
+        }
+        this.aiAttachmentContainer.removeAllViews();
+        if (this.pendingAttachments.isEmpty()) {
+            this.aiAttachmentScrollView.setVisibility(View.GONE);
+            return;
+        }
+        this.aiAttachmentScrollView.setVisibility(View.VISIBLE);
+        
+        for (int i = 0; i < this.pendingAttachments.size(); i++) {
+            AttachmentInfo attach = this.pendingAttachments.get(i);
+            final int index = i;
+            
+            LinearLayout card = new LinearLayout((Context)this);
+            card.setOrientation(0);
+            card.setGravity(16);
+            card.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+            
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                    this.dp(160),
+                    this.dp(60)
+            );
+            cardParams.setMargins(0, 0, this.dp(10), 0);
+            card.setLayoutParams((ViewGroup.LayoutParams)cardParams);
+            
+            GradientDrawable cardBg = new GradientDrawable();
+            cardBg.setColor(Color.rgb(31, 41, 55));
+            cardBg.setCornerRadius((float)this.dp(8));
+            card.setBackground((Drawable)cardBg);
+            
+            if (attach.isImage) {
+                ImageView iv = new ImageView((Context)this);
+                iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                try (InputStream is = this.getContentResolver().openInputStream(attach.uri)) {
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inSampleSize = 4;
+                    Bitmap bmp = BitmapFactory.decodeStream(is, null, options);
+                    if (bmp != null) {
+                        iv.setImageBitmap(bmp);
+                    } else {
+                        iv.setImageResource(17301616);
+                    }
+                } catch (Exception e) {
+                    iv.setImageResource(17301616);
+                }
+                card.addView((View)iv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
+            } else {
+                TextView fileIcon = new TextView((Context)this);
+                fileIcon.setText((CharSequence)"📄");
+                fileIcon.setTextSize(24.0f);
+                fileIcon.setGravity(17);
+                card.addView((View)fileIcon, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
+            }
+            
+            LinearLayout textLayout = new LinearLayout((Context)this);
+            textLayout.setOrientation(1);
+            textLayout.setGravity(16);
+            
+            TextView nameTv = new TextView((Context)this);
+            nameTv.setText((CharSequence)attach.name);
+            nameTv.setTextColor(-1);
+            nameTv.setTextSize(12.0f);
+            nameTv.setSingleLine(true);
+            nameTv.setEllipsize(TextUtils.TruncateAt.END);
+            
+            TextView sizeTv = new TextView((Context)this);
+            String sizeStr = attach.size < 1024 ? attach.size + " B" : (attach.size < 1024 * 1024 ? (attach.size / 1024) + " KB" : String.format(Locale.getDefault(), "%.1f MB", attach.size / (1024.0 * 1024.0)));
+            sizeTv.setText((CharSequence)sizeStr);
+            sizeTv.setTextColor(Color.rgb(156, 163, 175));
+            sizeTv.setTextSize(10.0f);
+            
+            textLayout.addView((View)nameTv);
+            textLayout.addView((View)sizeTv);
+            
+            LinearLayout.LayoutParams textLayoutParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+            textLayoutParams.setMargins(this.dp(6), 0, this.dp(6), 0);
+            card.addView((View)textLayout, (ViewGroup.LayoutParams)textLayoutParams);
+            
+            TextView deleteBtn = new TextView((Context)this);
+            deleteBtn.setText((CharSequence)"✕");
+            deleteBtn.setTextColor(Color.rgb(239, 68, 68));
+            deleteBtn.setTextSize(16.0f);
+            deleteBtn.setPadding(this.dp(4), this.dp(4), this.dp(4), this.dp(4));
+            deleteBtn.setClickable(true);
+            deleteBtn.setOnClickListener(v -> {
+                this.pendingAttachments.remove(index);
+                this.refreshAttachmentCards();
+            });
+            card.addView((View)deleteBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+            
+            this.aiAttachmentContainer.addView((View)card);
         }
     }
 
@@ -488,6 +678,17 @@ extends Activity {
         this.aiChatHistory.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
         chatScroll.addView((View)this.aiChatHistory);
         mainContent.addView((View)chatScroll, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
+        
+        this.aiAttachmentScrollView = new HorizontalScrollView((Context)this);
+        this.aiAttachmentScrollView.setVisibility(View.GONE);
+        this.aiAttachmentScrollView.setBackgroundColor(Color.rgb(26, 26, 26));
+        this.aiAttachmentContainer = new LinearLayout((Context)this);
+        this.aiAttachmentContainer.setOrientation(0);
+        this.aiAttachmentContainer.setGravity(16);
+        this.aiAttachmentContainer.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        this.aiAttachmentScrollView.addView((View)this.aiAttachmentContainer, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -1));
+        mainContent.addView((View)this.aiAttachmentScrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(76)));
+
         LinearLayout bottomArea = new LinearLayout((Context)this);
         bottomArea.setOrientation(0);
         bottomArea.setPadding(this.dp(12), this.dp(12), this.dp(12), this.dp(12));
@@ -497,7 +698,24 @@ extends Activity {
         attachBtn.setBackgroundColor(0);
         attachBtn.setTextColor(Color.rgb((int)200, (int)200, (int)200));
         attachBtn.setTextSize(2, 24.0f);
-        attachBtn.setOnClickListener(v -> this.setStatus("\u6682\u672a\u5b9e\u73b0\u56fe\u7247\u9644\u4ef6\u9009\u53d6\uff0c\u5360\u4f4d\u7b26"));
+        attachBtn.setOnClickListener(v -> {
+            PopupMenu popup = new PopupMenu((Context)this, attachBtn);
+            popup.getMenu().add(0, 1, 0, "添加图片");
+            popup.getMenu().add(0, 2, 1, "添加文件");
+            popup.setOnMenuItemClickListener(item -> {
+                if (item.getItemId() == 1) {
+                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                    intent.setType("image/*");
+                    this.startActivityForResult(Intent.createChooser(intent, "选择图片"), REQUEST_CODE_SELECT_IMAGE);
+                } else if (item.getItemId() == 2) {
+                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                    intent.setType("*/*");
+                    this.startActivityForResult(Intent.createChooser(intent, "选择文件"), REQUEST_CODE_SELECT_FILE);
+                }
+                return true;
+            });
+            popup.show();
+        });
         bottomArea.addView((View)attachBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(48), this.dp(48)));
         this.aiChatInput = this.multiInput("\u7535\u8111\u6269\u5c55 | \u624b\u673a\u6269\u5c55 | \u71d5\u5e55", "");
         this.aiChatInput.setBackground(null);
@@ -1956,10 +2174,46 @@ extends Activity {
 
     private void sendAiChat() {
         String text = this.aiChatInput.getText().toString().trim();
-        if (text.isEmpty()) {
+        if (text.isEmpty() && this.pendingAttachments.isEmpty()) {
             return;
         }
-        this.sendAiChat(text);
+        
+        StringBuilder textWithFiles = new StringBuilder(text);
+        ArrayList<AttachmentInfo> imgs = new ArrayList<>();
+        
+        for (AttachmentInfo attach : this.pendingAttachments) {
+            if (attach.isImage) {
+                imgs.add(attach);
+            } else {
+                if (attach.textContent != null) {
+                    if (textWithFiles.length() > 0) {
+                        textWithFiles.append("\n\n");
+                    }
+                    textWithFiles.append("[附件: ").append(attach.name).append("]\n```");
+                    textWithFiles.append("\n").append(attach.textContent).append("\n```");
+                } else {
+                    if (textWithFiles.length() > 0) {
+                        textWithFiles.append("\n\n");
+                    }
+                    textWithFiles.append("[附件: ").append(attach.name).append(" (大小: ").append(attach.size).append("字节)]");
+                }
+            }
+        }
+        
+        for (AttachmentInfo img : imgs) {
+            if (textWithFiles.length() > 0) {
+                textWithFiles.append("\n");
+            }
+            textWithFiles.append("[图片: ").append(img.name).append("]");
+        }
+        
+        this.activeImageAttachments.clear();
+        this.activeImageAttachments.addAll(imgs);
+        
+        this.pendingAttachments.clear();
+        this.refreshAttachmentCards();
+        
+        this.sendAiChat(textWithFiles.toString());
     }
 
     private void sendAiChat(String text) {
@@ -2136,7 +2390,9 @@ extends Activity {
         return sb.toString();
     }
 
-        private void fetchAiReply() {
+    private void fetchAiReply() {
+        final ArrayList<AttachmentInfo> imagesToSend = new ArrayList<>(this.activeImageAttachments);
+        this.activeImageAttachments.clear();
         String aiBaseUrl = this.prefs.getString("aiBaseUrl", "");
         String aiApiKey = this.prefs.getString("aiApiKey", "");
         String aiModel = this.prefs.getString("aiModel", "");
@@ -2190,7 +2446,32 @@ extends Activity {
                             if (histMsg != null) {
                                 JSONObject cleanMsg = new JSONObject();
                                 cleanMsg.put("role", (Object)histMsg.optString("role"));
-                                cleanMsg.put("content", (Object)histMsg.optString("content"));
+                                String contentStr = histMsg.optString("content");
+                                if (i == requestHistory.length() - 1 && "user".equals(histMsg.optString("role")) && !imagesToSend.isEmpty()) {
+                                    try {
+                                        JSONArray contentArr = new JSONArray();
+                                        JSONObject textObj = new JSONObject();
+                                        textObj.put("type", "text");
+                                        textObj.put("text", contentStr);
+                                        contentArr.put(textObj);
+                                        for (AttachmentInfo img : imagesToSend) {
+                                            if (img.base64Data != null) {
+                                                JSONObject imgObj = new JSONObject();
+                                                imgObj.put("type", "image_url");
+                                                JSONObject imgUrlObj = new JSONObject();
+                                                String mime = img.mimeType != null ? img.mimeType : "image/jpeg";
+                                                imgUrlObj.put("url", "data:" + mime + ";base64," + img.base64Data);
+                                                imgObj.put("image_url", imgUrlObj);
+                                                contentArr.put(imgObj);
+                                            }
+                                        }
+                                        cleanMsg.put("content", contentArr);
+                                    } catch (Exception e) {
+                                        cleanMsg.put("content", contentStr);
+                                    }
+                                } else {
+                                    cleanMsg.put("content", contentStr);
+                                }
                                 messages.put((Object)cleanMsg);
                             }
                         }
@@ -4455,6 +4736,26 @@ extends Activity {
 
             private WebDavConfig() {
             }
+        }
+    }
+
+    private static class AttachmentInfo {
+        String name;
+        long size;
+        String mimeType;
+        Uri uri;
+        String base64Data;
+        String textContent;
+        boolean isImage;
+
+        AttachmentInfo(String name, long size, String mimeType, Uri uri, String base64Data, String textContent, boolean isImage) {
+            this.name = name;
+            this.size = size;
+            this.mimeType = mimeType;
+            this.uri = uri;
+            this.base64Data = base64Data;
+            this.textContent = textContent;
+            this.isImage = isImage;
         }
     }
 
