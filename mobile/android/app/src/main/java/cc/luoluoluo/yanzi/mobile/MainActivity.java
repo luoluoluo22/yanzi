@@ -5445,6 +5445,18 @@ extends Activity {
         return true;
     }
 
+    private void cancelSpeechRecognition() {
+        if (this.speechRecognizer != null) {
+            try {
+                this.speechRecognizer.cancel();
+            } catch (Exception e) {
+                Log.e("YanziVoice", "Failed to cancel SpeechRecognizer", e);
+            }
+        }
+        this.isSpeechListening = false;
+        this.pendingStopSpeech = false;
+    }
+
     private void destroySpeechRecognizer() {
         final android.speech.SpeechRecognizer recognizerToDestroy = this.speechRecognizer;
         this.speechRecognizer = null;
@@ -5466,14 +5478,14 @@ extends Activity {
 
     private void startSpeechRecognition() {
         try {
-            this.destroySpeechRecognizer(); // 确保重置状态
+            this.cancelSpeechRecognition(); // 仅重置状态，不物理注销服务连接
             this.lastSpeechStartTime = System.currentTimeMillis();
             this.pendingStopSpeech = false;
             this.isSpeechActionUp = false;
             this.isSpeechFinished = false;
             android.content.ComponentName comp = this.findAvailableSpeechService();
             if (comp != null) {
-                this.initSpeechRecognizer(comp);
+                this.initSpeechRecognizer(comp); // init里已对speechRecognizer非空进行防重入控制
                 if (this.speechRecognizer != null) {
                     this.isSpeechListening = false;
                     this.speechRecognizer.startListening(this.speechRecognizerIntent);
@@ -5498,15 +5510,14 @@ extends Activity {
             long duration = System.currentTimeMillis() - this.lastSpeechStartTime;
             if (duration < 500) {
                 Log.d("YanziVoice", "Speech duration too short: " + duration + "ms, cancelling");
-                this.destroySpeechRecognizer();
+                this.cancelSpeechRecognition();
                 this.switchToTextInput();
                 Toast.makeText((Context)this, "说话时间太短", Toast.LENGTH_SHORT).show();
                 return;
             }
             if (this.isSpeechFinished) {
-                Log.d("YanziVoice", "Speech already finished when ActionUp, switching UI and destroying");
+                Log.d("YanziVoice", "Speech already finished when ActionUp, switching UI");
                 this.switchToTextInput();
-                this.destroySpeechRecognizer();
             } else {
                 if (this.speechRecognizer != null) {
                     if (this.isSpeechListening) {
@@ -5522,7 +5533,7 @@ extends Activity {
         } catch (Exception e) {
             Log.e("YanziVoice", "Failed to stop speech recognition", e);
             this.switchToTextInput();
-            this.destroySpeechRecognizer();
+            this.cancelSpeechRecognition();
         }
     }
 
@@ -5628,6 +5639,7 @@ extends Activity {
     }
 
     private void initSpeechRecognizer(android.content.ComponentName comp) {
+        if (this.speechRecognizer != null) return; // 重点：常驻单一实例，避免频繁bind/unbind
         this.speechRecognizer = android.speech.SpeechRecognizer.createSpeechRecognizer((Context)this, comp);
         this.speechRecognizerIntent = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         this.speechRecognizerIntent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
@@ -5690,9 +5702,9 @@ extends Activity {
                 } else {
                     Toast.makeText((Context)MainActivity.this, "识别失败: " + msg, Toast.LENGTH_SHORT).show();
                 }
+                MainActivity.this.cancelSpeechRecognition();
                 if (MainActivity.this.isSpeechActionUp) {
                     MainActivity.this.switchToTextInput();
-                    MainActivity.this.destroySpeechRecognizer();
                 }
             }
 
@@ -5706,9 +5718,9 @@ extends Activity {
                     MainActivity.this.aiChatInput.setText((CharSequence)text);
                     MainActivity.this.aiChatInput.setSelection(text.length());
                 }
+                MainActivity.this.cancelSpeechRecognition();
                 if (MainActivity.this.isSpeechActionUp) {
                     MainActivity.this.switchToTextInput();
-                    MainActivity.this.destroySpeechRecognizer();
                 }
             }
 
