@@ -288,8 +288,10 @@ extends Activity {
     private final android.content.BroadcastReceiver screenshotReceiver = new android.content.BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            Log.d("Yanzi", "BroadcastReceiver onReceive action: " + intent.getAction());
             if ("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS".equals(intent.getAction())) {
                 String base64Data = intent.getStringExtra("image_base64");
+                Log.d("Yanzi", "BroadcastReceiver got base64 data length: " + (base64Data != null ? base64Data.length() : 0));
                 if (base64Data != null) {
                     MainActivity.this.addSharedAppScreenshot("float_capture", base64Data);
                 }
@@ -516,11 +518,13 @@ extends Activity {
     }
 
     private void addSharedAppScreenshot(String packageName, String base64Data) {
+        Log.d("Yanzi", "addSharedAppScreenshot start, package: " + packageName + ", base64 length: " + (base64Data != null ? base64Data.length() : 0));
         String name = "app_share_" + packageName.substring(packageName.lastIndexOf(".") + 1) + ".jpg";
         long size = base64Data.length() * 3L / 4L;
         AttachmentInfo attach = new AttachmentInfo(name, size, "image/jpeg", null, base64Data, null, true);
         this.pendingAttachments.add(attach);
         this.runOnUiThread(() -> {
+            Log.d("Yanzi", "addSharedAppScreenshot runOnUiThread running, pending size: " + this.pendingAttachments.size());
             this.refreshAttachmentCards();
             Toast.makeText(this, "成功截取并共享应用画面", Toast.LENGTH_SHORT).show();
         });

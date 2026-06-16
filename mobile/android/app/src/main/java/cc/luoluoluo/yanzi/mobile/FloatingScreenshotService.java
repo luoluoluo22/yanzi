@@ -132,9 +132,12 @@ public class FloatingScreenshotService extends Service {
             MobileAccessibilityService.captureJpegBase64(new MobileAccessibilityService.ScreenshotCallback() {
                 @Override
                 public void onSuccess(String jpegBase64, int width, int height) {
+                    Log.d("Yanzi", "Screenshot success, width: " + width + ", height: " + height + ", base64 length: " + (jpegBase64 != null ? jpegBase64.length() : 0));
                     Intent broadcast = new Intent("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS");
+                    broadcast.setPackage(getPackageName());
                     broadcast.putExtra("image_base64", jpegBase64);
                     sendBroadcast(broadcast);
+                    Log.d("Yanzi", "Broadcast cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS sent");
 
                     try {
                         Intent backIntent = new Intent(FloatingScreenshotService.this, MainActivity.class);
