@@ -177,6 +177,9 @@ extends Activity {
     private static final int REQUEST_PICK_PHOTO = 4101;
     private static final int REQUEST_CODE_SELECT_IMAGE = 8001;
     private static final int REQUEST_CODE_SELECT_FILE = 8002;
+    private static final int REQUEST_CODE_TAKE_PHOTO = 8003;
+    private Uri cameraPhotoUri;
+    private File cameraPhotoFile;
     private final ArrayList<AttachmentInfo> pendingAttachments = new ArrayList<>();
     private final ArrayList<AttachmentInfo> activeImageAttachments = new ArrayList<>();
     private HorizontalScrollView aiAttachmentScrollView;
@@ -365,7 +368,177 @@ extends Activity {
             this.sendPhotoToDesktop(uri);
         } else if ((requestCode == REQUEST_CODE_SELECT_IMAGE || requestCode == REQUEST_CODE_SELECT_FILE) && resultCode == -1 && data != null && (uri = data.getData()) != null) {
             this.handleAttachmentSelected(uri, requestCode == REQUEST_CODE_SELECT_IMAGE);
+        } else if (requestCode == REQUEST_CODE_TAKE_PHOTO && resultCode == -1) {
+            if (this.cameraPhotoUri != null && this.cameraPhotoFile != null && this.cameraPhotoFile.exists()) {
+                this.handleCameraPhotoTaken(this.cameraPhotoUri, this.cameraPhotoFile.getName(), this.cameraPhotoFile.length());
+            }
         }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 9001) {
+            if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                this.launchCamera();
+            } else {
+                Toast.makeText(this, "需要相机权限才能拍照", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void takeCameraPhoto() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (this.checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                this.requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 9001);
+                return;
+            }
+        }
+        this.launchCamera();
+    }
+
+    private void launchCamera() {
+        Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+        if (intent.resolveActivity(this.getPackageManager()) != null) {
+            try {
+                String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+                String imageFileName = "JPEG_" + timeStamp + "_";
+                File storageDir = this.getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+                this.cameraPhotoFile = File.createTempFile(imageFileName, ".jpg", storageDir);
+                
+                this.cameraPhotoUri = androidx.core.content.FileProvider.getUriForFile(this, 
+                        "cc.luoluoluo.yanzi.mobile.fileprovider", this.cameraPhotoFile);
+                
+                intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, this.cameraPhotoUri);
+                this.startActivityForResult(intent, REQUEST_CODE_TAKE_PHOTO);
+            } catch (Exception e) {
+                Log.e("Yanzi", "Failed to create photo file", e);
+                Toast.makeText(this, "拍照初始化失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            Toast.makeText(this, "未找到相机应用", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void handleCameraPhotoTaken(Uri uri, String name, long size) {
+        String mimeType = "image/jpeg";
+        String base64Data = null;
+        try (InputStream is = this.getContentResolver().openInputStream(uri)) {
+            if (is != null) {
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+                BitmapFactory.decodeStream(is, null, options);
+                
+                int maxDim = Math.max(options.outWidth, options.outHeight);
+                int inSampleSize = 1;
+                if (maxDim > 1024) {
+                    inSampleSize = maxDim / 1024;
+                }
+                options.inJustDecodeBounds = false;
+                options.inSampleSize = inSampleSize;
+                
+                try (InputStream is2 = this.getContentResolver().openInputStream(uri)) {
+                    Bitmap bmp = BitmapFactory.decodeStream(is2, null, options);
+                    if (bmp != null) {
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        bmp.compress(Bitmap.CompressFormat.JPEG, 80, baos);
+                        byte[] bytes = baos.toByteArray();
+                        base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e("Yanzi", "Failed to process camera photo", e);
+            Toast.makeText(this, "照片加载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        AttachmentInfo attach = new AttachmentInfo(name, size, mimeType, uri, base64Data, null, true);
+        this.pendingAttachments.add(attach);
+        this.runOnUiThread(this::refreshAttachmentCards);
+    }
+
+    private void showAppShareDialog() {
+        Intent mainIntent = new Intent(Intent.ACTION_MAIN, null);
+        mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<android.content.pm.ResolveInfo> resolveInfos = this.getPackageManager().queryIntentActivities(mainIntent, 0);
+        
+        List<android.content.pm.ResolveInfo> apps = new ArrayList<>();
+        for (android.content.pm.ResolveInfo info : resolveInfos) {
+            if (info.activityInfo != null && info.activityInfo.packageName != null && !info.activityInfo.packageName.equals(this.getPackageName())) {
+                apps.add(info);
+            }
+        }
+        
+        if (apps.isEmpty()) {
+            Toast.makeText(this, "未找到其他可共享的应用", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        CharSequence[] items = new CharSequence[apps.size()];
+        for (int i = 0; i < apps.size(); i++) {
+            items[i] = apps.get(i).loadLabel(this.getPackageManager());
+        }
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this, 16974545);
+        builder.setTitle("选择要共享的应用");
+        builder.setItems(items, (dialog, which) -> {
+            android.content.pm.ResolveInfo selectedApp = apps.get(which);
+            this.shareAppScreenshot(selectedApp.activityInfo.packageName);
+        });
+        builder.show();
+    }
+
+    private void shareAppScreenshot(String packageName) {
+        if (!MobileAccessibilityService.isEnabled()) {
+            Toast.makeText(this, "共享失败：请先前往无障碍设置开启 燕子 辅助功能", Toast.LENGTH_LONG).show();
+            return;
+        }
+        
+        Intent launchIntent = this.getPackageManager().getLaunchIntentForPackage(packageName);
+        if (launchIntent != null) {
+            try {
+                this.startActivity(launchIntent);
+            } catch (Exception e) {
+                Toast.makeText(this, "启动应用失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            Toast.makeText(this, "正在拉起应用，请稍候...", Toast.LENGTH_SHORT).show();
+            
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                MobileAccessibilityService.captureJpegBase64(new MobileAccessibilityService.ScreenshotCallback() {
+                    @Override
+                    public void onSuccess(String jpegBase64, int width, int height) {
+                        Intent backIntent = new Intent(MainActivity.this, MainActivity.class);
+                        backIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                        MainActivity.this.startActivity(backIntent);
+                        
+                        MainActivity.this.addSharedAppScreenshot(packageName, jpegBase64);
+                    }
+
+                    @Override
+                    public void onFailure(String message) {
+                        Intent backIntent = new Intent(MainActivity.this, MainActivity.class);
+                        backIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                        MainActivity.this.startActivity(backIntent);
+                        
+                        MainActivity.this.runOnUiThread(() -> Toast.makeText(MainActivity.this, "跨应用截图失败: " + message, Toast.LENGTH_LONG).show());
+                    }
+                });
+            }, 1200);
+        } else {
+            Toast.makeText(this, "无法启动选中的应用", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void addSharedAppScreenshot(String packageName, String base64Data) {
+        String name = "app_share_" + packageName.substring(packageName.lastIndexOf(".") + 1) + ".jpg";
+        long size = base64Data.length() * 3L / 4L;
+        AttachmentInfo attach = new AttachmentInfo(name, size, "image/jpeg", null, base64Data, null, true);
+        this.pendingAttachments.add(attach);
+        this.runOnUiThread(this::refreshAttachmentCards);
+        Toast.makeText(this, "成功截取并共享应用画面", Toast.LENGTH_SHORT).show();
     }
 
     private void handleAttachmentSelected(Uri uri, boolean isImage) {
@@ -487,16 +660,32 @@ extends Activity {
             if (attach.isImage) {
                 ImageView iv = new ImageView((Context)this);
                 iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                try (InputStream is = this.getContentResolver().openInputStream(attach.uri)) {
-                    BitmapFactory.Options options = new BitmapFactory.Options();
-                    options.inSampleSize = 4;
-                    Bitmap bmp = BitmapFactory.decodeStream(is, null, options);
-                    if (bmp != null) {
-                        iv.setImageBitmap(bmp);
-                    } else {
+                if (attach.uri != null) {
+                    try (InputStream is = this.getContentResolver().openInputStream(attach.uri)) {
+                        BitmapFactory.Options options = new BitmapFactory.Options();
+                        options.inSampleSize = 4;
+                        Bitmap bmp = BitmapFactory.decodeStream(is, null, options);
+                        if (bmp != null) {
+                            iv.setImageBitmap(bmp);
+                        } else {
+                            iv.setImageResource(17301616);
+                        }
+                    } catch (Exception e) {
                         iv.setImageResource(17301616);
                     }
-                } catch (Exception e) {
+                } else if (attach.base64Data != null) {
+                    try {
+                        byte[] decodedString = Base64.decode(attach.base64Data, Base64.DEFAULT);
+                        Bitmap bmp = BitmapFactory.decodeByteArray(decodedString, 0, decodedString.length);
+                        if (bmp != null) {
+                            iv.setImageBitmap(bmp);
+                        } else {
+                            iv.setImageResource(17301616);
+                        }
+                    } catch (Exception e) {
+                        iv.setImageResource(17301616);
+                    }
+                } else {
                     iv.setImageResource(17301616);
                 }
                 card.addView((View)iv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
@@ -702,6 +891,8 @@ extends Activity {
             PopupMenu popup = new PopupMenu((Context)this, attachBtn);
             popup.getMenu().add(0, 1, 0, "添加图片");
             popup.getMenu().add(0, 2, 1, "添加文件");
+            popup.getMenu().add(0, 3, 2, "拍照");
+            popup.getMenu().add(0, 4, 3, "共享应用");
             popup.setOnMenuItemClickListener(item -> {
                 if (item.getItemId() == 1) {
                     Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
@@ -711,6 +902,10 @@ extends Activity {
                     Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                     intent.setType("*/*");
                     this.startActivityForResult(Intent.createChooser(intent, "选择文件"), REQUEST_CODE_SELECT_FILE);
+                } else if (item.getItemId() == 3) {
+                    this.takeCameraPhoto();
+                } else if (item.getItemId() == 4) {
+                    this.showAppShareDialog();
                 }
                 return true;
             });
