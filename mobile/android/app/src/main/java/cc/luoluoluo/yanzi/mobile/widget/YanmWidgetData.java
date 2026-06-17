@@ -3,7 +3,6 @@ package cc.luoluoluo.yanzi.mobile.widget;
 import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
 
 import org.json.JSONArray;
@@ -120,10 +119,9 @@ public final class YanmWidgetData {
         if (ids.length == 0) {
             return;
         }
-        Intent intent = new Intent(context, YanmComponentWidgetProvider.class);
-        intent.setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE);
-        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids);
-        context.sendBroadcast(intent);
+        for (int id : ids) {
+            YanmComponentWidgetProvider.updateWidget(context, manager, id);
+        }
     }
 
     public static String resolveStateKey(JSONObject component, String componentId) {

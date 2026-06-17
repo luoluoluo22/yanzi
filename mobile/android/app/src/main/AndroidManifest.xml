@@ -58,7 +58,10 @@
         </activity>
         <activity
             android:name=".YanmComponentEditActivity"
-            android:exported="false" />
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity="cc.luoluoluo.yanzi.mobile.widget"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
         <service
             android:name=".FloatingWheelService"
             android:exported="false" />

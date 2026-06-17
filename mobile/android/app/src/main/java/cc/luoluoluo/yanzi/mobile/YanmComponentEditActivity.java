@@ -6,9 +6,12 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
+import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -26,6 +29,7 @@ import cc.luoluoluo.yanzi.mobile.widget.YanmWidgetData;
 import cc.luoluoluo.yanzi.mobile.widget.YanmWidgetProvider;
 
 public final class YanmComponentEditActivity extends Activity {
+    private static final String TAG = "YanziYanmEdit";
     private static final String DEFAULT_BASE_URL = "https://sync.luoluoluo.cc.cd";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -34,6 +38,7 @@ public final class YanmComponentEditActivity extends Activity {
     private int appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     private String componentId = "";
     private String stateKey = "note";
+    private boolean launchedFromWidget = false;
     private EditText contentInput;
     private TextView titleText;
     private TextView metaText;
@@ -41,6 +46,7 @@ public final class YanmComponentEditActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         prefs = getSharedPreferences(YanmWidgetData.PREFS_NAME, Context.MODE_PRIVATE);
         setContentView(R.layout.activity_yanm_component_edit);
 
@@ -67,6 +73,7 @@ public final class YanmComponentEditActivity extends Activity {
             return;
         }
         appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
+        launchedFromWidget = intent.getBooleanExtra("from_widget", false) || appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID;
         componentId = firstNonEmpty(intent.getStringExtra("component_id"), "");
         stateKey = firstNonEmpty(intent.getStringExtra("state_key"), "note");
         if (componentId.isEmpty() && appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
@@ -110,6 +117,7 @@ public final class YanmComponentEditActivity extends Activity {
             yanm.put("componentState", state);
             prefs.edit().putString(YanmWidgetData.CACHE_YANM, yanm.toString()).apply();
             refreshYanmWidgets();
+            MobileDiagnostics.append(this, "小部件便签已保存到本地缓存: component=" + componentId + ", key=" + stateKey + ", length=" + value.length());
             Toast.makeText(this, "已保存，正在同步。", Toast.LENGTH_SHORT).show();
             syncYanmStateAsync(yanm);
         } catch (Exception ex) {
@@ -121,6 +129,7 @@ public final class YanmComponentEditActivity extends Activity {
         executor.execute(() -> {
             try {
                 String baseUrl = normalizedBaseUrl();
+                MobileDiagnostics.append(this, "小部件便签开始同步燕幕: baseUrl=" + baseUrl + ", key=" + stateKey);
                 String token = requireToken(baseUrl);
                 try {
                     MainActivity.YanziApiClient.putYanmState(baseUrl, token, yanm);
@@ -131,11 +140,14 @@ public final class YanmComponentEditActivity extends Activity {
                     token = refreshToken(baseUrl);
                     MainActivity.YanziApiClient.putYanmState(baseUrl, token, yanm);
                 }
+                MobileDiagnostics.append(this, "小部件便签燕幕同步成功: key=" + stateKey);
                 mainHandler.post(() -> {
                     Toast.makeText(this, "燕幕已同步。", Toast.LENGTH_SHORT).show();
-                    finish();
+                    finishToSource();
                 });
             } catch (Exception ex) {
+                Log.e(TAG, "Yanm widget note sync failed", ex);
+                MobileDiagnostics.append(this, "小部件便签燕幕同步失败: " + ex.getMessage());
                 mainHandler.post(() -> Toast.makeText(this, "同步失败：" + ex.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
@@ -147,10 +159,26 @@ public final class YanmComponentEditActivity extends Activity {
         AppWidgetManager manager = AppWidgetManager.getInstance(this);
         int[] listIds = manager.getAppWidgetIds(new ComponentName(this, YanmWidgetProvider.class));
         if (listIds.length > 0) {
-            Intent intent = new Intent(this, YanmWidgetProvider.class);
-            intent.setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE);
-            intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, listIds);
-            sendBroadcast(intent);
+            new YanmWidgetProvider().onUpdate(this, manager, listIds);
+        }
+    }
+
+    private void finishToSource() {
+        hideKeyboard();
+        if (launchedFromWidget && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            finishAndRemoveTask();
+            return;
+        }
+        finish();
+    }
+
+    private void hideKeyboard() {
+        try {
+            InputMethodManager manager = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (manager != null && contentInput != null) {
+                manager.hideSoftInputFromWindow(contentInput.getWindowToken(), 0);
+            }
+        } catch (Exception ignored) {
         }
     }
 

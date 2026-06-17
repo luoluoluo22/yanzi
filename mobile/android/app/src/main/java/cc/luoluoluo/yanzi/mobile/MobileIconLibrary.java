@@ -15,10 +15,55 @@ public final class MobileIconLibrary {
     private static final Map<String, String> ICONS = new HashMap<>();
     private static final Map<String, String> ALIASES = new HashMap<>();
     private static final Map<String, Path> CACHE = new HashMap<>();
+    private static final Map<String, String> EMOJI_MAP = new HashMap<>();
     
     private static Context appContext = null;
     private static final Map<String, String> LARGE_ICONS = new HashMap<>();
     private static boolean largeLibraryLoaded = false;
+
+    static {
+        EMOJI_MAP.put("💬", "chat");
+        EMOJI_MAP.put("📷", "camera");
+        EMOJI_MAP.put("📸", "camera");
+        EMOJI_MAP.put("🖼️", "image");
+        EMOJI_MAP.put("🖼", "image");
+        EMOJI_MAP.put("🌐", "globe");
+        EMOJI_MAP.put("💻", "dashboard");
+        EMOJI_MAP.put("📁", "folder");
+        EMOJI_MAP.put("📂", "folder");
+        EMOJI_MAP.put("⚙️", "settings");
+        EMOJI_MAP.put("⚙", "settings");
+        EMOJI_MAP.put("📝", "file");
+        EMOJI_MAP.put("📄", "file");
+        EMOJI_MAP.put("🚀", "play");
+        EMOJI_MAP.put("🔍", "search");
+        EMOJI_MAP.put("➕", "plus");
+        EMOJI_MAP.put("🔄", "refresh");
+        EMOJI_MAP.put("🧩", "puzzle");
+        EMOJI_MAP.put("🧭", "compass");
+        EMOJI_MAP.put("🗑️", "delete");
+        EMOJI_MAP.put("🗑", "delete");
+        EMOJI_MAP.put("📱", "cellphone");
+        EMOJI_MAP.put("💡", "lightbulb");
+        EMOJI_MAP.put("🔑", "key");
+        EMOJI_MAP.put("🔒", "lock");
+        EMOJI_MAP.put("🎨", "palette");
+        EMOJI_MAP.put("🔔", "bell");
+        EMOJI_MAP.put("📅", "calendar");
+        EMOJI_MAP.put("📊", "chart-bar");
+        EMOJI_MAP.put("🔋", "battery");
+        EMOJI_MAP.put("🎵", "music");
+        EMOJI_MAP.put("🎬", "movie");
+        EMOJI_MAP.put("🎮", "controller");
+        EMOJI_MAP.put("✉️", "email");
+        EMOJI_MAP.put("✉", "email");
+        EMOJI_MAP.put("👤", "account");
+        EMOJI_MAP.put("🏠", "home");
+        EMOJI_MAP.put("🌟", "star");
+        EMOJI_MAP.put("⭐", "star");
+        EMOJI_MAP.put("❤️", "heart");
+        EMOJI_MAP.put("❤", "heart");
+    }
 
     public static void init(Context context) {
         if (context != null) {
@@ -136,6 +181,9 @@ public final class MobileIconLibrary {
             return "";
         }
         String value = reference.trim();
+        if (EMOJI_MAP.containsKey(value)) {
+            value = EMOJI_MAP.get(value);
+        }
         if (value.startsWith("mdi:") || value.startsWith("app:")) {
             value = value.substring(4);
         }

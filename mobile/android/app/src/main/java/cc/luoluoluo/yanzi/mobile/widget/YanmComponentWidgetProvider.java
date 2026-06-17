@@ -86,9 +86,11 @@ public final class YanmComponentWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_yanm_component_refresh, refreshPi);
 
         Intent editIntent = new Intent(context, YanmComponentEditActivity.class);
+        editIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         editIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId);
         editIntent.putExtra("component_id", componentId == null ? "" : componentId);
         editIntent.putExtra("state_key", stateKey == null ? "" : stateKey);
+        editIntent.putExtra("from_widget", true);
         PendingIntent editPi = PendingIntent.getActivity(
                 context,
                 appWidgetId + 40000,
@@ -105,17 +107,7 @@ public final class YanmComponentWidgetProvider extends AppWidgetProvider {
         JSONObject state = YanmWidgetData.readComponentState(context);
         String key = stateKey == null ? "" : stateKey.trim();
         if (!key.isEmpty()) {
-            String value = state.optString(key, "");
-            if (!value.trim().isEmpty()) {
-                return value;
-            }
-        }
-
-        for (String fallback : new String[] { "note", "content", "text", "value" }) {
-            String value = state.optString(fallback, "");
-            if (!value.trim().isEmpty()) {
-                return value;
-            }
+            return state.optString(key, "");
         }
 
         return YanmWidgetData.firstNonEmpty(
