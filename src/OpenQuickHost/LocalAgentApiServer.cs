@@ -212,6 +212,221 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "POST" && path == "/v1/clipboard/sync")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                var clientText = GetString(payload, "text");
+                bool isWrite = false;
+                if (payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("write", out var writeProp))
+                {
+                    isWrite = writeProp.ValueKind == JsonValueKind.True;
+                }
+
+                string currentPcText = "";
+                try
+                {
+                    if (isWrite && !string.IsNullOrEmpty(clientText))
+                    {
+                        ClipboardService.SetText(clientText);
+                    }
+                    currentPcText = ClipboardService.GetText() ?? "";
+                }
+                catch (Exception ex)
+                {
+                    currentPcText = "[错误] 无法访问 PC 剪贴板: " + ex.Message;
+                }
+
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    text = currentPcText
+                });
+                return;
+            }
+
+            if (request.HttpMethod == "POST" && path == "/v1/shell/run")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                var command = GetString(payload, "command");
+
+                if (string.IsNullOrEmpty(command))
+                {
+                    await WriteJsonAsync(response, 400, new { error = "Command is required" });
+                    return;
+                }
+
+                try
+                {
+                    using var process = new System.Diagnostics.Process();
+                    process.StartInfo.FileName = "powershell.exe";
+                    var bytes = Encoding.Unicode.GetBytes(command);
+                    var base64 = Convert.ToBase64String(bytes);
+                    
+                    process.StartInfo.Arguments = $"-NoProfile -NonInteractive -EncodedCommand {base64}";
+                    process.StartInfo.RedirectStandardOutput = true;
+                    process.StartInfo.RedirectStandardError = true;
+                    process.StartInfo.UseShellExecute = false;
+                    process.StartInfo.CreateNoWindow = true;
+
+                    var outputBuilder = new StringBuilder();
+                    var errorBuilder = new StringBuilder();
+
+                    process.OutputDataReceived += (s, e) => { if (e.Data != null) outputBuilder.AppendLine(e.Data); };
+                    process.ErrorDataReceived += (s, e) => { if (e.Data != null) errorBuilder.AppendLine(e.Data); };
+
+                    process.Start();
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    try
+                    {
+                        await process.WaitForExitAsync(cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        process.Kill(true);
+                        await WriteJsonAsync(response, 200, new
+                        {
+                            ok = false,
+                            output = outputBuilder.ToString() + "\r\n[API 错误] 命令执行超时 (15秒)",
+                            exitCode = -1
+                        });
+                        return;
+                    }
+
+                    var output = outputBuilder.ToString();
+                    var error = errorBuilder.ToString();
+                    var combinedOutput = string.IsNullOrEmpty(error) ? output : $"{output}\r\n[错误输出]\r\n{error}";
+
+                    await WriteJsonAsync(response, 200, new
+                    {
+                        ok = true,
+                        output = combinedOutput,
+                        exitCode = process.ExitCode
+                    });
+                }
+                catch (Exception ex)
+                {
+                    await WriteJsonAsync(response, 500, new { error = ex.Message });
+                }
+                return;
+            }
+
+            if (request.HttpMethod == "POST" && path == "/v1/fs/list")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                var targetPath = GetString(payload, "path");
+
+                try
+                {
+                    var items = new List<object>();
+                    string currentPath = "";
+
+                    if (string.IsNullOrEmpty(targetPath))
+                    {
+                        foreach (var drive in DriveInfo.GetDrives())
+                        {
+                            if (drive.IsReady)
+                            {
+                                items.Add(new
+                                {
+                                    name = drive.Name,
+                                    isDir = true,
+                                    size = 0L,
+                                    lastModified = 0L
+                                });
+                            }
+                        }
+
+                        var specialDirs = new[]
+                        {
+                            Environment.SpecialFolder.Desktop,
+                            Environment.SpecialFolder.MyDocuments,
+                            Environment.SpecialFolder.UserProfile
+                        };
+                        foreach (var dir in specialDirs)
+                        {
+                            var dirPath = Environment.GetFolderPath(dir);
+                            if (!string.IsNullOrEmpty(dirPath))
+                            {
+                                items.Add(new
+                                {
+                                    name = dirPath,
+                                    isDir = true,
+                                    size = 0L,
+                                    lastModified = 0L
+                                });
+                            }
+                        }
+                        currentPath = "";
+                    }
+                    else
+                    {
+                        currentPath = Path.GetFullPath(targetPath);
+                        if (Directory.Exists(currentPath))
+                        {
+                            foreach (var dir in Directory.GetDirectories(currentPath))
+                            {
+                                try
+                                {
+                                    var dirInfo = new DirectoryInfo(dir);
+                                    if ((dirInfo.Attributes & FileAttributes.Hidden) != 0 || (dirInfo.Attributes & FileAttributes.System) != 0)
+                                    {
+                                        continue;
+                                    }
+                                    items.Add(new
+                                    {
+                                        name = Path.GetFileName(dir),
+                                        isDir = true,
+                                        size = 0L,
+                                        lastModified = new DateTimeOffset(dirInfo.LastWriteTimeUtc).ToUnixTimeMilliseconds()
+                                    });
+                                }
+                                catch {}
+                            }
+
+                            foreach (var file in Directory.GetFiles(currentPath))
+                            {
+                                try
+                                {
+                                    var fileInfo = new FileInfo(file);
+                                    if ((fileInfo.Attributes & FileAttributes.Hidden) != 0 || (fileInfo.Attributes & FileAttributes.System) != 0)
+                                    {
+                                        continue;
+                                    }
+                                    items.Add(new
+                                    {
+                                        name = Path.GetFileName(file),
+                                        isDir = false,
+                                        size = fileInfo.Length,
+                                        lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc).ToUnixTimeMilliseconds()
+                                    });
+                                }
+                                catch {}
+                            }
+                        }
+                        else
+                        {
+                            await WriteJsonAsync(response, 404, new { error = "Directory not found" });
+                            return;
+                        }
+                    }
+
+                    await WriteJsonAsync(response, 200, new
+                    {
+                        ok = true,
+                        path = currentPath,
+                        items
+                    });
+                }
+                catch (Exception ex)
+                {
+                    await WriteJsonAsync(response, 500, new { error = ex.Message });
+                }
+                return;
+            }
+
             if (request.HttpMethod == "GET" && path == "/health")
             {
                 await WriteJsonAsync(response, 200, new { ok = true, service = "yanzi-local-agent-api" });

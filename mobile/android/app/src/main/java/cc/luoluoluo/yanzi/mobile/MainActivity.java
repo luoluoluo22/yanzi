@@ -248,6 +248,11 @@ extends Activity {
     private final Object aiToolCallLock = new Object();
     private final Map<String, Long> recentAiToolCalls = new HashMap<String, Long>();
     private final Set<String> runningAiToolCalls = new HashSet<String>();
+    private String currentPath = null;
+    private TextView tvCurrentPath = null;
+    private LinearLayout fileListLayout = null;
+    private TextView tvShellOutput = null;
+    private EditText etShellInput = null;
     private DrawerLayout aiDrawerLayout;
     private LinearLayout aiSessionListDrawer;
     private List<RemoteExtension> currentDesktopExtensions = new ArrayList<RemoteExtension>();
@@ -267,18 +272,19 @@ extends Activity {
             "\u7cfb\u7edf\u53cd\u9988\uff1a\n" +
             "[{\"id\": \"ext_calculator\", \"name\": \"\u8ba1\u7b97\u5668\"}, {\"id\": \"ext_weather\", \"name\": \"\u5929\u6c14\u52a9\u624b\"}]\n" +
             "AI\u56de\u590d\uff1a\n" +
-            "\u76ee\u524d\u5df2\u5b89\\u88c5\u7684\\u63d2\u4ef6\\u5217\\u8868\\u5982\\u4e0b\uff1a\n" +
+            "\u76ee\u524d\u5df2\u5b89\\u88c5\u7684\\u63d2\u4ef6\\u5217\u8868\u5982\u4e0b\uff1a\n" +
             "1. \u8ba1\u7b97\u5668 (ID: ext_calculator)\n" +
             "2. \u5929\u6c14\u52a9\u624b (ID: ext_weather)\n" +
             "\u4f60\u53ef\u4ee5\u544a\u8bc9\u6211\u4f60\u60f3\u6267\\u884c\u54ea\u4e00\u4e2a\u3002\n" +
             "\n" +
-            "\u3010\u53ef\\u7528\u5de5\u5177\u5217\\u8868\u3011\n" +
-            "1. query_extensions: \u83b7\u53d6\u53ef\u7528\u6269\u5c55\u5217\u8868\u3002\u65e0\\u53c2\u6570\u3002\n" +
+            "\u3010\u53ef\u7528\u5de5\u5177\u5217\u8868\u3011\n" +
+            "1. query_extensions: \u83b7\u53d6\u53ef\u7528\u6269\u5c55\u5217\u8868\u3002\u65e0\u53c2\u6570\u3002\n" +
             "2. execute_extension: \u6267\u884c\u67d0\u4e2a\u6269\u5c55\u3002\u53c2\u6570: id (\u6269\u5c55ID)\u3002\n" +
-            "3. view_yanm: \u67e5\u770b\u71d5\u5e55\u7ec4\u4ef6\u3002\u53c2\u6570: id (\u53ef\u9009\uff0c\u586b\u5165 id \u67e5\u770b\u7ec4\\u4ef6\u8be6\u60c5\uff0c\u4e0d\\u586b\u5219\u67e5\u770b\u6240\u6709\u7ec4\u4ef6\u540d)\u3002\n" +
+            "3. view_yanm: \u67e5\u770b\u71d5\u5e55\u7ec4\u4ef6\u3002\u53c2\u6570: id (\u53ef\u9009\uff0c\u586b\u5165 id \u67e5\u770b\u7ec4\u4ef6\u8be6\u60c5\uff0c\u4e0d\u586b\u5219\u67e5\u770b\u6240\u6709\u7ec4\u4ef6\u540d)\u3002\n" +
             "4. update_yanm_component: \u4fee\u6539\u71d5\u5e55\u7ec4\u4ef6\u3002\u53c2\u6570: id (\u7ec4\u4ef6ID), title (\u6807\u9898), html (\u5185\u5bb9)\u3002\n" +
-            "5. manage_mobile_extension: \u7ba1\u7406\u624b\u673a\\u6269\u5c55\u3002\u53c2\u6570: action (list/read/create/update/delete), id, name, code, icon, description\u3002\n" +
-            "\u3010\u6ce8\u610f\u3011\u5982\u679c\u4f60\u8c03\u7528\u4e86\u5de5\u5177\uff0c\u7cfb\u7edf\u4f1a\\u5728\\u540e\\u53f0\\u771f\\u5b9e\\u6267\\u884c\uff0c\\u5e76\\u5728\\u6267\\u884c\\u5b8c\\u6210\\u540e\\u5c06\\u771f\\u5b9e\\u7684\\u7ed3\\u679c\\u53cd\\u9988\\u7ed9\\u4f60\\uff0c\\u4e4b\\u540e\\u4f60\\u518d\\u6839\\u636e\\u6267\\u884c\\u7ed3\\u679c\\u6765\\u51b3\\u5b9a\\u662f\\u7ee7\\u7eed\\u8c03\\u7528\u5de5\u5177\\u8fd8\\u662f\\u8f93\\u51fa\\u6700\\u7ec8\\u7684\\u81ea\\u7136\\u8bed\\u8a00\\u56de\\u590d\u3002";
+            "5. manage_mobile_extension: \u7ba1\u7406\u624b\u673a\u6269\u5c55\u3002\u53c2\u6570: action (list/read/create/update/delete), id, name, code, icon, description\u3002\n" +
+            "6. execute_command: \u5728\u7535\u8111\u7aef\u6267\u884c\u547d\u4ee4\u884c\u547d\u4ee4\u3002\u53c2\u6570: command (\u8981\u6267\u884c\u7684\u547d\u4ee4\u6587\u672c)\u3002\n" +
+            "\u3010\u6ce8\u610f\u3011\u5982\u679c\u4f60\u8c03\u7528\u4e86\u5de5\u5177\uff0c\u7cfb\u7edf\u4f1a\u5728\u540e\u53f0\u771f\u5b9e\u6267\u884c\uff0c\u5e76\u5728\u6267\u884c\u5b8c\u6210\u540e\u5c06\u771f\u5b9e\u7684\u7ed3\u679c\u53cd\u9988\u7ed9\u4f60\uff0c\u4e4b\u540e\u4f60\u518d\u6839\u636e\u6267\u884c\u7ed3\u679c\u6765\u51b3\u5b9a\u662f\u7ee7\u7eed\u8c03\u7528\u5de5\u5177\u8fd8\u662f\u8f93\u51fa\u6700\u7ec8\u7684\u81ea\u7136\u8bed\u8a00\u56de\u590d\u3002";
     private SwipeRefreshLayout swipeRefresh;
     private final Set<String> expandedComponentIds = new HashSet<String>();
     private final List<String> sortedComponentIds = new ArrayList<String>();
@@ -422,12 +428,205 @@ extends Activity {
             this.overlayButton.setText((CharSequence)(FloatingWheelService.isRunning ? "\u5173\u95ed\u60ac\u6d6e\u8f6e\u76d8" : "\u6253\u5f00\u60ac\u6d6e\u8f6e\u76d8"));
         }
         LanDiscoveryManager.discover((Context)this);
+        this.syncClipboard();
         this.refreshDiagnosticLogFromStore();
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
         this.diagnosticRefreshHandler.postDelayed(this.diagnosticRefreshRunnable, 1000L);
         if (this.isWakeListeningEnabled && !this.isWakeTriggeredSpeech) {
             this.startWakeListening();
         }
+    }
+
+    private void syncClipboard() {
+        this.executor.execute(() -> {
+            try {
+                String token = this.prefs.getString("token", "").trim();
+                if (token.isEmpty()) return;
+                
+                String baseUrl = this.normalizedBaseUrl();
+                
+                final String[] localTextHolder = new String[]{""};
+                final boolean[] hasClipHolder = new boolean[]{false};
+                this.runOnUiThread(() -> {
+                    try {
+                        android.content.ClipboardManager cm = (android.content.ClipboardManager) this.getSystemService(Context.CLIPBOARD_SERVICE);
+                        if (cm != null && cm.hasPrimaryClip()) {
+                            android.content.ClipData data = cm.getPrimaryClip();
+                            if (data != null && data.getItemCount() > 0) {
+                                CharSequence text = data.getItemAt(0).getText();
+                                if (text != null) {
+                                    localTextHolder[0] = text.toString();
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                    hasClipHolder[0] = true;
+                });
+                
+                int waits = 0;
+                while (!hasClipHolder[0] && waits < 10) {
+                    Thread.sleep(50);
+                    waits++;
+                }
+                
+                String localText = localTextHolder[0];
+                String lastSyncedText = this.prefs.getString("last_synced_clipboard", "");
+                
+                boolean writeToPc = false;
+                if (!localText.isEmpty() && !localText.equals(lastSyncedText)) {
+                    writeToPc = true;
+                }
+                
+                JSONObject payload = new JSONObject()
+                    .put("text", (Object)localText)
+                    .put("write", writeToPc);
+                    
+                JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/clipboard/sync", payload, token, "\u540c\u6b65\u526a\u8d34\u677f");
+                String pcText = res.optString("text", "");
+                
+                if (!pcText.isEmpty() && !pcText.equals(localText)) {
+                    this.runOnUiThread(() -> {
+                        try {
+                            android.content.ClipboardManager cm = (android.content.ClipboardManager) this.getSystemService(Context.CLIPBOARD_SERVICE);
+                            if (cm != null) {
+                                android.content.ClipData clip = android.content.ClipData.newPlainText("Yanzi Sync", pcText);
+                                cm.setPrimaryClip(clip);
+                                Toast.makeText(this.getApplicationContext(), "\u526a\u8d34\u677f\u5df2\u540c\u6b65\u81ea\u7535\u8111\u7aef", Toast.LENGTH_SHORT).show();
+                            }
+                        } catch (Exception ignored) {}
+                    });
+                    this.prefs.edit().putString("last_synced_clipboard", pcText).apply();
+                } else if (writeToPc) {
+                    this.prefs.edit().putString("last_synced_clipboard", localText).apply();
+                }
+            } catch (Exception e) {
+                Log.e("YanziClipboard", "Sync clipboard error", e);
+            }
+        });
+    }
+
+    private void loadFileList(String targetPath) {
+        this.runOnUiThread(() -> {
+            if (this.fileListLayout != null) {
+                this.fileListLayout.removeAllViews();
+                this.fileListLayout.addView((View)this.textView("\u6b63\u5728\u52a0\u8f7d\u6587\u4ef6\u5217\u8868...", 14, Color.rgb(148, 163, 184), false));
+            }
+        });
+        
+        this.executor.execute(() -> {
+            try {
+                String token = this.prefs.getString("token", "").trim();
+                if (token.isEmpty()) return;
+                
+                String baseUrl = this.normalizedBaseUrl();
+                JSONObject payload = new JSONObject().put("path", (Object)targetPath);
+                JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/fs/list", payload, token, "\u83b7\u53d6\u6587\u4ef6\u5217\u8868");
+                
+                String processedPath = res.optString("path", "");
+                JSONArray items = res.optJSONArray("items");
+                
+                this.runOnUiThread(() -> {
+                    this.currentPath = processedPath;
+                    if (this.tvCurrentPath != null) {
+                        this.tvCurrentPath.setText((CharSequence)(processedPath.isEmpty() ? "\u5f53\u524d\u8def\u5f84: [\u76d8\u7b26\u6839\u89c6\u5b9a]" : "\u5f53\u524d\u8def\u5f84: " + processedPath));
+                    }
+                    
+                    if (this.fileListLayout == null) return;
+                    this.fileListLayout.removeAllViews();
+                    
+                    if (items == null || items.length() == 0) {
+                        this.fileListLayout.addView((View)this.textView("\u6b64\u6587\u4ef6\u5939\u4e3a\u7a7a\u3002", 14, Color.rgb(148, 163, 184), false));
+                        return;
+                    }
+                    
+                    for (int i = 0; i < items.length(); ++i) {
+                        JSONObject item = items.optJSONObject(i);
+                        if (item == null) continue;
+                        
+                        String name = item.optString("name", "");
+                        boolean isDir = item.optBoolean("isDir", false);
+                        long size = item.optLong("size", 0L);
+                        
+                        LinearLayout row = new LinearLayout((Context)this);
+                        row.setOrientation(0);
+                        row.setGravity(16);
+                        row.setPadding(0, this.dp(8), 0, this.dp(8));
+                        row.setClickable(true);
+                        
+                        ImageView ivIcon = new ImageView((Context)this);
+                        String iconName = isDir ? "folder" : "file-document-outline";
+                        int iconColor = isDir ? Color.rgb(34, 211, 238) : Color.rgb(200, 200, 200);
+                        ivIcon.setImageDrawable((android.graphics.drawable.Drawable)new PathDrawable(MobileIconLibrary.resolveOrDefault(iconName), iconColor));
+                        
+                        row.addView((View)ivIcon, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(24), this.dp(24)));
+                        
+                        LinearLayout textContainer = new LinearLayout((Context)this);
+                        textContainer.setOrientation(1);
+                        
+                        TextView tvName = this.textView(name, 14, Color.WHITE, false);
+                        tvName.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                        tvName.setSingleLine(true);
+                        textContainer.addView((View)tvName);
+                        
+                        if (!isDir) {
+                            String sizeStr = size < 1024 ? size + " B" : (size < 1024 * 1024 ? (size / 1024) + " KB" : (size / (1024 * 1024)) + " MB");
+                            TextView tvSize = this.textView(sizeStr, 11, Color.rgb(148, 163, 184), false);
+                            textContainer.addView((View)tvSize);
+                        }
+                        
+                        LinearLayout.LayoutParams tcParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+                        tcParams.leftMargin = this.dp(10);
+                        row.addView((View)textContainer, (ViewGroup.LayoutParams)tcParams);
+                        
+                        if (isDir) {
+                            row.setOnClickListener(v -> {
+                                String separator = processedPath.endsWith("\\") || processedPath.endsWith("/") ? "" : "\\";
+                                String nextPath = processedPath.isEmpty() ? name : processedPath + separator + name;
+                                this.loadFileList(nextPath);
+                            });
+                        } else {
+                            Button btnRun = new Button((Context)this);
+                            btnRun.setText((CharSequence)"\u8fd0\u884c"); // "运行"
+                            btnRun.setTextColor(-1);
+                            btnRun.setBackgroundColor(Color.rgb(30, 41, 59));
+                            btnRun.setTextSize(11f);
+                            btnRun.setAllCaps(false);
+                            
+                            btnRun.setOnClickListener(v -> {
+                                String separator = processedPath.endsWith("\\") || processedPath.endsWith("/") ? "" : "\\";
+                                String fullFilePath = processedPath + separator + name;
+                                Toast.makeText(this.getApplicationContext(), "\u6b63\u5728\u7535\u8111\u4e0a\u6253\u5f00\u8be5\u6587\u4ef6...", Toast.LENGTH_SHORT).show();
+                                this.executor.execute(() -> {
+                                    try {
+                                        String runToken = this.prefs.getString("token", "").trim();
+                                        String runBaseUrl = this.normalizedBaseUrl();
+                                        JSONObject runPayload = new JSONObject().put("command", (Object)("Start-Process \"" + fullFilePath + "\""));
+                                        YanziApiClient.postJson(runBaseUrl, "/v1/shell/run", runPayload, runToken, "\u6253\u5f00\u6587\u4ef6");
+                                    } catch (Exception ex) {
+                                        Log.e("YanziFS", "Run file error", ex);
+                                    }
+                                });
+                            });
+                            
+                            row.addView((View)btnRun, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(60), this.dp(30)));
+                        }
+                        
+                        View divider = new View((Context)this);
+                        divider.setBackgroundColor(Color.rgb(30, 41, 59));
+                        
+                        this.fileListLayout.addView((View)row);
+                        this.fileListLayout.addView(divider, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(1)));
+                    }
+                });
+            } catch (Exception e) {
+                this.runOnUiThread(() -> {
+                    if (this.fileListLayout != null) {
+                        this.fileListLayout.removeAllViews();
+                        this.fileListLayout.addView((View)this.textView("\u52a0\u8f6d\u5931\u8d25: " + e.getMessage(), 14, Color.RED, false));
+                    }
+                });
+            }
+        });
     }
 
     protected void onPause() {
@@ -1186,8 +1385,70 @@ extends Activity {
         this.mobileExtensionTabPage.addView((View)this.textView("\u624b\u673a\u6269\u5c55", 28, -1, true));
         this.mobileExtensionTabPage.addView((View)this.textView("\u7ba1\u7406\u548c\u6d4b\u8bd5\u53ea\u5728\u624b\u673a\u7aef\u8fd0\u884c\u7684 mobile-js \u6269\u5c55\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
         this.buildMobileExtensionEditor(this.mobileExtensionTabPage);
-        this.desktopExtensionTabPage.addView((View)this.textView("\u7535\u8111\u6269\u5c55", 28, -1, true));
-        this.desktopExtensionTabPage.addView((View)this.textView("\u4ece\u624b\u673a\u89e6\u53d1\u540c\u8d26\u53f7\u7535\u8111\u7aef\u5df2\u540c\u6b65\u7684\u6269\u5c55\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
+        // 子 Tab 条
+        LinearLayout subTabBar = new LinearLayout((Context)this);
+        subTabBar.setOrientation(0);
+        subTabBar.setGravity(16);
+        subTabBar.setPadding(0, 0, 0, this.dp(12));
+        
+        Button btnShowExtensions = new Button((Context)this);
+        btnShowExtensions.setText((CharSequence)"\u7535\u8111\u6269\u5c55"); // "电脑扩展"
+        btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
+        
+        GradientDrawable activeBg = new GradientDrawable();
+        activeBg.setCornerRadius((float)this.dp(8));
+        activeBg.setColor(Color.argb(20, 34, 211, 238));
+        btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
+        btnShowExtensions.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(8));
+        btnShowExtensions.setAllCaps(false);
+        
+        Button btnShowFileManager = new Button((Context)this);
+        btnShowFileManager.setText((CharSequence)"\u6587\u4ef6 & \u7d4a\u7aef"); // "文件 & 终端"
+        btnShowFileManager.setTextColor(Color.rgb(148, 163, 184));
+        btnShowFileManager.setBackgroundColor(Color.TRANSPARENT);
+        btnShowFileManager.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(8));
+        btnShowFileManager.setAllCaps(false);
+        
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, this.dp(36));
+        btnParams.rightMargin = this.dp(12);
+        subTabBar.addView((View)btnShowExtensions, (ViewGroup.LayoutParams)btnParams);
+        subTabBar.addView((View)btnShowFileManager, (ViewGroup.LayoutParams)btnParams);
+        
+        this.desktopExtensionTabPage.addView((View)subTabBar);
+        
+        LinearLayout extensionsContainer = new LinearLayout((Context)this);
+        extensionsContainer.setOrientation(1);
+        extensionsContainer.setVisibility(0); // VISIBLE
+        this.desktopExtensionTabPage.addView((View)extensionsContainer);
+        
+        LinearLayout fileManagerContainer = new LinearLayout((Context)this);
+        fileManagerContainer.setOrientation(1);
+        fileManagerContainer.setVisibility(8); // GONE
+        this.desktopExtensionTabPage.addView((View)fileManagerContainer);
+        
+        btnShowExtensions.setOnClickListener(v -> {
+            extensionsContainer.setVisibility(0);
+            fileManagerContainer.setVisibility(8);
+            btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
+            btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
+            btnShowFileManager.setTextColor(Color.rgb(148, 163, 184));
+            btnShowFileManager.setBackgroundColor(Color.TRANSPARENT);
+        });
+        
+        btnShowFileManager.setOnClickListener(v -> {
+            extensionsContainer.setVisibility(8);
+            fileManagerContainer.setVisibility(0);
+            btnShowFileManager.setTextColor(Color.rgb(34, 211, 238));
+            btnShowFileManager.setBackground((android.graphics.drawable.Drawable)activeBg);
+            btnShowExtensions.setTextColor(Color.rgb(148, 163, 184));
+            btnShowExtensions.setBackgroundColor(Color.TRANSPARENT);
+            if (this.currentPath == null) {
+                this.loadFileList("");
+            }
+        });
+
+        extensionsContainer.addView((View)this.textView("\u7535\u8111\u6269\u5c55", 28, -1, true));
+        extensionsContainer.addView((View)this.textView("\u4ece\u624b\u673a\u89e6\u53d1\u540c\u8d26\u53f7\u7535\u8111\u7aef\u5df2\u540c\u6b65\u7684\u6269\u5c55\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
         this.searchDesktopExtensionsInput = new EditText((Context)this);
         this.searchDesktopExtensionsInput.setHint((CharSequence)"\u641c\u7d22\u7b5b\u9009\u6269\u5c55...");
         this.searchDesktopExtensionsInput.setTextColor(-1);
@@ -1197,7 +1458,7 @@ extends Activity {
         this.searchDesktopExtensionsInput.setSingleLine(true);
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(-1, -2);
         searchParams.setMargins(0, this.dp(10), 0, this.dp(10));
-        this.desktopExtensionTabPage.addView((View)this.searchDesktopExtensionsInput, (ViewGroup.LayoutParams)searchParams);
+        extensionsContainer.addView((View)this.searchDesktopExtensionsInput, (ViewGroup.LayoutParams)searchParams);
         this.searchDesktopExtensionsInput.addTextChangedListener(new TextWatcher(){
 
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -1214,8 +1475,141 @@ extends Activity {
         });
         this.extensionList = new LinearLayout((Context)this);
         this.extensionList.setOrientation(1);
-        this.desktopExtensionTabPage.addView((View)this.extensionList);
+        extensionsContainer.addView((View)this.extensionList);
         this.renderCachedExtensions();
+
+        // YanShell UI
+        LinearLayout shellPanel = new LinearLayout((Context)this);
+        shellPanel.setOrientation(1);
+        shellPanel.setPadding(0, this.dp(8), 0, this.dp(16));
+        shellPanel.addView((View)this.textView("\u71d5\u5e3a\u7d4a\u7aef (YanShell)", 16, Color.WHITE, true));
+        
+        LinearLayout shellInputRow = new LinearLayout((Context)this);
+        shellInputRow.setOrientation(0);
+        shellInputRow.setGravity(16);
+        
+        this.etShellInput = new EditText((Context)this);
+        this.etShellInput.setHint((CharSequence)"\u8f93\u5165 PowerShell \u547d\u4ee4...");
+        this.etShellInput.setTextColor(-1);
+        this.etShellInput.setHintTextColor(Color.rgb(100, 116, 139));
+        this.etShellInput.setBackgroundColor(Color.rgb(15, 23, 42));
+        this.etShellInput.setPadding(this.dp(10), this.dp(8), this.dp(10), this.dp(8));
+        this.etShellInput.setSingleLine(true);
+        this.etShellInput.setTypeface(Typeface.MONOSPACE);
+        this.etShellInput.setTextSize(13f);
+        
+        Button btnRunShell = new Button((Context)this);
+        btnRunShell.setText((CharSequence)"\u6267\u884c");
+        btnRunShell.setTextColor(-1);
+        btnRunShell.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnRunShell.setAllCaps(false);
+        
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        inputParams.rightMargin = this.dp(8);
+        shellInputRow.addView((View)this.etShellInput, (ViewGroup.LayoutParams)inputParams);
+        shellInputRow.addView((View)btnRunShell, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(38)));
+        shellPanel.addView((View)shellInputRow);
+        
+        HorizontalScrollView hsv = new HorizontalScrollView((Context)this);
+        ScrollView sv = new ScrollView((Context)this);
+        this.tvShellOutput = new TextView((Context)this);
+        this.tvShellOutput.setBackgroundColor(-16777216);
+        this.tvShellOutput.setTextColor(-16711936);
+        this.tvShellOutput.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
+        this.tvShellOutput.setTypeface(Typeface.MONOSPACE);
+        this.tvShellOutput.setTextSize(11f);
+        this.tvShellOutput.setText((CharSequence)"\u7b49\u5f85\u547d\u4ee4\u8f93\u5165...");
+        this.tvShellOutput.setVisibility(8);
+        
+        sv.addView((View)this.tvShellOutput);
+        hsv.addView((View)sv);
+        LinearLayout.LayoutParams outputParams = new LinearLayout.LayoutParams(-1, this.dp(150));
+        outputParams.topMargin = this.dp(6);
+        shellPanel.addView((View)hsv, (ViewGroup.LayoutParams)outputParams);
+        fileManagerContainer.addView((View)shellPanel);
+        
+        btnRunShell.setOnClickListener(v -> {
+            String cmd = this.etShellInput.getText().toString().trim();
+            if (cmd.isEmpty()) return;
+            this.tvShellOutput.setVisibility(0);
+            this.tvShellOutput.setTextColor(-256);
+            this.tvShellOutput.setText((CharSequence)("\u6b63\u5728\u6267\u884c\u547d\u4ee4...\n> " + cmd));
+            this.executor.execute(() -> {
+                try {
+                    String baseUrl = this.normalizedBaseUrl();
+                    String token = this.requireToken();
+                    JSONObject payload = new JSONObject().put("command", (Object)cmd);
+                    JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/shell/run", payload, token, "\u6267\u884c\u547d\u4ee4");
+                    String output = res.optString("output", "");
+                    int exitCode = res.optInt("exitCode", 0);
+                    this.runOnUiThread(() -> {
+                        this.tvShellOutput.setTextColor(exitCode == 0 ? -16711936 : -65536);
+                        this.tvShellOutput.setText((CharSequence)(output.isEmpty() ? "\u547d\u4ee4\u6267\u884c\u5b8c\u6bd5\uff0c\u65e0\u8f93\u51fa\u5185\u5bb9\u3002" : output));
+                    });
+                } catch (Exception ex) {
+                    this.runOnUiThread(() -> {
+                        this.tvShellOutput.setTextColor(-65536);
+                        this.tvShellOutput.setText((CharSequence)("\u547d\u4ee4\u6267\u884c\u5931\u8d25: " + ex.getMessage()));
+                    });
+                }
+            });
+        });
+        
+        // YanPath UI
+        LinearLayout fsPanel = new LinearLayout((Context)this);
+        fsPanel.setOrientation(1);
+        fsPanel.addView((View)this.textView("\u6587\u4ef6\u7ba1\u7406 (YanPath)", 16, -1, true));
+        
+        LinearLayout pathRow = new LinearLayout((Context)this);
+        pathRow.setOrientation(0);
+        pathRow.setGravity(16);
+        pathRow.setPadding(0, this.dp(4), 0, this.dp(8));
+        
+        this.tvCurrentPath = new TextView((Context)this);
+        this.tvCurrentPath.setTextColor(Color.rgb(182, 194, 214));
+        this.tvCurrentPath.setTextSize(13f);
+        this.tvCurrentPath.setText((CharSequence)"\u5f53\u524d\u8def\u5f84: [\u76d8\u7b26\u6839\u89c6\u5b9a]");
+        this.tvCurrentPath.setEllipsize(android.text.TextUtils.TruncateAt.START);
+        this.tvCurrentPath.setSingleLine(true);
+        
+        Button btnRoot = new Button((Context)this);
+        btnRoot.setText((CharSequence)"\u6839");
+        btnRoot.setTextColor(-1);
+        btnRoot.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnRoot.setAllCaps(false);
+        btnRoot.setTextSize(12f);
+        
+        Button btnBack = new Button((Context)this);
+        btnBack.setText((CharSequence)"\u8fd4\u56de");
+        btnBack.setTextColor(-1);
+        btnBack.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnBack.setAllCaps(false);
+        btnBack.setTextSize(12f);
+        
+        pathRow.addView((View)btnRoot, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(45), this.dp(32)));
+        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(this.dp(60), this.dp(32));
+        backParams.leftMargin = this.dp(6);
+        backParams.rightMargin = this.dp(6);
+        pathRow.addView((View)btnBack, (ViewGroup.LayoutParams)backParams);
+        pathRow.addView((View)this.tvCurrentPath, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        fsPanel.addView((View)pathRow);
+        
+        this.fileListLayout = new LinearLayout((Context)this);
+        this.fileListLayout.setOrientation(1);
+        fsPanel.addView((View)this.fileListLayout);
+        fileManagerContainer.addView((View)fsPanel);
+        
+        btnRoot.setOnClickListener(v -> this.loadFileList(""));
+        btnBack.setOnClickListener(v -> {
+            if (this.currentPath == null || this.currentPath.isEmpty()) return;
+            java.io.File file = new java.io.File(this.currentPath);
+            String parent = file.getParent();
+            if (parent == null) {
+                this.loadFileList("");
+            } else {
+                this.loadFileList(parent);
+            }
+        });
         this.profileTabPage.addView((View)this.textView("\u6211\u7684", 28, -1, true));
         this.profileTabPage.addView((View)this.textView("\u767b\u5f55\u3001\u53d1\u9001\u6d88\u606f\u3001\u60ac\u6d6e\u8f6e\u76d8\u548c\u8bca\u65ad\u4fe1\u606f\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
         this.baseUrlInput = this.input("\u4e91\u7aef\u5730\u5740", this.prefs.getString("baseUrl", DEFAULT_BASE_URL));
@@ -2633,7 +3027,7 @@ extends Activity {
     }
 
     private boolean isKnownAiTool(String toolName) {
-        return "query_extensions".equals(toolName) || "execute_extension".equals(toolName) || "view_yanm".equals(toolName) || "update_yanm_component".equals(toolName) || "manage_mobile_extension".equals(toolName);
+        return "query_extensions".equals(toolName) || "execute_extension".equals(toolName) || "view_yanm".equals(toolName) || "update_yanm_component".equals(toolName) || "manage_mobile_extension".equals(toolName) || "execute_command".equals(toolName);
     }
 
     private String parseToolName(String content) {
@@ -3037,6 +3431,30 @@ extends Activity {
                                         finally {
                                             this.finishAiToolCall(activeToolCallKey);
                                         }
+                                    });
+                                    return;
+                                }
+                                if ("execute_command".equals(toolName)) {
+                                    String cmd = toolCall.optString("command");
+                                    this.runOnUiThread(() -> {
+                                        this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:execute_command", content, Color.rgb(167, 243, 208), true);
+                                        this.executor.execute(() -> {
+                                            try {
+                                                String baseUrl = this.normalizedBaseUrl();
+                                                String token = this.requireToken();
+                                                JSONObject cmdPayload = new JSONObject().put("command", (Object)cmd);
+                                                JSONObject cmdRes = YanziApiClient.postJson(baseUrl, "/v1/shell/run", cmdPayload, token, "AI\u6267\u884c\u547d\u4ee4");
+                                                String output = cmdRes.optString("output", "");
+                                                int exitCode = cmdRes.optInt("exitCode", 0);
+                                                this.sendAiSystemFeedback("execute_command", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u547d\u4ee4\u884c\u6267\u884c\u7ed3\u679c(\u9000\u51fa\u7801:" + exitCode + ")\uff1a\n" + output + "\n\u8bf7\u6839\u636e\u7ed3\u679c\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u56de\u590d\u7528\u6237\uff0c\u7edd\u5bf9\u4e0d\u8981\u518d\u6b21\u8c03\u7528\u672c\u5de5\u5177\uff01");
+                                            }
+                                            catch (Exception e) {
+                                                this.sendAiSystemFeedback("execute_command", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u6267\u884c\u547d\u4ee4\u5931\u8d25\uff1a" + e.getMessage());
+                                            }
+                                            finally {
+                                                this.finishAiToolCall(activeToolCallKey);
+                                            }
+                                        });
                                     });
                                     return;
                                 }
@@ -3581,6 +3999,8 @@ extends Activity {
                     } else if ("view_yanm".equals(toolName)) {
                         String toolId = toolCall.optString("id");
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: view_yanm" + (toolId.isEmpty() ? "" : " (id: " + toolId + ")");
+                    } else if ("execute_command".equals(toolName)) {
+                        displayText = "\ud83d\udee0 \u4f7f\u7528\u5de5\u5177: execute_command (command: " + toolCall.optString("command") + ")";
                     } else {
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: " + toolName;
                     }
