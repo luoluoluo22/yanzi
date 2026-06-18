@@ -3222,7 +3222,7 @@ extends Activity {
                     conn.setConnectTimeout(2000);
                     conn.setReadTimeout(2000);
                     int code = conn.getResponseCode();
-                    if (code == 200) {
+                    if (code == 200 || code == 401) {
                         connected = true;
                         type = "lan";
                     }
@@ -3244,7 +3244,7 @@ extends Activity {
                         conn.setConnectTimeout(2500);
                         conn.setReadTimeout(2500);
                         int code = conn.getResponseCode();
-                        if (code == 200) {
+                        if (code == 200 || code == 401) {
                             connected = true;
                             type = "internet";
                         }

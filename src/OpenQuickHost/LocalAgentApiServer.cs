@@ -206,6 +206,12 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "GET" && path == "/health")
+            {
+                await WriteJsonAsync(response, 200, new { ok = true, service = "yanzi-local-agent-api" });
+                return;
+            }
+
             if (!IsAuthorized(request))
             {
                 await WriteJsonAsync(response, 401, new { error = "unauthorized" });
@@ -528,11 +534,6 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
-            if (request.HttpMethod == "GET" && path == "/health")
-            {
-                await WriteJsonAsync(response, 200, new { ok = true, service = "yanzi-local-agent-api" });
-                return;
-            }
 
             if (request.HttpMethod == "POST" && path == "/v1/me/devices")
             {
