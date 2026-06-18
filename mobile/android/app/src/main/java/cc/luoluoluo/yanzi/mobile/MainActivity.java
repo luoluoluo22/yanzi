@@ -1631,7 +1631,12 @@ extends Activity {
             public void onPageScrollStateChanged(int state) {}
         });
 
-        this.mobileExtensionTabPage.addView((View)this.mobileViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
+        int mobileScreenHeight = this.getResources().getDisplayMetrics().heightPixels;
+        int mobilePagerHeight = mobileScreenHeight - this.dp(160);
+        if (mobilePagerHeight < this.dp(400)) {
+            mobilePagerHeight = this.dp(500);
+        }
+        this.mobileExtensionTabPage.addView((View)this.mobileViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, mobilePagerHeight));
         this.mobileExtensionTabPage.addView((View)this.mobileExtensionEditorView);
         
         // 渲染文档内容
