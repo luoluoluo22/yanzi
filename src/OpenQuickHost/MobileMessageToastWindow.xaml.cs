@@ -24,13 +24,18 @@ public partial class MobileMessageToastWindow : Window
 
     private readonly StringBuilder _conversationText = new();
     private string? _lastUrl;
+    private System.Windows.Threading.DispatcherTimer? _autoCloseTimer;
 
     public MobileMessageToastWindow()
     {
         InitializeComponent();
         LoadInboxHistory();
 
-        Loaded += (_, _) => PositionBottomRight();
+        Loaded += (_, _) =>
+        {
+            PositionBottomRight();
+            InitializeAutoCloseTimer();
+        };
     }
 
     public MobileMessageToastWindow(string title, string messageText, string sourceDeviceId, DateTimeOffset receivedAt, string? screenshotDataUrl = null, string? screenshotFilePath = null)
@@ -39,7 +44,11 @@ public partial class MobileMessageToastWindow : Window
         TitleText.Text = string.IsNullOrWhiteSpace(title) ? "手机发来消息" : title.Trim();
         AppendMessageCore(title, messageText, sourceDeviceId, receivedAt, screenshotDataUrl, screenshotFilePath, updateHeader: true);
 
-        Loaded += (_, _) => PositionBottomRight();
+        Loaded += (_, _) =>
+        {
+            PositionBottomRight();
+            InitializeAutoCloseTimer();
+        };
     }
 
     public void AppendMessage(string title, string messageText, string sourceDeviceId, DateTimeOffset receivedAt, string? screenshotDataUrl = null, string? screenshotFilePath = null)
@@ -109,6 +118,10 @@ public partial class MobileMessageToastWindow : Window
 
         AddMessageBubble(messageText, sourceLabel, receivedAt, screenshotDataUrl, screenshotFilePath);
         UpdateUrlActions();
+        if (AutoCloseCheckBox != null && AutoCloseCheckBox.IsChecked == true)
+        {
+            ResetAutoCloseTimer();
+        }
         Dispatcher.InvokeAsync(() => MessageScrollViewer.ScrollToEnd());
     }
 
@@ -569,6 +582,58 @@ public partial class MobileMessageToastWindow : Window
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private void InitializeAutoCloseTimer()
+    {
+        if (AutoCloseCheckBox == null) return;
+        var settings = AppSettingsStore.Load();
+        AutoCloseCheckBox.IsChecked = settings.AutoCloseToastEnabled;
+
+        if (settings.AutoCloseToastEnabled)
+        {
+            ResetAutoCloseTimer();
+        }
+    }
+
+    private void ResetAutoCloseTimer()
+    {
+        if (_autoCloseTimer == null)
+        {
+            _autoCloseTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(5)
+            };
+            _autoCloseTimer.Tick += (s, e) => Close();
+        }
+        else
+        {
+            _autoCloseTimer.Stop();
+        }
+        _autoCloseTimer.Start();
+    }
+
+    private void StopAutoCloseTimer()
+    {
+        _autoCloseTimer?.Stop();
+    }
+
+    private void AutoCloseCheckBox_Checked(object sender, RoutedEventArgs e)
+    {
+        var settings = AppSettingsStore.Load();
+        settings.AutoCloseToastEnabled = true;
+        AppSettingsStore.Save(settings);
+
+        ResetAutoCloseTimer();
+    }
+
+    private void AutoCloseCheckBox_Unchecked(object sender, RoutedEventArgs e)
+    {
+        var settings = AppSettingsStore.Load();
+        settings.AutoCloseToastEnabled = false;
+        AppSettingsStore.Save(settings);
+
+        StopAutoCloseTimer();
     }
 
     private static string? ExtractUrl(string text)

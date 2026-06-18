@@ -540,6 +540,8 @@ public sealed record AppSettings
 {
     public string ThemeMode { get; set; } = "Dark";
 
+    public bool AutoCloseToastEnabled { get; set; } = false;
+
     public string LauncherHotkey { get; set; } = "Alt+Space";
 
     public bool LaunchAtStartup { get; set; } = true;

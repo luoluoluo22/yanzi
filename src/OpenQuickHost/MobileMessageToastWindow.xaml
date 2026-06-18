@@ -1,4 +1,4 @@
-﻿<Window x:Class="OpenQuickHost.MobileMessageToastWindow"
+<Window x:Class="OpenQuickHost.MobileMessageToastWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="手机消息"
@@ -96,6 +96,13 @@
                             Foreground="White"
                             Click="OpenLinkButton_Click"
                             Visibility="Collapsed" />
+                    <CheckBox x:Name="AutoCloseCheckBox"
+                              Content="5s 自动关闭"
+                              Foreground="#FF94A3B8"
+                              VerticalAlignment="Center"
+                              Margin="0,0,12,0"
+                              Checked="AutoCloseCheckBox_Checked"
+                              Unchecked="AutoCloseCheckBox_Unchecked" />
                     <Button Width="72"
                             Height="34"
                             Margin="0,0,8,0"
