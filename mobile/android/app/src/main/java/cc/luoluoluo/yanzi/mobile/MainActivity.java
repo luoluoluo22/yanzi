@@ -344,6 +344,17 @@ extends Activity {
     private android.view.View fileManagerContainer;
     private android.view.View shellContainer;
     private int currentSubTabIndex = 0;
+    private android.widget.Button btnShowMobileExtensions;
+    private android.widget.Button btnShowMobileDocs;
+    private android.widget.Button btnShowMobileShell;
+    private int currentMobileSubTab = 0;
+    private boolean isEditingMobileExtension = false;
+    private android.widget.ScrollView mobileDocsScrollView;
+    private android.widget.LinearLayout mobileDocsContainer;
+    private android.widget.LinearLayout mobileShellContainer;
+    private android.widget.TextView tvMobileShellLog;
+    private android.widget.ScrollView svMobileShellLog;
+    private android.widget.EditText etMobileShellInput;
     private android.view.GestureDetector tabGestureDetector;
 
     private final Map<String, WebView> activeYanmWebViews = new HashMap<String, WebView>();
@@ -1514,17 +1525,82 @@ extends Activity {
         this.yanmList.setAlignmentMode(0);
         this.yanmList.setUseDefaultMargins(false);
         this.yanmTabPage.addView((View)this.yanmList, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
+        // 手机端子 Tab 栏
+        LinearLayout mobileSubTabBar = new LinearLayout((Context)this);
+        mobileSubTabBar.setOrientation(0);
+        mobileSubTabBar.setGravity(16);
+        mobileSubTabBar.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(8));
+        
+        this.btnShowMobileExtensions = new android.widget.Button((Context)this);
+        this.btnShowMobileExtensions.setText((CharSequence)"\u6269\u5c55"); // "扩展"
+        this.btnShowMobileExtensions.setTextColor(Color.rgb(148, 163, 184));
+        this.btnShowMobileExtensions.setBackgroundColor(Color.TRANSPARENT);
+        this.btnShowMobileExtensions.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        this.btnShowMobileExtensions.setAllCaps(false);
+        this.btnShowMobileExtensions.setTextSize(13f);
+        
+        this.btnShowMobileDocs = new android.widget.Button((Context)this);
+        this.btnShowMobileDocs.setText((CharSequence)"\u6587\u6863"); // "文档"
+        this.btnShowMobileDocs.setTextColor(Color.rgb(148, 163, 184));
+        this.btnShowMobileDocs.setBackgroundColor(Color.TRANSPARENT);
+        this.btnShowMobileDocs.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        this.btnShowMobileDocs.setAllCaps(false);
+        this.btnShowMobileDocs.setTextSize(13f);
+        
+        this.btnShowMobileShell = new android.widget.Button((Context)this);
+        this.btnShowMobileShell.setText((CharSequence)"\u624b\u673a\u7ec8\u7aef"); // "手机终端"
+        this.btnShowMobileShell.setTextColor(Color.rgb(148, 163, 184));
+        this.btnShowMobileShell.setBackgroundColor(Color.TRANSPARENT);
+        this.btnShowMobileShell.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        this.btnShowMobileShell.setAllCaps(false);
+        this.btnShowMobileShell.setTextSize(13f);
+        
+        LinearLayout.LayoutParams mobileBtnParams = new LinearLayout.LayoutParams(-2, this.dp(36));
+        mobileBtnParams.rightMargin = this.dp(8);
+        mobileSubTabBar.addView((View)this.btnShowMobileExtensions, (ViewGroup.LayoutParams)mobileBtnParams);
+        mobileSubTabBar.addView((View)this.btnShowMobileDocs, (ViewGroup.LayoutParams)mobileBtnParams);
+        mobileSubTabBar.addView((View)this.btnShowMobileShell, (ViewGroup.LayoutParams)mobileBtnParams);
+        
+        this.btnShowMobileExtensions.setOnClickListener(v -> this.selectMobileSubTab(0));
+        this.btnShowMobileDocs.setOnClickListener(v -> this.selectMobileSubTab(1));
+        this.btnShowMobileShell.setOnClickListener(v -> this.selectMobileSubTab(2));
+        
+        this.mobileExtensionTabPage.addView((View)mobileSubTabBar);
+
         this.mobileExtensionListView = new LinearLayout((Context)this);
         this.mobileExtensionListView.setOrientation(1);
-        this.mobileExtensionListView.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
+        this.mobileExtensionListView.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
         
         this.mobileExtensionEditorView = new LinearLayout((Context)this);
         this.mobileExtensionEditorView.setOrientation(1);
         this.mobileExtensionEditorView.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
         this.mobileExtensionEditorView.setVisibility(View.GONE);
         
+        this.mobileDocsScrollView = new android.widget.ScrollView((Context)this);
+        this.mobileDocsScrollView.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
+        this.mobileDocsScrollView.setVisibility(View.GONE);
+        
+        this.mobileDocsContainer = new android.widget.LinearLayout((Context)this);
+        this.mobileDocsContainer.setOrientation(1);
+        this.mobileDocsScrollView.addView((View)this.mobileDocsContainer, (ViewGroup.LayoutParams)new android.widget.FrameLayout.LayoutParams(-1, -2));
+        
+        this.mobileShellContainer = new android.widget.LinearLayout((Context)this);
+        this.mobileShellContainer.setOrientation(1);
+        this.mobileShellContainer.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
+        this.mobileShellContainer.setVisibility(View.GONE);
+        
         this.mobileExtensionTabPage.addView((View)this.mobileExtensionListView);
         this.mobileExtensionTabPage.addView((View)this.mobileExtensionEditorView);
+        this.mobileExtensionTabPage.addView((View)this.mobileDocsScrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
+        this.mobileExtensionTabPage.addView((View)this.mobileShellContainer, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
+        
+        // 渲染文档内容
+        this.buildMobileDocsView(this.mobileDocsContainer);
+        // 渲染终端内容
+        this.buildMobileShellView(this.mobileShellContainer);
+        
+        // 默认选中第一个子 Tab
+        this.selectMobileSubTab(0);
         
         // 渲染 List 页面头部
         LinearLayout listHeader = new LinearLayout((Context)this);
@@ -1543,6 +1619,7 @@ extends Activity {
         Button newExtBtn = this.button("\u65b0\u5efa\u6269\u5c55");
         newExtBtn.setOnClickListener(v -> {
             // 重置编辑器字段，开启编辑器二级界面
+            this.isEditingMobileExtension = true;
             this.mobileExtensionInput.setText((CharSequence)this.defaultMobileExtensionJson());
             this.updateMobileExtensionFieldsFromDraft();
             this.mobileExtensionListView.setVisibility(View.GONE);
@@ -1566,6 +1643,7 @@ extends Activity {
         editorNavBar.setPadding(0, this.dp(8), 0, this.dp(16));
         Button backBtn = this.button("\u2190 \u8fd4\u56de");
         backBtn.setOnClickListener(v -> {
+            this.isEditingMobileExtension = false;
             this.mobileExtensionEditorView.setVisibility(View.GONE);
             this.mobileExtensionListView.setVisibility(View.VISIBLE);
             this.setStatus("\u5df2\u8fd4\u56de\u624b\u673a\u6269\u5c55\u5217\u8868");
@@ -2883,6 +2961,7 @@ extends Activity {
                         try { pretty = item.toString(2); } catch (Exception e) {}
                         this.mobileExtensionInput.setText((CharSequence)pretty);
                         this.updateMobileExtensionFieldsFromDraft();
+                        this.isEditingMobileExtension = true;
                         if (this.mobileExtensionListView != null) this.mobileExtensionListView.setVisibility(View.GONE);
                         if (this.mobileExtensionEditorView != null) this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
                         this.scrollToView((View)this.mobileExtensionSectionTitle);
@@ -2916,6 +2995,7 @@ extends Activity {
                 catch (Exception exception) {}
                 this.mobileExtensionInput.setText((CharSequence)pretty);
                 this.updateMobileExtensionFieldsFromDraft();
+                this.isEditingMobileExtension = true;
                 if (this.mobileExtensionListView != null) this.mobileExtensionListView.setVisibility(View.GONE);
                 if (this.mobileExtensionEditorView != null) this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
                 this.scrollToView((View)this.mobileExtensionSectionTitle);
@@ -6195,31 +6275,39 @@ extends Activity {
 
         @JavascriptInterface
         public void toast(String text) {
+            MainActivity.this.appendMobileShellLog("[API] toast: " + text);
             MainActivity.this.runOnUiThread(() -> Toast.makeText((Context)MainActivity.this, (CharSequence)text, (int)0).show());
         }
 
         @JavascriptInterface
         public void sendToDesktop(String text) {
+            MainActivity.this.appendMobileShellLog("[API] sendToDesktop: " + text);
             MainActivity.this.runOnUiThread(() -> MainActivity.this.sendTextValueToDesktop(text, "\u624b\u673a\u811a\u672c\u6b63\u5728\u53d1\u9001\u5230\u7535\u8111..."));
         }
 
         @JavascriptInterface
         public String getSharedText() {
-            return MainActivity.this.textInput == null ? "" : MainActivity.this.textInput.getText().toString();
+            String val = MainActivity.this.textInput == null ? "" : MainActivity.this.textInput.getText().toString();
+            MainActivity.this.appendMobileShellLog("[API] getSharedText -> " + val);
+            return val;
         }
 
         @JavascriptInterface
         public String getClipboardText() {
             ClipboardManager manager = (ClipboardManager)MainActivity.this.getSystemService("clipboard");
             if (manager == null || manager.getPrimaryClip() == null || manager.getPrimaryClip().getItemCount() == 0) {
+                MainActivity.this.appendMobileShellLog("[API] getClipboardText -> (empty)");
                 return "";
             }
             CharSequence value = manager.getPrimaryClip().getItemAt(0).coerceToText((Context)MainActivity.this);
-            return value == null ? "" : value.toString();
+            String val = value == null ? "" : value.toString();
+            MainActivity.this.appendMobileShellLog("[API] getClipboardText -> " + val);
+            return val;
         }
 
         @JavascriptInterface
         public String setClipboardText(String text) {
+            MainActivity.this.appendMobileShellLog("[API] setClipboardText: " + text);
             ClipboardManager manager = (ClipboardManager)MainActivity.this.getSystemService("clipboard");
             if (manager != null) {
                 manager.setPrimaryClip(ClipData.newPlainText((CharSequence)"Yanzi mobile script", (CharSequence)(text == null ? "" : text)));
@@ -6229,6 +6317,7 @@ extends Activity {
 
         @JavascriptInterface
         public String openUrl(String url) {
+            MainActivity.this.appendMobileShellLog("[API] openUrl: " + url);
             MainActivity.this.runOnUiThread(() -> {
                 Intent intent = new Intent("android.intent.action.VIEW", Uri.parse((String)url));
                 MainActivity.this.startActivity(intent);
@@ -6238,6 +6327,7 @@ extends Activity {
 
         @JavascriptInterface
         public String pickPhoto() {
+            MainActivity.this.appendMobileShellLog("[API] pickPhoto");
             MainActivity.this.runOnUiThread(() -> MainActivity.this.pickPhotoFromGallery());
             return "ok";
         }
@@ -6247,6 +6337,7 @@ extends Activity {
          */
         @JavascriptInterface
         public String readTextFile(String name) {
+            MainActivity.this.appendMobileShellLog("[API] readTextFile: " + name);
             try {
                 File file = MainActivity.this.resolveMobileScriptFile(name);
                 if (!file.exists()) {
@@ -6272,26 +6363,31 @@ extends Activity {
 
         @JavascriptInterface
         public String saveTextFile(String name, String text) {
+            MainActivity.this.appendMobileShellLog("[API] saveTextFile: " + name + " (len=" + (text != null ? text.length() : 0) + ")");
             return this.writeTextFile(name, text, false);
         }
 
         @JavascriptInterface
         public String appendTextFile(String name, String text) {
+            MainActivity.this.appendMobileShellLog("[API] appendTextFile: " + name + " (len=" + (text != null ? text.length() : 0) + ")");
             return this.writeTextFile(name, text, true);
         }
 
         @JavascriptInterface
         public String httpGet(String url) {
+            MainActivity.this.appendMobileShellLog("[API] httpGet: " + url);
             return this.runHttpRequest("GET", url, null, null);
         }
 
         @JavascriptInterface
         public String httpPostJson(String url, String jsonText) {
+            MainActivity.this.appendMobileShellLog("[API] httpPostJson: " + url);
             return this.runHttpRequest("POST", url, jsonText, "application/json; charset=utf-8");
         }
 
         @JavascriptInterface
         public void done(String text) {
+            MainActivity.this.appendMobileShellLog("[API] done: " + text);
             MainActivity.this.runOnUiThread(() -> {
                 MainActivity.this.updateMobileScriptResult(text, false);
                 MainActivity.this.setStatus(text);
@@ -6303,6 +6399,7 @@ extends Activity {
 
         @JavascriptInterface
         public void fail(String text) {
+            MainActivity.this.appendMobileShellLog("[API] fail: " + text);
             MainActivity.this.runOnUiThread(() -> {
                 MainActivity.this.updateMobileScriptResult("\u6d4b\u8bd5\u5931\u8d25\uff1a " + text, true);
                 MainActivity.this.setStatus("\u624b\u673a\u811a\u672c\u6267\u884c\u5931\u8d25\uff1a" + text);
@@ -8005,6 +8102,275 @@ extends Activity {
         android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) this.getSystemService(Context.INPUT_METHOD_SERVICE);
         if (imm != null) {
             imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+        }
+    }
+
+    private void selectMobileSubTab(int index) {
+        if (index < 0 || index > 2) return;
+        this.currentMobileSubTab = index;
+        
+        this.runOnUiThread(() -> {
+            android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
+            activeBg.setCornerRadius((float)this.dp(8));
+            activeBg.setColor(Color.argb(20, 34, 211, 238));
+            
+            if (this.btnShowMobileExtensions != null) {
+                this.btnShowMobileExtensions.setTextColor(Color.rgb(148, 163, 184));
+                this.btnShowMobileExtensions.setBackgroundColor(Color.TRANSPARENT);
+            }
+            if (this.btnShowMobileDocs != null) {
+                this.btnShowMobileDocs.setTextColor(Color.rgb(148, 163, 184));
+                this.btnShowMobileDocs.setBackgroundColor(Color.TRANSPARENT);
+            }
+            if (this.btnShowMobileShell != null) {
+                this.btnShowMobileShell.setTextColor(Color.rgb(148, 163, 184));
+                this.btnShowMobileShell.setBackgroundColor(Color.TRANSPARENT);
+            }
+            
+            if (index == 0) {
+                if (this.btnShowMobileExtensions != null) {
+                    this.btnShowMobileExtensions.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowMobileExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
+                }
+            } else if (index == 1) {
+                if (this.btnShowMobileDocs != null) {
+                    this.btnShowMobileDocs.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowMobileDocs.setBackground((android.graphics.drawable.Drawable)activeBg);
+                }
+            } else if (index == 2) {
+                if (this.btnShowMobileShell != null) {
+                    this.btnShowMobileShell.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowMobileShell.setBackground((android.graphics.drawable.Drawable)activeBg);
+                }
+            }
+            
+            if (index == 0) {
+                if (this.isEditingMobileExtension) {
+                    this.mobileExtensionListView.setVisibility(View.GONE);
+                    this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
+                } else {
+                    this.mobileExtensionListView.setVisibility(View.VISIBLE);
+                    this.mobileExtensionEditorView.setVisibility(View.GONE);
+                }
+                this.mobileDocsScrollView.setVisibility(View.GONE);
+                this.mobileShellContainer.setVisibility(View.GONE);
+            } else if (index == 1) {
+                this.mobileExtensionListView.setVisibility(View.GONE);
+                this.mobileExtensionEditorView.setVisibility(View.GONE);
+                this.mobileDocsScrollView.setVisibility(View.VISIBLE);
+                this.mobileShellContainer.setVisibility(View.GONE);
+            } else if (index == 2) {
+                this.mobileExtensionListView.setVisibility(View.GONE);
+                this.mobileExtensionEditorView.setVisibility(View.GONE);
+                this.mobileDocsScrollView.setVisibility(View.GONE);
+                this.mobileShellContainer.setVisibility(View.VISIBLE);
+            }
+        });
+    }
+
+    private void buildMobileDocsView(LinearLayout container) {
+        TextView mainTitle = this.textView("\u624b\u673a\u6269\u5c55 JS API \u6587\u6863", 20, -1, true);
+        container.addView((View)mainTitle);
+        
+        TextView descText = this.textView("\u624b\u673a\u6269\u5c55\u57fa\u4e8e\u8f6b\u91cf\u7ea7 JavaScript \u73af\u5883\u6267\u884c\u3002\u60a8\u53ef\u4ee5\u5728\u811a\u672c\u7684 async function run(context) \u4e2d\u8c03\u7528\u4ee5\u4e0b context.mobile API\u3002", 13, Color.rgb(182, 194, 214), false);
+        descText.setPadding(0, this.dp(8), 0, this.dp(16));
+        container.addView((View)descText);
+        
+        java.util.List<DocItem> docs = new java.util.ArrayList<>();
+        docs.add(new DocItem("context.mobile.toast(text)", "\u5f39\u51fa\u7cfb\u7edf Toast \u63d0\u793a\u6d88\u606f\uff0c\u65e0\u8fd4\u56de\u503c\u3002", "text (string): \u63d0\u793a\u6587\u672c", "context.mobile.toast('Hello');"));
+        docs.add(new DocItem("context.mobile.sendToDesktop(text)", "\u53d1\u9001\u6587\u672c\u6d88\u606f\u5230\u5f53\u524d\u5df2\u8fde\u63a5\u7684\u7535\u8111\u7aef\uff08\u9700\u5728\u7ebf\uff0c\u65e0\u8fd4\u56de\u503c\uff09\u3002", "text (string): \u53d1\u9001\u5185\u5bb9", "context.mobile.sendToDesktop('hi');"));
+        docs.add(new DocItem("context.mobile.getSharedText()", "\u83b7\u53d6\u624b\u673a\u4e3b\u754c\u9762\u8f93\u5165\u6846\u5f53\u524d\u7684\u5171\u4eab\u6587\u672c\u5185\u5bb9\u3002", "\u65e0", "const text = context.mobile.getSharedText();"));
+        docs.add(new DocItem("context.mobile.getClipboardText()", "\u5f02\u6b65\u83b7\u53d6\u624b\u673a\u7cfb\u7edf\u5f53\u524d\u7684\u526a\u8d34\u677f\u6587\u672c\u5185\u5bb9\u3002", "\u65e0", "const clip = await context.mobile.getClipboardText();"));
+        docs.add(new DocItem("context.mobile.setClipboardText(text)", "\u5f02\u6b65\u8bbe\u7f6e\u624b\u673a\u7cfb\u7edf\u526a\u8d34\u677f\u6587\u672c\u3002", "text (string): \u5199\u5165\u7684\u6587\u672c", "await context.mobile.setClipboardText('new text');"));
+        docs.add(new DocItem("context.mobile.openUrl(url)", "\u5f02\u6b65\u8c03\u7528\u7cfb\u7edf\u6d4f\u89c8\u5668\u6253\u5f00\u630f\u5b9a\u7684\u7f51\u5740\u3002", "url (string): \u8981\u6253\u5f00\u7684\u7f51\u5740", "await context.mobile.openUrl('https://www.baidu.com');"));
+        docs.add(new DocItem("context.mobile.pickPhoto()", "\u5f02\u6b65\u89e6\u53d1\u624b\u673a\u76f8\u518c\u9009\u62e9\u7167\u7247\u5e76\u53d1\u9001\u5230\u5df2\u8fde\u63a5\u7684\u7535\u8111\u7aef\u3002", "\u65e0", "await context.mobile.pickPhoto();"));
+        docs.add(new DocItem("context.mobile.readTextFile(name)", "\u5f02\u6b65\u5728\u624b\u673a\u79c1\u6709\u811a\u672c\u5b58\u50a8\u533a\u4e2d\u8bfb\u53d6\u630f\u5b9a\u540d\u79f0\u7684\u6587\u672c\u6587\u4ef6\u3002", "name (string): \u6587\u4ef6\u540d", "const res = await context.mobile.readTextFile('data.txt');\nif (res.ok) { context.mobile.toast(res.text); }"));
+        docs.add(new DocItem("context.mobile.saveTextFile(name, text)", "\u5f02\u6b65\u5728\u624b\u673a\u79c1\u6709\u811a\u672c\u5b58\u50a8\u533a\u4e2d\u4fdd\u5b58/\u91cd\u5199\u6587\u672c\u6587\u4ef6\u3002", "name (string): \u6587\u4ef6\u540d\ntext (string): \u5199\u5165\u5185\u5bb9", "await context.mobile.saveTextFile('data.txt', 'hello');"));
+        docs.add(new DocItem("context.mobile.appendTextFile(name, text)", "\u5f02\u6b65\u5728\u624b\u673a\u79c1\u6709\u811a\u672c\u5b58\u50a8\u533a\u4e2d\u8ffd\u52a0\u6587\u672c\u5185\u5bb9\u3002", "name (string): \u6587\u4ef6\u540d\ntext (string): \u8ffd\u52a0\u5185\u5bb9", "await context.mobile.appendTextFile('log.txt', '\\nnew log');"));
+        docs.add(new DocItem("context.mobile.httpGet(url)", "\u5f02\u6b65\u53d1\u9001 HTTP GET \u8bf7\u6c42\uff0c\u8fd4\u56de JSON \u54cd\u5e94\u3002", "url (string): \u8bf7\u6c42\u7f51\u5740", "const res = await context.mobile.httpGet('https://api.github.com');"));
+        docs.add(new DocItem("context.mobile.httpPostJson(url, jsonText)", "\u5f02\u6b65\u53d1\u9001 HTTP POST JSON \u8bf7\u6c42\u3002", "url (string): \u8bf7\u6c42\u7f51\u5740\njsonText (string): JSON\u5b57\u7b26\u4e32", "const res = await context.mobile.httpPostJson('https://example.com/api', JSON.stringify({a:1}));"));
+        docs.add(new DocItem("context.mobile.done(text)", "\u6807\u8bb0\u5f53\u524d\u811a\u672c\u6210\u529f\u8fd0\u884c\u5b8c\u6210\uff0c\u5e76\u901a\u77e5\u9000\u51fa\u3002", "text (string): \u5b8c\u6210\u6d88\u606f", "context.mobile.done('\u6267\u884c\u6210\u529f');"));
+        docs.add(new DocItem("context.mobile.fail(text)", "\u6807\u8bb0\u5f53\u524d\u811a\u672c\u8fd0\u884c\u5931\u8d25\uff0c\u5e76\u4e0a\u62a5\u9519\u8bef\u4fe8\u606f\u3002", "text (string): \u9519\u8bef\u4fe8\u606f", "context.mobile.fail('\u8fd5\u884c\u51fa\u9519');"));
+        
+        for (DocItem item : docs) {
+            LinearLayout card = new LinearLayout((Context)this);
+            card.setOrientation(1);
+            card.setPadding(this.dp(12), this.dp(12), this.dp(12), this.dp(12));
+            
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
+            cardParams.bottomMargin = this.dp(12);
+            card.setLayoutParams((ViewGroup.LayoutParams)cardParams);
+            
+            android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+            bg.setColor(Color.rgb(30, 41, 59));
+            bg.setCornerRadius((float)this.dp(8));
+            card.setBackground((android.graphics.drawable.Drawable)bg);
+            
+            TextView nameTv = new TextView((Context)this);
+            nameTv.setText((CharSequence)item.name);
+            nameTv.setTextColor(Color.rgb(34, 211, 238));
+            nameTv.setTextSize(15f);
+            nameTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            card.addView((View)nameTv);
+            
+            TextView descTv = new TextView((Context)this);
+            descTv.setText((CharSequence)("\u529f\u80fd\uff1a" + item.desc));
+            descTv.setTextColor(Color.rgb(226, 232, 240));
+            descTv.setTextSize(13f);
+            descTv.setPadding(0, this.dp(6), 0, 0);
+            card.addView((View)descTv);
+            
+            TextView paramsTv = new TextView((Context)this);
+            paramsTv.setText((CharSequence)("\u53c2\u6570\uff1a" + item.params));
+            paramsTv.setTextColor(Color.rgb(148, 163, 184));
+            paramsTv.setTextSize(12f);
+            paramsTv.setPadding(0, this.dp(4), 0, 0);
+            card.addView((View)paramsTv);
+            
+            TextView exampleTv = new TextView((Context)this);
+            exampleTv.setText((CharSequence)item.example);
+            exampleTv.setTextColor(Color.rgb(167, 243, 208));
+            exampleTv.setTextSize(11f);
+            exampleTv.setTypeface(Typeface.MONOSPACE);
+            exampleTv.setPadding(this.dp(10), this.dp(8), this.dp(10), this.dp(8));
+            
+            LinearLayout.LayoutParams exParams = new LinearLayout.LayoutParams(-1, -2);
+            exParams.topMargin = this.dp(8);
+            exampleTv.setLayoutParams((ViewGroup.LayoutParams)exParams);
+            
+            android.graphics.drawable.GradientDrawable exBg = new android.graphics.drawable.GradientDrawable();
+            exBg.setColor(Color.rgb(15, 23, 42));
+            exBg.setCornerRadius((float)this.dp(4));
+            exampleTv.setBackground((android.graphics.drawable.Drawable)exBg);
+            
+            card.addView((View)exampleTv);
+            container.addView((View)card);
+        }
+    }
+
+    private void buildMobileShellView(LinearLayout container) {
+        TextView mainTitle = this.textView("\u624b\u673a JS \u7ec8\u7aef", 20, -1, true);
+        container.addView((View)mainTitle);
+        
+        TextView descText = this.textView("\u5728\u6b64\u53ef\u76f2\u63a5\u7f16\u5199\u5e76\u8fd0\u884c JS \u811a\u672c\uff0c\u6216\u67e5\u770b\u6269\u5c55\u7684 API \u8c03\u7528\u65e5\u5fd7\u3002", 13, Color.rgb(182, 194, 214), false);
+        descText.setPadding(0, this.dp(4), 0, this.dp(12));
+        container.addView((View)descText);
+        
+        LinearLayout logLayout = new LinearLayout((Context)this);
+        logLayout.setOrientation(1);
+        android.graphics.drawable.GradientDrawable logBg = new android.graphics.drawable.GradientDrawable();
+        logBg.setColor(Color.rgb(9, 13, 22));
+        logBg.setCornerRadius((float)this.dp(8));
+        logLayout.setBackground((android.graphics.drawable.Drawable)logBg);
+        logLayout.setPadding(this.dp(12), this.dp(12), this.dp(12), this.dp(12));
+        
+        LinearLayout.LayoutParams logLayoutParams = new LinearLayout.LayoutParams(-1, this.dp(200));
+        logLayoutParams.bottomMargin = this.dp(12);
+        logLayout.setLayoutParams((ViewGroup.LayoutParams)logLayoutParams);
+        
+        this.svMobileShellLog = new ScrollView((Context)this);
+        this.tvMobileShellLog = new TextView((Context)this);
+        this.tvMobileShellLog.setText((CharSequence)"-- Yanzi Mobile JS Shell Ready --\n");
+        this.tvMobileShellLog.setTextColor(Color.rgb(34, 211, 238));
+        this.tvMobileShellLog.setTextSize(12f);
+        this.tvMobileShellLog.setTypeface(Typeface.MONOSPACE);
+        
+        this.svMobileShellLog.addView((View)this.tvMobileShellLog, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -2));
+        logLayout.addView((View)this.svMobileShellLog, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
+        container.addView((View)logLayout);
+        
+        LinearLayout actionRow = new LinearLayout((Context)this);
+        actionRow.setOrientation(0);
+        actionRow.setGravity(16);
+        actionRow.setPadding(0, 0, 0, this.dp(8));
+        
+        TextView inputTitle = this.textView("\u8f93\u5165 JS \u4ee3\u7801\uff1a", 14, -1, true);
+        actionRow.addView((View)inputTitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        
+        android.widget.Button btnClearLog = new android.widget.Button((Context)this);
+        btnClearLog.setText((CharSequence)"\u6e05\u9664\u65e5\u5fd7");
+        btnClearLog.setTextColor(Color.rgb(148, 163, 184));
+        btnClearLog.setBackgroundColor(Color.TRANSPARENT);
+        btnClearLog.setAllCaps(false);
+        btnClearLog.setTextSize(12f);
+        btnClearLog.setOnClickListener(v -> this.tvMobileShellLog.setText((CharSequence)""));
+        actionRow.addView((View)btnClearLog, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(30)));
+        container.addView((View)actionRow);
+        
+        this.etMobileShellInput = new EditText((Context)this);
+        this.etMobileShellInput.setHint((CharSequence)"context.mobile.toast('Hello Yanzi!');");
+        this.etMobileShellInput.setHintTextColor(Color.rgb(100, 116, 139));
+        this.etMobileShellInput.setTextColor(-1);
+        this.etMobileShellInput.setTextSize(14f);
+        this.etMobileShellInput.setTypeface(Typeface.MONOSPACE);
+        this.etMobileShellInput.setGravity(83);
+        this.etMobileShellInput.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
+        
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, this.dp(100));
+        inputParams.bottomMargin = this.dp(12);
+        this.etMobileShellInput.setLayoutParams((ViewGroup.LayoutParams)inputParams);
+        
+        android.graphics.drawable.GradientDrawable inputBg = new android.graphics.drawable.GradientDrawable();
+        inputBg.setColor(Color.rgb(15, 23, 42));
+        inputBg.setCornerRadius((float)this.dp(6));
+        inputBg.setStroke(this.dp(1), Color.rgb(51, 65, 85));
+        this.etMobileShellInput.setBackground((android.graphics.drawable.Drawable)inputBg);
+        container.addView((View)this.etMobileShellInput);
+        
+        android.widget.Button btnRun = this.button("\u8fd0\u884c\u4ee3\u7801");
+        btnRun.setOnClickListener(v -> {
+            String code = this.etMobileShellInput.getText().toString();
+            this.runDirectJsCode(code);
+        });
+        container.addView((View)btnRun, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(44)));
+    }
+
+    private void appendMobileShellLog(String text) {
+        this.runOnUiThread(() -> {
+            if (this.tvMobileShellLog != null) {
+                this.tvMobileShellLog.append(text + "\n");
+                if (this.svMobileShellLog != null) {
+                    this.svMobileShellLog.post(() -> this.svMobileShellLog.fullScroll(View.FOCUS_DOWN));
+                }
+            }
+        });
+    }
+
+    private void runDirectJsCode(String jsCode) {
+        if (jsCode.trim().isEmpty()) {
+            this.appendMobileShellLog("[SYSTEM] \u8bf7\u8f93\u5165\u9700\u8981\u6267\u884c\u7684\u4ee3\u7801\u3002");
+            return;
+        }
+        this.appendMobileShellLog("\n[SYSTEM] \u5f00\u59cb\u8fd0\u884c\u811a\u672c...");
+        try {
+            String finalSource;
+            if (jsCode.contains("async function run") || jsCode.contains("function run")) {
+                finalSource = jsCode;
+            } else {
+                finalSource = "async function run(context) {\n" + jsCode + "\n}";
+            }
+            this.executeMobileScriptHeadless(finalSource, "DirectCode", new ScriptCallback() {
+                @Override
+                public void onResult(String result) {
+                    MainActivity.this.appendMobileShellLog("[SYSTEM] \u6267\u884c\u7ed3\u679c: " + result);
+                }
+            });
+        }
+        catch (Exception ex) {
+            this.appendMobileShellLog("[SYSTEM] \u542f\u52a8\u9519\u8bef: " + ex.getMessage());
+        }
+    }
+
+    private static class DocItem {
+        String name;
+        String desc;
+        String params;
+        String example;
+        DocItem(String name, String desc, String params, String example) {
+            this.name = name;
+            this.desc = desc;
+            this.params = params;
+            this.example = example;
         }
     }
 }
