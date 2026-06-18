@@ -2845,6 +2845,29 @@ extends Activity {
         }
     }
 
+    private void saveCurrentYanmOrder() {
+        ArrayList<String> newList = new ArrayList<String>();
+        for (int i = 0; i < this.yanmList.getChildCount(); i++) {
+            View child = this.yanmList.getChildAt(i);
+            Object tag = child.getTag();
+            if (tag instanceof String) {
+                String tagStr = (String) tag;
+                if (tagStr.startsWith("yanm_comp_")) {
+                    String compId = tagStr.substring("yanm_comp_".length());
+                    newList.add(compId);
+                }
+            }
+        }
+        this.sortedComponentIds.clear();
+        this.sortedComponentIds.addAll(newList);
+        this.saveSortedState();
+        this.yanmList.post(() -> {
+            if (this.currentYanmSnapshot != null) {
+                this.renderYanm(this.currentYanmSnapshot);
+            }
+        });
+    }
+
     private void showSortDialog(String componentId, int currentIndex, List<JSONObject> components) {
         if (components.size() <= 1) {
             return;
@@ -4267,6 +4290,9 @@ extends Activity {
                 arrowView.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
                 headerLayout.addView((View)arrowView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
             }
+            TextView dragHandle = this.textView("☰", 16, Color.rgb((int)148, (int)163, (int)184), false);
+            dragHandle.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
+            headerLayout.addView((View)dragHandle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
             card.addView((View)headerLayout);
             if (!type.isEmpty() && !type.equalsIgnoreCase("component")) {
                 card.addView((View)this.textView(type, 11, Color.rgb((int)94, (int)234, (int)212), false));
@@ -4285,12 +4311,60 @@ extends Activity {
                 String summary = MainActivity.summarizeYanmComponent(component);
                 card.addView((View)this.textView(summary, 12, Color.rgb((int)182, (int)194, (int)214), false));
             }
-            int index = i++;
-            ArrayList<JSONObject> finalCompsRef = finalComponents;
+
+            dragHandle.setOnTouchListener((v, event) -> {
+                if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    android.content.ClipData data = android.content.ClipData.newPlainText("component_id", componentId);
+                    android.view.View.DragShadowBuilder shadowBuilder = new android.view.View.DragShadowBuilder(card);
+                    card.startDragAndDrop(data, shadowBuilder, card, 0);
+                    return true;
+                }
+                return false;
+            });
+
             card.setOnLongClickListener(v -> {
-                this.showSortDialog(componentId, index, finalCompsRef);
+                android.content.ClipData data = android.content.ClipData.newPlainText("component_id", componentId);
+                android.view.View.DragShadowBuilder shadowBuilder = new android.view.View.DragShadowBuilder(card);
+                card.startDragAndDrop(data, shadowBuilder, card, 0);
                 return true;
             });
+
+            card.setOnDragListener(new android.view.View.OnDragListener() {
+                @Override
+                public boolean onDrag(android.view.View v, android.view.DragEvent event) {
+                    switch (event.getAction()) {
+                        case android.view.DragEvent.ACTION_DRAG_STARTED:
+                            if (event.getLocalState() == card) {
+                                card.setAlpha(0.4f);
+                            }
+                            return true;
+                        case android.view.DragEvent.ACTION_DRAG_ENTERED:
+                            android.view.View draggedView = (android.view.View) event.getLocalState();
+                            if (draggedView != null && draggedView != card) {
+                                int targetIndex = yanmList.indexOfChild(card);
+                                int sourceIndex = yanmList.indexOfChild(draggedView);
+                                if (sourceIndex >= 0 && targetIndex >= 0 && sourceIndex != targetIndex) {
+                                    yanmList.removeView(draggedView);
+                                    yanmList.addView(draggedView, targetIndex);
+                                }
+                            }
+                            return true;
+                        case android.view.DragEvent.ACTION_DRAG_EXITED:
+                            return true;
+                        case android.view.DragEvent.ACTION_DROP:
+                            return true;
+                        case android.view.DragEvent.ACTION_DRAG_ENDED:
+                            if (event.getLocalState() == card) {
+                                card.setAlpha(1.0f);
+                                saveCurrentYanmOrder();
+                            }
+                            return true;
+                    }
+                    return false;
+                }
+            });
+
+            i++;
             this.yanmList.addView((View)card);
         }
         this.setStatus("\u71d5\u5e55\u5df2\u52a0\u8f7d\uff1a" + finalComponents.size() + " \u4e2a\u7ec4\u4ef6\u3002");
