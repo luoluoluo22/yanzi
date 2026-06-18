@@ -427,6 +427,82 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "POST" && path == "/v1/fs/read")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                var targetPath = GetString(payload, "path");
+
+                if (string.IsNullOrEmpty(targetPath))
+                {
+                    await WriteJsonAsync(response, 400, new { error = "Path is required" });
+                    return;
+                }
+
+                try
+                {
+                    var fullPath = Path.GetFullPath(targetPath);
+                    if (!File.Exists(fullPath))
+                    {
+                        await WriteJsonAsync(response, 404, new { error = "File not found" });
+                        return;
+                    }
+
+                    var fileInfo = new FileInfo(fullPath);
+                    if (fileInfo.Length > 10 * 1024 * 1024)
+                    {
+                        await WriteJsonAsync(response, 400, new { error = "File is too large to read (max 10MB)" });
+                        return;
+                    }
+
+                    string content = File.ReadAllText(fullPath, Encoding.UTF8);
+                    await WriteJsonAsync(response, 200, new
+                    {
+                        ok = true,
+                        path = fullPath,
+                        content = content
+                    });
+                }
+                catch (Exception ex)
+                {
+                    await WriteJsonAsync(response, 500, new { error = ex.Message });
+                }
+                return;
+            }
+
+            if (request.HttpMethod == "POST" && path == "/v1/fs/write")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                var targetPath = GetString(payload, "path");
+                var content = GetString(payload, "content");
+
+                if (string.IsNullOrEmpty(targetPath))
+                {
+                    await WriteJsonAsync(response, 400, new { error = "Path is required" });
+                    return;
+                }
+
+                try
+                {
+                    var fullPath = Path.GetFullPath(targetPath);
+                    var dir = Path.GetDirectoryName(fullPath);
+                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
+                    File.WriteAllText(fullPath, content ?? string.Empty, Encoding.UTF8);
+                    await WriteJsonAsync(response, 200, new
+                    {
+                        ok = true,
+                        path = fullPath
+                    });
+                }
+                catch (Exception ex)
+                {
+                    await WriteJsonAsync(response, 500, new { error = ex.Message });
+                }
+                return;
+            }
+
             if (request.HttpMethod == "GET" && path == "/health")
             {
                 await WriteJsonAsync(response, 200, new { ok = true, service = "yanzi-local-agent-api" });

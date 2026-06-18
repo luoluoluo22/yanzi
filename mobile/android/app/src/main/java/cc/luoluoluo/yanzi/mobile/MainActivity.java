@@ -318,6 +318,15 @@ extends Activity {
     private final java.util.Set<String> failedSpeechPackages = new java.util.HashSet<String>();
     private String currentSpeechPackage = null;
     private int speechRetryCount = 0;
+    private android.widget.Button btnShowExtensions;
+    private android.widget.Button btnShowFileManager;
+    private android.widget.Button btnShowShell;
+    private android.view.View extensionsContainer;
+    private android.view.View fileManagerContainer;
+    private android.view.View shellContainer;
+    private int currentSubTabIndex = 0;
+    private android.view.GestureDetector tabGestureDetector;
+
     private final Map<String, WebView> activeYanmWebViews = new HashMap<String, WebView>();
     private WebView activeMobileScriptRunner;
     private View photoProgressView;
@@ -585,30 +594,59 @@ extends Activity {
                                 this.loadFileList(nextPath);
                             });
                         } else {
-                            Button btnRun = new Button((Context)this);
-                            btnRun.setText((CharSequence)"\u8fd0\u884c"); // "运行"
-                            btnRun.setTextColor(-1);
-                            btnRun.setBackgroundColor(Color.rgb(30, 41, 59));
-                            btnRun.setTextSize(11f);
-                            btnRun.setAllCaps(false);
+                            Button btnOpen = new Button((Context)this);
+                            btnOpen.setText((CharSequence)"打开");
+                            btnOpen.setTextColor(-1);
+                            btnOpen.setBackgroundColor(Color.rgb(30, 41, 59));
+                            btnOpen.setTextSize(11f);
+                            btnOpen.setAllCaps(false);
                             
-                            btnRun.setOnClickListener(v -> {
+                            btnOpen.setOnClickListener(v -> {
                                 String separator = processedPath.endsWith("\\") || processedPath.endsWith("/") ? "" : "\\";
                                 String fullFilePath = processedPath + separator + name;
-                                Toast.makeText(this.getApplicationContext(), "\u6b63\u5728\u7535\u8111\u4e0a\u6253\u5f00\u8be5\u6587\u4ef6...", Toast.LENGTH_SHORT).show();
-                                this.executor.execute(() -> {
-                                    try {
-                                        String runToken = this.prefs.getString("token", "").trim();
-                                        String runBaseUrl = this.normalizedBaseUrl();
-                                        JSONObject runPayload = new JSONObject().put("command", (Object)("Start-Process \"" + fullFilePath + "\""));
-                                        YanziApiClient.postJson(runBaseUrl, "/v1/shell/run", runPayload, runToken, "\u6253\u5f00\u6587\u4ef6");
-                                    } catch (Exception ex) {
-                                        Log.e("YanziFS", "Run file error", ex);
-                                    }
-                                });
+                                boolean isText = this.isTextFile(name);
+                                
+                                if (isText) {
+                                    Toast.makeText(this.getApplicationContext(), "正在加载文件内容...", Toast.LENGTH_SHORT).show();
+                                    this.executor.execute(() -> {
+                                        try {
+                                            String readToken = this.prefs.getString("token", "").trim();
+                                            String readBaseUrl = this.normalizedBaseUrl();
+                                            JSONObject readPayload = new JSONObject().put("path", (Object)fullFilePath);
+                                            JSONObject readRes = YanziApiClient.postJson(readBaseUrl, "/v1/fs/read", readPayload, readToken, "读取文件");
+                                            if (readRes.optBoolean("ok", false)) {
+                                                String content = readRes.optString("content", "");
+                                                this.runOnUiThread(() -> {
+                                                    this.showTextEditorDialog(fullFilePath, name, content);
+                                                });
+                                            } else {
+                                                String error = readRes.optString("error", "未知错误");
+                                                this.runOnUiThread(() -> {
+                                                    Toast.makeText(this.getApplicationContext(), "加载失败: " + error, Toast.LENGTH_LONG).show();
+                                                });
+                                            }
+                                        } catch (Exception ex) {
+                                            this.runOnUiThread(() -> {
+                                                Toast.makeText(this.getApplicationContext(), "加载失败: " + ex.getMessage(), Toast.LENGTH_LONG).show();
+                                            });
+                                        }
+                                    });
+                                } else {
+                                    Toast.makeText(this.getApplicationContext(), "非文本文件，正在电脑上打开...", Toast.LENGTH_SHORT).show();
+                                    this.executor.execute(() -> {
+                                        try {
+                                            String runToken = this.prefs.getString("token", "").trim();
+                                            String runBaseUrl = this.normalizedBaseUrl();
+                                            JSONObject runPayload = new JSONObject().put("command", (Object)("Start-Process \"" + fullFilePath + "\""));
+                                            YanziApiClient.postJson(runBaseUrl, "/v1/shell/run", runPayload, runToken, "打开文件");
+                                        } catch (Exception ex) {
+                                            Log.e("YanziFS", "Run file error", ex);
+                                        }
+                                    });
+                                }
                             });
                             
-                            row.addView((View)btnRun, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(60), this.dp(30)));
+                            row.addView((View)btnOpen, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(60), this.dp(30)));
                         }
                         
                         View divider = new View((Context)this);
@@ -1391,59 +1429,86 @@ extends Activity {
         subTabBar.setGravity(16);
         subTabBar.setPadding(0, 0, 0, this.dp(12));
         
-        Button btnShowExtensions = new Button((Context)this);
-        btnShowExtensions.setText((CharSequence)"\u7535\u8111\u6269\u5c55"); // "电脑扩展"
-        btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
+        this.btnShowExtensions = new Button((Context)this);
+        this.btnShowExtensions.setText((CharSequence)"电脑扩展");
+        this.btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
+        this.btnShowExtensions.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        this.btnShowExtensions.setAllCaps(false);
+        this.btnShowExtensions.setTextSize(13f);
         
         GradientDrawable activeBg = new GradientDrawable();
         activeBg.setCornerRadius((float)this.dp(8));
         activeBg.setColor(Color.argb(20, 34, 211, 238));
-        btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
-        btnShowExtensions.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(8));
-        btnShowExtensions.setAllCaps(false);
+        this.btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
         
-        Button btnShowFileManager = new Button((Context)this);
-        btnShowFileManager.setText((CharSequence)"\u6587\u4ef6 & \u7d4a\u7aef"); // "文件 & 终端"
-        btnShowFileManager.setTextColor(Color.rgb(148, 163, 184));
-        btnShowFileManager.setBackgroundColor(Color.TRANSPARENT);
-        btnShowFileManager.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(8));
-        btnShowFileManager.setAllCaps(false);
+        this.btnShowFileManager = new Button((Context)this);
+        this.btnShowFileManager.setText((CharSequence)"文件管理");
+        this.btnShowFileManager.setTextColor(Color.rgb(148, 163, 184));
+        this.btnShowFileManager.setBackgroundColor(Color.TRANSPARENT);
+        this.btnShowFileManager.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        this.btnShowFileManager.setAllCaps(false);
+        this.btnShowFileManager.setTextSize(13f);
+
+        this.btnShowShell = new Button((Context)this);
+        this.btnShowShell.setText((CharSequence)"PowerShell");
+        this.btnShowShell.setTextColor(Color.rgb(148, 163, 184));
+        this.btnShowShell.setBackgroundColor(Color.TRANSPARENT);
+        this.btnShowShell.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        this.btnShowShell.setAllCaps(false);
+        this.btnShowShell.setTextSize(13f);
         
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, this.dp(36));
-        btnParams.rightMargin = this.dp(12);
-        subTabBar.addView((View)btnShowExtensions, (ViewGroup.LayoutParams)btnParams);
-        subTabBar.addView((View)btnShowFileManager, (ViewGroup.LayoutParams)btnParams);
+        btnParams.rightMargin = this.dp(8);
+        subTabBar.addView((View)this.btnShowExtensions, (ViewGroup.LayoutParams)btnParams);
+        subTabBar.addView((View)this.btnShowFileManager, (ViewGroup.LayoutParams)btnParams);
+        subTabBar.addView((View)this.btnShowShell, (ViewGroup.LayoutParams)btnParams);
         
         this.desktopExtensionTabPage.addView((View)subTabBar);
         
         LinearLayout extensionsContainer = new LinearLayout((Context)this);
+        this.extensionsContainer = extensionsContainer;
         extensionsContainer.setOrientation(1);
         extensionsContainer.setVisibility(0); // VISIBLE
         this.desktopExtensionTabPage.addView((View)extensionsContainer);
         
         LinearLayout fileManagerContainer = new LinearLayout((Context)this);
+        this.fileManagerContainer = fileManagerContainer;
         fileManagerContainer.setOrientation(1);
         fileManagerContainer.setVisibility(8); // GONE
         this.desktopExtensionTabPage.addView((View)fileManagerContainer);
+
+        LinearLayout shellContainer = new LinearLayout((Context)this);
+        this.shellContainer = shellContainer;
+        shellContainer.setOrientation(1);
+        shellContainer.setVisibility(8); // GONE
+        this.desktopExtensionTabPage.addView((View)shellContainer);
         
-        btnShowExtensions.setOnClickListener(v -> {
-            extensionsContainer.setVisibility(0);
-            fileManagerContainer.setVisibility(8);
-            btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
-            btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
-            btnShowFileManager.setTextColor(Color.rgb(148, 163, 184));
-            btnShowFileManager.setBackgroundColor(Color.TRANSPARENT);
-        });
-        
-        btnShowFileManager.setOnClickListener(v -> {
-            extensionsContainer.setVisibility(8);
-            fileManagerContainer.setVisibility(0);
-            btnShowFileManager.setTextColor(Color.rgb(34, 211, 238));
-            btnShowFileManager.setBackground((android.graphics.drawable.Drawable)activeBg);
-            btnShowExtensions.setTextColor(Color.rgb(148, 163, 184));
-            btnShowExtensions.setBackgroundColor(Color.TRANSPARENT);
-            if (this.currentPath == null) {
-                this.loadFileList("");
+        this.btnShowExtensions.setOnClickListener(v -> this.selectSubTab(0));
+        this.btnShowFileManager.setOnClickListener(v -> this.selectSubTab(1));
+        this.btnShowShell.setOnClickListener(v -> this.selectSubTab(2));
+
+        // 初始化滑动手势检测器
+        this.tabGestureDetector = new android.view.GestureDetector((Context)this, new android.view.GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onFling(android.view.MotionEvent e1, android.view.MotionEvent e2, float velocityX, float velocityY) {
+                if (MainActivity.this.desktopExtensionTabPage == null || MainActivity.this.desktopExtensionTabPage.getVisibility() != 0) {
+                    return false;
+                }
+                float diffX = e2.getX() - e1.getX();
+                float diffY = e2.getY() - e1.getY();
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > MainActivity.this.dp(100) && Math.abs(velocityX) > MainActivity.this.dp(100)) {
+                    if (diffX > 0) {
+                        if (MainActivity.this.currentSubTabIndex > 0) {
+                            MainActivity.this.selectSubTab(MainActivity.this.currentSubTabIndex - 1);
+                        }
+                    } else {
+                        if (MainActivity.this.currentSubTabIndex < 2) {
+                            MainActivity.this.selectSubTab(MainActivity.this.currentSubTabIndex + 1);
+                        }
+                    }
+                    return true;
+                }
+                return false;
             }
         });
 
@@ -1482,7 +1547,7 @@ extends Activity {
         LinearLayout shellPanel = new LinearLayout((Context)this);
         shellPanel.setOrientation(1);
         shellPanel.setPadding(0, this.dp(8), 0, this.dp(16));
-        shellPanel.addView((View)this.textView("\u71d5\u5e3a\u7d4a\u7aef (YanShell)", 16, Color.WHITE, true));
+        shellPanel.addView((View)this.textView("PowerShell 终端 (YanShell)", 16, Color.WHITE, true));
         
         LinearLayout shellInputRow = new LinearLayout((Context)this);
         shellInputRow.setOrientation(0);
@@ -1526,7 +1591,7 @@ extends Activity {
         LinearLayout.LayoutParams outputParams = new LinearLayout.LayoutParams(-1, this.dp(150));
         outputParams.topMargin = this.dp(6);
         shellPanel.addView((View)hsv, (ViewGroup.LayoutParams)outputParams);
-        fileManagerContainer.addView((View)shellPanel);
+        shellContainer.addView((View)shellPanel);
         
         btnRunShell.setOnClickListener(v -> {
             String cmd = this.etShellInput.getText().toString().trim();
@@ -2843,6 +2908,134 @@ extends Activity {
         catch (Exception exception) {
             // empty catch block
         }
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (this.tabGestureDetector != null) {
+            this.tabGestureDetector.onTouchEvent(ev);
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    private void selectSubTab(int index) {
+        if (index < 0 || index > 2) return;
+        this.currentSubTabIndex = index;
+        
+        this.runOnUiThread(() -> {
+            android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
+            activeBg.setCornerRadius((float)this.dp(8));
+            activeBg.setColor(Color.argb(20, 34, 211, 238));
+            
+            if (this.btnShowExtensions != null) {
+                this.btnShowExtensions.setTextColor(Color.rgb(148, 163, 184));
+                this.btnShowExtensions.setBackgroundColor(Color.TRANSPARENT);
+            }
+            if (this.btnShowFileManager != null) {
+                this.btnShowFileManager.setTextColor(Color.rgb(148, 163, 184));
+                this.btnShowFileManager.setBackgroundColor(Color.TRANSPARENT);
+            }
+            if (this.btnShowShell != null) {
+                this.btnShowShell.setTextColor(Color.rgb(148, 163, 184));
+                this.btnShowShell.setBackgroundColor(Color.TRANSPARENT);
+            }
+            
+            if (this.extensionsContainer != null) this.extensionsContainer.setVisibility(8); // GONE
+            if (this.fileManagerContainer != null) this.fileManagerContainer.setVisibility(8); // GONE
+            if (this.shellContainer != null) this.shellContainer.setVisibility(8); // GONE
+            
+            if (index == 0) {
+                if (this.btnShowExtensions != null) {
+                    this.btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
+                }
+                if (this.extensionsContainer != null) this.extensionsContainer.setVisibility(0); // VISIBLE
+            } else if (index == 1) {
+                if (this.btnShowFileManager != null) {
+                    this.btnShowFileManager.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowFileManager.setBackground((android.graphics.drawable.Drawable)activeBg);
+                }
+                if (this.fileManagerContainer != null) this.fileManagerContainer.setVisibility(0); // VISIBLE
+                if (this.currentPath == null) {
+                    this.loadFileList("");
+                }
+            } else if (index == 2) {
+                if (this.btnShowShell != null) {
+                    this.btnShowShell.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowShell.setBackground((android.graphics.drawable.Drawable)activeBg);
+                }
+                if (this.shellContainer != null) this.shellContainer.setVisibility(0); // VISIBLE
+            }
+        });
+    }
+
+    private boolean isTextFile(String fileName) {
+        if (fileName == null) return false;
+        String nameLower = fileName.toLowerCase(java.util.Locale.ROOT);
+        return nameLower.endsWith(".txt") || nameLower.endsWith(".json") || nameLower.endsWith(".js") 
+            || nameLower.endsWith(".py") || nameLower.endsWith(".md") || nameLower.endsWith(".html") 
+            || nameLower.endsWith(".css") || nameLower.endsWith(".xml") || nameLower.endsWith(".ini") 
+            || nameLower.endsWith(".conf") || nameLower.endsWith(".yaml") || nameLower.endsWith(".yml") 
+            || nameLower.endsWith(".sh") || nameLower.endsWith(".bat") || nameLower.endsWith(".ps1") 
+            || nameLower.endsWith(".cs") || nameLower.endsWith(".java") || nameLower.endsWith(".cpp") 
+            || nameLower.endsWith(".h") || nameLower.endsWith(".c") || nameLower.endsWith(".log")
+            || nameLower.endsWith(".patch") || nameLower.endsWith(".diff") || nameLower.endsWith(".properties");
+    }
+
+    private void showTextEditorDialog(String fullFilePath, String fileName, String content) {
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder((Context)this);
+        builder.setTitle((CharSequence)("编辑文件: " + fileName));
+
+        LinearLayout container = new LinearLayout((Context)this);
+        container.setOrientation(1);
+        container.setPadding(this.dp(16), this.dp(10), this.dp(16), this.dp(10));
+
+        ScrollView sv = new ScrollView((Context)this);
+        EditText etContent = new EditText((Context)this);
+        etContent.setText((CharSequence)content);
+        etContent.setTextColor(-1);
+        etContent.setTextSize(14f);
+        etContent.setBackgroundColor(Color.rgb(15, 23, 42));
+        etContent.setPadding(this.dp(12), this.dp(12), this.dp(12), this.dp(12));
+        etContent.setGravity(android.view.Gravity.TOP);
+        etContent.setInputType(131073); // TYPE_TEXT_FLAG_MULTI_LINE | TYPE_CLASS_TEXT
+        etContent.setHorizontallyScrolling(false);
+        etContent.setMinimumHeight(this.dp(350));
+
+        sv.addView((View)etContent, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
+        container.addView((View)sv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(400)));
+
+        builder.setView((View)container);
+
+        builder.setPositiveButton((CharSequence)"保存回传", (dialog, which) -> {
+            String newContent = etContent.getText().toString();
+            Toast.makeText(this.getApplicationContext(), "正在回传并保存文件...", Toast.LENGTH_SHORT).show();
+            this.executor.execute(() -> {
+                try {
+                    String token = this.prefs.getString("token", "").trim();
+                    String baseUrl = this.normalizedBaseUrl();
+                    JSONObject writePayload = new JSONObject().put("path", (Object)fullFilePath).put("content", (Object)newContent);
+                    JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/fs/write", writePayload, token, "回传文件");
+                    if (res.optBoolean("ok", false)) {
+                        this.runOnUiThread(() -> {
+                            Toast.makeText(this.getApplicationContext(), "保存回传成功！", Toast.LENGTH_SHORT).show();
+                        });
+                    } else {
+                        String error = res.optString("error", "未知错误");
+                        this.runOnUiThread(() -> {
+                            Toast.makeText(this.getApplicationContext(), "保存失败: " + error, Toast.LENGTH_LONG).show();
+                        });
+                    }
+                } catch (Exception ex) {
+                    this.runOnUiThread(() -> {
+                        Toast.makeText(this.getApplicationContext(), "保存失败: " + ex.getMessage(), Toast.LENGTH_LONG).show();
+                    });
+                }
+            });
+        });
+
+        builder.setNegativeButton((CharSequence)"取消", null);
+        builder.show();
     }
 
     private void saveCurrentYanmOrder() {
