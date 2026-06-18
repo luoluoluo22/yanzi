@@ -390,18 +390,32 @@ extends Activity {
     };
 
     protected void onCreate(Bundle savedInstanceState) {
-        if (this.getIntent() != null && this.getIntent().hasExtra("run_remote_extension_id")) {
-            super.onCreate(savedInstanceState);
-            sContext = this;
-            this.prefs = this.getSharedPreferences("yanzi-mobile", 0);
-            this.deviceId = this.getOrCreateDeviceId();
-            String extId = this.getIntent().getStringExtra("run_remote_extension_id");
-            String extName = this.getIntent().getStringExtra("run_remote_extension_name");
-            if (extId != null && !extId.isEmpty()) {
-                this.runRemoteExtensionSilently(extId, extName != null ? extName : extId, null);
+        if (this.getIntent() != null) {
+            if (this.getIntent().hasExtra("run_remote_extension_id")) {
+                super.onCreate(savedInstanceState);
+                sContext = this;
+                this.prefs = this.getSharedPreferences("yanzi-mobile", 0);
+                this.deviceId = this.getOrCreateDeviceId();
+                String extId = this.getIntent().getStringExtra("run_remote_extension_id");
+                String extName = this.getIntent().getStringExtra("run_remote_extension_name");
+                if (extId != null && !extId.isEmpty()) {
+                    this.runRemoteExtensionSilently(extId, extName != null ? extName : extId, null);
+                }
+                this.finish();
+                return;
             }
-            this.finish();
-            return;
+            if (this.getIntent().hasExtra("run_mobile_extension_id")) {
+                super.onCreate(savedInstanceState);
+                sContext = this;
+                this.prefs = this.getSharedPreferences("yanzi-mobile", 0);
+                this.deviceId = this.getOrCreateDeviceId();
+                String extId = this.getIntent().getStringExtra("run_mobile_extension_id");
+                String extName = this.getIntent().getStringExtra("run_mobile_extension_name");
+                if (extId != null && !extId.isEmpty()) {
+                    this.runLocalMobileExtensionByIdSilently(extId, extName != null ? extName : extId);
+                }
+                return;
+            }
         }
         super.onCreate(savedInstanceState);
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
@@ -1181,6 +1195,12 @@ extends Activity {
                 this.selectTab("desktop");
                 RemoteExtension tempExt = new RemoteExtension(extId, extName != null ? extName : extId, "", "", "");
                 this.runRemoteExtension(tempExt, null);
+            }
+        } else if (intent.hasExtra("run_mobile_extension_id")) {
+            String extId = intent.getStringExtra("run_mobile_extension_id");
+            String extName = intent.getStringExtra("run_mobile_extension_name");
+            if (extId != null && !extId.isEmpty()) {
+                this.runLocalMobileExtensionByIdSilently(extId, extName != null ? extName : extId);
             }
         }
     }
@@ -3034,6 +3054,8 @@ extends Activity {
                 popup.getMenu().add(0, 1, 0, (CharSequence)"\u6267\u884c");
                 popup.getMenu().add(0, 2, 1, (CharSequence)"\u7f16\u8f91");
                 popup.getMenu().add(0, 3, 2, (CharSequence)"\u5220\u9664");
+                popup.getMenu().add(0, 4, 3, (CharSequence)"\u6dfb\u52a0\u5230\u6845\u9762"); // "添加到桌面"
+                popup.getMenu().add(0, 5, 4, (CharSequence)"\u6dfb\u52a0\u5230\u71d5\u73af"); // "添加到燕环"
                 popup.setOnMenuItemClickListener(menuItem -> {
                     if (menuItem.getItemId() == 1) {
                         card.performClick();
@@ -3050,6 +3072,10 @@ extends Activity {
                         this.setStatus("\u6b63\u5728\u7f16\u8f91\u6269\u5c55\uff1a" + name);
                     } else if (menuItem.getItemId() == 3) {
                         this.deleteLocalMobileExtension(id);
+                    } else if (menuItem.getItemId() == 4) {
+                        this.createLocalMobileExtensionShortcut(id, name, item.optString("icon", "mdi:play"));
+                    } else if (menuItem.getItemId() == 5) {
+                        this.addLocalMobileExtensionToWheel(id, name);
                     }
                     return true;
                 });
@@ -6070,6 +6096,174 @@ extends Activity {
                 Toast.makeText((Context)this, (CharSequence)("\u8bbe\u7f6e\u5931\u8d25\uff1a" + ex.getMessage()), (int)0).show();
             }
         }).show();
+    }
+
+    private void runLocalMobileExtensionByIdSilently(String id, String name) {
+        try {
+            JSONArray array = this.readLocalMobileExtensions();
+            JSONObject targetItem = null;
+            for (int i = 0; i < array.length(); ++i) {
+                JSONObject item = array.optJSONObject(i);
+                if (item != null && id.equals(item.optString("id"))) {
+                    targetItem = item;
+                    break;
+                }
+            }
+            if (targetItem == null) {
+                Toast.makeText((Context)this, "\u672a\u627e\u5230\u624b\u673a\u6269\u5c55\uff1a" + name, Toast.LENGTH_SHORT).show();
+                this.finish();
+                return;
+            }
+            String code = targetItem.optString("code");
+            if (code == null || code.isEmpty()) {
+                JSONObject script = targetItem.optJSONObject("script");
+                if (script != null) {
+                    code = script.optString("source");
+                }
+            }
+            if (code != null && !code.isEmpty()) {
+                Toast.makeText((Context)this, "\u6b63\u5728\u8fd0\u884c\u6269\u5c55\uff1a" + name, Toast.LENGTH_SHORT).show();
+                this.executeMobileScriptHeadless(code, name, result -> {
+                    this.runOnUiThread(() -> this.finish());
+                });
+            } else {
+                Toast.makeText((Context)this, "\u6269\u5c55\u65e0\u53ef\u6267\u884c\u4ee3\u7801\uff1a" + name, Toast.LENGTH_SHORT).show();
+                this.finish();
+            }
+        } catch (Exception ex) {
+            Toast.makeText((Context)this, "\u542f\u52a8\u5931\u8d25\uff1a" + ex.getMessage(), Toast.LENGTH_SHORT).show();
+            this.finish();
+        }
+    }
+
+    private void createLocalMobileExtensionShortcut(String id, String name, String iconName) {
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                ShortcutManager shortcutManager = (ShortcutManager)this.getSystemService(ShortcutManager.class);
+                if (shortcutManager != null && shortcutManager.isRequestPinShortcutSupported()) {
+                    Intent shortcutIntent = new Intent((Context)this, MainActivity.class);
+                    shortcutIntent.setAction("android.intent.action.VIEW");
+                    shortcutIntent.putExtra("run_mobile_extension_id", id);
+                    shortcutIntent.putExtra("run_mobile_extension_name", name);
+                    shortcutIntent.addFlags(0x14000000);
+                    
+                    int size = 192;
+                    Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+                    Canvas canvas = new Canvas(bitmap);
+                    Paint bgPaint = new Paint(1);
+                    bgPaint.setStyle(Paint.Style.FILL);
+                    
+                    int colorIndex = Math.abs(id.hashCode()) % 5;
+                    int iconBgColor = Color.rgb(59, 130, 246);
+                    if (colorIndex == 1) iconBgColor = Color.rgb(16, 185, 129);
+                    else if (colorIndex == 2) iconBgColor = Color.rgb(239, 68, 68);
+                    else if (colorIndex == 3) iconBgColor = Color.rgb(245, 158, 11);
+                    else if (colorIndex == 4) iconBgColor = Color.rgb(139, 92, 246);
+                    bgPaint.setColor(iconBgColor);
+                    
+                    float radius = (float)size * 0.22f;
+                    canvas.drawRoundRect(new RectF(0.0f, 0.0f, (float)size, (float)size), radius, radius, bgPaint);
+                    
+                    String cleanIcon = iconName;
+                    if (cleanIcon.startsWith("mdi:")) {
+                        cleanIcon = cleanIcon.substring(4);
+                    }
+                    Path iconPath = MobileIconLibrary.resolveOrDefault(cleanIcon);
+                    if (iconPath != null) {
+                        Path path = new Path(iconPath);
+                        RectF bounds = new RectF();
+                        path.computeBounds(bounds, true);
+                        if (bounds.width() > 0.0f && bounds.height() > 0.0f) {
+                            float targetSize = (float)size * 0.52f;
+                            float scale = targetSize / Math.max(bounds.width(), bounds.height());
+                            Matrix matrix = new Matrix();
+                            matrix.postTranslate(-bounds.centerX(), -bounds.centerY());
+                            matrix.postScale(scale, scale);
+                            matrix.postTranslate((float)size / 2.0f, (float)size / 2.0f);
+                            path.transform(matrix);
+                            Paint iconPaint = new Paint(1);
+                            iconPaint.setStyle(Paint.Style.FILL);
+                            iconPaint.setColor(-1);
+                            canvas.drawPath(path, iconPaint);
+                        }
+                    }
+                    
+                    Icon icon = Icon.createWithBitmap(bitmap);
+                    ShortcutInfo shortcutInfo = new ShortcutInfo.Builder((Context)this, "mobext_" + id)
+                        .setShortLabel((CharSequence)name)
+                        .setLongLabel((CharSequence)name)
+                        .setIcon(icon)
+                        .setIntent(shortcutIntent)
+                        .build();
+                    boolean success = shortcutManager.requestPinShortcut(shortcutInfo, null);
+                    if (success) {
+                        this.setStatus("\u5df2\u5411\u7cfb\u7edf\u53d1\u9001\u521b\u5efa\u684c\u9762\u56fe\u6807\u8bf7\u6c42\uff1a" + name);
+                        Toast.makeText((Context)this, (CharSequence)("\u5df2\u5411\u7cfb\u7edf\u53d1\u9001\u521b\u5efa\u684c\u9762\u56fe\u6807\u8bf7\u6c42\uff1a" + name), Toast.LENGTH_SHORT).show();
+                    } else {
+                        this.setStatus("\u7cfb\u7edf\u62d2\u7edd\u4e86\u5feb\u6377\u65b9\u5f0f\u521b\u5efa\u8bf7\u6c42");
+                        Toast.makeText((Context)this, (CharSequence)"\u7cfb\u7edf\u62d2\u7edd\u4e86\u5feb\u6377\u65b9\u5f0f\u521b\u5efa\u8bf7\u6c42(\u8bf7\u68c0\u67e5\u5feb\u6377\u65b9\u5f0f\u6743\u9650)", Toast.LENGTH_LONG).show();
+                    }
+                    return;
+                }
+                this.setStatus("\u5f53\u524d\u7cfb\u7edf\u6216\u684c\u9762\u0020\u4e0d\u652f\u6301\u521b\u5efa\u5feb\u6377\u65b9\u5f0f");
+                Toast.makeText((Context)this, (CharSequence)"\u5f53\u524d\u7cfb\u7edf\u6216\u684c\u9762\u0020\u4e0d\u652f\u6301\u521b\u5efa\u5feb\u6377\u65b9\u5f0f", Toast.LENGTH_SHORT).show();
+            } else {
+                this.setStatus("\u5f53\u524d\u7cfb\u7edf\u7248\u672c\u8f83\u4f4e\uff0c\u4e0d\u652f\u6301\u521b\u5efa\u5feb\u6377\u65b9\u5f0f");
+                Toast.makeText((Context)this, (CharSequence)"\u5f53\u524d\u7cfb\u7edf\u7248\u672c\u8f83\u4f4e\uff0c\u4e0d\u652f\u6301\u521b\u5efa\u5feb\u6377\u65b9\u5f0f", Toast.LENGTH_SHORT).show();
+            }
+        }
+        catch (Exception ex) {
+            this.setStatus("\u521b\u5efa\u684c\u9762\u56fe\u6807\u5931\u8d25\uff1a" + ex.getMessage());
+            Toast.makeText((Context)this, (CharSequence)("\u521b\u5efa\u684c\u9762\u56fe\u6807\u5931\u8d25\uff1a" + ex.getMessage()), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void addLocalMobileExtensionToWheel(String id, String name) {
+        try {
+            JSONArray array = this.readLocalMobileExtensions();
+            boolean[] occupied = new boolean[6];
+            for (int i = 0; i < array.length(); ++i) {
+                JSONObject item = array.optJSONObject(i);
+                if (item != null) {
+                    int slot = item.optInt("_wheelSlot", -1);
+                    if (slot >= 0 && slot < 6) {
+                        occupied[slot] = true;
+                    }
+                }
+            }
+            
+            int freeSlot = -1;
+            for (int slot = 0; slot < 6; ++slot) {
+                if (!occupied[slot]) {
+                    freeSlot = slot;
+                    break;
+                }
+            }
+            
+            if (freeSlot == -1) {
+                Toast.makeText((Context)this, "\u71d5\u73af\u8f6e\u76d8\u5df2\u6ee1\u0020(\u5171\u00206\u0020\u4e2a\u69fd\u4f4d)\uff0c\u8bf7\u5148\u5728\u60ac\u6d6e\u8f6e\u76d8\u4e0a\u957f\u6309\u5df2\u6709\u63d2\u69fd\u8fdb\u884c\u6e05\u9664\u3002", Toast.LENGTH_LONG).show();
+                return;
+            }
+            
+            JSONObject targetItem = null;
+            for (int i = 0; i < array.length(); ++i) {
+                JSONObject item = array.optJSONObject(i);
+                if (item != null && id.equals(item.optString("id"))) {
+                    targetItem = item;
+                    break;
+                }
+            }
+            
+            if (targetItem != null) {
+                targetItem.put("_wheelSlot", freeSlot);
+                this.prefs.edit().putString("mobileExtensions", array.toString()).apply();
+                this.renderLocalMobileExtensions();
+                Toast.makeText((Context)this, "\u6210\u529f\u5c06\u201c" + name + "\u201d\u6dfb\u52a0\u5230\u71d5\u73af\u8f6e\u76d8\u63d2\u69fd\u0020" + (freeSlot + 1), Toast.LENGTH_SHORT).show();
+            }
+        }
+        catch (Exception ex) {
+            Toast.makeText((Context)this, "\u6dfb\u52a0\u5230\u71d5\u73af\u5931\u8d25\uff1a" + ex.getMessage(), Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void createRemoteExtensionShortcut(RemoteExtension extension) {
