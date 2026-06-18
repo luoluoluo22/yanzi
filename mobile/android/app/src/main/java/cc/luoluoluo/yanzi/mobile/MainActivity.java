@@ -2853,7 +2853,13 @@ extends Activity {
             card.addView((View)nameTv);
             
             card.setOnClickListener(v -> {
-                String code = item.optJSONObject("script") != null ? item.optJSONObject("script").optString("source") : "";
+                String code = item.optString("code");
+                if (code == null || code.isEmpty()) {
+                    JSONObject script = item.optJSONObject("script");
+                    if (script != null) {
+                        code = script.optString("source");
+                    }
+                }
                 if (code != null && !code.isEmpty()) {
                     this.setStatus("\u6b63\u5728\u6267\u884c\u6269\u5c55\uff1a" + name);
                     this.executeMobileScriptHeadless(code, name, result -> {
@@ -6300,6 +6306,9 @@ extends Activity {
             MainActivity.this.runOnUiThread(() -> {
                 MainActivity.this.updateMobileScriptResult("\u6d4b\u8bd5\u5931\u8d25\uff1a " + text, true);
                 MainActivity.this.setStatus("\u624b\u673a\u811a\u672c\u6267\u884c\u5931\u8d25\uff1a" + text);
+                if (this.callback != null) {
+                    this.callback.onResult("\u5931\u8d25: " + text);
+                }
             });
         }
 
