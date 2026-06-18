@@ -5023,7 +5023,7 @@ extends Activity {
             
             info.feedbackTextView = contentText2;
             this.currentActiveToolMessageInfo = info;
-        } else if (isSystem || isFeedback) {
+        } else if (isFeedback) {
             msgContainer.setGravity(0x800003);
             LinearLayout header = new LinearLayout((Context)this);
             header.setOrientation(0);
@@ -5033,9 +5033,9 @@ extends Activity {
             if (sender != null && sender.contains(":")) {
                 feedbackTool = sender.substring(sender.indexOf(":") + 1);
             }
-            String toolLabel = feedbackTool.isEmpty() ? "\u7cfb\u7edf\u6d88\u606f" : feedbackTool;
+            String toolLabel = feedbackTool.isEmpty() ? "\u7cfb\u7edf\u53cd\u9988" : feedbackTool;
             headerText.setText((CharSequence)("\u25b6 \ud83d\udd27 \u4f7f\u7528\u5de5\u5177: " + toolLabel + " (\u70b9\u51fb\u5c55\u5f00)"));
-            int headerColor = isFeedback ? Color.rgb((int)234, (int)179, (int)8) : Color.rgb((int)156, (int)163, (int)175);
+            int headerColor = Color.rgb((int)234, (int)179, (int)8);
             headerText.setTextColor(headerColor);
             headerText.setTextSize(2, 12.0f);
             headerText.setPadding(0, this.dp(4), 0, this.dp(4));
@@ -5066,6 +5066,30 @@ extends Activity {
             });
             msgContainer.addView((View)header);
             msgContainer.addView((View)contentText);
+        } else if (isSystem) {
+            msgContainer.setGravity(0x800003);
+            TextView errorTv = new TextView((Context)this);
+            errorTv.setText((CharSequence)displayText, TextView.BufferType.SPANNABLE);
+            int msgColor = (color != -1) ? color : Color.rgb((int)248, (int)113, (int)113);
+            errorTv.setTextColor(msgColor);
+            errorTv.setTextSize(2, 12.0f);
+            errorTv.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+            errorTv.setTextIsSelectable(true);
+            GradientDrawable bg = new GradientDrawable();
+            if (msgColor == Color.rgb(248, 113, 113) || msgColor == Color.RED) {
+                bg.setColor(Color.argb((int)25, (int)248, (int)113, (int)113));
+                bg.setStroke(this.dp(1), Color.argb((int)50, (int)248, (int)113, (int)113));
+            } else {
+                bg.setColor(Color.argb((int)15, (int)156, (int)163, (int)175));
+                bg.setStroke(this.dp(1), Color.argb((int)30, (int)156, (int)163, (int)175));
+            }
+            bg.setCornerRadius((float)this.dp(8));
+            errorTv.setBackground((Drawable)bg);
+            msgContainer.setOnLongClickListener(v -> {
+                this.showAiMessageMenu(info);
+                return true;
+            });
+            msgContainer.addView((View)errorTv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
         } else {
             msgContainer.setGravity(0x800003);
             msgContainer.setOnLongClickListener(v -> {
