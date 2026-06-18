@@ -266,6 +266,9 @@ extends Activity {
     private LinearLayout fileListLayout = null;
     private TextView tvShellOutput = null;
     private EditText etShellInput = null;
+    private ScrollView shellScrollView = null;
+    private final java.util.List<String> shellHistory = new java.util.ArrayList<>();
+    private int shellHistoryIndex = -1;
     private DrawerLayout aiDrawerLayout;
     private LinearLayout aiSessionListDrawer;
     private List<RemoteExtension> currentDesktopExtensions = new ArrayList<RemoteExtension>();
@@ -1438,7 +1441,46 @@ extends Activity {
         root.setOrientation(1);
         root.setPadding(this.dp(20), this.dp(24), this.dp(20), this.dp(24));
         scrollView.addView((View)root);
-        this.swipeRefresh = new SwipeRefreshLayout((Context)this);
+        this.swipeRefresh = new SwipeRefreshLayout((Context)this) {
+            private float startX;
+            private float startY;
+            private int touchSlop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+
+            @Override
+            public boolean onInterceptTouchEvent(android.view.MotionEvent ev) {
+                switch (ev.getAction()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        startX = ev.getX();
+                        startY = ev.getY();
+                        break;
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        float diffX = Math.abs(ev.getX() - startX);
+                        float diffY = Math.abs(ev.getY() - startY);
+                        
+                        // 1. 如果水平滑动位移明显大于垂直位移，说明是左右滑动切换 Tab，不予拦截
+                        if (diffX > touchSlop && diffX > diffY) {
+                            return false;
+                        }
+                        
+                        // 2. 增加下滑距离判定：下拉距离不到 30dp 时，不予拦截，给子 View 自主滚动机会
+                        if (diffY < MainActivity.this.dp(30)) {
+                            return false;
+                        }
+                        
+                        // 3. 终端内部滑动：如果是终端页面，且终端 ScrollView 还可以向下滚动，则禁止下拉刷新拦截
+                        if (MainActivity.this.desktopExtensionTabPage != null && 
+                            MainActivity.this.desktopExtensionTabPage.getVisibility() == android.view.View.VISIBLE) {
+                            if (MainActivity.this.currentSubTabIndex == 2 && MainActivity.this.shellScrollView != null) {
+                                if (MainActivity.this.shellScrollView.canScrollVertically(-1)) {
+                                    return false;
+                                }
+                            }
+                        }
+                        break;
+                }
+                return super.onInterceptTouchEvent(ev);
+            }
+        };
         this.swipeRefresh.addView((View)scrollView);
         this.swipeRefresh.setColorSchemeColors(new int[]{Color.rgb((int)59, (int)130, (int)246)});
         this.swipeRefresh.setProgressBackgroundColorSchemeColor(Color.rgb((int)30, (int)30, (int)30));
@@ -1669,73 +1711,219 @@ extends Activity {
         extensionsContainer.addView((View)this.extensionList);
         this.renderCachedExtensions();
 
-        // YanShell UI
+        // YanShell UI (Termux-style)
         LinearLayout shellPanel = new LinearLayout((Context)this);
         shellPanel.setOrientation(1);
         shellPanel.setPadding(0, this.dp(8), 0, this.dp(16));
-        shellPanel.addView((View)this.textView("PowerShell", 16, Color.WHITE, true));
         
-        LinearLayout shellInputRow = new LinearLayout((Context)this);
-        shellInputRow.setOrientation(0);
-        shellInputRow.setGravity(16);
+        // 顶部小指示栏（macOS 终端窗口风格小圆点 + 标题）
+        LinearLayout shellTitleBar = new LinearLayout((Context)this);
+        shellTitleBar.setOrientation(0);
+        shellTitleBar.setGravity(16);
+        shellTitleBar.setPadding(0, 0, 0, this.dp(6));
         
-        this.etShellInput = new EditText((Context)this);
-        this.etShellInput.setHint((CharSequence)"\u8f93\u5165 PowerShell \u547d\u4ee4...");
-        this.etShellInput.setTextColor(-1);
-        this.etShellInput.setHintTextColor(Color.rgb(100, 116, 139));
-        this.etShellInput.setBackgroundColor(Color.rgb(15, 23, 42));
-        this.etShellInput.setPadding(this.dp(10), this.dp(8), this.dp(10), this.dp(8));
-        this.etShellInput.setSingleLine(true);
-        this.etShellInput.setTypeface(Typeface.MONOSPACE);
-        this.etShellInput.setTextSize(13f);
+        int[] dotColors = {Color.rgb(239, 68, 68), Color.rgb(245, 158, 11), Color.rgb(34, 197, 94)};
+        for (int c : dotColors) {
+            View dot = new View((Context)this);
+            android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+            gd.setColor(c);
+            gd.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            dot.setBackground(gd);
+            LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(this.dp(8), this.dp(8));
+            dp.rightMargin = this.dp(6);
+            shellTitleBar.addView(dot, dp);
+        }
         
-        Button btnRunShell = new Button((Context)this);
-        btnRunShell.setText((CharSequence)"\u6267\u884c");
-        btnRunShell.setTextColor(-1);
-        btnRunShell.setBackgroundColor(Color.rgb(30, 41, 59));
-        btnRunShell.setAllCaps(false);
+        TextView shellTitle = this.textView("PowerShell", 14, Color.rgb(156, 163, 175), true);
+        shellTitle.setTypeface(Typeface.MONOSPACE);
+        shellTitleBar.addView(shellTitle);
+        shellPanel.addView(shellTitleBar);
         
-        LinearLayout.LayoutParams shellInputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        shellInputParams.rightMargin = this.dp(8);
-        shellInputRow.addView((View)this.etShellInput, (ViewGroup.LayoutParams)shellInputParams);
-        shellInputRow.addView((View)btnRunShell, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(38)));
-        shellPanel.addView((View)shellInputRow);
-        
+        // 1. 输出局部 ScrollView (sv) 在上方
         ScrollView sv = new ScrollView((Context)this);
+        this.shellScrollView = sv; // 保存成员变量
         this.tvShellOutput = new TextView((Context)this);
-        this.tvShellOutput.setBackgroundColor(-16777216);
-        this.tvShellOutput.setTextColor(-16711936);
+        this.tvShellOutput.setBackgroundColor(-16777216); // 纯黑背景
+        this.tvShellOutput.setTextColor(-16711936); // 终端绿字
         this.tvShellOutput.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
         this.tvShellOutput.setTypeface(Typeface.MONOSPACE);
         this.tvShellOutput.setTextSize(11f);
-        this.tvShellOutput.setText((CharSequence)"\u7b49\u5f85\u547d\u4ee4\u8f93\u5165...");
+        this.tvShellOutput.setText((CharSequence)"等待命令输入...");
         this.tvShellOutput.setVisibility(8);
         
         sv.addView((View)this.tvShellOutput);
         LinearLayout.LayoutParams outputParams = new LinearLayout.LayoutParams(-1, this.dp(350));
-        outputParams.topMargin = this.dp(6);
         shellPanel.addView((View)sv, (ViewGroup.LayoutParams)outputParams);
+        
+        // 2. 输入行在下方
+        LinearLayout shellInputRow = new LinearLayout((Context)this);
+        shellInputRow.setOrientation(0);
+        shellInputRow.setGravity(16);
+        shellInputRow.setPadding(this.dp(4), this.dp(4), this.dp(4), this.dp(4));
+        shellInputRow.setBackgroundColor(Color.rgb(15, 23, 42)); // 极深灰底框
+        
+        TextView tvPrompt = new TextView((Context)this);
+        tvPrompt.setText("PS > ");
+        tvPrompt.setTextColor(Color.rgb(34, 211, 238)); // 青色高亮提示符
+        tvPrompt.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tvPrompt.setTextSize(13f);
+        shellInputRow.addView(tvPrompt);
+        
+        this.etShellInput = new EditText((Context)this);
+        this.etShellInput.setHint((CharSequence)"输入命令...");
+        this.etShellInput.setTextColor(-1);
+        this.etShellInput.setHintTextColor(Color.rgb(100, 116, 139));
+        this.etShellInput.setBackgroundColor(Color.TRANSPARENT);
+        this.etShellInput.setPadding(this.dp(6), this.dp(6), this.dp(6), this.dp(6));
+        this.etShellInput.setSingleLine(true);
+        this.etShellInput.setTypeface(Typeface.MONOSPACE);
+        this.etShellInput.setTextSize(13f);
+        this.etShellInput.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND);
+        
+        Button btnRunShell = new Button((Context)this);
+        btnRunShell.setText((CharSequence)"执行");
+        btnRunShell.setTextColor(-1);
+        btnRunShell.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnRunShell.setAllCaps(false);
+        btnRunShell.setTextSize(11f);
+        
+        LinearLayout.LayoutParams shellInputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        shellInputParams.rightMargin = this.dp(6);
+        shellInputRow.addView((View)this.etShellInput, (ViewGroup.LayoutParams)shellInputParams);
+        shellInputRow.addView((View)btnRunShell, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(55), this.dp(30)));
+        
+        LinearLayout.LayoutParams inputRowParams = new LinearLayout.LayoutParams(-1, -2);
+        inputRowParams.topMargin = this.dp(6);
+        shellPanel.addView((View)shellInputRow, inputRowParams);
+        
+        // 3. 快捷辅助按键栏 (Extra Keys)
+        HorizontalScrollView extraKeysScroll = new HorizontalScrollView((Context)this);
+        extraKeysScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout extraKeysLayout = new LinearLayout((Context)this);
+        extraKeysLayout.setOrientation(0);
+        extraKeysLayout.setGravity(16);
+        extraKeysScroll.addView((View)extraKeysLayout);
+        
+        String[] keys = {"TAB", "Ctrl+C", "↑", "↓", "CLS", "HELP"};
+        for (String key : keys) {
+            Button kBtn = new Button((Context)this);
+            kBtn.setText((CharSequence)key);
+            kBtn.setTextColor(Color.rgb(200, 200, 200));
+            kBtn.setBackgroundColor(Color.rgb(30, 41, 59));
+            kBtn.setAllCaps(false);
+            kBtn.setTextSize(11f);
+            kBtn.setPadding(this.dp(10), 0, this.dp(10), 0);
+            
+            LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(-2, this.dp(28));
+            kp.rightMargin = this.dp(6);
+            extraKeysLayout.addView((View)kBtn, (ViewGroup.LayoutParams)kp);
+            
+            if ("TAB".equals(key)) {
+                kBtn.setOnClickListener(v -> {
+                    String currentText = this.etShellInput.getText().toString();
+                    if (currentText.isEmpty()) {
+                        this.etShellInput.setText("Get-");
+                        this.etShellInput.setSelection(4);
+                    } else {
+                        int cursor = this.etShellInput.getSelectionStart();
+                        this.etShellInput.getText().insert(cursor, " ");
+                    }
+                });
+            } else if ("Ctrl+C".equals(key)) {
+                kBtn.setOnClickListener(v -> {
+                    this.etShellInput.setText("");
+                });
+            } else if ("↑".equals(key)) {
+                kBtn.setOnClickListener(v -> {
+                    if (this.shellHistoryIndex > 0) {
+                        this.shellHistoryIndex--;
+                        this.etShellInput.setText(this.shellHistory.get(this.shellHistoryIndex));
+                        this.etShellInput.setSelection(this.etShellInput.getText().length());
+                    }
+                });
+            } else if ("↓".equals(key)) {
+                kBtn.setOnClickListener(v -> {
+                    if (this.shellHistoryIndex < this.shellHistory.size() - 1) {
+                        this.shellHistoryIndex++;
+                        this.etShellInput.setText(this.shellHistory.get(this.shellHistoryIndex));
+                        this.etShellInput.setSelection(this.etShellInput.getText().length());
+                    } else {
+                        this.shellHistoryIndex = this.shellHistory.size();
+                        this.etShellInput.setText("");
+                    }
+                });
+            } else if ("CLS".equals(key)) {
+                kBtn.setOnClickListener(v -> {
+                    this.tvShellOutput.setText("");
+                    this.tvShellOutput.setVisibility(8);
+                    this.adjustViewPagerHeight();
+                });
+            } else if ("HELP".equals(key)) {
+                kBtn.setOnClickListener(v -> {
+                    this.tvShellOutput.setVisibility(0);
+                    this.tvShellOutput.setTextColor(Color.rgb(34, 211, 238));
+                    String helpText = "PowerShell 常用极客指令备忘：\n" +
+                                     "====================================\n" +
+                                     "Get-Process  : 查看运行中的进程\n" +
+                                     "Get-Service  : 查看系统服务状态\n" +
+                                     "Get-Content <文件> : 查看文本内容\n" +
+                                     "ls / dir     : 列出当前目录下文件\n" +
+                                     "ipconfig     : 查看电脑网卡配置\n" +
+                                     "ping <主机>   : 测试网络连通性\n" +
+                                     "Get-Date     : 获取当前系统时间\n" +
+                                     "====================================\n" +
+                                     "提示：你也可以在输入框输入任何命令后直接按软键盘发送键执行！";
+                    this.tvShellOutput.setText(helpText);
+                    this.adjustViewPagerHeight();
+                    this.shellScrollView.post(() -> this.shellScrollView.fullScroll(android.view.View.FOCUS_DOWN));
+                });
+            }
+        }
+        
+        LinearLayout.LayoutParams ekParams = new LinearLayout.LayoutParams(-1, -2);
+        ekParams.topMargin = this.dp(6);
+        shellPanel.addView((View)extraKeysScroll, (ViewGroup.LayoutParams)ekParams);
         shellContainer.addView((View)shellPanel);
+        
+        // 软键盘 Enter 直接执行
+        this.etShellInput.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND || 
+                actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                btnRunShell.performClick();
+                return true;
+            }
+            return false;
+        });
         
         btnRunShell.setOnClickListener(v -> {
             String cmd = this.etShellInput.getText().toString().trim();
             if (cmd.isEmpty()) return;
+            
+            // 记录命令历史
+            if (this.shellHistory.isEmpty() || !this.shellHistory.get(this.shellHistory.size() - 1).equals(cmd)) {
+                this.shellHistory.add(cmd);
+            }
+            this.shellHistoryIndex = this.shellHistory.size();
+            
             this.tvShellOutput.setVisibility(0);
             this.tvShellOutput.setTextColor(-256);
-            this.tvShellOutput.setText((CharSequence)("\u6b63\u5728\u6267\u884c\u547d\u4ee4...\n> " + cmd));
+            this.tvShellOutput.setText((CharSequence)("正在执行命令...\n> " + cmd));
             this.adjustViewPagerHeight();
+            this.shellScrollView.post(() -> this.shellScrollView.fullScroll(android.view.View.FOCUS_DOWN));
+            
             this.executor.execute(() -> {
                 try {
                     String baseUrl = this.normalizedBaseUrl();
                     String token = this.requireToken();
                     JSONObject payload = new JSONObject().put("command", (Object)cmd);
-                    JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/shell/run", payload, token, "\u6267\u884c\u547d\u4ee4");
+                    JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/shell/run", payload, token, "执行命令");
                     String output = res.optString("output", "");
                     int exitCode = res.optInt("exitCode", 0);
                     this.runOnUiThread(() -> {
                         this.tvShellOutput.setTextColor(exitCode == 0 ? -16711936 : -65536);
-                        this.tvShellOutput.setText((CharSequence)(output.isEmpty() ? "\u547d\u4ee4\u6267\u884c\u5b8c\u6bd5\uff0c\u65e0\u8f93\u51fa\u5185\u5bb9\u3002" : output));
+                        this.tvShellOutput.setText((CharSequence)(output.isEmpty() ? "命令执行完毕，无输出内容。" : output));
                         this.adjustViewPagerHeight();
+                        this.shellScrollView.post(() -> this.shellScrollView.fullScroll(android.view.View.FOCUS_DOWN));
                     });
                 } catch (Exception ex) {
                     this.runOnUiThread(() -> {
