@@ -207,6 +207,9 @@ extends Activity {
     private TextView mobileExtensionSectionTitle;
     private TextView mobileExtensionTestResult;
     private LinearLayout mobileExtensionManagerList;
+    private LinearLayout mobileExtensionListView;
+    private LinearLayout mobileExtensionEditorView;
+    private GridLayout mobileExtensionGrid;
     private LinearLayout extensionList;
     private GridLayout yanmList;
     private LinearLayout yanmTabPage;
@@ -1511,9 +1514,68 @@ extends Activity {
         this.yanmList.setAlignmentMode(0);
         this.yanmList.setUseDefaultMargins(false);
         this.yanmTabPage.addView((View)this.yanmList, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-        this.mobileExtensionTabPage.addView((View)this.textView("\u624b\u673a\u6269\u5c55", 28, -1, true));
-        this.mobileExtensionTabPage.addView((View)this.textView("\u7ba1\u7406\u548c\u6d4b\u8bd5\u53ea\u5728\u626b\u673a\u7aef\u8fd0\u884c\u7684 mobile-js \u6269\u5c55\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
-        this.buildMobileExtensionEditor(this.mobileExtensionTabPage);
+        this.mobileExtensionListView = new LinearLayout((Context)this);
+        this.mobileExtensionListView.setOrientation(1);
+        this.mobileExtensionListView.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
+        
+        this.mobileExtensionEditorView = new LinearLayout((Context)this);
+        this.mobileExtensionEditorView.setOrientation(1);
+        this.mobileExtensionEditorView.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
+        this.mobileExtensionEditorView.setVisibility(View.GONE);
+        
+        this.mobileExtensionTabPage.addView((View)this.mobileExtensionListView);
+        this.mobileExtensionTabPage.addView((View)this.mobileExtensionEditorView);
+        
+        // 渲染 List 页面头部
+        LinearLayout listHeader = new LinearLayout((Context)this);
+        listHeader.setOrientation(0);
+        listHeader.setGravity(16);
+        listHeader.setPadding(0, 0, 0, this.dp(16));
+        
+        LinearLayout listTitleLayout = new LinearLayout((Context)this);
+        listTitleLayout.setOrientation(1);
+        listTitleLayout.addView((View)this.textView("\u624b\u673a\u6269\u5c55", 28, -1, true));
+        listTitleLayout.addView((View)this.textView("\u7ba1\u7406\u548c\u6d4b\u8bd5\u53ea\u5728\u626b\u673a\u7aef\u8fd0\u884c\u7684 mobile-js \u6269\u5c55\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
+        
+        listHeader.addView((View)listTitleLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        
+        // 加一个漂亮的“新建”按钮在主列表右上角
+        Button newExtBtn = this.button("\u65b0\u5efa\u6269\u5c55");
+        newExtBtn.setOnClickListener(v -> {
+            // 重置编辑器字段，开启编辑器二级界面
+            this.mobileExtensionInput.setText((CharSequence)this.defaultMobileExtensionJson());
+            this.updateMobileExtensionFieldsFromDraft();
+            this.mobileExtensionListView.setVisibility(View.GONE);
+            this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
+            this.setStatus("\u65b0\u5efa\u6269\u5c55\u8349\u7a3f");
+        });
+        listHeader.addView((View)newExtBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
+        this.mobileExtensionListView.addView((View)listHeader);
+        
+        // 网格展示容器
+        this.mobileExtensionGrid = new GridLayout((Context)this);
+        this.mobileExtensionGrid.setColumnCount(4); // 4 列网格
+        this.mobileExtensionGrid.setAlignmentMode(0);
+        this.mobileExtensionGrid.setUseDefaultMargins(true);
+        this.mobileExtensionListView.addView((View)this.mobileExtensionGrid, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
+        
+        // 在编辑二级界面最上面，增加一个返回导航栏！
+        LinearLayout editorNavBar = new LinearLayout((Context)this);
+        editorNavBar.setOrientation(0);
+        editorNavBar.setGravity(16);
+        editorNavBar.setPadding(0, this.dp(8), 0, this.dp(16));
+        Button backBtn = this.button("\u2190 \u8fd4\u56de");
+        backBtn.setOnClickListener(v -> {
+            this.mobileExtensionEditorView.setVisibility(View.GONE);
+            this.mobileExtensionListView.setVisibility(View.VISIBLE);
+            this.setStatus("\u5df2\u8fd4\u56de\u624b\u673a\u6269\u5c55\u5217\u8868");
+        });
+        editorNavBar.addView((View)backBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
+        TextView navTitle = this.textView("  \u7f16\u8f91\u624b\u673a\u6269\u5c55", 18, -1, true);
+        editorNavBar.addView((View)navTitle);
+        this.mobileExtensionEditorView.addView((View)editorNavBar);
+        
+        this.buildMobileExtensionEditor(this.mobileExtensionEditorView);
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
         subTabBar.setOrientation(0);
@@ -2715,17 +2777,121 @@ extends Activity {
             return;
         }
         this.mobileExtensionManagerList.removeAllViews();
-        this.mobileExtensionManagerList.addView((View)this.textView("\u672c\u673a\u624b\u673a\u6269\u5c55", 16, -1, true));
-        JSONArray array = this.readLocalMobileExtensions();
-        if (array.length() == 0) {
-            this.mobileExtensionManagerList.addView((View)this.textView("\u6682\u65e0\u672c\u673a\u6269\u5c55\u3002\u53ef\u901a\u8fc7\u7a7a\u69fd\u6216\u7f16\u8f91\u5668\u4fdd\u5b58\u3002", 12, Color.rgb((int)148, (int)163, (int)184), false));
+        this.mobileExtensionManagerList.addView((View)this.textView("\u672c\u673a\u6269\u5c55", 16, -1, true));
+        
+        if (this.mobileExtensionGrid == null) {
             return;
         }
+        this.mobileExtensionGrid.removeAllViews();
+        
+        JSONArray array = this.readLocalMobileExtensions();
+        if (array.length() == 0) {
+            TextView emptyTv = this.textView("\u6682\u65e0\u672c\u673a\u6269\u5c55\u3002", 12, Color.rgb((int)148, (int)163, (int)184), false);
+            emptyTv.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
+            this.mobileExtensionGrid.addView((View)emptyTv);
+            
+            this.mobileExtensionManagerList.addView((View)this.textView("\u6682\u65e0\u672c\u673a\u6269\u5c55\u3002", 12, Color.rgb((int)148, (int)163, (int)184), false));
+            return;
+        }
+        
         for (int i = 0; i < array.length(); ++i) {
             JSONObject item = array.optJSONObject(i);
             if (item == null) continue;
             String id = item.optString("id");
             String name = MainActivity.firstNonEmpty(item.optString("name"), item.optString("displayName"), id);
+            
+            LinearLayout card = new LinearLayout((Context)this);
+            card.setOrientation(1);
+            card.setGravity(17);
+            
+            GridLayout.LayoutParams params = new GridLayout.LayoutParams();
+            params.width = this.dp(80);
+            params.height = this.dp(110);
+            params.setMargins(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+            card.setLayoutParams((ViewGroup.LayoutParams)params);
+            
+            LinearLayout iconLayout = new LinearLayout((Context)this);
+            iconLayout.setGravity(17);
+            GradientDrawable iconBg = new GradientDrawable();
+            iconBg.setShape(GradientDrawable.OVAL);
+            
+            int colorIndex = Math.abs(id.hashCode()) % 5;
+            int iconBgColor = Color.rgb(59, 130, 246);
+            if (colorIndex == 1) iconBgColor = Color.rgb(16, 185, 129);
+            else if (colorIndex == 2) iconBgColor = Color.rgb(239, 68, 68);
+            else if (colorIndex == 3) iconBgColor = Color.rgb(245, 158, 11);
+            else if (colorIndex == 4) iconBgColor = Color.rgb(139, 92, 246);
+            
+            iconBg.setColor(iconBgColor);
+            iconLayout.setBackground((Drawable)iconBg);
+            
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(52), this.dp(52));
+            iconParams.bottomMargin = this.dp(6);
+            iconLayout.setLayoutParams((ViewGroup.LayoutParams)iconParams);
+            
+            TextView iconText = new TextView((Context)this);
+            String displayChar = "JS";
+            if (name != null && name.length() > 0) {
+                displayChar = name.substring(0, 1).toUpperCase();
+            }
+            iconText.setText((CharSequence)displayChar);
+            iconText.setTextColor(Color.WHITE);
+            iconText.setTextSize(2, 18.0f);
+            iconText.setTypeface(null, 1);
+            iconLayout.addView((View)iconText);
+            
+            TextView nameTv = new TextView((Context)this);
+            nameTv.setText((CharSequence)name);
+            nameTv.setTextColor(Color.WHITE);
+            nameTv.setTextSize(2, 12.0f);
+            nameTv.setGravity(17);
+            nameTv.setSingleLine(true);
+            nameTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            nameTv.setPadding(this.dp(4), 0, this.dp(4), 0);
+            
+            card.addView((View)iconLayout);
+            card.addView((View)nameTv);
+            
+            card.setOnClickListener(v -> {
+                String code = item.optJSONObject("script") != null ? item.optJSONObject("script").optString("source") : "";
+                if (code != null && !code.isEmpty()) {
+                    this.setStatus("\u6b63\u5728\u6267\u884c\u6269\u5c55\uff1a" + name);
+                    this.executeMobileScriptHeadless(code, name, result -> {
+                        this.setStatus("\u6269\u5c55\u6267\u884c\u7ed3\u679c\uff1a" + result);
+                    });
+                } else {
+                    this.setStatus("\u6269\u5c55\u65e0\u53ef\u6267\u884c\u4ee3\u7801");
+                }
+            });
+            
+            card.setOnLongClickListener(v -> {
+                PopupMenu popup = new PopupMenu((Context)this, (View)card);
+                popup.getMenu().add(0, 1, 0, (CharSequence)"\u6267\u884c");
+                popup.getMenu().add(0, 2, 1, (CharSequence)"\u7f16\u8f91");
+                popup.getMenu().add(0, 3, 2, (CharSequence)"\u5220\u9664");
+                popup.setOnMenuItemClickListener(menuItem -> {
+                    if (menuItem.getItemId() == 1) {
+                        card.performClick();
+                    } else if (menuItem.getItemId() == 2) {
+                        String pretty = item.toString();
+                        try { pretty = item.toString(2); } catch (Exception e) {}
+                        this.mobileExtensionInput.setText((CharSequence)pretty);
+                        this.updateMobileExtensionFieldsFromDraft();
+                        if (this.mobileExtensionListView != null) this.mobileExtensionListView.setVisibility(View.GONE);
+                        if (this.mobileExtensionEditorView != null) this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
+                        this.scrollToView((View)this.mobileExtensionSectionTitle);
+                        this.setStatus("\u6b63\u5728\u7f16\u8f91\u6269\u5c55\uff1a" + name);
+                    } else if (menuItem.getItemId() == 3) {
+                        this.deleteLocalMobileExtension(id);
+                    }
+                    return true;
+                });
+                popup.show();
+                return true;
+            });
+            
+            this.mobileExtensionGrid.addView((View)card);
+            
             LinearLayout row = new LinearLayout((Context)this);
             row.setOrientation(0);
             row.setGravity(16);
@@ -2741,11 +2907,11 @@ extends Activity {
                 try {
                     pretty = item.toString(2);
                 }
-                catch (Exception exception) {
-                    // empty catch block
-                }
+                catch (Exception exception) {}
                 this.mobileExtensionInput.setText((CharSequence)pretty);
                 this.updateMobileExtensionFieldsFromDraft();
+                if (this.mobileExtensionListView != null) this.mobileExtensionListView.setVisibility(View.GONE);
+                if (this.mobileExtensionEditorView != null) this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
                 this.scrollToView((View)this.mobileExtensionSectionTitle);
                 this.setStatus("\u6b63\u5728\u7f16\u8f91\u624b\u673a\u6269\u5c55\uff1a" + name);
             });
@@ -4484,7 +4650,7 @@ extends Activity {
                                                 ext.put("code", (Object)toolCall.optString("code", ""));
                                                 this.upsertLocalMobileExtension(ext);
                                                 this.renderLocalMobileExtensions();
-                                                this.sendAiSystemFeedback("manage_mobile_extension", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u5df2\u6210\u529f" + ("create".equals(action) ? "\u521b\u5efa" : "\u66f4\u65b0") + "\u624b\u673a\u6269\u5c55: " + id + "\u3002\u8bf7\u7528\u81ea\u7136\u8bed\u8a00\u5411\u7528\u6237\u53cd\u9988\u7ed3\u679c\uff0c\u7edd\u5bf9\u4e0d\u53ef\u518d\u6b21\u8f93\u51fa\u4efb\u4f55 JSON \u5de5\u5177\u8c03\u7528\uff01");
+                                                this.sendAiSystemFeedback("manage_mobile_extension", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u5df2\u6210\u529f" + ("create".equals(action) ? "\u521b\u5efa" : "\u66f4\u65b0") + "\u624b\u673a\u6269\u5c55: " + id + "\u3002\u4f60\u53ef\u4ee5\u7ee7\u7eed\u8c03\u7528\u0020\u0065\u0078\u0065\u0063\u0075\u0074\u0065\u005f\u0065\u0078\u0074\u0065\u006e\u0073\u0069\u006f\u006e\u0020\u5de5\u5177\uff08\u53c2\u6570\uff1a\u0069\u0064\u0020\u4e3a\u8be5\u6269\u5c55\u0049\u0044\uff09\u6765\u8fd0\u884c\u8be5\u624b\u673a\u6269\u5c55\uff0c\u6216\u8005\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u5411\u7528\u6237\u53cd\u9988\u7ed3\u679c\u3002");
                                             }
                                         }
                                         catch (Exception e) {
