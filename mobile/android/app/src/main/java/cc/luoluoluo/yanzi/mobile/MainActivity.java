@@ -193,7 +193,7 @@ extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
     private String deviceId;
-    private ScrollView mainScrollView;
+    private androidx.core.widget.NestedScrollView mainScrollView;
     private EditText baseUrlInput;
     private EditText emailInput;
     private EditText passwordInput;
@@ -269,7 +269,7 @@ extends Activity {
     private LinearLayout fileListLayout = null;
     private TextView tvShellOutput = null;
     private EditText etShellInput = null;
-    private ScrollView shellScrollView = null;
+    private androidx.core.widget.NestedScrollView shellScrollView = null;
     private final java.util.List<String> shellHistory = new java.util.ArrayList<>();
     private int shellHistoryIndex = -1;
     private DrawerLayout aiDrawerLayout;
@@ -349,11 +349,11 @@ extends Activity {
     private android.widget.Button btnShowMobileShell;
     private int currentMobileSubTab = 0;
     private boolean isEditingMobileExtension = false;
-    private android.widget.ScrollView mobileDocsScrollView;
+    private androidx.core.widget.NestedScrollView mobileDocsScrollView;
     private android.widget.LinearLayout mobileDocsContainer;
     private android.widget.LinearLayout mobileShellContainer;
     private android.widget.TextView tvMobileShellLog;
-    private android.widget.ScrollView svMobileShellLog;
+    private androidx.core.widget.NestedScrollView svMobileShellLog;
     private android.widget.EditText etMobileShellInput;
     private androidx.viewpager.widget.ViewPager mobileViewPager;
     private android.view.GestureDetector tabGestureDetector;
@@ -1446,12 +1446,12 @@ extends Activity {
     }
 
     private void buildUi(String sharedText) {
-        ScrollView scrollView;
+        androidx.core.widget.NestedScrollView scrollView;
         LinearLayout shell = new LinearLayout((Context)this);
         shell.setOrientation(1);
         shell.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
         shell.setFitsSystemWindows(true);
-        this.mainScrollView = scrollView = new ScrollView((Context)this);
+        this.mainScrollView = scrollView = new androidx.core.widget.NestedScrollView((Context)this);
         LinearLayout root = new LinearLayout((Context)this);
         root.setOrientation(1);
         root.setPadding(this.dp(20), this.dp(24), this.dp(20), this.dp(24));
@@ -1577,7 +1577,8 @@ extends Activity {
         this.mobileExtensionEditorView.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
         this.mobileExtensionEditorView.setVisibility(View.GONE);
         
-        this.mobileDocsScrollView = new android.widget.ScrollView((Context)this);
+        this.mobileDocsScrollView = new androidx.core.widget.NestedScrollView((Context)this);
+        this.mobileDocsScrollView.setNestedScrollingEnabled(true);
         this.mobileDocsScrollView.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
         
         this.mobileDocsContainer = new android.widget.LinearLayout((Context)this);
@@ -1918,7 +1919,8 @@ extends Activity {
         shellPanel.addView(shellTitleBar);
         
         // 1. 输出局部 ScrollView (sv) 在上方
-        ScrollView sv = new ScrollView((Context)this);
+        androidx.core.widget.NestedScrollView sv = new androidx.core.widget.NestedScrollView((Context)this);
+        sv.setNestedScrollingEnabled(true);
         this.shellScrollView = sv; // 保存成员变量
         this.tvShellOutput = new TextView((Context)this);
         this.tvShellOutput.setBackgroundColor(-16777216); // 纯黑背景
@@ -8400,7 +8402,8 @@ extends Activity {
         logLayoutParams.bottomMargin = this.dp(12);
         logLayout.setLayoutParams((ViewGroup.LayoutParams)logLayoutParams);
         
-        this.svMobileShellLog = new ScrollView((Context)this);
+        this.svMobileShellLog = new androidx.core.widget.NestedScrollView((Context)this);
+        this.svMobileShellLog.setNestedScrollingEnabled(true);
         this.tvMobileShellLog = new TextView((Context)this);
         this.tvMobileShellLog.setText((CharSequence)"-- Yanzi Mobile JS Shell Ready --\n");
         this.tvMobileShellLog.setTextColor(Color.rgb(34, 211, 238));
