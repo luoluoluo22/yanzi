@@ -219,6 +219,19 @@ extends Activity {
     private View aiTabButton;
     private View desktopExtensionTabButton;
     private View profileTabButton;
+    private View desktopConnectionDot;
+    private android.os.Handler connectionCheckHandler;
+    private Runnable connectionCheckRunnable;
+    private boolean isDesktopConnected = false;
+    private String desktopConnectionType = "";
+    private LinearLayout offlineHintView;
+    private LinearLayout mainDesktopContentLayout;
+    private TextView tvDesktopConnectionStatus;
+    private androidx.viewpager.widget.ViewPager desktopViewPager;
+    private HorizontalScrollView breadcrumbsScrollView;
+    private LinearLayout breadcrumbsLayout;
+    private EditText fsSearchInput;
+    private boolean isFsUploading = false;
     private Button loginButton;
     private Button overlayButton;
     private EditText searchDesktopExtensionsInput;
@@ -429,6 +442,14 @@ extends Activity {
         this.handleExternalAction(this.getIntent());
         this.startFloatingWheelIfPermitted();
         this.initTextToSpeech();
+        this.connectionCheckHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        this.connectionCheckRunnable = new Runnable() {
+            @Override
+            public void run() {
+                MainActivity.this.checkConnectionAsync();
+                MainActivity.this.connectionCheckHandler.postDelayed(this, 8000L);
+            }
+        };
     }
 
     protected void onResume() {
@@ -443,6 +464,9 @@ extends Activity {
         this.diagnosticRefreshHandler.postDelayed(this.diagnosticRefreshRunnable, 1000L);
         if (this.isWakeListeningEnabled && !this.isWakeTriggeredSpeech) {
             this.startWakeListening();
+        }
+        if (this.connectionCheckHandler != null && this.connectionCheckRunnable != null) {
+            this.connectionCheckHandler.post(this.connectionCheckRunnable);
         }
     }
 
@@ -539,6 +563,7 @@ extends Activity {
                     if (this.tvCurrentPath != null) {
                         this.tvCurrentPath.setText((CharSequence)(processedPath.isEmpty() ? "\u5f53\u524d\u8def\u5f84: [\u76d8\u7b26\u6839\u89c6\u5b9a]" : "\u5f53\u524d\u8def\u5f84: " + processedPath));
                     }
+                    this.renderBreadcrumbs(processedPath);
                     
                     if (this.fileListLayout == null) return;
                     this.fileListLayout.removeAllViews();
@@ -561,6 +586,7 @@ extends Activity {
                         row.setGravity(16);
                         row.setPadding(0, this.dp(8), 0, this.dp(8));
                         row.setClickable(true);
+                        row.setTag((Object)name);
                         
                         ImageView ivIcon = new ImageView((Context)this);
                         String iconName = isDir ? "folder" : "file-document-outline";
@@ -655,6 +681,9 @@ extends Activity {
                         this.fileListLayout.addView((View)row);
                         this.fileListLayout.addView(divider, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(1)));
                     }
+                    if (this.fsSearchInput != null) {
+                        this.filterFsList(this.fsSearchInput.getText().toString());
+                    }
                 });
             } catch (Exception e) {
                 this.runOnUiThread(() -> {
@@ -671,6 +700,9 @@ extends Activity {
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
         this.stopWakeListening(false);
         this.destroySpeechRecognizer();
+        if (this.connectionCheckHandler != null && this.connectionCheckRunnable != null) {
+            this.connectionCheckHandler.removeCallbacks(this.connectionCheckRunnable);
+        }
         super.onPause();
     }
 
@@ -705,6 +737,21 @@ extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         Uri uri;
         super.onActivityResult(requestCode, resultCode, data);
+        if (this.isFsUploading) {
+            this.isFsUploading = false;
+            if (resultCode == -1) {
+                if (requestCode == 2001 || requestCode == 2002) {
+                    if (data != null && data.getData() != null) {
+                        this.uploadFileToPc(data.getData());
+                    }
+                } else if (requestCode == REQUEST_CODE_TAKE_PHOTO) {
+                    if (this.cameraPhotoUri != null && this.cameraPhotoFile != null && this.cameraPhotoFile.exists()) {
+                        this.uploadFileToPc(this.cameraPhotoUri);
+                    }
+                }
+            }
+            return;
+        }
         if (requestCode == 4101 && resultCode == -1 && data != null && (uri = data.getData()) != null) {
             this.sendPhotoToDesktop(uri);
         } else if ((requestCode == REQUEST_CODE_SELECT_IMAGE || requestCode == REQUEST_CODE_SELECT_FILE) && resultCode == -1 && data != null && (uri = data.getData()) != null) {
@@ -1421,7 +1468,7 @@ extends Activity {
         this.yanmList.setUseDefaultMargins(false);
         this.yanmTabPage.addView((View)this.yanmList, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         this.mobileExtensionTabPage.addView((View)this.textView("\u624b\u673a\u6269\u5c55", 28, -1, true));
-        this.mobileExtensionTabPage.addView((View)this.textView("\u7ba1\u7406\u548c\u6d4b\u8bd5\u53ea\u5728\u624b\u673a\u7aef\u8fd0\u884c\u7684 mobile-js \u6269\u5c55\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
+        this.mobileExtensionTabPage.addView((View)this.textView("\u7ba1\u7406\u548c\u6d4b\u8bd5\u53ea\u5728\u626b\u673a\u7aef\u8fd0\u884c\u7684 mobile-js \u6269\u5c55\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
         this.buildMobileExtensionEditor(this.mobileExtensionTabPage);
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
@@ -1463,57 +1510,131 @@ extends Activity {
         subTabBar.addView((View)this.btnShowFileManager, (ViewGroup.LayoutParams)btnParams);
         subTabBar.addView((View)this.btnShowShell, (ViewGroup.LayoutParams)btnParams);
         
-        this.desktopExtensionTabPage.addView((View)subTabBar);
+        LinearLayout desktopHeader = new LinearLayout((Context)this);
+        desktopHeader.setOrientation(0);
+        desktopHeader.setGravity(16);
+        desktopHeader.setPadding(0, 0, 0, this.dp(10));
+        
+        TextView tvTitle = this.textView("电脑", 28, -1, true);
+        desktopHeader.addView((View)tvTitle);
+        
+        this.tvDesktopConnectionStatus = new TextView((Context)this);
+        this.tvDesktopConnectionStatus.setTextSize(14f);
+        this.tvDesktopConnectionStatus.setPadding(this.dp(8), this.dp(6), 0, 0);
+        this.tvDesktopConnectionStatus.setTextColor(Color.rgb(148, 163, 184));
+        desktopHeader.addView((View)this.tvDesktopConnectionStatus);
+        
+        this.desktopExtensionTabPage.addView((View)desktopHeader);
+        
+        this.offlineHintView = new LinearLayout((Context)this);
+        this.offlineHintView.setOrientation(1);
+        this.offlineHintView.setGravity(17);
+        this.offlineHintView.setPadding(0, this.dp(100), 0, this.dp(100));
+        
+        TextView tvOffline = new TextView((Context)this);
+        tvOffline.setText("电脑端未上线");
+        tvOffline.setTextColor(Color.rgb(148, 163, 184));
+        tvOffline.setTextSize(16f);
+        tvOffline.setGravity(17);
+        
+        TextView tvOfflineDesc = new TextView((Context)this);
+        tvOfflineDesc.setText("请确认电脑端程序已开启并在运行中");
+        tvOfflineDesc.setTextColor(Color.rgb(100, 116, 139));
+        tvOfflineDesc.setTextSize(13f);
+        tvOfflineDesc.setGravity(17);
+        tvOfflineDesc.setPadding(0, this.dp(8), 0, 0);
+        
+        this.offlineHintView.addView((View)tvOffline);
+        this.offlineHintView.addView((View)tvOfflineDesc);
+        this.desktopExtensionTabPage.addView((View)this.offlineHintView);
+        
+        this.mainDesktopContentLayout = new LinearLayout((Context)this);
+        this.mainDesktopContentLayout.setOrientation(1);
+        this.mainDesktopContentLayout.setVisibility(8);
+        this.mainDesktopContentLayout.addView((View)subTabBar);
+        this.desktopExtensionTabPage.addView((View)this.mainDesktopContentLayout);
         
         LinearLayout extensionsContainer = new LinearLayout((Context)this);
         this.extensionsContainer = extensionsContainer;
         extensionsContainer.setOrientation(1);
-        extensionsContainer.setVisibility(0); // VISIBLE
-        this.desktopExtensionTabPage.addView((View)extensionsContainer);
         
         LinearLayout fileManagerContainer = new LinearLayout((Context)this);
         this.fileManagerContainer = fileManagerContainer;
         fileManagerContainer.setOrientation(1);
-        fileManagerContainer.setVisibility(8); // GONE
-        this.desktopExtensionTabPage.addView((View)fileManagerContainer);
 
         LinearLayout shellContainer = new LinearLayout((Context)this);
         this.shellContainer = shellContainer;
         shellContainer.setOrientation(1);
-        shellContainer.setVisibility(8); // GONE
-        this.desktopExtensionTabPage.addView((View)shellContainer);
+        
+        int screenHeight = this.getResources().getDisplayMetrics().heightPixels;
+        int pagerHeight = screenHeight - this.dp(200);
+        if (pagerHeight < this.dp(400)) {
+            pagerHeight = this.dp(500);
+        }
+        
+        this.desktopViewPager = new androidx.viewpager.widget.ViewPager((Context)this);
+        this.desktopViewPager.setId(android.view.View.generateViewId());
+        
+        final List<View> pages = new java.util.ArrayList<>();
+        ScrollView extensionsScroll = new ScrollView((Context)this);
+        extensionsScroll.addView(extensionsContainer);
+        
+        ScrollView fileManagerScroll = new ScrollView((Context)this);
+        fileManagerScroll.addView(fileManagerContainer);
+        
+        ScrollView shellScroll = new ScrollView((Context)this);
+        shellScroll.addView(shellContainer);
+        
+        pages.add(extensionsScroll);
+        pages.add(fileManagerScroll);
+        pages.add(shellScroll);
+        
+        this.desktopViewPager.setAdapter(new androidx.viewpager.widget.PagerAdapter() {
+            @Override
+            public int getCount() {
+                return pages.size();
+            }
+            @Override
+            public boolean isViewFromObject(View view, Object object) {
+                return view == object;
+            }
+            @Override
+            public Object instantiateItem(ViewGroup container, int position) {
+                View page = pages.get(position);
+                container.addView(page);
+                return page;
+            }
+            @Override
+            public void destroyItem(ViewGroup container, int position, Object object) {
+                container.removeView((View)object);
+            }
+        });
+        
+        this.desktopViewPager.addOnPageChangeListener(new androidx.viewpager.widget.ViewPager.OnPageChangeListener() {
+            @Override
+            public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {}
+            
+            @Override
+            public void onPageSelected(int position) {
+                MainActivity.this.selectSubTab(position);
+            }
+            
+            @Override
+            public void onPageScrollStateChanged(int state) {}
+        });
         
         this.btnShowExtensions.setOnClickListener(v -> this.selectSubTab(0));
         this.btnShowFileManager.setOnClickListener(v -> this.selectSubTab(1));
         this.btnShowShell.setOnClickListener(v -> this.selectSubTab(2));
+        
+        this.mainDesktopContentLayout.addView((View)this.desktopViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, pagerHeight));
 
-        // 初始化滑动手势检测器
-        this.tabGestureDetector = new android.view.GestureDetector((Context)this, new android.view.GestureDetector.SimpleOnGestureListener() {
-            @Override
-            public boolean onFling(android.view.MotionEvent e1, android.view.MotionEvent e2, float velocityX, float velocityY) {
-                if (MainActivity.this.desktopExtensionTabPage == null || MainActivity.this.desktopExtensionTabPage.getVisibility() != 0) {
-                    return false;
-                }
-                float diffX = e2.getX() - e1.getX();
-                float diffY = e2.getY() - e1.getY();
-                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > MainActivity.this.dp(100) && Math.abs(velocityX) > MainActivity.this.dp(100)) {
-                    if (diffX > 0) {
-                        if (MainActivity.this.currentSubTabIndex > 0) {
-                            MainActivity.this.selectSubTab(MainActivity.this.currentSubTabIndex - 1);
-                        }
-                    } else {
-                        if (MainActivity.this.currentSubTabIndex < 2) {
-                            MainActivity.this.selectSubTab(MainActivity.this.currentSubTabIndex + 1);
-                        }
-                    }
-                    return true;
-                }
-                return false;
-            }
-        });
-
-        extensionsContainer.addView((View)this.textView("\u7535\u8111\u6269\u5c55", 28, -1, true));
-        extensionsContainer.addView((View)this.textView("\u4ece\u624b\u673a\u89e6\u53d1\u540c\u8d26\u53f7\u7535\u8111\u7aef\u5df2\u540c\u6b65\u7684\u6269\u5c55\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
+        LinearLayout extensionsSearchRow = new LinearLayout((Context)this);
+        extensionsSearchRow.setOrientation(0);
+        extensionsSearchRow.setGravity(16);
+        LinearLayout.LayoutParams searchRowParams = new LinearLayout.LayoutParams(-1, -2);
+        searchRowParams.setMargins(0, this.dp(10), 0, this.dp(10));
+        
         this.searchDesktopExtensionsInput = new EditText((Context)this);
         this.searchDesktopExtensionsInput.setHint((CharSequence)"\u641c\u7d22\u7b5b\u9009\u6269\u5c55...");
         this.searchDesktopExtensionsInput.setTextColor(-1);
@@ -1521,23 +1642,35 @@ extends Activity {
         this.searchDesktopExtensionsInput.setBackgroundColor(Color.rgb((int)15, (int)23, (int)42));
         this.searchDesktopExtensionsInput.setPadding(this.dp(10), this.dp(8), this.dp(10), this.dp(8));
         this.searchDesktopExtensionsInput.setSingleLine(true);
-        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(-1, -2);
-        searchParams.setMargins(0, this.dp(10), 0, this.dp(10));
-        extensionsContainer.addView((View)this.searchDesktopExtensionsInput, (ViewGroup.LayoutParams)searchParams);
+        
+        Button btnSearchExtensions = new Button((Context)this);
+        btnSearchExtensions.setText((CharSequence)"搜索");
+        btnSearchExtensions.setTextColor(-1);
+        btnSearchExtensions.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnSearchExtensions.setAllCaps(false);
+        
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        inputParams.rightMargin = this.dp(8);
+        extensionsSearchRow.addView((View)this.searchDesktopExtensionsInput, (ViewGroup.LayoutParams)inputParams);
+        extensionsSearchRow.addView((View)btnSearchExtensions, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(36)));
+        extensionsContainer.addView((View)extensionsSearchRow);
+        
         this.searchDesktopExtensionsInput.addTextChangedListener(new TextWatcher(){
-
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-            }
-
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (MainActivity.this.currentDesktopExtensions != null) {
                     MainActivity.this.renderExtensions(MainActivity.this.currentDesktopExtensions);
                 }
             }
-
-            public void afterTextChanged(Editable s) {
-            }
+            public void afterTextChanged(Editable s) {}
         });
+        btnSearchExtensions.setOnClickListener(v -> {
+            if (MainActivity.this.currentDesktopExtensions != null) {
+                MainActivity.this.renderExtensions(MainActivity.this.currentDesktopExtensions);
+            }
+            MainActivity.this.hideKeyboard((View)MainActivity.this.searchDesktopExtensionsInput);
+        });
+        
         this.extensionList = new LinearLayout((Context)this);
         this.extensionList.setOrientation(1);
         extensionsContainer.addView((View)this.extensionList);
@@ -1547,7 +1680,7 @@ extends Activity {
         LinearLayout shellPanel = new LinearLayout((Context)this);
         shellPanel.setOrientation(1);
         shellPanel.setPadding(0, this.dp(8), 0, this.dp(16));
-        shellPanel.addView((View)this.textView("PowerShell 终端 (YanShell)", 16, Color.WHITE, true));
+        shellPanel.addView((View)this.textView("PowerShell", 16, Color.WHITE, true));
         
         LinearLayout shellInputRow = new LinearLayout((Context)this);
         shellInputRow.setOrientation(0);
@@ -1569,13 +1702,12 @@ extends Activity {
         btnRunShell.setBackgroundColor(Color.rgb(30, 41, 59));
         btnRunShell.setAllCaps(false);
         
-        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        inputParams.rightMargin = this.dp(8);
-        shellInputRow.addView((View)this.etShellInput, (ViewGroup.LayoutParams)inputParams);
+        LinearLayout.LayoutParams shellInputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        shellInputParams.rightMargin = this.dp(8);
+        shellInputRow.addView((View)this.etShellInput, (ViewGroup.LayoutParams)shellInputParams);
         shellInputRow.addView((View)btnRunShell, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(38)));
         shellPanel.addView((View)shellInputRow);
         
-        HorizontalScrollView hsv = new HorizontalScrollView((Context)this);
         ScrollView sv = new ScrollView((Context)this);
         this.tvShellOutput = new TextView((Context)this);
         this.tvShellOutput.setBackgroundColor(-16777216);
@@ -1587,10 +1719,9 @@ extends Activity {
         this.tvShellOutput.setVisibility(8);
         
         sv.addView((View)this.tvShellOutput);
-        hsv.addView((View)sv);
-        LinearLayout.LayoutParams outputParams = new LinearLayout.LayoutParams(-1, this.dp(150));
+        LinearLayout.LayoutParams outputParams = new LinearLayout.LayoutParams(-1, this.dp(350));
         outputParams.topMargin = this.dp(6);
-        shellPanel.addView((View)hsv, (ViewGroup.LayoutParams)outputParams);
+        shellPanel.addView((View)sv, (ViewGroup.LayoutParams)outputParams);
         shellContainer.addView((View)shellPanel);
         
         btnRunShell.setOnClickListener(v -> {
@@ -1619,33 +1750,26 @@ extends Activity {
                 }
             });
         });
-        
+
         // YanPath UI
         LinearLayout fsPanel = new LinearLayout((Context)this);
         fsPanel.setOrientation(1);
-        fsPanel.addView((View)this.textView("\u6587\u4ef6\u7ba1\u7406 (YanPath)", 16, -1, true));
+        fsPanel.addView((View)this.textView("文件管理 (YanPath)", 16, -1, true));
         
         LinearLayout pathRow = new LinearLayout((Context)this);
         pathRow.setOrientation(0);
         pathRow.setGravity(16);
         pathRow.setPadding(0, this.dp(4), 0, this.dp(8));
         
-        this.tvCurrentPath = new TextView((Context)this);
-        this.tvCurrentPath.setTextColor(Color.rgb(182, 194, 214));
-        this.tvCurrentPath.setTextSize(13f);
-        this.tvCurrentPath.setText((CharSequence)"\u5f53\u524d\u8def\u5f84: [\u76d8\u7b26\u6839\u89c6\u5b9a]");
-        this.tvCurrentPath.setEllipsize(android.text.TextUtils.TruncateAt.START);
-        this.tvCurrentPath.setSingleLine(true);
-        
         Button btnRoot = new Button((Context)this);
-        btnRoot.setText((CharSequence)"\u6839");
+        btnRoot.setText((CharSequence)"根");
         btnRoot.setTextColor(-1);
         btnRoot.setBackgroundColor(Color.rgb(30, 41, 59));
         btnRoot.setAllCaps(false);
         btnRoot.setTextSize(12f);
         
         Button btnBack = new Button((Context)this);
-        btnBack.setText((CharSequence)"\u8fd4\u56de");
+        btnBack.setText((CharSequence)"返回");
         btnBack.setTextColor(-1);
         btnBack.setBackgroundColor(Color.rgb(30, 41, 59));
         btnBack.setAllCaps(false);
@@ -1656,8 +1780,96 @@ extends Activity {
         backParams.leftMargin = this.dp(6);
         backParams.rightMargin = this.dp(6);
         pathRow.addView((View)btnBack, (ViewGroup.LayoutParams)backParams);
-        pathRow.addView((View)this.tvCurrentPath, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        
+        this.breadcrumbsScrollView = new HorizontalScrollView((Context)this);
+        this.breadcrumbsScrollView.setHorizontalScrollBarEnabled(false);
+        this.breadcrumbsLayout = new LinearLayout((Context)this);
+        this.breadcrumbsLayout.setOrientation(0);
+        this.breadcrumbsLayout.setGravity(16);
+        this.breadcrumbsScrollView.addView((View)this.breadcrumbsLayout, new ViewGroup.LayoutParams(-2, -1));
+        
+        pathRow.addView((View)this.breadcrumbsScrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
         fsPanel.addView((View)pathRow);
+        
+        LinearLayout fsSearchRow = new LinearLayout((Context)this);
+        fsSearchRow.setOrientation(0);
+        fsSearchRow.setGravity(16);
+        LinearLayout.LayoutParams fsSearchParams = new LinearLayout.LayoutParams(-1, -2);
+        fsSearchParams.setMargins(0, this.dp(6), 0, this.dp(6));
+        
+        this.fsSearchInput = new EditText((Context)this);
+        this.fsSearchInput.setHint((CharSequence)"输入关键字筛选当前目录...");
+        this.fsSearchInput.setTextColor(-1);
+        this.fsSearchInput.setHintTextColor(Color.rgb(100, 116, 139));
+        this.fsSearchInput.setBackgroundColor(Color.rgb(15, 23, 42));
+        this.fsSearchInput.setPadding(this.dp(10), this.dp(8), this.dp(10), this.dp(8));
+        this.fsSearchInput.setSingleLine(true);
+        this.fsSearchInput.setTextSize(13f);
+        
+        Button btnFsSearch = new Button((Context)this);
+        btnFsSearch.setText((CharSequence)"搜索");
+        btnFsSearch.setTextColor(-1);
+        btnFsSearch.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnFsSearch.setAllCaps(false);
+        
+        LinearLayout.LayoutParams fsInputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        fsInputParams.rightMargin = this.dp(8);
+        fsSearchRow.addView((View)this.fsSearchInput, (ViewGroup.LayoutParams)fsInputParams);
+        fsSearchRow.addView((View)btnFsSearch, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(36)));
+        fsPanel.addView((View)fsSearchRow);
+        
+        this.fsSearchInput.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                MainActivity.this.filterFsList(s.toString());
+            }
+            @Override
+            public void afterTextChanged(android.text.Editable s) {}
+        });
+        btnFsSearch.setOnClickListener(v -> {
+            MainActivity.this.filterFsList(this.fsSearchInput.getText().toString());
+            this.hideKeyboard((View)this.fsSearchInput);
+        });
+        
+        LinearLayout uploadRow = new LinearLayout((Context)this);
+        uploadRow.setOrientation(0);
+        uploadRow.setGravity(16);
+        uploadRow.setPadding(0, this.dp(4), 0, this.dp(8));
+        
+        Button btnUploadFile = new Button((Context)this);
+        btnUploadFile.setText((CharSequence)"上传文件");
+        btnUploadFile.setTextColor(-1);
+        btnUploadFile.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnUploadFile.setAllCaps(false);
+        btnUploadFile.setTextSize(11f);
+        
+        Button btnUploadPhoto = new Button((Context)this);
+        btnUploadPhoto.setText((CharSequence)"上传照片");
+        btnUploadPhoto.setTextColor(-1);
+        btnUploadPhoto.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnUploadPhoto.setAllCaps(false);
+        btnUploadPhoto.setTextSize(11f);
+        
+        Button btnCamera = new Button((Context)this);
+        btnCamera.setText((CharSequence)"拍照");
+        btnCamera.setTextColor(-1);
+        btnCamera.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnCamera.setAllCaps(false);
+        btnCamera.setTextSize(11f);
+        
+        LinearLayout.LayoutParams btnUploadParams = new LinearLayout.LayoutParams(0, this.dp(34), 1.0f);
+        btnUploadParams.rightMargin = this.dp(6);
+        uploadRow.addView((View)btnUploadFile, (ViewGroup.LayoutParams)btnUploadParams);
+        uploadRow.addView((View)btnUploadPhoto, (ViewGroup.LayoutParams)btnUploadParams);
+        btnUploadParams.rightMargin = 0;
+        uploadRow.addView((View)btnCamera, (ViewGroup.LayoutParams)btnUploadParams);
+        fsPanel.addView((View)uploadRow);
+        
+        btnUploadFile.setOnClickListener(v -> this.startFsUploadFile());
+        btnUploadPhoto.setOnClickListener(v -> this.startFsUploadPhoto());
+        btnCamera.setOnClickListener(v -> this.startFsTakePhoto());
         
         this.fileListLayout = new LinearLayout((Context)this);
         this.fileListLayout.setOrientation(1);
@@ -1858,7 +2070,25 @@ extends Activity {
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(-2, -2);
         textParams.setMargins(0, this.dp(3), 0, 0);
         textView.setLayoutParams((ViewGroup.LayoutParams)textParams);
-        container.addView((View)iconView);
+        if ("desktop".equals(key)) {
+            FrameLayout iconWrapper = new FrameLayout((Context)this);
+            iconWrapper.setLayoutParams(new LinearLayout.LayoutParams(-2, -2));
+            iconWrapper.addView((View)iconView);
+            View dot = new View((Context)this);
+            FrameLayout.LayoutParams dotParams = new FrameLayout.LayoutParams(this.dp(7), this.dp(7));
+            dotParams.gravity = 53;
+            dot.setLayoutParams((ViewGroup.LayoutParams)dotParams);
+            GradientDrawable dotBg = new GradientDrawable();
+            dotBg.setShape(GradientDrawable.OVAL);
+            dotBg.setColor(Color.rgb(34, 197, 94));
+            dot.setBackground((Drawable)dotBg);
+            dot.setVisibility(View.GONE);
+            iconWrapper.addView(dot);
+            this.desktopConnectionDot = dot;
+            container.addView((View)iconWrapper);
+        } else {
+            container.addView((View)iconView);
+        }
         container.addView((View)textView);
         container.setTag((Object)new View[]{iconView, textView});
         container.setOnClickListener(v -> this.selectTab(key));
@@ -1885,6 +2115,9 @@ extends Activity {
         this.styleTabButton(this.aiTabButton, isAi);
         this.styleTabButton(this.desktopExtensionTabButton, isDesktop);
         this.styleTabButton(this.profileTabButton, isProfile);
+        if (isDesktop) {
+            this.checkConnectionAsync();
+        }
         if (this.mainScrollView != null) {
             this.mainScrollView.post(() -> this.mainScrollView.smoothScrollTo(0, 0));
         }
@@ -2965,6 +3198,253 @@ extends Activity {
                     this.btnShowShell.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
                 if (this.shellContainer != null) this.shellContainer.setVisibility(0); // VISIBLE
+            }
+        });
+    }
+
+    private void checkConnectionAsync() {
+        this.executor.execute(() -> {
+            boolean connected = false;
+            String type = "";
+            String lanBaseUrl = cc.luoluoluo.yanzi.mobile.LanDiscoveryManager.getLanBaseUrl((Context)this);
+            if (lanBaseUrl == null) {
+                lanBaseUrl = cc.luoluoluo.yanzi.mobile.LanDiscoveryManager.cachedLanBaseUrl;
+            }
+            if (lanBaseUrl != null) {
+                try {
+                    String cleanUrl = lanBaseUrl;
+                    if (cleanUrl.endsWith("/")) {
+                        cleanUrl = cleanUrl.substring(0, cleanUrl.length() - 1);
+                    }
+                    java.net.URL url = new java.net.URL(cleanUrl + "/health");
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("GET");
+                    conn.setConnectTimeout(2000);
+                    conn.setReadTimeout(2000);
+                    int code = conn.getResponseCode();
+                    if (code == 200) {
+                        connected = true;
+                        type = "lan";
+                    }
+                    conn.disconnect();
+                } catch (Exception e) {
+                }
+            }
+            if (!connected) {
+                try {
+                    String internetBaseUrl = this.normalizedBaseUrl();
+                    if (internetBaseUrl != null && !internetBaseUrl.isEmpty()) {
+                        String cleanUrl = internetBaseUrl;
+                        if (cleanUrl.endsWith("/")) {
+                            cleanUrl = cleanUrl.substring(0, cleanUrl.length() - 1);
+                        }
+                        java.net.URL url = new java.net.URL(cleanUrl + "/health");
+                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                        conn.setRequestMethod("GET");
+                        conn.setConnectTimeout(2500);
+                        conn.setReadTimeout(2500);
+                        int code = conn.getResponseCode();
+                        if (code == 200) {
+                            connected = true;
+                            type = "internet";
+                        }
+                        conn.disconnect();
+                    }
+                } catch (Exception e) {
+                }
+            }
+            final boolean finalConnected = connected;
+            final String finalType = type;
+            this.runOnUiThread(() -> {
+                this.isDesktopConnected = finalConnected;
+                this.desktopConnectionType = finalType;
+                this.updateConnectionUi();
+            });
+        });
+    }
+
+    private void updateConnectionUi() {
+        if (this.desktopConnectionDot != null) {
+            this.desktopConnectionDot.setVisibility(this.isDesktopConnected ? View.VISIBLE : View.GONE);
+        }
+        if (this.isDesktopConnected) {
+            if (this.offlineHintView != null) {
+                this.offlineHintView.setVisibility(View.GONE);
+            }
+            if (this.mainDesktopContentLayout != null) {
+                this.mainDesktopContentLayout.setVisibility(View.VISIBLE);
+            }
+            if (this.tvDesktopConnectionStatus != null) {
+                if ("lan".equals(this.desktopConnectionType)) {
+                    this.tvDesktopConnectionStatus.setText(" (局域网)");
+                    this.tvDesktopConnectionStatus.setTextColor(Color.rgb(34, 197, 94));
+                } else {
+                    this.tvDesktopConnectionStatus.setText(" (在线)");
+                    this.tvDesktopConnectionStatus.setTextColor(Color.rgb(34, 211, 238));
+                }
+            }
+        } else {
+            if (this.offlineHintView != null) {
+                this.offlineHintView.setVisibility(View.VISIBLE);
+            }
+            if (this.mainDesktopContentLayout != null) {
+                this.mainDesktopContentLayout.setVisibility(View.GONE);
+            }
+            if (this.tvDesktopConnectionStatus != null) {
+                this.tvDesktopConnectionStatus.setText(" (未上线)");
+                this.tvDesktopConnectionStatus.setTextColor(Color.rgb(239, 68, 68));
+            }
+        }
+    }
+
+    private void filterFsList(String query) {
+        if (this.fileListLayout == null) return;
+        String q = query.trim().toLowerCase(java.util.Locale.ROOT);
+        for (int i = 0; i < this.fileListLayout.getChildCount(); i++) {
+            View child = this.fileListLayout.getChildAt(i);
+            Object tag = child.getTag();
+            if (tag instanceof String) {
+                String fileName = (String)tag;
+                if (q.isEmpty() || fileName.toLowerCase(java.util.Locale.ROOT).contains(q)) {
+                    child.setVisibility(View.VISIBLE);
+                } else {
+                    child.setVisibility(View.GONE);
+                }
+            }
+        }
+    }
+
+    private void renderBreadcrumbs(String path) {
+        if (this.breadcrumbsLayout == null) return;
+        this.breadcrumbsLayout.removeAllViews();
+        if (path == null || path.isEmpty()) {
+            TextView tv = new TextView((Context)this);
+            tv.setText("盘符根");
+            tv.setTextColor(Color.rgb(148, 163, 184));
+            tv.setTextSize(13f);
+            this.breadcrumbsLayout.addView(tv);
+            return;
+        }
+        String normalized = path.replace("\\", "/");
+        String[] parts = normalized.split("/");
+        final StringBuilder currentBuilder = new StringBuilder();
+        boolean isWindows = path.contains(":");
+        for (int i = 0; i < parts.length; i++) {
+            final String part = parts[i];
+            if (part.isEmpty()) continue;
+            if (i > 0) {
+                currentBuilder.append(isWindows ? "\\" : "/");
+                TextView tvArrow = new TextView((Context)this);
+                tvArrow.setText(" > ");
+                tvArrow.setTextColor(Color.rgb(100, 116, 139));
+                tvArrow.setTextSize(11f);
+                this.breadcrumbsLayout.addView(tvArrow);
+            }
+            currentBuilder.append(part);
+            final String clickPath = currentBuilder.toString();
+            TextView tvPart = new TextView((Context)this);
+            tvPart.setText(part);
+            tvPart.setTextSize(13f);
+            if (i == parts.length - 1) {
+                tvPart.setTextColor(Color.rgb(34, 211, 238));
+                tvPart.setTypeface(Typeface.DEFAULT_BOLD);
+            } else {
+                tvPart.setTextColor(Color.rgb(182, 194, 214));
+                tvPart.setPaintFlags(tvPart.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+                tvPart.setClickable(true);
+                tvPart.setOnClickListener(v -> {
+                    this.loadFileList(clickPath);
+                });
+            }
+            this.breadcrumbsLayout.addView(tvPart);
+        }
+        if (this.breadcrumbsScrollView != null) {
+            this.breadcrumbsScrollView.post(() -> this.breadcrumbsScrollView.fullScroll(View.FOCUS_RIGHT));
+        }
+    }
+
+    private void startFsUploadFile() {
+        this.isFsUploading = true;
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("*/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        this.startActivityForResult(Intent.createChooser(intent, "选择文件上传"), 2001);
+    }
+
+    private void startFsUploadPhoto() {
+        this.isFsUploading = true;
+        Intent intent = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+        this.startActivityForResult(Intent.createChooser(intent, "选择照片上传"), 2002);
+    }
+
+    private void startFsTakePhoto() {
+        this.isFsUploading = true;
+        this.takeCameraPhoto();
+    }
+
+    private void uploadFileToPc(Uri uri) {
+        if (this.currentPath == null || this.currentPath.isEmpty()) {
+            Toast.makeText(this, "当前目录无效，请先进入一个具体路径", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this, "开始上传文件...", Toast.LENGTH_SHORT).show();
+        this.executor.execute(() -> {
+            try {
+                String fileName = "upload_" + System.currentTimeMillis();
+                android.database.Cursor cursor = this.getContentResolver().query(uri, null, null, null, null);
+                if (cursor != null) {
+                    try {
+                        if (cursor.moveToFirst()) {
+                            int nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                            if (nameIndex != -1) {
+                                String name = cursor.getString(nameIndex);
+                                if (name != null && !name.isEmpty()) {
+                                    fileName = name;
+                                }
+                            }
+                        }
+                    } finally {
+                        cursor.close();
+                    }
+                }
+                final String finalFileName = fileName;
+                java.io.InputStream inputStream = this.getContentResolver().openInputStream(uri);
+                if (inputStream == null) {
+                    throw new java.io.IOException("无法打开输入流");
+                }
+                java.io.ByteArrayOutputStream byteBuffer = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = inputStream.read(buffer)) != -1) {
+                    byteBuffer.write(buffer, 0, len);
+                }
+                inputStream.close();
+                byte[] bytes = byteBuffer.toByteArray();
+                String base64Content = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP);
+                String separator = this.currentPath.endsWith("\\") || this.currentPath.endsWith("/") ? "" : "\\";
+                String targetFilePath = this.currentPath + separator + finalFileName;
+                String token = this.prefs.getString("token", "").trim();
+                String baseUrl = this.normalizedBaseUrl();
+                JSONObject payload = new JSONObject();
+                payload.put("path", (Object)targetFilePath);
+                payload.put("content", (Object)base64Content);
+                payload.put("base64", true);
+                JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/fs/write", payload, token, "上传文件");
+                if (res.optBoolean("ok", false)) {
+                    this.runOnUiThread(() -> {
+                        Toast.makeText(this, "上传成功: " + finalFileName, Toast.LENGTH_SHORT).show();
+                        this.loadFileList(this.currentPath);
+                    });
+                } else {
+                    String error = res.optString("error", "未知错误");
+                    this.runOnUiThread(() -> {
+                        Toast.makeText(this, "上传失败: " + error, Toast.LENGTH_LONG).show();
+                    });
+                }
+            } catch (Exception e) {
+                this.runOnUiThread(() -> {
+                    Toast.makeText(this, "上传失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                });
             }
         });
     }

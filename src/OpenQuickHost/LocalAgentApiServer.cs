@@ -481,6 +481,23 @@ public sealed class LocalAgentApiServer : IDisposable
                     return;
                 }
 
+                var isBase64 = false;
+                if (payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("base64", out var base64Val))
+                {
+                    if (base64Val.ValueKind == JsonValueKind.True)
+                    {
+                        isBase64 = true;
+                    }
+                    else if (base64Val.ValueKind == JsonValueKind.False)
+                    {
+                        isBase64 = false;
+                    }
+                    else if (base64Val.ValueKind == JsonValueKind.String)
+                    {
+                        bool.TryParse(base64Val.GetString(), out isBase64);
+                    }
+                }
+
                 try
                 {
                     var fullPath = Path.GetFullPath(targetPath);
@@ -489,7 +506,15 @@ public sealed class LocalAgentApiServer : IDisposable
                     {
                         Directory.CreateDirectory(dir);
                     }
-                    File.WriteAllText(fullPath, content ?? string.Empty, Encoding.UTF8);
+                    if (isBase64)
+                    {
+                        var bytes = Convert.FromBase64String(content ?? string.Empty);
+                        File.WriteAllBytes(fullPath, bytes);
+                    }
+                    else
+                    {
+                        File.WriteAllText(fullPath, content ?? string.Empty, Encoding.UTF8);
+                    }
                     await WriteJsonAsync(response, 200, new
                     {
                         ok = true,
