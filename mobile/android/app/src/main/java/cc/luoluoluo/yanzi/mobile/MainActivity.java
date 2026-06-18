@@ -1675,6 +1675,10 @@ extends Activity {
         this.mobileExtensionGrid.setUseDefaultMargins(true);
         this.mobileExtensionListView.addView((View)this.mobileExtensionGrid, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         
+        this.mobileExtensionManagerList = this.card();
+        this.mobileExtensionManagerList.addView((View)this.textView("\u672c\u673a\u624b\u673a\u6269\u5c55", 16, -1, true));
+        this.mobileExtensionListView.addView((View)this.mobileExtensionManagerList);
+        
         // 在编辑二级界面最上面，增加一个返回导航栏！
         LinearLayout editorNavBar = new LinearLayout((Context)this);
         editorNavBar.setOrientation(0);
@@ -2521,15 +2525,14 @@ extends Activity {
         Button promptButton = this.button("\u590d\u5236\u63d0\u793a\u8bcd");
         header.addView((View)promptButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
         root.addView((View)header);
-        HorizontalScrollView editorScroll = new HorizontalScrollView((Context)this);
-        editorScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout editorRow = new LinearLayout((Context)this);
-        editorRow.setOrientation(0);
-        editorRow.setPadding(0, 0, this.dp(8), 0);
+        
+        // 1. 手动调整卡片
         LinearLayout helperPanel = this.card();
-        helperPanel.setLayoutParams((ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(280), -2));
+        LinearLayout.LayoutParams helperParams = new LinearLayout.LayoutParams(-1, -2);
+        helperParams.setMargins(0, this.dp(8), 0, this.dp(8));
+        helperPanel.setLayoutParams((ViewGroup.LayoutParams)helperParams);
         helperPanel.addView((View)this.textView("\u624b\u52a8\u8c03\u6574", 16, -1, true));
-        helperPanel.addView((View)this.textView("\u4f18\u5148\u505a\u672c\u673a\u53ef\u6267\u884c\u6269\u5c55\uff0c\u518d\u8865\u5145\u53d1\u5230\u7535\u8111\u3002\u6a21\u677f\u70b9\u51fb\u540e\u4f1a\u8986\u76d6\u53f3\u4fa7 JSON \u533a\u3002", 12, Color.rgb((int)182, (int)194, (int)214), false));
+        helperPanel.addView((View)this.textView("\u4f18\u5148\u505a\u672c\u673a\u53ef\u6267\u884c\u6269\u5c55\uff0c\u518d\u8865\u5145\u53d1\u5230\u7535\u8111\u3002\u6a21\u677f\u70b9\u51fb\u540e\u4f1a\u8986\u76d6 JSON \u533a\u3002", 12, Color.rgb((int)182, (int)194, (int)214), false));
         this.mobileExtensionIdInput = this.input("\u6269\u5c55 ID", "mobile-copy-shared-text");
         this.mobileExtensionNameInput = this.input("\u6269\u5c55\u540d\u79f0", "\u590d\u5236\u5f53\u524d\u8f93\u5165");
         this.mobileExtensionIconInput = this.input("\u56fe\u6807", "mdi:content-copy");
@@ -2541,23 +2544,17 @@ extends Activity {
         helperPanel.addView((View)this.mobileExtensionDescriptionInput);
         LinearLayout helperActions = new LinearLayout((Context)this);
         helperActions.setOrientation(0);
-        Button applyMetaButton = this.button("\u5e94\u7528\u5de6\u4fa7\u5b57\u6bb5");
+        Button applyMetaButton = this.button("\u5e94\u7528\u5b57\u6bb5");
         Button saveDraftButton = this.button("\u4fdd\u5b58\u6269\u5c55");
         helperActions.addView((View)applyMetaButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(42), 1.0f));
         helperActions.addView((View)saveDraftButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(42), 1.0f));
         helperPanel.addView((View)helperActions);
-        helperPanel.addView((View)this.textView("\u6a21\u677f\u793a\u4f8b", 15, -1, true));
-        helperPanel.addView((View)this.textView("\u672c\u673a\u80fd\u529b\u4f18\u5148\uff1a\u526a\u8d34\u677f\u3001\u6d4f\u89c8\u5668\u3001\u6587\u4ef6\u3001\u7f51\u7edc\u8bf7\u6c42\u3002", 12, Color.rgb((int)103, (int)232, (int)249), false));
-        for (MobileExtensionTemplate template : this.buildMobileExtensionTemplates()) {
-            Button templateButton = this.button(template.name);
-            templateButton.setAllCaps(false);
-            templateButton.setOnClickListener(v -> this.replaceDraftWithTemplate(template));
-            helperPanel.addView((View)templateButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(42)));
-            helperPanel.addView((View)this.textView(template.description, 11, Color.rgb((int)148, (int)163, (int)184), false));
-        }
+        root.addView((View)helperPanel);
+        
+        // 2. JSON 区卡片
         LinearLayout codePanel = this.card();
-        LinearLayout.LayoutParams codeParams = new LinearLayout.LayoutParams(this.dp(460), -2);
-        codeParams.setMargins(this.dp(12), this.dp(8), 0, this.dp(8));
+        LinearLayout.LayoutParams codeParams = new LinearLayout.LayoutParams(-1, -2);
+        codeParams.setMargins(0, this.dp(8), 0, this.dp(8));
         codePanel.setLayoutParams((ViewGroup.LayoutParams)codeParams);
         codePanel.addView((View)this.textView("JSON \u533a", 16, -1, true));
         this.mobileExtensionInput = this.multiInput("\u624b\u673a\u6269\u5c55 JSON / mobile-js", this.prefs.getString("mobileExtensionDraft", this.defaultMobileExtensionJson()));
@@ -2577,13 +2574,39 @@ extends Activity {
         this.mobileExtensionTestResult.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
         this.mobileExtensionTestResult.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
         codePanel.addView((View)this.mobileExtensionTestResult);
-        editorRow.addView((View)helperPanel);
-        editorRow.addView((View)codePanel);
-        editorScroll.addView((View)editorRow);
-        root.addView((View)editorScroll);
-        this.mobileExtensionManagerList = this.card();
-        this.mobileExtensionManagerList.addView((View)this.textView("\u672c\u673a\u624b\u673a\u6269\u5c55", 16, -1, true));
-        root.addView((View)this.mobileExtensionManagerList);
+        root.addView((View)codePanel);
+        
+        // 3. 模板示例卡片（默认折叠）
+        LinearLayout templatePanel = this.card();
+        LinearLayout.LayoutParams templateParams = new LinearLayout.LayoutParams(-1, -2);
+        templateParams.setMargins(0, this.dp(8), 0, this.dp(8));
+        templatePanel.setLayoutParams((ViewGroup.LayoutParams)templateParams);
+        TextView templateHeader = this.textView("\u6a21\u677f\u793a\u4f8b (\u70b9\u51fb\u5c55\u5f00 \u25bd)", 15, -1, true);
+        templateHeader.setPadding(0, this.dp(10), 0, this.dp(10));
+        templatePanel.addView((View)templateHeader);
+        LinearLayout templateContainer = new LinearLayout((Context)this);
+        templateContainer.setOrientation(1);
+        templateContainer.setVisibility(View.GONE);
+        templateContainer.addView((View)this.textView("\u672c\u673a\u80fd\u529b\u4f18\u5148\uff1a\u526a\u8d34\u677f\u3001\u6d4f\u89c8\u5668\u3001\u6587\u4ef6\u3001\u7f51\u7edc\u8bf7\u6c42\u3002", 12, Color.rgb((int)103, (int)232, (int)249), false));
+        for (MobileExtensionTemplate template : this.buildMobileExtensionTemplates()) {
+            Button templateButton = this.button(template.name);
+            templateButton.setAllCaps(false);
+            templateButton.setOnClickListener(v -> this.replaceDraftWithTemplate(template));
+            templateContainer.addView((View)templateButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(42)));
+            templateContainer.addView((View)this.textView(template.description, 11, Color.rgb((int)148, (int)163, (int)184), false));
+        }
+        templateHeader.setOnClickListener(v -> {
+            if (templateContainer.getVisibility() == View.GONE) {
+                templateContainer.setVisibility(View.VISIBLE);
+                templateHeader.setText("\u6a21\u677f\u793a\u4f8b (\u70b9\u51fb\u6298\u53e0 \u25b3)");
+            } else {
+                templateContainer.setVisibility(View.GONE);
+                templateHeader.setText("\u6a21\u677f\u793a\u4f8b (\u70b9\u51fb\u5c55\u5f00 \u25bd)");
+            }
+        });
+        templatePanel.addView((View)templateContainer);
+        root.addView((View)templatePanel);
+        
         promptButton.setOnClickListener(v -> this.copyMobileExtensionPrompt());
         applyMetaButton.setOnClickListener(v -> this.applyMetadataToDraft());
         saveDraftButton.setOnClickListener(v -> this.saveMobileExtensionDraft());
