@@ -684,6 +684,7 @@ extends Activity {
                     if (this.fsSearchInput != null) {
                         this.filterFsList(this.fsSearchInput.getText().toString());
                     }
+                    this.adjustViewPagerHeight();
                 });
             } catch (Exception e) {
                 this.runOnUiThread(() -> {
@@ -691,6 +692,7 @@ extends Activity {
                         this.fileListLayout.removeAllViews();
                         this.fileListLayout.addView((View)this.textView("\u52a0\u8f6d\u5931\u8d25: " + e.getMessage(), 14, Color.RED, false));
                     }
+                    this.adjustViewPagerHeight();
                 });
             }
         });
@@ -1576,18 +1578,9 @@ extends Activity {
         this.desktopViewPager.setId(android.view.View.generateViewId());
         
         final List<View> pages = new java.util.ArrayList<>();
-        ScrollView extensionsScroll = new ScrollView((Context)this);
-        extensionsScroll.addView(extensionsContainer);
-        
-        ScrollView fileManagerScroll = new ScrollView((Context)this);
-        fileManagerScroll.addView(fileManagerContainer);
-        
-        ScrollView shellScroll = new ScrollView((Context)this);
-        shellScroll.addView(shellContainer);
-        
-        pages.add(extensionsScroll);
-        pages.add(fileManagerScroll);
-        pages.add(shellScroll);
+        pages.add(extensionsContainer);
+        pages.add(fileManagerContainer);
+        pages.add(shellContainer);
         
         this.desktopViewPager.setAdapter(new androidx.viewpager.widget.PagerAdapter() {
             @Override
@@ -1730,6 +1723,7 @@ extends Activity {
             this.tvShellOutput.setVisibility(0);
             this.tvShellOutput.setTextColor(-256);
             this.tvShellOutput.setText((CharSequence)("\u6b63\u5728\u6267\u884c\u547d\u4ee4...\n> " + cmd));
+            this.adjustViewPagerHeight();
             this.executor.execute(() -> {
                 try {
                     String baseUrl = this.normalizedBaseUrl();
@@ -1741,11 +1735,13 @@ extends Activity {
                     this.runOnUiThread(() -> {
                         this.tvShellOutput.setTextColor(exitCode == 0 ? -16711936 : -65536);
                         this.tvShellOutput.setText((CharSequence)(output.isEmpty() ? "\u547d\u4ee4\u6267\u884c\u5b8c\u6bd5\uff0c\u65e0\u8f93\u51fa\u5185\u5bb9\u3002" : output));
+                        this.adjustViewPagerHeight();
                     });
                 } catch (Exception ex) {
                     this.runOnUiThread(() -> {
                         this.tvShellOutput.setTextColor(-65536);
                         this.tvShellOutput.setText((CharSequence)("\u547d\u4ee4\u6267\u884c\u5931\u8d25: " + ex.getMessage()));
+                        this.adjustViewPagerHeight();
                     });
                 }
             });
@@ -2925,6 +2921,7 @@ extends Activity {
             card.addView((View)name, (ViewGroup.LayoutParams)nameParams);
             grid.addView((View)card);
         }
+        this.adjustViewPagerHeight();
     }
 
     private void runRemoteExtension(RemoteExtension extension, View cardView) {
@@ -3156,6 +3153,10 @@ extends Activity {
         this.currentSubTabIndex = index;
         
         this.runOnUiThread(() -> {
+            if (this.desktopViewPager != null && this.desktopViewPager.getCurrentItem() != index) {
+                this.desktopViewPager.setCurrentItem(index, true);
+            }
+            
             android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
             activeBg.setCornerRadius((float)this.dp(8));
             activeBg.setColor(Color.argb(20, 34, 211, 238));
@@ -3173,22 +3174,16 @@ extends Activity {
                 this.btnShowShell.setBackgroundColor(Color.TRANSPARENT);
             }
             
-            if (this.extensionsContainer != null) this.extensionsContainer.setVisibility(8); // GONE
-            if (this.fileManagerContainer != null) this.fileManagerContainer.setVisibility(8); // GONE
-            if (this.shellContainer != null) this.shellContainer.setVisibility(8); // GONE
-            
             if (index == 0) {
                 if (this.btnShowExtensions != null) {
                     this.btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
                     this.btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
-                if (this.extensionsContainer != null) this.extensionsContainer.setVisibility(0); // VISIBLE
             } else if (index == 1) {
                 if (this.btnShowFileManager != null) {
                     this.btnShowFileManager.setTextColor(Color.rgb(34, 211, 238));
                     this.btnShowFileManager.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
-                if (this.fileManagerContainer != null) this.fileManagerContainer.setVisibility(0); // VISIBLE
                 if (this.currentPath == null) {
                     this.loadFileList("");
                 }
@@ -3197,7 +3192,44 @@ extends Activity {
                     this.btnShowShell.setTextColor(Color.rgb(34, 211, 238));
                     this.btnShowShell.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
-                if (this.shellContainer != null) this.shellContainer.setVisibility(0); // VISIBLE
+            }
+            this.adjustViewPagerHeight();
+        });
+    }
+
+    private void adjustViewPagerHeight() {
+        if (this.desktopViewPager == null) return;
+        int index = this.desktopViewPager.getCurrentItem();
+        View view = null;
+        if (index == 0) {
+            view = this.extensionsContainer;
+        } else if (index == 1) {
+            view = this.fileManagerContainer;
+        } else if (index == 2) {
+            view = this.shellContainer;
+        }
+        if (view == null) return;
+        
+        final View finalView = view;
+        this.desktopViewPager.post(() -> {
+            try {
+                int width = this.desktopViewPager.getWidth();
+                if (width <= 0) {
+                    width = this.getResources().getDisplayMetrics().widthPixels - this.dp(32);
+                }
+                int widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY);
+                int heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+                finalView.measure(widthSpec, heightSpec);
+                int measuredHeight = finalView.getMeasuredHeight();
+                int minHeight = this.dp(300);
+                int targetHeight = Math.max(minHeight, measuredHeight);
+                ViewGroup.LayoutParams lp = this.desktopViewPager.getLayoutParams();
+                if (lp != null && lp.height != targetHeight) {
+                    lp.height = targetHeight;
+                    this.desktopViewPager.setLayoutParams(lp);
+                }
+            } catch (Exception e) {
+                // ignore
             }
         });
     }
