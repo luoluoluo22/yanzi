@@ -1579,7 +1579,6 @@ extends Activity {
         
         this.mobileDocsScrollView = new android.widget.ScrollView((Context)this);
         this.mobileDocsScrollView.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
-        this.mobileDocsScrollView.setVisibility(View.GONE);
         
         this.mobileDocsContainer = new android.widget.LinearLayout((Context)this);
         this.mobileDocsContainer.setOrientation(1);
@@ -1588,7 +1587,6 @@ extends Activity {
         this.mobileShellContainer = new android.widget.LinearLayout((Context)this);
         this.mobileShellContainer.setOrientation(1);
         this.mobileShellContainer.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
-        this.mobileShellContainer.setVisibility(View.GONE);
 
         // 新建并配置 ViewPager
         this.mobileViewPager = new androidx.viewpager.widget.ViewPager((Context)this);
@@ -1633,7 +1631,7 @@ extends Activity {
             public void onPageScrollStateChanged(int state) {}
         });
 
-        this.mobileExtensionTabPage.addView((View)this.mobileViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
+        this.mobileExtensionTabPage.addView((View)this.mobileViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
         this.mobileExtensionTabPage.addView((View)this.mobileExtensionEditorView);
         
         // 渲染文档内容
