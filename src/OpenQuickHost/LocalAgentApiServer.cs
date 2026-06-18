@@ -265,7 +265,9 @@ public sealed class LocalAgentApiServer : IDisposable
                 {
                     using var process = new System.Diagnostics.Process();
                     process.StartInfo.FileName = "powershell.exe";
-                    var bytes = Encoding.Unicode.GetBytes(command);
+                    // Prepend progress preference silencer to avoid CLIXML progress streams in stderr
+                    var prependedCommand = "$ProgressPreference = 'SilentlyContinue';\r\n" + command;
+                    var bytes = Encoding.Unicode.GetBytes(prependedCommand);
                     var base64 = Convert.ToBase64String(bytes);
                     
                     process.StartInfo.Arguments = $"-NoProfile -NonInteractive -EncodedCommand {base64}";
@@ -303,6 +305,12 @@ public sealed class LocalAgentApiServer : IDisposable
 
                     var output = outputBuilder.ToString();
                     var error = errorBuilder.ToString();
+
+                    // If error output contains only CLIXML progress data on a successful exit, discard it to avoid confusing the user
+                    if (!string.IsNullOrEmpty(error) && process.ExitCode == 0 && error.Contains("CLIXML") && error.Contains("progress"))
+                    {
+                        error = "";
+                    }
                     var combinedOutput = string.IsNullOrEmpty(error) ? output : $"{output}\r\n[错误输出]\r\n{error}";
 
                     await WriteJsonAsync(response, 200, new

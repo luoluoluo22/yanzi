@@ -6626,7 +6626,11 @@ extends Activity {
                 case 1:
                     ClipboardManager manager = (ClipboardManager)this.getSystemService("clipboard");
                     if (manager != null) {
-                        manager.setPrimaryClip(ClipData.newPlainText("AI Message", info.text));
+                        String textToCopy = info.text;
+                        if (info.feedbackTextView != null) {
+                            textToCopy = "AI \u539f\u59cb\u56de\u590d\uff1a\n" + info.text + "\n\n" + info.feedbackTextView.getText().toString();
+                        }
+                        manager.setPrimaryClip(ClipData.newPlainText("AI Message", textToCopy));
                         this.setStatus("\u5df2\u590d\u5236\u6d88\u606f\u5230\u526a\u8d34\u677f\u3002");
                     }
                     break;
