@@ -3936,10 +3936,12 @@ extends Activity {
             this.setStatus("\u8bf7\u5148\u8fde\u63a5 PC \u7aef\u540c\u6b65 AI \u914d\u7f6e\u3002");
             return;
         }
-        this.addAiChatMessage("\u7cfb\u7edf\u53cd\u9988:" + toolName, text, -256, true);
-        this.isAiCancelled = false;
-        this.setAiLoadingState(true);
-        this.fetchAiReply();
+        this.runOnUiThread(() -> {
+            this.addAiChatMessage("系统反馈:" + toolName, text, -256, true);
+            this.isAiCancelled = false;
+            this.setAiLoadingState(true);
+            this.fetchAiReply();
+        });
     }
 
     private boolean isKnownAiTool(String toolName) {
@@ -4859,6 +4861,10 @@ extends Activity {
     }
 
     private void addAiChatMessage(String sender, String text, int color, boolean saveToHistory) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            this.runOnUiThread(() -> this.addAiChatMessage(sender, text, color, saveToHistory));
+            return;
+        }
         TextView tv;
         if (sender != null && sender.startsWith("\u7cfb\u7edf\u53cd\u9988")) {
             String toolName = "";
