@@ -206,7 +206,6 @@ extends Activity {
     private EditText mobileExtensionDescriptionInput;
     private TextView mobileExtensionSectionTitle;
     private TextView mobileExtensionTestResult;
-    private LinearLayout mobileExtensionManagerList;
     private LinearLayout mobileExtensionListView;
     private LinearLayout mobileExtensionEditorView;
     private GridLayout mobileExtensionGrid;
@@ -347,6 +346,7 @@ extends Activity {
     private android.widget.Button btnShowMobileExtensions;
     private android.widget.Button btnShowMobileDocs;
     private android.widget.Button btnShowMobileShell;
+    private android.widget.LinearLayout mobileSubTabBar;
     private int currentMobileSubTab = 0;
     private boolean isEditingMobileExtension = false;
     private androidx.core.widget.NestedScrollView mobileDocsScrollView;
@@ -1527,7 +1527,7 @@ extends Activity {
         this.yanmList.setUseDefaultMargins(false);
         this.yanmTabPage.addView((View)this.yanmList, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         // 手机端子 Tab 栏
-        LinearLayout mobileSubTabBar = new LinearLayout((Context)this);
+        this.mobileSubTabBar = new LinearLayout((Context)this);
         mobileSubTabBar.setOrientation(0);
         mobileSubTabBar.setGravity(16);
         mobileSubTabBar.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(8));
@@ -1574,7 +1574,7 @@ extends Activity {
         
         this.mobileExtensionEditorView = new LinearLayout((Context)this);
         this.mobileExtensionEditorView.setOrientation(1);
-        this.mobileExtensionEditorView.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
+        this.mobileExtensionEditorView.setPadding(this.dp(6), this.dp(12), this.dp(6), this.dp(12));
         this.mobileExtensionEditorView.setVisibility(View.GONE);
         
         this.mobileDocsScrollView = new androidx.core.widget.NestedScrollView((Context)this);
@@ -1662,6 +1662,7 @@ extends Activity {
             this.updateMobileExtensionFieldsFromDraft();
             // 在编辑状态下，隐藏 ViewPager，显示编辑界面
             this.mobileViewPager.setVisibility(View.GONE);
+            if (this.mobileSubTabBar != null) this.mobileSubTabBar.setVisibility(View.GONE);
             this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
             this.setStatus("\u65b0\u5efa\u6269\u5c55\u8349\u7a3f");
         });
@@ -1675,20 +1676,17 @@ extends Activity {
         this.mobileExtensionGrid.setUseDefaultMargins(true);
         this.mobileExtensionListView.addView((View)this.mobileExtensionGrid, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         
-        this.mobileExtensionManagerList = this.card();
-        this.mobileExtensionManagerList.addView((View)this.textView("\u672c\u673a\u624b\u673a\u6269\u5c55", 16, -1, true));
-        this.mobileExtensionListView.addView((View)this.mobileExtensionManagerList);
-        
         // 在编辑二级界面最上面，增加一个返回导航栏！
         LinearLayout editorNavBar = new LinearLayout((Context)this);
         editorNavBar.setOrientation(0);
         editorNavBar.setGravity(16);
         editorNavBar.setPadding(0, this.dp(8), 0, this.dp(16));
-        Button backBtn = this.button("\u2190 \u8fd4\u56de");
+        Button backBtn = this.button("\u2190");
         backBtn.setOnClickListener(v -> {
             this.isEditingMobileExtension = false;
             this.mobileExtensionEditorView.setVisibility(View.GONE);
             this.mobileViewPager.setVisibility(View.VISIBLE);
+            if (this.mobileSubTabBar != null) this.mobileSubTabBar.setVisibility(View.VISIBLE);
             this.setStatus("\u5df2\u8fd4\u56de\u624b\u673a\u6269\u5c55\u5217\u8868");
         });
         editorNavBar.addView((View)backBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
@@ -2531,8 +2529,6 @@ extends Activity {
         LinearLayout.LayoutParams helperParams = new LinearLayout.LayoutParams(-1, -2);
         helperParams.setMargins(0, this.dp(8), 0, this.dp(8));
         helperPanel.setLayoutParams((ViewGroup.LayoutParams)helperParams);
-        helperPanel.addView((View)this.textView("\u624b\u52a8\u8c03\u6574", 16, -1, true));
-        helperPanel.addView((View)this.textView("\u4f18\u5148\u505a\u672c\u673a\u53ef\u6267\u884c\u6269\u5c55\uff0c\u518d\u8865\u5145\u53d1\u5230\u7535\u8111\u3002\u6a21\u677f\u70b9\u51fb\u540e\u4f1a\u8986\u76d6 JSON \u533a\u3002", 12, Color.rgb((int)182, (int)194, (int)214), false));
         this.mobileExtensionIdInput = this.input("\u6269\u5c55 ID", "mobile-copy-shared-text");
         this.mobileExtensionNameInput = this.input("\u6269\u5c55\u540d\u79f0", "\u590d\u5236\u5f53\u524d\u8f93\u5165");
         this.mobileExtensionIconInput = this.input("\u56fe\u6807", "mdi:content-copy");
@@ -2542,13 +2538,8 @@ extends Activity {
         helperPanel.addView((View)this.mobileExtensionNameInput);
         helperPanel.addView((View)this.mobileExtensionIconInput);
         helperPanel.addView((View)this.mobileExtensionDescriptionInput);
-        LinearLayout helperActions = new LinearLayout((Context)this);
-        helperActions.setOrientation(0);
-        Button applyMetaButton = this.button("\u5e94\u7528\u5b57\u6bb5");
         Button saveDraftButton = this.button("\u4fdd\u5b58\u6269\u5c55");
-        helperActions.addView((View)applyMetaButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(42), 1.0f));
-        helperActions.addView((View)saveDraftButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(42), 1.0f));
-        helperPanel.addView((View)helperActions);
+        helperPanel.addView((View)saveDraftButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(42)));
         root.addView((View)helperPanel);
         
         // 2. JSON 区卡片
@@ -2608,7 +2599,6 @@ extends Activity {
         root.addView((View)templatePanel);
         
         promptButton.setOnClickListener(v -> this.copyMobileExtensionPrompt());
-        applyMetaButton.setOnClickListener(v -> this.applyMetadataToDraft());
         saveDraftButton.setOnClickListener(v -> this.saveMobileExtensionDraft());
         pasteJsonButton.setOnClickListener(v -> this.pasteJsonIntoMobileExtensionEditor());
         testButton.setOnClickListener(v -> this.runMobileScript());
@@ -2802,8 +2792,26 @@ extends Activity {
     private void saveMobileExtensionDraft() {
         try {
             String draft = this.mobileExtensionInput.getText().toString();
-            String id = MainActivity.firstNonEmpty(this.mobileExtensionIdInput.getText().toString(), "mobile-extension-draft");
-            String name = MainActivity.firstNonEmpty(this.mobileExtensionNameInput.getText().toString(), "\u624b\u673a\u6269\u5c55\u8349\u7a3f");
+            String inputId = this.mobileExtensionIdInput.getText().toString().trim();
+            String inputName = this.mobileExtensionNameInput.getText().toString().trim();
+            String inputIcon = this.mobileExtensionIconInput.getText().toString().trim();
+            String inputDesc = this.mobileExtensionDescriptionInput.getText().toString().trim();
+
+            if (draft.trim().startsWith("{") && draft.trim().endsWith("}")) {
+                JSONObject json = new JSONObject(draft);
+                if (!inputId.isEmpty()) json.put("id", inputId);
+                if (!inputName.isEmpty()) {
+                    json.put("name", inputName);
+                    json.put("displayName", inputName);
+                }
+                if (!inputIcon.isEmpty()) json.put("icon", inputIcon);
+                if (!inputDesc.isEmpty()) json.put("description", inputDesc);
+                draft = json.toString(2);
+                this.mobileExtensionInput.setText(draft);
+            }
+
+            String id = MainActivity.firstNonEmpty(inputId, "mobile-extension-draft");
+            String name = MainActivity.firstNonEmpty(inputName, "\u624b\u673a\u6269\u5c55\u8349\u7a3f");
             if (draft.trim().startsWith("{") && draft.trim().endsWith("}")) {
                 JSONObject json = new JSONObject(draft);
                 id = MainActivity.firstNonEmpty(json.optString("id"), id);
@@ -2826,18 +2834,36 @@ extends Activity {
         try {
             WebView runner;
             String draft = this.mobileExtensionInput.getText().toString();
+            String inputId = this.mobileExtensionIdInput.getText().toString().trim();
+            String inputName = this.mobileExtensionNameInput.getText().toString().trim();
+            String inputIcon = this.mobileExtensionIconInput.getText().toString().trim();
+            String inputDesc = this.mobileExtensionDescriptionInput.getText().toString().trim();
+
+            if (draft.trim().startsWith("{") && draft.trim().endsWith("}")) {
+                JSONObject json = new JSONObject(draft);
+                if (!inputId.isEmpty()) json.put("id", inputId);
+                if (!inputName.isEmpty()) {
+                    json.put("name", inputName);
+                    json.put("displayName", inputName);
+                }
+                if (!inputIcon.isEmpty()) json.put("icon", inputIcon);
+                if (!inputDesc.isEmpty()) json.put("description", inputDesc);
+                draft = json.toString(2);
+                this.mobileExtensionInput.setText(draft);
+            }
+
             this.prefs.edit().putString("mobileExtensionDraft", draft).apply();
             this.updateMobileExtensionFieldsFromDraft();
             String source = MainActivity.extractMobileScriptSource(draft);
             if (source.trim().isEmpty()) {
                 throw new IllegalStateException("\u811a\u672c\u4e3a\u7a7a\u3002");
             }
-            this.updateMobileScriptResult("\u6b63\u5728\u6d4b\u8bd5 JSON...", false);
+            this.updateMobileScriptResult("\u6b63\u5728\u6d4b\u8bd5...", false);
             this.activeMobileScriptRunner = runner = new WebView((Context)this);
             runner.getSettings().setJavaScriptEnabled(true);
             runner.addJavascriptInterface((Object)new MobileJsBridge(), "yanziMobileJsHost");
             String html = this.buildMobileScriptHtml(source);
-            runner.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+            runner.loadDataWithBaseURL("http://localhost/", html, "text/html", "UTF-8", null);
             this.setStatus("\u624b\u673a\u811a\u672c\u5df2\u542f\u52a8\u3002");
         }
         catch (Exception ex) {
@@ -2914,12 +2940,6 @@ extends Activity {
     }
 
     private void renderLocalMobileExtensions() {
-        if (this.mobileExtensionManagerList == null) {
-            return;
-        }
-        this.mobileExtensionManagerList.removeAllViews();
-        this.mobileExtensionManagerList.addView((View)this.textView("\u672c\u673a\u6269\u5c55", 16, -1, true));
-        
         if (this.mobileExtensionGrid == null) {
             return;
         }
@@ -2930,8 +2950,6 @@ extends Activity {
             TextView emptyTv = this.textView("\u6682\u65e0\u672c\u673a\u6269\u5c55\u3002", 12, Color.rgb((int)148, (int)163, (int)184), false);
             emptyTv.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
             this.mobileExtensionGrid.addView((View)emptyTv);
-            
-            this.mobileExtensionManagerList.addView((View)this.textView("\u6682\u65e0\u672c\u673a\u6269\u5c55\u3002", 12, Color.rgb((int)148, (int)163, (int)184), false));
             return;
         }
         
@@ -2950,6 +2968,12 @@ extends Activity {
             params.height = this.dp(110);
             params.setMargins(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
             card.setLayoutParams((ViewGroup.LayoutParams)params);
+            
+            String iconName = item.optString("icon", "mdi:play");
+            if (iconName.startsWith("mdi:")) {
+                iconName = iconName.substring(4);
+            }
+            android.graphics.Path path = MobileIconLibrary.resolveOrDefault(iconName);
             
             LinearLayout iconLayout = new LinearLayout((Context)this);
             iconLayout.setGravity(17);
@@ -2970,16 +2994,10 @@ extends Activity {
             iconParams.bottomMargin = this.dp(6);
             iconLayout.setLayoutParams((ViewGroup.LayoutParams)iconParams);
             
-            TextView iconText = new TextView((Context)this);
-            String displayChar = "JS";
-            if (name != null && name.length() > 0) {
-                displayChar = name.substring(0, 1).toUpperCase();
-            }
-            iconText.setText((CharSequence)displayChar);
-            iconText.setTextColor(Color.WHITE);
-            iconText.setTextSize(2, 18.0f);
-            iconText.setTypeface(null, 1);
-            iconLayout.addView((View)iconText);
+            ImageView iconImg = new ImageView((Context)this);
+            iconImg.setImageDrawable((Drawable)new PathDrawable(path, Color.WHITE));
+            iconImg.setPadding(this.dp(13), this.dp(13), this.dp(13), this.dp(13));
+            iconLayout.addView((View)iconImg, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
             
             TextView nameTv = new TextView((Context)this);
             nameTv.setText((CharSequence)name);
@@ -3026,6 +3044,7 @@ extends Activity {
                         this.updateMobileExtensionFieldsFromDraft();
                         this.isEditingMobileExtension = true;
                         if (this.mobileViewPager != null) this.mobileViewPager.setVisibility(View.GONE);
+                        if (this.mobileSubTabBar != null) this.mobileSubTabBar.setVisibility(View.GONE);
                         if (this.mobileExtensionEditorView != null) this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
                         this.scrollToView((View)this.mobileExtensionSectionTitle);
                         this.setStatus("\u6b63\u5728\u7f16\u8f91\u6269\u5c55\uff1a" + name);
@@ -3039,32 +3058,6 @@ extends Activity {
             });
             
             this.mobileExtensionGrid.addView((View)card);
-            
-            LinearLayout row = new LinearLayout((Context)this);
-            row.setOrientation(0);
-            row.setGravity(16);
-            TextView title = this.textView(name + "\n" + id, 12, -1, false);
-            row.addView((View)title, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-            Button edit = this.button("\u7f16\u8f91");
-            Button delete = this.button("\u5220\u9664");
-            row.addView((View)edit, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(72), this.dp(40)));
-            row.addView((View)delete, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(72), this.dp(40)));
-            this.mobileExtensionManagerList.addView((View)row);
-            edit.setOnClickListener(v -> {
-                String pretty = item.toString();
-                try {
-                    pretty = item.toString(2);
-                }
-                catch (Exception exception) {}
-                this.mobileExtensionInput.setText((CharSequence)pretty);
-                this.updateMobileExtensionFieldsFromDraft();
-                this.isEditingMobileExtension = true;
-                if (this.mobileViewPager != null) this.mobileViewPager.setVisibility(View.GONE);
-                if (this.mobileExtensionEditorView != null) this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
-                this.scrollToView((View)this.mobileExtensionSectionTitle);
-                this.setStatus("\u6b63\u5728\u7f16\u8f91\u624b\u673a\u6269\u5c55\uff1a" + name);
-            });
-            delete.setOnClickListener(v -> this.deleteLocalMobileExtension(id));
         }
     }
 
@@ -6002,7 +5995,7 @@ extends Activity {
                     WebView runner = new WebView((Context)this);
                     runner.getSettings().setJavaScriptEnabled(true);
                     runner.addJavascriptInterface((Object)new MobileJsBridge(callback), "yanziMobileJsHost");
-                    runner.loadDataWithBaseURL(null, this.buildMobileScriptHtml(source), "text/html", "UTF-8", null);
+                    runner.loadDataWithBaseURL("http://localhost/", this.buildMobileScriptHtml(source), "text/html", "UTF-8", null);
                 }
                 catch (Exception e) {
                     this.setStatus("\u540e\u53f0\u811a\u672c\u6267\u884c\u5931\u8d25: " + taskName + " - " + e.getMessage());
