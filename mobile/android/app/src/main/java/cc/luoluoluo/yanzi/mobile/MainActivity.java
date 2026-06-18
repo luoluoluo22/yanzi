@@ -355,6 +355,7 @@ extends Activity {
     private android.widget.TextView tvMobileShellLog;
     private android.widget.ScrollView svMobileShellLog;
     private android.widget.EditText etMobileShellInput;
+    private androidx.viewpager.widget.ViewPager mobileViewPager;
     private android.view.GestureDetector tabGestureDetector;
 
     private final Map<String, WebView> activeYanmWebViews = new HashMap<String, WebView>();
@@ -1588,11 +1589,52 @@ extends Activity {
         this.mobileShellContainer.setOrientation(1);
         this.mobileShellContainer.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
         this.mobileShellContainer.setVisibility(View.GONE);
+
+        // 新建并配置 ViewPager
+        this.mobileViewPager = new androidx.viewpager.widget.ViewPager((Context)this);
+        this.mobileViewPager.setId(android.view.View.generateViewId());
         
-        this.mobileExtensionTabPage.addView((View)this.mobileExtensionListView);
+        final java.util.List<View> mobilePages = new java.util.ArrayList<>();
+        mobilePages.add(this.mobileExtensionListView);
+        mobilePages.add(this.mobileDocsScrollView);
+        mobilePages.add(this.mobileShellContainer);
+        
+        this.mobileViewPager.setAdapter(new androidx.viewpager.widget.PagerAdapter() {
+            @Override
+            public int getCount() {
+                return mobilePages.size();
+            }
+            @Override
+            public boolean isViewFromObject(View view, Object object) {
+                return view == object;
+            }
+            @Override
+            public Object instantiateItem(ViewGroup container, int position) {
+                View page = mobilePages.get(position);
+                container.addView(page);
+                return page;
+            }
+            @Override
+            public void destroyItem(ViewGroup container, int position, Object object) {
+                container.removeView((View)object);
+            }
+        });
+        
+        this.mobileViewPager.addOnPageChangeListener(new androidx.viewpager.widget.ViewPager.OnPageChangeListener() {
+            @Override
+            public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {}
+            
+            @Override
+            public void onPageSelected(int position) {
+                MainActivity.this.selectMobileSubTab(position);
+            }
+            
+            @Override
+            public void onPageScrollStateChanged(int state) {}
+        });
+
+        this.mobileExtensionTabPage.addView((View)this.mobileViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
         this.mobileExtensionTabPage.addView((View)this.mobileExtensionEditorView);
-        this.mobileExtensionTabPage.addView((View)this.mobileDocsScrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
-        this.mobileExtensionTabPage.addView((View)this.mobileShellContainer, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
         
         // 渲染文档内容
         this.buildMobileDocsView(this.mobileDocsContainer);
@@ -1602,27 +1644,20 @@ extends Activity {
         // 默认选中第一个子 Tab
         this.selectMobileSubTab(0);
         
-        // 渲染 List 页面头部
+        // 渲染 List 页面头部 (移除了大标题，只保留新建按钮，置右排布)
         LinearLayout listHeader = new LinearLayout((Context)this);
         listHeader.setOrientation(0);
-        listHeader.setGravity(16);
-        listHeader.setPadding(0, 0, 0, this.dp(16));
-        
-        LinearLayout listTitleLayout = new LinearLayout((Context)this);
-        listTitleLayout.setOrientation(1);
-        listTitleLayout.addView((View)this.textView("\u624b\u673a\u6269\u5c55", 28, -1, true));
-        listTitleLayout.addView((View)this.textView("\u7ba1\u7406\u548c\u6d4b\u8bd5\u53ea\u5728\u626b\u673a\u7aef\u8fd0\u884c\u7684 mobile-js \u6269\u5c55\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
-        
-        listHeader.addView((View)listTitleLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        listHeader.setGravity(5); // Gravity.RIGHT is 5
+        listHeader.setPadding(0, 0, 0, this.dp(12));
         
         // 加一个漂亮的“新建”按钮在主列表右上角
         Button newExtBtn = this.button("\u65b0\u5efa\u6269\u5c55");
         newExtBtn.setOnClickListener(v -> {
-            // 重置编辑器字段，开启编辑器二级界面
             this.isEditingMobileExtension = true;
             this.mobileExtensionInput.setText((CharSequence)this.defaultMobileExtensionJson());
             this.updateMobileExtensionFieldsFromDraft();
-            this.mobileExtensionListView.setVisibility(View.GONE);
+            // 在编辑状态下，隐藏 ViewPager，显示编辑界面
+            this.mobileViewPager.setVisibility(View.GONE);
             this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
             this.setStatus("\u65b0\u5efa\u6269\u5c55\u8349\u7a3f");
         });
@@ -1645,7 +1680,7 @@ extends Activity {
         backBtn.setOnClickListener(v -> {
             this.isEditingMobileExtension = false;
             this.mobileExtensionEditorView.setVisibility(View.GONE);
-            this.mobileExtensionListView.setVisibility(View.VISIBLE);
+            this.mobileViewPager.setVisibility(View.VISIBLE);
             this.setStatus("\u5df2\u8fd4\u56de\u624b\u673a\u6269\u5c55\u5217\u8868");
         });
         editorNavBar.addView((View)backBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
@@ -2962,7 +2997,7 @@ extends Activity {
                         this.mobileExtensionInput.setText((CharSequence)pretty);
                         this.updateMobileExtensionFieldsFromDraft();
                         this.isEditingMobileExtension = true;
-                        if (this.mobileExtensionListView != null) this.mobileExtensionListView.setVisibility(View.GONE);
+                        if (this.mobileViewPager != null) this.mobileViewPager.setVisibility(View.GONE);
                         if (this.mobileExtensionEditorView != null) this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
                         this.scrollToView((View)this.mobileExtensionSectionTitle);
                         this.setStatus("\u6b63\u5728\u7f16\u8f91\u6269\u5c55\uff1a" + name);
@@ -2996,7 +3031,7 @@ extends Activity {
                 this.mobileExtensionInput.setText((CharSequence)pretty);
                 this.updateMobileExtensionFieldsFromDraft();
                 this.isEditingMobileExtension = true;
-                if (this.mobileExtensionListView != null) this.mobileExtensionListView.setVisibility(View.GONE);
+                if (this.mobileViewPager != null) this.mobileViewPager.setVisibility(View.GONE);
                 if (this.mobileExtensionEditorView != null) this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
                 this.scrollToView((View)this.mobileExtensionSectionTitle);
                 this.setStatus("\u6b63\u5728\u7f16\u8f91\u624b\u673a\u6269\u5c55\uff1a" + name);
@@ -5929,7 +5964,7 @@ extends Activity {
     }
 
     private String buildMobileScriptHtml(String source) {
-        return "<!doctype html><html><body><script>window.context={mobile:{toast:function(text){yanziMobileJsHost.toast(String(text||''));},sendToDesktop:function(text){yanziMobileJsHost.sendToDesktop(String(text||''));},done:function(text){yanziMobileJsHost.done(String(text||''));},fail:function(text){yanziMobileJsHost.fail(String(text||''));},getSharedText:function(){return yanziMobileJsHost.getSharedText();},getClipboardText:function(){return Promise.resolve(yanziMobileJsHost.getClipboardText());},setClipboardText:function(text){return Promise.resolve(yanziMobileJsHost.setClipboardText(String(text||'')));},openUrl:function(url){return Promise.resolve(yanziMobileJsHost.openUrl(String(url||'')));},pickPhoto:function(){return Promise.resolve(yanziMobileJsHost.pickPhoto());},readTextFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.readTextFile(String(name||''))));},saveTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.saveTextFile(String(name||''),String(text||''))));},appendTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.appendTextFile(String(name||''),String(text||''))));},httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpGet(String(url||''))));},httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpPostJson(String(url||''),String(jsonText||''))));}}};async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('\u811a\u672c\u6267\u884c\u5b8c\u6210');}catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}__run();</script></body></html>";
+        return "<!doctype html><html><body><script>window.context={mobile:{toast:function(text){yanziMobileJsHost.toast(String(text||''));},sendToDesktop:function(text){yanziMobileJsHost.sendToDesktop(String(text||''));},done:function(text){yanziMobileJsHost.done(String(text||''));},fail:function(text){yanziMobileJsHost.fail(String(text||''));},getSharedText:function(){return yanziMobileJsHost.getSharedText();},getClipboardText:function(){return Promise.resolve(yanziMobileJsHost.getClipboardText());},setClipboardText:function(text){return Promise.resolve(yanziMobileJsHost.setClipboardText(String(text||'')));},openUrl:function(url){return Promise.resolve(yanziMobileJsHost.openUrl(String(url||'')));},pickPhoto:function(){return Promise.resolve(yanziMobileJsHost.pickPhoto());},readTextFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.readTextFile(String(name||''))));},saveTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.saveTextFile(String(name||''),String(text||''))));},appendTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.appendTextFile(String(name||''),String(text||''))));},httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpGet(String(url||''))));},httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpPostJson(String(url||''),String(jsonText||''))));},getBatteryLevel:function(){return yanziMobileJsHost.getBatteryLevel();},getScreenBrightness:function(){return yanziMobileJsHost.getScreenBrightness();},setScreenBrightness:function(val){yanziMobileJsHost.setScreenBrightness(Number(val||0));},getLocation:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.getLocation()));},listScriptFiles:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.listScriptFiles()));},deleteScriptFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.deleteScriptFile(String(name||''))));}}};async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('\u811a\u672c\u6267\u884c\u5b8c\u6210');}catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}__run();</script></body></html>";
     }
 
     private void executeMobileScriptHeadless(String source, String taskName, ScriptCallback callback) {
@@ -6407,6 +6442,105 @@ extends Activity {
                     this.callback.onResult("\u5931\u8d25: " + text);
                 }
             });
+        }
+
+        @JavascriptInterface
+        public int getBatteryLevel() {
+            MainActivity.this.appendMobileShellLog("[API] getBatteryLevel");
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                    android.os.BatteryManager bm = (android.os.BatteryManager) MainActivity.this.getSystemService(Context.BATTERY_SERVICE);
+                    if (bm != null) {
+                        return bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY);
+                    }
+                }
+                Intent intent = MainActivity.this.registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+                if (intent != null) {
+                    int level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+                    int scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1);
+                    if (level != -1 && scale != -1 && scale != 0) {
+                        return (level * 100) / scale;
+                    }
+                }
+            } catch (Exception e) {
+                MainActivity.this.appendMobileShellLog("[SYSTEM] \u83b7\u53d6\u7535\u91cf\u5931\u8d25: " + e.getMessage());
+            }
+            return -1;
+        }
+
+        @JavascriptInterface
+        public float getScreenBrightness() {
+            MainActivity.this.appendMobileShellLog("[API] getScreenBrightness");
+            try {
+                android.view.WindowManager.LayoutParams lp = MainActivity.this.getWindow().getAttributes();
+                if (lp.screenBrightness < 0) {
+                    int val = android.provider.Settings.System.getInt(MainActivity.this.getContentResolver(), android.provider.Settings.System.SCREEN_BRIGHTNESS);
+                    return val / 255.0f;
+                }
+                return lp.screenBrightness;
+            } catch (Exception e) {
+                MainActivity.this.appendMobileShellLog("[SYSTEM] \u83b7\u53d6\u4eae\u5ea6\u5931\u8d25: " + e.getMessage());
+                return 0.5f;
+            }
+        }
+
+        @JavascriptInterface
+        public void setScreenBrightness(float brightness) {
+            MainActivity.this.appendMobileShellLog("[API] setScreenBrightness: " + brightness);
+            MainActivity.this.runOnUiThread(() -> {
+                try {
+                    android.view.WindowManager.LayoutParams lp = MainActivity.this.getWindow().getAttributes();
+                    lp.screenBrightness = Math.max(0.0f, Math.min(1.0f, brightness));
+                    MainActivity.this.getWindow().setAttributes(lp);
+                } catch (Exception e) {
+                    MainActivity.this.appendMobileShellLog("[SYSTEM] \u8bbe\u7f6e\u4eae\u5ea6\u5931\u8d25: " + e.getMessage());
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public String getLocation() {
+            MainActivity.this.appendMobileShellLog("[API] getLocation: \u6b63\u5728\u901a\u8fc7\u7f51\u7edc\u83b7\u53d6\u7c97\u7565\u5b9a\u4f4d...");
+            return this.runHttpRequest("GET", "http://ip-api.com/json?lang=zh-CN", null, null);
+        }
+
+        @JavascriptInterface
+        public String listScriptFiles() {
+            MainActivity.this.appendMobileShellLog("[API] listScriptFiles");
+            try {
+                File dir = MainActivity.this.resolveMobileScriptFile("");
+                File[] files = dir.listFiles();
+                JSONArray arr = new JSONArray();
+                if (files != null) {
+                    for (File f : files) {
+                        if (f.isFile()) {
+                            JSONObject jobj = new JSONObject();
+                            jobj.put("name", f.getName());
+                            jobj.put("size", f.length());
+                            jobj.put("lastModified", f.lastModified());
+                            arr.put(jobj);
+                        }
+                    }
+                }
+                return new JSONObject().put("ok", true).put("files", (Object)arr).toString();
+            } catch (Exception e) {
+                return MainActivity.buildJsonErrorResult(e.getMessage());
+            }
+        }
+
+        @JavascriptInterface
+        public String deleteScriptFile(String name) {
+            MainActivity.this.appendMobileShellLog("[API] deleteScriptFile: " + name);
+            try {
+                File file = MainActivity.this.resolveMobileScriptFile(name);
+                if (!file.exists()) {
+                    return new JSONObject().put("ok", false).put("error", (Object)"\u6587\u4ef6\u4e0d\u5b58\u5728").toString();
+                }
+                boolean deleted = file.delete();
+                return new JSONObject().put("ok", deleted).toString();
+            } catch (Exception e) {
+                return MainActivity.buildJsonErrorResult(e.getMessage());
+            }
         }
 
         private String writeTextFile(String name, String text, boolean append) {
@@ -8144,36 +8278,28 @@ extends Activity {
                 }
             }
             
+            if (this.mobileViewPager != null && this.mobileViewPager.getCurrentItem() != index) {
+                this.mobileViewPager.setCurrentItem(index, true);
+            }
+            
             if (index == 0) {
                 if (this.isEditingMobileExtension) {
-                    this.mobileExtensionListView.setVisibility(View.GONE);
+                    if (this.mobileViewPager != null) this.mobileViewPager.setVisibility(View.GONE);
                     this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
                 } else {
-                    this.mobileExtensionListView.setVisibility(View.VISIBLE);
+                    if (this.mobileViewPager != null) this.mobileViewPager.setVisibility(View.VISIBLE);
                     this.mobileExtensionEditorView.setVisibility(View.GONE);
                 }
-                this.mobileDocsScrollView.setVisibility(View.GONE);
-                this.mobileShellContainer.setVisibility(View.GONE);
-            } else if (index == 1) {
-                this.mobileExtensionListView.setVisibility(View.GONE);
+            } else {
+                if (this.mobileViewPager != null) this.mobileViewPager.setVisibility(View.VISIBLE);
                 this.mobileExtensionEditorView.setVisibility(View.GONE);
-                this.mobileDocsScrollView.setVisibility(View.VISIBLE);
-                this.mobileShellContainer.setVisibility(View.GONE);
-            } else if (index == 2) {
-                this.mobileExtensionListView.setVisibility(View.GONE);
-                this.mobileExtensionEditorView.setVisibility(View.GONE);
-                this.mobileDocsScrollView.setVisibility(View.GONE);
-                this.mobileShellContainer.setVisibility(View.VISIBLE);
             }
         });
     }
 
     private void buildMobileDocsView(LinearLayout container) {
-        TextView mainTitle = this.textView("\u624b\u673a\u6269\u5c55 JS API \u6587\u6863", 20, -1, true);
-        container.addView((View)mainTitle);
-        
         TextView descText = this.textView("\u624b\u673a\u6269\u5c55\u57fa\u4e8e\u8f6b\u91cf\u7ea7 JavaScript \u73af\u5883\u6267\u884c\u3002\u60a8\u53ef\u4ee5\u5728\u811a\u672c\u7684 async function run(context) \u4e2d\u8c03\u7528\u4ee5\u4e0b context.mobile API\u3002", 13, Color.rgb(182, 194, 214), false);
-        descText.setPadding(0, this.dp(8), 0, this.dp(16));
+        descText.setPadding(0, this.dp(4), 0, this.dp(12));
         container.addView((View)descText);
         
         java.util.List<DocItem> docs = new java.util.ArrayList<>();
@@ -8191,6 +8317,12 @@ extends Activity {
         docs.add(new DocItem("context.mobile.httpPostJson(url, jsonText)", "\u5f02\u6b65\u53d1\u9001 HTTP POST JSON \u8bf7\u6c42\u3002", "url (string): \u8bf7\u6c42\u7f51\u5740\njsonText (string): JSON\u5b57\u7b26\u4e32", "const res = await context.mobile.httpPostJson('https://example.com/api', JSON.stringify({a:1}));"));
         docs.add(new DocItem("context.mobile.done(text)", "\u6807\u8bb0\u5f53\u524d\u811a\u672c\u6210\u529f\u8fd0\u884c\u5b8c\u6210\uff0c\u5e76\u901a\u77e5\u9000\u51fa\u3002", "text (string): \u5b8c\u6210\u6d88\u606f", "context.mobile.done('\u6267\u884c\u6210\u529f');"));
         docs.add(new DocItem("context.mobile.fail(text)", "\u6807\u8bb0\u5f53\u524d\u811a\u672c\u8fd0\u884c\u5931\u8d25\uff0c\u5e76\u4e0a\u62a5\u9519\u8bef\u4fe8\u606f\u3002", "text (string): \u9519\u8bef\u4fe8\u606f", "context.mobile.fail('\u8fd5\u884c\u51fa\u9519');"));
+        docs.add(new DocItem("context.mobile.getBatteryLevel()", "\u83b7\u53d6\u624b\u673a\u5f53\u524d\u5269\u4f59\u7535\u91cf\u767e\u5206\u6bd5\u3002", "\u65e0", "const battery = context.mobile.getBatteryLevel();"));
+        docs.add(new DocItem("context.mobile.getScreenBrightness()", "\u83b7\u53d6\u5f53\u524d\u5e5c\u5e55\u4eae\u5ea6\uff080.0\u81f31.0\uff09\u3002", "\u65e0", "const brightness = context.mobile.getScreenBrightness();"));
+        docs.add(new DocItem("context.mobile.setScreenBrightness(val)", "\u8bbe\u7f6e\u5f53\u524d\u5e5c\u5e55\u4eae\u5ea6\u3002", "val (number): \u4eae\u5ea6\u503c\uff080.0\u81f31.0\uff09", "context.mobile.setScreenBrightness(0.5);"));
+        docs.add(new DocItem("context.mobile.getLocation()", "\u5f02\u6b65\u83b7\u53d6\u57fa\u4e8e IP \u7f51\u7edc\u7684\u7c97\u7565\u5730\u7406\u5b9a\u4f4d\u4fe8\u606f\u3002", "\u65e0", "const loc = await context.mobile.getLocation();"));
+        docs.add(new DocItem("context.mobile.listScriptFiles()", "\u5f02\u6b65\u83b7\u53d6\u624b\u673a\u79c1\u6709\u811a\u672c\u76ee\u5f55\u4e0b\u7684\u5168\u90e8\u6587\u4ef6\u5217\u8868\u3002", "\u65e0", "const res = await context.mobile.listScriptFiles();"));
+        docs.add(new DocItem("context.mobile.deleteScriptFile(name)", "\u5f02\u6b65\u5220\u9664\u79c1\u6709\u811a\u672c\u76ee\u5f55\u4e0b\u7684\u630f\u5b9a\u6587\u4ef6\u3002", "name (string): \u6587\u4ef6\u540d", "const res = await context.mobile.deleteScriptFile('temp.txt');"));
         
         for (DocItem item : docs) {
             LinearLayout card = new LinearLayout((Context)this);
@@ -8249,9 +8381,6 @@ extends Activity {
     }
 
     private void buildMobileShellView(LinearLayout container) {
-        TextView mainTitle = this.textView("\u624b\u673a JS \u7ec8\u7aef", 20, -1, true);
-        container.addView((View)mainTitle);
-        
         TextView descText = this.textView("\u5728\u6b64\u53ef\u76f2\u63a5\u7f16\u5199\u5e76\u8fd0\u884c JS \u811a\u672c\uff0c\u6216\u67e5\u770b\u6269\u5c55\u7684 API \u8c03\u7528\u65e5\u5fd7\u3002", 13, Color.rgb(182, 194, 214), false);
         descText.setPadding(0, this.dp(4), 0, this.dp(12));
         container.addView((View)descText);
