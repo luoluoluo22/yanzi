@@ -1295,23 +1295,43 @@ public class FloatingWheelService extends Service {
             return;
         }
 
+        // 1. 关闭燕环圆环菜单和扩展面板
         closeOverlayUi();
-        showProgress("正在截图并发送...");
-        log("截图：开始调用无障碍截图。");
-        MobileAccessibilityService.captureJpegBase64(new MobileAccessibilityService.ScreenshotCallback() {
-            @Override
-            public void onSuccess(String jpegBase64, int width, int height) {
-                log("截图：无障碍截图成功，尺寸=" + width + "x" + height + "。");
-                sendScreenshotPayloadToDesktop(jpegBase64, width, height);
-            }
+        // 2. 彻底隐藏悬浮球气泡，确保背景无干扰
+        if (bubbleView != null) {
+            bubbleView.setVisibility(View.GONE);
+        }
 
-            @Override
-            public void onFailure(String message) {
-                hideProgress();
-                log("截图：无障碍截图失败，" + message);
-                toast("截图失败：" + message);
-            }
-        });
+        // 3. 延迟 350ms，给 WindowManager 移除窗口和系统 Surface 刷帧留出物理时间
+        mainHandler.postDelayed(() -> {
+            log("截图：开始调用无障碍截图。");
+            MobileAccessibilityService.captureJpegBase64(new MobileAccessibilityService.ScreenshotCallback() {
+                @Override
+                public void onSuccess(String jpegBase64, int width, int height) {
+                    log("截图：无障碍截图成功，尺寸=" + width + "x" + height + "。");
+                    // 截图完毕后，在主线程重新让悬浮球气泡显示，并弹出发送进度提示
+                    mainHandler.post(() -> {
+                        if (bubbleView != null) {
+                            bubbleView.setVisibility(View.VISIBLE);
+                        }
+                        showProgress("正在发送截图...");
+                    });
+                    sendScreenshotPayloadToDesktop(jpegBase64, width, height);
+                }
+
+                @Override
+                public void onFailure(String message) {
+                    // 截图失败，在主线程恢复悬浮球气泡
+                    mainHandler.post(() -> {
+                        if (bubbleView != null) {
+                            bubbleView.setVisibility(View.VISIBLE);
+                        }
+                    });
+                    log("截图：无障碍截图失败，" + message);
+                    toast("截图失败：" + message);
+                }
+            });
+        }, 350L);
     }
 
     private void sendTextToDesktop(String text) {
