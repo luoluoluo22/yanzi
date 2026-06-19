@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yanzi",
+  "compatibility_date": "2026-06-19",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "website"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}

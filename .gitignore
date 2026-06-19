@@ -39,3 +39,6 @@ publish/
 *.msi
 *Setup*.exe
 .DS_Store
+
+.dev.vars*
+!.dev.vars.example
