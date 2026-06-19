@@ -1,6 +1,8 @@
 # 燕子启动器 (Yanzi)
 
 > 完全免费的开源 Windows 效率神器，可替代 Quicker
+>
+> 🌐 **官方网站/在线文档**：[https://yanzi.luoluoluo.cc.cd/](https://yanzi.luoluoluo.cc.cd/)
 
 用过 Quicker 吗？燕子做的事情差不多，但**完全免费、源码公开、永远不会涨价停服**。
 
