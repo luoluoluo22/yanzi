@@ -1,3 +1,5 @@
+using Avalonia;
+using Avalonia.Media;
 using System.Collections.ObjectModel;
 
 namespace Yanzi.Shared;
@@ -101,7 +103,8 @@ public class RadialMenuService
             var item = items.ElementAtOrDefault(index);
             var slot = GetSlotSettings(_currentPageId, index);
             Items.Add(new RadialMenuItemViewModel(_currentPageId, index, item, slot?.ChildPageId ?? string.Empty, 
-                ResolvePageName(slot?.ChildPageId), x, y, angle * 180.0 / Math.PI, RadialMenuRing.Inner));
+                ResolvePageName(slot?.ChildPageId), x, y, angle * 180.0 / Math.PI, RadialMenuRing.Inner,
+                CreateSectorGeometry(center.X, center.Y, 44, 136, angle * 180.0 / Math.PI - 22.5, angle * 180.0 / Math.PI + 22.5)));
         }
 
         for (var offset = 0; offset < RadialMenuSettings.OuterSlotCount; offset++)
@@ -114,7 +117,8 @@ public class RadialMenuService
             var item = items.ElementAtOrDefault(index);
             var slot = GetSlotSettings(_currentPageId, index);
             OuterItems.Add(new RadialMenuItemViewModel(_currentPageId, index, item, slot?.ChildPageId ?? string.Empty, 
-                ResolvePageName(slot?.ChildPageId), x, y, angleDegrees, RadialMenuRing.Outer));
+                ResolvePageName(slot?.ChildPageId), x, y, angleDegrees, RadialMenuRing.Outer,
+                CreateSectorGeometry(center.X, center.Y, 136, 215, angleDegrees - 11.25, angleDegrees + 11.25)));
         }
     }
 
@@ -188,13 +192,19 @@ public class RadialMenuService
             var slot = GetSlotSettings(parent.ChildPageId, index);
             ChildItems.Add(new RadialMenuItemViewModel(parent.ChildPageId, index, item, 
                 slot?.ChildPageId ?? string.Empty, ResolvePageName(slot?.ChildPageId), 
-                x, y, childAngle * 180.0 / Math.PI, RadialMenuRing.Child));
+                x, y, childAngle * 180.0 / Math.PI, RadialMenuRing.Child,
+                CreateSectorGeometry(ChildRingCenterX, ChildRingCenterY, 32, 120, childAngle * 180.0 / Math.PI - 22.5, childAngle * 180.0 / Math.PI + 22.5)));
         }
 
         HasChildRing = true;
     }
 
     public void BuildGrandChildRing(RadialMenuItemViewModel parent)
+    {
+        BuildGrandChildRing(parent, 640, 640);
+    }
+
+    public void BuildGrandChildRing(RadialMenuItemViewModel parent, double windowWidth, double windowHeight)
     {
         if (string.IsNullOrWhiteSpace(parent.ChildPageId))
         {
@@ -206,6 +216,35 @@ public class RadialMenuService
         var angle = parent.AngleDegrees * Math.PI / 180.0;
         GrandChildRingCenterX = ChildRingCenterX + Math.Cos(angle) * 216;
         GrandChildRingCenterY = ChildRingCenterY + Math.Sin(angle) * 216;
+        var clamped = ClampRingCenter(GrandChildRingCenterX, GrandChildRingCenterY, 112, windowWidth, windowHeight);
+        GrandChildRingCenterX = clamped.X;
+        GrandChildRingCenterY = clamped.Y;
+        GrandChildRingTitle = parent.ChildPageTitle;
+
+        BuildSeparators(GrandChildSeparators, GrandChildRingCenterX, GrandChildRingCenterY, 27, 98, RadialMenuSettings.InnerSlotCount);
+
+        GrandChildItems.Clear();
+        const double radius = 64;
+        for (var index = 0; index < 8; index++)
+        {
+            var childAngleDegrees = -90 + index * 45.0;
+            var childAngle = childAngleDegrees * Math.PI / 180.0;
+            var x = GrandChildRingCenterX + Math.Cos(childAngle) * radius - 31;
+            var y = GrandChildRingCenterY + Math.Sin(childAngle) * radius - 25;
+            var item = items.ElementAtOrDefault(index);
+            var slot = GetSlotSettings(parent.ChildPageId, index);
+            GrandChildItems.Add(new RadialMenuItemViewModel(
+                parent.ChildPageId,
+                index,
+                item,
+                slot?.ChildPageId ?? string.Empty,
+                ResolvePageName(slot?.ChildPageId),
+                x,
+                y,
+                childAngleDegrees,
+                RadialMenuRing.GrandChild,
+                CreateSectorGeometry(GrandChildRingCenterX, GrandChildRingCenterY, 27, 98, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
+        }
 
         HasGrandChildRing = true;
     }
@@ -225,6 +264,54 @@ public class RadialMenuService
         GrandChildSeparators.Clear();
         HasGrandChildRing = false;
         GrandChildRingTitle = string.Empty;
+    }
+
+    private static Geometry CreateSectorGeometry(double centerX, double centerY, double innerRadius, double outerRadius, double startAngleDegrees, double endAngleDegrees)
+    {
+        static Avalonia.Point PointOnCircle(double cx, double cy, double radius, double angleDegrees)
+        {
+            var radians = angleDegrees * Math.PI / 180.0;
+            return new Avalonia.Point(
+                cx + Math.Cos(radians) * radius,
+                cy + Math.Sin(radians) * radius);
+        }
+
+        var outerStart = PointOnCircle(centerX, centerY, outerRadius, startAngleDegrees);
+        var outerEnd = PointOnCircle(centerX, centerY, outerRadius, endAngleDegrees);
+        var innerEnd = PointOnCircle(centerX, centerY, innerRadius, endAngleDegrees);
+        var innerStart = PointOnCircle(centerX, centerY, innerRadius, startAngleDegrees);
+        var isLargeArc = Math.Abs(endAngleDegrees - startAngleDegrees) > 180.0;
+
+        var figure = new PathFigure
+        {
+            StartPoint = outerStart,
+            IsClosed = true,
+            IsFilled = true
+        };
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = outerEnd,
+            Size = new Size(outerRadius, outerRadius),
+            RotationAngle = 0,
+            IsLargeArc = isLargeArc,
+            SweepDirection = SweepDirection.Clockwise
+        });
+        figure.Segments.Add(new LineSegment
+        {
+            Point = innerEnd
+        });
+        figure.Segments.Add(new ArcSegment
+        {
+            Point = innerStart,
+            Size = new Size(innerRadius, innerRadius),
+            RotationAngle = 0,
+            IsLargeArc = isLargeArc,
+            SweepDirection = SweepDirection.CounterClockwise
+        });
+
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+        return geometry;
     }
 
     private static (double X, double Y) ClampRingCenter(double x, double y, double radius, double width, double height)

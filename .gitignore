@@ -30,3 +30,12 @@ cloudflare/.dev.vars
 .vs/
 docs/local-release-assets/
 connect-phone.ps1
+
+# Build outputs and macOS bundles
+publish/
+*.app/
+*.dmg
+*.pkg
+*.msi
+*Setup*.exe
+.DS_Store

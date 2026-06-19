@@ -14,19 +14,35 @@ public sealed class RadialMenuActivationEventArgs : EventArgs
         RadialMenuActivationSource source,
         int? fingerCount = null,
         double? screenX = null,
-        double? screenY = null)
+        double? screenY = null,
+        bool isLongPress = false)
     {
         Source = source;
         FingerCount = fingerCount;
         ScreenX = screenX;
         ScreenY = screenY;
+        IsLongPress = isLongPress;
     }
 
     public RadialMenuActivationSource Source { get; }
     public int? FingerCount { get; }
     public double? ScreenX { get; }
     public double? ScreenY { get; }
+    public bool IsLongPress { get; }
     public bool HasScreenPosition => ScreenX.HasValue && ScreenY.HasValue;
+}
+
+public class HotkeyTriggeredEventArgs : EventArgs
+{
+    public string Hotkey { get; }
+    public bool Handled { get; set; }
+    public double? ScreenX { get; set; }
+    public double? ScreenY { get; set; }
+
+    public HotkeyTriggeredEventArgs(string hotkey)
+    {
+        Hotkey = hotkey;
+    }
 }
 
 public interface IGlobalInputTriggerListener : IDisposable
@@ -38,6 +54,10 @@ public interface IGlobalInputTriggerListener : IDisposable
     event EventHandler<RadialMenuActivationEventArgs>? ActivationRequested;
     event EventHandler<RadialMenuActivationEventArgs>? ActivationUpdated;
     event EventHandler<RadialMenuActivationEventArgs>? ActivationReleased;
+    event EventHandler? LauncherRequested;
+    event EventHandler<HotkeyTriggeredEventArgs>? HotkeyTriggered;
+
+    void UpdateAbbreviations(Dictionary<string, string> abbreviations);
 }
 
 public interface IGlobalInputTriggerListenerFactory
@@ -53,6 +73,18 @@ public sealed class DisabledGlobalInputTriggerListenerFactory : IGlobalInputTrig
 public sealed class DisabledGlobalInputTriggerListener : IGlobalInputTriggerListener
 {
     public bool IsRunning => false;
+
+    public event EventHandler? LauncherRequested
+    {
+        add { }
+        remove { }
+    }
+
+    public event EventHandler<HotkeyTriggeredEventArgs>? HotkeyTriggered
+    {
+        add { }
+        remove { }
+    }
 
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationRequested
     {
@@ -70,6 +102,10 @@ public sealed class DisabledGlobalInputTriggerListener : IGlobalInputTriggerList
     {
         add { }
         remove { }
+    }
+
+    public void UpdateAbbreviations(Dictionary<string, string> abbreviations)
+    {
     }
 
     public void Start()
@@ -101,6 +137,8 @@ public class GlobalInputTriggerSettings
     public double TrackpadGestureNormalizedThreshold { get; set; } = 0.025;
     public double TrackpadGestureScreenScalePixels { get; set; } = 2200;
     public bool EnableInputDiagnostics { get; set; }
+    public string LauncherHotkey { get; set; } = "alt+space";
+    public string MousePanelHotkey { get; set; } = "alt+m";
 }
 
 public static class TrackpadGestureModes

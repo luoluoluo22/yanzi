@@ -39,8 +39,23 @@ internal sealed class MacPrivateMultitouchInputTriggerListener : IGlobalInputTri
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationRequested;
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationUpdated;
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationReleased;
+    public event EventHandler? LauncherRequested
+    {
+        add { }
+        remove { }
+    }
+
+    public event EventHandler<HotkeyTriggeredEventArgs>? HotkeyTriggered
+    {
+        add { }
+        remove { }
+    }
 
     public bool IsAvailable => OperatingSystem.IsMacOS() && File.Exists(FrameworkPath);
+
+    public void UpdateAbbreviations(Dictionary<string, string> abbreviations)
+    {
+    }
 
     public void Start()
     {
@@ -181,13 +196,13 @@ internal sealed class MacPrivateMultitouchInputTriggerListener : IGlobalInputTri
             return;
         }
 
+        var threshold = Math.Max(0.002, _settings.TrackpadGestureNormalizedThreshold);
         var dx = centroid.X - _centroidStart.Value.X;
         var dy = centroid.Y - _centroidStart.Value.Y;
         var distance = Math.Sqrt(dx * dx + dy * dy);
-        var threshold = Math.Max(0.002, _settings.TrackpadGestureNormalizedThreshold);
         LogMultitouch($"centroid dx={dx:0.0000}, dy={dy:0.0000}, distance={distance:0.0000}, threshold={threshold:0.0000}");
 
-        if (distance < threshold)
+        if (!IsDiagonalUpRightGesture(dx, dy, threshold))
             return;
 
         _gestureTriggered = true;
@@ -285,6 +300,17 @@ internal sealed class MacPrivateMultitouchInputTriggerListener : IGlobalInputTri
         }
 
         return new ContactPoint(x / fingerCount, y / fingerCount);
+    }
+
+    private static bool IsDiagonalUpRightGesture(double dx, double dy, double threshold)
+    {
+        var minimumComponent = Math.Max(0.0025, threshold * 0.7);
+        if (dx < minimumComponent || dy < minimumComponent)
+            return false;
+
+        var maxComponent = Math.Max(dx, dy);
+        var minComponent = Math.Min(dx, dy);
+        return minComponent / maxComponent >= 0.45;
     }
 
     private void LogMultitouch(string message)

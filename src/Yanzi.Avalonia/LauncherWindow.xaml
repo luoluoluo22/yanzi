@@ -1,0 +1,348 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Yanzi.Avalonia"
+        xmlns:shared="clr-namespace:Yanzi.Shared"
+        x:Class="Yanzi.Avalonia.LauncherWindow"
+        Title="燕子启动器"
+        Width="{Binding WindowWidth}"
+        Height="520"
+        SystemDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        TransparencyBackgroundFallback="Transparent"
+        ExtendClientAreaToDecorationsHint="True"
+        ShowInTaskbar="False"
+        ShowActivated="True"
+        IsVisible="False"
+        Topmost="True"
+        Focusable="True"
+        WindowStartupLocation="CenterScreen"
+        Deactivated="Window_Deactivated">
+
+    <Border Background="#E61A1A1A"
+            CornerRadius="18"
+            BorderBrush="#2CFFFFFF"
+            BorderThickness="1.5"
+            ClipToBounds="True">
+        <Border.BoxShadow>
+            <BoxShadows>0 12 40 0 #D0000000</BoxShadows>
+        </Border.BoxShadow>
+
+        <Grid ColumnDefinitions="620,*">
+            <!-- LEFT COLUMN: Main Search & Launcher (Width 620) -->
+            <Grid Grid.Column="0" RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="20,16,20,14">
+                
+                <!-- Category Tabs Bar -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="0,0,0,10">
+                    <Button Classes="tab" Classes.active="{Binding IsAllActive}" Content="全部 1" Click="OnTabClick" Tag="All"/>
+                    <Button Classes="tab" Classes.active="{Binding IsAppActive}" Content="应用 2" Click="OnTabClick" Tag="App"/>
+                    <Button Classes="tab" Classes.active="{Binding IsFileActive}" Content="文件 3" Click="OnTabClick" Tag="File"/>
+                    <Button Classes="tab" Classes.active="{Binding IsExtensionActive}" Content="扩展 4" Click="OnTabClick" Tag="Extension"/>
+                    <Button Classes="tab" Classes.active="{Binding IsClipboardActive}" Content="剪贴 5" Click="OnTabClick" Tag="Clipboard"/>
+                    <Button Classes="tab" Classes.active="{Binding IsSnippetActive}" Content="短语 6" Click="OnTabClick" Tag="Snippet"/>
+                    <Button Classes="tab" Content="＋" Command="{Binding ToggleEditorCommand}"/>
+                </StackPanel>
+
+                <!-- Accessibility Warning Banner -->
+                <Border Grid.Row="1" IsVisible="{Binding IsAccessibilityWarningVisible}"
+                        Background="#33EF4444"
+                        BorderBrush="#FFEF4444"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="12,8"
+                        Margin="0,0,0,10"
+                        PointerPressed="OnAccessibilityWarningClick"
+                        Cursor="Hand">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="⚠️ 燕子启动器未获得 macOS 辅助功能 (Accessibility) 权限，全局热键与快捷短语将失效。点击在此开启引导。"
+                                   Foreground="White" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        <Path Grid.Column="1" Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"
+                              Fill="White" Width="10" Height="10" Stretch="Uniform" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    </Grid>
+                </Border>
+
+                <!-- Search Container -->
+                <Border Grid.Row="2" Height="48" CornerRadius="12" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1.2" Padding="14,0" Margin="0,0,0,12">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <!-- Search Icon -->
+                        <Path Grid.Column="0" Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L19.71,19L18.3,20.41L13.03,15.14C11.9,16.1 10.42,16.7 8.5,16.7C3.8,16.7 0,12.9 0,8.2C0,3.5 3.8,0.2 8.5,0.2Z"
+                              Fill="#A0FFFFFF" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        
+                        <!-- Search TextBox Input -->
+                        <TextBox Grid.Column="1" Name="SearchInput"
+                                 Text="{Binding SearchText, Mode=TwoWay}"
+                                 Watermark="输入搜索内容，支持应用、文件、扩展..."
+                                 Background="Transparent" BorderThickness="0"
+                                 Foreground="White" FontSize="15" FontWeight="Normal"
+                                 VerticalAlignment="Center" CaretBrush="White"/>
+                        
+                        <!-- Execution Arrow Button -->
+                        <Button Grid.Column="2" Width="28" Height="28" Background="Transparent" BorderThickness="0" CornerRadius="6" Command="{Binding ExecuteSelectedCommand}" VerticalAlignment="Center">
+                            <Path Data="M5,12L12,5L19,12M12,5V19" Fill="#A0FFFFFF" Width="12" Height="12" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- Search Results Scrollable ListBox -->
+                <ListBox Grid.Row="3" Name="ResultsList"
+                         ItemsSource="{Binding FilteredItems}"
+                         SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                         Background="Transparent" BorderThickness="0"
+                         Padding="0" Margin="0,0,0,10">
+                    <ListBox.Styles>
+                        <Style Selector="ListBoxItem">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0,2"/>
+                            <Setter Property="CornerRadius" Value="12"/>
+                            <Setter Property="BorderThickness" Value="1"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
+                        </Style>
+                        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                            <Setter Property="Background" Value="#10FFFFFF"/>
+                            <Setter Property="BorderBrush" Value="#15FFFFFF"/>
+                        </Style>
+                        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                            <Setter Property="Background" Value="#1A3B82F6"/>
+                            <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                        </Style>
+                    </ListBox.Styles>
+
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border CornerRadius="12" Padding="12,10" Background="Transparent">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <!-- Left Extension/App Icon Card -->
+                                    <Border Grid.Column="0" Width="40" Height="40" CornerRadius="10" Background="{Binding AccentBrush}" Margin="0,0,12,0" VerticalAlignment="Center">
+                                        <Panel Width="32" Height="32" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayIcon}" 
+                                                       IsVisible="{Binding !HasRealIcon}" 
+                                                       Foreground="White" FontSize="18" FontWeight="SemiBold" 
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            <Image Source="{Binding RealIcon}" 
+                                                   IsVisible="{Binding HasRealIcon}" 
+                                                   Width="28" Height="28"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Panel>
+                                    </Border>
+
+                                    <!-- Middle Details -->
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13.5" FontWeight="SemiBold"/>
+                                            <Border CornerRadius="6" Background="#20FFFFFF" Padding="6,2">
+                                                <TextBlock Text="{Binding KindText}" Foreground="#A0FFFFFF" FontSize="9"/>
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Subtitle}" Foreground="#88FFFFFF" FontSize="11" Margin="0,2,0,0"/>
+                                    </StackPanel>
+
+                                    <!-- Right aligned kind category indicator -->
+                                    <TextBlock Grid.Column="2" Text="{Binding CategoryText}" Foreground="#55FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Bottom Action Bar -->
+                <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Height="30" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="16">
+                        <!-- Add Button '+' -->
+                        <Button Width="26" Height="26" Background="#1DFFFFFF" BorderThickness="0" CornerRadius="13" Command="{Binding ToggleEditorCommand}">
+                            <TextBlock Text="＋" Foreground="White" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Button>
+                        <!-- Menu '≡' Button -->
+                        <Button Width="26" Height="26" Background="#1DFFFFFF" BorderThickness="0" CornerRadius="6" Click="OnMenuButtonClick">
+                            <TextBlock Text="≡" Foreground="White" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Button.ContextMenu>
+                                <ContextMenu Name="MainMenu" Background="#F01C1C1C" BorderBrush="#30FFFFFF" BorderThickness="1" CornerRadius="10">
+                                    <MenuItem Header="切换标签页" InputGesture="Tab" Click="OnCycleTabClick" Foreground="White"/>
+                                    <Separator Background="#20FFFFFF"/>
+                                    <MenuItem Header="系统设置" InputGesture="Cmd+," Click="OnOpenSettingsClick" Foreground="White"/>
+                                    <MenuItem Header="管理/切换编辑器" InputGesture="Ctrl+K" Click="OnToggleEditorClick" Foreground="White"/>
+                                    <Separator Background="#20FFFFFF"/>
+                                    <MenuItem Header="退出应用" InputGesture="Cmd+Q" Click="OnExitClick" Foreground="White"/>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                    </StackPanel>
+                    
+                    <!-- Keyboard shortcut hint -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <TextBlock Text="更多菜单" Foreground="#66FFFFFF" FontSize="11"/>
+                        <Border CornerRadius="4" Background="#1DFFFFFF" Padding="6,2">
+                            <TextBlock Text="Ctrl K" Foreground="#A0FFFFFF" FontSize="9.5" FontWeight="SemiBold"/>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+
+            </Grid>
+
+            <!-- RIGHT COLUMN: Slide-out JSON Custom Extension Editor (Width 360) -->
+            <!-- RIGHT COLUMN: Slide-out Editor Panel (Width 360) -->
+            <Border Grid.Column="1" Background="#FF111111" BorderBrush="#2CFFFFFF" BorderThickness="1,0,0,0" Padding="20,16">
+                <Panel>
+                    <!-- 1. DEDICATED GRAPHICAL SNIPPET EDITOR PANEL -->
+                    <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding IsSnippetEditor}">
+                        <!-- Editor Header -->
+                        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
+                            <TextBlock Text="{Binding EditorTitle}" Foreground="#FF8B5CF6" FontSize="15" FontWeight="Bold"/>
+                            <TextBlock Text="配置您的快捷文本短语和触发简写指令" Foreground="#88FFFFFF" FontSize="11" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <!-- Form ScrollViewer -->
+                        <ScrollViewer Grid.Row="1" Margin="0,0,0,14" VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="12">
+                                <!-- Name -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="短语名称" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetName, Mode=TwoWay}" Watermark="例如: 我的常用邮箱, 快捷问候" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                </StackPanel>
+
+                                <!-- Abbreviation -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="触发缩写 (在任何其他应用中输入此缩写+空格触发)" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetAbbreviation, Mode=TwoWay}" Watermark="例如: em, email" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                </StackPanel>
+
+                                <!-- Icon -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="图标 (Emoji)" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetIcon, Mode=TwoWay}" Watermark="例如: 📝, ✉️, 💬" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                </StackPanel>
+
+                                <!-- Description -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="短语描述" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetDescription, Mode=TwoWay}" Watermark="可选描述" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                </StackPanel>
+
+                                <!-- Snippet Content -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="短语内容 (扩展替换后的完整文本)" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetText, Mode=TwoWay}" Watermark="输入要自动粘贴的完整内容..." Height="110" AcceptsReturn="True" TextWrapping="Wrap" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6" VerticalContentAlignment="Top"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Action Buttons -->
+                        <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
+                            <TextBlock Grid.Row="0" Text="{Binding ValidationMessage}" Foreground="{Binding ValidationColor}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
+                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto">
+                                <Button Grid.Column="0" Classes="action-btn save" Command="{Binding SaveCustomSnippetCommand}">
+                                    <TextBlock Text="保存并应用" Foreground="White" HorizontalAlignment="Center" FontWeight="SemiBold"/>
+                                </Button>
+                                <Button Grid.Column="1" Content="删除" Classes="action-btn delete" Command="{Binding DeleteCustomExtensionCommand}" IsVisible="{Binding IsDeleteMode}" Margin="8,0,0,0"/>
+                                <Button Grid.Column="2" Content="关闭" Classes="action-btn cancel" Command="{Binding ToggleEditorCommand}"/>
+                                <Button Grid.Column="3" Content="复制提示词" Classes="action-btn cancel" Command="{Binding CopyPromptCommand}" ToolTip.Tip="复制提示词供 AI 生成内容"/>
+                            </Grid>
+                        </Grid>
+                    </Grid>
+
+                    <!-- 2. EXISTING EXTENSION/APPLESCRIPT JSON EDITOR PANEL -->
+                    <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding !IsSnippetEditor}">
+                        <!-- Editor Header -->
+                        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
+                            <TextBlock Text="{Binding EditorTitle}" Foreground="#FF10B981" FontSize="15" FontWeight="Bold"/>
+                            <TextBlock Text="定义扩展名称、图标和 AppleScript 苹果脚本内容" Foreground="#88FFFFFF" FontSize="11" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <!-- JSON Editor -->
+                        <ScrollViewer Grid.Row="1" Background="#1D000000" CornerRadius="8" Padding="6" Margin="0,0,0,14">
+                            <TextBox Name="JsonEditorInput"
+                                     Text="{Binding EditorJsonText, Mode=TwoWay}"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     FontFamily="Courier New, monospace"
+                                     FontSize="12"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Foreground="#FF10B981"
+                                     CaretBrush="White"/>
+                        </ScrollViewer>
+
+                        <!-- Action Buttons -->
+                        <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
+                            <TextBlock Grid.Row="0" Text="{Binding ValidationMessage}" Foreground="{Binding ValidationColor}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
+                            <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto">
+                                <Button Grid.Column="0" Classes="action-btn save" Command="{Binding SaveCustomExtensionCommand}">
+                                    <TextBlock Text="保存并应用" Foreground="White" HorizontalAlignment="Center" FontWeight="SemiBold"/>
+                                </Button>
+                                <Button Grid.Column="1" Content="删除" Classes="action-btn delete" Command="{Binding DeleteCustomExtensionCommand}" IsVisible="{Binding IsDeleteMode}" Margin="8,0,0,0"/>
+                                <Button Grid.Column="2" Content="关闭" Classes="action-btn cancel" Command="{Binding ToggleEditorCommand}"/>
+                                <Button Grid.Column="3" Content="复制写扩展提示词" Classes="action-btn cancel" Command="{Binding CopyPromptCommand}"/>
+                            </Grid>
+                        </Grid>
+                    </Grid>
+                </Panel>
+            </Border>
+        </Grid>
+    </Border>
+
+    <!-- Custom Styles -->
+    <Window.Styles>
+        <!-- Tab button styling -->
+        <Style Selector="Button.tab">
+            <Setter Property="Background" Value="#1DFFFFFF"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.tab:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#30FFFFFF"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.tab.active">
+            <Setter Property="Background" Value="#FF3B82F6"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.tab.active:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FF2563EB"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+
+        <!-- Editor Action Buttons -->
+        <Style Selector="Button.action-btn">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="Button.action-btn.save">
+            <Setter Property="Background" Value="#FF3B82F6"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.action-btn.save:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FF2563EB"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.action-btn.cancel">
+            <Setter Property="Background" Value="#1DFFFFFF"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+        </Style>
+        <Style Selector="Button.action-btn.cancel:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#30FFFFFF"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+
+        <!-- Red Delete Button Style -->
+        <Style Selector="Button.action-btn.delete">
+            <Setter Property="Background" Value="#FFEF4444"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="14,8"/>
+        </Style>
+        <Style Selector="Button.action-btn.delete:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FFDC2626"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+    </Window.Styles>
+</Window>

@@ -38,6 +38,21 @@ internal sealed class MacTrackpadGestureInputTriggerListener : IGlobalInputTrigg
         add { }
         remove { }
     }
+    public event EventHandler? LauncherRequested
+    {
+        add { }
+        remove { }
+    }
+
+    public event EventHandler<HotkeyTriggeredEventArgs>? HotkeyTriggered
+    {
+        add { }
+        remove { }
+    }
+
+    public void UpdateAbbreviations(Dictionary<string, string> abbreviations)
+    {
+    }
 
     public void Start()
     {
@@ -52,8 +67,9 @@ internal sealed class MacTrackpadGestureInputTriggerListener : IGlobalInputTrigg
         }
 
         var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, CFRunLoopModeDefaultMode);
+        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, CFRunLoopModeCommonModes);
         CFRelease(runLoopSource);
+        CFRunLoopWakeUp(CFRunLoopGetMain());
 
         CGEventTapEnable(_eventTap, true);
         _isEnabled = true;
@@ -295,6 +311,12 @@ internal sealed class MacTrackpadGestureInputTriggerListener : IGlobalInputTrigg
     private static extern IntPtr CFRunLoopGetCurrent();
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern IntPtr CFRunLoopGetMain();
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
+    private static extern void CFRunLoopWakeUp(IntPtr runLoop);
+
+    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern void CFRunLoopAddSource(IntPtr runLoop, IntPtr source, IntPtr mode);
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
@@ -308,8 +330,8 @@ internal sealed class MacTrackpadGestureInputTriggerListener : IGlobalInputTrigg
 
     private static ulong CGEventMaskBit(CGEventType type) => 1UL << (int)type;
 
-    private static readonly IntPtr CFRunLoopModeDefaultMode =
-        CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopDefaultMode", CFStringEncodingUtf8);
+    private static readonly IntPtr CFRunLoopModeCommonModes =
+        CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopCommonModes", CFStringEncodingUtf8);
 
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern IntPtr CFStringCreateWithCString(IntPtr allocator, string cStr, uint encoding);

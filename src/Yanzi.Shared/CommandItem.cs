@@ -15,13 +15,19 @@ public class CommandItem
     public bool ShortcutOption { get; set; }
     public bool ShortcutControl { get; set; }
     public string? ApplicationName { get; set; }
+    public string? ScriptSource { get; set; }
+    public string? SnippetText { get; set; }
+    public string? Abbreviation { get; set; }
+    public string? GlobalHotkey { get; set; }
 }
 
 public enum CommandActionKind
 {
     None,
     KeyboardShortcut,
-    LaunchApplication
+    LaunchApplication,
+    AppleScript,
+    Snippet
 }
 
 public interface ICommandActionExecutor

@@ -1,0 +1,107 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Yanzi.Avalonia.SettingsWindow"
+        Title="燕子启动器 - 设置"
+        Width="460"
+        Height="390"
+        SystemDecorations="None"
+        Background="#F0181818"
+        TransparencyLevelHint="Transparent"
+        TransparencyBackgroundFallback="Transparent"
+        ShowInTaskbar="True"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        Focusable="True">
+    <Border CornerRadius="18"
+            BorderThickness="1"
+            BorderBrush="#2DFFFFFF"
+            Background="#F0181818"
+            Padding="24">
+        <DockPanel LastChildFill="True">
+            <!-- Header -->
+            <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,16">
+                <TextBlock Text="燕子启动器 - 设置"
+                           Foreground="White"
+                           FontSize="18"
+                           FontWeight="SemiBold"/>
+                <TextBlock Text="配置您的触发偏好与服务状态"
+                           Foreground="#99FFFFFF"
+                           FontSize="11"/>
+            </StackPanel>
+            
+            <!-- Bottom Buttons -->
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,16,0,0">
+                <Button Content="保存并应用" Click="Save_Click" Width="100" HorizontalContentAlignment="Center"/>
+                <Button Content="关闭" Click="Close_Click" Width="80" HorizontalContentAlignment="Center"/>
+            </StackPanel>
+            
+            <!-- Content -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="16">
+                    <!-- Service Status Section -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
+                        <DockPanel>
+                            <StackPanel Spacing="2" VerticalAlignment="Center">
+                                <TextBlock Text="服务运行状态" Foreground="White" FontSize="14" FontWeight="Medium"/>
+                                <TextBlock Text="启用或暂停全局触发服务" Foreground="#80FFFFFF" FontSize="10"/>
+                            </StackPanel>
+                            <ToggleSwitch x:Name="ServiceSwitch" OnContent="运行中" OffContent="已暂停" 
+                                           HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                        </DockPanel>
+                    </Border>
+                    
+                    <!-- General Settings Section -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="通用系统设置" Foreground="White" FontSize="14" FontWeight="Medium"/>
+                            <CheckBox x:Name="AutoStartCheck" Content="随系统开机自启动" Foreground="#E0FFFFFF"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- Launcher Hotkey Settings -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="主启动器快捷键" Foreground="White" FontSize="14" FontWeight="Medium"/>
+                            <TextBlock Text="设置全局唤醒主启动器的快捷键" Foreground="#80FFFFFF" FontSize="10"/>
+                            <TextBlock x:Name="AccessibilityWarning" 
+                                       Text="⚠️ 燕子启动器未获得 macOS 辅助功能 (Accessibility) 权限，快捷键可能不起作用。请在系统设置 -> 隐私与安全 -> 辅助功能 中启用它。" 
+                                       Foreground="#FFF87171" 
+                                       FontSize="10" 
+                                       TextWrapping="Wrap" 
+                                       Margin="0,4,0,0" 
+                                       IsVisible="False"/>
+                            
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBox x:Name="LauncherHotkeyInput" Grid.Column="0" Watermark="例如: alt+space, cmd+space" Foreground="White" Background="#20000000" BorderBrush="#30FFFFFF" BorderThickness="1" CornerRadius="6" VerticalAlignment="Center" Padding="8,6"/>
+                                <Button x:Name="RecordButton" Grid.Column="1" Content="录制" Click="RecordHotkey_Click" Margin="8,0,0,0" Width="60" HorizontalContentAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Mouse Settings -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="鼠标右键触发" Foreground="White" FontSize="14" FontWeight="Medium"/>
+                            
+                            <CheckBox x:Name="RightLongPressCheck" Content="启用右键长按弹出轮盘" Foreground="#E0FFFFFF"/>
+                            <CheckBox x:Name="RightDragCheck" Content="启用右键拖拽弹出轮盘" Foreground="#E0FFFFFF"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- Fn + Slide Settings -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Fn 键 + 触控板滑动触发" Foreground="White" FontSize="14" FontWeight="Medium"/>
+                            
+                            <DockPanel>
+                                <TextBlock Text="滑动触发距离 (像素)" Foreground="#E0FFFFFF" VerticalAlignment="Center"/>
+                                <NumericUpDown x:Name="DragThresholdInput" Minimum="5" Maximum="200" Increment="5" FormatString="F0"
+                                               Width="120" HorizontalAlignment="Right"/>
+                            </DockPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+    </Border>
+</Window>
