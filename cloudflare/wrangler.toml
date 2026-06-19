@@ -10,3 +10,11 @@ database_id = "512f99ac-4f5f-4e30-affb-58fc4da94bfa"
 [[r2_buckets]]
 binding = "PACKAGES"
 bucket_name = "openquickhost-sync-assets"
+
+[[migrations]]
+tag = "v1_device_relay"
+new_classes = ["DeviceRelayRoom"]
+
+[[migrations]]
+tag = "delete-relay-room"
+deleted_classes = ["DeviceRelayRoom"]
