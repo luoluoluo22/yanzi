@@ -162,6 +162,27 @@
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 30px 110px rgba(0, 0, 0, 0.38);
     }
 
+    .yanm-stage-wrap::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    .yanm-stage-wrap::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+    }
+
+    .yanm-stage-wrap::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+
+    .yanm-stage-wrap::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
     .yanm-stage {
       position: absolute;
       left: 0;
@@ -262,6 +283,7 @@
         <span id="sync-label">登录后读取燕子云端燕幕数据</span>
       </div>
       <div class="yanm-toolbar-actions">
+        <button class="button secondary" id="scale-mode-button" type="button">显示: 适应窗口</button>
         <button class="button secondary" id="refresh-button" type="button">刷新燕幕</button>
         <button class="button secondary" id="logout-button" type="button">退出登录</button>
       </div>
@@ -294,6 +316,7 @@
     const loginButton = document.getElementById("login-button");
     const refreshButton = document.getElementById("refresh-button");
     const logoutButton = document.getElementById("logout-button");
+    const scaleModeButton = document.getElementById("scale-mode-button");
     const authStatus = document.getElementById("auth-status");
     const userLabel = document.getElementById("user-label");
     const syncLabel = document.getElementById("sync-label");
@@ -303,8 +326,10 @@
     const stage = document.getElementById("stage");
     const empty = document.getElementById("empty");
 
+    const SCALE_MODE_KEY = "yanzi.yanm.scaleMode";
     let currentSnapshot = null;
     let saveTimer = 0;
+    let scaleMode = localStorage.getItem(SCALE_MODE_KEY) || "fit"; // "fit" or "actual"
 
     function getToken() {
       return localStorage.getItem(TOKEN_KEY) || "";
@@ -493,6 +518,9 @@
       stage.innerHTML = "";
       empty.classList.toggle("yanm-hidden", components.length > 0);
       if (!components.length) {
+        stageWrap.style.height = "";
+        stageWrap.style.minHeight = "";
+        stageWrap.style.overflow = "";
         return;
       }
 
@@ -504,12 +532,22 @@
       const padding = 64;
       const wrapWidth = stageWrap.clientWidth - padding;
       const wrapHeight = Math.max(560, window.innerHeight - 300);
-      const scale = Math.min(1, wrapWidth / Math.max(bounds.width + padding, 1), wrapHeight / Math.max(bounds.height + padding, 1));
 
       stage.style.width = `${bounds.width + padding}px`;
       stage.style.height = `${bounds.height + padding}px`;
-      stage.style.transform = `scale(${scale})`;
-      stageWrap.style.minHeight = `${Math.max(620, (bounds.height + padding) * scale)}px`;
+
+      if (scaleMode === "fit") {
+        const scale = Math.min(1, wrapWidth / Math.max(bounds.width + padding, 1), wrapHeight / Math.max(bounds.height + padding, 1));
+        stage.style.transform = `scale(${scale})`;
+        stageWrap.style.minHeight = `${Math.max(620, (bounds.height + padding) * scale)}px`;
+        stageWrap.style.height = `${Math.max(620, (bounds.height + padding) * scale)}px`;
+        stageWrap.style.overflow = "hidden";
+      } else {
+        stage.style.transform = "scale(1)";
+        stageWrap.style.minHeight = "620px";
+        stageWrap.style.height = `${wrapHeight}px`;
+        stageWrap.style.overflow = "auto";
+      }
 
       for (const component of components) {
         const frame = document.createElement("div");
@@ -661,6 +699,23 @@
         login();
       }
     });
+    function updateScaleModeButton() {
+      if (scaleMode === "fit") {
+        scaleModeButton.textContent = "显示: 适应窗口";
+      } else {
+        scaleModeButton.textContent = "显示: 1:1 实际大小";
+      }
+    }
+
+    scaleModeButton.addEventListener("click", function () {
+      scaleMode = scaleMode === "fit" ? "actual" : "fit";
+      localStorage.setItem(SCALE_MODE_KEY, scaleMode);
+      updateScaleModeButton();
+      if (currentSnapshot) {
+        renderYanm(currentSnapshot.yanm);
+      }
+    });
+
     refreshButton.addEventListener("click", loadYanm);
     logoutButton.addEventListener("click", function () {
       setToken("");
@@ -677,6 +732,7 @@
       }
     });
 
+    updateScaleModeButton();
     restoreSession();
   </script>
 </body>
