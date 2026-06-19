@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Skill 规范 - 燕子在线文档</title>
+  <meta name="description" content="燕子启动器面向本机 AI Agent 提供的 Skill 导出规范及本地 HTTP API 定义。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+
+<body>
+  <div class="noise"></div>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo"
+          style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
+        <span style="font-weight: 600;">燕子启动器</span>
+      </a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/docs/product-overview.html" class="active">文档</a>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载</a>
+    </nav>
+  </header>
+
+  <!-- Sidebar Expand Hover Button -->
+  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </button>
+
+  <main class="doc-page">
+    <div class="doc-layout">
+      <!-- Left Sidebar Directory -->
+      <aside class="doc-sidebar">
+        <div class="sidebar-header">
+          <strong>文档目录</strong>
+          <button id="sidebar-toggle" class="sidebar-toggle-btn" title="折叠侧边栏">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+        </div>
+
+        <div class="sidebar-search-container">
+          <input type="text" id="directory-search" class="sidebar-search-input" placeholder="搜索目录... (/)">
+          <svg class="sidebar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+
+        <div class="doc-toc-group">
+          <span class="doc-toc-title">用户手册</span>
+          <div class="doc-toc-links">
+            <a href="/docs/product-overview.html">1. 产品说明</a>
+            <a href="/docs/getting-started.html">2. 快速上手</a>
+          </div>
+        </div>
+
+        <div class="doc-toc-group">
+          <span class="doc-toc-title">开发者文档</span>
+          <div class="doc-toc-links">
+            <a href="/docs/extension-authoring-guide.html">3. 开发指南</a>
+            <a href="/docs/extension-spec.html">4. 扩展规范</a>
+            <a href="/docs/agent-skill-spec.html" class="active">5. Agent Skill 规范</a>
+            <a href="/docs/ai-extension-test-set.html">6. AI 扩展测试集</a>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center Reading Area -->
+      <div class="guide-stack">
+        <div class="doc-content-header" style="margin-bottom: 2rem;">
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Agent Skill 规范</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">这份文档定义了燕子当前对外提供给本机 AI agent 使用的 skill 约定、导出规则和本地扩展 API。目标是让外部 agent 能读取 skill 提示，并使用 HTTP API 自动增删改查扩展。</p>
+        </div>
+
+        <article class="guide-card">
+          <h2>1. 内置 Skill 根目录</h2>
+          <p>燕子程序内置的 skill 根目录是 <code>skills/</code>。当前内置了一个用于开发扩展的 skill：</p>
+          <div class="code-card">
+<pre><code>skills/
+  yanzi-extension-dev/
+    SKILL.md
+    agents/
+      openai.yaml
+    references/
+      local-agent-api.md
+      manifest.md
+      script-extensions.md</code></pre>
+          </div>
+        </article>
+
+        <article class="guide-card">
+          <h2>2. Skill 目录结构说明</h2>
+          <p>每个 skill 文件夹至少要包含 <code>SKILL.md</code>，推荐的目录结构如下：</p>
+          <div class="code-card">
+<pre><code>my-skill/
+  SKILL.md
+  agents/
+    openai.yaml
+  references/
+    *.md</code></pre>
+          </div>
+          <h3 style="margin-top: 1.5rem;">核心文件字段说明</h3>
+          <ul>
+            <li><strong><code>SKILL.md</code></strong>：skill 主说明文件，描述何时使用、如何使用、约束和具体工作流。</li>
+            <li><strong><code>agents/openai.yaml</code></strong>：给支持 YAML 元信息的 agent 提供展示名、简介、默认系统提示词。</li>
+            <li><strong><code>references/*.md</code></strong>：长文档引用引用区，避免把所有细节都堆进主 `SKILL.md`，减小上下文开销。</li>
+          </ul>
+        </article>
+
+        <article class="guide-card">
+          <h2>3. 当前导出规则定义</h2>
+          <p>燕子客户端左下角菜单里的“导出 Skill”会把程序内置的整个 <code>skills/</code> 目录复制到目标 agent 的约定目录。</p>
+          
+          <h3 style="margin-top: 1.5rem;">项目级导出</h3>
+          <p>当用户选择的是“项目根目录”时，导出路径映射如下：</p>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 1rem; margin-bottom: 1.5rem;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">Agent 名称</th>
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">项目级目标路径</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><strong>Codex</strong></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);"><code>.codex/skills</code></td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><strong>Antigravity</strong></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);"><code>.agents/skills</code></td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><strong>Trae</strong></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);"><code>.trae/skills</code></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3 style="margin-top: 1.5rem;">全局导出</h3>
+          <p>全局导出时，直接导出到当前 Windows 用户目录下的约定位置，映射如下：</p>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">Agent 名称</th>
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">全局级目标路径</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><strong>Codex</strong></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);"><code>%USERPROFILE%\.codex\skills</code></td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><strong>Antigravity</strong></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);"><code>%USERPROFILE%\.gemini\antigravity\skills</code></td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><strong>Trae</strong></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);"><code>%USERPROFILE%\.trae\skills</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="guide-card">
+          <h2>4. 导出内容语义说明</h2>
+          <p>导出时复制的是整个 <code>skills/</code> 根目录，并非单个 skill 目录。这意味着目标目录下会统一出现：</p>
+          <div class="code-card">
+<pre><code>&lt;agent skill root&gt;/
+  yanzi-extension-dev/
+    SKILL.md
+    agents/
+    references/</code></pre>
+          </div>
+          <p style="margin-top: 1.25rem;">这样设计的初衷是为了方便一次导出多个 skill，并保持和绝大多数 agent 的 skill 目录习惯一致，后续新增 skill 时也无需修改导出模型。</p>
+        </article>
+
+        <article class="guide-card">
+          <h2>5. 面向 Agent 的扩展工作流</h2>
+          <p>建议外部 Agent 按以下步骤顺序开展工作：</p>
+          <ol>
+            <li>首先读取导出的 <code>yanzi-extension-dev/SKILL.md</code> 获取开发上下文。</li>
+            <li>读取 <code>references/manifest.md</code> 字段约定。</li>
+            <li>如需编写脚本扩展，读取 <code>references/script-extensions.md</code>。</li>
+            <li>如要直接操作扩展定义，读取 <code>references/local-agent-api.md</code>。</li>
+            <li>通过本地 HTTP API 完成扩展的 CRUD。</li>
+          </ol>
+        </article>
+
+        <article class="guide-card">
+          <h2>6. 本地 Agent HTTP API</h2>
+          <p>燕子在本地提供了 HTTP 接口服务，供外部 Agent 对客户端配置和扩展进行直接操作。接口默认监听地址如下：</p>
+          <div class="code-card" style="margin-bottom: 1.5rem;">
+<pre><code>http://127.0.0.1:53919</code></pre>
+          </div>
+          <p>请求时需携带认证 Header：</p>
+          <div class="code-card" style="margin-bottom: 1.5rem;">
+<pre><code>X-Yanzi-Token: &lt;token&gt;</code></pre>
+          </div>
+          <h3 style="margin-top: 1.5rem;">主要 API 接口字典</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">HTTP 动作与路径</th>
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">接口功能描述</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>GET /health</code></td>
+                <td style="padding: 0.75rem 0.5rem;">健康检查，确认 API 与客户端在线状态。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>GET /v1/extensions</code></td>
+                <td style="padding: 0.75rem 0.5rem;">列出当前已安装的所有扩展。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>GET /v1/extensions/template</code></td>
+                <td style="padding: 0.75rem 0.5rem;">获取扩展 manifest.json 的空模板声明。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>GET /v1/extensions/{id}</code></td>
+                <td style="padding: 0.75rem 0.5rem;">获取特定 ID 的扩展配置与源码。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>POST /v1/extensions</code></td>
+                <td style="padding: 0.75rem 0.5rem;">新建一个扩展。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>PUT /v1/extensions/{id}</code></td>
+                <td style="padding: 0.75rem 0.5rem;">更新/替换指定 ID 的扩展。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>PATCH /v1/extensions/{id}/rename</code></td>
+                <td style="padding: 0.75rem 0.5rem;">重命名扩展。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>PATCH /v1/extensions/{id}/shortcut</code></td>
+                <td style="padding: 0.75rem 0.5rem;">设置或清除快捷键。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>DELETE /v1/extensions/{id}</code></td>
+                <td style="padding: 0.75rem 0.5rem;">删除指定扩展。</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="guide-card">
+          <h2>7. 扩展开发类型</h2>
+          <p>当前燕子支持两类扩展结构，满足轻重不同的定制诉求：</p>
+          
+          <h3 style="margin-top: 1.5rem;">单文件 JSON 扩展</h3>
+          <p>目录内仅包含一个 <code>manifest.json</code> 声明。主要适用于打开文件、目录、网页或跳转搜索前缀。如果需要简单的代码动作，可以在 JSON 声明中写入内联 C# 脚本：</p>
+          <ul>
+            <li>设置 <code>runtime</code> 为 <code>"csharp"</code>。</li>
+            <li>设置 <code>entryMode</code> 为 <code>"inline"</code>。</li>
+            <li>在 <code>script.source</code> 中填写 C# 源码。</li>
+          </ul>
+
+          <h3 style="margin-top: 1.5rem;">脚本文件夹扩展</h3>
+          <p>适用于需要多文件、复杂本地依赖或调用 Windows 自动化的扩展。目录包含 <code>manifest.json</code> 和外部执行脚本（如 <code>main.ps1</code>）。目前支持的脚本引擎为 <code>csharp</code> 和 <code>powershell</code>。</p>
+        </article>
+
+        <article class="guide-card">
+          <h2>8. 规范约束与安全指引</h2>
+          <h3 style="margin-top: 1.25rem;">对燕子本身</h3>
+          <ul>
+            <li>只负责扩展的加载、分发、同步、安全运行和管理。</li>
+            <li>不对用户分享、自用的脚本做任何形式的强制审核。</li>
+            <li>通过 skill 和开放 HTTP API，尽最大可能方便外部 AI 辅助扩展编写。</li>
+          </ul>
+
+          <h3 style="margin-top: 1.5rem;">对外部 Agent 的约束要求</h3>
+          <ul>
+            <li>优先通过本机 REST API 创建和修改扩展配置，禁止强行猜测、覆盖客户端数据库。</li>
+            <li>修改扩展交互协议时，务必在 skill references 对应文档中做同步修改更新。</li>
+            <li>新建扩展时优先推荐使用 C# 内联脚本，执行时性能最好；若是 PowerShell 脚本，<code>param(...)</code> 参数声明必须严格处于文件最前端。</li>
+            <li>如需要中文字符输出，需密切注意脚本文件的 UTF-8 编码和系统的 stdout 输出流编码。</li>
+          </ul>
+        </article>
+
+        <article class="guide-card">
+          <h2>9. 后续扩展演进方向</h2>
+          <p>后续 Agent Skill 规范将在以下几点进行持续补充：</p>
+          <ul>
+            <li>增加更多市面上流行 AI IDE/Agent 的约定导出目录，使其“一键导出即可工作”。</li>
+            <li>建立 skill 版本号控制机制，加入向下兼容特性检测标记。</li>
+            <li>发布更严谨的 Swagger/OpenAPI 描述规范。</li>
+            <li>引入独立的脚本远程调试与断点追踪协议。</li>
+          </ul>
+        </article>
+
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          <a href="/docs/extension-spec.html" class="button secondary" style="gap: 8px; height: 46px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            上一页: 扩展规范
+          </a>
+          <a href="/docs/ai-extension-test-set.html" class="button primary" style="gap: 8px; height: 46px;">
+            下一页: AI 扩展测试集
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+        </div>
+      </div>
+
+      <!-- Right Outline (Dynamic TOC) -->
+      <aside class="doc-outline">
+        <strong>当前章节大纲</strong>
+        <ul id="outline-list"></ul>
+      </aside>
+    </div>
+  </main>
+
+  <script src="/assets/docs.js" defer></script>
+</body>
+
+</html>

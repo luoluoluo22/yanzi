@@ -31,21 +31,60 @@
     </nav>
   </header>
 
+  <!-- Sidebar Expand Hover Button -->
+  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </button>
+
   <main class="doc-page">
-    <section class="doc-layout">
-      <aside class="doc-toc">
-        <strong style="display: block; color: var(--text); font-size: 0.95rem; font-weight: 700; margin-bottom: 1rem;">文档目录</strong>
-        <a href="/docs/product-overview.html">1. 产品说明</a>
-        <a href="/docs/getting-started.html" class="active">2. 快速上手</a>
-        <a href="/docs/extension-authoring-guide.html">3. 开发指南</a>
-        <a href="/docs/extension-spec.html">4. 扩展规范</a>
+    <div class="doc-layout">
+      <!-- Left Sidebar Directory -->
+      <aside class="doc-sidebar">
+        <div class="sidebar-header">
+          <strong>文档目录</strong>
+          <button id="sidebar-toggle" class="sidebar-toggle-btn" title="折叠侧边栏">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+        </div>
+
+        <div class="sidebar-search-container">
+          <input type="text" id="directory-search" class="sidebar-search-input" placeholder="搜索目录... (/)">
+          <svg class="sidebar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+
+        <div class="doc-toc-group">
+          <span class="doc-toc-title">用户手册</span>
+          <div class="doc-toc-links">
+            <a href="/docs/product-overview.html">1. 产品说明</a>
+            <a href="/docs/getting-started.html" class="active">2. 快速上手</a>
+          </div>
+        </div>
+
+        <div class="doc-toc-group">
+          <span class="doc-toc-title">开发者文档</span>
+          <div class="doc-toc-links">
+            <a href="/docs/extension-authoring-guide.html">3. 开发指南</a>
+            <a href="/docs/extension-spec.html">4. 扩展规范</a>
+            <a href="/docs/agent-skill-spec.html">5. Agent Skill 规范</a>
+            <a href="/docs/ai-extension-test-set.html">6. AI 扩展测试集</a>
+          </div>
+        </div>
       </aside>
 
+      <!-- Center Reading Area -->
       <div class="guide-stack">
         <div class="doc-content-header" style="margin-bottom: 2rem;">
           <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">快速上手</h1>
           <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">本章将引导你下载并安装燕子客户端，了解高频使用的基础快捷键，以及如何配置个人多端云同步。</p>
         </div>
+        
         <article class="guide-card">
           <h2>1. 下载与安装</h2>
           <p>从蓝奏云盘下载最新一键安装版：</p>
@@ -134,8 +173,16 @@
           </a>
         </div>
       </div>
-    </section>
+
+      <!-- Right Outline (Dynamic TOC) -->
+      <aside class="doc-outline">
+        <strong>当前章节大纲</strong>
+        <ul id="outline-list"></ul>
+      </aside>
+    </div>
   </main>
+  
+  <script src="/assets/docs.js" defer></script>
 </body>
 
 </html>
