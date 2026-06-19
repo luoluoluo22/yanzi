@@ -24,11 +24,11 @@
     .yanm-shell {
       width: min(1440px, calc(100vw - 32px));
       margin: 0 auto;
-      padding: 7rem 0 4rem;
+      padding: 4rem 0 3rem;
     }
 
     body.yanm-logged-in .yanm-shell {
-      padding-top: 5.5rem;
+      padding-top: 1.5rem;
     }
 
     body.yanm-logged-in .yanm-hero {
@@ -134,10 +134,46 @@
     .yanm-toolbar {
       display: flex;
       justify-content: space-between;
-      gap: 1rem;
+      gap: 1.5rem;
       align-items: center;
-      margin: 1.5rem 0;
+      margin: 0 0 1.5rem 0;
       color: var(--text-muted);
+    }
+
+    .yanm-user-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .yanm-user-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .yanm-user-status strong {
+      color: var(--text);
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.25);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body.yanm-logged-in .status-dot {
+      background: #10b981;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+    }
+
+    #sync-label {
+      font-size: 0.82rem;
+      color: var(--text-dim);
     }
 
     .yanm-toolbar-actions {
@@ -269,9 +305,12 @@
     </section>
 
     <section class="yanm-toolbar">
-      <div>
-        <strong id="user-label">未登录</strong>
-        <span id="sync-label">登录后读取燕子云端燕幕数据</span>
+      <div class="yanm-user-info">
+        <div class="yanm-user-status">
+          <span class="status-dot"></span>
+          <strong id="user-label">未登录</strong>
+        </div>
+        <span id="sync-label">登录后读取燕子云端数据</span>
       </div>
       <div class="yanm-toolbar-actions">
         <button class="button secondary" id="scale-mode-button" type="button">显示: 适应窗口</button>
@@ -353,7 +392,7 @@
 
     function renderUser() {
       const user = getUser();
-      userLabel.textContent = user ? `${user.username || user.email} 已登录` : "未登录";
+      userLabel.textContent = user ? (user.username || user.email) : "未登录";
       authCard.classList.toggle("yanm-hidden", Boolean(user));
       document.body.classList.toggle("yanm-logged-in", Boolean(user));
     }
@@ -515,13 +554,23 @@
         return;
       }
 
-      const bounds = components.reduce((acc, item) => ({
-        width: Math.max(acc.width, Number(item.x ?? item.X ?? 0) + Number(item.width ?? item.Width ?? 320)),
-        height: Math.max(acc.height, Number(item.y ?? item.Y ?? 0) + Number(item.height ?? item.Height ?? 180))
-      }), { width: 1280, height: 720 });
+      const minX = components.reduce((min, item) => Math.min(min, Number(item.x ?? item.X ?? 0)), Infinity);
+      const minY = components.reduce((min, item) => Math.min(min, Number(item.y ?? item.Y ?? 0)), Infinity);
+      const offset = 24;
 
-      const padding = 64;
-      const wrapWidth = stageWrap.clientWidth - padding;
+      const bounds = components.reduce((acc, item) => {
+        const x = Number(item.x ?? item.X ?? 0) - minX + offset;
+        const y = Number(item.y ?? item.Y ?? 0) - minY + offset;
+        const width = Number(item.width ?? item.Width ?? 320);
+        const height = Number(item.height ?? item.Height ?? 180);
+        return {
+          width: Math.max(acc.width, x + width),
+          height: Math.max(acc.height, y + height)
+        };
+      }, { width: 0, height: 0 });
+
+      const padding = 24;
+      const wrapWidth = stageWrap.clientWidth - padding * 2;
       const wrapHeight = Math.max(560, window.innerHeight - 300);
 
       stage.style.width = `${bounds.width + padding}px`;
@@ -543,8 +592,8 @@
       for (const component of components) {
         const frame = document.createElement("div");
         frame.className = "yanm-component";
-        frame.style.left = `${Number(component.x ?? component.X ?? 0)}px`;
-        frame.style.top = `${Number(component.y ?? component.Y ?? 0)}px`;
+        frame.style.left = `${Number(component.x ?? component.X ?? 0) - minX + offset}px`;
+        frame.style.top = `${Number(component.y ?? component.Y ?? 0) - minY + offset}px`;
         frame.style.width = `${Number(component.width ?? component.Width ?? 320)}px`;
         frame.style.height = `${Number(component.height ?? component.Height ?? 180)}px`;
 
