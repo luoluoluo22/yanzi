@@ -10,10 +10,10 @@ database_id = "512f99ac-4f5f-4e30-affb-58fc4da94bfa"
 binding = "PACKAGES"
 bucket_name = "openquickhost-sync-assets"
 
-[[durable_objects.bindings]]
-name = "DEVICE_RELAY"
-class_name = "DeviceRelayRoom"
-
 [[migrations]]
 tag = "v1_device_relay"
 new_sqlite_classes = ["DeviceRelayRoom"]
+
+[[migrations]]
+tag = "delete-relay-room"
+deleted_classes = ["DeviceRelayRoom"]
