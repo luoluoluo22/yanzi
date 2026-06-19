@@ -85,11 +85,30 @@ nav a {
   font-weight: 500;
   transition: all 0.2s ease;
   text-decoration: none;
+  position: relative;
+  padding: 0.25rem 0;
 }
 
 nav a:hover {
   color: var(--text);
   text-shadow: 0 0 10px var(--accent-glow);
+}
+
+nav a.active {
+  color: var(--text) !important;
+  font-weight: 600;
+}
+
+nav a.active::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  border-radius: 99px;
 }
 
 main {
@@ -1295,7 +1314,7 @@ pre {
 }
 
 .doc-page {
-  padding-top: 48px;
+  padding-top: 80px;
 }
 
 .doc-hero {
