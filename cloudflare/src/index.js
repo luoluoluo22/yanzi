@@ -2450,6 +2450,7 @@ async function fetchWebDav(config, relativePath, init) {
   const url = buildWebDavUrl(config, relativePath);
   const headers = new Headers(init.headers || {});
   headers.set("authorization", `Basic ${base64EncodeUtf8(`${config.username}:${config.password}`)}`);
+  headers.set("user-agent", "YanziClient/1.0.0 (Windows; Cloudflare Worker)");
   return fetch(url, {
     ...init,
     headers
