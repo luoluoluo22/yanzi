@@ -1,12 +1,17 @@
 <!doctype html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>扩展开发指南 | Yanzi</title>
+  <title>开发指南 - 燕子在线文档</title>
   <meta name="description" content="燕子 Yanzi 扩展开发指南，包含打开目录、网页搜索、C# 动作、PowerShell 自动化和宿主界面扩展示例。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
+
 <body>
   <div class="noise"></div>
   <header class="site-header">
@@ -21,7 +26,7 @@
       <a href="/">首页</a>
       <a href="/store.html">扩展商店</a>
       <a href="/yanm.html">燕幕</a>
-      <a href="/docs/product-overview.html">文档</a>
+      <a href="/docs/product-overview.html" class="active">文档</a>
       <a href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载</a>
     </nav>
   </header>
@@ -38,14 +43,11 @@
 
     <section class="doc-layout">
       <aside class="doc-toc">
-        <a href="#choose">选择扩展类型</a>
-        <a href="#open-target">打开目录/网页</a>
-        <a href="#query">带参数搜索</a>
-        <a href="#csharp">C# 动作</a>
-        <a href="#powershell">PowerShell 自动化</a>
-        <a href="#hosted-view">宿主界面</a>
-        <a href="#icons">图标写法</a>
-        <a href="#ai-prompt">给 AI 的提示词</a>
+        <strong style="display: block; color: var(--text); font-size: 0.95rem; font-weight: 700; margin-bottom: 1rem;">文档目录</strong>
+        <a href="/docs/product-overview.html">1. 产品说明</a>
+        <a href="/docs/getting-started.html">2. 快速上手</a>
+        <a href="/docs/extension-authoring-guide.html" class="active">3. 开发指南</a>
+        <a href="/docs/extension-spec.html">4. 扩展规范</a>
       </aside>
 
       <div class="guide-stack">
@@ -122,7 +124,7 @@
   "entryMode": "inline",
   "permissions": ["context.read"],
   "script": {
-    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\\n    {\\n        var text = string.IsNullOrWhiteSpace(context.InputText) ? \\\"没有收到选中内容。\\\" : context.InputText.Trim();\\n        return Task.FromResult($\\\"来源: {context.LaunchSource}\\\\n长度: {text.Length}\\\\n\\\\n{text}\\\");\\n    }\\n}"
+    "source": "using OpenQuickHost.CSharpRuntime;\n\npublic static class YanziAction\n{\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\n    {\n        var text = string.IsNullOrWhiteSpace(context.InputText) ? \"没有收到选中内容。\" : context.InputText.Trim();\n        return Task.FromResult($\"来源: {context.LaunchSource}\\n长度: {text.Length}\\n\\n{text}\");\n    }\n}"
   }
 }</code></pre>
           </div>
@@ -156,7 +158,7 @@ public static class YanziAction
   "entryMode": "inline",
   "permissions": ["clipboard.read"],
   "script": {
-    "source": "param([string]$InputText = \\\"\\\", [string]$ContextPath = \\\"\\\")\\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\\n$text = Get-Clipboard -Raw\\nif ([string]::IsNullOrWhiteSpace($text)) { Write-Output \\\"当前剪贴板为空。\\\" } else { Write-Output $text.Trim() }"
+    "source": "param([string]$InputText = \"\", [string]$ContextPath = \"\")\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n$text = Get-Clipboard -Raw\nif ([string]::IsNullOrWhiteSpace($text)) { Write-Output \"当前剪贴板为空。\" } else { Write-Output $text.Trim() }"
   }
 }</code></pre>
           </div>
@@ -188,7 +190,7 @@ public static class YanziAction
     "emptyState": "结果会显示在这里。"
   },
   "script": {
-    "source": "using OpenQuickHost.CSharpRuntime;\\n\\npublic static class YanziAction\\n{\\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText.ToUpperInvariant());\\n    }\\n}"
+    "source": "using OpenQuickHost.CSharpRuntime;\n\npublic static class YanziAction\n{\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\n    {\n        return Task.FromResult(context.InputText.ToUpperInvariant());\n    }\n}"
   }
 }</code></pre>
           </div>
@@ -213,7 +215,7 @@ public static class YanziAction
 1. 只输出合法 JSON，不要 Markdown 代码块。
 2. 优先使用 runtime = "csharp"、entryMode = "inline"、script.source。
 3. C# 源码必须包含 public static class YanziAction，并实现 public static Task&lt;string&gt; RunAsync(YanziActionContext context)。
-4. 如果只是打开文件、目录、网页或系统协议，使用 openTarget，不要写脚本。
+4. 如果只是打开 file、目录、网页或系统协议，使用 openTarget，不要写脚本。
 5. 如果是搜索类命令，使用 queryPrefixes 和 queryTargetTemplate，模板里用 {query}。
 6. 如果需要宿主界面，使用 hostedView，actionType 优先使用 script。
 7. 必须包含 id、name、version、category、description、keywords。
@@ -225,8 +227,20 @@ public static class YanziAction
 在这里描述你的需求。</code></pre>
           </div>
         </article>
+
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          <a href="/docs/getting-started.html" class="button secondary" style="gap: 8px; height: 46px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            上一页: 快速上手
+          </a>
+          <a href="/docs/extension-spec.html" class="button primary" style="gap: 8px; height: 46px;">
+            下一页: 扩展规范
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+        </div>
       </div>
     </section>
   </main>
 </body>
+
 </html>

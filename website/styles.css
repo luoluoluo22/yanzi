@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #030406;
   --panel: rgba(20, 22, 28, 0.75);
   --panel-hover: rgba(28, 30, 38, 0.85);
@@ -1333,6 +1333,12 @@ pre {
 
 .doc-toc a:hover {
   color: var(--text);
+}
+
+.doc-toc a.active {
+  color: var(--accent);
+  font-weight: 600;
+  text-shadow: 0 0 10px var(--accent-glow);
 }
 
 .guide-stack {

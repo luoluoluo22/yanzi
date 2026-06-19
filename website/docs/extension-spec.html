@@ -1,32 +1,191 @@
 <!doctype html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>扩展规范</title>
+  <title>扩展规范 - 燕子在线文档</title>
+  <meta name="description" content="燕子启动器 manifest.json 声明式规范及字段定义。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
+
 <body>
-  <main style="padding-top:48px">
-    <section class="section" style="padding-top:0">
-      <p class="eyebrow">Documentation</p>
-      <h1 style="font-size:3rem;max-width:none">扩展规范</h1>
-      <div class="code-card" style="margin-top:24px">
+  <div class="noise"></div>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display: flex; align-items: center;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo"
+          style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
+      </a>
+      <a href="/docs/product-overview.html" style="text-decoration: none; color: inherit; font-weight: 600;">文档</a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/docs/product-overview.html" class="active">文档</a>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载</a>
+    </nav>
+  </header>
+
+  <main class="doc-page">
+    <section class="doc-hero">
+      <a class="back-link" href="/">← 返回官网首页</a>
+      <p class="eyebrow">Extension Spec</p>
+      <h1>扩展规范与配置字典</h1>
+      <p class="hero-text">
+        本章详细说明燕子扩展中 <code>manifest.json</code> 的各字段类型、定义范围以及支持的系统运行期权限。
+      </p>
+    </section>
+
+    <section class="doc-layout">
+      <aside class="doc-toc">
+        <strong style="display: block; color: var(--text); font-size: 0.95rem; font-weight: 700; margin-bottom: 1rem;">文档目录</strong>
+        <a href="/docs/product-overview.html">1. 产品说明</a>
+        <a href="/docs/getting-started.html">2. 快速上手</a>
+        <a href="/docs/extension-authoring-guide.html">3. 开发指南</a>
+        <a href="/docs/extension-spec.html" class="active">4. 扩展规范</a>
+      </aside>
+
+      <div class="guide-stack">
+        <article class="guide-card">
+          <h2>1. 典型声明示例</h2>
+          <p>以下为一个完整的标准搜索引擎前缀传参扩展 manifest 声明：</p>
+          <div class="code-card" style="margin-top: 1rem; margin-bottom: 1rem;">
 <pre><code>{
   "id": "google-search",
-  "name": "谷歌",
+  "name": "谷歌搜索",
   "version": "0.1.0",
   "category": "搜索",
+  "description": "使用默认浏览器快捷进行 Google 搜索。",
   "keywords": ["谷歌", "guge", "google", "gg"],
+  "icon": "mdi:search",
   "openTarget": "https://www.google.com",
   "queryPrefixes": ["谷歌", "guge", "google", "gg"],
   "queryTargetTemplate": "https://www.google.com/search?q={query}"
 }</code></pre>
-      </div>
-      <div class="card" style="margin-top:24px">
-        <p class="section-text" style="margin-top:0">当前最低要求是独立目录中的 `manifest.json`。简单命令可使用 `openTarget`，参数化命令建议支持 `queryPrefixes` 与 `queryTargetTemplate`。</p>
+          </div>
+        </article>
+
+        <article class="guide-card">
+          <h2>2. 属性字典定义说明</h2>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 1.25rem;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">字段 Key</th>
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">类型</th>
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">是否必填</th>
+                <th style="padding: 0.75rem 0.5rem; color: var(--text);">描述定义</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>id</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem; color: #10b981;">必填</td>
+                <td style="padding: 0.75rem 0.5rem;">扩展的唯一全局 ID。建议使用小写字母、数字及中划线命名。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>name</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem; color: #10b981;">必填</td>
+                <td style="padding: 0.75rem 0.5rem;">展示给用户的名称。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>version</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem; color: #10b981;">必填</td>
+                <td style="padding: 0.75rem 0.5rem;">版本号。遵循语义化版本规范（例如 <code>0.1.0</code>）。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>category</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">类别。例如 <code>工具</code>、<code>搜索</code>、<code>脚本</code> 等。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>description</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">扩展功能用途的详细描述。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>keywords</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">Array</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">用户搜索该扩展时被命中的关键字列表，支持中文及拼音缩写。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>icon</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">图标声明。可以是 <code>mdi:search</code>（内置图标）、本地相对路径图片或 Web 链接。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>openTarget</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">打开目标。配置后，点击扩展会自动打开该本地目录、文件或网页地址。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>queryPrefixes</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">Array</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">在主启动器输入匹配的前缀词列表。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>queryTargetTemplate</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">前缀搜索的跳转 URL 模板。剩余的搜索关键字会自动替代 <code>{query}</code> 占位符。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>runtime</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">运行引擎类型。支持 <code>csharp</code> 或 <code>powershell</code>。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>entryMode</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">执行方式。目前推荐使用 <code>inline</code>（内联代码直接运行）。</td>
+              </tr>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td style="padding: 0.75rem 0.5rem;"><code>permissions</code></td>
+                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">Array</td>
+                <td style="padding: 0.75rem 0.5rem;">选填</td>
+                <td style="padding: 0.75rem 0.5rem;">申请的特定运行时权限，例如 <code>context.read</code>、<code>clipboard.read</code>。</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+        
+        <article class="guide-card">
+          <h2>3. 权限列表声明说明</h2>
+          <ul>
+            <li><strong><code>context.read</code></strong>：允许扩展动作读取宿主传入的选中文件路径、当前软件窗口等上下文信息。</li>
+            <li><strong><code>clipboard.read</code></strong>：允许扩展脚本读取 Windows 系统剪贴板内容。</li>
+            <li><strong><code>clipboard.write</code></strong>：允许扩展脚本写入/覆盖 Windows 系统剪贴板。</li>
+          </ul>
+        </article>
+
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          <a href="/docs/extension-authoring-guide.html" class="button secondary" style="gap: 8px; height: 46px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            上一页: 开发指南
+          </a>
+          <a href="/" class="button primary" style="gap: 8px; height: 46px;">
+            返回官网首页
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+        </div>
       </div>
     </section>
   </main>
 </body>
+
 </html>
