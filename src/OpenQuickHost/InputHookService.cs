@@ -43,6 +43,7 @@ public class InputHookService
     private static DispatcherTimer? _longPressTimer;
     private static Action? _onLongPressRelease;
     private static Action? _onRadialRelease;
+    public static event Action? OnGlobalMouseDown;
     private static Action? _onShowPanel;
     private static Action? _onShowRadial;
     private static Action? _onShowYanm;
@@ -70,6 +71,8 @@ public class InputHookService
     private static TrackedMouseButton _trackedButton = TrackedMouseButton.None;
     private static POINT _downPoint;
     private static long _lastMouseTriggerReleaseTick;
+    private static long _capsLockDownTick;
+    private static bool _capsLockUsed;
 
     public static bool IsRunning => _isEnabled;
 
@@ -80,6 +83,11 @@ public class InputHookService
     {
         var tick = _lastMouseTriggerReleaseTick;
         return tick > 0 && Environment.TickCount64 - tick <= milliseconds;
+    }
+
+    public static void MarkCapsLockAsUsed()
+    {
+        _capsLockUsed = true;
     }
 
     public static string GetMouseStateSummary()
@@ -142,7 +150,7 @@ public class InputHookService
         }
         
         _longPressTimer = new DispatcherTimer();
-        _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 150, 2000));
+        _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 50, 1500));
         _longPressTimer.Tick += (s, e) =>
         {
             _longPressTimer.Stop();
@@ -206,7 +214,7 @@ public class InputHookService
         _windowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(appSettings.WindowSnapAssistMouseTriggerMode);
         if (_longPressTimer != null)
         {
-            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 150, 2000));
+            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 50, 1500));
         }
 
         ResetTransientMouseState();
@@ -274,6 +282,21 @@ public class InputHookService
             if ((mouse.flags & LLMHF_INJECTED) != 0)
             {
                 return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
+            }
+
+            if (message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN)
+            {
+                System.Windows.Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        OnGlobalMouseDown?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Error in OnGlobalMouseDown: {ex.Message}");
+                    }
+                }));
             }
 
             if (message == WM_LBUTTONDOWN)
@@ -435,7 +458,10 @@ public class InputHookService
                     _x2ButtonDown = false;
                 }
 
-                EndTracking(xButton == XBUTTON1 ? TrackedMouseButton.X1 : TrackedMouseButton.X2);
+                if (EndTracking(xButton == XBUTTON1 ? TrackedMouseButton.X1 : TrackedMouseButton.X2))
+                {
+                    return (IntPtr)1;
+                }
             }
             else if (message == WM_MOUSEHWHEEL && _settings.HorizontalWheel)
             {
@@ -470,6 +496,11 @@ public class InputHookService
                     _capsRadialActive = true;
                     _releaseShouldExecute = true;
                     _activeTriggerTarget = ActiveTriggerTarget.Radial;
+                    if (keyboard.vkCode == VK_CAPITAL)
+                    {
+                        _capsLockDownTick = Environment.TickCount64;
+                        _capsLockUsed = false;
+                    }
                     HostAssets.AppendLog($"Input hook: {RadialActivationKeys.Normalize(_radialSettings.ActivationKey)} hold radial triggered.");
                     InvokeShowRadial();
                 }
@@ -486,11 +517,60 @@ public class InputHookService
                 HostAssets.AppendLog($"Input hook: {RadialActivationKeys.Normalize(_radialSettings.ActivationKey)} hold radial released.");
                 System.Windows.Application.Current.Dispatcher.Invoke(() => _onRadialRelease?.Invoke());
                 _activeTriggerTarget = ActiveTriggerTarget.None;
+
+                if (keyboard.vkCode == VK_CAPITAL && !_capsLockUsed && (Environment.TickCount64 - _capsLockDownTick < 350))
+                {
+                    SendSyntheticCapsLock();
+                }
+
                 return (IntPtr)1;
             }
         }
 
         return CallNextHookEx(_keyboardHookID, nCode, wParam, lParam);
+    }
+
+    private static void SendSyntheticCapsLock()
+    {
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(25);
+            var inputs = new[]
+            {
+                new INPUT
+                {
+                    type = 1, // INPUT_KEYBOARD
+                    U = new InputUnion
+                    {
+                        ki = new KEYBDINPUT
+                        {
+                            wVk = (ushort)VK_CAPITAL,
+                            wScan = 0,
+                            dwFlags = 0, // Key down
+                            time = 0,
+                            dwExtraInfo = IntPtr.Zero
+                        }
+                    }
+                },
+                new INPUT
+                {
+                    type = 1, // INPUT_KEYBOARD
+                    U = new InputUnion
+                    {
+                        ki = new KEYBDINPUT
+                        {
+                            wVk = (ushort)VK_CAPITAL,
+                            wScan = 0,
+                            dwFlags = 2, // KEYEVENTF_KEYUP
+                            time = 0,
+                            dwExtraInfo = IntPtr.Zero
+                        }
+                    }
+                }
+            };
+            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+            HostAssets.AppendLog("Input hook: simulated CapsLock keypress for toggle.");
+        });
     }
 
     private static void BeginTracking(TrackedMouseButton button, POINT point)
@@ -536,11 +616,11 @@ public class InputHookService
 
         if (_longPressTimer != null)
         {
-            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 150, 2000));
+            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 50, 1500));
         }
 
         _longPressTimer?.Start();
-        HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={Math.Clamp(_settings.LongPressMilliseconds, 150, 2000)}ms.");
+        HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={Math.Clamp(_settings.LongPressMilliseconds, 50, 1500)}ms.");
     }
 
     private static void HandleMouseMove(POINT point)
@@ -665,7 +745,7 @@ public class InputHookService
         }
 
         _longPressTimer?.Stop();
-        var swallowRelease = button is TrackedMouseButton.Right or TrackedMouseButton.Middle && _releaseShouldExecute;
+        var swallowRelease = (button is TrackedMouseButton.Right or TrackedMouseButton.Middle or TrackedMouseButton.X1 or TrackedMouseButton.X2) && _releaseShouldExecute;
         var downSwallowedByMouseGesture = button switch
         {
             TrackedMouseButton.Right => MouseGestureService.HasRightDragRegistrations,

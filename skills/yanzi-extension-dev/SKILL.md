@@ -9,7 +9,7 @@ Use this skill when working on local extensions for Yanzi.
 
 ## Quick Start
 
-Yanzi stores runtime extensions under the app's `Extensions/` directory. Each extension lives in its own folder.
+Yanzi stores runtime extensions under the app's `Extensions/` directory. On Windows development/runtime environment, the actual path is `%LOCALAPPDATA%\OpenQuickHost\Extensions\` (and configuration/storage files under `%LOCALAPPDATA%\OpenQuickHost\`). The Local Agent API authentication Token is located in `%LOCALAPPDATA%\OpenQuickHost\appsettings.local.json` under the `"agentApiToken"` field. Each extension lives in its own folder.
 
 Two extension shapes are supported:
 
@@ -79,6 +79,16 @@ Hosted view fields:
 - `hostedView.actionButtonText`
 - `hostedView.actionType`
 - `hostedView.emptyState`
+
+Web app fields:
+
+- `app.type`
+- `app.entry`
+- `app.singleInstance`
+- `app.window.width`
+- `app.window.height`
+- `app.window.minWidth`
+- `app.window.minHeight`
 
 Read [references/manifest.md](references/manifest.md) when editing manifests.
 
@@ -177,10 +187,25 @@ Useful endpoints:
 
 Read [references/local-agent-api.md](references/local-agent-api.md) for request and response shapes.
 
+### Encoding Considerations
+When communicating with the local agent API (especially using legacy clients like Windows PowerShell 5.1), requests with non-ASCII text (e.g. Chinese characters) may cause encoding issues (garbled characters / 乱码) because the client defaults to sending ANSI/GBK payload instead of UTF-8. 
+
+To prevent encoding issues:
+1. Always specify '; charset=utf-8' in the 'Content-Type' header (e.g. '"Content-Type": "application/json; charset=utf-8"').
+2. Manually encode the payload to a UTF-8 byte stream before sending it as the request body. For PowerShell:
+   ```powershell
+   $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonPayload)
+   Invoke-RestMethod -Uri "..." -Method Post -Headers $headers -Body $bodyBytes
+   ```
+
 ## Working Rules
 
+- **CRITICAL**: When creating a NEW extension, you MUST use the Local Agent API (`POST /v1/extensions`) rather than directly writing files to the disk. Creating extensions via the API ensures the host application correctly registers them and applies the "Recently Added" sorting boost (置顶排列) so the user sees them at the top of their list. After creation, you may edit the files directly.
+- **CRITICAL**: When using `ProcessStartInfo` to call external processes (like ADB) from C# extensions, ensure that you explicitly set `StandardOutputEncoding = System.Text.Encoding.UTF8;` (and `StandardErrorEncoding`) and use `ReadToEndAsync()` to prevent Chinese character garbling (中文乱码).
+- **CRITICAL**: If you execute `dotnet build` to compile the host application or an extension, you MUST automatically launch the compiled application (e.g., `Start-Process` or `dotnet run`) immediately afterwards, so the user doesn't have to restart it manually.
 - Prefer editing extension folders through the local API when you are acting as an external agent.
 - When working inside the Yanzi codebase, update both the runtime behavior and the bundled skill docs if behavior changes.
-- Prefer C# inline actions for new extensions unless the task is specifically Windows shell automation.
+- Prefer C# inline actions for new extensions unless the task is specifically Windows shell automation. For complex or large extensions, prefer multi-file format (e.g. `entryMode = entry` pointing to `main.cs`) over inline source to maintain code clarity.
 - For PowerShell extensions, keep files ASCII unless non-ASCII output is required; when Chinese text is required, ensure the file is written with BOM-compatible UTF-8 handling.
-- When debugging inline scripts, prefer using the editor test flow first, then inspect `logs/host.log` and `logs/dev-debug.log` on the development machine.
+- When debugging inline scripts, prefer using the editor test flow first, then inspect `logs/host.log` and `dev-debug.log` on the development machine.
+- C# extensions loaded via in-process AssemblyLoadContext persist in memory. If your extension registers global event hooks (e.g. keyboard/mouse hooks via Win32 `SetWindowsHookEx`), use a `static` manager to keep the hook alive and running in the background even after `RunAsync` completes or the setting window closes.

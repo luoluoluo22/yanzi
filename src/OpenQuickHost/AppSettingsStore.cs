@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
@@ -37,11 +38,19 @@ public static class AppSettingsStore
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
     };
 
     private static AppSettings Normalize(AppSettings settings)
     {
+        settings.ThemeMode = settings.ThemeMode?.Trim() switch
+        {
+            "Light" => "Light",
+            "System" => "System",
+            _ => "Dark"
+        };
+
         settings.QuickPanelGlobalGroups ??= [];
         if (settings.QuickPanelGlobalGroups.Count == 0)
         {
@@ -214,6 +223,12 @@ public static class AppSettingsStore
         settings.RadialMenu.DeadZonePixels = Math.Clamp(settings.RadialMenu.DeadZonePixels, 12, 120);
         settings.RadialMenu.RadiusPixels = Math.Clamp(settings.RadialMenu.RadiusPixels, 80, 240);
         settings.RadialMenu.DragThresholdPixels = Math.Clamp(settings.RadialMenu.DragThresholdPixels, 8, 120);
+        settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
+        settings.QuickPanelMouseTriggers.LongPressMilliseconds =
+            (settings.QuickPanelMouseTriggers.LongPressMilliseconds == 120 || settings.QuickPanelMouseTriggers.LongPressMilliseconds == 500)
+                ? 350
+                : Math.Clamp(settings.QuickPanelMouseTriggers.LongPressMilliseconds, 50, 1500);
+        settings.QuickPanelMouseTriggers.DragThresholdPixels = Math.Clamp(settings.QuickPanelMouseTriggers.DragThresholdPixels, 8, 120);
         settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode);
         settings.YanyuRules ??= [];
         settings.YanyuRules = settings.YanyuRules
@@ -243,11 +258,74 @@ public static class AppSettingsStore
             settings.SelectedQuickPanelContextGroupId = settings.QuickPanelContextGroups[0].Id;
         }
 
+        settings.PersonalSync ??= new PersonalSyncSettings();
+        settings.PersonalSync.Provider = PersonalSyncProviders.Normalize(settings.PersonalSync.Provider);
+        settings.PersonalSync.GitHub ??= new PersonalSyncGitHubConfig();
+        settings.PersonalSync.Gitee ??= new PersonalSyncGiteeConfig();
+        settings.PersonalSync.GitLab ??= new PersonalSyncGitLabConfig();
+        settings.PersonalSync.Gitea ??= new PersonalSyncGiteaConfig();
+        settings.PersonalSync.S3 ??= new PersonalSyncS3Config();
+        settings.PersonalSync.WebDav ??= new PersonalSyncWebDavConfig();
+        var hasLegacyWebDavConfig = HasWebDavConfigValues(
+            settings.WebDavServerUrl,
+            settings.WebDavRootPath,
+            settings.WebDavUsername);
+        settings.PersonalSync.GitHub.Username = settings.PersonalSync.GitHub.Username?.Trim() ?? string.Empty;
+        settings.PersonalSync.GitHub.Repo = string.IsNullOrWhiteSpace(settings.PersonalSync.GitHub.Repo) ? "yanzi-sync" : settings.PersonalSync.GitHub.Repo.Trim();
+        settings.PersonalSync.GitHub.Branch = string.IsNullOrWhiteSpace(settings.PersonalSync.GitHub.Branch) ? "main" : settings.PersonalSync.GitHub.Branch.Trim();
+        settings.PersonalSync.GitHub.PathPrefix = settings.PersonalSync.GitHub.PathPrefix?.Trim() ?? string.Empty;
+        settings.PersonalSync.Gitee.Username = settings.PersonalSync.Gitee.Username?.Trim() ?? string.Empty;
+        settings.PersonalSync.Gitee.Repo = string.IsNullOrWhiteSpace(settings.PersonalSync.Gitee.Repo) ? "yanzi-sync" : settings.PersonalSync.Gitee.Repo.Trim();
+        settings.PersonalSync.Gitee.Branch = string.IsNullOrWhiteSpace(settings.PersonalSync.Gitee.Branch) ? "master" : settings.PersonalSync.Gitee.Branch.Trim();
+        settings.PersonalSync.Gitee.PathPrefix = settings.PersonalSync.Gitee.PathPrefix?.Trim() ?? string.Empty;
+        settings.PersonalSync.GitLab.BaseUrl = string.IsNullOrWhiteSpace(settings.PersonalSync.GitLab.BaseUrl) ? "https://gitlab.com" : settings.PersonalSync.GitLab.BaseUrl.Trim();
+        settings.PersonalSync.GitLab.ProjectPath = settings.PersonalSync.GitLab.ProjectPath?.Trim() ?? string.Empty;
+        settings.PersonalSync.GitLab.Branch = string.IsNullOrWhiteSpace(settings.PersonalSync.GitLab.Branch) ? "main" : settings.PersonalSync.GitLab.Branch.Trim();
+        settings.PersonalSync.GitLab.PathPrefix = settings.PersonalSync.GitLab.PathPrefix?.Trim() ?? string.Empty;
+        settings.PersonalSync.Gitea.BaseUrl = string.IsNullOrWhiteSpace(settings.PersonalSync.Gitea.BaseUrl) ? "https://gitea.com" : settings.PersonalSync.Gitea.BaseUrl.Trim();
+        settings.PersonalSync.Gitea.Username = settings.PersonalSync.Gitea.Username?.Trim() ?? string.Empty;
+        settings.PersonalSync.Gitea.Repo = string.IsNullOrWhiteSpace(settings.PersonalSync.Gitea.Repo) ? "yanzi-sync" : settings.PersonalSync.Gitea.Repo.Trim();
+        settings.PersonalSync.Gitea.Branch = string.IsNullOrWhiteSpace(settings.PersonalSync.Gitea.Branch) ? "main" : settings.PersonalSync.Gitea.Branch.Trim();
+        settings.PersonalSync.Gitea.PathPrefix = settings.PersonalSync.Gitea.PathPrefix?.Trim() ?? string.Empty;
+        settings.PersonalSync.S3.AccessKeyId = settings.PersonalSync.S3.AccessKeyId?.Trim() ?? string.Empty;
+        settings.PersonalSync.S3.Region = settings.PersonalSync.S3.Region?.Trim() ?? string.Empty;
+        settings.PersonalSync.S3.Bucket = settings.PersonalSync.S3.Bucket?.Trim() ?? string.Empty;
+        settings.PersonalSync.S3.Endpoint = settings.PersonalSync.S3.Endpoint?.Trim() ?? string.Empty;
+        settings.PersonalSync.S3.PathPrefix = settings.PersonalSync.S3.PathPrefix?.Trim() ?? string.Empty;
+        settings.PersonalSync.WebDav.Url = string.IsNullOrWhiteSpace(settings.PersonalSync.WebDav.Url) ? "https://dav.jianguoyun.com/dav/" : settings.PersonalSync.WebDav.Url.Trim();
+        settings.PersonalSync.WebDav.Username = settings.PersonalSync.WebDav.Username?.Trim() ?? string.Empty;
+        settings.PersonalSync.WebDav.PathPrefix = string.IsNullOrWhiteSpace(settings.PersonalSync.WebDav.PathPrefix) ? "/yanzi" : settings.PersonalSync.WebDav.PathPrefix.Trim();
+
+        if (hasLegacyWebDavConfig &&
+            (settings.PersonalSync.Provider == PersonalSyncProviders.None ||
+             string.IsNullOrWhiteSpace(settings.PersonalSync.WebDav.Username)))
+        {
+            settings.PersonalSync.Provider = PersonalSyncProviders.WebDav;
+            settings.PersonalSync.Enabled = settings.EnableWebDavSync;
+            settings.PersonalSync.WebDav.Url = string.IsNullOrWhiteSpace(settings.WebDavServerUrl)
+                ? settings.PersonalSync.WebDav.Url
+                : settings.WebDavServerUrl.Trim();
+            settings.PersonalSync.WebDav.PathPrefix = string.IsNullOrWhiteSpace(settings.WebDavRootPath)
+                ? settings.PersonalSync.WebDav.PathPrefix
+                : settings.WebDavRootPath.Trim();
+            settings.PersonalSync.WebDav.Username = settings.WebDavUsername?.Trim() ?? string.Empty;
+        }
+
         if (!settings.WebDavSyncManuallyDisabled &&
-            HasWebDavConfigValues(settings.WebDavServerUrl, settings.WebDavRootPath, settings.WebDavUsername))
+            hasLegacyWebDavConfig)
         {
             settings.EnableWebDavSync = true;
         }
+
+        if (settings.PersonalSync.Provider == PersonalSyncProviders.WebDav)
+        {
+            settings.EnableWebDavSync = settings.PersonalSync.Enabled;
+            settings.WebDavServerUrl = settings.PersonalSync.WebDav.Url;
+            settings.WebDavRootPath = settings.PersonalSync.WebDav.PathPrefix;
+            settings.WebDavUsername = settings.PersonalSync.WebDav.Username;
+        }
+
+        settings.PersonalSyncAutoSyncDelaySeconds = NormalizePersonalSyncAutoSyncDelay(settings.PersonalSyncAutoSyncDelaySeconds);
 
         settings.AiBaseUrl = settings.AiBaseUrl?.Trim() ?? string.Empty;
         settings.AiApiKey = settings.AiApiKey?.Trim() ?? string.Empty;
@@ -298,6 +376,13 @@ public static class AppSettingsStore
             .OrderBy(static slot => slot.SlotIndex)
             .ToList();
         settings.WindowBindings = NormalizeWindowBindings(settings.WindowBindings);
+        settings.LastTestArgument = string.IsNullOrWhiteSpace(settings.LastTestArgument) ? "示例参数" : settings.LastTestArgument.Trim();
+
+        settings.AutoBackupFrequency = string.IsNullOrWhiteSpace(settings.AutoBackupFrequency)
+            ? "Weekly"
+            : settings.AutoBackupFrequency.Trim();
+        settings.LastAutoBackupTime = (settings.LastAutoBackupTime ?? string.Empty).Trim();
+        settings.CustomBackupDirectory = (settings.CustomBackupDirectory ?? string.Empty).Trim();
 
         return settings;
     }
@@ -376,6 +461,13 @@ public static class AppSettingsStore
                !string.IsNullOrWhiteSpace(username);
     }
 
+    private static int NormalizePersonalSyncAutoSyncDelay(int value)
+    {
+        return value is 0 or 2 or 3 or 5 or 10 or 20 or 30 or 60 or 120
+            ? value
+            : 10;
+    }
+
     private static List<string> NormalizeProcessList(IEnumerable<string>? processes) =>
         (processes ?? [])
         .Where(static item => !string.IsNullOrWhiteSpace(item))
@@ -446,6 +538,10 @@ public static class AppSettingsStore
 
 public sealed record AppSettings
 {
+    public string ThemeMode { get; set; } = "Dark";
+
+    public bool AutoCloseToastEnabled { get; set; } = false;
+
     public string LauncherHotkey { get; set; } = "Alt+Space";
 
     public bool LaunchAtStartup { get; set; } = true;
@@ -453,6 +549,14 @@ public sealed record AppSettings
     public bool RefreshCloudOnStartup { get; set; } = true;
 
     public bool CloseToTray { get; set; } = true;
+
+    public bool EnableAutoUpdate { get; set; } = true;
+
+    public string AutoBackupFrequency { get; set; } = "Weekly";
+
+    public string LastAutoBackupTime { get; set; } = string.Empty;
+
+    public string CustomBackupDirectory { get; set; } = string.Empty;
 
     public List<string?> QuickPanelSlots { get; set; } = Enumerable.Repeat<string?>(null, 28).ToList();
 
@@ -494,6 +598,12 @@ public sealed record AppSettings
 
     public string AgentApiToken { get; set; } = "yanzi-local-dev-token";
 
+    public string WanPushUuid { get; set; } = System.Guid.NewGuid().ToString("N");
+
+    public bool EnableLanSync { get; set; } = false;
+
+    public PersonalSyncSettings PersonalSync { get; set; } = new();
+
     public bool EnableWebDavSync { get; set; } = false;
 
     public bool WebDavSyncManuallyDisabled { get; set; } = false;
@@ -504,6 +614,8 @@ public sealed record AppSettings
 
     public string WebDavUsername { get; set; } = string.Empty;
 
+    public int PersonalSyncAutoSyncDelaySeconds { get; set; } = 10;
+
     public bool PreferManualExtensionEditor { get; set; } = false;
 
     public string AiBaseUrl { get; set; } = string.Empty;
@@ -511,6 +623,8 @@ public sealed record AppSettings
     public string AiApiKey { get; set; } = string.Empty;
 
     public string AiModel { get; set; } = string.Empty;
+
+    public List<AppEnvironmentVariableSettings> EnvironmentVariables { get; set; } = [];
 
     public List<YanyuRuleSettings> YanyuRules { get; set; } = [];
 
@@ -526,6 +640,8 @@ public sealed record AppSettings
 
     public WindowBindingSettings WindowBindings { get; set; } = new();
 
+    public bool LegacyCleanupDismissed { get; set; } = false;
+
     public string LauncherConfigUpdatedAtUtc { get; set; } = string.Empty;
 
     public double? SettingsWindowLeft { get; set; }
@@ -535,6 +651,8 @@ public sealed record AppSettings
     public double? SettingsWindowWidth { get; set; }
 
     public double? SettingsWindowHeight { get; set; }
+
+    public string LastTestArgument { get; set; } = "示例参数";
 }
 
 public sealed class WindowSnapAssistCustomLayoutSettings
@@ -580,6 +698,8 @@ public sealed class QuickPanelSlotItem
     public List<QuickPanelSlotItem?> FolderSlotItems { get; set; } = [];
 
     public bool IsFolder => string.Equals(ItemType, "folder", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsShortcut { get; set; } = false;
 }
 
 public sealed record QuickPanelMouseTriggerSettings
@@ -610,7 +730,7 @@ public sealed record QuickPanelMouseTriggerSettings
 
     public bool ExecuteOnButtonRelease { get; set; } = true;
 
-    public int LongPressMilliseconds { get; set; } = 500;
+    public int LongPressMilliseconds { get; set; } = 350;
 
     public int DragThresholdPixels { get; set; } = 26;
 }

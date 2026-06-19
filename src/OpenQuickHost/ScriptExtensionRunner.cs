@@ -403,6 +403,16 @@ public static class ScriptExtensionRunner
         var error = diagnostics.Length == 0
             ? "C# 扩展编译失败。"
             : string.Join(Environment.NewLine, diagnostics);
+            
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath))
+            {
+                File.WriteAllText(Path.Combine(command.ExtensionDirectoryPath, "debug.log"), $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] COMPILATION ERROR:{Environment.NewLine}{error}");
+            }
+        }
+        catch { }
+
         if (useNativeWindowMode)
         {
             HostAssets.AppendLog("ScriptRunner native-window reference diagnostics:" + Environment.NewLine + BuildNativeWindowReferenceDebugInfo());
@@ -428,6 +438,7 @@ public static class ScriptExtensionRunner
     {
         var references = new List<MetadataReference>(
             global::Basic.Reference.Assemblies.Net90.ReferenceInfos.All
+                .Where(info => !info.FileName.Contains(".Private."))
                 .Select(static info => (MetadataReference)info.Reference));
 
         var bundledDirectory = GetBundledNativeWindowReferenceDirectory();
@@ -461,10 +472,18 @@ public static class ScriptExtensionRunner
             references.AddRange(runtimeReferences);
         }
 
-        return references
+        var finalReferences = references
             .GroupBy(static reference => reference.Display, StringComparer.OrdinalIgnoreCase)
             .Select(static group => group.First())
-            .ToArray();
+            .ToList();
+
+        bool hasPrivateXml = finalReferences.Any(r => r.Display != null && r.Display.Contains("System.Private.Xml", StringComparison.OrdinalIgnoreCase));
+        if (hasPrivateXml)
+        {
+            finalReferences.RemoveAll(r => r.Display != null && r.Display.Contains("System.Xml.XmlSerializer", StringComparison.OrdinalIgnoreCase));
+        }
+
+        return finalReferences.ToArray();
     }
 
     private static string GetBundledNativeWindowReferenceDirectory()
@@ -543,6 +562,7 @@ public static class ScriptExtensionRunner
 
             var location = assembly.Location;
             var assemblyName = assembly.GetName().Name;
+
             if (string.Equals(assemblyName, "YanziExtension", StringComparison.OrdinalIgnoreCase) ||
                 IsGeneratedExtensionAssemblyPath(location))
             {
@@ -786,6 +806,15 @@ public static class ScriptExtensionRunner
             }
             catch (Exception ex)
             {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath))
+                    {
+                        File.AppendAllText(Path.Combine(command.ExtensionDirectoryPath, "debug.log"), $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] RUNTIME EXCEPTION:{Environment.NewLine}{ex}{Environment.NewLine}");
+                    }
+                }
+                catch { }
+
                 var result = new ScriptExecutionResult(false, string.Empty, ex.ToString(), -1);
                 ready.TrySetResult(result);
                 completed.TrySetResult(result);
@@ -825,7 +854,42 @@ public static class ScriptExtensionRunner
                 }
             }
 
-            _ = ObserveInProcessNativeWindowAsync(command, completed.Task, stateUpdatePath, executionStopwatch);
+            Guid? registryId = null;
+            try
+            {
+                Action abortAction = () =>
+                {
+                    try
+                    {
+                        string windowKey = $"{command.ExtensionId}-window";
+                        if (HostObjectRegistry.TryGetObject(windowKey, out var win) && win != null)
+                        {
+                            var quitMethod = win.GetType().GetMethod("Quit", BindingFlags.Public | BindingFlags.Instance);
+                            quitMethod?.Invoke(win, null);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Error aborting managed extension {command.ExtensionId}: {ex.Message}");
+                    }
+                };
+
+                RunningExtensionRegistry.RegisterManagedExtension(
+                    command.ExtensionId ?? "csharp",
+                    command.Title ?? "未命名扩展",
+                    "csharp",
+                    launchSource,
+                    isAliveFunc: () => thread.IsAlive,
+                    abortAction: abortAction,
+                    out var instanceId);
+                registryId = instanceId;
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to register managed extension in registry: {ex.Message}");
+            }
+
+            _ = ObserveInProcessNativeWindowAsync(command, completed.Task, stateUpdatePath, executionStopwatch, registryId);
             return new ScriptExecutionResult(true, "native-window-started", "原生窗口已启动。", 0);
         }
 
@@ -849,7 +913,7 @@ public static class ScriptExtensionRunner
 
         var environmentSnapshot = CaptureRuntimeEnvironmentSnapshot();
         var originalDirectory = Directory.GetCurrentDirectory();
-        var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: true);
+        var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: false);
         try
         {
             ApplyRuntimeEnvironment(command, contextPath, stateUpdatePath, launchSource);
@@ -885,7 +949,10 @@ public static class ScriptExtensionRunner
 
             Directory.SetCurrentDirectory(originalDirectory);
             RestoreRuntimeEnvironmentSnapshot(environmentSnapshot);
-            loadContext.Unload();
+            if (loadContext.IsCollectible)
+            {
+                loadContext.Unload();
+            }
         }
     }
 
@@ -893,7 +960,8 @@ public static class ScriptExtensionRunner
         CommandItem command,
         Task<ScriptExecutionResult> completionTask,
         string stateUpdatePath,
-        Stopwatch executionStopwatch)
+        Stopwatch executionStopwatch,
+        Guid? registryId)
     {
         try
         {
@@ -908,6 +976,10 @@ public static class ScriptExtensionRunner
         finally
         {
             TryDeleteTempFile(stateUpdatePath);
+            if (registryId.HasValue)
+            {
+                RunningExtensionRegistry.Remove(registryId.Value, "managed thread completed");
+            }
         }
     }
 
@@ -936,6 +1008,23 @@ public static class ScriptExtensionRunner
         if (stateUpdateProperty?.CanWrite == true)
         {
             stateUpdateProperty.SetValue(runtimeContext, stateUpdatePath);
+        }
+
+        var registerProperty = contextType.GetProperty("RegisterObject", BindingFlags.Instance | BindingFlags.Public);
+        if (registerProperty?.CanWrite == true)
+        {
+            Action<string, object> proxyDelegate = HostObjectRegistry.Register;
+            registerProperty.SetValue(runtimeContext, proxyDelegate);
+        }
+
+        var getRegisteredProperty = contextType.GetProperty("GetRegisteredObject", BindingFlags.Instance | BindingFlags.Public);
+        if (getRegisteredProperty?.CanWrite == true)
+        {
+            Func<string, object?> proxyGetDelegate = id => {
+                HostObjectRegistry.TryGetObject(id, out var obj);
+                return obj;
+            };
+            getRegisteredProperty.SetValue(runtimeContext, proxyGetDelegate);
         }
 
         return runtimeContext;
@@ -980,10 +1069,13 @@ public static class ScriptExtensionRunner
 
     private static Dictionary<string, string?> CaptureRuntimeEnvironmentSnapshot()
     {
-        return RuntimeEnvironmentKeys.ToDictionary(
-            static key => key,
-            static key => Environment.GetEnvironmentVariable(key),
-            StringComparer.OrdinalIgnoreCase);
+        return RuntimeEnvironmentKeys
+            .Concat(AppEnvironmentVariableStore.GetEnvironmentNames())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                static key => key,
+                static key => Environment.GetEnvironmentVariable(key),
+                StringComparer.OrdinalIgnoreCase);
     }
 
     private static void RestoreRuntimeEnvironmentSnapshot(IReadOnlyDictionary<string, string?> snapshot)
@@ -1107,6 +1199,7 @@ public static class ScriptExtensionRunner
             : string.Empty);
         Environment.SetEnvironmentVariable("YANZI_AGENT_API_TOKEN", settings.AgentApiToken ?? string.Empty);
         Environment.SetEnvironmentVariable("YANZI_HOST_LOG_PATH", HostAssets.HostLogPath);
+        AppEnvironmentVariableStore.ApplyToEnvironment(Environment.SetEnvironmentVariable);
     }
 
     private static void ApplyRuntimeEnvironment(
@@ -1135,6 +1228,7 @@ public static class ScriptExtensionRunner
             : string.Empty;
         startInfo.Environment["YANZI_AGENT_API_TOKEN"] = settings.AgentApiToken ?? string.Empty;
         startInfo.Environment["YANZI_HOST_LOG_PATH"] = HostAssets.HostLogPath;
+        AppEnvironmentVariableStore.ApplyToEnvironment((name, value) => startInfo.Environment[name] = value ?? string.Empty);
     }
 
     private static string Quote(string value)
@@ -1270,6 +1364,32 @@ public static class ScriptExtensionRunner
             public YanziStorageClient Storage => _storage ??= new YanziStorageClient(this);
             public HostedViewStateProxy ViewState => _viewState ??= new HostedViewStateProxy(this);
             public string StateUpdatePath { get; set; } = Environment.GetEnvironmentVariable("YANZI_STATE_UPDATES_PATH") ?? string.Empty;
+            public Action<string, object>? RegisterObject { get; set; }
+            public Func<string, object?>? GetRegisteredObject { get; set; }
+
+            public void Log(string message)
+            {
+                var logPath = Path.Combine(ExtensionDirectory, "debug.log");
+                try
+                {
+                    File.AppendAllText(logPath, $"[{Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+                }
+                catch { }
+            }
+
+            public async Task ShowNotificationAsync(string title, string message)
+            {
+                if (string.IsNullOrWhiteSpace(AgentApiBaseUrl) || string.IsNullOrWhiteSpace(AgentApiToken)) return;
+                try
+                {
+                    using var client = new System.Net.Http.HttpClient();
+                    client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", AgentApiToken);
+                    var payload = JsonSerializer.Serialize(new { title, message });
+                    var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                    await client.PostAsync($"{AgentApiBaseUrl}/v1/app/notify", content);
+                }
+                catch { }
+            }
 
             public async Task SetStateAsync(object values)
             {

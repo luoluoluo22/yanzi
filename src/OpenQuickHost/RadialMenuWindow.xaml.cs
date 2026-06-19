@@ -42,6 +42,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private bool _isPinned;
     private bool _isPinHoverActive;
     private string _centerPrimaryText = "燕环";
+    private bool _isCenterCloseMode;
+    private bool _isCenterHovered;
     private RadialSlotPayload? _cutSlotPayload;
     private RadialMenuItemViewModel? _dragSourceItem;
     private int _lastRadiusPixels = 96;
@@ -222,6 +224,36 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsCenterCloseMode
+    {
+        get => _isCenterCloseMode;
+        private set
+        {
+            if (value == _isCenterCloseMode)
+            {
+                return;
+            }
+
+            _isCenterCloseMode = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsCenterHovered
+    {
+        get => _isCenterHovered;
+        private set
+        {
+            if (value == _isCenterHovered)
+            {
+                return;
+            }
+
+            _isCenterHovered = value;
+            OnPropertyChanged();
+        }
+    }
+
     public System.Windows.Media.Brush PinButtonBrush => _isPinned
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFF59E0B")!
         : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
@@ -398,6 +430,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private async Task ExecuteCommandAfterForegroundRestoreAsync(CommandItem command, string launchSource)
     {
+        InputHookService.MarkCapsLockAsUsed();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
@@ -531,16 +564,22 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var cursorPoint = GetCursorWindowPoint();
         if (UpdatePinHoverState(cursorPoint))
         {
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
             return;
         }
 
         if (HasGrandChildRing && TryUpdateGrandChildSelection(cursorPoint))
         {
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
             return;
         }
 
         if (HasChildRing && TryUpdateChildSelection(cursorPoint))
         {
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
             return;
         }
 
@@ -555,10 +594,25 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             SetSelectedItem(null);
             ClearChildRing();
             ActiveTitle = _editModeLocked ? "点击中心 X 关闭" : "取消";
+            IsCenterHovered = true;
+            Cursor = System.Windows.Input.Cursors.Hand;
             return;
         }
 
+        IsCenterHovered = false;
+
         var angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
+        if (distance > 196)
+        {
+            SetSelectedItem(null);
+            ClearChildRing();
+            ActiveTitle = _editModeLocked ? "点击中心 X 关闭" : "取消";
+            Cursor = System.Windows.Input.Cursors.Arrow;
+            return;
+        }
+
+        Cursor = System.Windows.Input.Cursors.Hand;
+
         if (distance > 135)
         {
             var outerIndex = ((int)Math.Round((angle + 90) / 22.5) % RadialMenuSettings.OuterSlotCount + RadialMenuSettings.OuterSlotCount) % RadialMenuSettings.OuterSlotCount;
@@ -1229,15 +1283,18 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         if (!_editModeLocked && !Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             CenterPrimaryText = PageTitle;
+            IsCenterCloseMode = false;
             return;
         }
 
         CenterPrimaryText = "X";
+        IsCenterCloseMode = true;
     }
 
     private void UpdateCenterText()
     {
         CenterPrimaryText = _editModeLocked ? "X" : PageTitle;
+        IsCenterCloseMode = _editModeLocked;
     }
 
     private string ResolveActiveTitle(string? commandTitle, bool isEmptySlot, bool isChildRing = false, bool isGrandChildRing = false)
@@ -1272,6 +1329,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         _editInteractionActive = true;
         var menu = BuildEditContextMenu(target);
+        menu.PlacementTarget = this;
         menu.Closed += (_, _) =>
         {
             _editInteractionActive = false;
@@ -1810,6 +1868,17 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
         AngleDegrees = angleDegrees;
         Ring = ring;
         SectorGeometry = sectorGeometry;
+
+        if (Command != null)
+        {
+            Command.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(CommandItem.IsRunning))
+                {
+                    OnPropertyChanged(nameof(IsRunning));
+                }
+            };
+        }
     }
 
     public string OwnerPageId { get; }
@@ -1833,6 +1902,8 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
     public double Y { get; }
 
     public Geometry? SectorGeometry { get; }
+
+    public bool IsRunning => Command?.IsRunning == true;
 
     public string Title => !string.IsNullOrWhiteSpace(ChildPageId) ? ChildPageTitle : Command?.Title ?? string.Empty;
 

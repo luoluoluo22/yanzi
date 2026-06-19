@@ -2,7 +2,8 @@ param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$Version = "0.1.0",
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [string]$GithubToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,7 +13,7 @@ $project = Join-Path $root "src\OpenQuickHost\OpenQuickHost.csproj"
 $publishDir = Join-Path $root ".artifacts\publish\$Runtime"
 $installerOutDir = Join-Path $root ".artifacts\installer"
 $issPath = Join-Path $root "installer\yanzi.iss"
-$installerFileName = "YanziSetup-$Version.exe"
+$installerFileName = "YanziSetup.exe"
 $installerPath = Join-Path $installerOutDir $installerFileName
 
 function Assert-PayloadFile {
@@ -42,12 +43,12 @@ function Assert-PayloadDirectory {
 if (Test-Path $publishDir) {
     Remove-Item -Path $publishDir -Recurse -Force
 }
-if (Test-Path $installerOutDir) {
-    Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue
+# 不再清空 installerOutDir，保留之前的完整包以便 Velopack 生成增量包 (Delta)
+if (-not (Test-Path $installerOutDir)) {
+    New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
 }
 
 New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
-New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
 
 dotnet publish $project `
     -c $Configuration `
@@ -91,31 +92,66 @@ Write-Host "Published installer payload:"
 Write-Host "  $publishDir"
 
 if (-not $SkipInstaller) {
-    $iscc = Get-Command iscc -ErrorAction SilentlyContinue
-    if (-not $iscc) {
-        $candidatePaths = @(
-            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
-            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-        )
-        $isccPath = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $vpk = Get-Command vpk -ErrorAction SilentlyContinue
+    if (-not $vpk) {
+        $vpkPath = "vpk"
     } else {
-        $isccPath = $iscc.Source
+        $vpkPath = $vpk.Source
     }
 
-    if (-not $isccPath) {
-        Write-Warning "Inno Setup 6 was not found. Install it to build the one-click installer, or distribute the portable Yanzi.exe above."
-    } else {
-        & $isccPath `
-            "/DAppVersion=$Version" `
-            "/DPublishDir=$publishDir" `
-            "/DOutputDir=$installerOutDir" `
-            $issPath
-
-        if ($LASTEXITCODE -ne 0) {
-            throw "Inno Setup failed to build the installer."
-        }
-        Write-Host "Installer output:"
-        Write-Host "  $installerPath"
+    Write-Host "Downloading previous releases from GitHub for delta generation..."
+    $downloadArgs = @("download", "github", "--repoUrl", "https://github.com/luoluoluo22/yanzi", "--outputDir", $installerOutDir)
+    if ($GithubToken) {
+        $downloadArgs += @("--token", $GithubToken)
     }
+
+    try {
+        & $vpkPath $downloadArgs
+        Write-Host "Successfully downloaded previous releases."
+    } catch {
+        Write-Warning "Could not download previous releases (this is normal for the very first release or offline builds): $_"
+    }
+
+    Write-Host "Building Velopack installer package..."
+    & $vpkPath pack `
+        --packId "Yanzi" `
+        --packTitle "Yanzi" `
+        --packVersion $Version `
+        --packDir $publishDir `
+        --mainExe "Yanzi.exe" `
+        --icon "$root\src\OpenQuickHost\yanzi.ico" `
+        --outputDir $installerOutDir `
+        --shortcuts "Desktop,StartMenuRoot"
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Velopack pack failed to build the installer."
+    }
+
+    $setupFile = Join-Path $installerOutDir "Yanzi-win-Setup.exe"
+    if (Test-Path $setupFile) {
+        Rename-Item -Path $setupFile -NewName "Yanzi-win-Setup-$Version.exe" -Force
+    }
+
+    Write-Host "Creating portable ZIP archive..."
+    $rawZip = Join-Path $installerOutDir "Yanzi-win-Portable.zip"
+    if (Test-Path $rawZip) {
+        Remove-Item -Path $rawZip -Force
+    }
+    Compress-Archive -Path "$publishDir\*" -DestinationPath $rawZip -Force
+
+    $zipFile = Join-Path $installerOutDir "Yanzi-win-Portable.zip"
+    if (Test-Path $zipFile) {
+        Rename-Item -Path $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
+    }
+
+    # 打包并重命名完毕后，删除所有历史下载的、不是当前版本的旧 nupkg 包
+    Write-Host "Cleaning up historical packages in output directory..."
+    $cleanVersion = $Version.TrimStart("vV")
+    Get-ChildItem -Path $installerOutDir -File | Where-Object {
+        $_.Extension -eq ".nupkg" -and $_.Name -notmatch [regex]::Escape($cleanVersion)
+    } | Remove-Item -Force
+
+    Write-Host "Velopack packaging completed successfully."
+    Write-Host "Installer output directory:"
+    Write-Host "  $installerOutDir"
 }

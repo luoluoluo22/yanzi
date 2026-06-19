@@ -86,9 +86,10 @@ public static class LocalExtensionCatalog
 
                 entries.Add(new LocalExtensionCatalogEntry(manifestPath, manifest));
             }
-            catch
+            catch (Exception ex)
             {
                 // Skip invalid manifests so one broken extension does not block the host.
+                HostAssets.AppendLog($"加载本地扩展失败: {manifestPath}, 异常: {ex.Message}");
             }
         }
 
@@ -118,6 +119,7 @@ public static class LocalExtensionCatalog
             extensionId: manifest.Id,
             declaredVersion: manifest.Version ?? "0.1.0",
             extensionDirectoryPath: Path.GetDirectoryName(manifestPath),
+            app: manifest.App?.ToDefinition(),
             hostedView: manifest.HostedViewXaml?.ToDefinition() ?? manifest.HostedViewV2?.ToDefinition() ?? manifest.HostedView?.ToDefinition(),
             globalShortcut: manifest.GlobalShortcut,
             hotkeyBehavior: manifest.HotkeyBehavior,
@@ -612,6 +614,7 @@ public static class YanziAction
             extensionId: manifest.Id,
             declaredVersion: manifest.Version ?? "0.1.0",
             extensionDirectoryPath: extensionDirectory,
+            app: manifest.App?.ToDefinition(),
             hostedView: manifest.HostedViewXaml?.ToDefinition() ?? manifest.HostedViewV2?.ToDefinition() ?? manifest.HostedView?.ToDefinition(),
             globalShortcut: manifest.GlobalShortcut,
             hotkeyBehavior: manifest.HotkeyBehavior,
@@ -683,6 +686,7 @@ public static class YanziAction
             HostedView = manifest.HostedView,
             HostedViewV2 = manifest.HostedViewV2,
             HostedViewXaml = manifest.HostedViewXaml,
+            App = manifest.App,
             QueryPrefixes = manifest.QueryPrefixes,
             QueryTargetTemplate = manifest.QueryTargetTemplate,
             GlobalShortcut = manifest.GlobalShortcut,
@@ -833,7 +837,9 @@ public static class YanziAction
 
             if (absoluteUri.IsFile && File.Exists(absoluteUri.LocalPath))
             {
-                return manifest with { Icon = CopyIconIntoExtensionDirectory(absoluteUri.LocalPath, extensionDirectory) };
+                return IsSupportedLocalIconFile(absoluteUri.LocalPath)
+                    ? manifest with { Icon = CopyIconIntoExtensionDirectory(absoluteUri.LocalPath, extensionDirectory) }
+                    : manifest with { Icon = "mdi:file" };
             }
 
             return manifest;
@@ -841,7 +847,9 @@ public static class YanziAction
 
         if (Path.IsPathRooted(iconReference) && File.Exists(iconReference))
         {
-            return manifest with { Icon = CopyIconIntoExtensionDirectory(iconReference, extensionDirectory) };
+            return IsSupportedLocalIconFile(iconReference)
+                ? manifest with { Icon = CopyIconIntoExtensionDirectory(iconReference, extensionDirectory) }
+                : manifest with { Icon = "mdi:file" };
         }
 
         var localRelativePath = Path.GetFullPath(Path.Combine(extensionDirectory, iconReference));
@@ -870,6 +878,26 @@ public static class YanziAction
         var targetPath = Path.Combine(fullExtensionDirectory, targetFileName);
         File.Copy(fullSourcePath, targetPath, overwrite: true);
         return NormalizeRelativePath(targetFileName);
+    }
+
+    private static bool IsSupportedLocalIconFile(string sourcePath)
+    {
+        const long maxIconBytes = 2 * 1024 * 1024;
+        var extension = Path.GetExtension(sourcePath);
+        if (!new[] { ".png", ".jpg", ".jpeg", ".ico", ".svg", ".webp", ".bmp", ".gif" }
+                .Contains(extension, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            return new FileInfo(sourcePath).Length <= maxIconBytes;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string NormalizeRelativePath(string value)
@@ -1029,6 +1057,8 @@ public sealed record LocalExtensionManifest
 
     public LocalExtensionHostedViewXamlManifest? HostedViewXaml { get; init; }
 
+    public LocalExtensionAppManifest? App { get; init; }
+
     public string? GlobalShortcut { get; init; }
 
     public string? HotkeyBehavior { get; init; }
@@ -1053,6 +1083,55 @@ public sealed record LocalExtensionManifest
 }
 
 public sealed record LocalExtensionCatalogEntry(string ManifestPath, LocalExtensionManifest Manifest);
+
+public sealed class LocalExtensionAppManifest
+{
+    public string Type { get; init; } = "webview";
+
+    public string Entry { get; init; } = "app/index.html";
+
+    public bool? SingleInstance { get; init; }
+
+    public LocalExtensionHostedViewWindowManifest? Window { get; init; }
+
+    public LocalExtensionAppStorageManifest? Storage { get; init; }
+
+    public LocalExtensionAppBridgeManifest? Bridge { get; init; }
+
+    public AppExtensionDefinition ToDefinition()
+    {
+        return new AppExtensionDefinition(
+            Type,
+            Entry,
+            SingleInstance ?? false,
+            Window?.Width,
+            Window?.Height,
+            Window?.MinWidth,
+            Window?.MinHeight,
+            Window?.HideTitleBar ?? false,
+            Storage?.Mode ?? "local-first",
+            Storage?.Engine ?? "files",
+            Storage?.Sync ?? "webdav",
+            Storage?.Namespace,
+            Bridge?.Apis ?? []);
+    }
+}
+
+public sealed class LocalExtensionAppStorageManifest
+{
+    public string? Mode { get; init; }
+
+    public string? Engine { get; init; }
+
+    public string? Sync { get; init; }
+
+    public string? Namespace { get; init; }
+}
+
+public sealed class LocalExtensionAppBridgeManifest
+{
+    public string[]? Apis { get; init; }
+}
 
 public sealed record LocalExtensionStartupManifest
 {
@@ -1344,6 +1423,8 @@ public sealed class LocalExtensionHostedViewWindowManifest
     public double? MinWidth { get; init; }
 
     public double? MinHeight { get; init; }
+
+    public bool? HideTitleBar { get; init; }
 }
 
 public sealed class LocalExtensionHostedViewV2ComponentManifest

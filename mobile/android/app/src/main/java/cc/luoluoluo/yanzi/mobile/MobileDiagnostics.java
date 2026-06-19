@@ -7,15 +7,15 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-final class MobileDiagnostics {
+public final class MobileDiagnostics {
     private static final String PREFS_NAME = "yanzi-mobile";
     private static final String KEY_LOG = "diagnosticLog";
-    private static final int MAX_LENGTH = 6000;
+    private static final int MAX_LENGTH = 30000;
 
     private MobileDiagnostics() {
     }
 
-    static String append(Context context, String status) {
+    public static String append(Context context, String status) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String existing = prefs.getString(KEY_LOG, "");
         String line = "[" + new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date()) + "] " + status;
@@ -31,11 +31,11 @@ final class MobileDiagnostics {
         return combined;
     }
 
-    static String get(Context context) {
+    public static String get(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_LOG, "");
     }
 
-    static void clear(Context context) {
+    public static void clear(Context context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putString(KEY_LOG, "").apply();
     }
 }

@@ -1,0 +1,41 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Premium Light Theme Colors -->
+    <Color x:Key="ColorBG">#FFF9FAFB</Color>
+    <Color x:Key="ColorBorder">#FFE5E7EB</Color>
+    <Color x:Key="ColorAccent">#FF2563EB</Color>
+    <Color x:Key="ColorTextMain">#FF111827</Color>
+    <Color x:Key="ColorTextSec">#FF6B7280</Color>
+    <Color x:Key="ColorTextMuted">#FFA1A1AA</Color>
+    <Color x:Key="ColorInputBG">#FFFFFFFF</Color>
+
+    <SolidColorBrush x:Key="BrushBG" Color="{StaticResource ColorBG}"/>
+    <SolidColorBrush x:Key="BrushBorder" Color="{StaticResource ColorBorder}"/>
+    <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource ColorAccent}"/>
+    <SolidColorBrush x:Key="BrushTextMain" Color="{StaticResource ColorTextMain}"/>
+    <SolidColorBrush x:Key="BrushTextSec" Color="{StaticResource ColorTextSec}"/>
+    <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource ColorTextMuted}"/>
+    <SolidColorBrush x:Key="BrushInputBG" Color="{StaticResource ColorInputBG}"/>
+
+    <!-- Premium Button Theme Resources -->
+    <SolidColorBrush x:Key="BrushAccentText" Color="White"/>
+    <SolidColorBrush x:Key="BrushTagSelectedText" Color="#FF2563EB"/>
+    <SolidColorBrush x:Key="BrushSecondaryBtnBG" Color="#FFF3F4F6"/>
+    <SolidColorBrush x:Key="BrushSecondaryBtnBorder" Color="#FFE5E7EB"/>
+    <SolidColorBrush x:Key="BrushSecondaryBtnText" Color="#FF4B5563"/>
+    
+    <!-- Other Helper Theme Colors -->
+    <SolidColorBrush x:Key="BrushListViewItemMouseOver" Color="#0D000000"/>
+    <SolidColorBrush x:Key="BrushListViewItemHeaderBG" Color="#FFF3F4F6"/>
+    <SolidColorBrush x:Key="BrushListViewItemSelectedBG" Color="#202563EB"/>
+    <SolidColorBrush x:Key="BrushListViewItemSelectedBorder" Color="#402563EB"/>
+
+    <!-- ContextMenu & Dialog Resources -->
+    <SolidColorBrush x:Key="BrushDialogBG" Color="#FFF9FAFB"/>
+    <SolidColorBrush x:Key="BrushContextMenuBG" Color="#F2FFFFFF"/>
+    <SolidColorBrush x:Key="BrushContextMenuBorder" Color="#25000000"/>
+    <SolidColorBrush x:Key="BrushSeparator" Color="#15000000"/>
+    <SolidColorBrush x:Key="BrushMenuItemHighlightBG" Color="#10000000"/>
+    <SolidColorBrush x:Key="BrushMenuItemGestureText" Color="#80000000"/>
+    <SolidColorBrush x:Key="BrushMenuItemDisabledText" Color="#40000000"/>
+</ResourceDictionary>

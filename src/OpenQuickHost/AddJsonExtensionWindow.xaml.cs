@@ -13,6 +13,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using OpenQuickHost.Sync;
+using System.Text.Json.Nodes;
+using Microsoft.Web.WebView2.Core;
 using Forms = System.Windows.Forms;
 using MediaBrush = System.Windows.Media.Brush;
 using MediaBrushes = System.Windows.Media.Brushes;
@@ -41,6 +43,7 @@ public partial class AddJsonExtensionWindow : Window
 
     private readonly IReadOnlyList<ExtensionIconOption> _builtInIcons = ExtensionIconLibrary.GetBuiltInOptions();
     private readonly bool _isEditMode;
+    private readonly string _initialJson;
     private AppSettings _settings;
     private string _aiGuidePrompt = string.Empty;
     private WizardStep _currentStep = WizardStep.Describe;
@@ -63,19 +66,44 @@ public partial class AddJsonExtensionWindow : Window
     public AddJsonExtensionWindow(string initialJson, bool isEditMode = false)
     {
         InitializeComponent();
+        App.EnableSilentLoading(this);
         Topmost = false;
         ShowInTaskbar = true;
         AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler(AnyTextBox_TextChanged));
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(TextBoxClipboard_PreviewKeyDown), true);
         BuiltInIconsList.ItemsSource = _builtInIcons;
         _isEditMode = isEditMode;
+        _initialJson = initialJson ?? string.Empty;
         _settings = AppSettingsStore.Load();
         _manualMode = true;
 
-        ConfigureMode(initialJson);
+        ConfigureMode(_initialJson);
 
         Loaded += (_, _) =>
         {
+            // 依据编辑状态动态展示窗口标题
+            if (_isEditMode)
+            {
+                HeaderTitleText.Text = "编辑扩展";
+                this.Title = "编辑扩展";
+            }
+            else
+            {
+                HeaderTitleText.Text = "新建扩展";
+                this.Title = "新建扩展";
+            }
+
+            // 初始化加载持久化记住的测试输入参数，若为空则显示默认值
+            TestArgumentBox.Text = _settings.LastTestArgument ?? "示例参数";
+            UpdateTestArgumentPlaceholderVisibility();
+
+            if (_isEditMode && ShouldOpenAdvancedEditorForExistingJson(_initialJson))
+            {
+                AdvancedModeTab.IsChecked = true;
+                SimpleModePanel.Visibility = Visibility.Collapsed;
+                AdvancedModePanel.Visibility = Visibility.Visible;
+            }
+
             // 确保 AI 编辑模式下 JSON 输入框为空（新增模式）
             if (!_isEditMode && !_manualMode)
             {
@@ -103,9 +131,40 @@ public partial class AddJsonExtensionWindow : Window
             
             // 初始化简单模式：根据已加载的 manifest 推断类型并把字段同步到简单控件
             InitializeSimpleMode();
+            if (_isEditMode && ShouldOpenAdvancedEditorForExistingJson(_initialJson))
+            {
+                AdvancedModeTab.IsChecked = true;
+                SimpleModePanel.Visibility = Visibility.Collapsed;
+                AdvancedModePanel.Visibility = Visibility.Visible;
+            }
             // 初始化完成，允许同步
             _isInitializing = false;
+
+            // 异步初始化高级编辑器与内联脚本编辑器，支持 4 秒超时无缝降级
+            _ = InitializeWebViewEditorsAsync();
         };
+    }
+
+    private static bool ShouldOpenAdvancedEditorForExistingJson(string initialJson)
+    {
+        if (string.IsNullOrWhiteSpace(initialJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(initialJson);
+            var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object &&
+                   (root.TryGetProperty("app", out _) ||
+                    root.TryGetProperty("hostedViewXaml", out _) ||
+                    root.TryGetProperty("hostedViewV2", out _));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public string JsonContent => ExtractJsonPayload(GetCurrentJsonText());
@@ -127,7 +186,7 @@ public partial class AddJsonExtensionWindow : Window
             PageHeaderPrefix.Text = "编辑";
             PageHeaderAccent.Text = "扩展";
             HeaderDescription.Text = "直接修改 JSON，验证通过后可以测试并保存。";
-            SaveButton.Content = "保存修改 →";
+            SaveButton.Content = "保存修改";
             _currentStep = WizardStep.Test;
         }
         else
@@ -135,7 +194,7 @@ public partial class AddJsonExtensionWindow : Window
             PageHeaderPrefix.Text = "添加";
             PageHeaderAccent.Text = "新扩展";
             HeaderDescription.Text = "通过表单和手动编写 JSON 来创建扩展。";
-            SaveButton.Content = "保存并添加 →";
+            SaveButton.Content = "保存并添加";
             _currentStep = WizardStep.Describe;
         }
 
@@ -205,6 +264,8 @@ public partial class AddJsonExtensionWindow : Window
 
     private void ManualJsonInputBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_isUpdatingWebView) return;
+
         if (!_isInitializing && !_suppressEditTracking)
         {
             _lastEditedSource = EditSource.Json;
@@ -223,6 +284,10 @@ public partial class AddJsonExtensionWindow : Window
         ManualTestLogTextBox.Clear();
         ManualTestSummaryText.Text = string.Empty;
         UpdateManualJsonValidationState();
+
+        // 动态检测 JSON 并同步更新下方的内联脚本独立编辑器状态与高度分栏
+        UpdateInlineScriptPanelState();
+
         RefreshAllState();
     }
 
@@ -954,6 +1019,21 @@ public partial class AddJsonExtensionWindow : Window
             ManualJsonStatusText.Text = $"格式有误，请检查 JSON 是否完整（{CompactError(ex.Message)}）";
             ManualJsonStatusText.Foreground = RedBrush;
             ManualJsonStatusDot.Fill = RedBrush;
+
+            // 高精度解析并捕获异常中的 LineNumber 与 BytePositionInLine，便于双击状态栏快速飞渡
+            try
+            {
+                var matchLine = System.Text.RegularExpressions.Regex.Match(ex.Message, @"LineNumber:\s*(\d+)");
+                var matchCol = System.Text.RegularExpressions.Regex.Match(ex.Message, @"BytePositionInLine:\s*(\d+)");
+
+                _lastErrorLine = matchLine.Success ? int.Parse(matchLine.Groups[1].Value) : 1;
+                _lastErrorCol = matchCol.Success ? int.Parse(matchCol.Groups[1].Value) : 1;
+            }
+            catch
+            {
+                _lastErrorLine = 1;
+                _lastErrorCol = 1;
+            }
         }
     }
 
@@ -1171,30 +1251,40 @@ public partial class AddJsonExtensionWindow : Window
             return;
         }
 
-        var text = ManualJsonInputBox.Text;
-        if (string.IsNullOrEmpty(text))
+        if (JsonWebViewEditor.Visibility == Visibility.Visible && _isJsonEditorReady)
         {
-            return;
+            // 通过 JavaScript 在 Monaco 视图中触发搜索高亮并滚动
+            _ = JsonWebViewEditor.ExecuteScriptAsync($"findNext({JsonSerializer.Serialize(query)})");
+            ManualJsonStatusText.Text = "已定位匹配内容。";
+            ManualJsonStatusText.Foreground = GreenBrush;
         }
-
-        var comparison = StringComparison.OrdinalIgnoreCase;
-        var start = ManualJsonInputBox.SelectionStart + Math.Max(ManualJsonInputBox.SelectionLength, 0);
-        var index = text.IndexOf(query, Math.Min(start, text.Length), comparison);
-        if (index < 0 && start > 0)
+        else
         {
-            index = text.IndexOf(query, 0, comparison);
-        }
+            var text = ManualJsonInputBox.Text;
+            if (string.IsNullOrEmpty(text))
+            {
+                return;
+            }
 
-        if (index < 0)
-        {
-            ManualJsonStatusText.Text = "未找到匹配内容。";
-            ManualJsonStatusText.Foreground = RedBrush;
-            return;
-        }
+            var comparison = StringComparison.OrdinalIgnoreCase;
+            var start = ManualJsonInputBox.SelectionStart + Math.Max(ManualJsonInputBox.SelectionLength, 0);
+            var index = text.IndexOf(query, Math.Min(start, text.Length), comparison);
+            if (index < 0 && start > 0)
+            {
+                index = text.IndexOf(query, 0, comparison);
+            }
 
-        SelectManualJsonRange(index, query.Length);
-        ManualJsonStatusText.Text = "已定位匹配内容。";
-        ManualJsonStatusText.Foreground = GreenBrush;
+            if (index < 0)
+            {
+                ManualJsonStatusText.Text = "未找到匹配内容。";
+                ManualJsonStatusText.Foreground = RedBrush;
+                return;
+            }
+
+            SelectManualJsonRange(index, query.Length);
+            ManualJsonStatusText.Text = "已定位匹配内容。";
+            ManualJsonStatusText.Foreground = GreenBrush;
+        }
     }
 
     private void ReplaceCurrentManualJsonMatch()
@@ -1207,23 +1297,34 @@ public partial class AddJsonExtensionWindow : Window
             return;
         }
 
-        var selected = ManualJsonInputBox.SelectedText;
-        if (!string.Equals(selected, query, StringComparison.OrdinalIgnoreCase))
+        var replacement = ManualJsonReplaceBox.Text ?? string.Empty;
+
+        if (JsonWebViewEditor.Visibility == Visibility.Visible && _isJsonEditorReady)
         {
-            FindNextManualJsonMatch();
-            selected = ManualJsonInputBox.SelectedText;
+            // 在 Monaco 中替换当前匹配
+            _ = JsonWebViewEditor.ExecuteScriptAsync($"replaceCurrent({JsonSerializer.Serialize(query)}, {JsonSerializer.Serialize(replacement)})");
+            ManualJsonStatusText.Text = "已替换当前匹配。";
+            ManualJsonStatusText.Foreground = GreenBrush;
+        }
+        else
+        {
+            var selected = ManualJsonInputBox.SelectedText;
             if (!string.Equals(selected, query, StringComparison.OrdinalIgnoreCase))
             {
-                return;
+                FindNextManualJsonMatch();
+                selected = ManualJsonInputBox.SelectedText;
+                if (!string.Equals(selected, query, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
             }
-        }
 
-        var replacement = ManualJsonReplaceBox.Text ?? string.Empty;
-        var start = ManualJsonInputBox.SelectionStart;
-        ManualJsonInputBox.SelectedText = replacement;
-        SelectManualJsonRange(start, replacement.Length);
-        ManualJsonStatusText.Text = "已替换当前匹配。";
-        ManualJsonStatusText.Foreground = GreenBrush;
+            var start = ManualJsonInputBox.SelectionStart;
+            ManualJsonInputBox.SelectedText = replacement;
+            SelectManualJsonRange(start, replacement.Length);
+            ManualJsonStatusText.Text = "已替换当前匹配。";
+            ManualJsonStatusText.Foreground = GreenBrush;
+        }
     }
 
     private void ReplaceAllManualJsonMatches()
@@ -1236,40 +1337,51 @@ public partial class AddJsonExtensionWindow : Window
             return;
         }
 
-        var text = ManualJsonInputBox.Text;
         var replacement = ManualJsonReplaceBox.Text ?? string.Empty;
-        var comparison = StringComparison.OrdinalIgnoreCase;
-        var builder = new StringBuilder(text.Length);
-        var count = 0;
-        var index = 0;
 
-        while (index < text.Length)
+        if (JsonWebViewEditor.Visibility == Visibility.Visible && _isJsonEditorReady)
         {
-            var match = text.IndexOf(query, index, comparison);
-            if (match < 0)
+            // 在 Monaco 中批量替换所有匹配
+            _ = JsonWebViewEditor.ExecuteScriptAsync($"replaceAll({JsonSerializer.Serialize(query)}, {JsonSerializer.Serialize(replacement)})");
+            ManualJsonStatusText.Text = "已替换全部匹配。";
+            ManualJsonStatusText.Foreground = GreenBrush;
+        }
+        else
+        {
+            var text = ManualJsonInputBox.Text;
+            var comparison = StringComparison.OrdinalIgnoreCase;
+            var builder = new StringBuilder(text.Length);
+            var count = 0;
+            var index = 0;
+
+            while (index < text.Length)
             {
-                builder.Append(text, index, text.Length - index);
-                break;
+                var match = text.IndexOf(query, index, comparison);
+                if (match < 0)
+                {
+                    builder.Append(text, index, text.Length - index);
+                    break;
+                }
+
+                builder.Append(text, index, match - index);
+                builder.Append(replacement);
+                index = match + query.Length;
+                count++;
             }
 
-            builder.Append(text, index, match - index);
-            builder.Append(replacement);
-            index = match + query.Length;
-            count++;
-        }
+            if (count == 0)
+            {
+                ManualJsonStatusText.Text = "未找到匹配内容。";
+                ManualJsonStatusText.Foreground = RedBrush;
+                return;
+            }
 
-        if (count == 0)
-        {
-            ManualJsonStatusText.Text = "未找到匹配内容。";
-            ManualJsonStatusText.Foreground = RedBrush;
-            return;
+            ManualJsonInputBox.Text = builder.ToString();
+            ManualJsonInputBox.Focus();
+            ManualJsonInputBox.CaretIndex = 0;
+            ManualJsonStatusText.Text = $"已替换 {count} 处。";
+            ManualJsonStatusText.Foreground = GreenBrush;
         }
-
-        ManualJsonInputBox.Text = builder.ToString();
-        ManualJsonInputBox.Focus();
-        ManualJsonInputBox.CaretIndex = 0;
-        ManualJsonStatusText.Text = $"已替换 {count} 处。";
-        ManualJsonStatusText.Foreground = GreenBrush;
     }
 
     private void SelectManualJsonRange(int start, int length)
@@ -1298,6 +1410,7 @@ public partial class AddJsonExtensionWindow : Window
         var runtime = NullIfEmpty(RuntimeBox.Text);
         var entryMode = NullIfEmpty(EntryModeBox.Text);
         var scriptSource = NullIfEmpty(ScriptSourceBox.Text);
+        var preservedManifest = TryParsePreservedManifest();
 
         return new LocalExtensionManifest
         {
@@ -1312,7 +1425,10 @@ public partial class AddJsonExtensionWindow : Window
             QueryTargetTemplate = NullIfEmpty(QueryTargetTemplateBox.Text),
             Icon = NullIfEmpty(IconBox.Text),
             AccentHex = NormalizeAccentHexOrNull(AccentHexBox.Text),
-            HostedView = _manualHostedView,
+            HostedView = _manualHostedView ?? preservedManifest?.HostedView,
+            HostedViewV2 = preservedManifest?.HostedViewV2,
+            HostedViewXaml = preservedManifest?.HostedViewXaml,
+            App = preservedManifest?.App,
             GlobalShortcut = NullIfEmpty(GlobalShortcutBox.Text),
             HotkeyBehavior = NullIfEmpty(HotkeyBehaviorBox.Text),
             Runtime = runtime,
@@ -1334,6 +1450,42 @@ public partial class AddJsonExtensionWindow : Window
             SearchProvider = _manualSearchProvider,
             MouseGesture = NormalizeMouseGestureForManifest(_manualMouseGesture)
         };
+    }
+
+    private LocalExtensionManifest? TryParsePreservedManifest()
+    {
+        if (!_isEditMode)
+        {
+            return null;
+        }
+
+        foreach (var candidate in new[] { ManualJsonInputBox.Text, _initialJson })
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            try
+            {
+                var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(
+                    ExtractJsonPayload(candidate),
+                    CreateJsonOptions());
+                if (manifest?.App != null ||
+                    manifest?.HostedView != null ||
+                    manifest?.HostedViewV2 != null ||
+                    manifest?.HostedViewXaml != null)
+                {
+                    return manifest;
+                }
+            }
+            catch
+            {
+                // Preserve is a best-effort guard for custom protocols; normal validation reports malformed JSON elsewhere.
+            }
+        }
+
+        return null;
     }
 
     private LocalExtensionMouseGestureManifest? NormalizeMouseGestureForManifest(LocalExtensionMouseGestureManifest? gesture)
@@ -1399,6 +1551,7 @@ public partial class AddJsonExtensionWindow : Window
         {
             IconPreviewImage.Source = imageSource;
             IconPreviewImage.Visibility = Visibility.Visible;
+            IconPreviewHostBackgroundToImage();
             IconPreviewHintText.Text = "当前使用图片图标或本地图标路径。";
             HighlightSelectedBuiltInButton(null);
             return;
@@ -1409,6 +1562,7 @@ public partial class AddJsonExtensionWindow : Window
         {
             IconPreviewVector.Data = vectorIcon;
             IconPreviewVectorHost.Visibility = Visibility.Visible;
+            IconPreviewHostBackgroundToAccent();
             IconPreviewHintText.Text = $"当前使用内置图标：{iconReference}";
             HighlightSelectedBuiltInButton(iconReference);
             return;
@@ -1416,10 +1570,29 @@ public partial class AddJsonExtensionWindow : Window
 
         IconPreviewGlyph.Text = InferFallbackGlyph();
         IconPreviewGlyph.Visibility = Visibility.Visible;
+        IconPreviewHostBackgroundToAccent();
         IconPreviewHintText.Text = string.IsNullOrWhiteSpace(iconReference)
             ? "未设置图标时会回退为字母标识。"
             : $"当前 icon 值未解析成功：{iconReference}";
         HighlightSelectedBuiltInButton(null);
+    }
+
+    private void IconPreviewHostBackgroundToImage()
+    {
+        PreviewIconHost.Background = MediaBrushes.Transparent;
+    }
+
+    private void IconPreviewHostBackgroundToAccent()
+    {
+        var hex = AccentHexBox.Text?.Trim();
+        try
+        {
+            PreviewIconHost.Background = CreateBrush(NormalizeAccentHexOrDefault(hex));
+        }
+        catch
+        {
+            PreviewIconHost.Background = AccentBrush;
+        }
     }
 
     private void SafeRefreshIconPreview()
@@ -1835,6 +2008,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- C# 适合复杂逻辑、JSON/HTTP/文件处理、P/Invoke、强类型 .NET API、System.Drawing/System.Management、原生 WPF 窗口。");
         builder.AppendLine("- hostedViewXaml 可做宿主内工作区；C# 加 uiMode=native-window 可做独立 WPF 窗口。");
         builder.AppendLine("- 宿主 context 只提供管家能力：InputText、LaunchSource、ExtensionDirectory、ExtensionDataDirectory、Now、Permissions、State、SetStateAsync、Storage、ViewState、UpdateView。其它功能请用 C# / PowerShell / Windows 原生能力实现。");
+        builder.AppendLine("- 如果需要向绑定的手机端发送横幅通知，请向本机的燕子服务发送 HTTP POST 请求到 http://127.0.0.1:{端口}/v1/notify（默认端口 53919，Header 需携带 Authorization: Bearer yanzi-local-dev-token），Body 格式为 {\"title\":\"标题\",\"body\":\"内容\"}，且必须使用绝对标准的 UTF-8 编码字节流发送，否则手机上会显示 ??? 乱码。");
         builder.AppendLine();
         builder.AppendLine("选择策略：");
         builder.AppendLine("- 能用 openTarget 或 queryTargetTemplate 完成就不要写脚本。");
@@ -3219,4 +3393,661 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
     }
 
     private sealed record TestExecutionResult(bool Success, string Summary, string Log);
+
+    #region Advanced Editor & Inline Script Upgrades
+
+    private bool _isJsonEditorReady = false;
+    private bool _isScriptEditorReady = false;
+    private bool _isJsonEditorInitializing = false;
+    private bool _isSyncingScript = false;
+    private bool _isUpdatingWebView = false;
+    private TaskCompletionSource<bool>? _jsonEditorReadyTcs;
+    private TaskCompletionSource<bool>? _scriptEditorReadyTcs;
+
+    private int _lastErrorLine = 1;
+    private int _lastErrorCol = 1;
+
+    private async Task InitializeWebViewEditorsAsync()
+    {
+        if (_isJsonEditorInitializing) return;
+        _isJsonEditorInitializing = true;
+
+        if (!CheckWebView2RuntimeAvailable(logSuccess: false))
+        {
+            JsonWebViewEditor.Visibility = Visibility.Collapsed;
+            ManualJsonInputBox.Visibility = Visibility.Visible;
+            ScriptWebViewEditor.Visibility = Visibility.Collapsed;
+            InlineScriptInputBox.Visibility = Visibility.Visible;
+            return;
+        }
+
+        // 初始化 JSON 编辑器
+        try
+        {
+            var userDataFolder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OpenQuickHost",
+                "JsonEditorWebView2");
+            Directory.CreateDirectory(userDataFolder);
+            var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+
+            await JsonWebViewEditor.EnsureCoreWebView2Async(env);
+            JsonWebViewEditor.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+            JsonWebViewEditor.CoreWebView2.Settings.AreDevToolsEnabled = true;
+
+            JsonWebViewEditor.CoreWebView2.WebMessageReceived += JsonWebViewEditor_WebMessageReceived;
+            JsonWebViewEditor.CoreWebView2.NavigateToString(GetJsonMonacoHtml());
+
+            var timeoutTask = Task.Delay(4000);
+            var readyTcs = new TaskCompletionSource<bool>();
+            _jsonEditorReadyTcs = readyTcs;
+
+            var completedTask = await Task.WhenAny(readyTcs.Task, timeoutTask);
+            if (completedTask == readyTcs.Task && readyTcs.Task.Result)
+            {
+                _isJsonEditorReady = true;
+                JsonWebViewEditor.Visibility = Visibility.Visible;
+                ManualJsonInputBox.Visibility = Visibility.Collapsed;
+
+                var text = ManualJsonInputBox.Text;
+                _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(text)})");
+            }
+            else
+            {
+                JsonWebViewEditor.Visibility = Visibility.Collapsed;
+                ManualJsonInputBox.Visibility = Visibility.Visible;
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to initialize JsonWebViewEditor: {ex.Message}");
+            JsonWebViewEditor.Visibility = Visibility.Collapsed;
+            ManualJsonInputBox.Visibility = Visibility.Visible;
+        }
+
+        // 初始化 Script 编辑器
+        try
+        {
+            var userDataFolder2 = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OpenQuickHost",
+                "ScriptEditorWebView2");
+            Directory.CreateDirectory(userDataFolder2);
+            var env2 = await CoreWebView2Environment.CreateAsync(null, userDataFolder2);
+
+            await ScriptWebViewEditor.EnsureCoreWebView2Async(env2);
+            ScriptWebViewEditor.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+            ScriptWebViewEditor.CoreWebView2.Settings.AreDevToolsEnabled = true;
+
+            ScriptWebViewEditor.CoreWebView2.WebMessageReceived += ScriptWebViewEditor_WebMessageReceived;
+            ScriptWebViewEditor.CoreWebView2.NavigateToString(GetScriptMonacoHtml());
+
+            var timeoutTask2 = Task.Delay(4000);
+            var readyTcs2 = new TaskCompletionSource<bool>();
+            _scriptEditorReadyTcs = readyTcs2;
+
+            var completedTask2 = await Task.WhenAny(readyTcs2.Task, timeoutTask2);
+            if (completedTask2 == readyTcs2.Task && readyTcs2.Task.Result)
+            {
+                _isScriptEditorReady = true;
+                ScriptWebViewEditor.Visibility = Visibility.Visible;
+                InlineScriptInputBox.Visibility = Visibility.Collapsed;
+
+                var text = InlineScriptInputBox.Text;
+                _ = ScriptWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(text)})");
+            }
+            else
+            {
+                ScriptWebViewEditor.Visibility = Visibility.Collapsed;
+                InlineScriptInputBox.Visibility = Visibility.Visible;
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to initialize ScriptWebViewEditor: {ex.Message}");
+            ScriptWebViewEditor.Visibility = Visibility.Collapsed;
+            InlineScriptInputBox.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void JsonWebViewEditor_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            var rawJson = e.TryGetWebMessageAsString();
+            using var doc = JsonDocument.Parse(rawJson);
+            var root = doc.RootElement;
+            var type = root.GetProperty("type").GetString();
+
+            if (type == "ready")
+            {
+                _jsonEditorReadyTcs?.TrySetResult(true);
+            }
+            else if (type == "change")
+            {
+                var val = root.GetProperty("value").GetString() ?? string.Empty;
+                if (!_isUpdatingWebView)
+                {
+                    _isUpdatingWebView = true;
+                    ManualJsonInputBox.Text = val;
+                    _isUpdatingWebView = false;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"JsonWebViewEditor_WebMessageReceived failed: {ex.Message}");
+        }
+    }
+
+    private void ScriptWebViewEditor_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            var rawJson = e.TryGetWebMessageAsString();
+            using var doc = JsonDocument.Parse(rawJson);
+            var root = doc.RootElement;
+            var type = root.GetProperty("type").GetString();
+
+            if (type == "ready")
+            {
+                _scriptEditorReadyTcs?.TrySetResult(true);
+            }
+            else if (type == "change")
+            {
+                var val = root.GetProperty("value").GetString() ?? string.Empty;
+                if (!_isSyncingScript)
+                {
+                    SyncScriptSourceToManifest(val);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"ScriptWebViewEditor_WebMessageReceived failed: {ex.Message}");
+        }
+    }
+
+    private void UpdateInlineScriptPanelState()
+    {
+        if (string.IsNullOrWhiteSpace(ManualJsonInputBox.Text))
+        {
+            HideInlineScriptPanel();
+            return;
+        }
+
+        try
+        {
+            var node = JsonNode.Parse(ManualJsonInputBox.Text);
+            if (node != null && node["script"] is JsonObject scriptObj && scriptObj["source"] != null)
+            {
+                var sourceCode = scriptObj["source"]?.ToString() ?? string.Empty;
+                var runtime = node["runtime"]?.ToString() ?? "csharp";
+
+                ShowInlineScriptPanel(sourceCode, runtime);
+            }
+            else
+            {
+                HideInlineScriptPanel();
+            }
+        }
+        catch
+        {
+            // 忽略 JSON 解析错误期间的状态更新
+        }
+    }
+
+    private void ShowInlineScriptPanel(string sourceCode, string runtime)
+    {
+        var displayLang = "C#";
+        var monacoLang = "csharp";
+        if (runtime.Contains("powershell", StringComparison.OrdinalIgnoreCase) || runtime.Contains("ps", StringComparison.OrdinalIgnoreCase))
+        {
+            displayLang = "PowerShell";
+            monacoLang = "powershell";
+            InlineScriptLanguageBadge.Text = displayLang;
+            InlineScriptLanguageBadgeHost.Background = CreateBrush("#1AF59E0B");
+            InlineScriptLanguageBadge.Foreground = CreateBrush("#FFF59E0B");
+        }
+        else if (runtime.Contains("javascript", StringComparison.OrdinalIgnoreCase) || runtime.Contains("js", StringComparison.OrdinalIgnoreCase))
+        {
+            displayLang = "JavaScript";
+            monacoLang = "javascript";
+            InlineScriptLanguageBadge.Text = displayLang;
+            InlineScriptLanguageBadgeHost.Background = CreateBrush("#1AFBBF24");
+            InlineScriptLanguageBadge.Foreground = CreateBrush("#FFFBBF24");
+        }
+        else
+        {
+            InlineScriptLanguageBadge.Text = displayLang;
+            InlineScriptLanguageBadgeHost.Background = CreateBrush("#1A3B82F6");
+            InlineScriptLanguageBadge.Foreground = CreateBrush("#FF3B82F6");
+        }
+
+        if (!_isSyncingScript)
+        {
+            _isSyncingScript = true;
+            InlineScriptInputBox.Text = sourceCode;
+            if (_isScriptEditorReady && ScriptWebViewEditor.Visibility == Visibility.Visible)
+            {
+                _ = ScriptWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(sourceCode)})");
+                _ = ScriptWebViewEditor.ExecuteScriptAsync($"setLanguage({JsonSerializer.Serialize(monacoLang)})");
+            }
+            _isSyncingScript = false;
+        }
+
+        if (InlineScriptPanel.Visibility != Visibility.Visible)
+        {
+            // 上下分栏比例分配
+            JsonEditorRow.Height = new GridLength(1.5, GridUnitType.Star);
+            InlineScriptSplitterRow.Height = new GridLength(4);
+            InlineScriptRow.Height = new GridLength(1.2, GridUnitType.Star);
+
+            InlineScriptPanel.Visibility = Visibility.Visible;
+            InlineScriptSplitter.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void HideInlineScriptPanel()
+    {
+        if (InlineScriptPanel.Visibility == Visibility.Visible)
+        {
+            JsonEditorRow.Height = new GridLength(1, GridUnitType.Star);
+            InlineScriptSplitterRow.Height = new GridLength(0);
+            InlineScriptRow.Height = new GridLength(0);
+
+            InlineScriptPanel.Visibility = Visibility.Collapsed;
+            InlineScriptSplitter.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void InlineScriptInputBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isSyncingScript) return;
+        SyncScriptSourceToManifest(InlineScriptInputBox.Text);
+    }
+
+    private void SyncScriptSourceToManifest(string sourceCode)
+    {
+        if (_isSyncingScript) return;
+        try
+        {
+            var jsonText = ManualJsonInputBox.Text;
+            if (string.IsNullOrWhiteSpace(jsonText)) return;
+
+            var node = JsonNode.Parse(jsonText);
+            if (node is JsonObject jsonObject)
+            {
+                if (jsonObject["script"] == null)
+                {
+                    jsonObject["script"] = new JsonObject();
+                }
+
+                if (jsonObject["script"] is JsonObject scriptObj)
+                {
+                    scriptObj["source"] = sourceCode;
+                }
+
+                var options = new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                };
+                var updatedJson = jsonObject.ToJsonString(options);
+
+                _isSyncingScript = true;
+
+                // 同步更新 TextBox 隐藏字段
+                ManualJsonInputBox.Text = updatedJson;
+
+                // 同步更新 Monaco
+                if (_isJsonEditorReady && JsonWebViewEditor.Visibility == Visibility.Visible)
+                {
+                    _isUpdatingWebView = true;
+                    _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(updatedJson)})");
+                    _isUpdatingWebView = false;
+                }
+
+                _isSyncingScript = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SyncScriptSourceToManifest failed: {ex.Message}");
+        }
+    }
+
+    private void ManualJsonStatusText_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ClickCount != 2) return;
+
+        e.Handled = true;
+
+        if (_lastJsonValid) return;
+
+        if (JsonWebViewEditor.Visibility == Visibility.Visible && _isJsonEditorReady)
+        {
+            _ = JsonWebViewEditor.ExecuteScriptAsync($"revealPosition({_lastErrorLine}, {_lastErrorCol})");
+        }
+        else
+        {
+            NavigateToLineAndColumn(ManualJsonInputBox, _lastErrorLine, _lastErrorCol);
+        }
+    }
+
+    private void NavigateToLineAndColumn(System.Windows.Controls.TextBox textBox, int lineNumber, int columnNumber)
+    {
+        try
+        {
+            var text = textBox.Text;
+            var currentLine = 1;
+            var charIndex = 0;
+
+            while (currentLine < lineNumber && charIndex < text.Length)
+            {
+                if (text[charIndex] == '\n')
+                {
+                    currentLine++;
+                }
+                charIndex++;
+            }
+
+            if (columnNumber > 0)
+            {
+                charIndex += (columnNumber - 1);
+            }
+
+            if (charIndex >= 0 && charIndex <= text.Length)
+            {
+                textBox.Focus();
+                textBox.Select(charIndex, 0);
+
+                var lineIndex = textBox.GetLineIndexFromCharacterIndex(charIndex);
+                if (lineIndex >= 0)
+                {
+                    textBox.ScrollToLine(lineIndex);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"NavigateToLineAndColumn failed: {ex.Message}");
+        }
+    }
+
+    private static bool CheckWebView2RuntimeAvailable(bool logSuccess = true)
+    {
+        try
+        {
+            var version = CoreWebView2Environment.GetAvailableBrowserVersionString();
+            var ok = !string.IsNullOrWhiteSpace(version);
+            if (ok && logSuccess)
+            {
+                HostAssets.AppendLog($"JsonEditor: WebView2 runtime available, version={version}.");
+            }
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"JsonEditor: WebView2 runtime unavailable, error={ex.Message}");
+            return false;
+        }
+    }
+
+    private string GetJsonMonacoHtml()
+    {
+        return @"<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv=""Content-Type"" content=""text/html;charset=utf-8"" />
+<style>
+    html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #1e1e1e;
+    }
+    #container {
+        width: 100%;
+        height: 100%;
+    }
+</style>
+<script src=""https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js""></script>
+</head>
+<body>
+<div id=""container""></div>
+<script>
+    var editor;
+    var currentMatchIndex = -1;
+    var lastFindQuery = '';
+    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+    
+    require(['vs/editor/editor.main'], function() {
+        editor = monaco.editor.create(document.getElementById('container'), {
+            value: '',
+            language: 'json',
+            theme: 'vs-dark',
+            automaticLayout: true,
+            tabSize: 2,
+            formatOnPaste: true,
+            formatOnType: true,
+            folding: true,
+            minimap: { enabled: false }
+        });
+
+        editor.onDidChangeModelContent(function() {
+            var val = editor.getValue();
+            try {
+                window.chrome.webview.postMessage(JSON.stringify({
+                    type: 'change',
+                    value: val
+                }));
+            } catch(e) {}
+        });
+
+        try {
+            window.chrome.webview.postMessage(JSON.stringify({
+                type: 'ready'
+            }));
+        } catch(e) {}
+    });
+
+    function setValue(val) {
+        if (editor && editor.getValue() !== val) {
+            editor.setValue(val);
+        }
+    }
+    function getValue() {
+        return editor ? editor.getValue() : '';
+    }
+    function revealPosition(line, col) {
+        if (editor) {
+            editor.revealLineInCenter(line);
+            editor.setPosition({ lineNumber: line, column: col });
+            editor.focus();
+        }
+    }
+    function findNext(query) {
+        if (!editor) return;
+        var model = editor.getModel();
+        var matches = model.findMatches(query, true, false, false, null, true);
+        if (matches && matches.length > 0) {
+            if (query !== lastFindQuery) {
+                currentMatchIndex = 0;
+                lastFindQuery = query;
+            } else {
+                currentMatchIndex = (currentMatchIndex + 1) % matches.length;
+            }
+            var match = matches[currentMatchIndex];
+            editor.setSelection(match.range);
+            editor.revealRangeInCenter(match.range);
+            editor.focus();
+            return true;
+        }
+        return false;
+    }
+    function replaceCurrent(query, replacement) {
+        if (!editor) return;
+        var selection = editor.getSelection();
+        var model = editor.getModel();
+        var selectedText = model.getValueInRange(selection);
+        if (selectedText.toLowerCase() === query.toLowerCase()) {
+            editor.executeEdits('find-replace', [{
+                range: selection,
+                text: replacement,
+                forceMoveMarkers: true
+            }]);
+            findNext(query);
+            return true;
+        } else {
+            return findNext(query);
+        }
+    }
+    function replaceAll(query, replacement) {
+        if (!editor) return;
+        var model = editor.getModel();
+        var matches = model.findMatches(query, true, false, false, null, true);
+        if (matches && matches.length > 0) {
+            var edits = matches.map(function(m) {
+                return {
+                    range: m.range,
+                    text: replacement,
+                    forceMoveMarkers: true
+                };
+            });
+            editor.executeEdits('find-replace', edits);
+            return matches.length;
+        }
+        return 0;
+    }
+</script>
+</body>
+</html>";
+    }
+
+    private string GetScriptMonacoHtml()
+    {
+        return @"<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv=""Content-Type"" content=""text/html;charset=utf-8"" />
+<style>
+    html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #1e1e1e;
+    }
+    #container {
+        width: 100%;
+        height: 100%;
+    }
+</style>
+<script src=""https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js""></script>
+</head>
+<body>
+<div id=""container""></div>
+<script>
+    var editor;
+    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+    
+    require(['vs/editor/editor.main'], function() {
+        editor = monaco.editor.create(document.getElementById('container'), {
+            value: '',
+            language: 'csharp',
+            theme: 'vs-dark',
+            automaticLayout: true,
+            tabSize: 4,
+            folding: true,
+            minimap: { enabled: false }
+        });
+
+        editor.onDidChangeModelContent(function() {
+            var val = editor.getValue();
+            try {
+                window.chrome.webview.postMessage(JSON.stringify({
+                    type: 'change',
+                    value: val
+                }));
+            } catch(e) {}
+        });
+
+        try {
+            window.chrome.webview.postMessage(JSON.stringify({
+                type: 'ready'
+            }));
+        } catch(e) {}
+    });
+
+    function setValue(val) {
+        if (editor && editor.getValue() !== val) {
+            editor.setValue(val);
+        }
+    }
+    function setLanguage(lang) {
+        if (editor) {
+            var model = editor.getModel();
+            monaco.editor.setModelLanguage(model, lang);
+        }
+    }
+    function revealPosition(line, col) {
+        if (editor) {
+            editor.revealLineInCenter(line);
+            editor.setPosition({ lineNumber: line, column: col });
+            editor.focus();
+        }
+    }
+</script>
+</body>
+</html>";
+    }
+
+    private void UpdateTestArgumentPlaceholderVisibility()
+    {
+        if (TestArgumentPlaceholder == null || TestArgumentBox == null) return;
+        
+        TestArgumentPlaceholder.Visibility = 
+            (string.IsNullOrEmpty(TestArgumentBox.Text) && !TestArgumentBox.IsFocused) 
+            ? Visibility.Visible 
+            : Visibility.Collapsed;
+    }
+
+    private void TestArgumentBox_GotFocus(object sender, RoutedEventArgs e)
+    {
+        UpdateTestArgumentPlaceholderVisibility();
+    }
+
+    private void TestArgumentBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        UpdateTestArgumentPlaceholderVisibility();
+    }
+
+    private void TestArgumentBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        UpdateTestArgumentPlaceholderVisibility();
+        
+        // 当用户输入时，持久化记住它
+        if (_settings != null && TestArgumentBox != null)
+        {
+            var text = TestArgumentBox.Text;
+            if (string.Equals(_settings.LastTestArgument, text, StringComparison.Ordinal) == false)
+            {
+                _settings.LastTestArgument = text;
+                try
+                {
+                    AppSettingsStore.Save(_settings);
+                }
+                catch
+                {
+                    // 忽略保存临时错误，保证编辑无阻碍
+                }
+            }
+        }
+    }
+
+    #endregion
 }

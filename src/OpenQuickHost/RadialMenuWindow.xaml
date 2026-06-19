@@ -105,30 +105,39 @@
 
         <Ellipse Width="58"
                  Height="58"
-                 Fill="#F2161616"
                  Stroke="#33FFFFFF"
                  StrokeThickness="1"
                  HorizontalAlignment="Center"
-                 VerticalAlignment="Center"/>
+                 VerticalAlignment="Center">
+            <Ellipse.Style>
+                <Style TargetType="Ellipse">
+                    <Setter Property="Fill" Value="#F2161616" />
+                    <Style.Triggers>
+                        <!-- 悬浮鼠标才是红底高亮 -->
+                        <DataTrigger Binding="{Binding IsCenterHovered}" Value="True">
+                            <Setter Property="Fill" Value="#D0B91C1C" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Ellipse.Style>
+        </Ellipse>
 
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-            <TextBlock Text="{Binding CenterPrimaryText}"
-                       Foreground="White"
-                       FontSize="16"
-                       FontWeight="SemiBold"
-                       HorizontalAlignment="Center"/>
-        </StackPanel>
+        <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Viewbox Width="24" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Path Data="{local:IconGeometry close}" Fill="White" Stretch="Uniform" /> 
+            </Viewbox>
+        </Grid>
 
         <TextBlock Text="{Binding ActiveTitle}"
                    Foreground="#FF8E8E8E"
-                   FontSize="11"
+                   FontSize="{DynamicResource FontSizeSmall}"
                    Width="220"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
                    TextAlignment="Center"
                    TextTrimming="CharacterEllipsis">
             <TextBlock.RenderTransform>
-                <TranslateTransform Y="176"/>
+                <TranslateTransform Y="220"/>
             </TextBlock.RenderTransform>
         </TextBlock>
 
@@ -192,6 +201,7 @@
                             Drop="RadialSlot_Drop"
                             MouseEnter="RadialSlot_MouseEnter"
                             MouseLeave="RadialSlot_MouseLeave"
+                            Cursor="Hand"
                             RenderTransformOrigin="0.5,0.5">
                         <Border.RenderTransform>
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
@@ -200,7 +210,7 @@
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <TextBlock Text="➕" 
                                            Foreground="#80FFFFFF" 
-                                           FontSize="20" 
+                                           FontSize="{DynamicResource FontSizeTitle}" 
                                            HorizontalAlignment="Center" 
                                            VerticalAlignment="Center">
                                     <TextBlock.Style>
@@ -216,12 +226,26 @@
                                 </TextBlock>
                                 
                                 <!-- Show normal content for filled slots -->
-                                <Grid Width="23" Height="23" HorizontalAlignment="Center" ClipToBounds="True" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                    <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
-                                    </Viewbox>
-                                    <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <Grid Width="23" Height="23" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Grid ClipToBounds="True">
+                                        <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                        </Viewbox>
+                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    </Grid>
+                                    <!-- Running indicator (Green Dot) -->
+                                    <Border Width="6"
+                                            Height="6"
+                                            CornerRadius="3"
+                                            Background="#FF10B981"
+                                            BorderBrush="#CCFFFFFF"
+                                            BorderThickness="0.8"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Bottom"
+                                            Margin="-1.5,0,0,-1.5"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF60A5FA|#FFFFFFFF'}"
@@ -264,6 +288,7 @@
                             Drop="RadialSlot_Drop"
                             MouseEnter="RadialSlot_MouseEnter"
                             MouseLeave="RadialSlot_MouseLeave"
+                            Cursor="Hand"
                             RenderTransformOrigin="0.5,0.5">
                         <Border.RenderTransform>
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
@@ -272,7 +297,7 @@
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <TextBlock Text="➕" 
                                            Foreground="#80FFFFFF" 
-                                           FontSize="24" 
+                                           FontSize="{DynamicResource FontSizeHeader}" 
                                            HorizontalAlignment="Center" 
                                            VerticalAlignment="Center">
                                     <TextBlock.Style>
@@ -291,30 +316,43 @@
                                 <Grid Width="32"
                                       Height="32"
                                       HorizontalAlignment="Center"
-                                      ClipToBounds="True"
                                       Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <Image Source="{Binding IconSource}"
-                                           Stretch="UniformToFill"
-                                           Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                    <Viewbox Width="19"
-                                             Height="19"
-                                             Stretch="Uniform"
-                                             HorizontalAlignment="Center"
-                                             VerticalAlignment="Center"
-                                             Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
-                                    </Viewbox>
-                                    <TextBlock Text="{Binding DisplayGlyph}"
-                                               Foreground="White"
-                                               FontSize="13"
-                                               FontWeight="SemiBold"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Center"
-                                               Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    <Grid ClipToBounds="True">
+                                        <Image Source="{Binding IconSource}"
+                                               Stretch="UniformToFill"
+                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        <Viewbox Width="19"
+                                                 Height="19"
+                                                 Stretch="Uniform"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                        </Viewbox>
+                                        <TextBlock Text="{Binding DisplayGlyph}"
+                                                   Foreground="White"
+                                                   FontSize="{DynamicResource FontSizeNormal}"
+                                                   FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    </Grid>
+                                    <!-- Running indicator (Green Dot) -->
+                                    <Border Width="8"
+                                            Height="8"
+                                            CornerRadius="4"
+                                            Background="#FF10B981"
+                                            BorderBrush="#CCFFFFFF"
+                                            BorderThickness="0.8"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Bottom"
+                                            Margin="-2,0,0,-2"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF60A5FA|#FFFFFFFF'}"
-                                           FontSize="10"
+                                           FontSize="{DynamicResource FontSizeTiny}"
                                            Width="60"
                                            TextAlignment="Center"
                                            TextTrimming="CharacterEllipsis"
@@ -376,7 +414,7 @@
                        Width="150"
                        TextAlignment="Center"
                        Foreground="White"
-                       FontSize="15"
+                       FontSize="{DynamicResource FontSizeLarge}"
                        FontWeight="SemiBold"/>
             <ItemsControl ItemsSource="{Binding ChildItems}">
                 <ItemsControl.ItemsPanel>
@@ -404,6 +442,7 @@
                                 Drop="RadialSlot_Drop"
                                 MouseEnter="RadialSlot_MouseEnter"
                                 MouseLeave="RadialSlot_MouseLeave"
+                                Cursor="Hand"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
@@ -431,26 +470,39 @@
                                     <Grid Width="26"
                                           Height="26"
                                           HorizontalAlignment="Center"
-                                          ClipToBounds="True"
                                           Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Image Source="{Binding IconSource}"
-                                               Stretch="UniformToFill"
-                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                        <Viewbox Width="16"
-                                                 Height="16"
-                                                 Stretch="Uniform"
-                                                 HorizontalAlignment="Center"
-                                                 VerticalAlignment="Center"
-                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
-                                        </Viewbox>
-                                        <TextBlock Text="{Binding DisplayGlyph}"
-                                                   Foreground="White"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        <Grid ClipToBounds="True">
+                                            <Image Source="{Binding IconSource}"
+                                                   Stretch="UniformToFill"
+                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Viewbox Width="16"
+                                                     Height="16"
+                                                     Stretch="Uniform"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center"
+                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                            </Viewbox>
+                                            <TextBlock Text="{Binding DisplayGlyph}"
+                                                       Foreground="White"
+                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                       FontWeight="SemiBold"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        </Grid>
+                                        <!-- Running indicator (Green Dot) -->
+                                        <Border Width="7"
+                                                Height="7"
+                                                CornerRadius="3.5"
+                                                Background="#FF10B981"
+                                                BorderBrush="#CCFFFFFF"
+                                                BorderThickness="0.8"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Bottom"
+                                                Margin="-1.8,0,0,-1.8"
+                                                IsHitTestVisible="False"
+                                                Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF60A5FA|#FFFFFFFF'}"
@@ -517,7 +569,7 @@
                        Width="128"
                        TextAlignment="Center"
                        Foreground="White"
-                       FontSize="14"
+                       FontSize="{DynamicResource FontSizeNormalPlus}"
                        FontWeight="SemiBold"/>
             <ItemsControl ItemsSource="{Binding GrandChildItems}">
                 <ItemsControl.ItemsPanel>
@@ -545,6 +597,7 @@
                                 Drop="RadialSlot_Drop"
                                 MouseEnter="RadialSlot_MouseEnter"
                                 MouseLeave="RadialSlot_MouseLeave"
+                                Cursor="Hand"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
@@ -553,7 +606,7 @@
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <TextBlock Text="➕" 
                                                Foreground="#80FFFFFF" 
-                                               FontSize="20" 
+                                               FontSize="{DynamicResource FontSizeTitle}" 
                                                HorizontalAlignment="Center" 
                                                VerticalAlignment="Center">
                                         <TextBlock.Style>
@@ -569,12 +622,26 @@
                                     </TextBlock>
                                     
                                     <!-- Show normal content for filled slots -->
-                                    <Grid Width="23" Height="23" HorizontalAlignment="Center" ClipToBounds="True" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                        <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
-                                        </Viewbox>
-                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    <Grid Width="23" Height="23" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Grid ClipToBounds="True">
+                                            <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                            </Viewbox>
+                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        </Grid>
+                                        <!-- Running indicator (Green Dot) -->
+                                        <Border Width="6"
+                                                Height="6"
+                                                CornerRadius="3"
+                                                Background="#FF10B981"
+                                                BorderBrush="#CCFFFFFF"
+                                                BorderThickness="0.8"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Bottom"
+                                                Margin="-1.5,0,0,-1.5"
+                                                IsHitTestVisible="False"
+                                                Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF60A5FA|#FFFFFFFF'}"

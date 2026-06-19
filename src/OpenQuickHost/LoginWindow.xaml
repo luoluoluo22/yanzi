@@ -4,14 +4,17 @@
         Title="登录燕子云同步"
         Width="420"
         SizeToContent="Height"
-        MinHeight="420"
+        MinHeight="400"
         WindowStartupLocation="CenterScreen"
+        Background="{x:Null}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         Style="{StaticResource DialogWindow}">
-    <Border Margin="1"
-            CornerRadius="12"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
-            BorderThickness="1">
+    <Border Margin="0"
+            CornerRadius="0"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
+            BorderThickness="0">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <Grid Margin="25">
                 <Grid.RowDefinitions>
@@ -57,8 +60,8 @@
                 <StackPanel Grid.Row="2" Margin="0,18,0,0">
                     <TextBlock x:Name="PrimaryFieldLabel"
                                Text="邮箱"
-                               Foreground="#FFB8B8B8"
-                               FontSize="12"
+                               Foreground="{DynamicResource BrushTextSec}"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
                     <TextBox x:Name="PrimaryInputBox"
@@ -68,8 +71,8 @@
 
                 <StackPanel x:Name="EmailPanel" Grid.Row="3" Margin="0,14,0,0">
                     <TextBlock Text="邮箱"
-                               Foreground="#FFB8B8B8"
-                               FontSize="12"
+                               Foreground="{DynamicResource BrushTextSec}"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
                     <TextBox x:Name="EmailBox"
@@ -79,8 +82,8 @@
 
                 <StackPanel Grid.Row="4" Margin="0,14,0,0">
                     <TextBlock Text="密码"
-                               Foreground="#FFB8B8B8"
-                               FontSize="12"
+                               Foreground="{DynamicResource BrushTextSec}"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
                     <PasswordBox x:Name="PasswordBox"
@@ -95,8 +98,8 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="邮箱验证码"
-                                   Foreground="#FFB8B8B8"
-                                   FontSize="12"
+                                   Foreground="{DynamicResource BrushTextSec}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
                                    Margin="2,0,0,6"
                                    FontWeight="SemiBold" />
                         <TextBox x:Name="CodeBox"
@@ -115,9 +118,9 @@
                 <StackPanel Grid.Row="6" Margin="0,16,0,0">
                     <CheckBox x:Name="RememberCheckBox"
                               IsChecked="True"
-                              Foreground="#FFB8B8B8"
+                              Foreground="{DynamicResource BrushTextSec}"
                               Content="记住登录信息（本机加密保存）"
-                              FontSize="12" />
+                              FontSize="{DynamicResource FontSizeSmallPlus}" />
                     <Button x:Name="ForgotPasswordButton"
                             Margin="0,10,0,0"
                             HorizontalAlignment="Left"
@@ -127,7 +130,7 @@
                     <TextBlock x:Name="StatusText"
                                Margin="0,10,0,0"
                                Foreground="#FFEF4444"
-                               FontSize="12"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                TextWrapping="Wrap"
                                Visibility="Collapsed" />
                 </StackPanel>

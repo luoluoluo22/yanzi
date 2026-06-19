@@ -13,8 +13,8 @@
         MinHeight="450"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
-        ResizeMode="CanResizeWithGrip"
-        Background="#FF1A1A1A"
+        ResizeMode="CanResize"
+        Background="{DynamicResource BrushBG}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display"
@@ -25,8 +25,8 @@
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
                             ResizeBorderThickness="6"
-                            CornerRadius="16"
-                            GlassFrameThickness="0" />
+                            CornerRadius="0"
+                            GlassFrameThickness="1" />
     </shell:WindowChrome.WindowChrome>
     
     <Window.Resources>
@@ -125,9 +125,9 @@
     </Window.Resources>
 
     <Border Margin="1"
-            CornerRadius="16"
-            Background="#F21A1A1A"
-            BorderBrush="#22FFFFFF"
+            CornerRadius="0"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1"
             MouseLeftButtonDown="Window_MouseLeftButtonDown">
         <Grid>
@@ -162,15 +162,15 @@
                              VerticalAlignment="Center"
                              Margin="5,0,15,0">
                         <Path Data="{local:IconGeometry search}"
-                              Fill="#FFAAAAAA"
+                              Fill="{DynamicResource BrushTextSec}"
                               Stretch="Uniform"/>
                     </Viewbox>
 
                     <Grid Grid.Column="1">
                         <TextBlock IsHitTestVisible="False"
                                    VerticalAlignment="Center"
-                                   FontSize="20"
-                                   Foreground="#FF5F6368"
+                                   FontSize="{DynamicResource FontSizeTitle}"
+                                   Foreground="{DynamicResource BrushTextMuted}"
                                    Visibility="{Binding SearchInlineCompletionVisibility}"
                                    Text="{Binding SearchInlineCompletionSuffix}">
                             <TextBlock.RenderTransform>
@@ -179,8 +179,8 @@
                         </TextBlock>
                         <TextBox x:Name="SearchBox"
                                  AllowDrop="True"
-                                 FontSize="20"
-                                 Foreground="White"
+                                 FontSize="{DynamicResource FontSizeTitle}"
+                                 Foreground="{DynamicResource BrushTextMain}"
                                  Background="Transparent"
                                  BorderThickness="0"
                                  CaretBrush="#FF3B82F6"
@@ -199,8 +199,8 @@
                         <TextBlock IsHitTestVisible="False"
                                    Text="搜索应用、扩展、系统项，或输入 @应用 / @系统 ..."
                                    VerticalAlignment="Center"
-                                   Foreground="#FF555555"
-                                   FontSize="20"
+                                   Foreground="{DynamicResource BrushTextMuted}"
+                                   FontSize="{DynamicResource FontSizeTitle}"
                                    Margin="2,0,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -222,7 +222,7 @@
                             BorderThickness="0"
                             ToolTip="{Binding PinButtonTooltip}"
                             Click="PinAutoHideButton_Click"
-                            Style="{StaticResource QuickMenuButtonStyle}">
+                            Style="{DynamicResource GhostButtonStyle}">
                         <Viewbox Width="14"
                                  Height="14"
                                  HorizontalAlignment="Center"
@@ -251,7 +251,7 @@
                                 <Border x:Name="AttachedFileCard"
                                         Margin="0,0,0,8"
                                         Padding="10,8"
-                                        Background="#FF222222"
+                                        Background="{DynamicResource BrushSecondaryBtnBG}"
                                         BorderBrush="#223B82F6"
                                         BorderThickness="1"
                                         CornerRadius="10">
@@ -270,7 +270,7 @@
                                                 Background="#E53B3B"
                                                 BorderBrush="#FFFCA5A5"
                                                 BorderThickness="1"
-                                                Foreground="White"
+                                                Foreground="{DynamicResource BrushTextMain}"
                                                 Cursor="Hand"
                                                 Tag="{Binding}"
                                                 ToolTip="移除附件"
@@ -304,7 +304,7 @@
                                                 </Style>
                                             </Button.Style>
                                             <TextBlock Text="×"
-                                                       FontSize="11"
+                                                       FontSize="{DynamicResource FontSizeSmall}"
                                                        FontWeight="SemiBold"
                                                        HorizontalAlignment="Center"
                                                        VerticalAlignment="Center" />
@@ -313,7 +313,7 @@
                                                 Width="34"
                                                 Height="34"
                                                 CornerRadius="8"
-                                                Background="#FF2B2F36"
+                                                Background="{DynamicResource BrushSecondaryBtnBG}"
                                                 VerticalAlignment="Center">
                                             <Grid>
                                                 <Image Source="{Binding IconSource}"
@@ -321,8 +321,8 @@
                                                        Margin="6"
                                                        Visibility="{Binding HasIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                 <TextBlock Text="F"
-                                                           Foreground="White"
-                                                           FontSize="14"
+                                                           Foreground="{DynamicResource BrushTextMain}"
+                                                           FontSize="{DynamicResource FontSizeNormalPlus}"
                                                            FontWeight="SemiBold"
                                                            HorizontalAlignment="Center"
                                                            VerticalAlignment="Center">
@@ -341,13 +341,13 @@
                                         </Border>
                                         <StackPanel Grid.Column="2" Margin="10,0,10,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding DisplayName}"
-                                                       Foreground="White"
-                                                       FontSize="13"
+                                                       Foreground="{DynamicResource BrushTextMain}"
+                                                       FontSize="{DynamicResource FontSizeNormal}"
                                                        FontWeight="SemiBold"
                                                        TextTrimming="CharacterEllipsis" />
                                             <TextBlock Text="{Binding FullPath}"
-                                                       Foreground="#FF8E8E8E"
-                                                       FontSize="11"
+                                                       Foreground="{DynamicResource BrushTextSec}"
+                                                       FontSize="{DynamicResource FontSizeSmall}"
                                                        Margin="0,3,0,0"
                                                        TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
@@ -355,10 +355,10 @@
                                                 Tag="{Binding}"
                                                 Content="复制路径"
                                                 Padding="10,5"
-                                                FontSize="11"
-                                                Foreground="#FFE5E7EB"
+                                                FontSize="{DynamicResource FontSizeSmall}"
+                                                Foreground="{DynamicResource BrushTextMain}"
                                                 Click="CopyAttachedFilePathButton_Click"
-                                                Style="{StaticResource QuickMenuButtonStyle}" />
+                                                Style="{DynamicResource GhostButtonStyle}" />
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -391,7 +391,7 @@
                                         Click="SearchScopeButton_Click"
                                         Margin="0,0,5,0"
                                         Padding="7,3"
-                                        FontSize="12"
+                                        FontSize="{DynamicResource FontSizeSmallPlus}"
                                         FontWeight="SemiBold"
                                         BorderThickness="1"
                                         Cursor="Hand">
@@ -405,9 +405,9 @@
                                     </Button.ContextMenu>
                                     <Button.Style>
                                         <Style TargetType="Button">
-                                            <Setter Property="Background" Value="#E012151B" />
-                                            <Setter Property="BorderBrush" Value="#48516172" />
-                                            <Setter Property="Foreground" Value="#FFE5E7EB" />
+                                            <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}" />
+                                            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                             <Setter Property="Template">
                                                 <Setter.Value>
                                                     <ControlTemplate TargetType="Button">
@@ -428,9 +428,9 @@
                                                         </Border>
                                                         <ControlTemplate.Triggers>
                                                             <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="Root" Property="Background" Value="#E0192435" />
-                                                                <Setter TargetName="Root" Property="BorderBrush" Value="#6D7B8BA3" />
-                                                                <Setter Property="Foreground" Value="White" />
+                                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                                                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                                             </Trigger>
                                                         </ControlTemplate.Triggers>
                                                     </ControlTemplate>
@@ -438,9 +438,9 @@
                                             </Setter>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                    <Setter Property="Background" Value="#E0192945" />
-                                                    <Setter Property="BorderBrush" Value="#A03B82F6" />
-                                                    <Setter Property="Foreground" Value="White" />
+                                                    <Setter Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource BrushListViewItemSelectedBorder}" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTagSelectedText}" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -454,15 +454,15 @@
                             Click="SearchScopeAddButton_Click"
                             Margin="1,0,0,0"
                             Padding="7,3"
-                            FontSize="12"
+                            FontSize="{DynamicResource FontSizeSmallPlus}"
                             FontWeight="SemiBold"
                             BorderThickness="1"
                             Cursor="Hand">
                         <Button.Style>
                             <Style TargetType="Button">
-                                <Setter Property="Background" Value="#E012151B" />
-                                <Setter Property="BorderBrush" Value="#48516172" />
-                                <Setter Property="Foreground" Value="#FFE5E7EB" />
+                                <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="Button">
@@ -501,7 +501,7 @@
             <!-- Separator -->
             <Rectangle Grid.Row="0"
                        Height="1"
-                       Fill="#FF2A2A2A"
+                       Fill="{DynamicResource BrushSecondaryBtnBG}"
                        VerticalAlignment="Bottom"
                        Margin="0,5,0,0"
                        Visibility="{Binding NormalLauncherVisibility}"/>
@@ -524,7 +524,7 @@
                          PreviewMouseRightButtonUp="CommandList_PreviewMouseRightButtonUp"
                          PreviewKeyDown="CommandList_PreviewKeyDown"
                          SelectionChanged="CommandList_SelectionChanged"
-                         ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     
                     <ListBox.ContextMenu>
@@ -583,6 +583,20 @@
                                     <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem x:Name="TerminateExtensionMenuItem"
+                                      Header="停止运行"
+                                      Click="TerminateExtensionMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry stop}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem x:Name="OpenExtensionDirectoryMenuItem"
+                                      Header="打开扩展目录"
+                                      Click="OpenExtensionDirectoryMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
                             <MenuItem x:Name="ToggleYanyuEnabledMenuItem"
                                       Header="启用燕语"
                                       Click="ToggleYanyuEnabledMenuItem_Click">
@@ -624,7 +638,7 @@
                                       Header="添加桌面快捷方式"
                                       Click="CreateDesktopShortcutMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry desktop-shortcut}" Fill="#60A5FA" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry desktop-shortcut}" Fill="{DynamicResource BrushAccent}" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                         </ContextMenu>
@@ -648,10 +662,10 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="Root" Property="Background" Value="#FF2D2D2D" />
+                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
                                             </Trigger>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Root" Property="Background" Value="#FF252525" />
+                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -680,75 +694,95 @@
                                 </Grid.ColumnDefinitions>
 
                                 <!-- Icon Area -->
-                                <Border Width="32"
-                                        Height="32"
-                                        CornerRadius="8"
-                                        ClipToBounds="True"
-                                        Background="{Binding AccentBrush}"
-                                        VerticalAlignment="Center"
-                                        Margin="0,0,12,0">
-                                    <Grid>
-                                        <Image Source="{Binding IconSource}"
-                                               Margin="3"
-                                               Stretch="Uniform"
-                                               RenderOptions.BitmapScalingMode="HighQuality"
-                                               SnapsToDevicePixels="True"
-                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <Viewbox Margin="6"
-                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Width="24"
-                                                  Height="24"
-                                                  Data="{Binding VectorIcon}"
-                                                  Fill="White"
-                                                  Stretch="Uniform" />
-                                        </Viewbox>
-                                        <TextBlock Text="{Binding DisplayGlyph}"
-                                               FontSize="14"
-                                               Foreground="White"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Center"
-                                               FontWeight="Bold"
-                                               Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <Border Width="9"
-                                                Height="9"
-                                                CornerRadius="4.5"
-                                                Background="#FFFF5A7A"
-                                                BorderBrush="#CCFFFFFF"
-                                                BorderThickness="1"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Top"
-                                                Margin="0,1,1,0"
-                                                Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <Border Background="#C0181818"
-                                                Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                        <Viewbox Width="18"
-                                                 Height="18"
-                                                 HorizontalAlignment="Center"
-                                                 VerticalAlignment="Center"
-                                                 Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Data="{local:IconGeometry sync}"
-                                                  Fill="#FFE5E7EB"
-                                                  Stretch="Uniform"
-                                                  RenderTransformOrigin="0.5,0.5">
-                                                <Path.RenderTransform>
-                                                    <RotateTransform Angle="0" />
-                                                </Path.RenderTransform>
-                                                <Path.Triggers>
-                                                    <EventTrigger RoutedEvent="Loaded">
-                                                        <BeginStoryboard>
-                                                            <Storyboard RepeatBehavior="Forever">
-                                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                 From="0"
-                                                                                 To="360"
-                                                                                 Duration="0:0:0.9" />
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </EventTrigger>
-                                                </Path.Triggers>
-                                            </Path>
-                                        </Viewbox>
-                                    </Grid>
-                                </Border>
+                                <Grid VerticalAlignment="Center" Margin="0,0,12,0">
+                                    <Border Width="32"
+                                            Height="32"
+                                            CornerRadius="8"
+                                            ClipToBounds="True">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{Binding AccentBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Image Source="{Binding IconSource}"
+                                                   Stretch="UniformToFill"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                   SnapsToDevicePixels="True"
+                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Viewbox Margin="6"
+                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Width="24"
+                                                      Height="24"
+                                                      Data="{Binding VectorIcon}"
+                                                      Fill="White"
+                                                      Stretch="Uniform" />
+                                            </Viewbox>
+                                            <TextBlock Text="{Binding DisplayGlyph}"
+                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontWeight="Bold"
+                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Border Width="9"
+                                                    Height="9"
+                                                    CornerRadius="4.5"
+                                                    Background="#FFFF5A7A"
+                                                    BorderBrush="#CCFFFFFF"
+                                                    BorderThickness="1"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    Margin="0,1,1,0"
+                                                    Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Border Background="{DynamicResource BrushDialogBG}"
+                                                    Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Viewbox Width="18"
+                                                     Height="18"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center"
+                                                     Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Data="{local:IconGeometry sync}"
+                                                      Fill="{DynamicResource BrushTextMain}"
+                                                      Stretch="Uniform"
+                                                      RenderTransformOrigin="0.5,0.5">
+                                                    <Path.RenderTransform>
+                                                        <RotateTransform Angle="0" />
+                                                    </Path.RenderTransform>
+                                                    <Path.Triggers>
+                                                        <EventTrigger RoutedEvent="Loaded">
+                                                            <BeginStoryboard>
+                                                                <Storyboard RepeatBehavior="Forever">
+                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                     From="0"
+                                                                                     To="360"
+                                                                                     Duration="0:0:0.9" />
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </EventTrigger>
+                                                    </Path.Triggers>
+                                                </Path>
+                                            </Viewbox>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Running indicator (Green Dot) -->
+                                    <Border Width="9"
+                                            Height="9"
+                                            CornerRadius="4.5"
+                                            Background="#FF10B981"
+                                            BorderBrush="#CCFFFFFF"
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Bottom"
+                                            Margin="-2,0,0,-2"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                </Grid>
 
                                 <!-- Text Area -->
                                 <Grid Grid.Column="1" VerticalAlignment="Center">
@@ -758,15 +792,15 @@
                                     </Grid.RowDefinitions>
                                     <TextBlock Text="{Binding Title}"
                                                Grid.Row="0"
-                                               FontSize="14"
+                                               FontSize="{DynamicResource FontSizeNormalPlus}"
                                                FontWeight="Medium"
-                                               Foreground="White"
+                                               Foreground="{DynamicResource BrushTextMain}"
                                                TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{Binding EffectiveSubtitle}"
                                                Grid.Row="1"
                                                Margin="0,2,0,0"
-                                               Foreground="#FF888888"
-                                               FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
                                                TextTrimming="CharacterEllipsis" />
                                 </Grid>
 
@@ -775,21 +809,21 @@
                                             Orientation="Horizontal"
                                             VerticalAlignment="Center"
                                             Margin="8,0,5,0">
-                                    <Border Background="#FF282828"
-                                            BorderBrush="#FF3A3A3A"
+                                    <Border Background="{DynamicResource BrushBG}"
+                                            BorderBrush="{DynamicResource BrushBorderStrong}"
                                             BorderThickness="1"
                                             CornerRadius="6"
                                             Padding="8,4"
                                             Margin="0,0,8,0"
                                             Visibility="{Binding HasGlobalShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <TextBlock Text="{Binding ShortcutLabel}"
-                                                   Foreground="#FFACACAC"
-                                                   FontSize="10"
+                                                   Foreground="{DynamicResource BrushTextSec}"
+                                                   FontSize="{DynamicResource FontSizeTiny}"
                                                    FontWeight="SemiBold" />
                                     </Border>
                                     <TextBlock Text="{Binding DisplayTypeLabel}" 
-                                               Foreground="#FF666666" 
-                                               FontSize="12" 
+                                               Foreground="{DynamicResource BrushTextSec}" 
+                                               FontSize="{DynamicResource FontSizeSmallPlus}" 
                                                VerticalAlignment="Center"
                                                Visibility="{Binding HasDisplayTypeLabel, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </StackPanel>
@@ -811,8 +845,8 @@
 
                 <!-- 左侧话题列表 -->
                 <Border Grid.Column="0"
-                        Background="#E61C1C1C"
-                        BorderBrush="#FF333333"
+                        Background="{DynamicResource BrushDialogBG}"
+                        BorderBrush="{DynamicResource BrushBorder}"
                         BorderThickness="1"
                         CornerRadius="16">
                     <Border.Effect>
@@ -826,7 +860,7 @@
                         </Grid.RowDefinitions>
 
                         <Border Padding="20,18"
-                                BorderBrush="#FF2A2A2A"
+                                BorderBrush="{DynamicResource BrushBorder}"
                                 BorderThickness="0,0,0,1">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -835,24 +869,24 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
                                     <TextBlock Text="对话历史"
-                                               Foreground="White"
-                                               FontSize="16"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeLargePlus}"
                                                FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding AiChatModelDisplayText}"
                                                Margin="0,5,0,0"
-                                               Foreground="#FF8E8E93"
-                                               FontSize="11" />
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               FontSize="{DynamicResource FontSizeSmall}" />
                                 </StackPanel>
                                 <Border Grid.Column="1"
-                                        Background="#FF2A2A2A"
-                                        BorderBrush="#FF3A3A3A"
+                                        Background="{DynamicResource BrushSecondaryBtnBG}"
+                                        BorderBrush="{DynamicResource BrushBorderStrong}"
                                         BorderThickness="1"
                                         CornerRadius="8"
                                         Padding="10,6"
                                         VerticalAlignment="Center">
                                     <TextBlock Text="Esc 返回"
-                                               Foreground="#FFB6B6B6"
-                                               FontSize="11" />
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               FontSize="{DynamicResource FontSizeSmall}" />
                                 </Border>
                             </Grid>
                         </Border>
@@ -867,8 +901,8 @@
                                         <Border x:Name="TopicItem"
                                                 Margin="12,8,12,0"
                                                 Padding="14,12"
-                                                Background="#FF222222"
-                                                BorderBrush="#FF2A2A2A"
+                                                Background="{DynamicResource BrushSecondaryBtnBG}"
+                                                BorderBrush="{DynamicResource BrushBorder}"
                                                 BorderThickness="1"
                                                 CornerRadius="12"
                                                 Cursor="Hand"
@@ -876,30 +910,30 @@
                                                 MouseRightButtonUp="AiChatTopicItem_MouseRightButtonUp">
                                             <StackPanel>
                                                 <TextBlock Text="{Binding Title}"
-                                                           Foreground="White"
-                                                           FontSize="13"
+                                                           Foreground="{DynamicResource BrushTextMain}"
+                                                           FontSize="{DynamicResource FontSizeNormal}"
                                                            FontWeight="SemiBold"
                                                            TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{Binding PreviewText}"
                                                            Margin="0,7,0,0"
-                                                           Foreground="#FF9CA3AF"
-                                                           FontSize="12"
+                                                           Foreground="{DynamicResource BrushTextSec}"
+                                                           FontSize="{DynamicResource FontSizeSmallPlus}"
                                                            TextWrapping="Wrap"
                                                            MaxHeight="36"
                                                            TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{Binding UpdatedAt, StringFormat={}{0:MM-dd HH:mm}}"
                                                            Margin="0,8,0,0"
-                                                           Foreground="#FF6B7280"
-                                                           FontSize="11" />
+                                                           Foreground="{DynamicResource BrushTextMuted}"
+                                                           FontSize="{DynamicResource FontSizeSmall}" />
                                             </StackPanel>
                                         </Border>
                                         <DataTemplate.Triggers>
                                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                <Setter TargetName="TopicItem" Property="Background" Value="#FF2A2440" />
+                                                <Setter TargetName="TopicItem" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
                                                 <Setter TargetName="TopicItem" Property="BorderBrush" Value="#FF3B82F6" />
                                             </DataTrigger>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="TopicItem" Property="Background" Value="#FF2A2A2A" />
+                                                <Setter TargetName="TopicItem" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
                                             </Trigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>
@@ -909,19 +943,19 @@
 
                         <Border Grid.Row="2"
                                 Padding="12"
-                                BorderBrush="#FF2A2A2A"
+                                BorderBrush="{DynamicResource BrushBorder}"
                                 BorderThickness="0,1,0,0">
                             <Button Height="42"
-                                    Background="#FF2A2A2A"
-                                    BorderBrush="#FF3A3A3A"
+                                    Background="{DynamicResource BrushSecondaryBtnBG}"
+                                    BorderBrush="{DynamicResource BrushBorderStrong}"
                                     BorderThickness="1"
-                                    Foreground="White"
+                                    Foreground="{DynamicResource BrushTextMain}"
                                     HorizontalContentAlignment="Center"
                                     VerticalContentAlignment="Center"
                                     Click="AiChatNewTopicButton_Click"
-                                    Style="{StaticResource QuickMenuButtonStyle}">
+                                    Style="{DynamicResource GhostButtonStyle}">
                                 <TextBlock Text="+ 新建对话"
-                                           FontSize="13"
+                                           FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold" />
                             </Button>
                         </Border>
@@ -949,99 +983,67 @@
 
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="{Binding SelectedAiChatTopic.Title}"
-                                       Foreground="White"
-                                       FontSize="18"
+                                       Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeSubtitle}"
                                        FontWeight="SemiBold" />
                             <TextBlock Text="{Binding AiChatModelDisplayText}"
                                        Margin="0,5,0,0"
-                                       Foreground="#FF8E8E93"
-                                       FontSize="11" />
+                                       Foreground="{DynamicResource BrushTextSec}"
+                                       FontSize="{DynamicResource FontSizeSmall}" />
                         </StackPanel>
 
                         <Button Grid.Column="1"
                                 Margin="0,0,10,0"
                                 Padding="18,8"
-                                Background="#FF2A2A2A"
-                                BorderBrush="#FF3A3A3A"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
                                 BorderThickness="1"
-                                Foreground="White"
+                                Foreground="{DynamicResource BrushTextMain}"
                                 HorizontalContentAlignment="Center"
                                 VerticalContentAlignment="Center"
                                 Click="AiChatRenameTopicButton_Click"
-                                Style="{StaticResource QuickMenuButtonStyle}">
-                            <TextBlock Text="重命名" FontSize="12" />
+                                Style="{DynamicResource GhostButtonStyle}">
+                            <TextBlock Text="重命名" FontSize="{DynamicResource FontSizeSmallPlus}" />
                         </Button>
 
                         <Button Grid.Column="2"
                                 Margin="0,0,10,0"
                                 Padding="18,8"
-                                Background="#FF2A2A2A"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
                                 BorderBrush="#FF4B2E35"
                                 BorderThickness="1"
                                 Foreground="#FFFCA5A5"
                                 HorizontalContentAlignment="Center"
                                 VerticalContentAlignment="Center"
                                 Click="AiChatDeleteTopicButton_Click"
-                                Style="{StaticResource QuickMenuButtonStyle}">
-                            <TextBlock Text="删除" FontSize="12" />
+                                Style="{DynamicResource GhostButtonStyle}">
+                            <TextBlock Text="删除" FontSize="{DynamicResource FontSizeSmallPlus}" />
                         </Button>
 
                         <Button Grid.Column="3"
-                                Width="32"
-                                Height="32"
-                                Background="Transparent"
-                                BorderThickness="0"
+                                Margin="0,0,10,0"
+                                Padding="18,8"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
+                                BorderThickness="1"
+                                Foreground="{DynamicResource BrushTextMain}"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
                                 ToolTip="打开 AI 设置"
                                 Click="AiChatSettingsButton_Click"
-                                Style="{StaticResource QuickMenuButtonStyle}">
-                            <Viewbox Width="16" Height="16">
-                                <Canvas Width="16" Height="16">
-                                    <Rectangle Width="12"
-                                               Height="1.5"
-                                               RadiusX="0.75"
-                                               RadiusY="0.75"
-                                               Fill="#FFA1A1AA"
-                                               Canvas.Left="2"
-                                               Canvas.Top="3" />
-                                    <Rectangle Width="12"
-                                               Height="1.5"
-                                               RadiusX="0.75"
-                                               RadiusY="0.75"
-                                               Fill="#FFA1A1AA"
-                                               Canvas.Left="2"
-                                               Canvas.Top="7.25" />
-                                    <Rectangle Width="12"
-                                               Height="1.5"
-                                               RadiusX="0.75"
-                                               RadiusY="0.75"
-                                               Fill="#FFA1A1AA"
-                                               Canvas.Left="2"
-                                               Canvas.Top="11.5" />
-                                    <Ellipse Width="4"
-                                             Height="4"
-                                             Fill="#FF8B5CF6"
-                                             Canvas.Left="8.5"
-                                             Canvas.Top="1.75" />
-                                    <Ellipse Width="4"
-                                             Height="4"
-                                             Fill="#FF8B5CF6"
-                                             Canvas.Left="4"
-                                             Canvas.Top="6" />
-                                    <Ellipse Width="4"
-                                             Height="4"
-                                             Fill="#FF8B5CF6"
-                                             Canvas.Left="10"
-                                             Canvas.Top="10.25" />
-                                </Canvas>
-                            </Viewbox>
+                                Style="{DynamicResource GhostButtonStyle}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="⚙️" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,4,0" />
+                                <TextBlock Text="设置" FontSize="{DynamicResource FontSizeSmallPlus}" />
+                            </StackPanel>
                         </Button>
                     </Grid>
 
                     <!-- 消息列表 -->
                     <Border Grid.Row="1"
                             Margin="0,0,0,16"
-                            Background="#E61C1C1C"
-                            BorderBrush="#FF333333"
+                            Background="{DynamicResource BrushDialogBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1"
                             CornerRadius="16"
                             Padding="20">
@@ -1061,14 +1063,14 @@
                                                 <Border x:Name="Bubble"
                                                         MaxWidth="600"
                                                         Padding="16,12"
-                                                        Background="#FF2A2A2A"
+                                                        Background="{DynamicResource BrushSecondaryBtnBG}"
                                                         CornerRadius="14"
                                                         Cursor="Hand"
                                                         MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
                                                     <StackPanel>
                                                         <TextBlock Text="{Binding Text}"
-                                                                   Foreground="White"
-                                                                   FontSize="14"
+                                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
                                                                    LineHeight="22"
                                                                    TextWrapping="Wrap" />
                                                         <ItemsControl ItemsSource="{Binding Attachments}"
@@ -1077,20 +1079,20 @@
                                                                 <DataTemplate DataType="{x:Type local:AiChatMessageAttachment}">
                                                                     <Border Margin="0,10,0,0"
                                                                             Padding="10,8"
-                                                                            Background="#33000000"
+                                                                            Background="{DynamicResource BrushSecondaryBtnBG}"
                                                                             BorderBrush="#33FFFFFF"
                                                                             BorderThickness="1"
                                                                             CornerRadius="10">
                                                                         <StackPanel>
                                                                             <TextBlock Text="{Binding FileName}"
-                                                                                       Foreground="White"
-                                                                                       FontSize="12"
+                                                                                       Foreground="{DynamicResource BrushTextMain}"
+                                                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
                                                                                        FontWeight="SemiBold"
                                                                                        TextTrimming="CharacterEllipsis" />
                                                                             <TextBlock Text="{Binding FileSizeText}"
                                                                                        Margin="0,4,0,0"
-                                                                                       Foreground="#FFD1D5DB"
-                                                                                       FontSize="11" />
+                                                                                       Foreground="{DynamicResource BrushTextMain}"
+                                                                                       FontSize="{DynamicResource FontSizeSmall}" />
                                                                         </StackPanel>
                                                                     </Border>
                                                                 </DataTemplate>
@@ -1101,8 +1103,8 @@
                                                 <TextBlock x:Name="TimeStamp"
                                                            Text="{Binding Timestamp, StringFormat={}{0:HH:mm}}"
                                                            Margin="12,6,0,0"
-                                                           Foreground="#FF6B7280"
-                                                           FontSize="11" />
+                                                           Foreground="{DynamicResource BrushTextMuted}"
+                                                           FontSize="{DynamicResource FontSizeSmall}" />
                                             </StackPanel>
                                             <DataTemplate.Triggers>
                                                 <DataTrigger Binding="{Binding IsUser}" Value="True">
@@ -1119,8 +1121,8 @@
 
                             <Grid Visibility="{Binding NoTopicVisibility}">
                                 <TextBlock Text="选择左侧话题，或创建一个新对话。"
-                                           Foreground="#FF6B7280"
-                                           FontSize="15"
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeLarge}"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center" />
                             </Grid>
@@ -1130,8 +1132,8 @@
                     <!-- 附件列表 -->
                     <Border Grid.Row="2"
                             Margin="0,0,0,12"
-                            Background="#FF202020"
-                            BorderBrush="#FF343434"
+                            Background="{DynamicResource BrushSecondaryBtnBG}"
+                            BorderBrush="{DynamicResource BrushBorderStrong}"
                             BorderThickness="1"
                             CornerRadius="12"
                             Padding="12"
@@ -1141,8 +1143,8 @@
                                 <DataTemplate DataType="{x:Type local:AiChatAttachment}">
                                     <Border Margin="0,0,0,8"
                                             Padding="12,10"
-                                            Background="#FF262626"
-                                            BorderBrush="#FF363636"
+                                            Background="{DynamicResource BrushSecondaryBtnBG}"
+                                            BorderBrush="{DynamicResource BrushBorderStrong}"
                                             BorderThickness="1"
                                             CornerRadius="10">
                                         <Grid>
@@ -1153,19 +1155,19 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="{Binding FileName}"
-                                                           Foreground="White"
-                                                           FontSize="13"
+                                                           Foreground="{DynamicResource BrushTextMain}"
+                                                           FontSize="{DynamicResource FontSizeNormal}"
                                                            TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{Binding FileSizeText}"
                                                            Margin="0,5,0,0"
-                                                           Foreground="#FF9CA3AF"
-                                                           FontSize="11" />
+                                                           Foreground="{DynamicResource BrushTextSec}"
+                                                           FontSize="{DynamicResource FontSizeSmall}" />
                                             </StackPanel>
                                             <TextBlock Grid.Column="1"
                                                        Margin="12,0"
                                                        VerticalAlignment="Center"
-                                                       Foreground="#FF6B7280"
-                                                       FontSize="11"
+                                                       Foreground="{DynamicResource BrushTextMuted}"
+                                                       FontSize="{DynamicResource FontSizeSmall}"
                                                        Text="已附加" />
                                             <Button Grid.Column="2"
                                                     Tag="{Binding}"
@@ -1175,8 +1177,8 @@
                                                     BorderThickness="0"
                                                     Click="AiChatRemoveAttachmentButton_Click">
                                                 <TextBlock Text="×"
-                                                           Foreground="#FFE5E7EB"
-                                                           FontSize="18"
+                                                           Foreground="{DynamicResource BrushTextMain}"
+                                                           FontSize="{DynamicResource FontSizeSubtitle}"
                                                            HorizontalAlignment="Center"
                                                            VerticalAlignment="Center" />
                                             </Button>
@@ -1189,8 +1191,8 @@
 
                     <!-- 输入框 -->
                     <Border Grid.Row="3"
-                            Background="#E61C1C1C"
-                            BorderBrush="#FF333333"
+                            Background="{DynamicResource BrushDialogBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1"
                             CornerRadius="12"
                             Padding="16,14"
@@ -1211,8 +1213,8 @@
                                     Width="36"
                                     Height="36"
                                     Margin="0,0,12,0"
-                                    Background="#FF2A2440"
-                                    BorderBrush="#554C1D95"
+                                    Background="{DynamicResource BrushSecondaryBtnBG}"
+                                    BorderBrush="{DynamicResource BrushBorderStrong}"
                                     BorderThickness="1"
                                     Cursor="Hand"
                                     ToolTip="添加附件"
@@ -1229,7 +1231,7 @@
                                     </ControlTemplate>
                                 </Button.Template>
                                 <TextBlock Text="+"
-                                           Foreground="#FFE9D5FF"
+                                           Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="22"
                                            FontWeight="Bold"
                                            HorizontalAlignment="Center"
@@ -1240,8 +1242,8 @@
                             <Grid Grid.Column="1">
                                 <TextBox x:Name="AiChatInputBox"
                                          Text="{Binding AiChatInputText, UpdateSourceTrigger=PropertyChanged}"
-                                         FontSize="16"
-                                         Foreground="White"
+                                         FontSize="{DynamicResource FontSizeLargePlus}"
+                                         Foreground="{DynamicResource BrushTextMain}"
                                          Background="Transparent"
                                          BorderThickness="0"
                                          CaretBrush="#FF3B82F6"
@@ -1250,8 +1252,8 @@
                                          PreviewKeyDown="AiChatInputBox_PreviewKeyDown" />
                                 <TextBlock IsHitTestVisible="False"
                                            VerticalAlignment="Center"
-                                           Foreground="#FF666666"
-                                           FontSize="16"
+                                           Foreground="{DynamicResource BrushTextSec}"
+                                           FontSize="{DynamicResource FontSizeLargePlus}"
                                            Text="继续对话..."
                                            Visibility="{Binding AiChatInputPlaceholderVisibility}" />
                             </Grid>
@@ -1275,8 +1277,8 @@
                                     </ControlTemplate>
                                 </Button.Template>
                                 <TextBlock Text="➜"
-                                           Foreground="White"
-                                           FontSize="18"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeSubtitle}"
                                            FontWeight="SemiBold"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center" />
@@ -1292,14 +1294,14 @@
                         </Grid.ColumnDefinitions>
 
                         <TextBlock Text="Tab 切换标签 · Shift+Enter 换行 · Esc 返回搜索"
-                                   Foreground="#FF7F7F7F"
-                                   FontSize="12"
+                                   Foreground="{DynamicResource BrushTextMuted}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
                                    VerticalAlignment="Center" />
 
                         <TextBlock Grid.Column="1"
                                    Text="{Binding AiChatStatusText}"
-                                   Foreground="#FF7F7F7F"
-                                   FontSize="12"
+                                   Foreground="{DynamicResource BrushTextMuted}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
                                    VerticalAlignment="Center" />
                     </Grid>
                 </Grid>
@@ -1308,7 +1310,7 @@
             <Border Grid.Row="1"
                     Margin="16,10,16,8"
                     Padding="18"
-                    Background="#F11B1B1B"
+                    Background="{DynamicResource BrushDialogBG}"
                     BorderBrush="#FF323232"
                     BorderThickness="1"
                     CornerRadius="14"
@@ -1331,11 +1333,11 @@
                         <Button Grid.Column="0"
                                 Width="34"
                                 Height="34"
-                                Background="#FF262626"
-                                BorderBrush="#FF363636"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
                                 BorderThickness="1"
-                                Foreground="White"
-                                FontSize="14"
+                                Foreground="{DynamicResource BrushTextMain}"
+                                FontSize="{DynamicResource FontSizeNormalPlus}"
                                 Click="CloseHostedViewButton_Click">
                             <TextBlock Text="←"
                                        HorizontalAlignment="Center"
@@ -1344,25 +1346,25 @@
 
                         <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
                             <TextBlock Text="{Binding HostedViewTitle}"
-                                       Foreground="White"
-                                       FontSize="18"
+                                       Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeSubtitle}"
                                        FontWeight="SemiBold" />
                             <TextBlock Text="{Binding HostedViewSubtitle}"
                                        Foreground="#FF8A8A8A"
-                                       FontSize="12"
+                                       FontSize="{DynamicResource FontSizeSmallPlus}"
                                        Margin="0,3,0,0" />
                         </StackPanel>
 
                         <Border Grid.Column="2"
-                                Background="#FF262626"
-                                BorderBrush="#FF363636"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
                                 BorderThickness="1"
                                 CornerRadius="8"
                                 Padding="10,5"
                                 VerticalAlignment="Center">
                             <TextBlock Text="{Binding HostedViewCommandLabel}"
-                                       Foreground="#FFB6B6B6"
-                                       FontSize="11" />
+                                       Foreground="{DynamicResource BrushTextSec}"
+                                       FontSize="{DynamicResource FontSizeSmall}" />
                         </Border>
                     </Grid>
 
@@ -1374,7 +1376,7 @@
                         </Grid.ColumnDefinitions>
 
                         <Border Grid.Column="0"
-                                Background="#FF202020"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
                                 BorderBrush="#FF2E2E2E"
                                 BorderThickness="1"
                                 CornerRadius="12"
@@ -1386,8 +1388,8 @@
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Text="{Binding HostedViewInputLabel}"
-                                           Foreground="White"
-                                           FontSize="13"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold" />
 
                                 <Grid Grid.Row="1" Margin="0,10,0,0">
@@ -1396,19 +1398,19 @@
                                              AcceptsReturn="True"
                                              VerticalScrollBarVisibility="Auto"
                                              TextWrapping="Wrap"
-                                             Background="#FF171717"
+                                             Background="{DynamicResource BrushBG}"
                                              BorderBrush="#FF2E2E2E"
                                              BorderThickness="1"
-                                             Foreground="White"
+                                             Foreground="{DynamicResource BrushTextMain}"
                                              CaretBrush="#FF3B82F6"
                                              Padding="12"
-                                             FontSize="14"
+                                             FontSize="{DynamicResource FontSizeNormalPlus}"
                                              TextChanged="HostedViewInputBox_TextChanged" />
 
                                     <TextBlock IsHitTestVisible="False"
                                                Margin="14,12,14,0"
                                                VerticalAlignment="Top"
-                                               Foreground="#FF555555"
+                                               Foreground="{DynamicResource BrushTextMuted}"
                                                Text="{Binding HostedViewInputPlaceholder}"
                                                TextWrapping="Wrap">
                                         <TextBlock.Style>
@@ -1427,7 +1429,7 @@
                         </Border>
 
                         <Border Grid.Column="2"
-                                Background="#FF202020"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
                                 BorderBrush="#FF2E2E2E"
                                 BorderThickness="1"
                                 CornerRadius="12"
@@ -1439,13 +1441,13 @@
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Text="{Binding HostedViewOutputLabel}"
-                                           Foreground="White"
-                                           FontSize="13"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold" />
 
                                 <Border Grid.Row="1"
                                         Margin="0,10,0,0"
-                                        Background="#FF171717"
+                                        Background="{DynamicResource BrushBG}"
                                         BorderBrush="#FF2E2E2E"
                                         BorderThickness="1"
                                         CornerRadius="10"
@@ -1461,7 +1463,7 @@
                                              Foreground="#FFE5E5E5"
                                              CaretBrush="#FF3B82F6"
                                              Padding="0"
-                                             FontSize="14" />
+                                             FontSize="{DynamicResource FontSizeNormalPlus}" />
                                 </Border>
                             </Grid>
                         </Border>
@@ -1480,17 +1482,17 @@
 
                         <TextBlock Text="{Binding HostedViewStatus}"
                                    Foreground="#FF818181"
-                                   FontSize="12"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
                                    VerticalAlignment="Center"
                                    Margin="2,0,14,0" />
 
                         <Button Grid.Column="1"
                                 Content="{Binding HostedViewActionButtonText}"
                                 Background="#FF2563EB"
-                                Foreground="White"
+                                Foreground="{DynamicResource BrushTextMain}"
                                 BorderThickness="0"
                                 Padding="18,10"
-                                FontSize="13"
+                                FontSize="{DynamicResource FontSizeNormal}"
                                 FontWeight="SemiBold"
                                 Click="HostedViewRunButton_Click"
                                 Visibility="{Binding HostedViewFooterActionVisibility}" />
@@ -1500,8 +1502,8 @@
 
             <!-- 3. Footer -->
             <Border Grid.Row="2"
-                    Background="#FF161616"
-                    CornerRadius="0,0,16,16"
+                    Background="{DynamicResource BrushBG}"
+                    CornerRadius="0"
                     Padding="20,10"
                     Visibility="{Binding NormalLauncherVisibility}">
                 <Grid>
@@ -1519,46 +1521,45 @@
                                 PreviewDragEnter="FooterAddExtensionButton_DragEnter"
                                 PreviewDragOver="FooterAddExtensionButton_DragOver"
                                 PreviewDrop="FooterAddExtensionButton_Drop"
-                                Style="{StaticResource QuickMenuButtonStyle}">
+                                Style="{DynamicResource GhostButtonStyle}">
                             <Viewbox Width="14"
                                      Height="14"
                                      HorizontalAlignment="Center"
                                      VerticalAlignment="Center"
                                      Stretch="Uniform">
                                 <Canvas Width="1024" Height="1024">
-                                    <Path Data="{local:IconGeometry plus}"
-                                          Fill="#FFE5E7EB" />
+                                    <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" />
                                 </Canvas>
                             </Viewbox>
                         </Button>
                         <Button x:Name="FooterQuickMenuButton"
                                 Width="32"
                                 Height="32"
+                                Padding="0"
                                 Margin="0,0,12,0"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Click="FooterQuickMenuButton_Click"
-                                Style="{StaticResource QuickMenuButtonStyle}">
-                            <Path Data="{local:IconGeometry menu}" 
-                                  Fill="#FF888888" Height="14" Width="14" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                Style="{DynamicResource GhostButtonStyle}">
+                            <Path Data="{local:IconGeometry dots-horizontal}" Fill="{DynamicResource BrushTextMain}" Height="14" Width="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
                     </StackPanel>
                     
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <TextBlock x:Name="FooterMenuHintText"
                                    Text="右箭头菜单"
-                                   Foreground="#FF888888"
-                                   FontSize="12"
+                                   Foreground="{DynamicResource BrushTextSec}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
                                    VerticalAlignment="Center"/>
-                        <Border Background="#FF282828"
+                        <Border Background="{DynamicResource BrushBG}"
                                 CornerRadius="3"
                                 Padding="6,2"
                                 Margin="8,0,0,0"
                                 VerticalAlignment="Center">
                             <TextBlock x:Name="FooterMenuHintKeyText"
                                        Text="→"
-                                       Foreground="#FF888888"
-                                       FontSize="10"/>
+                                       Foreground="{DynamicResource BrushTextSec}"
+                                       FontSize="{DynamicResource FontSizeTiny}"/>
                         </Border>
                     </StackPanel>
 
@@ -1570,8 +1571,8 @@
                            StaysOpen="False">
                         <Border Width="280"
                                 Margin="0,0,0,16"
-                                Background="#F21A1A1A"
-                                BorderBrush="#25FFFFFF"
+                                Background="{DynamicResource BrushDialogBG}"
+                                BorderBrush="{DynamicResource BrushBorder}"
                                 BorderThickness="1"
                                 CornerRadius="14">
                             <Border.Effect>
@@ -1581,87 +1582,87 @@
                                 <!-- Header Section -->
                                 <StackPanel Margin="10,6,10,12">
                                     <TextBlock Text="快捷操作"
-                                               Foreground="White"
-                                               FontSize="15"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeLarge}"
                                                FontWeight="SemiBold"/>
                                     <TextBlock Text="快速执行常用动作，无需搜索。"
-                                               Foreground="#99FFFFFF"
-                                               FontSize="11"
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0"
                                                TextWrapping="Wrap"/>
                                 </StackPanel>
 
-                                <Separator Background="#12FFFFFF" Margin="6,0,6,8"/>
+                                <Separator Background="{DynamicResource BrushSeparator}" Margin="6,0,6,8"/>
 
-                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                <Button Style="{DynamicResource GhostButtonStyle}"
                                         ToolTip="把程序内置技能组复制到外部文件夹进行编辑或备份"
-                                        Click="QuickMenuInstallSkill_Click">
+                                        HorizontalContentAlignment="Stretch" Click="QuickMenuInstallSkill_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="42" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <Path Data="{local:IconGeometry skill-export}"
-                                              Stroke="White" StrokeThickness="1.4" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.9"/>
+                                              Stroke="{DynamicResource BrushTextMain}" StrokeThickness="1.4" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.9"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="导出 Skill" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="导出 Skill" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
                                         </StackPanel>
                                     </Grid>
                                 </Button>
 
-                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                <Button Style="{DynamicResource GhostButtonStyle}"
                                         ToolTip="进入设置页调整程序同步、外观及各项偏好"
-                                        Click="QuickMenuOpenSettings_Click">
+                                        HorizontalContentAlignment="Stretch" Click="QuickMenuOpenSettings_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="42" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <Path Data="{local:IconGeometry settings}" 
-                                              Fill="#D0FFFFFF" Height="18" Width="18" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                              Fill="{DynamicResource BrushTextMain}" Height="18" Width="18" Stretch="Uniform" HorizontalAlignment="Center"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="设置" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="设置" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
                                         </StackPanel>
                                     </Grid>
                                 </Button>
 
-                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                <Button Style="{DynamicResource GhostButtonStyle}"
                                         ToolTip="强制重新同步当前账户下的云端扩展状态"
-                                        Click="QuickMenuRefreshCloud_Click">
+                                        HorizontalContentAlignment="Stretch" Click="QuickMenuRefreshCloud_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="42" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <Path Data="{local:IconGeometry refresh}" 
-                                              Stroke="White" StrokeThickness="1.5" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.9"/>
+                                              Stroke="{DynamicResource BrushTextMain}" StrokeThickness="1.5" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.9"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="刷新云端" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="刷新云端" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
                                         </StackPanel>
                                     </Grid>
                                 </Button>
 
-                                <Rectangle Height="1" Fill="#15FFFFFF" Margin="6,10" />
+                                <Rectangle Height="1" Fill="{DynamicResource BrushSeparator}" Margin="6,10" />
 
-                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                <Button Style="{DynamicResource GhostButtonStyle}"
                                         ToolTip="打开本地使用说明与扩展开发参考文档"
-                                        Click="QuickMenuOpenDocs_Click">
+                                        HorizontalContentAlignment="Stretch" Click="QuickMenuOpenDocs_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="42" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <Path Data="{local:IconGeometry help-docs}" 
-                                              Stroke="#CCFFFFFF" StrokeThickness="1.2" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                              Stroke="{DynamicResource BrushTextMain}" StrokeThickness="1.2" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="帮助文档" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="帮助文档" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
                                         </StackPanel>
                                     </Grid>
                                 </Button>
 
-                                <Button Style="{StaticResource QuickMenuButtonStyle}"
+                                <Button Style="{DynamicResource GhostButtonStyle}"
                                         ToolTip="查看 燕子 (Swallow) 的版本信息与产品声明"
-                                        Click="QuickMenuOpenAbout_Click">
+                                        HorizontalContentAlignment="Stretch" Click="QuickMenuOpenAbout_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="42" />
@@ -1669,9 +1670,9 @@
                                         </Grid.ColumnDefinitions>
                                         <!-- Stylized Swallow Bird Icon -->
                                         <Path Data="{local:IconGeometry about}" 
-                                              Fill="#60A5FA" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                              Fill="{DynamicResource BrushAccent}" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="关于燕子" Foreground="#F0FFFFFF" FontSize="13" FontWeight="Medium"/>
+                                            <TextBlock Text="关于燕子" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
                                         </StackPanel>
                                     </Grid>
                                 </Button>

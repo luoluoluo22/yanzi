@@ -56,9 +56,9 @@ public class MobileAccessibilityService extends AccessibilityService {
                         Bitmap bitmap = hardwareBitmap.copy(Bitmap.Config.ARGB_8888, false);
                         int width = bitmap.getWidth();
                         int height = bitmap.getHeight();
-                        Bitmap output = scaleDown(bitmap, 1600);
+                        Bitmap output = scaleDown(bitmap, 900);
                         ByteArrayOutputStream stream = new ByteArrayOutputStream();
-                        output.compress(Bitmap.CompressFormat.JPEG, 86, stream);
+                        output.compress(Bitmap.CompressFormat.JPEG, 55, stream);
                         String base64 = Base64.getEncoder().encodeToString(stream.toByteArray());
                         callback.onSuccess(base64, width, height);
                         if (output != bitmap) {

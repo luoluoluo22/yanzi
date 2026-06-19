@@ -9,9 +9,9 @@
         PreviewKeyDown="Window_PreviewKeyDown"
         PreviewKeyUp="Window_PreviewKeyUp">
     <Border Margin="1"
-            CornerRadius="12"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            CornerRadius="0"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1">
         <Grid Margin="25">
             <Grid.RowDefinitions>
@@ -35,14 +35,14 @@
                     Margin="0,20,0,0"
                     Height="52"
                     CornerRadius="8"
-                    Background="#FF1E1E1E"
-                    BorderBrush="#FF3B82F6"
+                    Background="{DynamicResource BrushInputBG}"
+                    BorderBrush="{DynamicResource BrushAccent}"
                     BorderThickness="1">
                 <Grid>
                     <TextBlock x:Name="CapturedHotkeyText"
                                Text="请直接按下新的组合键"
-                               Foreground="White"
-                               FontSize="15"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               FontSize="{DynamicResource FontSizeLarge}"
                                FontWeight="SemiBold"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"/>
@@ -51,17 +51,13 @@
 
             <StackPanel Grid.Row="3" Margin="0,14,0,0">
                 <TextBlock Text="显示名称"
-                           Foreground="White"
-                           FontSize="13"
+                           Foreground="{DynamicResource BrushTextMain}"
+                           FontSize="{DynamicResource FontSizeNormal}"
                            FontWeight="SemiBold" />
                 <TextBox x:Name="DisplayNameTextBox"
                          Margin="0,8,0,0"
                          Height="34"
-                         Background="#FF1E1E1E"
-                         Foreground="White"
-                         BorderBrush="#33FFFFFF"
-                         BorderThickness="1"
-                         CaretBrush="White"
+                         VerticalContentAlignment="Center"
                          TextChanged="DisplayNameTextBox_TextChanged" />
             </StackPanel>
 
@@ -77,7 +73,7 @@
                            Grid.Column="0"
                            VerticalAlignment="Center"
                            Foreground="#FFEF4444"
-                           FontSize="12"
+                           FontSize="{DynamicResource FontSizeSmallPlus}"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
                 <Button Grid.Column="1"

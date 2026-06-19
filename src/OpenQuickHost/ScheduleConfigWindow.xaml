@@ -198,7 +198,7 @@
     </Window.Resources>
 
     <Border Margin="1"
-            CornerRadius="12"
+            CornerRadius="0"
             Background="#F2161616"
             BorderBrush="#22FFFFFF"
             BorderThickness="1">
@@ -211,8 +211,8 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="定时运行" Foreground="White" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="按设定的时间周期自动运行此扩展" Foreground="#FF6B7280" FontSize="11" Margin="0,3,0,0"/>
+                    <TextBlock Text="定时运行" Foreground="White" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold"/>
+                    <TextBlock Text="按设定的时间周期自动运行此扩展" Foreground="#FF6B7280" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
                 </StackPanel>
                 <CheckBox Grid.Column="1"
                           x:Name="EnableToggle"
@@ -229,7 +229,7 @@
                 <Rectangle Height="1" Fill="#FF232323" Margin="0,0,0,18"/>
 
                 <!-- ── 调度模式 ── -->
-                <TextBlock Text="调度模式" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <TextBlock Text="调度模式" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <Grid Margin="0,0,0,18">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -237,10 +237,10 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Border x:Name="ModeSimpBtn" Grid.Column="0" Style="{StaticResource SegBtnBase}" MouseLeftButtonDown="ModeSimpBtn_Click">
-                        <TextBlock x:Name="ModeSimpText" Text="简单设置" FontSize="13" FontWeight="Medium" Foreground="White" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="ModeSimpText" Text="简单设置" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium" Foreground="White" HorizontalAlignment="Center"/>
                     </Border>
                     <Border x:Name="ModeCronBtn" Grid.Column="2" Style="{StaticResource SegBtnBase}" MouseLeftButtonDown="ModeCronBtn_Click">
-                        <TextBlock x:Name="ModeCronText" Text="Cron 表达式" FontSize="13" FontWeight="Medium" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="ModeCronText" Text="Cron 表达式" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                     </Border>
                 </Grid>
 
@@ -248,87 +248,87 @@
                 <StackPanel x:Name="SimpleModePanel">
 
                     <!-- ── 频率 ── -->
-                    <TextBlock Text="运行频率" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                    <TextBlock Text="运行频率" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                     <WrapPanel Margin="0,0,0,18">
                         <Border x:Name="FreqMinBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="min">
-                            <TextBlock Text="按分钟" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                            <TextBlock Text="按分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                         </Border>
                         <Border x:Name="FreqHourBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="hour">
-                            <TextBlock Text="按小时" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                            <TextBlock Text="按小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                         </Border>
                         <Border x:Name="FreqDailyBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="daily">
-                            <TextBlock Text="每天" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                            <TextBlock Text="每天" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                         </Border>
                         <Border x:Name="FreqWeekBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="week">
-                            <TextBlock Text="每周" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                            <TextBlock Text="每周" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                         </Border>
                         <Border x:Name="FreqMonthBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="month">
-                            <TextBlock Text="每月" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                            <TextBlock Text="每月" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                         </Border>
                     </WrapPanel>
 
                     <!-- ── 按分钟 ── -->
                     <StackPanel x:Name="MinutePanel" Visibility="Collapsed" Margin="0,0,0,18">
-                        <TextBlock Text="间隔" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <TextBlock Text="间隔" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <WrapPanel Margin="0,0,0,10">
                             <Border x:Name="Min5Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="5">
-                                <TextBlock Text="5 分钟" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="5 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                             <Border x:Name="Min10Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="10">
-                                <TextBlock Text="10 分钟" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="10 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                             <Border x:Name="Min15Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="15">
-                                <TextBlock Text="15 分钟" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="15 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                             <Border x:Name="Min30Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="30">
-                                <TextBlock Text="30 分钟" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="30 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                             <Border x:Name="Min45Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="45">
-                                <TextBlock Text="45 分钟" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="45 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                         </WrapPanel>
                         <!-- 自定义分钟输入 -->
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="自定义：" Foreground="#FF8E8E8E" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="自定义：" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBox x:Name="CustomMinuteBox" Width="60" Height="32" Padding="8,6"
-                                     FontSize="13" TextChanged="CustomMinuteBox_TextChanged"
+                                     FontSize="{DynamicResource FontSizeNormal}" TextChanged="CustomMinuteBox_TextChanged"
                                      ToolTip="输入 1-59 之间的数字"/>
-                            <TextBlock Text="分钟" Foreground="#FF8E8E8E" FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            <TextBlock Text="分钟" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="6,0,0,0"/>
                         </StackPanel>
                     </StackPanel>
 
                     <!-- ── 按小时 ── -->
                     <StackPanel x:Name="HourPanel" Visibility="Collapsed" Margin="0,0,0,18">
-                        <TextBlock Text="间隔" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <TextBlock Text="间隔" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <WrapPanel>
                             <Border x:Name="Hr1Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="1">
-                                <TextBlock Text="1 小时" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="1 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                             <Border x:Name="Hr2Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="2">
-                                <TextBlock Text="2 小时" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="2 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                             <Border x:Name="Hr3Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="3">
-                                <TextBlock Text="3 小时" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="3 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                             <Border x:Name="Hr4Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="4">
-                                <TextBlock Text="4 小时" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="4 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                             <Border x:Name="Hr6Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="6">
-                                <TextBlock Text="6 小时" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="6 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                             <Border x:Name="Hr12Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="12">
-                                <TextBlock Text="12 小时" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
+                                <TextBlock Text="12 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center"/>
                             </Border>
                         </WrapPanel>
                     </StackPanel>
 
                     <!-- ── 每天 ── -->
                     <StackPanel x:Name="DailyPanel" Visibility="Collapsed" Margin="0,0,0,18">
-                        <TextBlock Text="时间" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <TextBlock Text="时间" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <Border Background="#FF1A1A1A" BorderBrush="#FF2E2E2E" BorderThickness="1" CornerRadius="8" Padding="16,0" Height="44">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ComboBox x:Name="DailyHourBox" Width="64" Height="32" IsEditable="True" SelectionChanged="TimeChanged" LostFocus="EditableCombo_LostFocus"/>
-                                <TextBlock Text=" : " Foreground="#FF8E8E8E" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
+                                <TextBlock Text=" : " Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeLargePlus}" VerticalAlignment="Center" Margin="4,0"/>
                                 <ComboBox x:Name="DailyMinBox" Width="64" Height="32" IsEditable="True" SelectionChanged="TimeChanged" LostFocus="EditableCombo_LostFocus"/>
                             </StackPanel>
                         </Border>
@@ -336,35 +336,35 @@
 
                     <!-- ── 每周 ── -->
                     <StackPanel x:Name="WeeklyPanel" Visibility="Collapsed" Margin="0,0,0,18">
-                        <TextBlock Text="星期" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <TextBlock Text="星期" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <WrapPanel Margin="0,0,0,14">
                             <Border x:Name="DowMon" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="1">
-                                <TextBlock Text="一" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="一" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <Border x:Name="DowTue" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="2">
-                                <TextBlock Text="二" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="二" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <Border x:Name="DowWed" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="3">
-                                <TextBlock Text="三" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="三" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <Border x:Name="DowThu" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="4">
-                                <TextBlock Text="四" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="四" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <Border x:Name="DowFri" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="5">
-                                <TextBlock Text="五" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="五" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <Border x:Name="DowSat" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="6">
-                                <TextBlock Text="六" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="六" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <Border x:Name="DowSun" Style="{StaticResource DowChipBase}" Margin="0,0,0,0" MouseLeftButtonDown="DowChip_Click" Tag="7">
-                                <TextBlock Text="日" FontSize="12" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="日" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="#FF8E8E8E" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </WrapPanel>
-                        <TextBlock Text="时间" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <TextBlock Text="时间" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <Border Background="#FF1A1A1A" BorderBrush="#FF2E2E2E" BorderThickness="1" CornerRadius="8" Padding="16,0" Height="44">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ComboBox x:Name="WeeklyHourBox" Width="64" Height="32" IsEditable="True" SelectionChanged="TimeChanged" LostFocus="EditableCombo_LostFocus"/>
-                                <TextBlock Text=" : " Foreground="#FF8E8E8E" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
+                                <TextBlock Text=" : " Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeLargePlus}" VerticalAlignment="Center" Margin="4,0"/>
                                 <ComboBox x:Name="WeeklyMinBox" Width="64" Height="32" IsEditable="True" SelectionChanged="TimeChanged" LostFocus="EditableCombo_LostFocus"/>
                             </StackPanel>
                         </Border>
@@ -372,13 +372,13 @@
 
                     <!-- ── 每月 ── -->
                     <StackPanel x:Name="MonthlyPanel" Visibility="Collapsed" Margin="0,0,0,18">
-                        <TextBlock Text="日期（每月第几天）" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <TextBlock Text="日期（每月第几天）" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <WrapPanel Margin="0,0,0,14" x:Name="MonthDayWrap"/>
-                        <TextBlock Text="时间" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <TextBlock Text="时间" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <Border Background="#FF1A1A1A" BorderBrush="#FF2E2E2E" BorderThickness="1" CornerRadius="8" Padding="16,0" Height="44">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ComboBox x:Name="MonthlyHourBox" Width="64" Height="32" IsEditable="True" SelectionChanged="TimeChanged" LostFocus="EditableCombo_LostFocus"/>
-                                <TextBlock Text=" : " Foreground="#FF8E8E8E" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
+                                <TextBlock Text=" : " Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeLargePlus}" VerticalAlignment="Center" Margin="4,0"/>
                                 <ComboBox x:Name="MonthlyMinBox" Width="64" Height="32" IsEditable="True" SelectionChanged="TimeChanged" LostFocus="EditableCombo_LostFocus"/>
                             </StackPanel>
                         </Border>
@@ -387,25 +387,25 @@
 
                 <!-- ═══════ CRON PANEL ═══════ -->
                 <StackPanel x:Name="CronModePanel" Visibility="Collapsed" Margin="0,0,0,18">
-                    <TextBlock Text="Cron 表达式" Foreground="#FF8E8E8E" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                    <TextBox x:Name="CronBox" Height="44" Padding="14,12" FontFamily="Consolas" FontSize="14" TextChanged="CronBox_TextChanged"
+                    <TextBlock Text="Cron 表达式" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                    <TextBox x:Name="CronBox" Height="44" Padding="14,12" FontFamily="Consolas" FontSize="{DynamicResource FontSizeNormalPlus}" TextChanged="CronBox_TextChanged"
                              ToolTip="例：0 9 * * * 表示每天 09:00"/>
-                    <TextBlock Text="格式：分 时 日 月 周  （* 表示任意）" Foreground="#FF555555" FontSize="11" Margin="0,6,0,0"/>
+                    <TextBlock Text="格式：分 时 日 月 周  （* 表示任意）" Foreground="#FF555555" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
                     <WrapPanel Margin="0,10,0,0">
                         <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="*/30 * * * *">
-                            <TextBlock Text="每30分钟" FontSize="11" Foreground="#FF8E8E8E"/>
+                            <TextBlock Text="每30分钟" FontSize="{DynamicResource FontSizeSmall}" Foreground="#FF8E8E8E"/>
                         </Border>
                         <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 * * * *">
-                            <TextBlock Text="每小时" FontSize="11" Foreground="#FF8E8E8E"/>
+                            <TextBlock Text="每小时" FontSize="{DynamicResource FontSizeSmall}" Foreground="#FF8E8E8E"/>
                         </Border>
                         <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 9 * * *">
-                            <TextBlock Text="每天9点" FontSize="11" Foreground="#FF8E8E8E"/>
+                            <TextBlock Text="每天9点" FontSize="{DynamicResource FontSizeSmall}" Foreground="#FF8E8E8E"/>
                         </Border>
                         <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 9 * * 1-5">
-                            <TextBlock Text="工作日9点" FontSize="11" Foreground="#FF8E8E8E"/>
+                            <TextBlock Text="工作日9点" FontSize="{DynamicResource FontSizeSmall}" Foreground="#FF8E8E8E"/>
                         </Border>
                         <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 9 1 * *">
-                            <TextBlock Text="每月1日" FontSize="11" Foreground="#FF8E8E8E"/>
+                            <TextBlock Text="每月1日" FontSize="{DynamicResource FontSizeSmall}" Foreground="#FF8E8E8E"/>
                         </Border>
                     </WrapPanel>
                 </StackPanel>
@@ -415,8 +415,8 @@
                         Background="#0D3B82F6" BorderBrush="#1A3B82F6" BorderThickness="1"
                         CornerRadius="8" Padding="14,10" Margin="0,0,0,18" Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="✅  " Foreground="#FF3B82F6" FontSize="13" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="PreviewText" Foreground="#FFD1D5DB" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        <TextBlock Text="✅  " Foreground="#FF3B82F6" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="PreviewText" Foreground="#FFD1D5DB" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -429,7 +429,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="ErrorText" Grid.Column="0" VerticalAlignment="Center"
-                           Foreground="#FFEF4444" FontSize="12" TextWrapping="Wrap" Visibility="Collapsed"/>
+                           Foreground="#FFEF4444" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Visibility="Collapsed"/>
                 <Button Grid.Column="1" Content="取消" Style="{StaticResource SecondaryBtn}" Width="90" Margin="0,0,10,0" Click="CancelButton_Click"/>
                 <Button Grid.Column="2" Content="确认" Style="{StaticResource PrimaryBtn}" Width="90" Click="OkButton_Click"/>
             </Grid>

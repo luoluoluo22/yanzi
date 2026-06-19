@@ -63,10 +63,25 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import java.net.ServerSocket;
+import java.net.Socket;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+
+import java.net.ServerSocket;
+import java.net.Socket;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+
 public class FloatingWheelService extends Service {
+    private static Context sContext;
+
     private static final String TAG = "YanziFloatingWheel";
     private static final String YANZI_SITE_URL = "https://yanzi.luoluoluo.cc.cd";
     private static final String DEFAULT_BASE_URL = "https://sync.luoluoluo.cc.cd";
+    private static final String CLOUD_USER_AGENT = "YanziClient-Mobile/0.1.0";
     public static final String ACTION_OPEN_WHEEL_FROM_GESTURE = "cc.luoluoluo.yanzi.mobile.OPEN_WHEEL_FROM_GESTURE";
     private static final int BUBBLE_SIZE_DP = 58;
     private static final int BUBBLE_PADDING_DP = 12;
@@ -94,6 +109,8 @@ public class FloatingWheelService extends Service {
     private boolean bubbleDragging;
     private boolean bubbleMoveMode;
     private boolean wheelTracking;
+    private ServerSocket notificationServerSocket;
+    private Thread notificationThread;
     private boolean ignoreBubbleGestureUntilUp;
     private Runnable pendingLongPress;
     private Runnable pendingSlotMenu;
@@ -126,68 +143,6 @@ public class FloatingWheelService extends Service {
         }
     }
 
-    private static final class MobileIconLibrary {
-        private static final Map<String, String> ICONS = new HashMap<>();
-        private static final Map<String, String> ALIASES = new HashMap<>();
-        private static final Map<String, Path> CACHE = new HashMap<>();
-
-        static {
-            ICONS.put("chat", "M4,4H20A2,2 0,0 1,22 6V15A2,2 0,0 1,20 17H7L3,21V6A2,2 0,0 1,4 4Z");
-            ICONS.put("camera", "M4,4H7L9,2H15L17,4H20A2,2 0,0 1,22 6V18A2,2 0,0 1,20 20H4A2,2 0,0 1,2 18V6A2,2 0,0 1,4 4M12,17A5,5 0,1 0,12 7A5,5 0,0 0,12 17M12,15A3,3 0,1 1,12 9A3,3 0,0 1,12 15Z");
-            ICONS.put("image", "M21,19V5A2,2 0,0 0,19 3H5A2,2 0,0 0,3 5V19A2,2 0,0 0,5 21H19A2,2 0,0 0,21 19M8.5,11A1.5,1.5 0,1 1,10 9.5A1.5,1.5 0,0 1,8.5 11M5,19L9,14L12,17L16,12L19,16V19H5Z");
-            ICONS.put("globe", "M12,2A10,10 0,1 0,22 12A10,10 0,0 0,12 2M4,12A8,8 0,0 1,12 4C10.44,6.22 9.5,8.97 9.5,12C9.5,15.03 10.44,17.78 12,20A8,8 0,0 1,4 12M12,20C13.56,17.78 14.5,15.03 14.5,12C14.5,8.97 13.56,6.22 12,4A8,8 0,0 1,20 12A8,8 0,0 1,12 20M11.5,6.05C10.54,7.85 10,9.86 10,12C10,14.14 10.54,16.15 11.5,17.95C12.46,16.15 13,14.14 13,12C13,9.86 12.46,7.85 11.5,6.05Z");
-            ICONS.put("clipboard", "M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0,0 0,3 5V19A2,2 0,0 0,5 21H19A2,2 0,0 0,21 19V5A2,2 0,0 0,19 3M12,3A1,1 0,0 1,13 4A1,1 0,0 1,12 5A1,1 0,0 1,11 4A1,1 0,0 1,12 3M19,19H5V5H19V19Z");
-            ICONS.put("dashboard", "M3,13H11V3H3V13M3,21H11V15H3V21M13,21H21V11H13V21M13,3V9H21V3H13Z");
-            ICONS.put("plus", "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z");
-            ICONS.put("file", "M14,2H6A2,2 0,0 0,4 4V20A2,2 0,0 0,6 22H18A2,2 0,0 0,20 20V8L14 2Z");
-            ICONS.put("folder", "M10,4H2C0.89,4 0,4.89 0,6V18A2,2 0,0 0,2 20H22A2,2 0,0 0,24 18V8C24,6.89 23.1,6 22,6H12L10,4Z");
-            ICONS.put("code", "M8.59,16.59L4,12L8.59,7.41L10,8.83L6.83,12L10,15.17L8.59,16.59M15.41,16.59L14,15.17L17.17,12L14,8.83L15.41,7.41L20,12L15.41,16.59Z");
-            ICONS.put("settings", "M12,8A4,4 0,0 1,16 12A4,4 0,0 1,12 16A4,4 0,0 1,8 12A4,4 0,0 1,12 8M10,22C9.75,22 9.54,21.82 9.5,21.58L9.13,18.93C8.5,18.68 7.96,18.34 7.44,17.94L4.95,18.95C4.73,19.03 4.46,18.95 4.34,18.73L2.34,15.27C2.21,15.05 2.27,14.78 2.46,14.63L4.57,12.97L4.5,12L4.57,11L2.46,9.37C2.27,9.22 2.21,8.95 2.34,8.73L4.34,5.27C4.46,5.05 4.73,4.96 4.95,5.05L7.44,6.05C7.96,5.66 8.5,5.32 9.13,5.07L9.5,2.42C9.54,2.18 9.75,2 10,2H14C14.25,2 14.46,2.18 14.5,2.42L14.87,5.07C15.5,5.32 16.04,5.66 16.56,6.05L19.05,5.05C19.27,4.96 19.54,5.05 19.66,5.27L21.66,8.73C21.79,8.95 21.73,9.22 21.54,9.37L19.43,11L19.5,12L19.43,13L21.54,14.63C21.73,14.78 21.79,15.05 21.66,15.27L19.66,18.73C19.54,18.95 19.27,19.04 19.05,18.95L16.56,17.95C16.04,18.34 15.5,18.68 14.87,18.93L14.5,21.58C14.46,21.82 14.25,22 14,22H10Z");
-
-            ALIASES.put("web", "globe");
-            ALIASES.put("content-copy", "clipboard");
-            ALIASES.put("monitor-dashboard", "dashboard");
-            ALIASES.put("view-dashboard-outline", "dashboard");
-            ALIASES.put("cellphone-arrow-down", "chat");
-            ALIASES.put("file-search-outline", "file");
-            ALIASES.put("file-document-edit-outline", "file");
-            ALIASES.put("folder-search-outline", "folder");
-            ALIASES.put("folder-cog-outline", "folder");
-            ALIASES.put("code-tags", "code");
-            ALIASES.put("code-json", "code");
-            ALIASES.put("cog-outline", "settings");
-        }
-
-        static Path resolve(String reference) {
-            String key = normalize(reference);
-            if (key.isEmpty()) {
-                return null;
-            }
-            if (CACHE.containsKey(key)) {
-                return CACHE.get(key);
-            }
-            String pathData = ICONS.get(key);
-            if (pathData == null) {
-                return null;
-            }
-            Path path = PathParser.createPathFromPathData(pathData);
-            CACHE.put(key, path);
-            return path;
-        }
-
-        private static String normalize(String reference) {
-            if (reference == null) {
-                return "";
-            }
-            String value = reference.trim();
-            if (value.startsWith("mdi:") || value.startsWith("app:")) {
-                value = value.substring(4);
-            }
-            value = value.toLowerCase(Locale.ROOT);
-            return ALIASES.containsKey(value) ? ALIASES.get(value) : value;
-        }
-    }
-
     private static final class BubbleGeometry {
         final int bubbleX;
         final int bubbleY;
@@ -204,11 +159,17 @@ public class FloatingWheelService extends Service {
         }
     }
 
+    public static boolean isRunning = false;
+
     @Override
     public void onCreate() {
         super.onCreate();
+        sContext = this;
+        isRunning = true;
+
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        startNotificationServer();
         showBubble();
     }
 
@@ -230,6 +191,11 @@ public class FloatingWheelService extends Service {
 
     @Override
     public void onDestroy() {
+        isRunning = false;
+        try {
+            if (notificationServerSocket != null) notificationServerSocket.close();
+            if (notificationThread != null) notificationThread.interrupt();
+        } catch (Exception e) {}
         removeView(wheelView);
         removeView(panelView);
         removeView(progressView);
@@ -398,6 +364,7 @@ public class FloatingWheelService extends Service {
         wheelView = wheel;
         currentSectorWheel = wheel;
         windowManager.addView(wheelView, params);
+        if (bubbleView != null) bubbleView.setAlpha(0.0f);
         showWheelActionButtons(geometry);
     }
 
@@ -878,6 +845,8 @@ public class FloatingWheelService extends Service {
                 drawItem(canvas, items[i], iconX, iconY, i == selectedIndex);
             }
 
+            fillPaint.setColor(Color.argb(204, 4, 12, 24));
+            canvas.drawArc(inner, start, TOTAL_SWEEP, true, fillPaint);
             strokePaint.setColor(Color.argb(180, 34, 211, 238));
             strokePaint.setStrokeWidth(dp(1));
             canvas.drawArc(inner, start, TOTAL_SWEEP, false, strokePaint);
@@ -1326,23 +1295,43 @@ public class FloatingWheelService extends Service {
             return;
         }
 
+        // 1. 关闭燕环圆环菜单和扩展面板
         closeOverlayUi();
-        showProgress("正在截图并发送...");
-        log("截图：开始调用无障碍截图。");
-        MobileAccessibilityService.captureJpegBase64(new MobileAccessibilityService.ScreenshotCallback() {
-            @Override
-            public void onSuccess(String jpegBase64, int width, int height) {
-                log("截图：无障碍截图成功，尺寸=" + width + "x" + height + "。");
-                sendScreenshotPayloadToDesktop(jpegBase64, width, height);
-            }
+        // 2. 彻底隐藏悬浮球气泡，确保背景无干扰
+        if (bubbleView != null) {
+            bubbleView.setVisibility(View.GONE);
+        }
 
-            @Override
-            public void onFailure(String message) {
-                hideProgress();
-                log("截图：无障碍截图失败，" + message);
-                toast("截图失败：" + message);
-            }
-        });
+        // 3. 延迟 350ms，给 WindowManager 移除窗口和系统 Surface 刷帧留出物理时间
+        mainHandler.postDelayed(() -> {
+            log("截图：开始调用无障碍截图。");
+            MobileAccessibilityService.captureJpegBase64(new MobileAccessibilityService.ScreenshotCallback() {
+                @Override
+                public void onSuccess(String jpegBase64, int width, int height) {
+                    log("截图：无障碍截图成功，尺寸=" + width + "x" + height + "。");
+                    // 截图完毕后，在主线程重新让悬浮球气泡显示，并弹出发送进度提示
+                    mainHandler.post(() -> {
+                        if (bubbleView != null) {
+                            bubbleView.setVisibility(View.VISIBLE);
+                        }
+                        showProgress("正在发送截图...");
+                    });
+                    sendScreenshotPayloadToDesktop(jpegBase64, width, height);
+                }
+
+                @Override
+                public void onFailure(String message) {
+                    // 截图失败，在主线程恢复悬浮球气泡
+                    mainHandler.post(() -> {
+                        if (bubbleView != null) {
+                            bubbleView.setVisibility(View.VISIBLE);
+                        }
+                    });
+                    log("截图：无障碍截图失败，" + message);
+                    toast("截图失败：" + message);
+                }
+            });
+        }, 350L);
     }
 
     private void sendTextToDesktop(String text) {
@@ -1372,30 +1361,25 @@ public class FloatingWheelService extends Service {
     private void sendScreenshotPayloadToDesktop(String jpegBase64, int width, int height) {
         executor.execute(() -> {
             try {
+                String baseUrl = normalizedBaseUrl();
                 String token = requireToken();
                 String deviceId = getOrCreateDeviceId();
                 byte[] imageBytes = Base64.getDecoder().decode(jpegBase64);
-                log("截图：准备上传 WebDAV，bytes=" + imageBytes.length + "。");
+                String cleanBase64 = jpegBase64.replaceAll("[\\s\\v]", "");
+                String screenshotDataUrl = "base64," + cleanBase64;
+                log("截图：准备发送，bytes=" + imageBytes.length + "。");
                 String messageId;
                 try {
-                    registerDevice(normalizedBaseUrl(), token, deviceId, buildDeviceName());
-                    log("截图：设备注册完成，正在读取 WebDAV 配置。");
-                    WebDavConfig webDav = fetchWebDavConfig(normalizedBaseUrl(), token);
-                    log("截图：WebDAV 配置读取完成，开始上传。");
-                    String remotePath = uploadScreenshotToWebDav(webDav, imageBytes);
-                    log("截图：WebDAV 上传完成，path=" + remotePath + "。");
-                    messageId = postScreenshotWebDavMessage(normalizedBaseUrl(), token, deviceId, remotePath, imageBytes.length, width, height);
+                    registerDevice(baseUrl, token, deviceId, buildDeviceName());
+                    messageId = sendScreenshotMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes, width, height);
                 } catch (Exception ex) {
                     if (!isUnauthorized(ex)) {
                         throw ex;
                     }
                     log("截图：Token 过期，刷新后重试。");
                     token = refreshToken();
-                    registerDevice(normalizedBaseUrl(), token, deviceId, buildDeviceName());
-                    WebDavConfig webDav = fetchWebDavConfig(normalizedBaseUrl(), token);
-                    String remotePath = uploadScreenshotToWebDav(webDav, imageBytes);
-                    log("截图：WebDAV 重试上传完成，path=" + remotePath + "。");
-                    messageId = postScreenshotWebDavMessage(normalizedBaseUrl(), token, deviceId, remotePath, imageBytes.length, width, height);
+                    registerDevice(baseUrl, token, deviceId, buildDeviceName());
+                    messageId = sendScreenshotMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes, width, height);
                 }
                 log("截图：消息已发送到云端，messageId=" + messageId + "。");
                 toast("截图已发送到电脑：" + messageId);
@@ -1406,6 +1390,10 @@ public class FloatingWheelService extends Service {
                 hideProgress();
             }
         });
+    }
+
+    private String sendScreenshotMessage(String baseUrl, String token, String deviceId, String screenshotDataUrl, byte[] imageBytes, int width, int height) throws Exception {
+        return postScreenshotDirectMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes.length, width, height);
     }
 
     private void openMain(String action) {
@@ -1486,6 +1474,7 @@ public class FloatingWheelService extends Service {
         cancelPendingSlotMenu();
         removeView(wheelView);
         wheelView = null;
+        if (bubbleView != null) bubbleView.setAlpha(1.0f);
         currentSectorWheel = null;
     }
 
@@ -1536,6 +1525,12 @@ public class FloatingWheelService extends Service {
         int v1Index = value.indexOf("/v1/");
         if (v1Index >= 0) {
             value = value.substring(0, v1Index);
+        }
+        if (value.endsWith("/health")) {
+            value = value.substring(0, value.length() - "/health".length());
+        }
+        if (value.contains("yanzi.luoluoluo.cc.cd")) {
+            value = DEFAULT_BASE_URL;
         }
         while (value.endsWith("/")) {
             value = value.substring(0, value.length() - 1);
@@ -1672,6 +1667,26 @@ public class FloatingWheelService extends Service {
         return postJson(baseUrl, "/v1/me/mobile/messages", payload, token).optString("messageId", "unknown");
     }
 
+    private static String postScreenshotDirectMessage(String baseUrl, String token, String sourceDeviceId, String screenshotDataUrl, int bytes, int width, int height) throws Exception {
+        JSONObject payload = new JSONObject()
+            .put("sourceDeviceId", sourceDeviceId)
+            .put("targetPlatform", "desktop")
+            .put("kind", "screenshot")
+            .put("title", "手机截图")
+            .put("text", "手机截图：" + width + "x" + height)
+            .put("payload", new JSONObject()
+                .put("source", "android-floating-wheel")
+                .put("sourceDeviceName", buildDeviceDisplayName())
+                .put("screenshotMime", "image/jpeg")
+                .put("screenshotWidth", width)
+                .put("screenshotHeight", height)
+                .put("screenshotBytes", bytes)
+                .put("screenshotDataUrl", screenshotDataUrl)
+                .put("expiresAt", System.currentTimeMillis() + 30L * 24L * 60L * 60L * 1000L)
+                .put("createdAt", System.currentTimeMillis()));
+        return postJson(baseUrl, "/v1/me/mobile/messages", payload, token).optString("messageId", "unknown");
+    }
+
     private static String postScreenshotWebDavMessage(String baseUrl, String token, String sourceDeviceId, String webDavPath, int bytes, int width, int height) throws Exception {
         JSONObject payload = new JSONObject()
             .put("sourceDeviceId", sourceDeviceId)
@@ -1700,7 +1715,7 @@ public class FloatingWheelService extends Service {
         config.username = json.optString("username", "");
         config.password = json.optString("password", "");
         if (!json.optBoolean("enabled", false) || config.username.trim().isEmpty() || config.password.trim().isEmpty()) {
-            throw new IllegalStateException("账号未配置可用的坚果云 WebDAV。");
+            throw new IllegalStateException("账号未配置可用的 WebDAV。");
         }
         return config;
     }
@@ -1770,37 +1785,85 @@ public class FloatingWheelService extends Service {
     }
 
     private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token) throws Exception {
-        URL url = new URL(baseUrl + path);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("POST");
-        connection.setConnectTimeout(15000);
-        connection.setReadTimeout(15000);
-        connection.setDoOutput(true);
-        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-        if (token != null && !token.trim().isEmpty()) {
-            connection.setRequestProperty("Authorization", "Bearer " + token);
+        if (shouldUseLan(path)) {
+            String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
+            if (lanBaseUrl != null) {
+                try {
+                    String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
+                    JSONObject result = doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, "POST", payload, 1500);
+                    handleLanSuccess("POST " + path);
+                    return result;
+                } catch (Exception e) {
+                    handleLanFailure("POST " + path, e);
+                }
+            }
         }
-        try (OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8)) {
-            writer.write(payload.toString());
-        }
-        int status = connection.getResponseCode();
-        String body = readBody(status >= 400 ? connection.getErrorStream() : connection.getInputStream());
-        if (status < 200 || status >= 300) {
-            throw new IllegalStateException("HTTP " + status + ": " + body);
-        }
-        return body.trim().isEmpty() ? new JSONObject() : new JSONObject(body);
+        return doRequest(baseUrl, path, token, "POST", payload, 15000);
     }
 
     private static JSONObject getJson(String baseUrl, String path, String token) throws Exception {
+        if (shouldUseLan(path)) {
+            String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
+            if (lanBaseUrl != null) {
+                try {
+                    String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
+                    JSONObject result = doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, "GET", null, 1500);
+                    handleLanSuccess("GET " + path);
+                    return result;
+                } catch (Exception e) {
+                    handleLanFailure("GET " + path, e);
+                }
+            }
+        }
+        return doRequest(baseUrl, path, token, "GET", null, 15000);
+    }
+
+    private static boolean shouldUseLan(String path) {
+        return !path.startsWith("/v1/auth/login");
+    }
+
+    private static void handleLanSuccess(String action) {
+        if (sContext != null) {
+            MobileDiagnostics.append(sContext, "局域网直连成功(" + action + ")");
+        }
+    }
+
+    private static void handleLanFailure(String action, Exception e) {
+        String message = e.getMessage() == null ? e.toString() : e.getMessage();
+        android.util.Log.w("FloatingWheelService", "LAN fallback failed: " + message);
+        if (sContext != null) {
+            MobileDiagnostics.append(sContext, "局域网直连失败(" + action + ")，已回退公网：" + message);
+            LanDiscoveryManager.clearLanBaseUrl(sContext);
+        } else {
+            LanDiscoveryManager.cachedLanBaseUrl = null;
+            LanDiscoveryManager.cachedLanApiToken = null;
+        }
+    }
+
+    private static JSONObject doRequest(String baseUrl, String path, String token, String method, JSONObject payload, int timeoutMs) throws Exception {
         URL url = new URL(baseUrl + path);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("GET");
-        connection.setConnectTimeout(15000);
-        connection.setReadTimeout(15000);
+        connection.setRequestMethod(method);
+        connection.setConnectTimeout(timeoutMs);
+        connection.setReadTimeout(timeoutMs);
+        connection.setRequestProperty("User-Agent", CLOUD_USER_AGENT);
         connection.setRequestProperty("Accept", "application/json");
+
+        if (payload != null) {
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        }
+
         if (token != null && !token.trim().isEmpty()) {
             connection.setRequestProperty("Authorization", "Bearer " + token);
         }
+
+        if (payload != null) {
+            try (OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8)) {
+                writer.write(payload.toString());
+            }
+        }
+
         int status = connection.getResponseCode();
         String body = readBody(status >= 400 ? connection.getErrorStream() : connection.getInputStream());
         if (status < 200 || status >= 300) {
@@ -1874,6 +1937,7 @@ public class FloatingWheelService extends Service {
         String auth = Base64.getEncoder().encodeToString((config.username + ":" + config.password).getBytes(StandardCharsets.UTF_8));
         connection.setRequestProperty("Authorization", "Basic " + auth);
         connection.setRequestProperty("Accept", "*/*");
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
         return connection;
     }
 
@@ -1928,5 +1992,78 @@ public class FloatingWheelService extends Service {
         String rootPath;
         String username;
         String password;
+    }
+
+    private void startNotificationServer() {
+        notificationThread = new Thread(() -> {
+            try {
+                notificationServerSocket = new ServerSocket(42981);
+                while (!Thread.currentThread().isInterrupted()) {
+                    Socket client = notificationServerSocket.accept();
+                    handleNotificationClient(client);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Notification server error", e);
+            }
+        });
+        notificationThread.start();
+    }
+
+    private void handleNotificationClient(Socket client) {
+        try {
+            BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
+            String line = in.readLine();
+            if (line == null) return;
+            
+            int contentLength = 0;
+            while ((line = in.readLine()) != null && !line.isEmpty()) {
+                if (line.toLowerCase().startsWith("content-length:")) {
+                    contentLength = Integer.parseInt(line.substring(15).trim());
+                }
+            }
+            
+            if (contentLength > 0) {
+                char[] bodyChars = new char[contentLength];
+                int read = in.read(bodyChars, 0, contentLength);
+                if (read > 0) {
+                    String body = new String(bodyChars, 0, read);
+                    JSONObject json = new JSONObject(body);
+                    String title = json.optString("title", "Yanzi 通知");
+                    String text = json.optString("body", "");
+                    
+                    showNotification(title, text);
+                }
+            }
+            
+            OutputStreamWriter out = new OutputStreamWriter(client.getOutputStream(), StandardCharsets.UTF_8);
+            out.write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+            out.flush();
+            client.close();
+        } catch (Exception e) {
+            Log.e(TAG, "Handle client error", e);
+        }
+    }
+
+    private void showNotification(String title, String text) {
+        mainHandler.post(() -> {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    NotificationChannel channel = new NotificationChannel("yanzi_push", "燕子电脑推送", NotificationManager.IMPORTANCE_HIGH);
+                    nm.createNotificationChannel(channel);
+                }
+                Notification.Builder builder;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    builder = new Notification.Builder(this, "yanzi_push");
+                } else {
+                    builder = new Notification.Builder(this);
+                }
+                builder.setSmallIcon(android.R.drawable.stat_notify_chat)
+                       .setContentTitle(title)
+                       .setContentText(text)
+                       .setAutoCancel(true);
+                nm.notify((int) System.currentTimeMillis(), builder.build());
+            }
+        });
     }
 }

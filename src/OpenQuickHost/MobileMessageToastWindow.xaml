@@ -41,7 +41,7 @@
                                Margin="0,4,0,0"
                                Foreground="#FF94A3B8"
                                Text="手机与电脑对话"
-                               FontSize="12" />
+                               FontSize="{DynamicResource FontSizeSmallPlus}" />
                 </StackPanel>
                 <Button DockPanel.Dock="Right"
                         Width="30"
@@ -69,7 +69,7 @@
                        Grid.Row="2"
                        Margin="2,8,0,0"
                        Foreground="#FF67E8F9"
-                       FontSize="12"
+                       FontSize="{DynamicResource FontSizeSmallPlus}"
                        TextTrimming="CharacterEllipsis"
                        Visibility="Collapsed" />
 
@@ -96,6 +96,13 @@
                             Foreground="White"
                             Click="OpenLinkButton_Click"
                             Visibility="Collapsed" />
+                    <CheckBox x:Name="AutoCloseCheckBox"
+                              Content="5s 自动关闭"
+                              Foreground="#FF94A3B8"
+                              VerticalAlignment="Center"
+                              Margin="0,0,12,0"
+                              Checked="AutoCloseCheckBox_Checked"
+                              Unchecked="AutoCloseCheckBox_Unchecked" />
                     <Button Width="72"
                             Height="34"
                             Margin="0,0,8,0"

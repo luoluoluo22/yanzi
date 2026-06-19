@@ -8,6 +8,7 @@
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
     <InformationalVersion>0.1.0</InformationalVersion>
     <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);1701;1603</NoWarn>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
@@ -79,6 +80,7 @@
     <PackageReference Include="Basic.Reference.Assemblies.Net90" Version="1.8.3" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="System.Diagnostics.EventLog" Version="9.0.16" />
     <PackageReference Include="System.DirectoryServices" Version="9.0.16" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.16" />
@@ -87,6 +89,7 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.16" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.16" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.16" />
+    <PackageReference Include="velopack" Version="0.0.941" />
   </ItemGroup>
 
   <Target Name="CopyNativeWindowReferenceAssembliesForBuild" AfterTargets="Build">
@@ -95,6 +98,10 @@
 
   <Target Name="CopyNativeWindowReferenceAssembliesForPublish" AfterTargets="Publish">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\copy-native-window-refs.ps1&quot; -OutputDir &quot;$(PublishDir)NativeWindowRefs&quot;" />
+  </Target>
+
+  <Target Name="KillProcessBeforeBuild" BeforeTargets="BeforeBuild;Clean">
+    <Exec Command="taskkill /f /im Yanzi.exe /t 2&gt;nul" IgnoreExitCode="true" />
   </Target>
 
 </Project>

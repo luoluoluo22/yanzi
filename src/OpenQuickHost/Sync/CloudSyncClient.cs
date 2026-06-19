@@ -125,6 +125,7 @@ public sealed class CloudSyncClient
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
         {
             ClearSession();
+            ClearCredential();
             throw new InvalidOperationException("邮箱或密码错误。");
         }
 
@@ -214,6 +215,7 @@ public sealed class CloudSyncClient
                 version = command.DeclaredVersion,
                 category = command.Category,
                 description = command.Subtitle,
+                accentHex = command.AccentBrush?.ToString(),
                 keywords = command.Keywords,
                 icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride,
                 queryPrefixes = command.QueryPrefixes,
@@ -434,10 +436,106 @@ public sealed class CloudSyncClient
         return payload?.Items ?? [];
     }
 
-    public async Task AckDeviceMessageAsync(string messageId, string deviceId, CancellationToken cancellationToken = default)
+    public async Task<string> SendDeviceMessageAsync(
+        string sourceDeviceId,
+        string targetPlatform,
+        string kind,
+        string title,
+        string text,
+        string? targetDeviceId = null,
+        object? payload = null,
+        CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
-        var body = JsonSerializer.Serialize(new { deviceId });
+        var body = JsonSerializer.Serialize(new
+        {
+            sourceDeviceId,
+            targetDeviceId,
+            targetPlatform,
+            kind,
+            title,
+            text,
+            payload = payload ?? new { }
+        });
+
+        using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/mobile/messages", body, includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var result = await ReadAsync<DeviceMessageCreateResponse>(response, cancellationToken);
+        return result?.MessageId ?? string.Empty;
+    }
+
+    public async Task<HttpResponseMessage> GetMobileMessagesEventsStreamAsync(string deviceId, CancellationToken cancellationToken)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/me/mobile/messages/events?deviceId={Uri.EscapeDataString(deviceId)}");
+        request.Version = HttpVersion.Version11;
+        request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        if (HasValidSession())
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session!.AccessToken);
+        }
+
+        Exception? lastError = null;
+        var attempts = new (HttpClient client, string label)[]
+        {
+            (_httpClient, "proxy"),
+            (_directHttpClient, "direct"),
+            (_httpClient, "proxy-retry")
+        };
+
+        for (var index = 0; index < attempts.Length; index++)
+        {
+            try
+            {
+                var response = await attempts[index].client.SendAsync(CloneRequest(request), HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                return response;
+            }
+            catch (Exception ex) when (IsRetryableTransportException(ex) && index < attempts.Length - 1)
+            {
+                lastError = ex;
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                if (index == attempts.Length - 1)
+                {
+                    throw new InvalidOperationException($"Failed to establish SSE connection: {ex.Message}", lastError);
+                }
+            }
+        }
+        throw new InvalidOperationException("Failed to establish SSE connection.", lastError);
+    }
+
+    public async Task AckDeviceMessageAsync(
+        string messageId,
+        string deviceId,
+        bool? success = null,
+        string? result = null,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        
+        object bodyObj;
+        if (success.HasValue)
+        {
+            bodyObj = new
+            {
+                deviceId,
+                success = success.Value,
+                result = result ?? string.Empty
+            };
+        }
+        else
+        {
+            bodyObj = new { deviceId };
+        }
+
+        var body = JsonSerializer.Serialize(bodyObj);
         using var request = CreateJsonRequest(
             HttpMethod.Post,
             $"/v1/me/mobile/messages/{Uri.EscapeDataString(messageId)}/ack",
@@ -607,13 +705,15 @@ public sealed class CloudSyncClient
             UseProxy = useProxy
         };
 
-        return new HttpClient(handler)
+        var client = new HttpClient(handler)
         {
             BaseAddress = new Uri(baseUrl, UriKind.Absolute),
             Timeout = TimeSpan.FromSeconds(15),
             DefaultRequestVersion = HttpVersion.Version11,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
         };
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("YanziClient-Desktop", "0.2.3"));
+        return client;
     }
 
     private static bool IsRetryableTransportException(Exception ex)
@@ -757,6 +857,13 @@ public sealed class DeviceMessageListResponse
     public string? DeviceId { get; set; }
 
     public List<DeviceMessageRecord> Items { get; set; } = [];
+}
+
+public sealed class DeviceMessageCreateResponse
+{
+    public bool Ok { get; set; }
+
+    public string MessageId { get; set; } = string.Empty;
 }
 
 public sealed class DeviceMessageRecord

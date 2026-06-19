@@ -888,6 +888,8 @@ public sealed class WebDavSyncService
             var entry = new WebDavSyncEntry
             {
                 ExtensionId = command.ExtensionId,
+                Title = command.Title,
+                Category = command.Category ?? "扩展",
                 Version = command.DeclaredVersion,
                 PackageHash = packageHash,
                 PackagePath = packagePath,
@@ -921,6 +923,8 @@ public sealed class WebDavSyncService
             items.Add(new WebDavSyncEntry
             {
                 ExtensionId = stateEntry.ExtensionId,
+                Title = stateEntry.Title,
+                Category = stateEntry.Category,
                 Version = stateEntry.Version,
                 PackageHash = stateEntry.PackageHash,
                 PackagePath = stateEntry.PackagePath,
@@ -942,6 +946,8 @@ public sealed class WebDavSyncService
             Items = index.Items.Select(item => new WebDavSyncEntry
             {
                 ExtensionId = item.ExtensionId,
+                Title = item.Title,
+                Category = item.Category,
                 Version = item.Version,
                 PackageHash = item.PackageHash,
                 PackagePath = item.PackagePath,
@@ -1001,6 +1007,8 @@ public sealed class WebDavSyncService
             Items = index.Items.Select(item => new WebDavSyncEntry
             {
                 ExtensionId = item.ExtensionId,
+                Title = item.Title,
+                Category = item.Category,
                 Version = item.Version,
                 PackageHash = item.PackageHash,
                 PackagePath = item.PackagePath,
@@ -1411,6 +1419,8 @@ public sealed class WebDavSyncService
     private static bool EntriesEquivalent(WebDavSyncEntry left, WebDavSyncEntry right)
     {
         return left.ExtensionId.Equals(right.ExtensionId, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(left.Title, right.Title, StringComparison.Ordinal) &&
+               string.Equals(left.Category, right.Category, StringComparison.Ordinal) &&
                left.Version.Equals(right.Version, StringComparison.OrdinalIgnoreCase) &&
                string.Equals(left.PackageHash, right.PackageHash, StringComparison.OrdinalIgnoreCase) &&
                string.Equals(left.PackagePath, right.PackagePath, StringComparison.OrdinalIgnoreCase) &&
@@ -1630,6 +1640,10 @@ public sealed class WebDavSyncIndex
 public sealed class WebDavSyncEntry
 {
     public string ExtensionId { get; set; } = string.Empty;
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Category { get; set; } = string.Empty;
 
     public string Version { get; set; } = "0.1.0";
 

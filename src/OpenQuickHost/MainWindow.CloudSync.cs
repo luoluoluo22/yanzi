@@ -1,9 +1,12 @@
 using System.IO;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.NetworkInformation;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Media.Imaging;
 using OpenQuickHost.Sync;
 using Forms = System.Windows.Forms;
 
@@ -11,11 +14,36 @@ namespace OpenQuickHost;
 
 public partial class MainWindow
 {
+    private DateTimeOffset _lastNetworkAddressChangedHandledAt = DateTimeOffset.MinValue;
+    private static readonly object MobileMessageBridgeLock = new();
+    private bool _deviceRegistered;
     private const string PublicStoreOrigin = "https://yanzi.luoluoluo.cc.cd";
 
     public static string BuildExtensionStoreUrl(string extensionId)
     {
         return $"{PublicStoreOrigin}/store.html?id={Uri.EscapeDataString(extensionId ?? string.Empty)}";
+    }
+
+    public CloudSyncClient? CloudSyncClient => _cloudSyncClient;
+
+    public async Task<(bool ok, string message)> InstallStoreExtensionAsync(string extensionId)
+    {
+        if (_cloudSyncClient == null)
+        {
+            return (false, "云同步未配置");
+        }
+
+        try
+        {
+            var packageBytes = await _cloudSyncClient.DownloadExtensionArchiveAsync(extensionId);
+            var result = await ExtensionInstallService.InstallPackageAsync(packageBytes, extensionId);
+            ReloadLocalExtensionsFromExternal();
+            return (true, $"已成功安装：{result.Name}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"安装失败：{ex.Message}");
+        }
     }
 
     public (bool ok, string message) CopyExtensionStoreLink(string extensionId)
@@ -70,6 +98,7 @@ public partial class MainWindow
             SyncStatus = $"已登录 {me?.Username ?? _cloudSyncClient.CurrentUserLabel}";
             ResetSilentCloudReconnect();
             StartMobileMessageBridge("cloud-refresh");
+            SyncLocalExtensionsToCloud();
             LastRunMessage = pulledConfig || pulledQuickPanelConfig
                 ? "已同步账号状态，并更新了云端配置。"
                 : "已同步账号状态。";
@@ -465,8 +494,8 @@ public partial class MainWindow
         }
 
         var confirm = System.Windows.MessageBox.Show(
-            $"确认将扩展“{deletable.Title}”移入回收站吗？\n如果已启用坚果云/WebDAV，同步器会在后台把这次删除同步到其他设备。",
-            "移入扩展回收站",
+            $"确认删除扩展“{deletable.Title}”吗？",
+            "确认删除",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)
@@ -477,7 +506,7 @@ public partial class MainWindow
         try
         {
             WebDavSyncService.MarkExtensionDeletedLocally(deletable.ExtensionId, deletable.DeclaredVersion);
-            ExtensionRecycleBinService.MoveToRecycleBin(deletable.ExtensionId);
+            ExtensionRecycleBinService.MoveToRecycleBin(deletable.ExtensionId, deletable.ExtensionDirectoryPath);
             RemoveLocalExtensionCommand(deletable.ExtensionId);
             ApplyFilter(SearchBox.Text);
             SelectedCommand = FilteredCommands.FirstOrDefault();
@@ -593,7 +622,27 @@ public partial class MainWindow
             dialog.SendPasswordResetCodeAsync = (email) => _cloudSyncClient.SendPasswordResetCodeAsync(email);
             dialog.RegisterAsyncHandler = (email, username, password, code) => _cloudSyncClient.RegisterAsync(email, username, password, code);
             dialog.ResetPasswordAsyncHandler = (email, password, code) => _cloudSyncClient.ResetPasswordAsync(email, password, code);
-            if (IsVisible)
+            Window? activeWindow = null;
+            foreach (Window win in System.Windows.Application.Current.Windows)
+            {
+                if (win.IsVisible && win != dialog)
+                {
+                    if (win is SettingsWindow)
+                    {
+                        activeWindow = win;
+                        break;
+                    }
+                    if (win.IsActive || activeWindow == null)
+                    {
+                        activeWindow = win;
+                    }
+                }
+            }
+            if (activeWindow != null)
+            {
+                dialog.Owner = activeWindow;
+            }
+            else if (IsVisible)
             {
                 dialog.Owner = this;
             }
@@ -620,6 +669,27 @@ public partial class MainWindow
 
     private static string FormatExceptionMessage(Exception ex)
     {
+        var rawMessage = ex.ToString();
+        if (rawMessage.Contains("The SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("unexpected EOF", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("0 bytes from the transport stream", StringComparison.OrdinalIgnoreCase))
+        {
+            return "网络连接被中断，无法建立 HTTPS 安全连接。请检查网络、代理/VPN、系统时间或稍后重试。";
+        }
+
+        if (rawMessage.Contains("NameResolutionFailure", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("No such host is known", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("nodename nor servname", StringComparison.OrdinalIgnoreCase))
+        {
+            return "无法解析服务器地址。请检查网络连接、DNS、代理/VPN 或同步服务地址是否填写正确。";
+        }
+
+        if (rawMessage.Contains("timed out", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("A task was canceled", StringComparison.OrdinalIgnoreCase))
+        {
+            return "连接超时。请检查网络是否稳定，或稍后重试。";
+        }
+
         var messages = new List<string>();
         Exception? current = ex;
         while (current != null)
@@ -650,6 +720,14 @@ public partial class MainWindow
     }
 
     private void NetworkChange_NetworkAddressChanged(object? sender, EventArgs e)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (now - _lastNetworkAddressChangedHandledAt < TimeSpan.FromSeconds(5)) return;
+        _lastNetworkAddressChangedHandledAt = now;
+        NetworkChange_NetworkAddressChanged_Real(sender, e);
+    }
+
+    private void NetworkChange_NetworkAddressChanged_Real(object? sender, EventArgs e)
     {
         Dispatcher.InvokeAsync(() =>
         {
@@ -762,11 +840,22 @@ public partial class MainWindow
         }
 
         _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
-        if (_mobileMessageBridgeTask is not { IsCompleted: false })
+        lock (MobileMessageBridgeLock)
         {
-            _mobileMessageBridgeCts?.Cancel();
-            _mobileMessageBridgeCts = new CancellationTokenSource();
-            _mobileMessageBridgeTask = Task.Run(() => MobileMessageBridgeLoopAsync(_mobileMessageBridgeCts.Token));
+            _deviceRegistered = false;
+            if (_mobileMessageBridgeTask is not { IsCompleted: false })
+            {
+                try
+                {
+                    _mobileMessageBridgeCts?.Cancel();
+                }
+                catch
+                {
+                    // Ignore cancel exceptions
+                }
+                _mobileMessageBridgeCts = new CancellationTokenSource();
+                _mobileMessageBridgeTask = Task.Run(() => MobileMessageBridgeLoopAsync(_mobileMessageBridgeCts.Token));
+            }
         }
 
         HostAssets.AppendLog($"Mobile bridge started: reason={reason}, deviceId={_desktopDeviceId}.");
@@ -775,23 +864,105 @@ public partial class MainWindow
 
     private async Task MobileMessageBridgeLoopAsync(CancellationToken cancellationToken)
     {
-        HostAssets.AppendLog("Mobile bridge background loop started.");
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        HostAssets.AppendLog("Mobile bridge background loop started with SSE streaming.");
+        _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+
         try
         {
-            while (await timer.WaitForNextTickAsync(cancellationToken))
-            {
-                await PollMobileMessagesSafeAsync("background-loop");
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            HostAssets.AppendLog("Mobile bridge background loop stopped.");
+            await PollMobileMessagesSafeAsync("sse-sync");
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Mobile bridge background loop crashed: {FormatExceptionMessage(ex)}");
+            HostAssets.AppendLog($"Mobile bridge SSE sync error during startup: {ex.Message}");
         }
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                HostAssets.AppendLog("Mobile bridge establishing SSE connection to cloud...");
+                using var response = await _cloudSyncClient!.GetMobileMessagesEventsStreamAsync(_desktopDeviceId, cancellationToken);
+                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
+
+                HostAssets.AppendLog("Mobile bridge SSE connection established successfully.");
+
+                while (!cancellationToken.IsCancellationRequested && !reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync(cancellationToken);
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var dataJson = line["data:".Length..].Trim();
+                        try
+                        {
+                            using var doc = System.Text.Json.JsonDocument.Parse(dataJson);
+                            var root = doc.RootElement;
+                            if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "messages")
+                            {
+                                if (root.TryGetProperty("items", out var itemsProp) && itemsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+                                {
+                                    var itemsText = itemsProp.GetRawText();
+                                    var messages = System.Text.Json.JsonSerializer.Deserialize<List<DeviceMessageRecord>>(itemsText, new System.Text.Json.JsonSerializerOptions
+                                    {
+                                        PropertyNameCaseInsensitive = true
+                                    });
+
+                                    if (messages != null && messages.Count > 0)
+                                    {
+                                        HostAssets.AppendLog($"Mobile bridge SSE pushed messages: count={messages.Count}.");
+                                        
+                                        foreach (var message in messages)
+                                        {
+                                            var res = await HandleMobileDeviceMessageAsync(message);
+                                            if (res.hasResult)
+                                            {
+                                                await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, res.success, res.output, cancellationToken);
+                                            }
+                                            else
+                                            {
+                                                await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken: cancellationToken);
+                                            }
+                                            HostAssets.AppendLog($"Mobile bridge SSE acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception parseEx)
+                        {
+                            HostAssets.AppendLog($"Mobile bridge SSE message parse failed: {parseEx.Message}");
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Mobile bridge SSE connection error: {FormatExceptionMessage(ex)}");
+            }
+
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                HostAssets.AppendLog("Mobile bridge SSE disconnected. Retrying in 5 seconds...");
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+        HostAssets.AppendLog("Mobile bridge background loop stopped.");
     }
 
     private async void MobileMessagePollTimer_Tick(object? sender, EventArgs e)
@@ -799,7 +970,7 @@ public partial class MainWindow
         await PollMobileMessagesSafeAsync("timer");
     }
 
-    private async Task PollMobileMessagesSafeAsync(string reason)
+    private async Task<int> PollMobileMessagesSafeAsync(string reason)
     {
         if (_mobileMessagePollRunning || _cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
@@ -807,7 +978,7 @@ public partial class MainWindow
             {
                 HostAssets.AppendLog($"Mobile bridge poll skipped: reason={reason}, previous poll still running.");
             }
-            return;
+            return 0;
         }
 
         _mobileMessagePollRunning = true;
@@ -815,16 +986,21 @@ public partial class MainWindow
         {
             using var pollTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
-            await _cloudSyncClient.RegisterDeviceAsync(
-                _desktopDeviceId,
-                "desktop",
-                DeviceIdentityStore.GetDesktopDisplayName(),
-                new
-                {
-                    app = "yanzi-desktop",
-                    os = Environment.OSVersion.VersionString
-                },
-                cancellationToken: pollTimeout.Token);
+            
+            if (!_deviceRegistered)
+            {
+                await _cloudSyncClient.RegisterDeviceAsync(
+                    _desktopDeviceId,
+                    "desktop",
+                    DeviceIdentityStore.GetDesktopDisplayName(),
+                    new
+                    {
+                        app = "yanzi-desktop",
+                        os = Environment.OSVersion.VersionString
+                    },
+                    cancellationToken: pollTimeout.Token);
+                _deviceRegistered = true;
+            }
 
             var messages = await _cloudSyncClient.GetPendingDeviceMessagesAsync(_desktopDeviceId, limit: 20, cancellationToken: pollTimeout.Token);
             if (messages.Count > 0)
@@ -839,10 +1015,18 @@ public partial class MainWindow
 
             foreach (var message in messages)
             {
-                await HandleMobileDeviceMessageAsync(message);
-                await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, pollTimeout.Token);
+                var res = await HandleMobileDeviceMessageAsync(message);
+                if (res.hasResult)
+                {
+                    await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, res.success, res.output, cancellationToken: pollTimeout.Token);
+                }
+                else
+                {
+                    await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken: pollTimeout.Token);
+                }
                 HostAssets.AppendLog($"Mobile bridge acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
             }
+            return messages.Count;
         }
         catch (OperationCanceledException ex)
         {
@@ -856,38 +1040,522 @@ public partial class MainWindow
         {
             _mobileMessagePollRunning = false;
         }
+        return 0;
     }
 
-    private async Task HandleMobileDeviceMessageAsync(DeviceMessageRecord message)
+    internal async Task<(bool hasResult, bool success, string output)> HandleMobileDeviceMessageAsync(DeviceMessageRecord message)
     {
         var title = string.IsNullOrWhiteSpace(message.Title) ? "手机发来消息" : message.Title.Trim();
         var text = string.IsNullOrWhiteSpace(message.Text) ? $"消息类型：{message.Kind}" : message.Text.Trim();
         var sourceLabel = GetMobileSourceLabel(message);
         var screenshotDataUrl = GetPayloadString(message, "screenshotDataUrl");
-        var screenshotFilePath = await TryDownloadMobileScreenshotFromWebDavAsync(message);
+        var mobileAttachmentFilePath = await TryDownloadMobileScreenshotFromWebDavAsync(message);
+
+        var screenshotFilePath = IsMobileScreenshotMessage(message)
+
+            ? mobileAttachmentFilePath
+
+            : null;
         if (string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase))
         {
             var payloadKeys = message.Payload.Count == 0
                 ? "(empty)"
                 : string.Join(",", message.Payload.Keys.OrderBy(static key => key, StringComparer.OrdinalIgnoreCase));
             HostAssets.AppendLog(
-                $"Mobile screenshot payload: id={message.MessageId}, keys={payloadKeys}, hasDataUrl={!string.IsNullOrWhiteSpace(screenshotDataUrl)}, webDavPath={GetPayloadString(message, "webDavPath") ?? "(none)"}, localFile={screenshotFilePath ?? "(none)"}.");
+                $"Mobile screenshot payload: id={message.MessageId}, keys={payloadKeys}, hasDataUrl={!string.IsNullOrWhiteSpace(screenshotDataUrl)}, webDavPath={GetPayloadString(message, "webDavPath") ?? "(none)"}, localFile={mobileAttachmentFilePath ?? "(none)"}.");
         }
         HostAssets.AppendLog(
             $"Mobile bridge message: id={message.MessageId}, source={sourceLabel}, kind={message.Kind}, text={trimForLog(text)}");
 
+        if (string.Equals(message.Kind, "run-extension", StringComparison.OrdinalIgnoreCase))
+        {
+            if (message.Payload.TryGetValue("extensionId", out var extensionElement))
+            {
+                var extensionId = extensionElement.ValueKind == JsonValueKind.String
+                    ? extensionElement.GetString()
+                    : extensionElement.ToString();
+                if (!string.IsNullOrWhiteSpace(extensionId) && _localExtensionIndex.TryGetValue(extensionId, out var command))
+                {
+                    var execResult = await RunMobileExtensionAsync(command, text);
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        LastRunMessage = execResult.success ? $"已执行手机端请求：{command.Title}" : $"执行手机端请求失败：{command.Title}";
+                        SyncStatus = execResult.success ? "手机端请求执行成功。" : $"手机端请求执行失败：{execResult.output}";
+                    });
+                    return (true, execResult.success, execResult.output);
+                }
+                else
+                {
+                    return (true, false, $"手机请求的扩展不存在：{extensionId}");
+                }
+            }
+            return (true, false, "缺少 extensionId 参数");
+        }
+
         await Dispatcher.InvokeAsync(() =>
         {
-            if (TryHandleMobileRunExtensionMessage(message, text))
-            {
-                return;
-            }
-
             LastRunMessage = $"{title}：{text}";
-            SyncStatus = "已收到手机端消息。";
+            var clipboardMessage = CopyMobileMessageToClipboard(message, text, screenshotDataUrl, mobileAttachmentFilePath);
+
+            SyncStatus = string.IsNullOrWhiteSpace(clipboardMessage)
+
+                ? "已收到手机端消息。"
+
+                : $"已收到手机端消息，{clipboardMessage}。";
             SaveMobileInboxMessage(message, title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
             ShowMobileMessageToast(title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
         });
+
+        return (false, true, string.Empty);
+    }
+
+    private static string CopyMobileMessageToClipboard(DeviceMessageRecord message, string text, string? screenshotDataUrl, string? localFilePath)
+
+    {
+
+        try
+
+        {
+
+            if (IsMobileScreenshotMessage(message))
+
+            {
+
+                var bitmap = TryCreateClipboardBitmap(screenshotDataUrl, localFilePath);
+
+                if (bitmap != null)
+
+                {
+
+                    var dataObject = new System.Windows.DataObject();
+
+                    dataObject.SetImage(bitmap);
+
+                    ClipboardService.SetDataObject(dataObject, true);
+
+                    HostAssets.AppendLog($"Mobile bridge clipboard copied image: id={message.MessageId}.");
+
+                    return "已复制图片到剪贴板";
+
+                }
+
+            }
+
+
+
+            var filePaths = ResolveMobileClipboardFilePaths(message, localFilePath);
+
+            if (filePaths.Count > 0)
+
+            {
+
+                CopyFileDropListToClipboard(filePaths);
+
+                HostAssets.AppendLog($"Mobile bridge clipboard copied files: id={message.MessageId}, count={filePaths.Count}.");
+
+                return filePaths.Count == 1 ? "已复制文件到剪贴板" : $"已复制 {filePaths.Count} 个文件到剪贴板";
+
+            }
+
+
+
+            if (!string.IsNullOrWhiteSpace(text))
+
+            {
+
+                ClipboardService.SetText(text);
+
+                HostAssets.AppendLog($"Mobile bridge clipboard copied text: id={message.MessageId}, length={text.Length}.");
+
+                return "已复制文本到剪贴板";
+
+            }
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            HostAssets.AppendLog($"Mobile bridge clipboard copy failed: id={message.MessageId}, {FormatExceptionMessage(ex)}");
+
+            return "剪贴板写入失败";
+
+        }
+
+
+
+        return string.Empty;
+
+    }
+
+
+
+    private static BitmapSource? TryCreateClipboardBitmap(string? dataUrl, string? localFilePath)
+
+    {
+
+        byte[] bytes;
+
+        if (!string.IsNullOrWhiteSpace(localFilePath) && File.Exists(localFilePath))
+
+        {
+
+            bytes = File.ReadAllBytes(localFilePath);
+
+        }
+
+        else if (!TryDecodeDataUrl(dataUrl, out bytes))
+
+        {
+
+            return null;
+
+        }
+
+
+
+        var bitmap = new BitmapImage();
+
+        bitmap.BeginInit();
+
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+
+        bitmap.StreamSource = new MemoryStream(bytes);
+
+        bitmap.EndInit();
+
+        bitmap.Freeze();
+
+        return bitmap;
+
+    }
+
+
+
+    private static bool TryDecodeDataUrl(string? dataUrl, out byte[] bytes)
+
+    {
+
+        bytes = [];
+
+        if (string.IsNullOrWhiteSpace(dataUrl))
+
+        {
+
+            return false;
+
+        }
+
+
+
+        const string marker = "base64,";
+
+        var index = dataUrl.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+
+        if (index < 0)
+
+        {
+
+            return false;
+
+        }
+
+
+
+        bytes = Convert.FromBase64String(dataUrl[(index + marker.Length)..]);
+
+        return bytes.Length > 0;
+
+    }
+
+
+
+    private static IReadOnlyList<string> ResolveMobileClipboardFilePaths(DeviceMessageRecord message, string? localFilePath)
+
+    {
+
+        var paths = new List<string>();
+
+        AddClipboardFilePath(paths, localFilePath);
+
+
+
+        foreach (var key in new[] { "localFilePath", "filePath", "path", "downloadedFilePath", "attachmentPath" })
+
+        {
+
+            AddClipboardFilePath(paths, GetPayloadString(message, key));
+
+        }
+
+
+
+        foreach (var key in new[] { "localFilePaths", "filePaths", "paths", "attachments", "files" })
+
+        {
+
+            AddPayloadFilePaths(paths, message, key);
+
+        }
+
+
+
+        return paths
+
+            .Where(static path => File.Exists(path) || Directory.Exists(path))
+
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+
+            .ToArray();
+
+    }
+
+
+
+    private static void AddPayloadFilePaths(List<string> paths, DeviceMessageRecord message, string key)
+
+    {
+
+        if (!message.Payload.TryGetValue(key, out var element))
+
+        {
+
+            return;
+
+        }
+
+
+
+        if (element.ValueKind == JsonValueKind.String)
+
+        {
+
+            AddClipboardFilePath(paths, element.GetString());
+
+            return;
+
+        }
+
+
+
+        if (element.ValueKind == JsonValueKind.Array)
+
+        {
+
+            foreach (var item in element.EnumerateArray())
+
+            {
+
+                if (item.ValueKind == JsonValueKind.String)
+
+                {
+
+                    AddClipboardFilePath(paths, item.GetString());
+
+                }
+
+                else if (item.ValueKind == JsonValueKind.Object)
+
+                {
+
+                    AddClipboardFilePath(paths, ReadPayloadObjectString(item, "localFilePath"));
+
+                    AddClipboardFilePath(paths, ReadPayloadObjectString(item, "filePath"));
+
+                    AddClipboardFilePath(paths, ReadPayloadObjectString(item, "path"));
+
+                }
+
+            }
+
+            return;
+
+        }
+
+
+
+        if (element.ValueKind == JsonValueKind.Object)
+
+        {
+
+            AddClipboardFilePath(paths, ReadPayloadObjectString(element, "localFilePath"));
+
+            AddClipboardFilePath(paths, ReadPayloadObjectString(element, "filePath"));
+
+            AddClipboardFilePath(paths, ReadPayloadObjectString(element, "path"));
+
+        }
+
+    }
+
+
+
+    private static string? ReadPayloadObjectString(JsonElement element, string key)
+
+    {
+
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(key, out var value))
+
+        {
+
+            return null;
+
+        }
+
+
+
+        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+
+    }
+
+
+
+    private static void AddClipboardFilePath(List<string> paths, string? path)
+
+    {
+
+        if (string.IsNullOrWhiteSpace(path))
+
+        {
+
+            return;
+
+        }
+
+
+
+        var normalized = path.Trim().Trim('"');
+
+        if (!string.IsNullOrWhiteSpace(normalized))
+
+        {
+
+            paths.Add(normalized);
+
+        }
+
+    }
+
+
+
+    private static void CopyFileDropListToClipboard(IReadOnlyList<string> filePaths)
+
+    {
+
+        var files = new StringCollection();
+
+        foreach (var filePath in filePaths)
+
+        {
+
+            files.Add(filePath);
+
+        }
+
+
+
+        var dataObject = new System.Windows.DataObject();
+
+        dataObject.SetFileDropList(files);
+
+        using var stream = new MemoryStream(new byte[] { 5, 0, 0, 0 });
+
+        dataObject.SetData("Preferred DropEffect", stream);
+
+        ClipboardService.SetDataObject(dataObject, true);
+
+    }
+
+
+
+    private static bool IsMobileScreenshotMessage(DeviceMessageRecord message)
+
+    {
+
+        return string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase);
+
+    }
+
+
+
+    private async Task<(bool success, string output)> RunMobileExtensionAsync(CommandItem runnable, string inputText)
+    {
+        var hasExternalInput = !string.IsNullOrWhiteSpace(inputText);
+        var command = ResolveRunnableCommand(runnable);
+        
+        if (command.App != null)
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (AppExtensionWindow.TryActivateExisting(command))
+                {
+                    return;
+                }
+                var window = new AppExtensionWindow(command, inputText, "mobile")
+                {
+                    ShowInTaskbar = true
+                };
+                window.Show();
+            });
+            return (true, "已成功在电脑端打开应用扩展。");
+        }
+        
+        if (command.HostedView != null)
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                ShowPanel();
+                OpenHostedView(command, inputText);
+            });
+            return (true, "已成功在电脑端打开视图界面。");
+        }
+        
+        if (command.SupportsQueryArgument == false && IsInternalCommand(command))
+        {
+            var internalSuccess = false;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                internalSuccess = HandleInternalCommand(command);
+            });
+            return (internalSuccess, internalSuccess ? "已成功执行内置指令。" : "执行内置指令失败。");
+        }
+        
+        if (ScriptExtensionRunner.CanExecute(command))
+        {
+            var result = await ScriptExtensionRunner.ExecuteAsync(command, inputText, "mobile");
+            if (result.Success)
+            {
+                return (true, string.IsNullOrWhiteSpace(result.Output) ? "执行成功，无输出。" : result.Output);
+            }
+            else
+            {
+                return (false, string.IsNullOrWhiteSpace(result.Error) ? $"执行失败，退出代码: {result.ExitCode}" : result.Error);
+            }
+        }
+        
+        var executionTarget = BuildExecutionTarget(command, inputText, allowRawQuery: hasExternalInput);
+        if (executionTarget is { Length: > 0 })
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = executionTarget,
+                    Arguments = command.LaunchArguments ?? string.Empty,
+                    WorkingDirectory = string.IsNullOrWhiteSpace(command.WorkingDirectory) ? string.Empty : command.WorkingDirectory,
+                    UseShellExecute = true
+                };
+                Process.Start(psi);
+                return (true, $"已运行命令：{command.Title}");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"无法启动程序：{ex.Message}");
+            }
+        }
+        
+        return (false, "不支持的扩展执行方式。");
     }
 
     private async Task<string?> TryDownloadMobileScreenshotFromWebDavAsync(DeviceMessageRecord message)
@@ -907,7 +1575,11 @@ public partial class MainWindow
         {
             var settings = AppSettingsStore.Load();
             var service = new WebDavSyncService(settings);
-            if (!service.IsConfigured)
+            var credential = WebDavCredentialStore.Load();
+            bool hasCredentials = Uri.TryCreate(settings.WebDavServerUrl, UriKind.Absolute, out _) &&
+                                 !string.IsNullOrWhiteSpace(settings.WebDavUsername) &&
+                                 !string.IsNullOrWhiteSpace(credential?.Password);
+            if (!hasCredentials)
             {
                 HostAssets.AppendLog($"Mobile screenshot WebDAV skipped: not configured, path={remotePath}.");
                 return null;
@@ -921,11 +1593,10 @@ public partial class MainWindow
                 return null;
             }
 
-            var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-            Directory.CreateDirectory(downloads);
-            var filePath = Path.Combine(downloads, $"yanzi-mobile-screenshot-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}.jpg");
+            var filePath = BuildMobileAttachmentDownloadPath(message, remotePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
             await File.WriteAllBytesAsync(filePath, bytes, timeout.Token);
-            HostAssets.AppendLog($"Mobile screenshot WebDAV downloaded: path={remotePath}, local={filePath}, bytes={bytes.Length}.");
+            HostAssets.AppendLog($"Mobile attachment WebDAV downloaded: kind={message.Kind}, path={remotePath}, local={filePath}, bytes={bytes.Length}.");
             return filePath;
         }
         catch (Exception ex)
@@ -934,6 +1605,74 @@ public partial class MainWindow
             return null;
         }
     }
+
+    private static string BuildMobileAttachmentDownloadPath(DeviceMessageRecord message, string remotePath)
+
+    {
+
+        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+
+        var fileName = FirstNonEmpty(
+
+            GetPayloadString(message, "fileName"),
+
+            GetPayloadString(message, "name"),
+
+            Path.GetFileName(remotePath.Replace('/', Path.DirectorySeparatorChar)));
+
+
+
+        if (string.IsNullOrWhiteSpace(fileName))
+
+        {
+
+            fileName = IsMobileScreenshotMessage(message)
+
+                ? $"yanzi-mobile-screenshot-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}.jpg"
+
+                : $"yanzi-mobile-file-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}";
+
+        }
+
+
+
+        fileName = SanitizeFileName(fileName);
+
+        var path = Path.Combine(downloads, fileName);
+
+        if (!File.Exists(path) && !Directory.Exists(path))
+
+        {
+
+            return path;
+
+        }
+
+
+
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+
+        var extension = Path.GetExtension(fileName);
+
+        return Path.Combine(downloads, $"{stem}-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}{extension}");
+
+    }
+
+
+
+    private static string SanitizeFileName(string fileName)
+
+    {
+
+        var invalidChars = Path.GetInvalidFileNameChars();
+
+        var sanitized = new string(fileName.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray()).Trim();
+
+        return string.IsNullOrWhiteSpace(sanitized) ? $"yanzi-mobile-file-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}" : sanitized;
+
+    }
+
+
 
     private static string? GetPayloadString(DeviceMessageRecord message, string key)
     {
@@ -1039,32 +1778,7 @@ public partial class MainWindow
         }
     }
 
-    private bool TryHandleMobileRunExtensionMessage(DeviceMessageRecord message, string inputText)
-    {
-        if (!string.Equals(message.Kind, "run-extension", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
 
-        if (!message.Payload.TryGetValue("extensionId", out var extensionElement))
-        {
-            return false;
-        }
-
-        var extensionId = extensionElement.ValueKind == JsonValueKind.String
-            ? extensionElement.GetString()
-            : extensionElement.ToString();
-        if (string.IsNullOrWhiteSpace(extensionId) ||
-            !_localExtensionIndex.TryGetValue(extensionId, out var command))
-        {
-            LastRunMessage = $"手机请求的扩展不存在：{extensionId}";
-            return true;
-        }
-
-        ExecuteCommandExternally(command, inputText, "mobile");
-        LastRunMessage = $"已执行手机端请求：{command.Title}";
-        return true;
-    }
 
     private static string trimForLog(string value)
     {
@@ -1075,11 +1789,11 @@ public partial class MainWindow
     private async Task SyncPersonalWebDavAsync(bool showDisabledMessage)
     {
         var settings = AppSettingsStore.Load();
-        if (!settings.EnableWebDavSync)
+        if (!PersonalSyncBackendFactory.IsConfigured(settings))
         {
             if (showDisabledMessage)
             {
-                SyncStatus = "未启用个人 WebDAV 扩展同步。";
+                SyncStatus = "未启用个人同步。";
             }
 
             return;
@@ -1087,10 +1801,10 @@ public partial class MainWindow
 
         try
         {
-            var service = new WebDavSyncService(settings);
+            var service = new PersonalSyncService(settings);
             var result = await service.SyncExtensionsAsync();
             ApplyWebDavSyncResult(result);
-            LastRunMessage = $"个人扩展同步完成：上传 {result.UploadedCount} 个，拉取 {result.PulledCount} 个。";
+            LastRunMessage = BuildPersonalSyncCompletedMessage(result);
         }
         catch (Exception ex)
         {
@@ -1100,29 +1814,53 @@ public partial class MainWindow
 
     private void StartBackgroundWebDavSync()
     {
-        if (AppSettingsStore.Load().EnableWebDavSync && !_backgroundWebDavSyncTimer.IsEnabled)
+        if (PersonalSyncBackendFactory.IsConfigured(AppSettingsStore.Load()) && !_backgroundWebDavSyncTimer.IsEnabled)
         {
             _backgroundWebDavSyncTimer.Start();
         }
     }
 
-    private void QueueBackgroundWebDavSync(string reason)
+    internal void QueueBackgroundWebDavSync(string reason, bool forceImmediate = false)
     {
         var settings = AppSettingsStore.Load();
-        if (!settings.EnableWebDavSync)
+        if (!PersonalSyncBackendFactory.IsConfigured(settings))
         {
             return;
         }
 
         StartBackgroundWebDavSync();
+        if (!forceImmediate && !IsImmediateBackgroundSyncReason(reason))
+        {
+            var delaySeconds = settings.PersonalSyncAutoSyncDelaySeconds;
+            if (delaySeconds <= 0)
+            {
+                HostAssets.AppendLog($"Personal sync auto sync skipped by setting: {reason}");
+                return;
+            }
+
+            _pendingBackgroundWebDavSyncReason = reason;
+            _backgroundWebDavSyncDelayTimer.Stop();
+            _backgroundWebDavSyncDelayTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(delaySeconds, 2, 120));
+            _backgroundWebDavSyncDelayTimer.Start();
+            HostAssets.AppendLog($"Personal sync auto sync scheduled: reason={reason}, delaySeconds={delaySeconds}");
+            return;
+        }
+
         if (_backgroundWebDavSyncRunning)
         {
             _backgroundWebDavSyncRequested = true;
-            HostAssets.AppendLog($"WebDAV background sync queued while running: {reason}");
+            HostAssets.AppendLog($"Personal sync background sync queued while running: {reason}");
             return;
         }
 
         _ = RunBackgroundWebDavSyncAsync(reason);
+    }
+
+    private static bool IsImmediateBackgroundSyncReason(string reason)
+    {
+        return reason.StartsWith("timer", StringComparison.OrdinalIgnoreCase) ||
+               reason.StartsWith("startup", StringComparison.OrdinalIgnoreCase) ||
+               reason.StartsWith("queued", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task RunBackgroundWebDavSyncAsync(string reason)
@@ -1130,22 +1868,22 @@ public partial class MainWindow
         _backgroundWebDavSyncRunning = true;
         try
         {
-            HostAssets.AppendLog($"WebDAV background sync started: {reason}");
             var settings = AppSettingsStore.Load();
+            HostAssets.AppendLog($"Personal sync background sync started: reason={reason}, provider={settings.PersonalSync.Provider}");
             var result = await Task.Run(async () =>
             {
-                var service = new WebDavSyncService(settings);
+                var service = new PersonalSyncService(settings);
                 return await service.SyncExtensionsAsync();
             });
             ApplyWebDavSyncResult(result);
-            SyncStatus = $"个人扩展后台同步完成：上传 {result.UploadedCount} 个，拉取 {result.PulledCount} 个。";
-            HostAssets.AppendLog($"WebDAV background sync completed: {reason}, uploaded={result.UploadedCount}, pulled={result.PulledCount}, configUploaded={result.ConfigUploaded}, configPulled={result.ConfigPulled}");
+            SyncStatus = BuildPersonalSyncCompletedMessage(result, includeConfigSummary: false);
+            HostAssets.AppendLog($"Personal sync background sync completed: reason={reason}, uploaded={result.UploadedCount}, pulled={result.PulledCount}, configUploaded={result.ConfigUploaded}, configPulled={result.ConfigPulled}");
         }
         catch (Exception ex)
         {
             var message = FormatExceptionMessage(ex);
             SyncStatus = $"个人扩展后台同步失败：{message}";
-            HostAssets.AppendLog($"WebDAV background sync failed: {reason} -> {message}");
+            HostAssets.AppendLog($"Personal sync background sync failed: reason={reason} -> {message}");
         }
         finally
         {
@@ -1165,6 +1903,8 @@ public partial class MainWindow
             ReloadLocalExtensionsFromWebDav();
         }
 
+        SyncLocalExtensionsToCloud();
+
         if (!result.ConfigPulled)
         {
             return;
@@ -1177,6 +1917,47 @@ public partial class MainWindow
         ApplyFilter(SearchBox.Text);
     }
 
+    public void SyncLocalExtensionsToCloud()
+    {
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var commands = LocalExtensionCatalog.LoadCommands();
+                int successCount = 0;
+                foreach (var cmd in commands)
+                {
+                    if (cmd.Source == CommandSource.LocalExtension && !IsInternalCommand(cmd))
+                    {
+                        string? publishedIcon = null;
+                        try
+                        {
+                            publishedIcon = await _cloudSyncClient.PublishIconAsync(cmd, cmd.DeclaredVersion);
+                        }
+                        catch (Exception iconEx)
+                        {
+                            HostAssets.AppendLog($"Failed to publish icon for {cmd.ExtensionId}: {iconEx.Message}");
+                        }
+
+                        await _cloudSyncClient.UpsertExtensionAsync(cmd, publishedIcon);
+                        await _cloudSyncClient.UpsertUserExtensionAsync(cmd);
+                        successCount++;
+                    }
+                }
+                HostAssets.AppendLog($"Auto synchronized {successCount} local extensions metadata to cloud db successfully.");
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to auto register local extensions to cloud db: {ex.Message}");
+            }
+        });
+    }
+
     private async Task<bool> PullWebDavConfigFromCloudAsync()
     {
         if (_cloudSyncClient == null)
@@ -1184,10 +1965,17 @@ public partial class MainWindow
             return false;
         }
 
-        var snapshot = await _cloudSyncClient.GetUserConfigAsync<CloudWebDavConfigSnapshot>(CloudWebDavConfigId);
+        var snapshot = await _cloudSyncClient.GetUserConfigAsync<CloudPersonalSyncConfigSnapshot>(CloudPersonalSyncConfigId);
+        var legacySnapshot = await _cloudSyncClient.GetUserConfigAsync<CloudPersonalSyncConfigSnapshot>(CloudLegacyWebDavConfigId);
+        HostAssets.AppendLog(
+            $"Personal sync cloud pull sources: primaryFound={snapshot != null}, legacyFound={legacySnapshot != null}");
         if (snapshot == null)
         {
-            HostAssets.AppendLog("WebDAV cloud pull: no user config found.");
+            snapshot = legacySnapshot;
+        }
+        if (snapshot == null)
+        {
+            HostAssets.AppendLog("Personal sync cloud pull: no user config found.");
             if (ShouldSyncLocalWebDavConfigToCloud())
             {
                 await PushWebDavConfigToCloudAsync("cloud-refresh-bootstrap");
@@ -1195,65 +1983,105 @@ public partial class MainWindow
             return false;
         }
 
-        HostAssets.AppendLog(
-            $"WebDAV cloud pull: enabled={snapshot.EnableWebDavSync}, serverUrl={snapshot.WebDavServerUrl}, rootPath={snapshot.WebDavRootPath}, username={snapshot.WebDavUsername}, hasPassword={!string.IsNullOrWhiteSpace(snapshot.WebDavPassword)}");
-
-        var settings = AppSettingsStore.Load();
-        var shouldDefaultEnable = snapshot.EnableWebDavSync || HasWebDavConfigValues(snapshot.WebDavServerUrl, snapshot.WebDavRootPath, snapshot.WebDavUsername, snapshot.WebDavPassword);
-        var resolvedEnabled = settings.WebDavSyncManuallyDisabled ? false : shouldDefaultEnable;
-        var changed =
-            settings.EnableWebDavSync != resolvedEnabled ||
-            !string.Equals(settings.WebDavServerUrl, snapshot.WebDavServerUrl, StringComparison.Ordinal) ||
-            !string.Equals(settings.WebDavRootPath, snapshot.WebDavRootPath, StringComparison.Ordinal) ||
-            !string.Equals(settings.WebDavUsername, snapshot.WebDavUsername, StringComparison.Ordinal);
-        var credential = WebDavCredentialStore.Load();
-        var passwordChanged = !string.Equals(credential?.Password, snapshot.WebDavPassword, StringComparison.Ordinal);
-        if (!changed)
+        var incomingSettings = snapshot.Settings ?? new PersonalSyncSettings();
+        incomingSettings.Provider = PersonalSyncProviders.Normalize(
+            string.IsNullOrWhiteSpace(snapshot.Provider)
+                ? incomingSettings.Provider
+                : snapshot.Provider);
+        incomingSettings.Enabled = incomingSettings.Enabled || snapshot.Enabled;
+        var incomingSecrets = snapshot.Secrets ?? new PersonalSyncSecretBag();
+        if (!ReferenceEquals(snapshot, legacySnapshot) && legacySnapshot != null)
         {
-            if (passwordChanged && !string.IsNullOrWhiteSpace(snapshot.WebDavPassword))
+            MergeLegacyWebDavSnapshot(incomingSettings, incomingSecrets, legacySnapshot);
+            HostAssets.AppendLog(
+                $"Personal sync cloud pull: merged legacy WebDAV snapshot, hasLegacyPassword={!string.IsNullOrWhiteSpace(legacySnapshot.Secrets?.WebDavPassword)}");
+        }
+        if (string.IsNullOrWhiteSpace(incomingSecrets.WebDavPassword))
+        {
+            var legacyDto = await _cloudSyncClient.FetchWebDavConfigAsync();
+            HostAssets.AppendLog(
+                $"Personal sync cloud pull: checked legacy WebDAV config endpoint, found={legacyDto != null}, hasPassword={!string.IsNullOrWhiteSpace(legacyDto?.Password)}");
+            if (!string.IsNullOrWhiteSpace(legacyDto?.Password))
             {
-                HostAssets.AppendLog("WebDAV cloud pull: applying password-only update.");
-                SaveWebDavCredential(snapshot.WebDavUsername ?? string.Empty, snapshot.WebDavPassword);
-                NotifySettingsWindowWebDavConfigChanged();
-                return true;
+                incomingSettings.Provider = PersonalSyncProviders.WebDav;
+                incomingSettings.Enabled = true;
+                incomingSettings.WebDav.Url = string.IsNullOrWhiteSpace(legacyDto.ServerUrl)
+                    ? incomingSettings.WebDav.Url
+                    : legacyDto.ServerUrl;
+                incomingSettings.WebDav.PathPrefix = string.IsNullOrWhiteSpace(legacyDto.RootPath)
+                    ? incomingSettings.WebDav.PathPrefix
+                    : legacyDto.RootPath;
+                incomingSettings.WebDav.Username = string.IsNullOrWhiteSpace(legacyDto.Username)
+                    ? incomingSettings.WebDav.Username
+                    : legacyDto.Username;
+                incomingSecrets.WebDavPassword = legacyDto.Password;
+                HostAssets.AppendLog("Personal sync cloud pull: recovered WebDAV password from legacy config endpoint.");
             }
+        }
+        var incomingAutoSyncDelaySeconds = NormalizePersonalSyncAutoSyncDelay(snapshot.AutoSyncDelaySeconds);
 
-            HostAssets.AppendLog("WebDAV cloud pull: no local changes detected.");
+        var localSettings = AppSettingsStore.Load();
+        var localPersonalSync = localSettings.PersonalSync ?? new PersonalSyncSettings();
+        var localSecrets = PersonalSyncSecretStore.Load();
+
+        HostAssets.AppendLog(
+            $"Personal sync cloud pull: provider={incomingSettings.Provider}, enabled={incomingSettings.Enabled}, hasGitHubToken={!string.IsNullOrWhiteSpace(incomingSecrets.GitHubToken)}, hasGiteeToken={!string.IsNullOrWhiteSpace(incomingSecrets.GiteeToken)}, hasGitLabToken={!string.IsNullOrWhiteSpace(incomingSecrets.GitLabToken)}, hasGiteaToken={!string.IsNullOrWhiteSpace(incomingSecrets.GiteaToken)}, hasS3Secret={!string.IsNullOrWhiteSpace(incomingSecrets.S3SecretAccessKey)}, hasWebDavPassword={!string.IsNullOrWhiteSpace(incomingSecrets.WebDavPassword)}");
+
+        if (!HasMeaningfulPersonalSyncConfig(incomingSettings, incomingSecrets) &&
+            HasMeaningfulPersonalSyncConfig(localPersonalSync, localSecrets))
+        {
+            HostAssets.AppendLog("Personal sync cloud pull skipped: remote snapshot is empty, pushing local config instead.");
+            await PushWebDavConfigToCloudAsync("cloud-refresh-empty-remote");
             return false;
         }
 
-        settings.EnableWebDavSync = resolvedEnabled;
-        settings.WebDavServerUrl = string.IsNullOrWhiteSpace(snapshot.WebDavServerUrl)
-            ? settings.WebDavServerUrl
-            : snapshot.WebDavServerUrl.Trim();
-        settings.WebDavRootPath = string.IsNullOrWhiteSpace(snapshot.WebDavRootPath)
-            ? "/yanzi"
-            : snapshot.WebDavRootPath.Trim();
-        settings.WebDavUsername = snapshot.WebDavUsername?.Trim() ?? string.Empty;
-        if (resolvedEnabled)
+        PreserveMissingPersonalSyncValues(localPersonalSync, incomingSettings, localSecrets, incomingSecrets);
+
+        if (ArePersonalSyncSettingsEqual(localPersonalSync, incomingSettings) &&
+            ArePersonalSyncSecretsEqual(localSecrets, incomingSecrets) &&
+            localSettings.PersonalSyncAutoSyncDelaySeconds == incomingAutoSyncDelaySeconds)
         {
-            settings.WebDavSyncManuallyDisabled = false;
-        }
-        AppSettingsStore.Save(settings);
-        _appSettings = settings;
-        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
-        if (!string.IsNullOrWhiteSpace(snapshot.WebDavPassword))
-        {
-            SaveWebDavCredential(snapshot.WebDavUsername ?? string.Empty, snapshot.WebDavPassword);
-        }
-        if (settings.EnableWebDavSync)
-        {
-            StartBackgroundWebDavSync();
-        }
-        else
-        {
-            _backgroundWebDavSyncTimer.Stop();
+            HostAssets.AppendLog("Personal sync cloud pull: no local changes detected.");
+            return false;
         }
 
+        SavePersonalSyncSettings(incomingSettings, incomingSecrets, queueCloudSync: false);
+        SavePersonalSyncAutoSyncDelaySeconds(incomingAutoSyncDelaySeconds, queueCloudSync: false);
         HostAssets.AppendLog(
-            $"WebDAV cloud pull applied: enabled={settings.EnableWebDavSync}, serverUrl={settings.WebDavServerUrl}, rootPath={settings.WebDavRootPath}, username={settings.WebDavUsername}, passwordSaved={!string.IsNullOrWhiteSpace(snapshot.WebDavPassword)}");
+            $"Personal sync cloud pull applied: provider={incomingSettings.Provider}, enabled={incomingSettings.Enabled}, autoSyncDelaySeconds={incomingAutoSyncDelaySeconds}");
         NotifySettingsWindowWebDavConfigChanged();
         return true;
+    }
+
+    private static void MergeLegacyWebDavSnapshot(
+        PersonalSyncSettings targetSettings,
+        PersonalSyncSecretBag targetSecrets,
+        CloudPersonalSyncConfigSnapshot legacySnapshot)
+    {
+        var legacySettings = legacySnapshot.Settings ?? new PersonalSyncSettings();
+        var legacySecrets = legacySnapshot.Secrets ?? new PersonalSyncSecretBag();
+        if (!string.IsNullOrWhiteSpace(legacySettings.WebDav.Url))
+        {
+            targetSettings.WebDav.Url = legacySettings.WebDav.Url;
+        }
+
+        if (!string.IsNullOrWhiteSpace(legacySettings.WebDav.PathPrefix))
+        {
+            targetSettings.WebDav.PathPrefix = legacySettings.WebDav.PathPrefix;
+        }
+
+        if (!string.IsNullOrWhiteSpace(legacySettings.WebDav.Username))
+        {
+            targetSettings.WebDav.Username = legacySettings.WebDav.Username;
+        }
+
+        if (!string.IsNullOrWhiteSpace(legacySecrets.WebDavPassword) &&
+            string.IsNullOrWhiteSpace(targetSecrets.WebDavPassword))
+        {
+            targetSecrets.WebDavPassword = legacySecrets.WebDavPassword;
+            targetSettings.Provider = PersonalSyncProviders.WebDav;
+            targetSettings.Enabled = true;
+        }
     }
 
     private void QueueCloudWebDavConfigSync(string reason)
@@ -1291,11 +2119,11 @@ public partial class MainWindow
         try
         {
             await PushWebDavConfigToCloudAsync(reason);
-            HostAssets.AppendLog($"Cloud WebDAV config synced: {reason}");
+            HostAssets.AppendLog($"Cloud personal sync config synced: {reason}");
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Cloud WebDAV config sync skipped: {reason} -> {FormatExceptionMessage(ex)}");
+            HostAssets.AppendLog($"Cloud personal sync config sync skipped: {reason} -> {FormatExceptionMessage(ex)}");
         }
     }
 
@@ -1343,22 +2171,79 @@ public partial class MainWindow
     {
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || !ShouldSyncLocalWebDavConfigToCloud())
         {
-            HostAssets.AppendLog($"WebDAV cloud push skipped: {reason}");
+            HostAssets.AppendLog($"Personal sync cloud push skipped: {reason}");
             return;
         }
 
         await _cloudSyncClient.EnsureAuthenticatedAsync();
         var settings = AppSettingsStore.Load();
-        var credential = WebDavCredentialStore.Load();
-        HostAssets.AppendLog(
-            $"WebDAV cloud push: reason={reason}, enabled={settings.EnableWebDavSync}, serverUrl={settings.WebDavServerUrl}, rootPath={settings.WebDavRootPath}, username={settings.WebDavUsername}, hasPassword={!string.IsNullOrWhiteSpace(credential?.Password)}");
-        await _cloudSyncClient.UpsertUserConfigAsync(CloudWebDavConfigId, new CloudWebDavConfigSnapshot
+        var sync = settings.PersonalSync ?? new PersonalSyncSettings();
+        var secrets = PersonalSyncSecretStore.Load();
+        var hadLocalWebDavPassword = !string.IsNullOrWhiteSpace(secrets.WebDavPassword);
+        var existingSnapshot = await _cloudSyncClient.GetUserConfigAsync<CloudPersonalSyncConfigSnapshot>(CloudPersonalSyncConfigId);
+        if (existingSnapshot?.Secrets != null)
         {
-            EnableWebDavSync = settings.EnableWebDavSync,
-            WebDavServerUrl = settings.WebDavServerUrl,
-            WebDavRootPath = settings.WebDavRootPath,
-            WebDavUsername = settings.WebDavUsername,
-            WebDavPassword = credential?.Password
+            PreserveMissingPersonalSyncValues(
+                existingSnapshot.Settings ?? new PersonalSyncSettings(),
+                sync,
+                existingSnapshot.Secrets,
+                secrets);
+            HostAssets.AppendLog(
+                $"Personal sync cloud push: preserved missing secrets from primary cloud snapshot, hasExistingWebDavPassword={!string.IsNullOrWhiteSpace(existingSnapshot.Secrets.WebDavPassword)}");
+        }
+
+        if (string.IsNullOrWhiteSpace(secrets.WebDavPassword))
+        {
+            var legacySnapshot = await _cloudSyncClient.GetUserConfigAsync<CloudPersonalSyncConfigSnapshot>(CloudLegacyWebDavConfigId);
+            if (legacySnapshot != null)
+            {
+                MergeLegacyWebDavSnapshot(sync, secrets, legacySnapshot);
+                HostAssets.AppendLog(
+                    $"Personal sync cloud push: checked legacy WebDAV snapshot, hasLegacyPassword={!string.IsNullOrWhiteSpace(legacySnapshot.Secrets?.WebDavPassword)}");
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(secrets.WebDavPassword))
+        {
+            var legacyDto = await _cloudSyncClient.FetchWebDavConfigAsync();
+            if (!string.IsNullOrWhiteSpace(legacyDto?.Password))
+            {
+                sync.Provider = PersonalSyncProviders.WebDav;
+                sync.Enabled = true;
+                sync.WebDav.Url = string.IsNullOrWhiteSpace(legacyDto.ServerUrl)
+                    ? sync.WebDav.Url
+                    : legacyDto.ServerUrl;
+                sync.WebDav.PathPrefix = string.IsNullOrWhiteSpace(legacyDto.RootPath)
+                    ? sync.WebDav.PathPrefix
+                    : legacyDto.RootPath;
+                sync.WebDav.Username = string.IsNullOrWhiteSpace(legacyDto.Username)
+                    ? sync.WebDav.Username
+                    : legacyDto.Username;
+                secrets.WebDavPassword = legacyDto.Password;
+                HostAssets.AppendLog("Personal sync cloud push: recovered WebDAV password from legacy config endpoint before push.");
+            }
+        }
+
+        if (!hadLocalWebDavPassword && !string.IsNullOrWhiteSpace(secrets.WebDavPassword))
+        {
+            PersonalSyncSecretStore.Save(secrets);
+            WebDavCredentialStore.Save(new SavedWebDavCredential
+            {
+                Username = sync.WebDav.Username,
+                Password = secrets.WebDavPassword
+            });
+            HostAssets.AppendLog("Personal sync cloud push: backfilled local WebDAV password from cloud before push.");
+        }
+
+        HostAssets.AppendLog(
+            $"Personal sync cloud push: reason={reason}, provider={sync.Provider}, enabled={sync.Enabled}, hasGitHubToken={!string.IsNullOrWhiteSpace(secrets.GitHubToken)}, hasGiteeToken={!string.IsNullOrWhiteSpace(secrets.GiteeToken)}, hasGitLabToken={!string.IsNullOrWhiteSpace(secrets.GitLabToken)}, hasGiteaToken={!string.IsNullOrWhiteSpace(secrets.GiteaToken)}, hasS3Secret={!string.IsNullOrWhiteSpace(secrets.S3SecretAccessKey)}, hasWebDavPassword={!string.IsNullOrWhiteSpace(secrets.WebDavPassword)}");
+        await _cloudSyncClient.UpsertUserConfigAsync(CloudPersonalSyncConfigId, new CloudPersonalSyncConfigSnapshot
+        {
+            Enabled = sync.Enabled,
+            Provider = sync.Provider,
+            Settings = sync,
+            Secrets = secrets,
+            AutoSyncDelaySeconds = settings.PersonalSyncAutoSyncDelaySeconds
         });
     }
 
@@ -1589,9 +2474,37 @@ public partial class MainWindow
     private static bool ShouldSyncLocalWebDavConfigToCloud()
     {
         var settings = AppSettingsStore.Load();
-        return !string.IsNullOrWhiteSpace(settings.WebDavServerUrl) &&
-               !string.IsNullOrWhiteSpace(settings.WebDavRootPath) &&
-               !string.IsNullOrWhiteSpace(settings.WebDavUsername);
+        var sync = settings.PersonalSync ?? new PersonalSyncSettings();
+        var secrets = PersonalSyncSecretStore.Load();
+        return sync.Enabled ||
+               HasWebDavConfigValues(sync.WebDav.Url, sync.WebDav.PathPrefix, sync.WebDav.Username, secrets.WebDavPassword) ||
+               !string.IsNullOrWhiteSpace(sync.GitHub.Username) ||
+               !string.Equals(sync.GitHub.Repo, "yanzi-sync", StringComparison.Ordinal) ||
+               !string.Equals(sync.GitHub.Branch, "main", StringComparison.OrdinalIgnoreCase) ||
+               !string.IsNullOrWhiteSpace(sync.GitHub.PathPrefix) ||
+               !string.IsNullOrWhiteSpace(sync.Gitee.Username) ||
+               !string.Equals(sync.Gitee.Repo, "yanzi-sync", StringComparison.Ordinal) ||
+               !string.Equals(sync.Gitee.Branch, "master", StringComparison.OrdinalIgnoreCase) ||
+               !string.IsNullOrWhiteSpace(sync.Gitee.PathPrefix) ||
+               !string.IsNullOrWhiteSpace(sync.GitLab.ProjectPath) ||
+               !string.Equals(sync.GitLab.BaseUrl, "https://gitlab.com", StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(sync.GitLab.Branch, "main", StringComparison.OrdinalIgnoreCase) ||
+               !string.IsNullOrWhiteSpace(sync.GitLab.PathPrefix) ||
+               !string.Equals(sync.Gitea.BaseUrl, "https://gitea.com", StringComparison.OrdinalIgnoreCase) ||
+               !string.IsNullOrWhiteSpace(sync.Gitea.Username) ||
+               !string.Equals(sync.Gitea.Repo, "yanzi-sync", StringComparison.Ordinal) ||
+               !string.Equals(sync.Gitea.Branch, "main", StringComparison.OrdinalIgnoreCase) ||
+               !string.IsNullOrWhiteSpace(sync.Gitea.PathPrefix) ||
+               !string.IsNullOrWhiteSpace(sync.S3.AccessKeyId) ||
+               !string.IsNullOrWhiteSpace(sync.S3.Region) ||
+               !string.IsNullOrWhiteSpace(sync.S3.Bucket) ||
+               !string.IsNullOrWhiteSpace(sync.S3.Endpoint) ||
+               !string.IsNullOrWhiteSpace(sync.S3.PathPrefix) ||
+               !string.IsNullOrWhiteSpace(secrets.GitHubToken) ||
+               !string.IsNullOrWhiteSpace(secrets.GiteeToken) ||
+               !string.IsNullOrWhiteSpace(secrets.GitLabToken) ||
+               !string.IsNullOrWhiteSpace(secrets.GiteaToken) ||
+               !string.IsNullOrWhiteSpace(secrets.S3SecretAccessKey);
     }
 
     private static bool ShouldSyncLocalQuickPanelConfigToCloud()
@@ -1809,6 +2722,106 @@ public partial class MainWindow
                !string.IsNullOrWhiteSpace(password);
     }
 
+    private static bool ArePersonalSyncSettingsEqual(PersonalSyncSettings? left, PersonalSyncSettings? right)
+    {
+        var leftJson = JsonSerializer.Serialize(left ?? new PersonalSyncSettings());
+        var rightJson = JsonSerializer.Serialize(right ?? new PersonalSyncSettings());
+        return string.Equals(leftJson, rightJson, StringComparison.Ordinal);
+    }
+
+    private static bool ArePersonalSyncSecretsEqual(PersonalSyncSecretBag? left, PersonalSyncSecretBag? right)
+    {
+        var leftJson = JsonSerializer.Serialize(left ?? new PersonalSyncSecretBag());
+        var rightJson = JsonSerializer.Serialize(right ?? new PersonalSyncSecretBag());
+        return string.Equals(leftJson, rightJson, StringComparison.Ordinal);
+    }
+
+    private static bool HasMeaningfulPersonalSyncConfig(PersonalSyncSettings? settings, PersonalSyncSecretBag? secrets)
+    {
+        settings ??= new PersonalSyncSettings();
+        secrets ??= new PersonalSyncSecretBag();
+        return settings.Enabled ||
+               !string.IsNullOrWhiteSpace(secrets.GitHubToken) ||
+               !string.IsNullOrWhiteSpace(secrets.GiteeToken) ||
+               !string.IsNullOrWhiteSpace(secrets.GitLabToken) ||
+               !string.IsNullOrWhiteSpace(secrets.GiteaToken) ||
+               !string.IsNullOrWhiteSpace(secrets.S3SecretAccessKey) ||
+               !string.IsNullOrWhiteSpace(secrets.WebDavPassword) ||
+               !string.IsNullOrWhiteSpace(settings.GitHub.Username) ||
+               !string.Equals(settings.GitHub.Repo, "yanzi-sync", StringComparison.Ordinal) ||
+               !string.IsNullOrWhiteSpace(settings.GitHub.PathPrefix) ||
+               !string.IsNullOrWhiteSpace(settings.Gitee.Username) ||
+               !string.Equals(settings.Gitee.Repo, "yanzi-sync", StringComparison.Ordinal) ||
+               !string.IsNullOrWhiteSpace(settings.Gitee.PathPrefix) ||
+               !string.IsNullOrWhiteSpace(settings.GitLab.ProjectPath) ||
+               !string.IsNullOrWhiteSpace(settings.GitLab.PathPrefix) ||
+               !string.IsNullOrWhiteSpace(settings.Gitea.Username) ||
+               !string.Equals(settings.Gitea.Repo, "yanzi-sync", StringComparison.Ordinal) ||
+               !string.IsNullOrWhiteSpace(settings.Gitea.PathPrefix) ||
+               !string.IsNullOrWhiteSpace(settings.S3.AccessKeyId) ||
+               !string.IsNullOrWhiteSpace(settings.S3.Region) ||
+               !string.IsNullOrWhiteSpace(settings.S3.Bucket) ||
+               !string.IsNullOrWhiteSpace(settings.S3.Endpoint) ||
+               !string.IsNullOrWhiteSpace(settings.S3.PathPrefix) ||
+               !string.IsNullOrWhiteSpace(settings.WebDav.Username);
+    }
+
+    private static void PreserveMissingPersonalSyncValues(
+        PersonalSyncSettings localSettings,
+        PersonalSyncSettings incomingSettings,
+        PersonalSyncSecretBag localSecrets,
+        PersonalSyncSecretBag incomingSecrets)
+    {
+        if (!incomingSettings.Enabled && localSettings.Enabled && !HasMeaningfulPersonalSyncConfig(incomingSettings, incomingSecrets))
+        {
+            incomingSettings.Enabled = true;
+        }
+
+        incomingSettings.GitHub.Username = KeepIncomingOrLocal(incomingSettings.GitHub.Username, localSettings.GitHub.Username);
+        incomingSettings.GitHub.Repo = KeepIncomingOrLocal(incomingSettings.GitHub.Repo, localSettings.GitHub.Repo);
+        incomingSettings.GitHub.Branch = KeepIncomingOrLocal(incomingSettings.GitHub.Branch, localSettings.GitHub.Branch);
+        incomingSettings.GitHub.PathPrefix = KeepIncomingOrLocal(incomingSettings.GitHub.PathPrefix, localSettings.GitHub.PathPrefix);
+        incomingSettings.Gitee.Username = KeepIncomingOrLocal(incomingSettings.Gitee.Username, localSettings.Gitee.Username);
+        incomingSettings.Gitee.Repo = KeepIncomingOrLocal(incomingSettings.Gitee.Repo, localSettings.Gitee.Repo);
+        incomingSettings.Gitee.Branch = KeepIncomingOrLocal(incomingSettings.Gitee.Branch, localSettings.Gitee.Branch);
+        incomingSettings.Gitee.PathPrefix = KeepIncomingOrLocal(incomingSettings.Gitee.PathPrefix, localSettings.Gitee.PathPrefix);
+        incomingSettings.GitLab.BaseUrl = KeepIncomingOrLocal(incomingSettings.GitLab.BaseUrl, localSettings.GitLab.BaseUrl);
+        incomingSettings.GitLab.ProjectPath = KeepIncomingOrLocal(incomingSettings.GitLab.ProjectPath, localSettings.GitLab.ProjectPath);
+        incomingSettings.GitLab.Branch = KeepIncomingOrLocal(incomingSettings.GitLab.Branch, localSettings.GitLab.Branch);
+        incomingSettings.GitLab.PathPrefix = KeepIncomingOrLocal(incomingSettings.GitLab.PathPrefix, localSettings.GitLab.PathPrefix);
+        incomingSettings.Gitea.BaseUrl = KeepIncomingOrLocal(incomingSettings.Gitea.BaseUrl, localSettings.Gitea.BaseUrl);
+        incomingSettings.Gitea.Username = KeepIncomingOrLocal(incomingSettings.Gitea.Username, localSettings.Gitea.Username);
+        incomingSettings.Gitea.Repo = KeepIncomingOrLocal(incomingSettings.Gitea.Repo, localSettings.Gitea.Repo);
+        incomingSettings.Gitea.Branch = KeepIncomingOrLocal(incomingSettings.Gitea.Branch, localSettings.Gitea.Branch);
+        incomingSettings.Gitea.PathPrefix = KeepIncomingOrLocal(incomingSettings.Gitea.PathPrefix, localSettings.Gitea.PathPrefix);
+        incomingSettings.S3.AccessKeyId = KeepIncomingOrLocal(incomingSettings.S3.AccessKeyId, localSettings.S3.AccessKeyId);
+        incomingSettings.S3.Region = KeepIncomingOrLocal(incomingSettings.S3.Region, localSettings.S3.Region);
+        incomingSettings.S3.Bucket = KeepIncomingOrLocal(incomingSettings.S3.Bucket, localSettings.S3.Bucket);
+        incomingSettings.S3.Endpoint = KeepIncomingOrLocal(incomingSettings.S3.Endpoint, localSettings.S3.Endpoint);
+        incomingSettings.S3.PathPrefix = KeepIncomingOrLocal(incomingSettings.S3.PathPrefix, localSettings.S3.PathPrefix);
+        incomingSettings.WebDav.Url = KeepIncomingOrLocal(incomingSettings.WebDav.Url, localSettings.WebDav.Url);
+        incomingSettings.WebDav.Username = KeepIncomingOrLocal(incomingSettings.WebDav.Username, localSettings.WebDav.Username);
+        incomingSettings.WebDav.PathPrefix = KeepIncomingOrLocal(incomingSettings.WebDav.PathPrefix, localSettings.WebDav.PathPrefix);
+        incomingSecrets.GitHubToken = KeepIncomingOrLocal(incomingSecrets.GitHubToken, localSecrets.GitHubToken);
+        incomingSecrets.GiteeToken = KeepIncomingOrLocal(incomingSecrets.GiteeToken, localSecrets.GiteeToken);
+        incomingSecrets.GitLabToken = KeepIncomingOrLocal(incomingSecrets.GitLabToken, localSecrets.GitLabToken);
+        incomingSecrets.GiteaToken = KeepIncomingOrLocal(incomingSecrets.GiteaToken, localSecrets.GiteaToken);
+        incomingSecrets.S3SecretAccessKey = KeepIncomingOrLocal(incomingSecrets.S3SecretAccessKey, localSecrets.S3SecretAccessKey);
+        incomingSecrets.WebDavPassword = KeepIncomingOrLocal(incomingSecrets.WebDavPassword, localSecrets.WebDavPassword);
+    }
+
+    private static string KeepIncomingOrLocal(string? incoming, string? local) =>
+        string.IsNullOrWhiteSpace(incoming) && !string.IsNullOrWhiteSpace(local)
+            ? local.Trim()
+            : incoming?.Trim() ?? string.Empty;
+
+    private static int NormalizePersonalSyncAutoSyncDelay(int value)
+    {
+        return value is 0 or 2 or 3 or 5 or 10 or 20 or 30 or 60 or 120
+            ? value
+            : 10;
+    }
+
     private void NotifySettingsWindowWebDavConfigChanged()
     {
         // If SettingsWindow is open, refresh its WebDAV UI
@@ -1920,6 +2933,12 @@ public partial class MainWindow
     public void SaveWebDavSettings(bool enabled, string serverUrl, string rootPath, string username)
     {
         var settings = AppSettingsStore.Load();
+        settings.PersonalSync ??= new PersonalSyncSettings();
+        settings.PersonalSync.Provider = PersonalSyncProviders.WebDav;
+        settings.PersonalSync.Enabled = enabled;
+        settings.PersonalSync.WebDav.Url = serverUrl.Trim();
+        settings.PersonalSync.WebDav.PathPrefix = string.IsNullOrWhiteSpace(rootPath) ? "/yanzi" : rootPath.Trim();
+        settings.PersonalSync.WebDav.Username = username.Trim();
         settings.EnableWebDavSync = enabled;
         settings.WebDavSyncManuallyDisabled = !enabled && HasWebDavConfigValues(serverUrl, rootPath, username, null);
         settings.WebDavServerUrl = serverUrl.Trim();
@@ -1942,6 +2961,9 @@ public partial class MainWindow
 
     public void SaveWebDavCredential(string username, string password)
     {
+        var secrets = PersonalSyncSecretStore.Load();
+        secrets.WebDavPassword = password;
+        PersonalSyncSecretStore.Save(secrets);
         WebDavCredentialStore.Save(new SavedWebDavCredential
         {
             Username = username.Trim(),
@@ -1949,6 +2971,9 @@ public partial class MainWindow
         });
 
         var settings = AppSettingsStore.Load();
+        settings.PersonalSync ??= new PersonalSyncSettings();
+        settings.PersonalSync.Provider = PersonalSyncProviders.WebDav;
+        settings.PersonalSync.WebDav.Username = username.Trim();
         settings.WebDavUsername = username.Trim();
         AppSettingsStore.Save(settings);
         _appSettings = settings;
@@ -1956,6 +2981,172 @@ public partial class MainWindow
         StartBackgroundWebDavSync();
         QueueBackgroundWebDavSync("credential-saved");
         QueueCloudWebDavConfigSync("credential-saved");
+    }
+
+    public PersonalSyncSecretBag GetPersonalSyncSecrets()
+    {
+        return PersonalSyncSecretStore.Load();
+    }
+
+    public async Task<IReadOnlyList<PersonalSyncGitCommitInfo>> GetPersonalSyncGitHubCommitsAsync(CancellationToken cancellationToken = default)
+    {
+        var settings = AppSettingsStore.Load();
+        var sync = settings.PersonalSync ?? new PersonalSyncSettings();
+        var secrets = PersonalSyncSecretStore.Load();
+        if (!string.Equals(sync.Provider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(secrets.GitHubToken))
+        {
+            return [];
+        }
+
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secrets.GitHubToken.Trim());
+        httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+        httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yanzi", "0.1"));
+
+        var owner = sync.GitHub.Username?.Trim();
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            using var userResponse = await httpClient.GetAsync("https://api.github.com/user", cancellationToken);
+            if (!userResponse.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"GitHub 账号读取失败：HTTP {(int)userResponse.StatusCode}");
+            }
+
+            using var userDocument = JsonDocument.Parse(await userResponse.Content.ReadAsStringAsync(cancellationToken));
+            owner = userDocument.RootElement.TryGetProperty("login", out var loginElement)
+                ? loginElement.GetString()
+                : null;
+        }
+
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            throw new InvalidOperationException("GitHub Token 未返回账号名。");
+        }
+
+        var repo = string.IsNullOrWhiteSpace(sync.GitHub.Repo) ? "yanzi-sync" : sync.GitHub.Repo.Trim();
+        var branch = string.IsNullOrWhiteSpace(sync.GitHub.Branch) ? "main" : sync.GitHub.Branch.Trim();
+        var url = $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits?sha={Uri.EscapeDataString(branch)}&per_page=12";
+        using var response = await httpClient.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"GitHub 提交记录读取失败：HTTP {(int)response.StatusCode}");
+        }
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        var commits = new List<PersonalSyncGitCommitInfo>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            var sha = item.TryGetProperty("sha", out var shaElement) ? shaElement.GetString() ?? string.Empty : string.Empty;
+            var htmlUrl = item.TryGetProperty("html_url", out var htmlUrlElement) ? htmlUrlElement.GetString() ?? string.Empty : string.Empty;
+            var commit = item.TryGetProperty("commit", out var commitElement) ? commitElement : default;
+            var message = commit.ValueKind != JsonValueKind.Undefined && commit.TryGetProperty("message", out var messageElement)
+                ? messageElement.GetString() ?? string.Empty
+                : string.Empty;
+            var authorName = string.Empty;
+            var committedAtUtc = DateTimeOffset.MinValue;
+            if (commit.ValueKind != JsonValueKind.Undefined &&
+                commit.TryGetProperty("author", out var authorElement))
+            {
+                if (authorElement.TryGetProperty("name", out var nameElement))
+                {
+                    authorName = nameElement.GetString() ?? string.Empty;
+                }
+
+                if (authorElement.TryGetProperty("date", out var dateElement) &&
+                    DateTimeOffset.TryParse(dateElement.GetString(), out var parsedDate))
+                {
+                    committedAtUtc = parsedDate.ToUniversalTime();
+                }
+            }
+
+            commits.Add(new PersonalSyncGitCommitInfo(
+                sha,
+                FirstLine(message),
+                authorName,
+                committedAtUtc == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : committedAtUtc,
+                htmlUrl));
+        }
+
+        return commits;
+    }
+
+    private static string FirstLine(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        using var reader = new StringReader(value.Trim());
+        return reader.ReadLine() ?? value.Trim();
+    }
+
+    public void SavePersonalSyncSettings(PersonalSyncSettings personalSync, PersonalSyncSecretBag secrets, bool queueCloudSync = true)
+    {
+        var settings = AppSettingsStore.Load();
+        settings.PersonalSync = personalSync ?? new PersonalSyncSettings();
+        settings.PersonalSync.Provider = PersonalSyncProviders.Normalize(settings.PersonalSync.Provider);
+
+        if (settings.PersonalSync.Provider == PersonalSyncProviders.WebDav)
+        {
+            settings.EnableWebDavSync = settings.PersonalSync.Enabled;
+            settings.WebDavSyncManuallyDisabled = !settings.PersonalSync.Enabled &&
+                                                  HasWebDavConfigValues(
+                                                      settings.PersonalSync.WebDav.Url,
+                                                      settings.PersonalSync.WebDav.PathPrefix,
+                                                      settings.PersonalSync.WebDav.Username,
+                                                      null);
+            settings.WebDavServerUrl = settings.PersonalSync.WebDav.Url;
+            settings.WebDavRootPath = settings.PersonalSync.WebDav.PathPrefix;
+            settings.WebDavUsername = settings.PersonalSync.WebDav.Username;
+            WebDavCredentialStore.Save(new SavedWebDavCredential
+            {
+                Username = settings.PersonalSync.WebDav.Username,
+                Password = secrets?.WebDavPassword ?? string.Empty
+            });
+        }
+        else
+        {
+            settings.EnableWebDavSync = false;
+        }
+
+        AppSettingsStore.Save(settings);
+        PersonalSyncSecretStore.Save(secrets ?? new PersonalSyncSecretBag());
+        _appSettings = settings;
+        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
+        if (PersonalSyncBackendFactory.IsConfigured(settings))
+        {
+            StartBackgroundWebDavSync();
+        }
+        else
+        {
+            _backgroundWebDavSyncTimer.Stop();
+        }
+
+        if (queueCloudSync)
+        {
+            QueueCloudWebDavConfigSync("personal-sync-settings-saved");
+        }
+    }
+
+    public void SavePersonalSyncAutoSyncDelaySeconds(int delaySeconds, bool queueCloudSync = true)
+    {
+        var normalized = NormalizePersonalSyncAutoSyncDelay(delaySeconds);
+        var settings = AppSettingsStore.Load();
+        if (settings.PersonalSyncAutoSyncDelaySeconds == normalized)
+        {
+            return;
+        }
+
+        settings.PersonalSyncAutoSyncDelaySeconds = normalized;
+        AppSettingsStore.Save(settings);
+        _appSettings = settings;
+        if (queueCloudSync)
+        {
+            QueueCloudWebDavConfigSync("personal-sync-delay-saved");
+        }
     }
 
     public void NotifyQuickPanelSettingsChanged(string reason, bool refreshYanmOverlay = true)
@@ -2004,13 +3195,17 @@ public partial class MainWindow
     {
         try
         {
-            var service = new WebDavSyncService(AppSettingsStore.Load());
-            await service.ProbeAsync();
-            return (true, $"WebDAV 连接正常：{service.SyncRootDisplay}");
+            var root = await Task.Run(async () =>
+            {
+                var service = new PersonalSyncService(AppSettingsStore.Load());
+                await service.ProbeAsync();
+                return service.SyncRootDisplay;
+            });
+            return (true, $"个人同步连接正常：{root}");
         }
         catch (Exception ex)
         {
-            return (false, $"WebDAV 测试失败：{FormatExceptionMessage(ex)}");
+            return (false, $"个人同步测试失败：{FormatExceptionMessage(ex)}");
         }
     }
 
@@ -2018,15 +3213,13 @@ public partial class MainWindow
     {
         try
         {
-            var service = new WebDavSyncService(AppSettingsStore.Load());
-            var result = await service.SyncExtensionsAsync();
+            var result = await Task.Run(async () =>
+            {
+                var service = new PersonalSyncService(AppSettingsStore.Load());
+                return await service.SyncExtensionsAsync();
+            });
             ApplyWebDavSyncResult(result);
-            var configSummary = result.ConfigPulled
-                ? "，配置已拉取"
-                : result.ConfigUploaded
-                    ? "，配置已上传"
-                    : string.Empty;
-            return (true, $"个人扩展同步完成：上传 {result.UploadedCount} 个，拉取 {result.PulledCount} 个{configSummary}。");
+            return (true, BuildPersonalSyncCompletedMessage(result));
         }
         catch (Exception ex)
         {
@@ -2034,11 +3227,29 @@ public partial class MainWindow
         }
     }
 
+    private static string BuildPersonalSyncCompletedMessage(WebDavSyncResult result, bool includeConfigSummary = true)
+    {
+        var packageSummary = result.UploadedCount == 0 && result.PulledCount == 0
+            ? "扩展包已是最新"
+            : $"扩展包上传 {result.UploadedCount} 个，拉取 {result.PulledCount} 个";
+        if (!includeConfigSummary)
+        {
+            return $"个人扩展同步完成：{packageSummary}。";
+        }
+
+        var configSummary = result.ConfigPulled
+            ? "，配置已拉取"
+            : result.ConfigUploaded
+                ? "，配置已上传"
+                : "，配置无变化";
+        return $"个人扩展同步完成：{packageSummary}{configSummary}。";
+    }
+
     public async Task<(bool ok, string message, bool uploaded, bool pulled, int payloadBytes)> SyncYanmStateNowAsync()
     {
         try
         {
-            var service = new WebDavSyncService(AppSettingsStore.Load());
+            var service = new PersonalSyncService(AppSettingsStore.Load());
             var result = await service.SyncYanmStateAsync();
             if (result.Pulled)
             {
@@ -2157,3 +3368,10 @@ public partial class MainWindow
     }
 
 }
+
+public sealed record PersonalSyncGitCommitInfo(
+    string Sha,
+    string Message,
+    string Author,
+    DateTimeOffset CommittedAtUtc,
+    string Url);

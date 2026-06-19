@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -37,15 +38,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _radialMenuSearchText = string.Empty;
     private string _launcherHotkey = "Alt+Space";
     private string _syncStatusText = "同步服务状态未知。";
-    private string _webDavServerUrl = "https://dav.jianguoyun.com/dav/";
-    private string _webDavRootPath = "/yanzi";
-    private string _webDavUsername = string.Empty;
     private string _webDavStatusText = "未启用个人扩展同步。";
     private string _syncActivityLogText = "暂无同步记录。";
+    private string _personalSyncCommitStatusText = "GitHub 同步启用后可查看最近提交。";
     private string _aiBaseUrl = string.Empty;
     private string _aiApiKey = string.Empty;
     private string _aiModel = string.Empty;
     private string _aiSettingsStatusText = "尚未配置 AI。";
+    private string _environmentStatusText = "尚未配置环境变量。";
     private string _radialPreviewDebugLog = "预览日志：等待交互。";
     private string _recycleBinSummary = "回收站为空。";
     private string _recycleBinSearchText = string.Empty;
@@ -64,6 +64,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private RadialMenuSlotEditorItem? _selectedRadialMenuSlot;
     private readonly Dictionary<string, WpfComboBox> _mouseTriggerTargetCombos = new(StringComparer.Ordinal);
     private bool _isUpdatingMouseTriggerTargetCombos;
+    private bool _showPersonalSyncAdvancedOptions;
     
     // 扩展名称缓存，避免重复读取文件
     private static readonly Dictionary<string, string> _extensionNameCache = new();
@@ -76,6 +77,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _originalAiApiKey = string.Empty;
     private string _originalAiModel = string.Empty;
     private bool _hasAiSettingsChanged;
+    private PersonalSyncSettings _personalSyncSettings = new();
+    private PersonalSyncSecretBag _personalSyncSecrets = new();
     
     // 扩展筛选状态
     private string _extensionFilterMode = "all"; // all, published, disabled, shortcut, recycle
@@ -85,6 +88,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         _mainWindow = mainWindow;
         _settings = AppSettingsStore.Load();
+        _personalSyncSettings = ClonePersonalSyncSettings(_settings.PersonalSync);
+        _personalSyncSecrets = ClonePersonalSyncSecrets(_mainWindow.GetPersonalSyncSecrets());
         _settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
         _settings.YarnSelect ??= new YarnSelectSettings();
         _settings.RadialMenu ??= new RadialMenuSettings();
@@ -93,7 +98,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         [
             new SettingsNavigationItem("general", "mdi:settings", "常规", "#FF3B82F6"),
             new SettingsNavigationItem("ai", "mdi:ai", "AI", "#FF8B5CF6"),
-            new SettingsNavigationItem("sync", "mdi:sync", "同步", "#FF22C55E"),
+            new SettingsNavigationItem("environment", "mdi:key", "环境变量", "#FF14B8A6"),
+            new SettingsNavigationItem("sync", "mdi:sync", "同步与备份", "#FF22C55E"),
             new SettingsNavigationItem("extensions", "mdi:dashboard", "扩展", "#FFF97316"),
             new SettingsNavigationItem("quickpanel", "mdi:mouse-panel", "鼠标触发", "#FFEC4899"),
             new SettingsNavigationItem("mousegestures", "mdi:gesture-tap", "鼠标手势", "#FFFB923C"),
@@ -106,22 +112,26 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         LaunchAtStartup = _settings.LaunchAtStartup;
         RefreshCloudOnStartup = _settings.RefreshCloudOnStartup;
         CloseToTray = _settings.CloseToTray;
+        EnableAutoUpdate = _settings.EnableAutoUpdate;
         EnableWindowSnapAssist = _settings.EnableWindowSnapAssist;
         LauncherHotkey = _settings.LauncherHotkey;
-        EnableWebDavSync = _settings.EnableWebDavSync;
-        WebDavServerUrl = string.IsNullOrWhiteSpace(_settings.WebDavServerUrl) ? "https://dav.jianguoyun.com/dav/" : _settings.WebDavServerUrl;
-        WebDavRootPath = _settings.WebDavRootPath;
-        WebDavUsername = _settings.WebDavUsername;
+        LoadPersonalSyncStateFromSettings();
         AiBaseUrl = _settings.AiBaseUrl;
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
+
+        SubscribeUpdateEvents();
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
+        EnvironmentVariables = new ObservableCollection<EnvironmentVariableEditorItem>(
+            AppEnvironmentVariableStore.Load().Select(static item => new EnvironmentVariableEditorItem(item.Name, item.Value, item.Description)));
+        EnvironmentStatusText = BuildEnvironmentSummary();
         BaseUrl = _mainWindow.SyncBaseUrl;
         ExtensionsRootPath = LocalExtensionCatalog.CatalogRootPath;
         AppVersionText = AppVersionInfo.DisplayText;
         ShortcutItems = new ObservableCollection<SettingsShortcutItem>();
         ExtensionItems = new ObservableCollection<SettingsExtensionItem>();
         RecycleBinItems = new ObservableCollection<SettingsRecycleBinItem>();
+        PersonalSyncCommitItems = new ObservableCollection<PersonalSyncCommitItem>();
         YarnSelectRules = new ObservableCollection<YarnSelectRuleItem>();
         YarnSelectExtensionOptions = new ObservableCollection<YarnSelectExtensionOption>();
         RadialMenuExtensionOptions = new ObservableCollection<YarnSelectExtensionOption>();
@@ -133,6 +143,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MouseGestureItems = new ObservableCollection<SettingsMouseGestureItem>();
         MouseGestureQuickBindItems = new ObservableCollection<MouseGestureQuickBindItem>();
         MouseGestureExtensionOptions = new ObservableCollection<MouseGestureExtensionOption>();
+        UpdateBackupStatusText();
         DataContext = this;
         // 延迟到Loaded事件中执行，避免构造函数卡顿
         // RefreshRadialMenuSlots();
@@ -145,6 +156,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         LoadLogoImage();
     }
 
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        HostAssets.AppendLog("SettingsWindow: OnSourceInitialized called. Updating DWM Theme.");
+        App.UpdateWindowDwmTheme(this);
+    }
+
     public ObservableCollection<SettingsNavigationItem> NavigationItems { get; }
 
     public ObservableCollection<SettingsShortcutItem> ShortcutItems { get; }
@@ -152,6 +170,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public ObservableCollection<SettingsExtensionItem> ExtensionItems { get; }
 
     public ObservableCollection<SettingsRecycleBinItem> RecycleBinItems { get; }
+
+    public ObservableCollection<PersonalSyncCommitItem> PersonalSyncCommitItems { get; }
 
     public ObservableCollection<YarnSelectRuleItem> YarnSelectRules { get; }
 
@@ -222,6 +242,29 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new(MouseGestureTriggerModes.MiddleDrag, "按住中键移动")
     ];
 
+    public IReadOnlyList<SyncProviderOption> PersonalSyncProviderOptions { get; } =
+    [
+        new(PersonalSyncProviders.GitHub, "GitHub"),
+        new(PersonalSyncProviders.Gitee, "Gitee"),
+        new(PersonalSyncProviders.GitLab, "GitLab"),
+        new(PersonalSyncProviders.Gitea, "Gitea"),
+        new(PersonalSyncProviders.S3, "S3"),
+        new(PersonalSyncProviders.WebDav, "WebDAV")
+    ];
+
+    public IReadOnlyList<AutoSyncDelayOption> PersonalSyncAutoSyncDelayOptions { get; } =
+    [
+        new(0, "禁用自动同步"),
+        new(2, "修改后 2 秒"),
+        new(3, "修改后 3 秒"),
+        new(5, "修改后 5 秒"),
+        new(10, "修改后 10 秒"),
+        new(20, "修改后 20 秒"),
+        new(30, "修改后 30 秒"),
+        new(60, "修改后 1 分钟"),
+        new(120, "修改后 2 分钟")
+    ];
+
     private static readonly IReadOnlyList<MouseTriggerOption> StandardMouseTriggerTargetOptions =
     [
         new("None", "禁用"),
@@ -252,6 +295,376 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new("→↓←↑", "S", "适合搜索、选择类动作")
     ];
 
+
+    // ==========================================
+    //            Velopack 自动更新集成
+    // ==========================================
+    private string _updateCheckStatusText = "未检测";
+    private bool _hasNewVersion;
+    private bool _isCheckingUpdate;
+    private bool _isDownloadingUpdate;
+    private int _updateProgressValue;
+    private bool _updateDownloaded;
+    private string _newVersionInfo = "";
+    private Velopack.UpdateInfo? _newVersionUpdateInfo;
+    private bool _updateEventsSubscribed;
+
+    public string UpdateCheckStatusText
+    {
+        get => _updateCheckStatusText;
+        set { _updateCheckStatusText = value; OnPropertyChanged(); }
+    }
+
+    public bool HasNewVersion
+    {
+        get => _hasNewVersion;
+        set { _hasNewVersion = value; OnPropertyChanged(); }
+    }
+
+    public bool IsCheckingUpdate
+    {
+        get => _isCheckingUpdate;
+        set { _isCheckingUpdate = value; OnPropertyChanged(); }
+    }
+
+    public bool IsDownloadingUpdate
+    {
+        get => _isDownloadingUpdate;
+        set { _isDownloadingUpdate = value; OnPropertyChanged(); }
+    }
+
+    public int UpdateProgressValue
+    {
+        get => _updateProgressValue;
+        set { _updateProgressValue = value; OnPropertyChanged(); }
+    }
+
+    public bool UpdateDownloaded
+    {
+        get => _updateDownloaded;
+        set { _updateDownloaded = value; OnPropertyChanged(); }
+    }
+
+    public string NewVersionInfo
+    {
+        get => _newVersionInfo;
+        set { _newVersionInfo = value; OnPropertyChanged(); }
+    }
+
+    private void SubscribeUpdateEvents()
+    {
+        if (_updateEventsSubscribed) return;
+        _updateEventsSubscribed = true;
+
+        VelopackUpdateService.Instance.UpdateStatusChanged += status =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                UpdateCheckStatusText = status;
+            });
+        };
+
+        VelopackUpdateService.Instance.DownloadProgressChanged += progress =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                UpdateProgressValue = progress;
+                if (progress >= 100)
+                {
+                    IsDownloadingUpdate = false;
+                    UpdateDownloaded = true;
+                }
+            });
+        };
+
+        VelopackUpdateService.Instance.UpdateReadyChanged += () =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                OnPropertyChanged(nameof(IsUpdateReadyToRestart));
+            });
+        };
+    }
+
+    private async Task AutoCheckUpdateOnAboutOpenAsync()
+    {
+        SubscribeUpdateEvents();
+        
+        if (UpdateDownloaded) return;
+        if (IsCheckingUpdate || IsDownloadingUpdate) return;
+
+        IsCheckingUpdate = true;
+        try
+        {
+            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync();
+            if (updateInfo != null)
+            {
+                _newVersionUpdateInfo = updateInfo;
+                NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
+                HasNewVersion = true;
+            }
+            else
+            {
+                HasNewVersion = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SettingsWindow: AutoCheckUpdateOnAboutOpen failed: {ex}");
+        }
+        finally
+        {
+            IsCheckingUpdate = false;
+        }
+    }
+
+    private async void CheckForUpdatesManualButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        SubscribeUpdateEvents();
+
+        if (IsCheckingUpdate || IsDownloadingUpdate) return;
+        
+        UpdateDownloaded = false;
+        HasNewVersion = false;
+        IsCheckingUpdate = true;
+        
+        try
+        {
+            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync();
+            if (updateInfo != null)
+            {
+                _newVersionUpdateInfo = updateInfo;
+                NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
+                HasNewVersion = true;
+            }
+            else
+            {
+                HasNewVersion = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SettingsWindow: ManualCheckForUpdates failed: {ex}");
+            System.Windows.MessageBox.Show(
+                $"检测更新发生异常: {ex.Message}\n\n详细诊断日志已记录至:\n{HostAssets.HostLogPath}\n\n如需反馈，请将该日志文件一并发送给开发者。",
+                "更新提示",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
+        finally
+        {
+            IsCheckingUpdate = false;
+        }
+    }
+
+    private async void DownloadUpdatesButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (_newVersionUpdateInfo == null) return;
+        
+        IsDownloadingUpdate = true;
+        UpdateProgressValue = 0;
+        UpdateDownloaded = false;
+
+        try
+        {
+            var success = await VelopackUpdateService.Instance.DownloadUpdatesAsync(_newVersionUpdateInfo);
+            if (success)
+            {
+                UpdateDownloaded = true;
+            }
+            else
+            {
+                UpdateDownloaded = false;
+                var result = System.Windows.MessageBox.Show(
+                    "增量文件下载合并失败，可能是由于网络连接异常。\n\n是否需要手动前往浏览器发布页面下载最新完整安装包？", 
+                    "更新提示", 
+                    System.Windows.MessageBoxButton.YesNo, 
+                    System.Windows.MessageBoxImage.Warning);
+                if (result == System.Windows.MessageBoxResult.Yes)
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "https://github.com/luoluoluo22/yanzi/releases",
+                            UseShellExecute = true
+                        });
+                    }
+                    catch (Exception exLaunch)
+                    {
+                        HostAssets.AppendLog($"SettingsWindow: Failed to launch release URL: {exLaunch.Message}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SettingsWindow: DownloadUpdates failed: {ex}");
+            var result = System.Windows.MessageBox.Show(
+                $"更新包下载发生异常: {ex.Message}\n\n是否需要手动前往浏览器发布页面下载最新完整安装包？",
+                "更新提示",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+            if (result == System.Windows.MessageBoxResult.Yes)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "https://github.com/luoluoluo22/yanzi/releases",
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception exLaunch)
+                {
+                    HostAssets.AppendLog($"SettingsWindow: Failed to launch release URL: {exLaunch.Message}");
+                }
+            }
+        }
+        finally
+        {
+            IsDownloadingUpdate = false;
+        }
+    }
+
+    private void ApplyUpdatesAndRestartButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (_newVersionUpdateInfo == null) return;
+        try
+        {
+            VelopackUpdateService.Instance.ApplyAndRestart(_newVersionUpdateInfo);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"应用更新并重启失败: {ex.Message}。您可以重试，或者手动重启软件完成更新。", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
+    private void RestartToUpdateButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var updateInfo = VelopackUpdateService.Instance.ReadyUpdateInfo ?? _newVersionUpdateInfo;
+        if (updateInfo == null)
+        {
+            System.Windows.MessageBox.Show("更新信息不存在，无法执行重启。请前往关于面板手动检测并下载更新。", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            VelopackUpdateService.Instance.ApplyAndRestart(updateInfo);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"应用更新并重启失败: {ex.Message}。您可以重试，或者手动重启软件完成更新。", "更新提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
+    }
+
+    private void BrowseBackupDirectoryButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var currentDir = string.IsNullOrWhiteSpace(_settings.CustomBackupDirectory)
+            ? Path.Combine(HostAssets.DataRootPath, "Backups")
+            : _settings.CustomBackupDirectory;
+
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择自动备份文件保存目录",
+            InitialDirectory = Directory.Exists(currentDir) ? currentDir : HostAssets.DataRootPath
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            CustomBackupDirectory = dialog.FolderName;
+            AppSettingsStore.Save(_settings);
+            _mainWindow.RefreshAppSettings();
+        }
+    }
+
+    private async void CreateBackupButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var saveFileDialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "导出本地完整数据备份",
+            Filter = "Swallow Backup File (*.zip)|*.zip",
+            FileName = $"manual_backup_{DateTime.Now:yyyyMMdd_HHmmss}.zip",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+        };
+
+        if (saveFileDialog.ShowDialog() == true)
+        {
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn != null) btn.IsEnabled = false;
+
+            var savePath = saveFileDialog.FileName;
+
+            try
+            {
+                await Task.Run(() => BackupService.CreateBackup(savePath));
+                System.Windows.MessageBox.Show("数据备份已成功导出！", "备份提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"导出备份失败: {ex.Message}", "备份提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (btn != null) btn.IsEnabled = true;
+            }
+        }
+    }
+
+    private async void ImportBackupButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        var openFileDialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "导入本地完整数据备份",
+            Filter = "Swallow Backup File (*.zip)|*.zip"
+        };
+
+        if (openFileDialog.ShowDialog() == true)
+        {
+            var result = System.Windows.MessageBox.Show(
+                "导入备份会覆盖您当前所有的配置和扩展插件！此操作无法撤销。\n\n在导入前，我们会自动关闭 Everything 引擎。导入成功后应用将自动重启。\n\n是否确定要导入该备份？",
+                "导入提示",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+
+            if (result == System.Windows.MessageBoxResult.Yes)
+            {
+                var btn = sender as System.Windows.Controls.Button;
+                if (btn != null) btn.IsEnabled = false;
+
+                var openPath = openFileDialog.FileName;
+
+                try
+                {
+                    EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                    await Task.Run(() => BackupService.RestoreBackup(openPath));
+
+                    System.Windows.MessageBox.Show("数据恢复成功！程序将立即重启以加载新数据。", "导入成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+
+                    System.Diagnostics.Process.Start(System.Environment.ProcessPath!);
+                    System.Windows.Application.Current.Shutdown();
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"导入失败: {ex.Message}", "导入失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                    EverythingRuntimeService.EnsureStartedInBackground();
+                }
+                finally
+                {
+                    if (btn != null) btn.IsEnabled = true;
+                }
+            }
+        }
+    }
+
+    private void AutoBackupFrequencyComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_settings == null) return;
+        AppSettingsStore.Save(_settings);
+        _mainWindow.RefreshAppSettings();
+    }
+
     public SettingsNavigationItem? SelectedNavigation
     {
         get => _selectedNavigation;
@@ -269,6 +682,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(SelectedSectionDescription));
             OnPropertyChanged(nameof(IsGeneralSelected));
             OnPropertyChanged(nameof(IsAiSelected));
+            OnPropertyChanged(nameof(IsEnvironmentSelected));
             OnPropertyChanged(nameof(IsSyncSelected));
             OnPropertyChanged(nameof(IsExtensionsSelected));
             OnPropertyChanged(nameof(IsRecycleBinSelected));
@@ -289,6 +703,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             else if (IsSyncSelected)
             {
                 RefreshSyncActivityLog();
+                _ = RefreshPersonalSyncCommitsAsync();
             }
             else if (IsRadialSelected)
             {
@@ -297,6 +712,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             else if (IsMouseGesturesSelected)
             {
                 RefreshMouseGestureManagement();
+            }
+            else if (IsAboutSelected)
+            {
+                _ = AutoCheckUpdateOnAboutOpenAsync();
             }
 
             if (!IsExtensionsSelected)
@@ -351,6 +770,52 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool EnableAgentApi
+    {
+        get => _settings.EnableAgentApi;
+        set
+        {
+            if (value == _settings.EnableAgentApi)
+            {
+                return;
+            }
+
+            _settings = _settings with { EnableAgentApi = value };
+            OnPropertyChanged();
+        }
+    }
+
+    public int AgentApiPort
+    {
+        get => _settings.AgentApiPort;
+        set
+        {
+            if (value == _settings.AgentApiPort)
+            {
+                return;
+            }
+
+            _settings = _settings with { AgentApiPort = value };
+            OnPropertyChanged();
+        }
+    }
+
+    public new string ThemeMode
+    {
+        get => _settings.ThemeMode;
+        set
+        {
+            if (string.Equals(value, _settings.ThemeMode, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _settings = _settings with { ThemeMode = value };
+            OnPropertyChanged();
+            App.ApplyTheme(value);
+        }
+    }
+
     public bool RefreshCloudOnStartup
     {
         get => _settings.RefreshCloudOnStartup;
@@ -392,6 +857,73 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             // Ignore logo load failures so settings can still open in published builds.
         }
     }
+
+    public bool EnableAutoUpdate
+    {
+        get => _settings.EnableAutoUpdate;
+        set
+        {
+            if (value == _settings.EnableAutoUpdate)
+            {
+                return;
+            }
+
+            _settings = _settings with { EnableAutoUpdate = value };
+            OnPropertyChanged();
+        }
+    }
+
+    private string _backupStatusText = string.Empty;
+
+    public string AutoBackupFrequency
+    {
+        get => _settings.AutoBackupFrequency;
+        set
+        {
+            if (value == _settings.AutoBackupFrequency) return;
+            _settings = _settings with { AutoBackupFrequency = value };
+            OnPropertyChanged();
+        }
+    }
+
+    public string CustomBackupDirectory
+    {
+        get => string.IsNullOrWhiteSpace(_settings.CustomBackupDirectory) 
+            ? "默认 (数据根目录\\Backups)" 
+            : _settings.CustomBackupDirectory;
+        set
+        {
+            if (value == _settings.CustomBackupDirectory) return;
+            _settings = _settings with { CustomBackupDirectory = value };
+            OnPropertyChanged();
+            UpdateBackupStatusText();
+        }
+    }
+
+    public string BackupStatusText
+    {
+        get => _backupStatusText;
+        private set
+        {
+            if (value == _backupStatusText) return;
+            _backupStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void UpdateBackupStatusText()
+    {
+        if (string.IsNullOrWhiteSpace(_settings.LastAutoBackupTime))
+        {
+            BackupStatusText = "自动备份就绪。当前尚无最近备份记录。";
+        }
+        else
+        {
+            BackupStatusText = $"上次自动备份时间: {_settings.LastAutoBackupTime}";
+        }
+    }
+
+    public bool IsUpdateReadyToRestart => VelopackUpdateService.Instance.IsUpdateReady;
 
     public bool CloseToTray
     {
@@ -538,60 +1070,141 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public bool EnableWebDavSync
     {
-        get => _settings.EnableWebDavSync;
+        get => EnablePersonalSync;
         set
         {
-            if (value == _settings.EnableWebDavSync)
+            EnablePersonalSync = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool EnableLanSync
+    {
+        get => _settings.EnableLanSync;
+        set
+        {
+            if (value == _settings.EnableLanSync) return;
+            _settings = _settings with { EnableLanSync = value };
+            OnPropertyChanged();
+            AppSettingsStore.Save(_settings);
+        }
+    }
+
+    public string WanPushUuid
+    {
+        get => _settings.WanPushUuid;
+        set
+        {
+            if (value == _settings.WanPushUuid) return;
+            _settings = _settings with { WanPushUuid = value };
+            OnPropertyChanged();
+        }
+    }
+
+    private void SaveWanPushUuidButton_Click(object sender, RoutedEventArgs e)
+    {
+        AppSettingsStore.Save(_settings);
+        ShowToast("广域网推送配置已保存");
+    }
+
+    private void EnableLanSync_Click(object sender, RoutedEventArgs e)
+    {
+        if (EnableLanSync)
+        {
+            var result = System.Windows.MessageBox.Show(
+                "开启局域网直连需要向 Windows 防火墙添加例外，并允许 HTTP 端口监听。\n系统将弹出一个 UAC 管理员权限请求。\n\n是否继续？",
+                "局域网直连提权说明",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Information);
+
+            if (result != System.Windows.MessageBoxResult.Yes)
             {
+                EnableLanSync = false;
                 return;
             }
 
-            _settings = _settings with { EnableWebDavSync = value };
-            OnPropertyChanged();
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c netsh http add urlacl url=http://*:{_settings.AgentApiPort}/ user=Everyone & netsh advfirewall firewall add rule name=\"Yanzi Agent API\" dir=in action=allow protocol=TCP localport={_settings.AgentApiPort} & netsh advfirewall firewall add rule name=\"Yanzi Discovery\" dir=in action=allow protocol=UDP localport=42980",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                Process.Start(psi)?.WaitForExit();
+                
+                System.Windows.MessageBox.Show("配置完成！请重启应用使设置生效。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"提权失败或被取消：{ex.Message}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                EnableLanSync = false;
+            }
+        }
+        else
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c netsh http delete urlacl url=http://*:{_settings.AgentApiPort}/ & netsh advfirewall firewall delete rule name=\"Yanzi Agent API\" & netsh advfirewall firewall delete rule name=\"Yanzi Discovery\"",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                Process.Start(psi)?.WaitForExit();
+            }
+            catch
+            {
+                // Ignore if user cancels removal
+            }
         }
     }
 
     public string WebDavServerUrl
     {
-        get => _webDavServerUrl;
+        get => _personalSyncSettings.WebDav.Url;
         set
         {
-            if (value == _webDavServerUrl)
+            if (value == _personalSyncSettings.WebDav.Url)
             {
                 return;
             }
 
-            _webDavServerUrl = value;
+            _personalSyncSettings.WebDav.Url = value;
             OnPropertyChanged();
         }
     }
 
     public string WebDavRootPath
     {
-        get => _webDavRootPath;
+        get => _personalSyncSettings.WebDav.PathPrefix;
         set
         {
-            if (value == _webDavRootPath)
+            if (value == _personalSyncSettings.WebDav.PathPrefix)
             {
                 return;
             }
 
-            _webDavRootPath = value;
+            _personalSyncSettings.WebDav.PathPrefix = value;
             OnPropertyChanged();
         }
     }
 
     public string WebDavUsername
     {
-        get => _webDavUsername;
+        get => _personalSyncSettings.WebDav.Username;
         set
         {
-            if (value == _webDavUsername)
+            if (value == _personalSyncSettings.WebDav.Username)
             {
                 return;
             }
 
-            _webDavUsername = value;
+            _personalSyncSettings.WebDav.Username = value;
             OnPropertyChanged();
         }
     }
@@ -622,6 +1235,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
 
             _syncActivityLogText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string PersonalSyncCommitStatusText
+    {
+        get => _personalSyncCommitStatusText;
+        private set
+        {
+            if (value == _personalSyncCommitStatusText)
+            {
+                return;
+            }
+
+            _personalSyncCommitStatusText = value;
             OnPropertyChanged();
         }
     }
@@ -700,6 +1328,283 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
 
             _aiSettingsStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public int PersonalSyncAutoSyncDelaySeconds
+    {
+        get => _settings.PersonalSyncAutoSyncDelaySeconds;
+        set
+        {
+            var normalized = NormalizePersonalSyncAutoSyncDelay(value);
+            if (normalized == _settings.PersonalSyncAutoSyncDelaySeconds)
+            {
+                return;
+            }
+
+            _settings = _settings with { PersonalSyncAutoSyncDelaySeconds = normalized };
+            _mainWindow.SavePersonalSyncAutoSyncDelaySeconds(normalized);
+            OnPropertyChanged();
+        }
+    }
+
+    private void UpdatePersonalSyncValue(string? nextValue, Action<string> apply, string currentValue, [CallerMemberName] string propertyName = "")
+    {
+        var normalized = nextValue ?? string.Empty;
+        if (string.Equals(normalized, currentValue, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        apply(normalized);
+        OnPropertyChanged(propertyName);
+    }
+
+    public bool EnablePersonalSync
+    {
+        get => _personalSyncSettings.Enabled;
+        set
+        {
+            if (value == _personalSyncSettings.Enabled)
+            {
+                return;
+            }
+
+            _personalSyncSettings.Enabled = value;
+            OnPropertyChanged();
+            RefreshWebDavSummary();
+        }
+    }
+
+    public string SelectedPersonalSyncProvider
+    {
+        get => PersonalSyncProviders.Normalize(_personalSyncSettings.Provider);
+        set
+        {
+            var normalized = PersonalSyncProviders.Normalize(value);
+            if (normalized == PersonalSyncProviders.None || normalized == PersonalSyncProviders.Normalize(_personalSyncSettings.Provider))
+            {
+                return;
+            }
+
+            _personalSyncSettings.Provider = normalized;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedPersonalSyncProviderDisplayName));
+            OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkText));
+            OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkUrl));
+            OnPropertyChanged(nameof(HasSelectedPersonalSyncProviderQuickLink));
+            OnPropertyChanged(nameof(IsSyncProviderGitHub));
+            OnPropertyChanged(nameof(IsSyncProviderGitee));
+            OnPropertyChanged(nameof(IsSyncProviderGitLab));
+            OnPropertyChanged(nameof(IsSyncProviderGitea));
+            OnPropertyChanged(nameof(IsSyncProviderS3));
+            OnPropertyChanged(nameof(IsSyncProviderWebDav));
+            RefreshWebDavSummary();
+        }
+    }
+
+    public bool IsSyncProviderGitHub => SelectedPersonalSyncProvider == PersonalSyncProviders.GitHub;
+
+    public bool IsSyncProviderGitee => SelectedPersonalSyncProvider == PersonalSyncProviders.Gitee;
+
+    public bool IsSyncProviderGitLab => SelectedPersonalSyncProvider == PersonalSyncProviders.GitLab;
+
+    public bool IsSyncProviderGitea => SelectedPersonalSyncProvider == PersonalSyncProviders.Gitea;
+
+    public bool IsSyncProviderS3 => SelectedPersonalSyncProvider == PersonalSyncProviders.S3;
+
+    public bool IsSyncProviderWebDav => SelectedPersonalSyncProvider == PersonalSyncProviders.WebDav;
+
+    public bool ShowPersonalSyncAdvancedOptions
+    {
+        get => _showPersonalSyncAdvancedOptions;
+        set
+        {
+            if (value == _showPersonalSyncAdvancedOptions)
+            {
+                return;
+            }
+
+            _showPersonalSyncAdvancedOptions = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PersonalSyncAdvancedOptionsButtonText));
+        }
+    }
+
+    public string PersonalSyncAdvancedOptionsButtonText => ShowPersonalSyncAdvancedOptions ? "隐藏高级配置" : "显示高级配置";
+
+    public string SelectedPersonalSyncProviderDisplayName => PersonalSyncProviders.GetDisplayName(SelectedPersonalSyncProvider);
+
+    public string SelectedPersonalSyncProviderQuickLinkText => SelectedPersonalSyncProvider switch
+    {
+        var provider when provider == PersonalSyncProviders.GitHub => "新建 GitHub Token",
+        var provider when provider == PersonalSyncProviders.Gitee => "新建 Gitee Token",
+        var provider when provider == PersonalSyncProviders.GitLab => "新建 GitLab Token",
+        var provider when provider == PersonalSyncProviders.Gitea => "打开 Gitea 应用令牌",
+        var provider when provider == PersonalSyncProviders.S3 => "打开 AWS IAM 安全凭证",
+        var provider when provider == PersonalSyncProviders.WebDav => "打开坚果云安全设置",
+        _ => string.Empty
+    };
+
+    public string SelectedPersonalSyncProviderQuickLinkUrl => SelectedPersonalSyncProvider switch
+    {
+        var provider when provider == PersonalSyncProviders.GitHub => "https://github.com/settings/tokens/new",
+        var provider when provider == PersonalSyncProviders.Gitee => "https://gitee.com/profile/personal_access_tokens/new",
+        var provider when provider == PersonalSyncProviders.GitLab => "https://gitlab.com/-/user_settings/personal_access_tokens",
+        var provider when provider == PersonalSyncProviders.Gitea => "https://gitea.com/user/settings/applications",
+        var provider when provider == PersonalSyncProviders.S3 => "https://console.aws.amazon.com/iam/home#/security_credentials",
+        var provider when provider == PersonalSyncProviders.WebDav => "https://www.jianguoyun.com/#/account/security",
+        _ => string.Empty
+    };
+
+    public bool HasSelectedPersonalSyncProviderQuickLink => !string.IsNullOrWhiteSpace(SelectedPersonalSyncProviderQuickLinkUrl);
+
+    public string GitHubSyncOwner
+    {
+        get => _personalSyncSettings.GitHub.Username;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.GitHub.Username = current, _personalSyncSettings.GitHub.Username);
+    }
+
+    public string GitHubSyncRepo
+    {
+        get => _personalSyncSettings.GitHub.Repo;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.GitHub.Repo = current, _personalSyncSettings.GitHub.Repo);
+    }
+
+    public string GitHubSyncBranch
+    {
+        get => _personalSyncSettings.GitHub.Branch;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.GitHub.Branch = current, _personalSyncSettings.GitHub.Branch);
+    }
+
+    public string GitHubSyncPathPrefix
+    {
+        get => _personalSyncSettings.GitHub.PathPrefix;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.GitHub.PathPrefix = current, _personalSyncSettings.GitHub.PathPrefix);
+    }
+
+    public string GiteeSyncUsername
+    {
+        get => _personalSyncSettings.Gitee.Username;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.Gitee.Username = current, _personalSyncSettings.Gitee.Username);
+    }
+
+    public string GiteeSyncRepo
+    {
+        get => _personalSyncSettings.Gitee.Repo;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.Gitee.Repo = current, _personalSyncSettings.Gitee.Repo);
+    }
+
+    public string GiteeSyncBranch
+    {
+        get => _personalSyncSettings.Gitee.Branch;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.Gitee.Branch = current, _personalSyncSettings.Gitee.Branch);
+    }
+
+    public string GiteeSyncPathPrefix
+    {
+        get => _personalSyncSettings.Gitee.PathPrefix;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.Gitee.PathPrefix = current, _personalSyncSettings.Gitee.PathPrefix);
+    }
+
+    public string GitLabSyncBaseUrl
+    {
+        get => _personalSyncSettings.GitLab.BaseUrl;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.GitLab.BaseUrl = current, _personalSyncSettings.GitLab.BaseUrl);
+    }
+
+    public string GitLabSyncProjectPath
+    {
+        get => _personalSyncSettings.GitLab.ProjectPath;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.GitLab.ProjectPath = current, _personalSyncSettings.GitLab.ProjectPath);
+    }
+
+    public string GitLabSyncBranch
+    {
+        get => _personalSyncSettings.GitLab.Branch;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.GitLab.Branch = current, _personalSyncSettings.GitLab.Branch);
+    }
+
+    public string GitLabSyncPathPrefix
+    {
+        get => _personalSyncSettings.GitLab.PathPrefix;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.GitLab.PathPrefix = current, _personalSyncSettings.GitLab.PathPrefix);
+    }
+
+    public string GiteaSyncBaseUrl
+    {
+        get => _personalSyncSettings.Gitea.BaseUrl;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.Gitea.BaseUrl = current, _personalSyncSettings.Gitea.BaseUrl);
+    }
+
+    public string GiteaSyncUsername
+    {
+        get => _personalSyncSettings.Gitea.Username;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.Gitea.Username = current, _personalSyncSettings.Gitea.Username);
+    }
+
+    public string GiteaSyncRepo
+    {
+        get => _personalSyncSettings.Gitea.Repo;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.Gitea.Repo = current, _personalSyncSettings.Gitea.Repo);
+    }
+
+    public string GiteaSyncBranch
+    {
+        get => _personalSyncSettings.Gitea.Branch;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.Gitea.Branch = current, _personalSyncSettings.Gitea.Branch);
+    }
+
+    public string GiteaSyncPathPrefix
+    {
+        get => _personalSyncSettings.Gitea.PathPrefix;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.Gitea.PathPrefix = current, _personalSyncSettings.Gitea.PathPrefix);
+    }
+
+    public string S3SyncAccessKeyId
+    {
+        get => _personalSyncSettings.S3.AccessKeyId;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.S3.AccessKeyId = current, _personalSyncSettings.S3.AccessKeyId);
+    }
+
+    public string S3SyncRegion
+    {
+        get => _personalSyncSettings.S3.Region;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.S3.Region = current, _personalSyncSettings.S3.Region);
+    }
+
+    public string S3SyncBucket
+    {
+        get => _personalSyncSettings.S3.Bucket;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.S3.Bucket = current, _personalSyncSettings.S3.Bucket);
+    }
+
+    public string S3SyncEndpoint
+    {
+        get => _personalSyncSettings.S3.Endpoint;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.S3.Endpoint = current, _personalSyncSettings.S3.Endpoint);
+    }
+
+    public string S3SyncPathPrefix
+    {
+        get => _personalSyncSettings.S3.PathPrefix;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.S3.PathPrefix = current, _personalSyncSettings.S3.PathPrefix);
+    }
+
+    public ObservableCollection<EnvironmentVariableEditorItem> EnvironmentVariables { get; }
+
+    public string EnvironmentStatusText
+    {
+        get => _environmentStatusText;
+        private set
+        {
+            if (value == _environmentStatusText)
+            {
+                return;
+            }
+
+            _environmentStatusText = value;
             OnPropertyChanged();
         }
     }
@@ -806,6 +1711,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public string ExtensionSearchSummary =>
         IsExtensionsLoading
             ? "正在刷新..."
+            : _extensionFilterMode == "recycle"
+            ? RecycleBinSearchSummary
             : ExtensionItems.Count == 0
             ? "无匹配项"
             : $"显示 {ExtensionItems.Count} 项";
@@ -1313,6 +2220,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         "general" => "控制燕子(Swallow)的基础行为，包括启动同步和托盘停驻策略。",
         "ai" => "配置 AI 对话使用的本地或远程兼容接口，包括地址、Key 和模型名。",
+        "environment" => "配置 Notion、第三方 API 和应用型扩展可读取的用户环境变量。",
         "sync" => "管理云账号状态、同步入口和当前服务端连接信息。",
         "extensions" => "查看本地扩展目录和当前机器已发现的扩展数量。",
         "recycle" => "查看已删除扩展，支持恢复和彻底删除。",
@@ -1328,6 +2236,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool IsGeneralSelected => SelectedNavigation?.Key == "general";
 
     public bool IsAiSelected => SelectedNavigation?.Key == "ai";
+
+    public bool IsEnvironmentSelected => SelectedNavigation?.Key == "environment";
 
     public bool IsSyncSelected => SelectedNavigation?.Key == "sync";
 
@@ -1484,6 +2394,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         return $"当前使用 {settings.AiModel} · {settings.AiBaseUrl}";
+    }
+
+    private string BuildEnvironmentSummary()
+    {
+        var count = EnvironmentVariables.Count(item => !string.IsNullOrWhiteSpace(item.Name));
+        return count == 0
+            ? "尚未配置环境变量。应用扩展和脚本将只能读取系统环境变量。"
+            : $"已配置 {count} 个用户环境变量，脚本运行和应用扩展桥接均可读取。";
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1693,11 +2611,34 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void ThemeModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        AppSettingsStore.Save(_settings);
+        _mainWindow.RefreshAppSettings();
+    }
+
     private void SaveSettingsToggle_Click(object sender, RoutedEventArgs e)
     {
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
         StartupRegistrationService.Apply(_settings.LaunchAtStartup);
+    }
+
+    private void OpenApiDocsUrlButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var port = _settings.AgentApiPort;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = $"http://127.0.0.1:{port}/docs",
+                UseShellExecute = true
+            });
+        }
+        catch (System.Exception ex)
+        {
+            System.Windows.MessageBox.Show($"无法打开浏览器: {ex.Message}");
+        }
     }
 
     private void SaveQuickPanelTrigger_Click(object sender, RoutedEventArgs e)
@@ -1839,7 +2780,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 ItemsSource = GetMouseTriggerTargetOptions(gesture),
                 DisplayMemberPath = nameof(MouseTriggerOption.Label),
                 SelectedValuePath = nameof(MouseTriggerOption.Value),
-                Style = TryFindResource("DarkComboBoxStyle") as Style
+                Style = TryFindResource("GlobalComboBoxStyle") as Style
             };
             combo.SelectionChanged += MouseTriggerTargetCombo_SelectionChanged;
             grid.Children.Add(combo);
@@ -2316,9 +3257,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             "WindowSnap" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xA0, 0x38, 0xBD, 0xF8)),
                              new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x14, 0x38, 0xBD, 0xF8)),
                              new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x38, 0xBD, 0xF8))),
-            _ => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x27, 0x27, 0x2A)), // Gray border
-                  new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x18, 0x18, 0x18)), // Gray background
-                  new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x52, 0x52, 0x5B))) // Gray highlight
+            _ => (null, null, null)
         };
 
         card.BorderBrush = borderBrush;
@@ -2362,13 +3301,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 // Active button - colored background
                 var activeBrush = target switch
                 {
-                    "None" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x3F, 0x3F, 0x46)), // Gray
+                    "None" => null,
                     "Panel" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x25, 0x63, 0xEB)), // Blue
                     "Radial" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x93, 0x33, 0xEA)), // Purple
                     "Yanm" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x05, 0x96, 0x69)), // Green
                     "WindowSnap" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x02, 0x84, 0xC7)),
                     "Gesture" => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0xEA, 0x58, 0x0C)),
-                    _ => new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x3F, 0x3F, 0x46))
+                    _ => null
                 };
                 button.Background = activeBrush;
                 button.Foreground = new SolidColorBrush(System.Windows.Media.Colors.White);
@@ -2428,18 +3367,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SaveWebDavSettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        _mainWindow.SaveWebDavSettings(EnableWebDavSync, WebDavServerUrl, WebDavRootPath, WebDavUsername);
-        
-        // 保存密码
-        var password = WebDavPasswordBox.Password;
-        if (!string.IsNullOrWhiteSpace(password))
-        {
-            _mainWindow.SaveWebDavCredential(WebDavUsername, password);
-        }
-        
+        _personalSyncSecrets.GitHubToken = GitHubTokenBox?.Password ?? string.Empty;
+        _personalSyncSecrets.GiteeToken = GiteeTokenBox?.Password ?? string.Empty;
+        _personalSyncSecrets.GitLabToken = GitLabTokenBox?.Password ?? string.Empty;
+        _personalSyncSecrets.GiteaToken = GiteaTokenBox?.Password ?? string.Empty;
+        _personalSyncSecrets.S3SecretAccessKey = S3SecretAccessKeyBox?.Password ?? string.Empty;
+        _personalSyncSecrets.WebDavPassword = WebDavPasswordBox?.Password ?? string.Empty;
+        _mainWindow.SavePersonalSyncSettings(ClonePersonalSyncSettings(_personalSyncSettings), ClonePersonalSyncSecrets(_personalSyncSecrets));
         _settings = AppSettingsStore.Load();
         RefreshWebDavSummary();
-        SyncStatusText = "WebDAV 配置已保存。";
+        SyncStatusText = "个人同步配置已保存。";
         RefreshSyncActivityLog();
     }
 
@@ -2468,6 +3405,46 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void AiSettings_TextChanged(object sender, TextChangedEventArgs e)
     {
         CheckAiSettingsChanged();
+    }
+
+    private void AddEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
+    {
+        EnvironmentVariables.Add(new EnvironmentVariableEditorItem("NOTION_TOKEN", string.Empty, "Notion Integration Token"));
+        EnvironmentStatusText = "已添加一行环境变量，填写后点击保存。";
+    }
+
+    private void RemoveEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: EnvironmentVariableEditorItem item })
+        {
+            EnvironmentVariables.Remove(item);
+            EnvironmentStatusText = "已移除一行环境变量，点击保存后生效。";
+        }
+    }
+
+    private void SaveEnvironmentVariablesButton_Click(object sender, RoutedEventArgs e)
+    {
+        var variables = EnvironmentVariables
+            .Where(static item => !string.IsNullOrWhiteSpace(item.Name))
+            .Select(static item => new AppEnvironmentVariableSettings
+            {
+                Name = item.Name.Trim(),
+                Value = item.Value ?? string.Empty,
+                Description = item.Description ?? string.Empty
+            })
+            .Where(static item => AppEnvironmentVariableStore.IsValidEnvironmentName(item.Name))
+            .ToArray();
+
+        AppEnvironmentVariableStore.Save(variables);
+        EnvironmentVariables.Clear();
+        foreach (var variable in AppEnvironmentVariableStore.Load())
+        {
+            EnvironmentVariables.Add(new EnvironmentVariableEditorItem(variable.Name, variable.Value, variable.Description));
+        }
+
+        _settings = AppSettingsStore.Load();
+        EnvironmentStatusText = BuildEnvironmentSummary();
+        ShowToast("环境变量已保存");
     }
 
     private void CheckAiSettingsChanged()
@@ -2525,7 +3502,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void WebDavPasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
     {
-        // 密码改变时更新状态
+        _personalSyncSecrets.WebDavPassword = WebDavPasswordBox.Password;
         RefreshWebDavSummary();
     }
 
@@ -2549,7 +3526,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         WebDavUsername = dialog.Username;
-        _mainWindow.SaveWebDavCredential(dialog.Username, dialog.Password);
+        _personalSyncSecrets.WebDavPassword = dialog.Password;
+        _mainWindow.SavePersonalSyncSettings(ClonePersonalSyncSettings(_personalSyncSettings), ClonePersonalSyncSecrets(_personalSyncSecrets));
         RefreshWebDavSummary();
         SyncStatusText = "WebDAV 凭据已保存。";
     }
@@ -2557,36 +3535,132 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private async void TestWebDavButton_Click(object sender, RoutedEventArgs e)
     {
         SaveWebDavSettingsButton_Click(sender, e);
-        var result = await _mainWindow.ProbeWebDavAsync();
-        WebDavStatusText = result.message;
-        RefreshSyncActivityLog();
-        if (!result.ok)
+        SetPersonalSyncButtonsEnabled(false);
+        WebDavStatusText = "正在后台测试连接...";
+        try
         {
-            System.Windows.MessageBox.Show(this, result.message, "WebDAV 测试失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            var result = await _mainWindow.ProbeWebDavAsync();
+            WebDavStatusText = result.message;
+            RefreshSyncActivityLog();
+            if (!result.ok)
+            {
+                System.Windows.MessageBox.Show(this, result.message, $"{SelectedPersonalSyncProviderDisplayName} 测试失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        finally
+        {
+            SetPersonalSyncButtonsEnabled(true);
         }
     }
 
     private async void SyncWebDavButton_Click(object sender, RoutedEventArgs e)
     {
         SaveWebDavSettingsButton_Click(sender, e);
-        var result = await _mainWindow.SyncWebDavNowAsync();
-        WebDavStatusText = result.message;
-        await RefreshExtensionsFromDiskAsync();
-        RefreshSyncActivityLog();
-        if (!result.ok)
+        SetPersonalSyncButtonsEnabled(false);
+        WebDavStatusText = "正在后台同步，请稍候...";
+        try
         {
-            System.Windows.MessageBox.Show(this, result.message, "WebDAV 同步失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            var result = await _mainWindow.SyncWebDavNowAsync();
+            WebDavStatusText = result.message;
+            await RefreshExtensionsFromDiskAsync();
+            RefreshSyncActivityLog();
+            await RefreshPersonalSyncCommitsAsync();
+            if (!result.ok)
+            {
+                System.Windows.MessageBox.Show(this, result.message, $"{SelectedPersonalSyncProviderDisplayName} 同步失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        finally
+        {
+            SetPersonalSyncButtonsEnabled(true);
+        }
+    }
+
+    private void SetPersonalSyncButtonsEnabled(bool enabled)
+    {
+        if (SavePersonalSyncButton != null) SavePersonalSyncButton.IsEnabled = enabled;
+        if (TestPersonalSyncButton != null) TestPersonalSyncButton.IsEnabled = enabled;
+        if (ClearPersonalSyncButton != null) ClearPersonalSyncButton.IsEnabled = enabled;
+        if (SyncPersonalSyncButton != null) SyncPersonalSyncButton.IsEnabled = enabled;
+    }
+
+    private async void RefreshPersonalSyncCommitsButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshPersonalSyncCommitsAsync(forceMessage: true);
+    }
+
+    private async Task RefreshPersonalSyncCommitsAsync(bool forceMessage = false)
+    {
+        if (!string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase))
+        {
+            PersonalSyncCommitItems.Clear();
+            PersonalSyncCommitStatusText = "提交记录当前仅支持 GitHub 同步仓库。";
+            if (LastSyncStatusTextBlock != null)
+            {
+                LastSyncStatusTextBlock.Text = "上次同步: 成功";
+                LastSyncStatusTextBlock.ToolTip = "同步已成功完成 (WebDav/其他模式)";
+            }
+            return;
+        }
+
+        try
+        {
+            if (forceMessage)
+            {
+                PersonalSyncCommitStatusText = "正在读取 GitHub 提交记录...";
+            }
+
+            var commits = await _mainWindow.GetPersonalSyncGitHubCommitsAsync();
+            PersonalSyncCommitItems.Clear();
+            foreach (var commit in commits)
+            {
+                PersonalSyncCommitItems.Add(new PersonalSyncCommitItem(
+                    commit.Sha,
+                    commit.Message,
+                    commit.Author,
+                    commit.CommittedAtUtc,
+                    commit.Url));
+            }
+
+            PersonalSyncCommitStatusText = PersonalSyncCommitItems.Count == 0
+                ? "仓库暂无提交记录。"
+                : $"最近 {PersonalSyncCommitItems.Count} 条提交，可点击打开 GitHub 详情。";
+
+            if (LastSyncStatusTextBlock != null)
+            {
+                if (PersonalSyncCommitItems.Count > 0)
+                {
+                    var latest = PersonalSyncCommitItems[0];
+                    LastSyncStatusTextBlock.Text = $"上次同步: {latest.Message}";
+                    LastSyncStatusTextBlock.ToolTip = $"最新提交: {latest.Message}\n作者: {latest.Author}\n时间: {latest.LocalTimeLabel}\nSHA: {latest.ShortSha}";
+                }
+                else
+                {
+                    LastSyncStatusTextBlock.Text = "上次同步: 成功";
+                    LastSyncStatusTextBlock.ToolTip = "暂无提交记录";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            PersonalSyncCommitItems.Clear();
+            PersonalSyncCommitStatusText = $"读取提交记录失败：{ex.Message}";
+            if (LastSyncStatusTextBlock != null)
+            {
+                LastSyncStatusTextBlock.Text = "上次同步: 失败";
+                LastSyncStatusTextBlock.ToolTip = $"读取记录失败：{ex.Message}";
+            }
         }
     }
 
     private async void ClearCloudButton_Click(object sender, RoutedEventArgs e)
     {
-        // 1. 确认操作
         var confirmResult = System.Windows.MessageBox.Show(
             this,
             "此操作将删除云端的所有扩展和配置数据，且无法恢复！\n\n" +
-            "由于坚果云的频率限制，清空过程可能需要几分钟时间。\n\n" +
-            "为了安全，请输入您的WebDAV密码以确认此操作。",
+            "清空后，下次点击“立即同步”会重新以上传本地内容为准。",
             "清空云端 - 危险操作",
             MessageBoxButton.OKCancel,
             MessageBoxImage.Warning);
@@ -2596,47 +3670,46 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        // 2. 验证密码
-        var credential = WebDavCredentialStore.Load();
-        if (credential == null || string.IsNullOrWhiteSpace(credential.Password))
+        if (IsSyncProviderWebDav && string.IsNullOrWhiteSpace(_personalSyncSecrets.WebDavPassword))
         {
             System.Windows.MessageBox.Show(
                 this,
-                "未设置WebDAV密码，无法验证身份。",
+                "当前 WebDAV 未设置密码，无法执行清空。",
                 "清空云端失败",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             return;
         }
 
-        var passwordDialog = new WebDavCredentialWindow(WebDavUsername, requireUsername: false)
+        if (IsSyncProviderWebDav)
         {
-            Owner = this,
-            Title = "验证密码 - 清空云端"
-        };
+            var passwordDialog = new WebDavCredentialWindow(WebDavUsername, requireUsername: false)
+            {
+                Owner = this,
+                Title = "验证密码 - 清空云端"
+            };
 
-        if (passwordDialog.ShowDialog() != true)
-        {
-            return;
+            if (passwordDialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            if (passwordDialog.Password != _personalSyncSecrets.WebDavPassword)
+            {
+                System.Windows.MessageBox.Show(
+                    this,
+                    "密码错误，无法执行清空操作。",
+                    "清空云端失败",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
         }
 
-        // 验证密码是否正确
-        if (passwordDialog.Password != credential.Password)
-        {
-            System.Windows.MessageBox.Show(
-                this,
-                "密码错误，无法执行清空操作。",
-                "清空云端失败",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-            return;
-        }
-
-        // 3. 执行清空
         try
         {
             WebDavStatusText = "正在清空云端，请稍候...（可能需要几分钟）";
-            var service = new WebDavSyncService(AppSettingsStore.Load());
+            var service = new PersonalSyncService(AppSettingsStore.Load());
             await service.ClearCloudAsync();
             WebDavStatusText = "云端已清空。";
             RefreshSyncActivityLog();
@@ -2709,6 +3782,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             FileName = item.DirectoryPath,
             UseShellExecute = true
         });
+    }
+
+    private void OpenExtensionLogMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SettingsExtensionItem item })
+        {
+            return;
+        }
+
+        if (!File.Exists(HostAssets.HostLogPath))
+        {
+            System.Windows.MessageBox.Show(this, "暂无运行日志。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = HostAssets.HostLogPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, $"打开运行日志失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void ExtensionCard_Click(object sender, MouseButtonEventArgs e)
@@ -3050,6 +4150,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public void RefreshExtensionsFromExternal()
+    {
+        _ = Dispatcher.InvokeAsync(async () => await RefreshExtensionsFromDiskAsync());
+    }
+
     private async Task RefreshExtensionsFromDiskAsync()
     {
         if (IsExtensionsLoading)
@@ -3113,16 +4218,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var uiApplyStartedAt = Stopwatch.StartNew();
             await Dispatcher.InvokeAsync(() =>
             {
-                _mainWindow.ReloadLocalExtensionsFromEntries(data.entries, "已刷新本地扩展。");
-                _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), publishedMap);
-                _cachedRecycleBinItems = data.recycleBinItems;
-                if (IsExtensionsSelected)
-                {
-                    RefreshExtensionSummary();
-                    RefreshExtensionItems();
-                }
+            _mainWindow.ReloadLocalExtensionsFromEntries(data.entries, "已刷新本地扩展。");
+            _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), publishedMap);
+            _cachedRecycleBinItems = data.recycleBinItems;
+            if (IsExtensionsSelected)
+            {
+                RefreshExtensionSummary();
+                RefreshRecycleBinSummary();
+                RefreshExtensionItems();
+            }
 
-                if (IsRecycleBinSelected)
+            if (IsRecycleBinSelected)
                 {
                     RefreshRecycleBinSummary();
                     RefreshRecycleBinItems();
@@ -3149,38 +4255,121 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void LoadPersonalSyncStateFromSettings()
+    {
+        _settings = AppSettingsStore.Load();
+        _personalSyncSettings = ClonePersonalSyncSettings(_settings.PersonalSync);
+        _personalSyncSecrets = ClonePersonalSyncSecrets(_mainWindow.GetPersonalSyncSecrets());
+        OnPropertyChanged(nameof(EnablePersonalSync));
+        OnPropertyChanged(nameof(SelectedPersonalSyncProvider));
+        OnPropertyChanged(nameof(PersonalSyncAutoSyncDelaySeconds));
+        OnPropertyChanged(nameof(SelectedPersonalSyncProviderDisplayName));
+        OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkText));
+        OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkUrl));
+        OnPropertyChanged(nameof(HasSelectedPersonalSyncProviderQuickLink));
+        OnPropertyChanged(nameof(IsSyncProviderGitHub));
+        OnPropertyChanged(nameof(IsSyncProviderGitee));
+        OnPropertyChanged(nameof(IsSyncProviderGitLab));
+        OnPropertyChanged(nameof(IsSyncProviderGitea));
+        OnPropertyChanged(nameof(IsSyncProviderS3));
+        OnPropertyChanged(nameof(IsSyncProviderWebDav));
+        OnPropertyChanged(nameof(GitHubSyncOwner));
+        OnPropertyChanged(nameof(GitHubSyncRepo));
+        OnPropertyChanged(nameof(GitHubSyncBranch));
+        OnPropertyChanged(nameof(GitHubSyncPathPrefix));
+        OnPropertyChanged(nameof(GiteeSyncUsername));
+        OnPropertyChanged(nameof(GiteeSyncRepo));
+        OnPropertyChanged(nameof(GiteeSyncBranch));
+        OnPropertyChanged(nameof(GiteeSyncPathPrefix));
+        OnPropertyChanged(nameof(GitLabSyncBaseUrl));
+        OnPropertyChanged(nameof(GitLabSyncProjectPath));
+        OnPropertyChanged(nameof(GitLabSyncBranch));
+        OnPropertyChanged(nameof(GitLabSyncPathPrefix));
+        OnPropertyChanged(nameof(GiteaSyncBaseUrl));
+        OnPropertyChanged(nameof(GiteaSyncUsername));
+        OnPropertyChanged(nameof(GiteaSyncRepo));
+        OnPropertyChanged(nameof(GiteaSyncBranch));
+        OnPropertyChanged(nameof(GiteaSyncPathPrefix));
+        OnPropertyChanged(nameof(S3SyncAccessKeyId));
+        OnPropertyChanged(nameof(S3SyncRegion));
+        OnPropertyChanged(nameof(S3SyncBucket));
+        OnPropertyChanged(nameof(S3SyncEndpoint));
+        OnPropertyChanged(nameof(S3SyncPathPrefix));
+        OnPropertyChanged(nameof(WebDavServerUrl));
+        OnPropertyChanged(nameof(WebDavRootPath));
+        OnPropertyChanged(nameof(WebDavUsername));
+        if (GitHubTokenBox != null) GitHubTokenBox.Password = _personalSyncSecrets.GitHubToken ?? string.Empty;
+        if (GiteeTokenBox != null) GiteeTokenBox.Password = _personalSyncSecrets.GiteeToken ?? string.Empty;
+        if (GitLabTokenBox != null) GitLabTokenBox.Password = _personalSyncSecrets.GitLabToken ?? string.Empty;
+        if (GiteaTokenBox != null) GiteaTokenBox.Password = _personalSyncSecrets.GiteaToken ?? string.Empty;
+        if (S3SecretAccessKeyBox != null) S3SecretAccessKeyBox.Password = _personalSyncSecrets.S3SecretAccessKey ?? string.Empty;
+        if (WebDavPasswordBox != null) WebDavPasswordBox.Password = _personalSyncSecrets.WebDavPassword ?? string.Empty;
+        RefreshWebDavSummary();
+    }
+
+    private static PersonalSyncSettings ClonePersonalSyncSettings(PersonalSyncSettings? settings)
+    {
+        settings ??= new PersonalSyncSettings();
+        var json = JsonSerializer.Serialize(settings);
+        return JsonSerializer.Deserialize<PersonalSyncSettings>(json) ?? new PersonalSyncSettings();
+    }
+
+    private static PersonalSyncSecretBag ClonePersonalSyncSecrets(PersonalSyncSecretBag? secrets)
+    {
+        secrets ??= new PersonalSyncSecretBag();
+        var json = JsonSerializer.Serialize(secrets);
+        return JsonSerializer.Deserialize<PersonalSyncSecretBag>(json) ?? new PersonalSyncSecretBag();
+    }
+
+    private static int NormalizePersonalSyncAutoSyncDelay(int value)
+    {
+        return value is 0 or 2 or 3 or 5 or 10 or 20 or 30 or 60 or 120
+            ? value
+            : 10;
+    }
+
     private void RefreshWebDavSummary()
     {
-        WebDavStatusText = !EnableWebDavSync
-            ? "未启用个人扩展同步。"
-            : _mainWindow.HasWebDavCredential()
-                ? $"已配置：{WebDavServerUrl} {WebDavRootPath}"
-                : "已启用，但还未设置 WebDAV 密码。";
+        if (!EnablePersonalSync)
+        {
+            WebDavStatusText = "未启用个人同步。";
+            return;
+        }
+
+        WebDavStatusText = SelectedPersonalSyncProvider switch
+        {
+            var provider when provider == PersonalSyncProviders.WebDav =>
+                string.IsNullOrWhiteSpace(_personalSyncSecrets.WebDavPassword)
+                    ? "已启用 WebDAV，但还未设置密码。"
+                    : $"WebDAV：{WebDavServerUrl} {WebDavRootPath}",
+            var provider when provider == PersonalSyncProviders.GitHub =>
+                string.IsNullOrWhiteSpace(_personalSyncSecrets.GitHubToken)
+                    ? "已选择 GitHub，但还未填写 Token。"
+                    : $"GitHub：{(string.IsNullOrWhiteSpace(GitHubSyncOwner) ? "<自动识别>" : GitHubSyncOwner)}/{GitHubSyncRepo}",
+            var provider when provider == PersonalSyncProviders.Gitee =>
+                string.IsNullOrWhiteSpace(_personalSyncSecrets.GiteeToken)
+                    ? "已选择 Gitee，但还未填写 Token。"
+                    : $"Gitee：{(string.IsNullOrWhiteSpace(GiteeSyncUsername) ? "<自动识别>" : GiteeSyncUsername)}/{GiteeSyncRepo}",
+            var provider when provider == PersonalSyncProviders.GitLab =>
+                string.IsNullOrWhiteSpace(_personalSyncSecrets.GitLabToken)
+                    ? "已选择 GitLab，但还未填写 Token。"
+                    : $"GitLab：{GitLabSyncProjectPath}",
+            var provider when provider == PersonalSyncProviders.Gitea =>
+                string.IsNullOrWhiteSpace(_personalSyncSecrets.GiteaToken)
+                    ? "已选择 Gitea，但还未填写 Token。"
+                    : $"Gitea：{(string.IsNullOrWhiteSpace(GiteaSyncUsername) ? "<自动识别>" : GiteaSyncUsername)}/{GiteaSyncRepo}",
+            var provider when provider == PersonalSyncProviders.S3 =>
+                string.IsNullOrWhiteSpace(_personalSyncSecrets.S3SecretAccessKey)
+                    ? "已选择 S3，但还未填写 Secret Access Key。"
+                    : $"S3：{S3SyncBucket} ({S3SyncRegion})",
+            _ => "个人同步配置待完成。"
+        };
     }
 
     public void RefreshWebDavConfigFromExternal()
     {
-        _settings = AppSettingsStore.Load();
-        EnableWebDavSync = _settings.EnableWebDavSync;
-        WebDavServerUrl = string.IsNullOrWhiteSpace(_settings.WebDavServerUrl) 
-            ? "https://dav.jianguoyun.com/dav/" 
-            : _settings.WebDavServerUrl;
-        WebDavRootPath = _settings.WebDavRootPath;
-        WebDavUsername = _settings.WebDavUsername;
-        
-        // Load password from credential store
-        var credential = WebDavCredentialStore.Load();
-        if (credential != null && !string.IsNullOrWhiteSpace(credential.Password))
-        {
-            WebDavPasswordBox.Password = credential.Password;
-        }
-        else
-        {
-            WebDavPasswordBox.Password = string.Empty;
-        }
-        
-        RefreshWebDavSummary();
-        SyncStatusText = "WebDAV 配置已从云端同步。";
+        LoadPersonalSyncStateFromSettings();
+        SyncStatusText = "个人同步配置已刷新。";
         RefreshSyncActivityLog();
     }
 
@@ -4205,6 +5394,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         [
             "同步", "云", "云同步", "账号", "登录", "注册", "坚果云", "webdav", "cloud", "cloudflare", "服务器", "密码", "配置"
         ],
+        "environment" =>
+        [
+            "环境变量", "密钥", "key", "token", "notion", "api", "secret", "env", "environment"
+        ],
         "extensions" =>
         [
             "扩展", "插件", "目录", "本地", "删除", "编辑", "搜索", "打开目录", "extension", "plugin", "folder", "delete", "edit"
@@ -4431,10 +5624,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _settings.RadialMenu.CustomShortcut = (_settings.RadialMenu.CustomShortcut ?? string.Empty).Trim();
         _settings.RadialMenu.WhitelistedProcesses = ParseProcessList(string.Join(", ", _settings.RadialMenu.WhitelistedProcesses ?? []));
         _settings.RadialMenu.BlacklistedProcesses = ParseProcessList(string.Join(", ", _settings.RadialMenu.BlacklistedProcesses ?? []));
-        ApplyMouseTriggerModeToRadialFlags(_settings.RadialMenu);
-        ApplyMouseTriggerModeToYanmFlags(_settings.Yanm);
         SyncRadialMouseTriggerModeFromFlags(_settings.RadialMenu);
         SyncYanmMouseTriggerModeFromFlags(_settings.Yanm);
+        ApplyMouseTriggerModeToRadialFlags(_settings.RadialMenu);
+        ApplyMouseTriggerModeToYanmFlags(_settings.Yanm);
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
         _mainWindow.NotifyQuickPanelSettingsChanged("quickpanel-trigger-settings-saved");
@@ -5820,6 +7013,49 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
         }
     }
+
+    private void OpenSyncProviderLinkButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string url } && !string.IsNullOrWhiteSpace(url))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this, $"无法打开链接: {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+    }
+
+    private void OpenPersonalSyncCommitButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string url } && !string.IsNullOrWhiteSpace(url))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this, $"无法打开提交链接: {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+    }
+
+    private void TogglePersonalSyncAdvancedOptionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        ShowPersonalSyncAdvancedOptions = !ShowPersonalSyncAdvancedOptions;
+    }
 }
 
 public sealed class BoolToColorConverter : IValueConverter
@@ -5853,6 +7089,16 @@ public sealed class EmptyStringToVisibilityConverter : IValueConverter
 public sealed record SettingsNavigationItem(string Key, string IconReference, string Title, string Accent)
 {
     public Geometry? IconGeometry => ExtensionIconLibrary.ResolveVectorIcon(IconReference);
+}
+
+public sealed record SyncProviderOption(string Value, string Label)
+{
+    public override string ToString() => Label;
+}
+
+public sealed record AutoSyncDelayOption(int Value, string Label)
+{
+    public override string ToString() => Label;
 }
 
 public sealed record MouseGestureTemplateDefinition(string Sequence, string Name, string Description);
@@ -6979,6 +8225,98 @@ public sealed class SettingsRecycleBinItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(RestoreButtonEnabled));
         OnPropertyChanged(nameof(DeleteButtonEnabled));
     }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+public sealed class PersonalSyncCommitItem
+{
+    public PersonalSyncCommitItem(string sha, string message, string author, DateTimeOffset committedAtUtc, string url)
+    {
+        Sha = sha;
+        Message = string.IsNullOrWhiteSpace(message) ? "(无提交说明)" : message;
+        Author = string.IsNullOrWhiteSpace(author) ? "未知作者" : author;
+        CommittedAtUtc = committedAtUtc;
+        Url = url;
+    }
+
+    public string Sha { get; }
+
+    public string ShortSha => Sha.Length <= 8 ? Sha : Sha[..8];
+
+    public string Message { get; }
+
+    public string Author { get; }
+
+    public DateTimeOffset CommittedAtUtc { get; }
+
+    public string LocalTimeLabel => CommittedAtUtc.ToLocalTime().ToString("yyyy/M/d HH:mm", CultureInfo.CurrentCulture);
+
+    public string Url { get; }
+}
+
+public sealed class EnvironmentVariableEditorItem : INotifyPropertyChanged
+{
+    private string _name;
+    private string _value;
+    private string _description;
+
+    public EnvironmentVariableEditorItem(string name, string value, string description)
+    {
+        _name = name;
+        _value = value;
+        _description = description;
+    }
+
+    public string Name
+    {
+        get => _name;
+        set
+        {
+            if (value == _name)
+            {
+                return;
+            }
+
+            _name = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string Value
+    {
+        get => _value;
+        set
+        {
+            if (value == _value)
+            {
+                return;
+            }
+
+            _value = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string Description
+    {
+        get => _description;
+        set
+        {
+            if (value == _description)
+            {
+                return;
+            }
+
+            _description = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {

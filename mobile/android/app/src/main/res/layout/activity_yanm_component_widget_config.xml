@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#111827"
+    android:orientation="vertical"
+    android:padding="18dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="选择燕幕组件"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/yanm_widget_config_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="选择一个组件显示到桌面。"
+        android:textColor="#94A3B8"
+        android:textSize="13sp" />
+
+    <ListView
+        android:id="@+id/yanm_widget_component_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="14dp"
+        android:layout_weight="1"
+        android:background="#1F2937"
+        android:divider="#374151"
+        android:dividerHeight="1dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="内容状态 key"
+        android:textColor="#E5E7EB"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <EditText
+        android:id="@+id/yanm_widget_state_key"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:hint="note"
+        android:singleLine="true"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#64748B" />
+
+    <Button
+        android:id="@+id/yanm_widget_confirm"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="16dp"
+        android:text="添加到桌面" />
+</LinearLayout>

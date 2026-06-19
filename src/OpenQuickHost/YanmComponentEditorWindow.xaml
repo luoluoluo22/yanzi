@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.YanmComponentEditorWindow"
+﻿<Window x:Class="OpenQuickHost.YanmComponentEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="编辑燕幕组件"
@@ -20,7 +20,7 @@
             <TextBlock x:Name="TitleText" Text="编辑燕幕组件" Foreground="White" FontSize="22" FontWeight="SemiBold"/>
             <TextBlock Text="填写组件名称和 HTML 内容。后续这里会接入 AI 生成、脚本数据和定时刷新。"
                        Foreground="#FF9CA3AF"
-                       FontSize="13"
+                       FontSize="{DynamicResource FontSizeNormal}"
                        Margin="0,8,0,0"/>
         </StackPanel>
 
@@ -51,7 +51,7 @@
                      VerticalScrollBarVisibility="Auto"
                      HorizontalScrollBarVisibility="Auto"
                      FontFamily="Consolas"
-                     FontSize="13"
+                     FontSize="{DynamicResource FontSizeNormal}"
                      Background="#FF141414"
                      Foreground="#FFF8FAFC"
                      BorderBrush="#FF333333"/>

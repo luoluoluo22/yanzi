@@ -21,6 +21,7 @@ public partial class RadialSlotPickerWindow : Window
         Func<Window, CommandItem?>? createExtension = null)
     {
         InitializeComponent();
+        App.EnableSilentLoading(this);
         _provider = provider;
         _createExtension = createExtension;
         Results = [];

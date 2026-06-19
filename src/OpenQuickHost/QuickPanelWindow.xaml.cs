@@ -14,11 +14,23 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Threading.Tasks;
+using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
 public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     private const int GlobalSlotCount = 12;
     private const int ContextSlotCount = 12;
     private const int FolderSlotCount = 24;
@@ -48,6 +60,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private bool _isShowingGlobalFavorites;
     private bool _isShowingContextFavorites;
     private DateTime _suppressAutoHideUntilUtc = DateTime.MinValue;
+    private DateTime _lastContextMenuClosedAt = DateTime.MinValue;
     private bool _isEditMode;
     private System.Windows.Point? _dragStartPoint;
     private SlotViewModel? _dragSourceSlot;
@@ -64,6 +77,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private string _folderPreviewTitle = string.Empty;
     private bool _isFolderPreviewVisible;
     private DateTimeOffset _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.MinValue;
+    private DateTimeOffset _suspendOutsideClickHideUntilUtc = DateTimeOffset.MinValue;
 
     public QuickPanelWindow(MainWindow mainWindow)
     {
@@ -88,6 +102,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         PreviewKeyDown += (s, e) =>
         {
             if (e.Key == Key.Escape) Hide();
+        };
+
+        InputHookService.OnGlobalMouseDown += InputHookService_OnGlobalMouseDown;
+        AddHandler(ContextMenuService.ContextMenuOpeningEvent, new ContextMenuEventHandler(QuickPanelWindow_ContextMenuOpening));
+
+        RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
+        Closed += (s, e) =>
+        {
+            RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
         };
     }
 
@@ -388,6 +411,10 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                         ? _settings.ContextFavoriteExtensionIds.Contains(command.ExtensionId)
                         : _settings.GlobalFavoriteExtensionIds.Contains(command.ExtensionId));
         var vm = new SlotViewModel(index, command, isFav, isContextual: isContextual);
+        if (item != null)
+        {
+            vm.IsShortcut = item.IsShortcut;
+        }
         vm.SetSlotLocation(groupId, containerPath);
         return vm;
     }
@@ -953,6 +980,136 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         return point.X >= 0 && point.Y >= 0 && point.X <= ActualWidth && point.Y <= ActualHeight;
     }
 
+    private ContextMenu? _currentContextMenu;
+
+    private void ContextMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContextMenu menu)
+        {
+            _currentContextMenu = menu;
+            HostAssets.AppendLog("QuickPanel: ContextMenu opened.");
+        }
+    }
+
+    private void QuickPanelWindow_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        HostAssets.AppendLog("QuickPanel: ContextMenu opening.");
+        try
+        {
+            Activate();
+            Focus();
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"QuickPanel ContextMenuOpening Activate error: {ex.Message}");
+        }
+    }
+
+    private void ContextMenu_Closed(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContextMenu menu && _currentContextMenu == menu)
+        {
+            _currentContextMenu = null;
+            _lastContextMenuClosedAt = DateTime.UtcNow;
+            HostAssets.AppendLog("QuickPanel: ContextMenu closed.");
+        }
+    }
+
+    private bool IsCursorInsideContextMenu()
+    {
+        if (_currentContextMenu == null || !_currentContextMenu.IsOpen)
+        {
+            return false;
+        }
+        try
+        {
+            var cursor = System.Windows.Forms.Cursor.Position;
+            var point = new NativeMethods.POINT { X = cursor.X, Y = cursor.Y };
+            var hwndAtCursor = NativeMethods.WindowFromPoint(point);
+            if (hwndAtCursor != IntPtr.Zero)
+            {
+                _ = NativeMethods.GetWindowThreadProcessId(hwndAtCursor, out var processId);
+                var currentPid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+                if (processId == currentPid)
+                {
+                    var classBuilder = new StringBuilder(256);
+                    if (NativeMethods.GetClassName(hwndAtCursor, classBuilder, classBuilder.Capacity) > 0)
+                    {
+                        var className = classBuilder.ToString();
+                        if (className.StartsWith("HwndWrapper", StringComparison.OrdinalIgnoreCase))
+                        {
+                            HostAssets.AppendLog($"IsCursorInsideContextMenu: cursor is inside a WPF Popup Window ({className}) of this process.");
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            // Check all WPF PopupRoots
+            foreach (PresentationSource currentSource in PresentationSource.CurrentSources)
+            {
+                if (currentSource is System.Windows.Interop.HwndSource hSource)
+                {
+                    if (hSource.RootVisual != null && hSource.RootVisual.GetType().Name == "PopupRoot")
+                    {
+                        if (NativeMethods.GetWindowRect(hSource.Handle, out var r))
+                        {
+                            if (cursor.X >= r.left && cursor.X <= r.right &&
+                                cursor.Y >= r.top && cursor.Y <= r.bottom)
+                            {
+                                HostAssets.AppendLog($"IsCursorInsideContextMenu: cursor is inside PopupRoot rect=({r.left},{r.top},{r.right},{r.bottom})");
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            var source = PresentationSource.FromVisual(_currentContextMenu);
+            if (source is System.Windows.Interop.HwndSource hwndSource)
+            {
+                var hwnd = hwndSource.Handle;
+                if (NativeMethods.GetWindowRect(hwnd, out var rect))
+                {
+                    bool inside = cursor.X >= rect.left && cursor.X <= rect.right &&
+                                  cursor.Y >= rect.top && cursor.Y <= rect.bottom;
+                    HostAssets.AppendLog($"IsCursorInsideContextMenu: fallback rect=({rect.left},{rect.top},{rect.right},{rect.bottom}), cursor=({cursor.X},{cursor.Y}), inside={inside}");
+                    return inside;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"IsCursorInsideContextMenu error: {ex.Message}");
+        }
+        return false;
+    }
+
+    private void InputHookService_OnGlobalMouseDown()
+    {
+        if (!IsVisible)
+        {
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow < _suspendOutsideClickHideUntilUtc)
+        {
+            return;
+        }
+
+        if (OwnedWindows.OfType<Window>().Any(static window => window.IsVisible))
+        {
+            return;
+        }
+
+        if (_isDraggingSlot || IsCursorInsideQuickPanel() || IsCursorInsideContextMenu())
+        {
+            return;
+        }
+
+        HidePanelIfAllowed();
+    }
+
     private void SlotButton_DragOver(object sender, System.Windows.DragEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: SlotViewModel target })
@@ -1273,7 +1430,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             _isExecutingSlot = false;
             ClearReleaseTarget();
-            if (_isPinned && IsVisible)
+            if (IsVisible)
             {
                 _releaseTargetTimer.Start();
             }
@@ -1377,10 +1534,151 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private int CountExtensionReferences(string? extensionId)
+    {
+        if (string.IsNullOrWhiteSpace(extensionId))
+        {
+            return 0;
+        }
+
+        var count = 0;
+        foreach (var group in _settings.QuickPanelGlobalGroups.Concat(_settings.QuickPanelContextGroups))
+        {
+            group.SlotItems ??= [];
+            foreach (var item in group.SlotItems)
+            {
+                count += CountReferencesInItem(item, extensionId);
+            }
+        }
+        return count;
+    }
+
+    private int CountReferencesInItem(QuickPanelSlotItem? item, string extensionId)
+    {
+        if (item == null)
+        {
+            return 0;
+        }
+
+        var count = 0;
+        if (!item.IsFolder)
+        {
+            if (string.Equals(item.ExtensionId, extensionId, StringComparison.OrdinalIgnoreCase))
+            {
+                count++;
+            }
+        }
+        else
+        {
+            item.FolderSlotItems ??= [];
+            foreach (var child in item.FolderSlotItems)
+            {
+                count += CountReferencesInItem(child, extensionId);
+            }
+        }
+        return count;
+    }
+
+    private void RunningExtensionRegistry_Changed(object? sender, System.EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new System.Action(() =>
+        {
+            foreach (var slot in _allGlobalSlots)
+            {
+                slot.RefreshRunningState();
+            }
+            foreach (var slot in _allContextSlots)
+            {
+                slot.RefreshRunningState();
+            }
+            if (ActiveFolderSlots != null)
+            {
+                foreach (var slot in ActiveFolderSlots)
+                {
+                    slot.RefreshRunningState();
+                }
+            }
+        }));
+    }
+
+    private void TerminateExtension_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        HostAssets.AppendLog("QuickPanel TerminateExtension_Click called.");
+        if (sender is MenuItem mi)
+        {
+            if (mi.CommandParameter is SlotViewModel vm)
+            {
+                HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: vm={vm.Title}, IsFolder={vm.IsFolder}, CommandNull={vm.Command == null}");
+                if (vm.IsFolder || vm.Command == null || string.IsNullOrEmpty(vm.Command.ExtensionId))
+                {
+                    HostAssets.AppendLog("QuickPanel TerminateExtension_Click: ignored because folder or command extensionId is empty.");
+                    return;
+                }
+
+                var extensionId = vm.Command.ExtensionId;
+                var runningInstances = RunningExtensionRegistry.GetSnapshot()
+                    .Where(x => string.Equals(x.ExtensionId, extensionId, System.StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: runningInstances count={runningInstances.Count}");
+                if (runningInstances.Count == 0)
+                {
+                    System.Windows.MessageBox.Show(this, "该扩展当前没有在运行。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    return;
+                }
+
+                var failedMessages = new System.Collections.Generic.List<string>();
+
+                foreach (var instance in runningInstances)
+                {
+                    HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: attempting to terminate instance={instance.InstanceId}");
+                    if (!RunningExtensionRegistry.TryTerminate(instance.InstanceId, out var msg))
+                    {
+                        failedMessages.Add(msg);
+                        HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: terminate failed: {msg}");
+                    }
+                    else
+                    {
+                        HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: terminate success: {msg}");
+                    }
+                }
+
+                if (failedMessages.Count > 0)
+                {
+                    var errorMsg = string.Join("\n", failedMessages);
+                    System.Windows.MessageBox.Show(this, $"结束部分实例失败：\n{errorMsg}", "停止运行失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                }
+            }
+            else
+            {
+                HostAssets.AppendLog($"QuickPanel TerminateExtension_Click: mi.CommandParameter is not SlotViewModel, but {mi.CommandParameter?.GetType().FullName}");
+            }
+        }
+        else
+        {
+            HostAssets.AppendLog("QuickPanel TerminateExtension_Click: sender is not MenuItem.");
+        }
+    }
+
     private async void RemoveExtension_Click(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem mi && mi.CommandParameter is SlotViewModel vm)
         {
+            if (!vm.IsFolder && (vm.IsShortcut || CountExtensionReferences(vm.Command?.ExtensionId) > 1))
+            {
+                var refShort = BuildSlotReference(vm);
+                var contShort = refShort == null ? null : GetSlotContainer(refShort);
+                if (contShort != null && refShort!.Index >= 0 && refShort.Index < contShort.Count)
+                {
+                    contShort[refShort.Index] = null;
+                    RefreshAllLegacySlots();
+                    SaveQuickPanelSettings("quickpanel-remove-slot-shortcut");
+                    LoadSlots();
+                    RefreshActiveFolderAfterMutation();
+                }
+                return;
+            }
+
             if (!vm.IsFolder && vm.Command?.Source == CommandSource.LocalExtension)
             {
                 var result = await _mainWindow.DeleteExtensionFromQuickPanelAsync(vm.Command.ExtensionId, this);
@@ -1458,6 +1756,218 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
 
         _mainWindow.LastRunMessage = message;
+    }
+
+    private void SlotContextMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu menu) return;
+        _currentContextMenu = menu;
+
+        var clipboard = _mainWindow.GetQuickPanelClipboard();
+        
+        MenuItem? pasteNormal = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteNormal");
+        MenuItem? pasteShortcut = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteShortcut");
+        MenuItem? pasteCopy = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteCopy");
+
+        if (pasteNormal == null) return;
+
+        if (clipboard == null)
+        {
+            pasteNormal.Visibility = Visibility.Visible;
+            pasteNormal.Header = "粘贴扩展";
+            if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
+            if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
+        }
+        else if (clipboard.IsCut)
+        {
+            pasteNormal.Visibility = Visibility.Visible;
+            pasteNormal.Header = "移动到此处";
+            if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
+            if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            pasteNormal.Visibility = Visibility.Collapsed;
+            if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Visible;
+            if (pasteCopy != null) pasteCopy.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void PasteShortcut_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel vm })
+        {
+            return;
+        }
+
+        var clipboard = _mainWindow.GetQuickPanelClipboard();
+        if (clipboard == null || clipboard.IsCut)
+        {
+            return;
+        }
+
+        if (!TryPasteShortcutIntoSlot(vm, clipboard, out var message))
+        {
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                _mainWindow.SyncStatus = message;
+            }
+            return;
+        }
+
+        _mainWindow.LastRunMessage = message;
+    }
+
+    private bool TryPasteShortcutIntoSlot(SlotViewModel targetSlot, QuickPanelClipboardItem clipboard, out string message)
+    {
+        var command = _mainWindow.GetAllCommands()
+            .FirstOrDefault(item => string.Equals(item.ExtensionId, clipboard.ExtensionId, StringComparison.OrdinalIgnoreCase));
+        if (command == null)
+        {
+            message = $"找不到扩展：{clipboard.Title}";
+            _mainWindow.ClearQuickPanelClipboard();
+            return false;
+        }
+
+        var targetReference = BuildSlotReference(targetSlot);
+        var targetContainer = targetReference == null ? null : GetSlotContainer(targetReference);
+        if (targetReference == null || targetContainer == null)
+        {
+            message = "当前鼠标面板分组不可用。";
+            return false;
+        }
+
+        targetContainer[targetReference.Index] = new QuickPanelSlotItem
+        {
+            ExtensionId = clipboard.ExtensionId,
+            IsShortcut = true
+        };
+        RefreshAllLegacySlots();
+        SaveQuickPanelSettings("quickpanel-paste-shortcut-slot");
+        LoadSlots();
+        RefreshActiveFolderAfterMutation();
+        _mainWindow.ClearQuickPanelClipboard();
+        message = targetSlot.Item == null
+            ? $"已将扩展粘贴为快捷方式到第 {targetSlot.Index + 1} 个槽位：{clipboard.Title}"
+            : $"已替换第 {targetSlot.Index + 1} 个槽位为快捷方式：{clipboard.Title}";
+        return true;
+    }
+
+    private async void PasteCopy_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel targetSlot })
+        {
+            return;
+        }
+
+        var clipboard = _mainWindow.GetQuickPanelClipboard();
+        if (clipboard == null || clipboard.IsCut)
+        {
+            return;
+        }
+
+        var parentCommand = _mainWindow.GetAllCommands()
+            .FirstOrDefault(item => string.Equals(item.ExtensionId, clipboard.ExtensionId, StringComparison.OrdinalIgnoreCase));
+        if (parentCommand == null)
+        {
+            _mainWindow.SyncStatus = $"找不到母扩展：{clipboard.Title}";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(parentCommand.ExtensionDirectoryPath) || !Directory.Exists(parentCommand.ExtensionDirectoryPath))
+        {
+            _mainWindow.SyncStatus = "母扩展目录不存在，无法克隆副本。";
+            return;
+        }
+
+        try
+        {
+            _mainWindow.SyncStatus = "正在创建并注册副本...";
+            var timestamp = DateTime.Now.ToString("yyyyMMddHHmmssfff");
+            var originalId = parentCommand.ExtensionId;
+            var newId = $"{originalId}_copy_{timestamp}";
+            var catalogRoot = LocalExtensionCatalog.CatalogRootPath;
+            var newDir = Path.Combine(catalogRoot, newId);
+
+            await Task.Run(() => CopyDirectory(parentCommand.ExtensionDirectoryPath, newDir));
+
+            var manifestPath = Path.Combine(newDir, "manifest.json");
+            if (!File.Exists(manifestPath))
+            {
+                _mainWindow.SyncStatus = "复制出的文件夹中找不到 manifest.json。";
+                return;
+            }
+
+            var json = File.ReadAllText(manifestPath);
+            var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(json, JsonOptions);
+            if (manifest == null)
+            {
+                _mainWindow.SyncStatus = "解析 manifest.json 失败。";
+                return;
+            }
+
+            manifest = manifest with
+            {
+                Id = newId,
+                Name = $"{manifest.Name ?? "未命名"} (副本)",
+                Startup = null,
+                GlobalShortcut = null,
+                HotkeyBehavior = null
+            };
+
+            var newJson = JsonSerializer.Serialize(manifest, JsonOptions);
+            File.WriteAllText(manifestPath, newJson);
+
+            var newCommand = _mainWindow.PersistJsonExtensionFromDialog(newJson, isEditMode: false);
+            if (newCommand == null)
+            {
+                _mainWindow.SyncStatus = "注册新扩展失败。";
+                return;
+            }
+
+            var targetReference = BuildSlotReference(targetSlot);
+            var targetContainer = targetReference == null ? null : GetSlotContainer(targetReference);
+            if (targetReference == null || targetContainer == null)
+            {
+                _mainWindow.SyncStatus = "当前槽位位置不可用。";
+                return;
+            }
+
+            targetContainer[targetReference.Index] = new QuickPanelSlotItem
+            {
+                ExtensionId = newId,
+                IsShortcut = false
+            };
+
+            RefreshAllLegacySlots();
+            SaveQuickPanelSettings("quickpanel-paste-copy-slot");
+            LoadSlots();
+            RefreshActiveFolderAfterMutation();
+            _mainWindow.ClearQuickPanelClipboard();
+
+            _mainWindow.SyncStatus = $"已成功创建并粘贴扩展副本：{newCommand.Title}";
+            _mainWindow.LastRunMessage = $"已添加副本到第 {targetSlot.Index + 1} 个槽位。";
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"PasteCopy_Click error: {ex}");
+            _mainWindow.SyncStatus = $"克隆扩展副本失败：{ex.Message}";
+        }
+    }
+
+    private static void CopyDirectory(string sourceDir, string destinationDir)
+    {
+        Directory.CreateDirectory(destinationDir);
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var destFile = Path.Combine(destinationDir, Path.GetFileName(file));
+            File.Copy(file, destFile, true);
+        }
+        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        {
+            var destSubDir = Path.Combine(destinationDir, Path.GetFileName(subDir));
+            CopyDirectory(subDir, destSubDir);
+        }
     }
 
     private async void EditExtension_Click(object sender, RoutedEventArgs e)
@@ -1651,6 +2161,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (_currentContextMenu != null)
+        {
+            HostAssets.AppendLog("Window_Deactivated: ignored because ContextMenu is open.");
+            return;
+        }
+
         if (OwnedWindows.OfType<Window>().Any(static window => window.IsVisible))
         {
             return;
@@ -1692,6 +2208,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             Topmost = true;
             Show();
             NativeMethods.ShowWithoutActivation(new WindowInteropHelper(this).Handle);
+            _suspendOutsideClickHideUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(250);
             _releaseTargetTimer.Start();
         }
         catch (Exception ex)
@@ -1878,10 +2395,16 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                     return true;
                 }
 
+                var sourceItem = clipboard.SourceSlot.Index >= 0 && clipboard.SourceSlot.Index < sourceContainer.Count
+                    ? sourceContainer[clipboard.SourceSlot.Index]
+                    : null;
+                var sourceIsShortcut = sourceItem?.IsShortcut ?? false;
+
                 var targetExisting = targetContainer[targetReference.Index];
                 targetContainer[targetReference.Index] = new QuickPanelSlotItem
                 {
-                    ExtensionId = clipboard.ExtensionId
+                    ExtensionId = clipboard.ExtensionId,
+                    IsShortcut = sourceIsShortcut
                 };
                 if (clipboard.SourceSlot.Index >= 0 && clipboard.SourceSlot.Index < sourceContainer.Count)
                 {
@@ -1902,12 +2425,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         targetContainer[targetReference.Index] = new QuickPanelSlotItem
         {
-            ExtensionId = clipboard.ExtensionId
+            ExtensionId = clipboard.ExtensionId,
+            IsShortcut = true
         };
         RefreshAllLegacySlots();
         SaveQuickPanelSettings("quickpanel-paste-slot");
         LoadSlots();
         RefreshActiveFolderAfterMutation();
+        _mainWindow.ClearQuickPanelClipboard();
         message = targetSlot.Item == null
             ? $"已粘贴到第 {targetSlot.Index + 1} 个槽位：{clipboard.Title}"
             : $"已替换第 {targetSlot.Index + 1} 个槽位为：{clipboard.Title}";
@@ -2669,7 +3194,35 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (ShouldHideForOutsidePointerDown())
+        {
+            HidePanelIfAllowed();
+            return;
+        }
+
         _ = ResolveSlotUnderCursor(occupiedOnly: true, updateTarget: true);
+    }
+
+    private bool ShouldHideForOutsidePointerDown()
+    {
+        if (DateTimeOffset.UtcNow < _suspendOutsideClickHideUntilUtc)
+        {
+            return false;
+        }
+
+        if (OwnedWindows.OfType<Window>().Any(static window => window.IsVisible))
+        {
+            return false;
+        }
+
+        if (_isDraggingSlot || IsCursorInsideQuickPanel())
+        {
+            return false;
+        }
+
+        return IsMouseButtonDown(VkLeftButton) ||
+               IsMouseButtonDown(VkRightButton) ||
+               IsMouseButtonDown(VkMiddleButton);
     }
 
     private SlotViewModel? ResolveSlotUnderCursor(bool occupiedOnly = false, bool updateTarget = true)
@@ -2767,6 +3320,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) => 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private static bool IsMouseButtonDown(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+
+    private const int VkLeftButton = 0x01;
+    private const int VkRightButton = 0x02;
+    private const int VkMiddleButton = 0x04;
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
 }
 
 public class QuickPanelGroupItem : INotifyPropertyChanged
@@ -2964,6 +3526,36 @@ public class SlotViewModel : INotifyPropertyChanged
     public IReadOnlyList<string> FolderExtensionIds => _folderExtensionIds;
     public IReadOnlyList<QuickPanelSlotItem?> FolderSlotItems => _folderSlotItems;
 
+    public bool IsShortcut
+    {
+        get => _item?.IsShortcut ?? false;
+        set
+        {
+            if (_item != null && _item.IsShortcut != value)
+            {
+                _item.IsShortcut = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public bool IsRunning
+    {
+        get
+        {
+            if (IsFolder || IsEmpty || _command == null || string.IsNullOrEmpty(_command.ExtensionId))
+            {
+                return false;
+            }
+            return RunningExtensionRegistry.GetSnapshot().Any(x => string.Equals(x.ExtensionId, _command.ExtensionId, System.StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public void RefreshRunningState()
+    {
+        OnPropertyChanged(nameof(IsRunning));
+    }
+
     public QuickPanelSlotItem? CloneSlotItem()
     {
         return CloneSlotItem(_item);
@@ -2979,7 +3571,8 @@ public class SlotViewModel : INotifyPropertyChanged
                 ExtensionId = item.ExtensionId,
                 FolderName = item.FolderName,
                 FolderExtensionIds = item.FolderExtensionIds.ToList(),
-                FolderSlotItems = item.FolderSlotItems.Select(CloneSlotItem).ToList()
+                FolderSlotItems = item.FolderSlotItems.Select(CloneSlotItem).ToList(),
+                IsShortcut = item.IsShortcut
             };
     }
 
@@ -3016,8 +3609,10 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsFolderChild));
         OnPropertyChanged(nameof(SourceGroupId));
         OnPropertyChanged(nameof(ContainerPath));
+        OnPropertyChanged(nameof(IsShortcut));
         OnPropertyChanged(nameof(SourceFolderIndex));
         OnPropertyChanged(nameof(SourceFolderItemIndex));
+        OnPropertyChanged(nameof(IsRunning));
     }
 
     private void AttachCommandEvents()
@@ -3114,6 +3709,12 @@ internal static class NativeMethods
     private static extern bool GetCursorPos(out POINT lpPoint);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT point);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
@@ -3151,8 +3752,14 @@ internal static class NativeMethods
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
 
+
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    private struct POINT
+    public struct POINT
     {
         public int X;
         public int Y;
@@ -3173,7 +3780,7 @@ internal static class NativeMethods
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    private struct RECT
+    public struct RECT
     {
         public int left;
         public int top;

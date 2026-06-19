@@ -6,49 +6,11 @@
         Height="420"
         WindowStartupLocation="CenterOwner"
         Style="{StaticResource DialogWindow}">
-    <Window.Resources>
-        <Style x:Key="DarkComboBox" TargetType="ComboBox">
-            <Setter Property="Background" Value="#FF1E1E1E"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderBrush" Value="#FF2A2A2A"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="12,8"/>
-            <Setter Property="Height" Value="42"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-        </Style>
-
-        <Style TargetType="ComboBoxItem">
-            <Setter Property="Padding" Value="12,8"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBoxItem">
-                        <Border x:Name="Root"
-                                Background="{TemplateBinding Background}"
-                                Padding="{TemplateBinding Padding}"
-                                CornerRadius="4"
-                                Margin="4,2">
-                            <ContentPresenter />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#1AFFFFFF" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#FF3B82F6" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </Window.Resources>
 
     <Border Margin="1"
-            CornerRadius="14"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            CornerRadius="0"
+            Background="{DynamicResource BrushBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1"
             MouseLeftButtonDown="Window_MouseLeftButtonDown">
         <Grid Margin="25">
@@ -70,12 +32,13 @@
             <!-- 2. Main Content Section -->
             <StackPanel Grid.Row="2" Margin="0,25,0,0">
                 <TextBlock Text="目标 Agent"
-                           Foreground="#FFB8B8B8"
-                           FontSize="12"
+                           Foreground="{DynamicResource BrushTextSec}"
+                           FontSize="{DynamicResource FontSizeSmallPlus}"
                            FontWeight="SemiBold"
                            Margin="2,0,0,8" />
                 <ComboBox x:Name="TargetComboBox"
-                          Style="{StaticResource DarkComboBox}"
+                          Style="{DynamicResource GlobalComboBoxStyle}"
+                          Height="36"
                           SelectedIndex="0">
                     <ComboBoxItem Tag="Codex">Codex</ComboBoxItem>
                     <ComboBoxItem Tag="Antigravity">Antigravity</ComboBoxItem>
@@ -83,12 +46,13 @@
                 </ComboBox>
 
                 <TextBlock Text="导出作用域"
-                           Foreground="#FFB8B8B8"
-                           FontSize="12"
+                           Foreground="{DynamicResource BrushTextSec}"
+                           FontSize="{DynamicResource FontSizeSmallPlus}"
                            FontWeight="SemiBold"
                            Margin="2,18,0,8" />
                 <ComboBox x:Name="ScopeComboBox"
-                          Style="{StaticResource DarkComboBox}"
+                          Style="{DynamicResource GlobalComboBoxStyle}"
+                          Height="36"
                           SelectedIndex="0">
                     <ComboBoxItem Tag="Project">项目级</ComboBoxItem>
                     <ComboBoxItem Tag="Global">全局级</ComboBoxItem>
@@ -96,8 +60,8 @@
                 
                 <TextBlock Margin="2,15,0,0"
                            Text="* 项目级导出将会在下一步要求选择目标项目根目录。"
-                           Foreground="#4DFFFFFF"
-                           FontSize="11"
+                           Foreground="{DynamicResource BrushTextSec}"
+                           FontSize="{DynamicResource FontSizeSmall}"
                            TextWrapping="Wrap" />
             </StackPanel>
 

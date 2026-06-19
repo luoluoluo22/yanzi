@@ -9,7 +9,7 @@
         WindowStartupLocation="CenterOwner"
         Style="{StaticResource DialogWindow}">
     <Border Margin="1"
-            CornerRadius="12"
+            CornerRadius="0"
             Background="#F2161616"
             BorderBrush="#22FFFFFF"
             BorderThickness="1">
@@ -43,12 +43,12 @@
                         <TextBlock x:Name="StatusText"
                                    Text="执行完成"
                                    Foreground="#FFDCFCE7"
-                                   FontSize="13"
+                                   FontSize="{DynamicResource FontSizeNormal}"
                                    FontWeight="SemiBold" />
                         <TextBlock x:Name="MetaText"
                                    Margin="0,6,0,0"
                                    Foreground="#FF9CA3AF"
-                                   FontSize="12"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
                                    TextWrapping="Wrap" />
                     </StackPanel>
                     <Button Grid.Column="1"
@@ -66,7 +66,7 @@
                        Margin="0,16,0,8"
                        Text="标准输出"
                        Foreground="White"
-                       FontSize="13"
+                       FontSize="{DynamicResource FontSizeNormal}"
                        FontWeight="SemiBold"
                        VerticalAlignment="Top" />
             <TextBox x:Name="OutputTextBox"
@@ -79,7 +79,7 @@
                      VerticalScrollBarVisibility="Auto"
                      HorizontalScrollBarVisibility="Auto"
                      FontFamily="Consolas"
-                     FontSize="12"
+                     FontSize="{DynamicResource FontSizeSmallPlus}"
                      Background="#FF111111"
                      BorderBrush="#FF2A2A2A"
                      BorderThickness="1"
@@ -89,7 +89,7 @@
                        Margin="0,16,0,8"
                        Text="错误输出"
                        Foreground="White"
-                       FontSize="13"
+                       FontSize="{DynamicResource FontSizeNormal}"
                        FontWeight="SemiBold"
                        VerticalAlignment="Top" />
             <TextBox x:Name="ErrorTextBox"
@@ -101,7 +101,7 @@
                      VerticalScrollBarVisibility="Auto"
                      HorizontalScrollBarVisibility="Auto"
                      FontFamily="Consolas"
-                     FontSize="12"
+                     FontSize="{DynamicResource FontSizeSmallPlus}"
                      Background="#FF111111"
                      BorderBrush="#FF2A2A2A"
                      BorderThickness="1"
@@ -115,7 +115,7 @@
                 <TextBlock x:Name="HintText"
                            VerticalAlignment="Center"
                            Foreground="#FF9CA3AF"
-                           FontSize="12"
+                           FontSize="{DynamicResource FontSizeSmallPlus}"
                            Text="这里显示当前测试执行的详细输出。" />
                 <Button Grid.Column="1"
                         x:Name="CloseButton"

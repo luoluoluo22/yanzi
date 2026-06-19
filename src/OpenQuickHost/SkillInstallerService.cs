@@ -48,7 +48,7 @@ public static class SkillInstallerService
         return target switch
         {
             SkillExportTarget.Codex => Path.Combine(destinationRoot, ".codex", "skills"),
-            SkillExportTarget.Antigravity => Path.Combine(destinationRoot, ".agents", "skills"),
+            SkillExportTarget.Antigravity => Path.Combine(destinationRoot, ".agent", "skills"),
             SkillExportTarget.Trae => Path.Combine(destinationRoot, ".trae", "skills"),
             _ => throw new InvalidOperationException("不支持的导出目标。")
         };
@@ -59,7 +59,7 @@ public static class SkillInstallerService
         return scope switch
         {
             SkillExportScope.Project when target == SkillExportTarget.Codex => Path.Combine(".codex", "skills"),
-            SkillExportScope.Project when target == SkillExportTarget.Antigravity => Path.Combine(".agents", "skills"),
+            SkillExportScope.Project when target == SkillExportTarget.Antigravity => Path.Combine(".agent", "skills"),
             SkillExportScope.Project when target == SkillExportTarget.Trae => Path.Combine(".trae", "skills"),
             SkillExportScope.Global when target == SkillExportTarget.Codex => Path.Combine(".codex", "skills"),
             SkillExportScope.Global when target == SkillExportTarget.Antigravity => Path.Combine(".gemini", "antigravity", "skills"),

@@ -1,0 +1,261 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    
+    <!-- Ghost Button (Transparent with hover effect) -->
+    <Style x:Key="GhostButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="16,10" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeNormal}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Global ComboBox Item Style -->
+    <Style x:Key="GlobalComboBoxItemStyle" TargetType="ComboBoxItem">
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Padding" Value="10,7" />
+        <Setter Property="Margin" Value="2" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            CornerRadius="5"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Global ComboBox Style -->
+    <Style x:Key="GlobalComboBoxStyle" TargetType="ComboBox">
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Background" Value="{DynamicResource BrushInputBG}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="12,0,36,0" />
+        <Setter Property="MaxDropDownHeight" Value="320" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource GlobalComboBoxItemStyle}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <!-- 使用 ToggleButton 作为背景和下拉按钮 -->
+                        <ToggleButton x:Name="ToggleButton"
+                                      Background="{TemplateBinding Background}"
+                                      BorderBrush="{TemplateBinding BorderBrush}"
+                                      BorderThickness="{TemplateBinding BorderThickness}"
+                                      Focusable="False"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                      ClickMode="Press">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="Root"
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            CornerRadius="6"
+                                            SnapsToDevicePixels="True">
+                                        <!-- 只渲染右侧的下拉箭头，内容区域由 ContentSite 承载 -->
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="32" />
+                                            </Grid.ColumnDefinitions>
+                                            <Path x:Name="Arrow"
+                                                  Grid.Column="1"
+                                                  Width="9"
+                                                  Height="5"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  Data="M0,0 L4.5,5 L9,0 Z"
+                                                  Fill="#FF9CA3AF"
+                                                  Stretch="Fill" />
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
+                                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                                        </Trigger>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
+                                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
+                                            <Setter TargetName="Arrow" Property="Fill" Value="{DynamicResource BrushTextMain}" />
+                                        </Trigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+
+                        <!-- 通用内容区域，通过 WPF 内置的 SelectionBoxItem 优雅渲染所有数据模型 -->
+                        <ContentPresenter x:Name="ContentSite"
+                                          IsHitTestVisible="False"
+                                          Content="{TemplateBinding SelectionBoxItem}"
+                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                          ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                          Margin="12,0,36,0"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Left" />
+
+                        <!-- 下拉 Popup 容器 -->
+                        <Popup x:Name="PART_Popup"
+                               Placement="Bottom"
+                               IsOpen="{TemplateBinding IsDropDownOpen}"
+                               AllowsTransparency="True"
+                               Focusable="False"
+                               PopupAnimation="Slide">
+                            <Border Background="{DynamicResource BrushBG}"
+                                    BorderBrush="{DynamicResource BrushBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Margin="0,4,0,0"
+                                    MinWidth="{TemplateBinding ActualWidth}"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                <ScrollViewer Padding="3"
+                                              SnapsToDevicePixels="True"
+                                              CanContentScroll="True"
+                                              VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 全局 ComboBox 默认隐式样式，使全局未显式声明 Style 的下拉框自动应用此高保真自适应设计 -->
+    <Style TargetType="ComboBox" BasedOn="{StaticResource GlobalComboBoxStyle}" />
+    
+    <!-- Global ListBoxItem Style (for sidebars and generic lists) -->
+    <Style x:Key="GlobalListBoxItemStyle" TargetType="ListBoxItem">
+        <Setter Property="Margin" Value="0,2" />
+        <Setter Property="Padding" Value="16,10" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Root"
+                            Padding="{TemplateBinding Padding}"
+                            CornerRadius="8"
+                            Background="Transparent">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 全局隐式滚动条样式，替换原生亮色粗滚动条 -->
+    <Style x:Key="GlobalScrollBarThumbStyle" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="Root" Background="{DynamicResource BrushBorder}" CornerRadius="2" Margin="0" />
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushTextSec}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushAccent}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid>
+                        <Track x:Name="PART_Track" IsDirectionReversed="true">
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource GlobalScrollBarThumbStyle}" />
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Background="Transparent" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Background="Transparent" />
+                            </Track.DecreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Height" Value="4" />
+            </Trigger>
+            <Trigger Property="Orientation" Value="Vertical">
+                <Setter Property="Width" Value="4" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+</ResourceDictionary>

@@ -9,6 +9,9 @@
         Background="#FF161616"
         Foreground="White"
         WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    </Window.Resources>
     <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -18,7 +21,7 @@
 
         <DockPanel Grid.Row="0" Margin="0,0,0,12">
             <StackPanel DockPanel.Dock="Left">
-                <TextBlock Text="正在运行的扩展" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="正在运行的扩展" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" />
                 <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="#FF9CA3AF" />
             </StackPanel>
             <Button DockPanel.Dock="Right"
@@ -43,7 +46,66 @@
                           Foreground="White">
                     <ListView.View>
                         <GridView>
-                            <GridViewColumn Header="名称" Width="180" DisplayMemberBinding="{Binding Title}" />
+                            <GridViewColumn Header="名称" Width="200">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <!-- Icon Area -->
+                                            <Grid Margin="0,0,8,0" VerticalAlignment="Center">
+                                                <Border Width="20"
+                                                        Height="20"
+                                                        CornerRadius="5"
+                                                        ClipToBounds="True">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="{Binding AccentBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                                    <Setter Property="Background" Value="Transparent" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <Grid>
+                                                        <Image Source="{Binding IconSource}"
+                                                               Stretch="UniformToFill"
+                                                               RenderOptions.BitmapScalingMode="HighQuality"
+                                                               SnapsToDevicePixels="True"
+                                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                        <Viewbox Margin="3"
+                                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Width="24"
+                                                                  Height="24"
+                                                                  Data="{Binding VectorIcon}"
+                                                                  Fill="White"
+                                                                  Stretch="Uniform" />
+                                                        </Viewbox>
+                                                        <TextBlock Text="{Binding DisplayGlyph}"
+                                                                   FontSize="10"
+                                                                   Foreground="White"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   FontWeight="Bold"
+                                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                    </Grid>
+                                                </Border>
+                                                <!-- Running indicator (Green Dot) -->
+                                                <Border Width="6"
+                                                        Height="6"
+                                                        CornerRadius="3"
+                                                        Background="#FF10B981"
+                                                        BorderBrush="#CCFFFFFF"
+                                                        BorderThickness="0.8"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Bottom"
+                                                        Margin="-1.5,0,0,-1.5"
+                                                        IsHitTestVisible="False" />
+                                            </Grid>
+                                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Foreground="White" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                             <GridViewColumn Header="扩展 ID" Width="170" DisplayMemberBinding="{Binding ExtensionId}" />
                             <GridViewColumn Header="PID" Width="70" DisplayMemberBinding="{Binding ProcessId}" />
                             <GridViewColumn Header="运行时" Width="80" DisplayMemberBinding="{Binding Runtime}" />
@@ -70,7 +132,7 @@
 
                 <TextBlock x:Name="EmptyStateTextBlock"
                            Text="当前没有正在运行的独立窗口扩展。"
-                           FontSize="16"
+                           FontSize="{DynamicResource FontSizeLargePlus}"
                            Foreground="#FF6B7280"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"

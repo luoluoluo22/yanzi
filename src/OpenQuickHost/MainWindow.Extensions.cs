@@ -38,6 +38,11 @@ public partial class MainWindow
         _localExtensionIndex[command.ExtensionId] = command;
         ApplyNewExtensionState(command);
         RefreshExtensionHotkeys();
+
+        if (!_isReplacingLocalExtensions)
+        {
+            SyncLocalExtensionsToCloud();
+        }
     }
 
     private void RemoveLocalExtensionCommand(string extensionId)
@@ -48,6 +53,8 @@ public partial class MainWindow
         _localExtensionIndex.Remove(extensionId);
         RemoveExtensionUiTracking(extensionId);
         RefreshExtensionHotkeys();
+
+        SyncLocalExtensionsToCloud();
     }
 
     public CommandItem PersistJsonExtensionFromDialog(string json, bool isEditMode)
@@ -136,7 +143,7 @@ public partial class MainWindow
         return index < 0 ? int.MaxValue : index;
     }
 
-    private void TrackRecentlyAddedExtension(string extensionId)
+    public void TrackRecentlyAddedExtension(string extensionId)
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
@@ -290,7 +297,7 @@ public partial class MainWindow
                string.Equals(command.Runtime, "c#", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void QueueCSharpPrebuild(CommandItem command, string reason)
+    public static void QueueCSharpPrebuild(CommandItem command, string reason)
     {
         if (!IsCSharpRuntime(command))
         {
@@ -309,6 +316,30 @@ public partial class MainWindow
                 var result = await ScriptExtensionRunner.PreparePortableAssetsAsync(command).ConfigureAwait(false);
                 HostAssets.AppendLog(
                     $"CSharp prebuild completed: id={command.ExtensionId}, title={command.Title}, reason={reason}, success={result.Success}, elapsedMs={stopwatch.ElapsedMilliseconds}, exitCode={result.ExitCode}, error={result.Error}");
+                
+                if (result.Success)
+                {
+                    var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                    if (dispatcher != null)
+                    {
+                        _ = dispatcher.InvokeAsync(async () =>
+                        {
+                            var mainWin = System.Windows.Application.Current.MainWindow as MainWindow;
+                            if (mainWin != null)
+                            {
+                                try
+                                {
+                                    HostAssets.AppendLog($"CSharp prebuild auto-running extension after success: id={command.ExtensionId}");
+                                    await mainWin.ExecuteCommandAsync(command, "prebuild-auto-run");
+                                }
+                                catch (Exception ex)
+                                {
+                                    HostAssets.AppendLog($"Failed to auto-run extension after build: {ex.Message}");
+                                }
+                            }
+                        });
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -414,7 +445,7 @@ public partial class MainWindow
                 "拖拽导入"
             }.Where(static value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             OpenTarget = fullPath,
-            Icon = fullPath
+            Icon = isDirectory ? "mdi:folder" : "mdi:file"
         };
 
         var json = JsonSerializer.Serialize(manifest, new JsonSerializerOptions
@@ -2010,11 +2041,19 @@ public partial class MainWindow
 
     private void ReplaceLocalExtensions(IReadOnlyList<CommandItem> commands, string? statusText)
     {
-        _allCommands.RemoveAll(x => x.Source == CommandSource.LocalExtension);
-        _localExtensionIndex.Clear();
-        foreach (var command in commands.OrderBy(GetLocalExtensionDisplayOrder).ThenBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
+        _isReplacingLocalExtensions = true;
+        try
         {
-            UpsertLocalExtensionCommand(command);
+            _allCommands.RemoveAll(x => x.Source == CommandSource.LocalExtension);
+            _localExtensionIndex.Clear();
+            foreach (var command in commands.OrderBy(GetLocalExtensionDisplayOrder).ThenBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
+            {
+                UpsertLocalExtensionCommand(command);
+            }
+        }
+        finally
+        {
+            _isReplacingLocalExtensions = false;
         }
 
         StartMouseGestureService();
@@ -2023,6 +2062,8 @@ public partial class MainWindow
         {
             SyncStatus = statusText;
         }
+        SyncLocalExtensionsToCloud();
+        _yanmOverlay?.ReloadSettings();
     }
 
     public IReadOnlyList<CommandItem> GetQuickPanelRecommendedCommands(ForegroundAppContext? context, IEnumerable<string> excludeExtensionIds, int maxCount = 8)
@@ -2234,7 +2275,7 @@ public partial class MainWindow
             }
 
             WebDavSyncService.MarkExtensionDeletedLocally(deletable.ExtensionId, deletable.DeclaredVersion);
-            ExtensionRecycleBinService.MoveToRecycleBin(deletable.ExtensionId);
+            ExtensionRecycleBinService.MoveToRecycleBin(deletable.ExtensionId, deletable.ExtensionDirectoryPath);
             RemoveExtensionFromQuickPanelSettings(deletable.ExtensionId);
             RemoveLocalExtensionCommand(deletable.ExtensionId);
             ApplyFilter(SearchBox.Text);

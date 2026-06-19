@@ -50,7 +50,8 @@ internal static class ExtensionIconLibrary
         ["skill-export"] = "M12,3 L20,7 V17 L12,21 L4,17 V7 Z M12,3 V21 M4,7 L12,11 L20,7",
         ["trash"] = "M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z",
         ["edit"] = "M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z",
-        ["store"] = "M12,18H6V14H12M21,14V12L20,7H4L3,12V14H4V20H14V14H18V20H20V14M20,4H4V6H20V4Z"
+        ["store"] = "M12,18H6V14H12M21,14V12L20,7H4L3,12V14H4V20H14V14H18V20H20V14M20,4H4V6H20V4Z",
+        ["stop"] = "M6,6H18V18H6V6Z"
     };
 
     private static readonly IReadOnlyDictionary<string, string> SvgAssetIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -238,6 +239,20 @@ internal static class ExtensionIconLibrary
 
     public static ImageSource? ResolveImageSource(string? iconReference, string? extensionDirectoryPath)
     {
+        if (iconReference != null && iconReference.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+        {
+            if (ImageCache.TryGetValue(iconReference, out var cachedUwpImage))
+            {
+                return cachedUwpImage;
+            }
+            var uwpIcon = NativeFileIconService.GetIcon(iconReference, isFolder: false);
+            if (uwpIcon != null)
+            {
+                ImageCache[iconReference] = uwpIcon;
+                return uwpIcon;
+            }
+        }
+
         var resolvedPath = ResolveImagePath(iconReference, extensionDirectoryPath);
         if (string.IsNullOrWhiteSpace(resolvedPath))
         {

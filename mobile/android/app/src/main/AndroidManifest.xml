@@ -2,8 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="cc.luoluoluo.yanzi.mobile">
 
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <supports-screens
         android:anyDensity="true"
@@ -20,9 +32,11 @@
         android:resizeableActivity="true"
         android:roundIcon="@drawable/yanzi_launcher_bitmap"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.YanziMobile">
         <activity
             android:name=".MainActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -35,8 +49,24 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".YanmComponentWidgetConfigActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".YanmComponentEditActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity="cc.luoluoluo.yanzi.mobile.widget"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
         <service
             android:name=".FloatingWheelService"
+            android:exported="false" />
+        <service
+            android:name=".FloatingScreenshotService"
             android:exported="false" />
         <service
             android:name=".MobileAccessibilityService"
@@ -49,5 +79,62 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/mobile_accessibility_service" />
         </service>
+
+        <!-- Extensions Widget Provider -->
+        <receiver android:name=".widget.ExtensionsWidgetProvider"
+            android:label="燕子快捷扩展 (2x2)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_RUN_EXT" />
+                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_EXT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_extensions_info" />
+        </receiver>
+
+        <!-- Yanm Widget Provider -->
+        <receiver android:name=".widget.YanmWidgetProvider"
+            android:label="燕幕组件列表 (2x4)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_YANM" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_yanm_info" />
+        </receiver>
+
+        <!-- Yanm Widget RemoteViews Service -->
+        <service android:name=".widget.YanmWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="true" />
+
+        <!-- Single Yanm Component Widget Provider -->
+        <receiver android:name=".widget.YanmComponentWidgetProvider"
+            android:label="燕幕单组件"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_YANM_COMPONENT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_yanm_component_info" />
+        </receiver>
+
+        <!-- FileProvider for camera photos -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="cc.luoluoluo.yanzi.mobile.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 </manifest>

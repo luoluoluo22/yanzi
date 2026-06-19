@@ -22,4 +22,13 @@ public static class UriProtocolRegistrationService
         using var commandKey = schemeKey?.CreateSubKey(@"shell\open\command");
         commandKey?.SetValue(string.Empty, $"\"{executablePath}\" \"%1\"");
     }
+
+    public static void Unregister()
+    {
+        try
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\yanzi", throwOnMissingSubKey: false);
+        }
+        catch { }
+    }
 }
