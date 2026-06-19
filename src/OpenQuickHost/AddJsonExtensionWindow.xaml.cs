@@ -565,7 +565,7 @@ public partial class AddJsonExtensionWindow : Window
 
     private string TryBuildManualCopyPrompt()
     {
-        return BuildGenerationPrompt(BuildManualRequestSummary());
+        return BuildDetailedPrompt(BuildManualRequestSummary());
     }
 
     private string BuildManualRequestSummary()
@@ -945,7 +945,7 @@ public partial class AddJsonExtensionWindow : Window
         }
 
         _aiPromptCopied = false;
-        _aiGuidePrompt = BuildGenerationPrompt(request);
+        _aiGuidePrompt = BuildDetailedPrompt(request);
         AiPromptPreviewBox.Text = _aiGuidePrompt;
         Dispatcher.BeginInvoke(() =>
         {
