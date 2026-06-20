@@ -587,8 +587,23 @@ public sealed class PersonalSyncService
 
         HostAssets.AppendLog($"Personal sync package upload started: id={entry.ExtensionId}, path={entry.PackagePath}, bytes={bytes.Length}, hash={entry.PackageHash}");
         await _backend.WriteBytesAsync(entry.PackagePath, bytes, "application/zip", cancellationToken);
-        var remoteBytes = await _backend.TryReadBytesAsync(entry.PackagePath, cancellationToken)
-            ?? throw new FileNotFoundException($"上传校验失败：{entry.PackagePath}");
+        byte[]? remoteBytes = null;
+        for (int i = 0; i < 5; i++)
+        {
+            remoteBytes = await _backend.TryReadBytesAsync(entry.PackagePath, cancellationToken);
+            if (remoteBytes != null)
+            {
+                break;
+            }
+            if (i < 4)
+            {
+                await Task.Delay(1000, cancellationToken);
+            }
+        }
+        if (remoteBytes == null)
+        {
+            throw new FileNotFoundException($"上传校验失败：{entry.PackagePath}");
+        }
         var remoteHash = ComputeSha256(remoteBytes);
         if (!TryValidateZipArchive(remoteBytes, out var zipError) ||
             !string.Equals(remoteHash, entry.PackageHash, StringComparison.OrdinalIgnoreCase))

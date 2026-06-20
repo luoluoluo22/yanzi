@@ -125,7 +125,8 @@ public sealed class CloudSyncClient
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
         {
             ClearSession();
-            ClearCredential();
+            // 登录失败时不清除本地加密记住的凭据文件，避免因后端暂时网络波动或接口不可用导致本地凭据被强行抹除。
+            // 这样既能在网络恢复后自动重连，也能在需要重新登录时在弹窗中保留自动填充邮箱的能力。
             throw new InvalidOperationException("邮箱或密码错误。");
         }
 
@@ -814,6 +815,24 @@ public sealed class CloudSyncClient
         if (response.IsSuccessStatusCode)
         {
             return;
+        }
+
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            var retryAfterSec = 60;
+            if (response.Headers.RetryAfter != null)
+            {
+                if (response.Headers.RetryAfter.Delta.HasValue)
+                {
+                    retryAfterSec = (int)response.Headers.RetryAfter.Delta.Value.TotalSeconds;
+                }
+                else if (response.Headers.RetryAfter.Date.HasValue)
+                {
+                    retryAfterSec = (int)(response.Headers.RetryAfter.Date.Value - DateTimeOffset.UtcNow).TotalSeconds;
+                }
+            }
+            if (retryAfterSec < 1) retryAfterSec = 1;
+            throw new InvalidOperationException($"请求过于频繁，请在 {retryAfterSec} 秒后重试。");
         }
 
         ErrorResponse? error = null;

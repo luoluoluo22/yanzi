@@ -3054,7 +3054,7 @@ extends Activity {
                 popup.getMenu().add(0, 1, 0, (CharSequence)"\u6267\u884c");
                 popup.getMenu().add(0, 2, 1, (CharSequence)"\u7f16\u8f91");
                 popup.getMenu().add(0, 3, 2, (CharSequence)"\u5220\u9664");
-                popup.getMenu().add(0, 4, 3, (CharSequence)"\u6dfb\u52a0\u5230\u6845\u9762"); // "添加到桌面"
+                popup.getMenu().add(0, 4, 3, (CharSequence)"\u6dfb\u52a0\u5230\u684c\u9762"); // "添加到桌面"
                 popup.getMenu().add(0, 5, 4, (CharSequence)"\u6dfb\u52a0\u5230\u71d5\u73af"); // "添加到燕环"
                 popup.setOnMenuItemClickListener(menuItem -> {
                     if (menuItem.getItemId() == 1) {

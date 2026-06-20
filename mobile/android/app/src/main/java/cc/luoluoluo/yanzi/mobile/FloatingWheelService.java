@@ -559,7 +559,7 @@ public class FloatingWheelService extends Service {
                 "catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}" +
                 "__run();" +
                 "</script></body></html>";
-            runner.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+            runner.loadDataWithBaseURL("http://localhost/", html, "text/html", "UTF-8", null);
             log("手机扩展开始执行。");
         } catch (Exception ex) {
             log("手机扩展执行失败：" + ex.getMessage());

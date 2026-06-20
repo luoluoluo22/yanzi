@@ -14,6 +14,25 @@ public partial class LoginWindow : Window
 
     public Func<string, string, string, Task>? ResetPasswordAsyncHandler { private get; set; }
 
+    public Func<string, string, Task>? SignInAsyncHandler { private get; set; }
+
+    private bool _isCountingDown;
+
+    private async void StartRateLimitCountdown(int seconds)
+    {
+        ConfirmButton.IsEnabled = false;
+        var remaining = seconds;
+        while (remaining > 0)
+        {
+            ShowError($"请求过于频繁，请在 {remaining} 秒后重试。");
+            await Task.Delay(1000);
+            remaining--;
+        }
+        StatusText.Visibility = Visibility.Collapsed;
+        _isCountingDown = false;
+        ConfirmButton.IsEnabled = true;
+    }
+
     public LoginWindow(string? email = null)
     {
         InitializeComponent();
@@ -136,6 +155,11 @@ public partial class LoginWindow : Window
             {
                 ValidateEmail(LoginEmail, emptyMessage: "请输入邮箱。");
                 ValidatePassword(Password);
+                if (SignInAsyncHandler != null)
+                {
+                    ShowInfo("正在登录...");
+                    await SignInAsyncHandler(LoginEmail, Password);
+                }
                 DialogResult = true;
                 return;
             }
@@ -183,11 +207,35 @@ public partial class LoginWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError(ex.Message);
+            var isRateLimit = false;
+            var seconds = 60;
+            var match = Regex.Match(ex.Message ?? string.Empty, @"请在\s*(\d+)\s*秒后重试");
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var parsedSec))
+            {
+                isRateLimit = true;
+                seconds = parsedSec;
+            }
+            else if ((ex.Message ?? string.Empty).Contains("429") || (ex.Message ?? string.Empty).Contains("Too Many Requests"))
+            {
+                isRateLimit = true;
+            }
+
+            if (isRateLimit)
+            {
+                _isCountingDown = true;
+                StartRateLimitCountdown(seconds);
+            }
+            else
+            {
+                ShowError(ex.Message ?? "未知错误。");
+            }
         }
         finally
         {
-            ConfirmButton.IsEnabled = true;
+            if (!_isCountingDown)
+            {
+                ConfirmButton.IsEnabled = true;
+            }
         }
     }
 

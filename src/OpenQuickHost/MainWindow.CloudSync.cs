@@ -622,6 +622,11 @@ public partial class MainWindow
             dialog.SendPasswordResetCodeAsync = (email) => _cloudSyncClient.SendPasswordResetCodeAsync(email);
             dialog.RegisterAsyncHandler = (email, username, password, code) => _cloudSyncClient.RegisterAsync(email, username, password, code);
             dialog.ResetPasswordAsyncHandler = (email, password, code) => _cloudSyncClient.ResetPasswordAsync(email, password, code);
+            dialog.SignInAsyncHandler = async (email, password) =>
+            {
+                _cloudSyncClient.SetCredential(email, password, dialog.RememberCredential);
+                await _cloudSyncClient.EnsureAuthenticatedAsync();
+            };
             Window? activeWindow = null;
             foreach (Window win in System.Windows.Application.Current.Windows)
             {
@@ -2171,7 +2176,7 @@ public partial class MainWindow
     {
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || !ShouldSyncLocalWebDavConfigToCloud())
         {
-            HostAssets.AppendLog($"Personal sync cloud push skipped: {reason}");
+            HostAssets.AppendLog($"Personal sync cloud push skipped: {reason}, hasClient={_cloudSyncClient != null}, hasCredential={_cloudSyncClient?.HasCredential == true}, shouldSync={ShouldSyncLocalWebDavConfigToCloud()}");
             return;
         }
 
