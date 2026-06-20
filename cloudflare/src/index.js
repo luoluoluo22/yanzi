@@ -2852,23 +2852,7 @@ function utf8ToBase64(str) {
 }
 
 async function readYanmStateFromGitHub(syncConfig) {
-  const github = syncConfig.settings.GitHub || syncConfig.settings.gitHub || {};
-  const token = (syncConfig.secrets.GitHubToken || syncConfig.secrets.gitHubToken || "").trim();
-  const repoRaw = String(github.repo || github.Repo || "yanzi-sync").trim();
-  const branch = String(github.branch || github.Branch || "main").trim();
-  const pathPrefix = String(github.pathPrefix || github.PathPrefix || "").trim();
-
-  let owner = String(github.username || "").trim();
-  let repo = repoRaw;
-  if (repoRaw.includes("/")) {
-    const parts = repoRaw.split("/");
-    owner = parts[0].trim();
-    repo = parts[1].trim();
-  }
-
-  if (!token || !owner || !repo) {
-    throw new HttpError(400, "github_config_incomplete", "GitHub token, owner, or repo is incomplete");
-  }
+  const { token, owner, repo, branch, pathPrefix } = await resolveGitHubRepoTarget(syncConfig);
 
   const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
@@ -2908,14 +2892,14 @@ async function readYanmStateFromGitHub(syncConfig) {
   };
 }
 
-async function writeYanmStateToGitHub(syncConfig, snapshot) {
+async function resolveGitHubRepoTarget(syncConfig) {
   const github = syncConfig.settings.GitHub || syncConfig.settings.gitHub || {};
   const token = (syncConfig.secrets.GitHubToken || syncConfig.secrets.gitHubToken || "").trim();
   const repoRaw = String(github.repo || github.Repo || "yanzi-sync").trim();
   const branch = String(github.branch || github.Branch || "main").trim();
   const pathPrefix = String(github.pathPrefix || github.PathPrefix || "").trim();
 
-  let owner = String(github.username || "").trim();
+  let owner = String(github.username || github.Username || "").trim();
   let repo = repoRaw;
   if (repoRaw.includes("/")) {
     const parts = repoRaw.split("/");
@@ -2923,9 +2907,43 @@ async function writeYanmStateToGitHub(syncConfig, snapshot) {
     repo = parts[1].trim();
   }
 
-  if (!token || !owner || !repo) {
-    throw new HttpError(400, "github_config_incomplete", "GitHub token, owner, or repo is incomplete");
+  if (!token || !repo) {
+    throw new HttpError(400, "github_config_incomplete", "GitHub token or repo is incomplete");
   }
+
+  if (!owner) {
+    owner = await resolveGitHubOwnerFromToken(token);
+  }
+
+  return { token, owner, repo, branch, pathPrefix };
+}
+
+async function resolveGitHubOwnerFromToken(token) {
+  const response = await fetch("https://api.github.com/user", {
+    method: "GET",
+    headers: {
+      "accept": "application/vnd.github+json",
+      "authorization": `Bearer ${token}`,
+      "user-agent": "YanziClient-Web"
+    }
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new HttpError(response.status || 502, "github_owner_resolve_failed", `Failed to resolve GitHub owner from token (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const owner = String(data.login || "").trim();
+  if (!owner) {
+    throw new HttpError(400, "github_owner_missing", "GitHub token did not return an account login");
+  }
+
+  return owner;
+}
+
+async function writeYanmStateToGitHub(syncConfig, snapshot) {
+  const { token, owner, repo, branch, pathPrefix } = await resolveGitHubRepoTarget(syncConfig);
 
   const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
