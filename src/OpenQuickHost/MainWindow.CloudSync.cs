@@ -1878,11 +1878,14 @@ public partial class MainWindow
             var result = await Task.Run(async () =>
             {
                 var service = new PersonalSyncService(settings);
-                return await service.SyncExtensionsAsync();
+                var extensions = await service.SyncExtensionsAsync();
+                var yanm = await service.SyncYanmStateAsync();
+                return (Extensions: extensions, Yanm: yanm);
             });
-            ApplyWebDavSyncResult(result);
-            SyncStatus = BuildPersonalSyncCompletedMessage(result, includeConfigSummary: false);
-            HostAssets.AppendLog($"Personal sync background sync completed: reason={reason}, uploaded={result.UploadedCount}, pulled={result.PulledCount}, configUploaded={result.ConfigUploaded}, configPulled={result.ConfigPulled}");
+            ApplyWebDavSyncResult(result.Extensions);
+            ApplyYanmStateSyncResult(result.Yanm);
+            SyncStatus = $"{BuildPersonalSyncCompletedMessage(result.Extensions, includeConfigSummary: false)} 燕幕{BuildYanmSyncAction(result.Yanm)}。";
+            HostAssets.AppendLog($"Personal sync background sync completed: reason={reason}, uploaded={result.Extensions.UploadedCount}, pulled={result.Extensions.PulledCount}, configUploaded={result.Extensions.ConfigUploaded}, configPulled={result.Extensions.ConfigPulled}, yanmUploaded={result.Yanm.Uploaded}, yanmPulled={result.Yanm.Pulled}, yanmBytes={result.Yanm.PayloadBytes}");
         }
         catch (Exception ex)
         {
@@ -1920,6 +1923,26 @@ public partial class MainWindow
         NotifySettingsWindowAiConfigChanged();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
         ApplyFilter(SearchBox.Text);
+    }
+
+    private void ApplyYanmStateSyncResult(WebDavYanmStateSyncResult result)
+    {
+        if (!result.Pulled)
+        {
+            return;
+        }
+
+        RefreshAppSettings();
+        _quickPanel?.RefreshSettingsFromStore();
+        _yanmOverlay?.ReloadSettings();
+        KeyboardDoubleTapService.ApplyYanmSettings(_appSettings.Yanm);
+        RefreshYanmHotkeyRegistration();
+        RefreshRadialHotkeyRegistration();
+    }
+
+    private static string BuildYanmSyncAction(WebDavYanmStateSyncResult result)
+    {
+        return result.Pulled ? "已拉取" : result.Uploaded ? "已上传" : "无变化";
     }
 
     public void SyncLocalExtensionsToCloud()
@@ -3256,13 +3279,9 @@ public partial class MainWindow
         {
             var service = new PersonalSyncService(AppSettingsStore.Load());
             var result = await service.SyncYanmStateAsync();
-            if (result.Pulled)
-            {
-                RefreshAppSettings();
-                _quickPanel?.RefreshSettingsFromStore();
-            }
+            ApplyYanmStateSyncResult(result);
 
-            var action = result.Pulled ? "已拉取" : result.Uploaded ? "已上传" : "无变化";
+            var action = BuildYanmSyncAction(result);
             return (true, $"燕幕同步{action}，数据 {FormatBytes(result.PayloadBytes)}。", result.Uploaded, result.Pulled, result.PayloadBytes);
         }
         catch (Exception ex)

@@ -538,9 +538,9 @@ async function handleRequest(request, env) {
     return json({
       ok: true,
       userId: auth.userId,
-      source: "cloud-config",
-      warning: "",
-      diagnostics: null,
+      source: snapshot.source || "cloud-config",
+      warning: snapshot.warning || "",
+      diagnostics: snapshot.diagnostics || null,
       updatedAtUtc: snapshot.updatedAtUtc || null,
       yanm: snapshot.yanm || null,
       bytes: snapshot.bytes
