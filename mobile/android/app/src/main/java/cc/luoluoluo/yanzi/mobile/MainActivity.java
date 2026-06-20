@@ -7120,6 +7120,8 @@ extends Activity {
             connection.setConnectTimeout(timeoutMs);
             connection.setReadTimeout(timeoutMs);
             connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
+            connection.setRequestProperty("X-Yanzi-Client", "mobile");
+            connection.setRequestProperty("X-Yanzi-Client-Version", "0.1.0");
             connection.setRequestProperty("Accept", "application/json");
             if (payload != null) {
                 connection.setDoOutput(true);

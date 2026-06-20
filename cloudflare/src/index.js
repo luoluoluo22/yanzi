@@ -3895,7 +3895,10 @@ function json(data, status = 200) {
 function withCors(response) {
   response.headers.set("access-control-allow-origin", "*");
   response.headers.set("access-control-allow-methods", "GET,POST,PUT,DELETE,OPTIONS");
-  response.headers.set("access-control-allow-headers", "content-type,authorization");
+  response.headers.set(
+    "access-control-allow-headers",
+    "content-type,authorization,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
+  );
   return response;
 }
 

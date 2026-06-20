@@ -427,6 +427,8 @@
     async function api(path, options = {}) {
       const headers = new Headers(options.headers || {});
       headers.set("accept", "application/json");
+      headers.set("x-yanzi-client", "web");
+      headers.set("x-yanzi-client-version", "0.1.0");
       if (options.body && !headers.has("content-type")) {
         headers.set("content-type", "application/json");
       }
