@@ -1225,7 +1225,7 @@ public sealed class LocalAgentApiServer : IDisposable
                 var settings = AppSettingsStore.Load();
                 settings.Yanm = yanm;
                 var updatedAtUtc = GetString(payload, "updatedAtUtc");
-                settings.LauncherConfigUpdatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
+                settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
                     ? DateTime.UtcNow.ToString("O")
                     : updatedAtUtc;
                 AppSettingsStore.Save(settings);
@@ -1365,9 +1365,12 @@ public sealed class LocalAgentApiServer : IDisposable
     {
         settings.Yanm ??= new YanmSettings();
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var updatedAtUtc = string.IsNullOrWhiteSpace(settings.LauncherConfigUpdatedAtUtc)
+        var updatedAtUtc = string.IsNullOrWhiteSpace(settings.YanmStateUpdatedAtUtc)
+            ? settings.LauncherConfigUpdatedAtUtc
+            : settings.YanmStateUpdatedAtUtc;
+        updatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
             ? DateTime.UtcNow.ToString("O")
-            : settings.LauncherConfigUpdatedAtUtc;
+            : updatedAtUtc;
         var bytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(settings.Yanm, JsonOptions));
         return WriteJsonAsync(response, 200, new
         {

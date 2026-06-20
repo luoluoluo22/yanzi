@@ -2998,7 +2998,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             YarnSelect = CloneByJson(settings.YarnSelect),
             RadialMenu = CloneByJson(settings.RadialMenu),
             YanyuRules = CloneByJson(settings.YanyuRules),
-            Yanm = CloneByJson(settings.Yanm),
+            Yanm = null,
             AiBaseUrl = settings.AiBaseUrl,
             AiApiKey = settings.AiApiKey,
             AiModel = settings.AiModel,

@@ -277,7 +277,7 @@ public sealed class WebDavSyncService
         localSettings.Yanm ??= new YanmSettings();
         localSettings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var localYanm = CloneByJson(localSettings.Yanm);
-        var localUpdatedAtUtc = TryParseUtc(localSettings.LauncherConfigUpdatedAtUtc) ?? DateTime.MinValue;
+        var localUpdatedAtUtc = GetLocalYanmUpdatedAtUtc(localSettings);
         var remoteInfo = await TryGetRemoteFileInfoAsync("state/yanm-state.json", cancellationToken);
         if (remoteInfo != null && localUpdatedAtUtc > DateTime.MinValue)
         {
@@ -293,7 +293,7 @@ public sealed class WebDavSyncService
             {
                 var uploadedAtUtc = DateTime.UtcNow;
                 await UploadYanmStateAsync(localYanm, uploadedAtUtc, cancellationToken);
-                SaveLauncherConfigUpdatedAtUtc(uploadedAtUtc);
+                SaveYanmStateUpdatedAtUtc(uploadedAtUtc);
                 var uploadedBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(new WebDavYanmStateSnapshot { UpdatedAtUtc = uploadedAtUtc.ToString("O"), Yanm = localYanm }, JsonOptions));
                 HostAssets.AppendLog(
                     $"WebDAV Yanm state uploaded by metadata: localUpdated={localUpdatedAtUtc:O}, remoteModified={remoteInfo.LastModifiedUtc:O}, bytes={uploadedBytes}.");
@@ -327,7 +327,7 @@ public sealed class WebDavSyncService
 
             var uploadedAtUtc = DateTime.UtcNow;
             await UploadYanmStateAsync(localYanm, uploadedAtUtc, cancellationToken);
-            SaveLauncherConfigUpdatedAtUtc(uploadedAtUtc);
+            SaveYanmStateUpdatedAtUtc(uploadedAtUtc);
             var uploadedBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(new WebDavYanmStateSnapshot { UpdatedAtUtc = uploadedAtUtc.ToString("O"), Yanm = localYanm }, JsonOptions));
             HostAssets.AppendLog($"WebDAV Yanm state uploaded: remote missing, bytes={uploadedBytes}.");
             return new WebDavYanmStateSyncResult(true, false, SyncRootDisplay, uploadedAtUtc, uploadedBytes);
@@ -340,7 +340,7 @@ public sealed class WebDavSyncService
         {
             if (localUpdatedAtUtc == DateTime.MinValue && remoteUpdatedAtUtc > DateTime.MinValue)
             {
-                SaveLauncherConfigUpdatedAtUtc(remoteUpdatedAtUtc);
+                SaveYanmStateUpdatedAtUtc(remoteUpdatedAtUtc);
             }
 
             HostAssets.AppendLog($"WebDAV Yanm state sync: no changes detected, bytes={payloadBytes}.");
@@ -357,7 +357,7 @@ public sealed class WebDavSyncService
 
         var updatedAtUtc = DateTime.UtcNow;
         await UploadYanmStateAsync(localYanm, updatedAtUtc, cancellationToken);
-        SaveLauncherConfigUpdatedAtUtc(updatedAtUtc);
+        SaveYanmStateUpdatedAtUtc(updatedAtUtc);
         var uploadBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(new WebDavYanmStateSnapshot { UpdatedAtUtc = updatedAtUtc.ToString("O"), Yanm = localYanm }, JsonOptions));
         HostAssets.AppendLog(
             $"WebDAV Yanm state uploaded: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc:O}, bytes={uploadBytes}.");
@@ -633,11 +633,6 @@ public sealed class WebDavSyncService
             settings.YanyuRules = incoming.YanyuRules;
         }
 
-        if (snapshot.Yanm != null)
-        {
-            settings.Yanm = incoming.Yanm;
-        }
-
         if (HasAiConfigPayload(snapshot))
         {
             settings.AiBaseUrl = incoming.AiBaseUrl;
@@ -654,7 +649,14 @@ public sealed class WebDavSyncService
     {
         var settings = AppSettingsStore.Load();
         settings.Yanm = CloneByJson(yanm);
-        settings.LauncherConfigUpdatedAtUtc = updatedAtUtc.ToString("O");
+        settings.YanmStateUpdatedAtUtc = updatedAtUtc.ToString("O");
+        AppSettingsStore.Save(settings);
+    }
+
+    private static void SaveYanmStateUpdatedAtUtc(DateTime updatedAtUtc)
+    {
+        var settings = AppSettingsStore.Load();
+        settings.YanmStateUpdatedAtUtc = updatedAtUtc.ToString("O");
         AppSettingsStore.Save(settings);
     }
 
@@ -663,6 +665,11 @@ public sealed class WebDavSyncService
         var settings = AppSettingsStore.Load();
         settings.LauncherConfigUpdatedAtUtc = updatedAtUtc.ToString("O");
         AppSettingsStore.Save(settings);
+    }
+
+    private static DateTime GetLocalYanmUpdatedAtUtc(AppSettings settings)
+    {
+        return TryParseUtc(settings.YanmStateUpdatedAtUtc) ?? DateTime.MinValue;
     }
 
     private static DateTime? TryParseUtc(string? value)

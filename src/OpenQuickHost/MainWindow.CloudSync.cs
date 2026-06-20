@@ -2311,7 +2311,6 @@ public partial class MainWindow
             snapshot.YarnSelect != null && !AreJsonPayloadsEqual(settings.YarnSelect, incoming.YarnSelect) ||
             snapshot.RadialMenu != null && !AreJsonPayloadsEqual(settings.RadialMenu, incoming.RadialMenu) ||
             snapshot.YanyuRules != null && !AreJsonPayloadsEqual(settings.YanyuRules, incoming.YanyuRules) ||
-            snapshot.Yanm != null && !AreJsonPayloadsEqual(settings.Yanm, incoming.Yanm) ||
             HasAiConfigPayload(snapshot) && !AreAiSettingsEqual(settings, incoming);
         var localUpdatedAtUtc = TryParseCloudTimestamp(settings.LauncherConfigUpdatedAtUtc);
         var remoteUpdatedAtUtc = TryParseCloudTimestamp(snapshot.UpdatedAtUtc);
@@ -2361,11 +2360,6 @@ public partial class MainWindow
         if (snapshot.YanyuRules != null)
         {
             settings.YanyuRules = incoming.YanyuRules;
-        }
-
-        if (snapshot.Yanm != null)
-        {
-            settings.Yanm = incoming.Yanm;
         }
 
         if (HasAiConfigPayload(snapshot))
@@ -2426,7 +2420,7 @@ public partial class MainWindow
         var settings = AppSettingsStore.Load();
         settings.Yanm ??= new YanmSettings();
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        await _cloudSyncClient.UpsertYanmStateAsync(settings.Yanm, settings.LauncherConfigUpdatedAtUtc);
+        await _cloudSyncClient.UpsertYanmStateAsync(settings.Yanm, GetYanmStateUpdatedAtUtc(settings));
     }
 
     public async Task<(bool ok, string message, bool pulled, int payloadBytes)> PullYanmStateFromCloudNowAsync()
@@ -2447,7 +2441,7 @@ public partial class MainWindow
 
             var settings = AppSettingsStore.Load();
             settings.Yanm ??= new YanmSettings();
-            var localUpdatedAtUtc = TryParseCloudTimestamp(settings.LauncherConfigUpdatedAtUtc);
+            var localUpdatedAtUtc = TryParseCloudTimestamp(GetYanmStateUpdatedAtUtc(settings));
             var remoteUpdatedAtUtc = TryParseCloudTimestamp(response.UpdatedAtUtc);
             if (remoteUpdatedAtUtc != null &&
                 localUpdatedAtUtc != null &&
@@ -2455,7 +2449,7 @@ public partial class MainWindow
             {
                 if (!AreJsonPayloadsEqual(settings.Yanm, response.Yanm))
                 {
-                    await _cloudSyncClient.UpsertYanmStateAsync(settings.Yanm, settings.LauncherConfigUpdatedAtUtc);
+                    await _cloudSyncClient.UpsertYanmStateAsync(settings.Yanm, GetYanmStateUpdatedAtUtc(settings));
                     return (true, $"云端燕幕较旧，已保留本地并回写云端，数据 {FormatBytes(response.Bytes)}。", false, response.Bytes);
                 }
 
@@ -2468,7 +2462,7 @@ public partial class MainWindow
             }
 
             settings.Yanm = response.Yanm;
-            settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+            settings.YanmStateUpdatedAtUtc = remoteUpdatedAtUtc?.ToString("O") ?? DateTime.UtcNow.ToString("O");
             AppSettingsStore.Save(settings);
             _appSettings = AppSettingsStore.Load();
             _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
@@ -3180,7 +3174,14 @@ public partial class MainWindow
     public void NotifyQuickPanelSettingsChanged(string reason, bool refreshYanmOverlay = true)
     {
         var settings = AppSettingsStore.Load();
-        settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+        if (IsYanmSettingsChangeReason(reason))
+        {
+            settings.YanmStateUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+        }
+        else
+        {
+            settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+        }
         AppSettingsStore.Save(settings);
         _appSettings = settings;
         _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
@@ -3205,11 +3206,24 @@ public partial class MainWindow
         }
 
         QueueCloudQuickPanelConfigSync(reason);
-        if (reason.StartsWith("yanm-", StringComparison.OrdinalIgnoreCase))
+        if (IsYanmSettingsChangeReason(reason))
         {
             QueueCloudYanmStateSync(reason);
         }
         QueueBackgroundWebDavSync($"config-{reason}");
+    }
+
+    private static bool IsYanmSettingsChangeReason(string reason)
+    {
+        return reason.StartsWith("yanm-", StringComparison.OrdinalIgnoreCase) ||
+               reason.Contains("yanm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetYanmStateUpdatedAtUtc(AppSettings settings)
+    {
+        return string.IsNullOrWhiteSpace(settings.YanmStateUpdatedAtUtc)
+            ? settings.LauncherConfigUpdatedAtUtc
+            : settings.YanmStateUpdatedAtUtc;
     }
 
     public bool HasWebDavCredential()
@@ -3344,11 +3358,13 @@ public partial class MainWindow
         var previous = settings.Yanm.CustomShortcut;
         settings.Yanm.CustomShortcut = shortcut.Trim();
         settings.Yanm.ActivationKey = YanmActivationKeys.Custom;
+        settings.YanmStateUpdatedAtUtc = DateTime.UtcNow.ToString("O");
         AppSettingsStore.Save(settings);
 
         if (!RefreshYanmHotkeyRegistration())
         {
             settings.Yanm.CustomShortcut = previous;
+            settings.YanmStateUpdatedAtUtc = DateTime.UtcNow.ToString("O");
             AppSettingsStore.Save(settings);
             RefreshYanmHotkeyRegistration();
             RefreshRadialHotkeyRegistration();
@@ -3357,6 +3373,8 @@ public partial class MainWindow
         }
 
         KeyboardDoubleTapService.ApplyYanmSettings(settings.Yanm);
+        QueueCloudYanmStateSync("yanm-hotkey-updated");
+        QueueBackgroundWebDavSync("config-yanm-hotkey-updated");
         message = $"燕幕快捷键已更新为 {settings.Yanm.CustomShortcut}";
         return true;
     }

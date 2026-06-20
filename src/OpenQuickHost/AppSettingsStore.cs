@@ -644,6 +644,8 @@ public sealed record AppSettings
 
     public string LauncherConfigUpdatedAtUtc { get; set; } = string.Empty;
 
+    public string YanmStateUpdatedAtUtc { get; set; } = string.Empty;
+
     public double? SettingsWindowLeft { get; set; }
 
     public double? SettingsWindowTop { get; set; }
