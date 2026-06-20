@@ -98,7 +98,7 @@ content-type,authorization,x-yanzi-client,x-yanzi-client-version,x-api-version,x
 If `POST /v1/auth/login` returns Cloudflare HTML with `403` or `1015`, the request
 was blocked before reaching the Worker.
 
-Useful allow/skip expression:
+Useful WAF allow/skip expression:
 
 ```text
 http.host eq "sync.luoluoluo.cc.cd"
@@ -109,6 +109,27 @@ and any(len(http.request.headers["x-yanzi-client-version"][*])[*] gt 0)
 
 Use this to skip custom WAF / managed WAF / rate limiting for trusted Yanzi API
 requests, or raise the rate limit threshold for these requests.
+
+Cloudflare Free plan Rate Limiting rules cannot use `http.request.headers` in
+the rate limit expression. The API returns:
+
+```text
+not entitled: the use of field http.request.headers is not allowed,
+an higher Advanced Rate Limiting plan is required
+```
+
+Current verified rate limiting rule:
+
+```text
+description: Rate limit login endpoint
+expression: http.request.uri.path eq "/v1/auth/login"
+period: 10
+requests_per_period: 30
+mitigation_timeout: 10
+```
+
+This replaced the previous `2 requests / 10 seconds` limit, which caused normal
+desktop login retries to hit Cloudflare `1015 Too Many Requests`.
 
 ## Verification
 
@@ -155,4 +176,3 @@ Expected result for wrong password:
 ```
 
 This means the request reached the Worker and the auth path is functioning.
-
