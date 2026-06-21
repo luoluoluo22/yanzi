@@ -5940,7 +5940,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             _settings.RadialMenu.Pages ??= [];
             if (_settings.RadialMenu.Pages.Count == 0)
             {
-                _settings.RadialMenu.Pages.Add(new RadialMenuPageSettings { Id = "default", Name = "默认" });
+                _settings.RadialMenu.Pages.Add(new RadialMenuPageSettings { Id = "default", Name = "全局" });
             }
 
             if (_settings.RadialMenu.Pages.All(page => !page.Id.Equals(_settings.RadialMenu.SelectedPageId, StringComparison.OrdinalIgnoreCase)))
@@ -5951,14 +5951,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             RadialMenuPages.Clear();
             foreach (var page in _settings.RadialMenu.Pages)
             {
-                RadialMenuPages.Add(new RadialMenuPageEditorItem(page.Id, page.Name));
+                var isAppPage = !string.IsNullOrEmpty(page.ContextProcessName);
+                var icon = isAppPage ? GetProcessIcon(page.ContextProcessName!) : null;
+                RadialMenuPages.Add(new RadialMenuPageEditorItem(page.Id, page.Name, icon, isAppPage));
             }
 
             RadialMenuChildPageOptions.Clear();
-            RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(string.Empty, "不进入子环"));
+            RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(string.Empty, "不进入子环", null, false));
             foreach (var page in _settings.RadialMenu.Pages)
             {
-                RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(page.Id, page.Name));
+                RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(page.Id, page.Name, null, false));
             }
 
             var selectedPage = _settings.RadialMenu.Pages.First(page => page.Id.Equals(_settings.RadialMenu.SelectedPageId, StringComparison.OrdinalIgnoreCase));
@@ -6005,13 +6007,180 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     runtimeCommand?.DisplayGlyph ?? (string.IsNullOrWhiteSpace(childPageId) ? string.Empty : "环")));
             }
 
-            OnPropertyChanged(nameof(SelectedRadialMenuPageId));
             OnPropertyChanged(nameof(SelectedRadialMenuPageName));
         }
         finally
         {
             _isRefreshingRadialMenu = false;
+            // 直接通过SelectedIndex设置ComboBox选中项，
+            // 避免SelectedValue/SelectedValuePath在ItemTemplate场景下不渲染选择框的WPF问题。
+            SyncRadialMenuPageComboBoxSelection();
         }
+    }
+
+    /// <summary>
+    /// 将ComboBox的选中项同步为当前设置中保存的SelectedPageId。
+    /// 通过SelectedIndex而非SelectedValue来设置，确保ItemTemplate正确渲染。
+    /// </summary>
+    private void SyncRadialMenuPageComboBoxSelection()
+    {
+        if (RadialMenuPageComboBox == null)
+        {
+            return;
+        }
+
+        var targetId = _settings.RadialMenu?.SelectedPageId ?? string.Empty;
+        var targetIndex = -1;
+        for (var i = 0; i < RadialMenuPages.Count; i++)
+        {
+            if (string.Equals(RadialMenuPages[i].Id, targetId, StringComparison.OrdinalIgnoreCase))
+            {
+                targetIndex = i;
+                break;
+            }
+        }
+
+        if (targetIndex < 0 && RadialMenuPages.Count > 0)
+        {
+            targetIndex = 0;
+        }
+
+        _isRefreshingRadialMenu = true;
+        try
+        {
+            RadialMenuPageComboBox.SelectedIndex = targetIndex;
+        }
+        finally
+        {
+            _isRefreshingRadialMenu = false;
+        }
+    }
+
+    /// <summary>
+    /// ComboBox选择变化事件处理，替代SelectedValue的TwoWay绑定。
+    /// </summary>
+    private void RadialMenuPageComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_isRefreshingRadialMenu)
+        {
+            return;
+        }
+
+        if (RadialMenuPageComboBox.SelectedItem is RadialMenuPageEditorItem selected &&
+            !string.IsNullOrWhiteSpace(selected.Id))
+        {
+            SelectedRadialMenuPageId = selected.Id;
+        }
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool DestroyIcon(IntPtr handle);
+
+    private static string? FindExecutablePath(string processName)
+    {
+        if (string.IsNullOrWhiteSpace(processName)) return null;
+
+        var exeName = processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) 
+            ? processName 
+            : processName + ".exe";
+
+        try
+        {
+            var nameOnly = Path.GetFileNameWithoutExtension(exeName);
+            var processes = System.Diagnostics.Process.GetProcessesByName(nameOnly);
+            if (processes.Length > 0)
+            {
+                var path = processes[0].MainModule?.FileName;
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    return path;
+                }
+            }
+        }
+        catch { }
+
+        string[] registryKeys = [
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths",
+            @"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\App Paths"
+        ];
+        foreach (var keyPath in registryKeys)
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(Path.Combine(keyPath, exeName)) 
+                             ?? Microsoft.Win32.Registry.CurrentUser.OpenSubKey(Path.Combine(keyPath, exeName));
+                if (key != null)
+                {
+                    var path = key.GetValue("")?.ToString();
+                    if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                    {
+                        return path;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        try
+        {
+            var pathEnv = Environment.GetEnvironmentVariable("PATH");
+            if (!string.IsNullOrEmpty(pathEnv))
+            {
+                foreach (var p in pathEnv.Split(';'))
+                {
+                    var fullPath = Path.Combine(p.Trim(), exeName);
+                    if (File.Exists(fullPath))
+                    {
+                        return fullPath;
+                    }
+                }
+            }
+        }
+        catch { }
+
+        string[] systemDirs = [
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs")
+        ];
+        foreach (var dir in systemDirs)
+        {
+            try
+            {
+                var fullPath = Path.Combine(dir, exeName);
+                if (File.Exists(fullPath)) return fullPath;
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
+    private static ImageSource? GetProcessIcon(string processName)
+    {
+        try
+        {
+            var path = FindExecutablePath(processName);
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            {
+                using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
+                if (icon != null)
+                {
+                    var bitmapSource = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                        icon.Handle,
+                        System.Windows.Int32Rect.Empty,
+                        System.Windows.Media.Imaging.BitmapSizeOptions.FromWidthAndHeight(16, 16));
+                    if (bitmapSource.CanFreeze)
+                    {
+                        bitmapSource.Freeze();
+                    }
+                    DestroyIcon(icon.Handle);
+                    return bitmapSource;
+                }
+            }
+        }
+        catch { }
+        return null;
     }
 
     private void BuildRadialPreviewSeparators()
@@ -7645,7 +7814,7 @@ public sealed class RadialMenuSlotEditorItem : INotifyPropertyChanged
 
 }
 
-public sealed record RadialMenuPageEditorItem(string Id, string Name);
+public sealed record RadialMenuPageEditorItem(string Id, string Name, ImageSource? Icon = null, bool IsAppPage = false);
 
 public sealed class YarnSelectRuleItem : INotifyPropertyChanged
 {

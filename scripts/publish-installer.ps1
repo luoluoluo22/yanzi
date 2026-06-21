@@ -54,6 +54,7 @@ dotnet publish $project `
     -c $Configuration `
     -r $Runtime `
     --self-contained true `
+    --source https://repo.huaweicloud.com/repository/nuget/v3/index.json `
     -p:Version=$Version `
     -p:InformationalVersion=$Version `
     -p:FileVersion="$Version.0" `

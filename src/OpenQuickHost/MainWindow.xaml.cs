@@ -30,6 +30,7 @@ namespace OpenQuickHost;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
+    public bool HasBeenShown { get; set; } = false;
     private const int HotKeyId = 0x5301;
     private const int YanmHotKeyId = 0x5302;
     private const int RadialHotKeyId = 0x5303;

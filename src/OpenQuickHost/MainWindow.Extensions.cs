@@ -478,6 +478,7 @@ public partial class MainWindow
 
     public void ShowPanel()
     {
+        HasBeenShown = true;
         ShowInTaskbar = true;
         if (!IsVisible)
         {
@@ -629,26 +630,52 @@ public partial class MainWindow
         _windowSnapAssistService.TriggerAtForegroundWindow();
     }
 
-    public IReadOnlyList<RadialMenuRuntimeItem> GetRadialMenuItems(string? pageId = null)
+    public IReadOnlyList<RadialMenuRuntimeItem> GetRadialMenuItems(string? pageId = null, string? activeProcessName = null)
     {
         var allCommands = GetAllCommands();
         var settings = AppSettingsStore.Load();
         var radial = settings.RadialMenu ?? new RadialMenuSettings();
-        var page = radial.Pages.FirstOrDefault(item => item.Id.Equals(pageId ?? radial.SelectedPageId, StringComparison.OrdinalIgnoreCase))
-            ?? radial.Pages.FirstOrDefault();
-        var slots = page?.Slots ?? [];
-        var slotTitles = page?.SlotTitles ?? [];
-        var childPages = page?.ChildPageIds ?? [];
+        
+        RadialMenuPageSettings? targetPage = null;
+        if (!string.IsNullOrEmpty(pageId))
+        {
+            targetPage = radial.Pages.FirstOrDefault(item => item.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (targetPage == null)
+        {
+            if (!string.IsNullOrWhiteSpace(activeProcessName))
+            {
+                var normalizedProcess = activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
+                targetPage = radial.Pages.FirstOrDefault(item =>
+                    !string.IsNullOrEmpty(item.ContextProcessName) &&
+                    item.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase));
+            }
+
+            targetPage ??= radial.Pages.FirstOrDefault(item => item.Id.Equals(radial.SelectedPageId, StringComparison.OrdinalIgnoreCase))
+                ?? radial.Pages.FirstOrDefault(item => string.IsNullOrEmpty(item.ContextProcessName))
+                ?? radial.Pages.FirstOrDefault();
+        }
+
         var result = new List<RadialMenuRuntimeItem>();
         for (var index = 0; index < RadialMenuSettings.TotalSlotCount; index++)
         {
-            var extensionId = slots.ElementAtOrDefault(index);
-            var displayTitle = slotTitles.ElementAtOrDefault(index);
+            string? extensionId = null;
+            string? displayTitle = null;
+            string? childPageId = null;
+
+            if (targetPage != null)
+            {
+                extensionId = targetPage.Slots.ElementAtOrDefault(index);
+                displayTitle = targetPage.SlotTitles.ElementAtOrDefault(index);
+                childPageId = targetPage.ChildPageIds.ElementAtOrDefault(index);
+            }
+
             var command = string.IsNullOrWhiteSpace(extensionId)
                 ? null
                 : ResolveRadialCommand(extensionId, allCommands, displayTitle);
-            var childPageId = childPages.ElementAtOrDefault(index) ?? string.Empty;
-            result.Add(new RadialMenuRuntimeItem(command, childPageId));
+            
+            result.Add(new RadialMenuRuntimeItem(command, childPageId ?? string.Empty));
         }
 
         return result;

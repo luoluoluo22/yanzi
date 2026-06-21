@@ -330,6 +330,7 @@ extends Activity {
             "4. update_yanm_component: \u4fee\u6539\u71d5\u5e55\u7ec4\u4ef6\u3002\u53c2\u6570: id (\u7ec4\u4ef6ID), title (\u6807\u9898), html (\u5185\u5bb9)\u3002\n" +
             "5. manage_mobile_extension: \u7ba1\u7406\u624b\u673a\u6269\u5c55\u3002\u53c2\u6570: action (list/read/create/update/delete), id, name, code, icon, description\u3002\u3010\u91cd\u8981\u3011\u624b\u673a\u6269\u5c55\u8fd0\u884c\u5728\u0020\u006d\u006f\u0062\u0069\u006c\u0065\u002d\u006a\u0073\u0020\u7684\u0020\u004a\u0061\u0076\u0061\u0053\u0063\u0072\u0069\u0070\u0074\u0020\u73af\u5883\u4e2d\uff0c\u4e25\u7981\u4f7f\u7528\u0020\u0043\u0023\u3001\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u6216\u0020\u0057\u0069\u006e\u0064\u006f\u0077\u0073\u0020\u684c\u9762\u0020\u0041\u0050\u0049\u3002\u5f53\u521b\u5efa\u6216\u66f4\u65b0\u6269\u5c55\u65f6\uff0c\u0063\u006f\u0064\u0065\u0020\u53c2\u6570\u5fc5\u987b\u662f\u7ebf\u6027\u3001\u7b80\u6d01\u7684\u0020\u004a\u0053\u0020\u4ee3\u7801\uff0c\u811a\u672c\u5165\u53e3\u4e3a\u0020\u0061\u0073\u0079\u006e\u0063\u0020\u0066\u0075\u006e\u0063\u0074\u0069\u006f\u006e\u0020\u0072\u0075\u006e\u0028\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u0029\uff0c\u53ef\u8c03\u7528\u0020\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u002e\u006d\u006f\u0062\u0069\u006c\u0065\u002e\u006f\u0070\u0065\u006e\u0055\u0072\u006c\u0028\u0075\u0072\u006c\u0029\u3001\u0074\u006f\u0061\u0073\u0074\uff0c\u8c03\u7528\u0020\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u002e\u006d\u006f\u0062\u0069\u006c\u0065\u002e\u0073\u0065\u006e\u0064\u0054\u006f\u0044\u0065\u0073\u006b\u0074\u006f\u0070\u0028\u0074\u0065\u0078\u0074\u0029\u3002\n" +
             "6. execute_command: \u5728\u7535\u8111\u7aef\u6267\u884c\u547d\u4ee4\u884c\u547d\u4ee4\u3002\u53c2\u6570: command (\u8981\u6267\u884c\u7684\u547d\u4ee4\u6587\u672c)\u3002\u3010\u91cd\u8981\u3011\u7535\u8111\u7aef\u5df2\u9ed8\u8ba4\u5728\u0020\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u0035\u002e\u0031\u0020\u73af\u5883\u4e2d\u6267\u884c\u547d\u4ee4\uff0c\u8bf7\u76f4\u63a5\u8f93\u5165\u0020\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u7684\u0020\u0043\u006d\u0064\u006c\u0065\u0074\u0020\u6216\u8868\u8fbe\u5f0f\uff0c\u4e25\u7981\u5916\u5c42\u5d4c\u5957\u8c03\u7528\u0020\u0070\u006f\u0077\u0065\u0072\u0073\u0068\u0065\u006c\u006c\u3001\u0070\u006f\u0077\u0065\u0072\u0073\u0068\u0065\u006c\u006c\u002e\u0065\u0078\u0065\u0020\u002d\u0043\u006f\u006d\u006d\u0061\u006e\u0064\u0020\u6216\u0020\u0063\u006d\u0064\u0020\u002f\u0063\uff0c\u907f\u514d\u8f6c\u4e49\u9519\u8bef\u548c\u6267\u884c\u8d85\u65f6\u3002\n" +
+            "7. execute_mobile_command: \u5728\u624b\u673a\u672c\u5730\u6267\u884c\u0020\u004c\u0069\u006e\u0075\u0078\u0020\u547d\u4ee4\u3002\u53c2\u6570\uff1a\u0063\u006f\u006d\u006d\u0061\u006e\u0064\u0020\uff08\u8981\u6267\u884c\u7684\u547d\u4ee4\u6587\u672c\uff09\u3002\u3010\u91cd\u8981\u3011\u624b\u673a\u7aef\u672c\u5730\u65e0\u0020\u0072\u006f\u006f\u0074\u0020\u6743\u9650\uff0c\u53ea\u80fd\u6267\u884c\u666e\u901a\u7684\u0020\u004c\u0069\u006e\u0075\u0078\u0020\u547d\u4ee4\uff08\u4f8b\u5982\u0020\u006c\u0073\u002c\u0020\u0070\u006d\u0020\u006c\u0069\u0073\u0074\u0020\u0070\u0061\u0063\u006b\u0061\u0067\u0065\u0073\u002c\u0020\u0067\u0065\u0074\u0070\u0072\u006f\u0070\u0020\u7b49\uff09\uff0c\u4e25\u7981\u6267\u884c\u4efb\u4f55\u7834\u574f\u7cfb\u7edf\u5b89\u5168\u7684\u547d\u4ee4\u3002\n" +
             "\u3010\u6ce8\u610f\u3011\u5982\u679c\u4f60\u8c03\u7528\u4e86\u5de5\u5177\uff0c\u7cfb\u7edf\u4f1a\u5728\u540e\u53f0\u771f\u5b9e\u6267\u884c\uff0c\u5e76\u5728\u6267\u884c\u5b8c\u6210\u540e\u5c06\u771f\u5b9e\u7684\u7ed3\u679c\u53cd\u9988\u7ed9\u4f60\uff0c\u4e4b\u540e\u4f60\u518d\u6839\u636e\u6267\u884c\u7ed3\u679c\u6765\u51b3\u5b9a\u662f\u7ee7\u7eed\u8c03\u7528\u5de5\u5177\u8fd8\u662f\u8f93\u51fa\u6700\u7ec8\u7684\u81ea\u7136\u8bed\u8a00\u56de\u590d\u3002";
     private SwipeRefreshLayout swipeRefresh;
     private final Set<String> expandedComponentIds = new HashSet<String>();
@@ -1633,6 +1634,9 @@ extends Activity {
                 this.refreshYanm();
             } else if (this.desktopExtensionTabPage != null && this.desktopExtensionTabPage.getVisibility() == 0) {
                 this.refreshExtensions();
+            } else if (this.mobileExtensionTabPage != null && this.mobileExtensionTabPage.getVisibility() == 0) {
+                this.syncMobileExtensionsFromCloud();
+                this.swipeRefresh.postDelayed(() -> this.swipeRefresh.setRefreshing(false), 800L);
             } else {
                 this.swipeRefresh.setRefreshing(false);
             }
@@ -3133,6 +3137,7 @@ extends Activity {
             next.put((Object)json);
         }
         this.prefs.edit().putString("mobileExtensions", next.toString()).apply();
+        this.pushMobileExtensionsToCloud();
     }
 
     private void deleteLocalMobileExtension(String id) {
@@ -3146,6 +3151,7 @@ extends Activity {
         this.prefs.edit().putString("mobileExtensions", next.toString()).apply();
         this.renderLocalMobileExtensions();
         this.setStatus("\u5df2\u5220\u9664\u624b\u673a\u6269\u5c55\uff1a" + id);
+        this.pushMobileExtensionsToCloud();
     }
 
     private void renderLocalMobileExtensions() {
@@ -4361,6 +4367,12 @@ extends Activity {
                     settings = YanziApiClient.fetchSettings(baseUrl, token);
                 }
                 JSONObject loadedSettings = settings;
+                
+                try {
+                    String pConfig = YanziApiClient.fetchPersonalConfig(baseUrl, token);
+                    this.prefs.edit().putString("personalSyncConfig", pConfig).apply();
+                } catch (Exception ignored) {}
+
                 this.runOnUiThread(() -> {
                     String aiBaseUrl = loadedSettings.optString("aiBaseUrl", "");
                     String aiApiKey = loadedSettings.optString("aiApiKey", "");
@@ -4496,7 +4508,7 @@ extends Activity {
     }
 
     private boolean isKnownAiTool(String toolName) {
-        return "query_extensions".equals(toolName) || "execute_extension".equals(toolName) || "view_yanm".equals(toolName) || "update_yanm_component".equals(toolName) || "manage_mobile_extension".equals(toolName) || "execute_command".equals(toolName);
+        return "query_extensions".equals(toolName) || "execute_extension".equals(toolName) || "view_yanm".equals(toolName) || "update_yanm_component".equals(toolName) || "manage_mobile_extension".equals(toolName) || "execute_command".equals(toolName) || "execute_mobile_command".equals(toolName);
     }
 
     private String parseToolName(String content) {
@@ -4919,6 +4931,26 @@ extends Activity {
                                             }
                                             catch (Exception e) {
                                                 this.sendAiSystemFeedback("execute_command", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u6267\u884c\u547d\u4ee4\u5931\u8d25\uff1a" + e.getMessage());
+                                            }
+                                            finally {
+                                                this.finishAiToolCall(activeToolCallKey);
+                                            }
+                                        });
+                                    });
+                                    return;
+                                }
+                                if ("execute_mobile_command".equals(toolName)) {
+                                    String cmd = toolCall.optString("command");
+                                    this.runOnUiThread(() -> {
+                                        this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:execute_mobile_command", content, Color.rgb(167, 243, 208), true);
+                                        this.executor.execute(() -> {
+                                            try {
+                                                int[] exitCodeOut = new int[1];
+                                                String output = FloatingWheelService.executeShellCommand(cmd, exitCodeOut);
+                                                this.sendAiSystemFeedback("execute_mobile_command", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u626b\u673a\u672c\u5730\u547d\u4ee4\u884c\u6267\u884c\u7ed3\u679c(\u9000\u51fa\u7801:" + exitCodeOut[0] + ")\uff1a\n" + output + "\n\u8bf7\u6839\u636e\u7ed3\u679c\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u56de\u590d\u7528\u6237\uff0c\u7edd\u5bf9\u4e0d\u8981\u518d\u6b21\u8c03\u7528\u672c\u5de5\u5177\uff01");
+                                            }
+                                            catch (Exception e) {
+                                                this.sendAiSystemFeedback("execute_mobile_command", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u626b\u673a\u672c\u5730\u6267\u884c\u547d\u4ee4\u5931\u8d25\uff1a" + e.getMessage());
                                             }
                                             finally {
                                                 this.finishAiToolCall(activeToolCallKey);
@@ -6068,6 +6100,207 @@ extends Activity {
                 this.runOnUiThread(() -> {
                     this.setStatus("\u71d5\u5e55\u72b6\u6001\u540c\u6b65\u5931\u8d25\uff1a" + ex.getMessage());
                     MobileDiagnostics.append((Context)this, "燕幕状态同步失败：" + ex.getMessage());
+                });
+            }
+        });
+    }
+
+    private void pushMobileExtensionsToCloud() {
+        this.executor.execute(() -> {
+            try {
+                String localJson = this.readLocalMobileExtensions().toString();
+                
+                String configStr = this.prefs.getString("personalSyncConfig", "{}");
+                JSONObject cloudConfig = new JSONObject(configStr);
+                boolean enabled = cloudConfig.optBoolean("enabled", false);
+                String provider = cloudConfig.optString("provider", "none");
+                
+                if (enabled && !"none".equals(provider)) {
+                    JSONObject secrets = cloudConfig.optJSONObject("secrets");
+                    JSONObject settings = cloudConfig.optJSONObject("settings");
+                    if (secrets == null) secrets = new JSONObject();
+                    if (settings == null) settings = new JSONObject();
+                    
+                    if ("webdav".equals(provider)) {
+                        JSONObject webDav = settings.optJSONObject("webDav");
+                        String password = secrets.optString("webDavPassword", "");
+                        if (webDav != null) {
+                            YanziApiClient.WebDavConfig config = new YanziApiClient.WebDavConfig();
+                            config.serverUrl = webDav.optString("url", "");
+                            config.rootPath = webDav.optString("pathPrefix", "");
+                            config.username = webDav.optString("username", "");
+                            config.password = password;
+                            
+                            YanziApiClient.putWebDavBytes(config, "mobile-extensions.json", localJson.getBytes(StandardCharsets.UTF_8), "application/json");
+                            Log.i("MainActivity", "Successfully pushed mobile extensions to WebDAV");
+                            return;
+                        }
+                    } else if ("github".equals(provider)) {
+                        JSONObject gitHub = settings.optJSONObject("github");
+                        String token = secrets.optString("githubToken", "");
+                        if (gitHub != null && !token.isEmpty()) {
+                            String owner = gitHub.optString("username", "");
+                            String repo = gitHub.optString("repo", "yanzi-sync");
+                            String branch = gitHub.optString("branch", "main");
+                            String pathPrefix = gitHub.optString("pathPrefix", "");
+                            String relPath = pathPrefix.isEmpty() ? "mobile-extensions.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "mobile-extensions.json";
+                            
+                            YanziApiClient.uploadFileToGitHub(token, owner, repo, branch, relPath, localJson);
+                            Log.i("MainActivity", "Successfully pushed mobile extensions to GitHub");
+                            return;
+                        }
+                    } else if ("gitee".equals(provider)) {
+                        JSONObject gitee = settings.optJSONObject("gitee");
+                        String token = secrets.optString("giteeToken", "");
+                        if (gitee != null && !token.isEmpty()) {
+                            String owner = gitee.optString("username", "");
+                            String repo = gitee.optString("repo", "yanzi-sync");
+                            String branch = gitee.optString("branch", "master");
+                            String pathPrefix = gitee.optString("pathPrefix", "");
+                            String relPath = pathPrefix.isEmpty() ? "mobile-extensions.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "mobile-extensions.json";
+                            
+                            YanziApiClient.uploadFileToGitee(token, owner, repo, branch, relPath, localJson);
+                            Log.i("MainActivity", "Successfully pushed mobile extensions to Gitee");
+                            return;
+                        }
+                    }
+                }
+                
+                try {
+                    String baseUrl = this.normalizedBaseUrl();
+                    String token = this.requireToken();
+                    YanziApiClient.putMobileExtensions(baseUrl, token, localJson);
+                } catch (Exception ex) {
+                    if (MainActivity.isUnauthorized(ex)) {
+                        String token = this.refreshToken();
+                        String baseUrl = this.normalizedBaseUrl();
+                        YanziApiClient.putMobileExtensions(baseUrl, token, localJson);
+                    } else {
+                        throw ex;
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("MainActivity", "Failed to push mobile extensions to cloud", e);
+            }
+        });
+    }
+
+    private void syncMobileExtensionsFromCloud() {
+        this.executor.execute(() -> {
+            try {
+                String cloudJsonStr = null;
+                
+                String configStr = this.prefs.getString("personalSyncConfig", "{}");
+                JSONObject cloudConfig = new JSONObject(configStr);
+                boolean enabled = cloudConfig.optBoolean("enabled", false);
+                String provider = cloudConfig.optString("provider", "none");
+                
+                if (enabled && !"none".equals(provider)) {
+                    JSONObject secrets = cloudConfig.optJSONObject("secrets");
+                    JSONObject settings = cloudConfig.optJSONObject("settings");
+                    if (secrets == null) secrets = new JSONObject();
+                    if (settings == null) settings = new JSONObject();
+                    
+                    if ("webdav".equals(provider)) {
+                        JSONObject webDav = settings.optJSONObject("webDav");
+                        String password = secrets.optString("webDavPassword", "");
+                        if (webDav != null) {
+                            YanziApiClient.WebDavConfig config = new YanziApiClient.WebDavConfig();
+                            config.serverUrl = webDav.optString("url", "");
+                            config.rootPath = webDav.optString("pathPrefix", "");
+                            config.username = webDav.optString("username", "");
+                            config.password = password;
+                            
+                            byte[] data = YanziApiClient.getWebDavBytes(config, "mobile-extensions.json");
+                            cloudJsonStr = (data == null) ? "[]" : new String(data, StandardCharsets.UTF_8);
+                        }
+                    } else if ("github".equals(provider)) {
+                        JSONObject gitHub = settings.optJSONObject("github");
+                        String token = secrets.optString("githubToken", "");
+                        if (gitHub != null && !token.isEmpty()) {
+                            String owner = gitHub.optString("username", "");
+                            String repo = gitHub.optString("repo", "yanzi-sync");
+                            String branch = gitHub.optString("branch", "main");
+                            String pathPrefix = gitHub.optString("pathPrefix", "");
+                            String relPath = pathPrefix.isEmpty() ? "mobile-extensions.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "mobile-extensions.json";
+                            
+                            cloudJsonStr = YanziApiClient.fetchFileFromGitHub(token, owner, repo, branch, relPath);
+                        }
+                    } else if ("gitee".equals(provider)) {
+                        JSONObject gitee = settings.optJSONObject("gitee");
+                        String token = secrets.optString("giteeToken", "");
+                        if (gitee != null && !token.isEmpty()) {
+                            String owner = gitee.optString("username", "");
+                            String repo = gitee.optString("repo", "yanzi-sync");
+                            String branch = gitee.optString("branch", "master");
+                            String pathPrefix = gitee.optString("pathPrefix", "");
+                            String relPath = pathPrefix.isEmpty() ? "mobile-extensions.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "mobile-extensions.json";
+                            
+                            cloudJsonStr = YanziApiClient.fetchFileFromGitee(token, owner, repo, branch, relPath);
+                        }
+                    }
+                }
+                
+                if (cloudJsonStr == null) {
+                    String baseUrl = this.normalizedBaseUrl();
+                    String token = this.requireToken();
+                    try {
+                        cloudJsonStr = YanziApiClient.fetchMobileExtensions(baseUrl, token);
+                    } catch (Exception ex) {
+                        if (!MainActivity.isUnauthorized(ex)) {
+                            throw ex;
+                        }
+                        token = this.refreshToken();
+                        cloudJsonStr = YanziApiClient.fetchMobileExtensions(baseUrl, token);
+                    }
+                }
+                
+                final String finalCloudJson = cloudJsonStr;
+                this.runOnUiThread(() -> {
+                    try {
+                        JSONArray cloudArray = new JSONArray(finalCloudJson);
+                        JSONArray localArray = this.readLocalMobileExtensions();
+                        
+                        java.util.Map<String, JSONObject> mergedMap = new java.util.LinkedHashMap<>();
+                        
+                        for (int i = 0; i < localArray.length(); ++i) {
+                            JSONObject item = localArray.optJSONObject(i);
+                            if (item != null) {
+                                String id = item.optString("id");
+                                if (!id.isEmpty()) {
+                                    mergedMap.put(id, item);
+                                }
+                            }
+                        }
+                        
+                        for (int i = 0; i < cloudArray.length(); ++i) {
+                            JSONObject item = cloudArray.optJSONObject(i);
+                            if (item != null) {
+                                String id = item.optString("id");
+                                if (!id.isEmpty()) {
+                                    mergedMap.put(id, item);
+                                }
+                            }
+                        }
+                        
+                        JSONArray mergedArray = new JSONArray();
+                        for (JSONObject obj : mergedMap.values()) {
+                            mergedArray.put(obj);
+                        }
+                        
+                        this.prefs.edit().putString("mobileExtensions", mergedArray.toString()).apply();
+                        this.renderLocalMobileExtensions();
+                        this.setStatus("\u624b\u673a\u6269\u5c55\u5df2\u540c\u6b65\u3002");
+                        
+                        this.pushMobileExtensionsToCloud();
+                        
+                    } catch (Exception e) {
+                        this.setStatus("\u540c\u6b65\u624b\u673a\u6269\u5c55\u89e3\u6790\u5931\u8d25\uff1a" + e.getMessage());
+                    }
+                });
+            } catch (Exception e) {
+                this.runOnUiThread(() -> {
+                    this.setStatus("\u62c9\u53d6\u4e91\u7aef\u624b\u673a\u6269\u5c55\u5931\u8d25\uff1a" + e.getMessage());
                 });
             }
         });
@@ -7271,6 +7504,200 @@ extends Activity {
                 sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
             }
             return res;
+        }
+
+        static String fetchPersonalConfig(String baseUrl, String token) throws Exception {
+            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/sync/personal-config", token, "\u8bfb\u53d6\u540c\u6b65\u914d\u7f6e");
+            return payload.toString();
+        }
+
+        static String fetchMobileExtensions(String baseUrl, String token) throws Exception {
+            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/mobile/extensions", token, "\u8bfb\u53d6\u624b\u673a\u6269\u5c55");
+            return payload.optString("extensions", "[]");
+        }
+
+        static void putMobileExtensions(String baseUrl, String token, String extensionsJson) throws Exception {
+            JSONObject payload = new JSONObject().put("extensions", (Object)extensionsJson);
+            YanziApiClient.putJson(baseUrl, "/v1/me/mobile/extensions", payload, token, "\u540c\u6b65\u624b\u673a\u6269\u5c55");
+        }
+
+        static byte[] getWebDavBytes(WebDavConfig config, String relativePath) throws Exception {
+            HttpURLConnection connection = YanziApiClient.openWebDav(config, relativePath);
+            connection.setRequestMethod("GET");
+            int status = connection.getResponseCode();
+            if (status == 404) {
+                return null;
+            }
+            if (status < 200 || status >= 300) {
+                throw new IllegalStateException("WebDAV GET failed: " + status);
+            }
+            InputStream is = connection.getInputStream();
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = is.read(buffer)) != -1) {
+                bos.write(buffer, 0, len);
+            }
+            is.close();
+            return bos.toByteArray();
+        }
+
+        static String fetchFileFromGitHub(String token, String owner, String repo, String branch, String relativePath) throws Exception {
+            String urlStr = "https://api.github.com/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?ref=" + encodePath(branch);
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Authorization", "Bearer " + token.trim());
+            conn.setRequestProperty("Accept", "application/vnd.github.raw");
+            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
+            
+            int code = conn.getResponseCode();
+            if (code == 404) {
+                return "[]";
+            }
+            if (code < 200 || code >= 300) {
+                throw new java.io.IOException("GitHub read failed: " + code);
+            }
+            InputStream is = conn.getInputStream();
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int len;
+            while ((len = is.read(buf)) != -1) {
+                bos.write(buf, 0, len);
+            }
+            is.close();
+            return bos.toString("UTF-8");
+        }
+
+        static void uploadFileToGitHub(String token, String owner, String repo, String branch, String relativePath, String content) throws Exception {
+            String sha = null;
+            String urlStr = "https://api.github.com/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?ref=" + encodePath(branch);
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Authorization", "Bearer " + token.trim());
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
+            
+            int code = conn.getResponseCode();
+            if (code == 200) {
+                InputStream is = conn.getInputStream();
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = is.read(buf)) != -1) {
+                    bos.write(buf, 0, len);
+                }
+                is.close();
+                JSONObject res = new JSONObject(bos.toString("UTF-8"));
+                sha = res.optString("sha", null);
+            }
+            
+            HttpURLConnection putConn = (HttpURLConnection) new URL("https://api.github.com/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath)).openConnection();
+            putConn.setRequestMethod("PUT");
+            putConn.setRequestProperty("Authorization", "Bearer " + token.trim());
+            putConn.setRequestProperty("Content-Type", "application/json");
+            putConn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
+            putConn.setDoOutput(true);
+            
+            JSONObject payload = new JSONObject();
+            payload.put("message", "Sync mobile-extensions.json from Mobile");
+            String base64Content = Base64.encodeToString(content.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+            payload.put("content", base64Content);
+            if (sha != null) {
+                payload.put("sha", sha);
+            }
+            payload.put("branch", branch);
+            
+            OutputStream os = putConn.getOutputStream();
+            os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+            os.flush();
+            os.close();
+            
+            int putCode = putConn.getResponseCode();
+            if (putCode < 200 || putCode >= 300) {
+                throw new java.io.IOException("GitHub write failed: " + putCode);
+            }
+        }
+
+        static String fetchFileFromGitee(String token, String owner, String repo, String branch, String relativePath) throws Exception {
+            String urlStr = "https://gitee.com/api/v5/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?access_token=" + token.trim() + "&ref=" + encodePath(branch);
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
+            
+            int code = conn.getResponseCode();
+            if (code == 404) {
+                return "[]";
+            }
+            if (code < 200 || code >= 300) {
+                throw new java.io.IOException("Gitee read failed: " + code);
+            }
+            InputStream is = conn.getInputStream();
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int len;
+            while ((len = is.read(buf)) != -1) {
+                bos.write(buf, 0, len);
+            }
+            is.close();
+            JSONObject res = new JSONObject(bos.toString("UTF-8"));
+            String contentBase64 = res.optString("content", "");
+            if (contentBase64.isEmpty()) {
+                return "[]";
+            }
+            byte[] decoded = Base64.decode(contentBase64, Base64.DEFAULT);
+            return new String(decoded, StandardCharsets.UTF_8);
+        }
+
+        static void uploadFileToGitee(String token, String owner, String repo, String branch, String relativePath, String content) throws Exception {
+            String sha = null;
+            String urlStr = "https://gitee.com/api/v5/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?access_token=" + token.trim() + "&ref=" + encodePath(branch);
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
+            
+            int code = conn.getResponseCode();
+            if (code == 200) {
+                InputStream is = conn.getInputStream();
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = is.read(buf)) != -1) {
+                    bos.write(buf, 0, len);
+                }
+                is.close();
+                JSONObject res = new JSONObject(bos.toString("UTF-8"));
+                sha = res.optString("sha", null);
+            }
+            
+            HttpURLConnection putConn = (HttpURLConnection) new URL("https://gitee.com/api/v5/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath)).openConnection();
+            putConn.setRequestMethod("PUT");
+            putConn.setRequestProperty("Content-Type", "application/json");
+            putConn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
+            putConn.setDoOutput(true);
+            
+            JSONObject payload = new JSONObject();
+            payload.put("access_token", token.trim());
+            payload.put("message", "Sync mobile-extensions.json from Mobile");
+            String base64Content = Base64.encodeToString(content.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+            payload.put("content", base64Content);
+            if (sha != null) {
+                payload.put("sha", sha);
+            }
+            payload.put("branch", branch);
+            
+            OutputStream os = putConn.getOutputStream();
+            os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+            os.flush();
+            os.close();
+            
+            int putCode = putConn.getResponseCode();
+            if (putCode < 200 || putCode >= 300) {
+                throw new java.io.IOException("Gitee write failed: " + putCode);
+            }
         }
 
         private static JSONObject putJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {

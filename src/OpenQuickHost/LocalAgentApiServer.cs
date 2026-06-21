@@ -917,6 +917,21 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "GET" && path == "/v1/sync/personal-config")
+            {
+                var settings = AppSettingsStore.Load();
+                var secrets = PersonalSyncSecretStore.Load();
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    enabled = settings.PersonalSync.Enabled,
+                    provider = settings.PersonalSync.Provider,
+                    settings = settings.PersonalSync,
+                    secrets = secrets
+                });
+                return;
+            }
+
             if (request.HttpMethod == "POST" && path == "/v1/sync/trigger")
             {
                 if (_onTriggerSync != null)
@@ -1244,6 +1259,31 @@ public sealed class LocalAgentApiServer : IDisposable
                 }
                 
                 await WriteYanmStateAsync(response, AppSettingsStore.Load());
+                return;
+            }
+
+            if (request.HttpMethod == "GET" && path == "/v1/me/mobile/extensions")
+            {
+                var settings = AppSettingsStore.Load();
+                var list = settings.MobileExtensionsJson ?? "[]";
+                await WriteJsonAsync(response, 200, new { ok = true, extensions = list });
+                return;
+            }
+
+            if (request.HttpMethod == "PUT" && path == "/v1/me/mobile/extensions")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                if (!payload.TryGetProperty("extensions", out var extElement) || extElement.ValueKind != JsonValueKind.String)
+                {
+                    await WriteJsonAsync(response, 400, new { error = "extensions_string_required" });
+                    return;
+                }
+                var extensionsStr = extElement.GetString() ?? "[]";
+                var settings = AppSettingsStore.Load();
+                settings.MobileExtensionsJson = extensionsStr;
+                AppSettingsStore.Save(settings);
+                _onSettingsChanged?.Invoke("api-mobile-extensions-updated", true);
+                await WriteJsonAsync(response, 200, new { ok = true });
                 return;
             }
 

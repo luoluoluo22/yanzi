@@ -2693,16 +2693,35 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="当前轮盘" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <ComboBox Width="180"
+                                            <ComboBox x:Name="RadialMenuPageComboBox"
+                                                      Width="180"
                                                       Height="30"
                                                       ItemsSource="{Binding RadialMenuPages}"
-                                                      DisplayMemberPath="Name"
-                                                      Text="{Binding SelectedRadialMenuPageName, Mode=OneWay}"
-                                                      IsEditable="True"
-                                                      IsReadOnly="True"
-                                                      SelectedValuePath="Id"
-                                                      SelectedValue="{Binding SelectedRadialMenuPageId, Mode=TwoWay}"
-                                                      ToolTip="滚轮会在这些轮盘页面之间切换"/>
+                                                      SelectionChanged="RadialMenuPageComboBox_SelectionChanged"
+                                                      ToolTip="滚轮会在这些轮盘页面之间切换">
+                                                 <ComboBox.ItemTemplate>
+                                                     <DataTemplate>
+                                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                             <Image Source="{Binding Icon}" 
+                                                                    Width="16" 
+                                                                    Height="16" 
+                                                                    Margin="0,0,6,0" 
+                                                                    VerticalAlignment="Center">
+                                                                 <Image.Style>
+                                                                     <Style TargetType="Image">
+                                                                         <Style.Triggers>
+                                                                             <Trigger Property="Source" Value="{x:Null}">
+                                                                                 <Setter Property="Visibility" Value="Collapsed"/>
+                                                                             </Trigger>
+                                                                         </Style.Triggers>
+                                                                     </Style>
+                                                                 </Image.Style>
+                                                             </Image>
+                                                             <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                                         </StackPanel>
+                                                     </DataTemplate>
+                                                 </ComboBox.ItemTemplate>
+                                             </ComboBox>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                                             <Button Content="新增页面" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,0,8,0" Click="AddRadialMenuPageButton_Click"/>

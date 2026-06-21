@@ -24,6 +24,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private RadialMenuItemViewModel? _selectedGrandChildItem;
     private List<RadialMenuPageSettings> _pages = [];
     private string _currentPageId = string.Empty;
+    private string? _activeProcessName;
+    private bool _isEditHoverActive;
+    private bool _isAddHoverActive;
     private readonly Stack<string> _pageStack = new();
     private bool _isExecuting;
     private string _activeTitle = "取消";
@@ -179,6 +182,29 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public double GrandChildRingTitleY => _grandChildRingCenterY - 10;
 
+    private ImageSource? _centerIcon;
+    public ImageSource? CenterIcon
+    {
+        get => _centerIcon;
+        private set
+        {
+            _centerIcon = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string _pageDisplaySummary = string.Empty;
+    public string PageDisplaySummary
+    {
+        get => _pageDisplaySummary;
+        private set
+        {
+            if (value == _pageDisplaySummary) return;
+            _pageDisplaySummary = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string ActiveTitle
     {
         get => _activeTitle;
@@ -275,6 +301,121 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsAddHoverActive
+    {
+        get => _isAddHoverActive;
+        private set
+        {
+            if (value == _isAddHoverActive)
+            {
+                return;
+            }
+
+            _isAddHoverActive = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AddButtonBrush));
+        }
+    }
+
+    public System.Windows.Media.Brush AddButtonBrush => _isAddHoverActive
+        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF10B981")!
+        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+
+    public bool IsEditHoverActive
+    {
+        get => _isEditHoverActive;
+        private set
+        {
+            if (value == _isEditHoverActive)
+            {
+                return;
+            }
+
+            _isEditHoverActive = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public ObservableCollection<PaginationDotViewModel> PaginationDots { get; } = new();
+
+    public System.Windows.Media.Brush EditButtonBrush => _editModeLocked
+        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF3B82F6")!
+        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+
+    private void LoadRadialMenuPages()
+    {
+        var settings = AppSettingsStore.Load();
+        settings.RadialMenu ??= new RadialMenuSettings();
+        settings.RadialMenu.Pages ??= [];
+
+        if (settings.RadialMenu.Pages.Count == 0)
+        {
+            settings.RadialMenu.Pages.Add(new RadialMenuPageSettings 
+            { 
+                Id = "default", 
+                Name = "全局",
+                Slots = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+                SlotTitles = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+                ChildPageIds = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList()
+            });
+            AppSettingsStore.Save(settings);
+            _mainWindow.RefreshAppSettings();
+        }
+
+        if ((_editModeLocked || Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) && !string.IsNullOrWhiteSpace(_activeProcessName))
+        {
+            var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
+            var appPage = settings.RadialMenu.Pages.FirstOrDefault(item => 
+                !string.IsNullOrEmpty(item.ContextProcessName) && 
+                item.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase));
+
+            if (appPage == null)
+            {
+                appPage = new RadialMenuPageSettings
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Name = $"{_activeProcessName}",
+                    ContextProcessName = normalizedProcess,
+                    ContextDisplayName = _activeProcessName,
+                    Slots = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+                    SlotTitles = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+                    ChildPageIds = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList()
+                };
+                settings.RadialMenu.Pages.Add(appPage);
+                AppSettingsStore.Save(settings);
+                _mainWindow.RefreshAppSettings();
+                _mainWindow.NotifyQuickPanelSettingsChanged("radial-inline-edit");
+            }
+        }
+
+        var normalizedProcessForFilter = string.IsNullOrWhiteSpace(_activeProcessName)
+            ? ""
+            : _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
+
+        var filteredPages = settings.RadialMenu.Pages.Where(page =>
+            string.IsNullOrEmpty(page.ContextProcessName) ||
+            (!string.IsNullOrEmpty(normalizedProcessForFilter) && page.ContextProcessName.Equals(normalizedProcessForFilter, StringComparison.OrdinalIgnoreCase))
+        ).ToList();
+
+        var appPages = filteredPages.Where(page => !string.IsNullOrEmpty(page.ContextProcessName)).ToList();
+        var globalPages = filteredPages.Where(page => string.IsNullOrEmpty(page.ContextProcessName)).ToList();
+
+        var sortedPages = new List<RadialMenuPageSettings>();
+        sortedPages.AddRange(appPages);
+        sortedPages.AddRange(globalPages);
+
+        _pages = sortedPages;
+
+        while (PaginationDots.Count < _pages.Count)
+        {
+            PaginationDots.Add(new PaginationDotViewModel { IsSelected = false });
+        }
+        while (PaginationDots.Count > _pages.Count)
+        {
+            PaginationDots.RemoveAt(PaginationDots.Count - 1);
+        }
+    }
+
     public void ShowAtMouse()
     {
         _isExecuting = false;
@@ -283,11 +424,39 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         _selectionTimer.Stop();
         var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
         _lastRadiusPixels = settings.RadiusPixels;
-        _pages = _mainWindow.GetRadialMenuPages().ToList();
         _previousForegroundWindow = RadialMenuNativeMethods.GetForegroundWindow();
-        _currentPageId = string.IsNullOrWhiteSpace(settings.SelectedPageId)
-            ? _pages.FirstOrDefault()?.Id ?? string.Empty
-            : settings.SelectedPageId;
+        _activeProcessName = null;
+        if (_previousForegroundWindow != IntPtr.Zero)
+        {
+            try
+            {
+                RadialMenuNativeMethods.GetWindowThreadProcessId(_previousForegroundWindow, out var processId);
+                using var process = System.Diagnostics.Process.GetProcessById((int)processId);
+                _activeProcessName = process.ProcessName;
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"RadialMenu: Failed to get process name: {ex.Message}");
+            }
+        }
+        LoadRadialMenuPages();
+        var firstAppPage = _pages.FirstOrDefault(page => !string.IsNullOrEmpty(page.ContextProcessName));
+        if (firstAppPage != null)
+        {
+            _currentPageId = firstAppPage.Id;
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(settings.SelectedPageId) && 
+                _pages.Any(p => p.Id.Equals(settings.SelectedPageId, StringComparison.OrdinalIgnoreCase)))
+            {
+                _currentPageId = settings.SelectedPageId;
+            }
+            else
+            {
+                _currentPageId = _pages.FirstOrDefault()?.Id ?? string.Empty;
+            }
+        }
         _pageStack.Clear();
         _centerPixels = Forms.Cursor.Position;
 
@@ -362,6 +531,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         if (_editModeLocked || Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             _editModeLocked = true;
+            LoadRadialMenuPages();
             _selectionTimer.Stop();
             UpdateEditModeState();
             OpenEditMenuForCurrentSelection();
@@ -369,11 +539,25 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         _selectionTimer.Stop();
+        if (IsEditHoverActive)
+        {
+            ToggleEditModeState();
+            _selectionTimer.Start();
+            UpdateSelectionFromCursor();
+            return;
+        }
+
         if (IsPinHoverActive)
         {
             TogglePinnedState();
             _selectionTimer.Start();
             UpdateSelectionFromCursor();
+            return;
+        }
+
+        if (IsAddHoverActive)
+        {
+            ShowAddRadialMenuContextMenu();
             return;
         }
 
@@ -506,9 +690,23 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         HasGrandChildRing = false;
         IsPinHoverActive = false;
         SetSelectedItem(null);
-        var items = _mainWindow.GetRadialMenuItems(_currentPageId);
+        var items = _mainWindow.GetRadialMenuItems(_currentPageId, _activeProcessName);
         var page = _pages.FirstOrDefault(item => item.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
         PageTitle = page?.Name ?? "燕环";
+
+        if (page != null && !string.IsNullOrEmpty(page.ContextProcessName))
+        {
+            CenterIcon = GetProcessIcon(page.ContextProcessName);
+        }
+        else
+        {
+            CenterIcon = null;
+        }
+
+        var pageName = page?.Name ?? "默认";
+        var appName = string.IsNullOrWhiteSpace(_activeProcessName) ? "全局" : _activeProcessName;
+        PageDisplaySummary = $"轮盘: {pageName}  |  当前应用: {appName}";
+
         UpdateCenterText();
         var center = GetMenuCenter();
         BuildSeparators(MainSeparators, center.X, center.Y, 30, 122, RadialMenuSettings.InnerSlotCount);
@@ -557,13 +755,39 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Outer,
                 CreateSectorGeometry(center.X, center.Y, 122, 196, angleDegrees - 11.25, angleDegrees + 11.25)));
         }
+
+        var currentIndex = _pages.FindIndex(page => page.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
+        for (int i = 0; i < PaginationDots.Count; i++)
+        {
+            PaginationDots[i].IsSelected = (i == currentIndex);
+        }
     }
 
     private void UpdateSelectionFromCursor()
     {
         var cursorPoint = GetCursorWindowPoint();
+        if (UpdateEditHoverState(cursorPoint))
+        {
+            IsPinHoverActive = false;
+            IsAddHoverActive = false;
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
+            return;
+        }
+
         if (UpdatePinHoverState(cursorPoint))
         {
+            IsEditHoverActive = false;
+            IsAddHoverActive = false;
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
+            return;
+        }
+
+        if (UpdateAddHoverState(cursorPoint))
+        {
+            IsEditHoverActive = false;
+            IsPinHoverActive = false;
             IsCenterHovered = false;
             Cursor = System.Windows.Input.Cursors.Hand;
             return;
@@ -1073,6 +1297,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         if (_editModeLocked || Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             _editModeLocked = true;
+            LoadRadialMenuPages();
             _selectionTimer.Stop();
             UpdateEditModeState();
             var target = new RadialEditTarget(item.OwnerPageId, item.Index, item);
@@ -1280,21 +1505,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void UpdateEditModeState()
     {
-        if (!_editModeLocked && !Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
-        {
-            CenterPrimaryText = PageTitle;
-            IsCenterCloseMode = false;
-            return;
-        }
-
-        CenterPrimaryText = "X";
-        IsCenterCloseMode = true;
+        CenterPrimaryText = PageTitle;
+        IsCenterCloseMode = false;
     }
 
     private void UpdateCenterText()
     {
-        CenterPrimaryText = _editModeLocked ? "X" : PageTitle;
-        IsCenterCloseMode = _editModeLocked;
+        CenterPrimaryText = PageTitle;
+        IsCenterCloseMode = false;
     }
 
     private string ResolveActiveTitle(string? commandTitle, bool isEmptySlot, bool isChildRing = false, bool isGrandChildRing = false)
@@ -1402,6 +1620,28 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         };
         clearChildItem.Click += (_, _) => ClearChildPageFromTarget(target);
         menu.Items.Add(clearChildItem);
+
+        if (!string.IsNullOrWhiteSpace(_activeProcessName))
+        {
+            menu.Items.Add(new Separator());
+            bool isBound = IsRadialSlotBoundToCurrentApp(target);
+            if (isBound)
+            {
+                var unbindItem = new MenuItem { Header = $"取消绑定 (当前应用: {_activeProcessName})" };
+                unbindItem.Click += (_, _) => UnbindRadialSlotFromCurrentApp(target);
+                menu.Items.Add(unbindItem);
+            }
+            else
+            {
+                var bindItem = new MenuItem 
+                { 
+                    Header = $"绑定到当前应用: {_activeProcessName}",
+                    IsEnabled = target.Item.Command != null || target.Item.HasChildPage
+                };
+                bindItem.Click += (_, _) => BindRadialSlotToCurrentApp(target);
+                menu.Items.Add(bindItem);
+            }
+        }
 
         return menu;
     }
@@ -1697,7 +1937,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         AppSettingsStore.Save(settings);
         _mainWindow.RefreshAppSettings();
         _mainWindow.NotifyQuickPanelSettingsChanged("radial-inline-edit");
-        _pages = _mainWindow.GetRadialMenuPages().ToList();
+        LoadRadialMenuPages();
     }
 
     private void RefreshFromSettings(string pageId, int index, bool ensureChildRingVisible)
@@ -1753,6 +1993,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         _editModeLocked = true;
+        LoadRadialMenuPages();
         UpdateEditModeState();
         AddCommandToTarget(new RadialEditTarget(item.OwnerPageId, item.Index, item));
         return true;
@@ -1796,6 +2037,124 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         HostAssets.AppendLog($"Radial menu pin toggled: pinned={_isPinned}.");
     }
 
+    private void ToggleEditModeState()
+    {
+        _editModeLocked = !_editModeLocked;
+        if (_editModeLocked)
+        {
+            LoadRadialMenuPages();
+            if (_pages.Count > 0)
+            {
+                _currentPageId = _pages[0].Id;
+            }
+        }
+        else
+        {
+            LoadRadialMenuPages();
+        }
+        BuildItems((AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
+        UpdateEditModeState();
+        OnPropertyChanged(nameof(EditButtonBrush));
+        HostAssets.AppendLog($"Radial menu edit mode toggled: locked={_editModeLocked}.");
+    }
+
+    private void EditButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleEditModeState();
+        e.Handled = true;
+    }
+
+    private void AddButton_Click(object sender, RoutedEventArgs e)
+    {
+        ShowAddRadialMenuContextMenu();
+        e.Handled = true;
+    }
+
+    private void ShowAddRadialMenuContextMenu()
+    {
+        var contextMenu = new ContextMenu();
+
+        var globalItem = new MenuItem { Header = "新建全局轮盘" };
+        globalItem.Click += (s, e) => AddGlobalPage();
+        contextMenu.Items.Add(globalItem);
+
+        var currentAppName = string.IsNullOrWhiteSpace(_activeProcessName) ? "当前应用" : _activeProcessName;
+        var appItem = new MenuItem { Header = $"新建 {currentAppName} 专属轮盘" };
+        appItem.Click += (s, e) => AddAppPage();
+        contextMenu.Items.Add(appItem);
+
+        contextMenu.PlacementTarget = AddButton;
+        contextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        contextMenu.IsOpen = true;
+    }
+
+    private void AddGlobalPage()
+    {
+        var settings = AppSettingsStore.Load();
+        settings.RadialMenu ??= new RadialMenuSettings();
+        settings.RadialMenu.Pages ??= [];
+
+        int globalCount = settings.RadialMenu.Pages.Count(p => string.IsNullOrEmpty(p.ContextProcessName)) + 1;
+        var newPage = new RadialMenuPageSettings
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = $"全局 {globalCount}",
+            Slots = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+            SlotTitles = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+            ChildPageIds = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList()
+        };
+        settings.RadialMenu.Pages.Add(newPage);
+        AppSettingsStore.Save(settings);
+
+        _mainWindow.RefreshAppSettings();
+        _mainWindow.NotifyQuickPanelSettingsChanged("radial-inline-edit");
+
+        LoadRadialMenuPages();
+        _currentPageId = newPage.Id;
+        BuildItems(_lastRadiusPixels);
+
+        HostAssets.AppendLog($"New global page added: name={newPage.Name}, id={newPage.Id}");
+    }
+
+    private void AddAppPage()
+    {
+        if (string.IsNullOrWhiteSpace(_activeProcessName))
+        {
+            return;
+        }
+
+        var settings = AppSettingsStore.Load();
+        settings.RadialMenu ??= new RadialMenuSettings();
+        settings.RadialMenu.Pages ??= [];
+
+        var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
+        int appCount = settings.RadialMenu.Pages.Count(p => 
+            !string.IsNullOrEmpty(p.ContextProcessName) && 
+            p.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase)) + 1;
+
+        var newPage = new RadialMenuPageSettings
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = appCount > 1 ? $"{_activeProcessName}专属 {appCount}" : $"{_activeProcessName}",
+            ContextProcessName = normalizedProcess,
+            ContextDisplayName = _activeProcessName,
+            Slots = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+            SlotTitles = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+            ChildPageIds = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList()
+        };
+        settings.RadialMenu.Pages.Add(newPage);
+        AppSettingsStore.Save(settings);
+
+        _mainWindow.RefreshAppSettings();
+        _mainWindow.NotifyQuickPanelSettingsChanged("radial-inline-edit");
+
+        LoadRadialMenuPages();
+        _currentPageId = newPage.Id;
+        BuildItems(_lastRadiusPixels);
+
+        HostAssets.AppendLog($"New app-specific page added: name={newPage.Name}, id={newPage.Id}, process={normalizedProcess}");
+    }
+
     private bool UpdatePinHoverState(System.Windows.Point cursorPoint)
     {
         var hovered = IsPointInPinButton(cursorPoint);
@@ -1823,6 +2182,170 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return bounds.Contains(point);
     }
 
+    private bool UpdateEditHoverState(System.Windows.Point cursorPoint)
+    {
+        var hovered = IsPointInEditButton(cursorPoint);
+        IsEditHoverActive = hovered;
+        if (!hovered)
+        {
+            return false;
+        }
+
+        SetSelectedItem(null);
+        ClearChildRing();
+        ActiveTitle = _editModeLocked ? "松开退出编辑" : "松开进入编辑";
+        return true;
+    }
+
+    private bool IsPointInEditButton(System.Windows.Point point)
+    {
+        if (!EditButton.IsLoaded)
+        {
+            return false;
+        }
+
+        var topLeft = EditButton.TranslatePoint(new System.Windows.Point(0, 0), this);
+        var bounds = new Rect(topLeft.X, topLeft.Y, EditButton.ActualWidth, EditButton.ActualHeight);
+        return bounds.Contains(point);
+    }
+
+    private bool UpdateAddHoverState(System.Windows.Point cursorPoint)
+    {
+        var hovered = IsPointInAddButton(cursorPoint);
+        IsAddHoverActive = hovered;
+        if (!hovered)
+        {
+            return false;
+        }
+
+        SetSelectedItem(null);
+        ClearChildRing();
+        ActiveTitle = "松开添加轮盘";
+        return true;
+    }
+
+    private bool IsPointInAddButton(System.Windows.Point point)
+    {
+        if (AddButton == null || !AddButton.IsLoaded)
+        {
+            return false;
+        }
+
+        var topLeft = AddButton.TranslatePoint(new System.Windows.Point(0, 0), this);
+        var bounds = new Rect(topLeft.X, topLeft.Y, AddButton.ActualWidth, AddButton.ActualHeight);
+        return bounds.Contains(point);
+    }
+
+    private bool IsRadialSlotBoundToCurrentApp(RadialEditTarget target)
+    {
+        if (string.IsNullOrWhiteSpace(_activeProcessName))
+        {
+            return false;
+        }
+
+        var settings = AppSettingsStore.Load();
+        var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
+        var appPage = settings.RadialMenu?.Pages?.FirstOrDefault(item => 
+            !string.IsNullOrEmpty(item.ContextProcessName) && 
+            item.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase));
+
+        if (appPage == null)
+        {
+            return false;
+        }
+
+        EnsureRadialPageSlotCapacity(appPage);
+        return appPage.Slots.ElementAtOrDefault(target.Index) != null || 
+               appPage.ChildPageIds.ElementAtOrDefault(target.Index) != null;
+    }
+
+    private void BindRadialSlotToCurrentApp(RadialEditTarget target)
+    {
+        if (string.IsNullOrWhiteSpace(_activeProcessName))
+        {
+            return;
+        }
+
+        var settings = AppSettingsStore.Load();
+        settings.RadialMenu ??= new RadialMenuSettings();
+        settings.RadialMenu.Pages ??= [];
+
+        var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
+        var appPage = settings.RadialMenu.Pages.FirstOrDefault(item => 
+            !string.IsNullOrEmpty(item.ContextProcessName) && 
+            item.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase));
+
+        if (appPage == null)
+        {
+            appPage = new RadialMenuPageSettings
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = $"{_activeProcessName}",
+                ContextProcessName = normalizedProcess,
+                ContextDisplayName = _activeProcessName,
+                Slots = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+                SlotTitles = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
+                ChildPageIds = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList()
+            };
+            settings.RadialMenu.Pages.Add(appPage);
+        }
+
+        EnsureRadialPageSlotCapacity(appPage);
+
+        var extensionId = target.Item.Command?.ExtensionId;
+        var displayTitle = target.Item.Command?.Title;
+        var childPageId = target.Item.ChildPageId;
+
+        appPage.Slots[target.Index] = string.IsNullOrWhiteSpace(extensionId) ? null : extensionId.Trim();
+        appPage.SlotTitles[target.Index] = string.IsNullOrWhiteSpace(displayTitle) ? null : displayTitle.Trim();
+        appPage.ChildPageIds[target.Index] = string.IsNullOrWhiteSpace(childPageId) ? null : childPageId.Trim();
+
+        PersistRadialSettings(settings);
+        
+        RefreshFromSettings(target.PageId, target.Index, ensureChildRingVisible: !string.IsNullOrWhiteSpace(appPage.ChildPageIds?.ElementAtOrDefault(target.Index)));
+        HostAssets.AppendLog($"Radial edit bound slot {target.Index + 1} to app {_activeProcessName}.");
+    }
+
+    private void UnbindRadialSlotFromCurrentApp(RadialEditTarget target)
+    {
+        if (string.IsNullOrWhiteSpace(_activeProcessName))
+        {
+            return;
+        }
+
+        var settings = AppSettingsStore.Load();
+        settings.RadialMenu ??= new RadialMenuSettings();
+        settings.RadialMenu.Pages ??= [];
+
+        var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
+        var appPage = settings.RadialMenu.Pages.FirstOrDefault(item => 
+            !string.IsNullOrEmpty(item.ContextProcessName) && 
+            item.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase));
+
+        if (appPage == null)
+        {
+            return;
+        }
+
+        EnsureRadialPageSlotCapacity(appPage);
+
+        appPage.Slots[target.Index] = null;
+        appPage.SlotTitles[target.Index] = null;
+        appPage.ChildPageIds[target.Index] = null;
+
+        bool isPageEmpty = appPage.Slots.All(s => s == null) && 
+                           appPage.ChildPageIds.All(c => c == null);
+        if (isPageEmpty)
+        {
+            settings.RadialMenu.Pages.Remove(appPage);
+        }
+
+        PersistRadialSettings(settings);
+
+        RefreshFromSettings(target.PageId, target.Index, ensureChildRingVisible: false);
+        HostAssets.AppendLog($"Radial edit unbound slot {target.Index + 1} from app {_activeProcessName}.");
+    }
+
     private void HideIfAllowed()
     {
         if (_isPinned)
@@ -1832,6 +2355,84 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         Hide();
+    }
+
+    public new void Hide()
+    {
+        _editModeLocked = false;
+        _editInteractionActive = false;
+        OnPropertyChanged(nameof(EditButtonBrush));
+        base.Hide();
+    }
+
+    private static string? FindExecutablePath(string processName)
+    {
+        if (string.IsNullOrWhiteSpace(processName)) return null;
+        if (processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            processName = processName.Substring(0, processName.Length - 4);
+        }
+
+        try
+        {
+            var processes = System.Diagnostics.Process.GetProcessesByName(processName);
+            if (processes.Length > 0)
+            {
+                var path = processes[0].MainModule?.FileName;
+                if (!string.IsNullOrEmpty(path) && File.Exists(path)) return path;
+            }
+        }
+        catch { }
+
+        var searchPaths = new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            Environment.GetFolderPath(Environment.SpecialFolder.SystemX86),
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), processName),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), processName)
+        };
+
+        var exeName = processName + ".exe";
+        foreach (var dir in searchPaths)
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) continue;
+                var fullPath = Path.Combine(dir, exeName);
+                if (File.Exists(fullPath)) return fullPath;
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
+    private static ImageSource? GetProcessIcon(string processName)
+    {
+        try
+        {
+            var path = FindExecutablePath(processName);
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            {
+                using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
+                if (icon != null)
+                {
+                    var bitmapSource = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                        icon.Handle,
+                        System.Windows.Int32Rect.Empty,
+                        System.Windows.Media.Imaging.BitmapSizeOptions.FromWidthAndHeight(32, 32));
+                    if (bitmapSource.CanFreeze)
+                    {
+                        bitmapSource.Freeze();
+                    }
+                    RadialMenuNativeMethods.DestroyIcon(icon.Handle);
+                    return bitmapSource;
+                }
+            }
+        }
+        catch { }
+        return null;
     }
 }
 
@@ -2019,4 +2620,24 @@ internal static partial class RadialMenuNativeMethods
 
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool DestroyIcon(IntPtr handle);
+}
+
+public class PaginationDotViewModel : INotifyPropertyChanged
+{
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value) return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 }

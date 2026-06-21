@@ -159,7 +159,7 @@ public static class AppSettingsStore
             settings.RadialMenu.Pages.Add(new RadialMenuPageSettings
             {
                 Id = "default",
-                Name = "默认",
+                Name = "全局",
                 Slots = settings.RadialMenu.Slots?.ToList() ?? Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList()
             });
         }
@@ -168,6 +168,11 @@ public static class AppSettingsStore
         {
             page.Id = string.IsNullOrWhiteSpace(page.Id) ? Guid.NewGuid().ToString("N") : page.Id.Trim();
             page.Name = string.IsNullOrWhiteSpace(page.Name) ? "未命名" : page.Name.Trim();
+            if (page.Id.Equals("default", StringComparison.OrdinalIgnoreCase) && 
+                (page.Name == "默认" || page.Name == "办公" || page.Name == "燕环"))
+            {
+                page.Name = "全局";
+            }
             page.Slots ??= [];
             while (page.Slots.Count < RadialMenuSettings.TotalSlotCount)
             {
@@ -655,6 +660,8 @@ public sealed record AppSettings
     public double? SettingsWindowHeight { get; set; }
 
     public string LastTestArgument { get; set; } = "示例参数";
+
+    public string MobileExtensionsJson { get; set; } = "[]";
 }
 
 public sealed class WindowSnapAssistCustomLayoutSettings
@@ -898,6 +905,10 @@ public sealed class RadialMenuPageSettings
     public List<string?> SlotTitles { get; set; } = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList();
 
     public List<string?> ChildPageIds { get; set; } = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList();
+
+    public string? ContextProcessName { get; set; }
+
+    public string? ContextDisplayName { get; set; }
 }
 
 public sealed class YanmSettings

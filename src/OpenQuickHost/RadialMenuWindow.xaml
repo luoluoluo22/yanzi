@@ -107,25 +107,46 @@
                  Height="58"
                  Stroke="#33FFFFFF"
                  StrokeThickness="1"
+                 Fill="#F2161616"
                  HorizontalAlignment="Center"
-                 VerticalAlignment="Center">
-            <Ellipse.Style>
-                <Style TargetType="Ellipse">
-                    <Setter Property="Fill" Value="#F2161616" />
-                    <Style.Triggers>
-                        <!-- 悬浮鼠标才是红底高亮 -->
-                        <DataTrigger Binding="{Binding IsCenterHovered}" Value="True">
-                            <Setter Property="Fill" Value="#D0B91C1C" />
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Ellipse.Style>
-        </Ellipse>
+                 VerticalAlignment="Center" />
 
-        <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
-            <Viewbox Width="24" Height="24" HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Path Data="{local:IconGeometry close}" Fill="White" Stretch="Uniform" /> 
-            </Viewbox>
+        <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Width="52" Height="52">
+            <TextBlock Text="{Binding CenterPrimaryText}"
+                       Foreground="White"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CenterIcon}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <Image Source="{Binding CenterIcon}"
+                   Width="32"
+                   Height="32"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center">
+                <Image.Style>
+                    <Style TargetType="Image">
+                        <Style.Triggers>
+                            <Trigger Property="Source" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </Trigger>
+                        </Style.Triggers>
+                        <Setter Property="Visibility" Value="Visible"/>
+                    </Style>
+                </Image.Style>
+            </Image>
         </Grid>
 
         <TextBlock Text="{Binding ActiveTitle}"
@@ -140,6 +161,81 @@
                 <TranslateTransform Y="220"/>
             </TextBlock.RenderTransform>
         </TextBlock>
+
+        <ItemsControl ItemsSource="{Binding PaginationDots}"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center">
+            <ItemsControl.RenderTransform>
+                <TranslateTransform Y="205"/>
+            </ItemsControl.RenderTransform>
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Ellipse Width="6" Height="6" Margin="4,0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="#44FFFFFF" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                        <Setter Property="Fill" Value="White" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="{Binding PageDisplaySummary}"
+                   Foreground="#80FFFFFF"
+                   FontSize="10"
+                   Width="350"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   TextAlignment="Center">
+            <TextBlock.RenderTransform>
+                <TranslateTransform Y="238"/>
+            </TextBlock.RenderTransform>
+        </TextBlock>
+
+        <Button x:Name="EditButton"
+                Width="34"
+                Height="34"
+                Padding="0"
+                Background="#E6101010"
+                BorderThickness="1"
+                BorderBrush="{Binding EditButtonBrush}"
+                ToolTip="进入编辑模式"
+                Click="EditButton_Click"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+            <Button.RenderTransform>
+                <TranslateTransform X="172" Y="-154" />
+            </Button.RenderTransform>
+            <Button.Style>
+                <Style TargetType="Button">
+                    <Setter Property="Opacity" Value="0.88" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsEditHoverActive}" Value="True">
+                            <Setter Property="Opacity" Value="1" />
+                            <Setter Property="Background" Value="#F03B82F6" />
+                            <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <Viewbox Width="16"
+                     Height="16"
+                     Stretch="Uniform">
+                <Path Data="{local:IconGeometry pen}"
+                      Fill="{Binding EditButtonBrush}" />
+            </Viewbox>
+        </Button>
 
         <Button x:Name="PinButton"
                 Width="34"
@@ -172,6 +268,40 @@
                      Stretch="Uniform">
                 <Path Data="{local:IconGeometry pin}"
                       Fill="{Binding PinButtonBrush}" />
+            </Viewbox>
+        </Button>
+
+        <Button x:Name="AddButton"
+                Width="34"
+                Height="34"
+                Padding="0"
+                Background="#E6101010"
+                BorderThickness="1"
+                BorderBrush="{Binding AddButtonBrush}"
+                ToolTip="添加轮盘"
+                Click="AddButton_Click"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+            <Button.RenderTransform>
+                <TranslateTransform X="256" Y="-154" />
+            </Button.RenderTransform>
+            <Button.Style>
+                <Style TargetType="Button">
+                    <Setter Property="Opacity" Value="0.88" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsAddHoverActive}" Value="True">
+                            <Setter Property="Opacity" Value="1" />
+                            <Setter Property="Background" Value="#F010B981" />
+                            <Setter Property="BorderBrush" Value="#A7F3D0" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <Viewbox Width="16"
+                     Height="16"
+                     Stretch="Uniform">
+                <Path Data="{local:IconGeometry plus}"
+                      Fill="{Binding AddButtonBrush}" />
             </Viewbox>
         </Button>
 

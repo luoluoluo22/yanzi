@@ -791,6 +791,11 @@ public partial class App : WpfApplication
         }
     }
 
+    private void TrayMobileInbox_Click(object sender, RoutedEventArgs e)
+    {
+        (MainWindow as MainWindow)?.ShowMobileInboxWindow();
+    }
+
     private void ToggleListenerServices()
     {
         if (MainWindow is not MainWindow mainWindow || _notifyIcon == null)
@@ -817,9 +822,19 @@ public partial class App : WpfApplication
 
     private void UpdateTrayMenuState(System.Windows.Controls.ContextMenu menu)
     {
+        bool hasShown = false;
+        if (MainWindow is MainWindow mw)
+        {
+            hasShown = mw.HasBeenShown;
+        }
+
         foreach (var item in menu.Items.OfType<System.Windows.Controls.MenuItem>())
         {
-            if (Equals(item.Tag, "service-toggle"))
+            if (Equals(item.Tag, "show-searchbox") || Equals(item.Tag, "mobile-chat"))
+            {
+                item.Visibility = hasShown ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            }
+            else if (Equals(item.Tag, "service-toggle"))
             {
                 item.Header = _listenerServicesPaused ? "恢复全部服务" : "暂停全部服务";
             }
