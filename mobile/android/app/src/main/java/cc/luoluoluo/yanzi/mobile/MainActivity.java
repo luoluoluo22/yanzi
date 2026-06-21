@@ -4803,14 +4803,23 @@ extends Activity {
                         String yanmStr = this.prefs.getString(CACHE_YANM, "{}");
                         JSONObject yanmObj = new JSONObject(yanmStr);
                         JSONArray yanmList = new JSONArray();
-                        Iterator it = yanmObj.keys();
-                        while (it.hasNext()) {
-                            String k = (String)it.next();
-                            JSONObject c = yanmObj.optJSONObject(k);
+                        JSONArray components = MainActivity.firstArray(yanmObj, "components", "Components");
+                        JSONObject state = MainActivity.firstObject(yanmObj, "componentState", "ComponentState");
+                        if (state == null) {
+                            state = new JSONObject();
+                        }
+                        int componentCount = components == null ? 0 : components.length();
+                        for (int i = 0; i < componentCount; ++i) {
+                            JSONObject c = components.optJSONObject(i);
                             if (c == null) continue;
+                            String id = MainActivity.getYanmComponentId(c, i);
+                            String stateKey = YanmWidgetData.resolveStateKey(c, id);
+                            String value = state.optString(stateKey, "");
                             JSONObject simple = new JSONObject();
-                            simple.put("id", (Object)k);
-                            simple.put("title", (Object)c.optString("title", "\u672a\u547d\u540d"));
+                            simple.put("id", (Object)id);
+                            simple.put("title", (Object)MainActivity.getYanmComponentTitle(c, i));
+                            simple.put("stateKey", (Object)stateKey);
+                            simple.put("stateLength", value.length());
                             yanmList.put((Object)simple);
                         }
                         yanmNamesStr = yanmList.toString();
@@ -4818,7 +4827,7 @@ extends Activity {
                     catch (Exception yanmStr) {
                         // empty catch block
                     }
-                    String finalPrompt = "\u3010\u7cfb\u7edf\u6307\u4ee4\uff08\u4e25\u683c\u9075\u5b88\uff09\u3011\n" + basePrompt + "\n\u5f53\u524d\u53ef\u7528\u6269\u5c55\u6709:\n" + extListPrompt.toString() + "\n\u5f53\u524d\u71d5\u5e55\u7ec4\u4ef6\u6709:\n" + yanmNamesStr;
+                    String finalPrompt = "\u3010\u7cfb\u7edf\u6307\u4ee4\uff08\u4e25\u683c\u9075\u5b88\uff09\u3011\n" + basePrompt + "\n\u5f53\u524d\u53ef\u7528\u6269\u5c55\u6709:\n" + extListPrompt.toString() + "\n\u5f53\u524d\u71d5\u5e55\u7ec4\u4ef6\u6709:\n" + yanmNamesStr + "\n\u3010\u71d5\u5e55\u5de5\u5177\u6700\u77ed\u8def\u5f84\u3011\n\u5982\u679c\u7528\u6237\u70b9\u540d\u4e86\u7ec4\u4ef6\u6807\u9898\uff08\u4f8b\u5982\u201c\u4fbf\u7b7e\u201d\uff09\uff0c\u4e14\u4e0a\u9762\u6e05\u5355\u5df2\u7ecf\u5305\u542b\u8be5\u7ec4\u4ef6\u7684 id/stateKey\uff0c\u4e0d\u8981\u5148\u8c03 view_yanm\uff1b\u76f4\u63a5\u7528\u8be5 id \u6216\u6807\u9898\u8c03 view_yanm_state \u8bfb\u5f53\u524d\u503c\uff0c\u7136\u540e\u8c03 update_yanm_state \u66f4\u65b0\u3002\u53ea\u6709\u6e05\u5355\u91cc\u627e\u4e0d\u5230\u76ee\u6807\u7ec4\u4ef6\u65f6\uff0c\u624d\u8c03 view_yanm \u5237\u65b0\u7ec4\u4ef6\u6e05\u5355\u3002";
                     messages.put((Object)new JSONObject().put("role", (Object)"system").put("content", (Object)finalPrompt));
                     if (requestHistory != null) {
                         for (int i = 0; i < requestHistory.length(); ++i) {
