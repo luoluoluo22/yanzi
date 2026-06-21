@@ -588,6 +588,25 @@ async function handleRequest(request, env) {
     });
   }
 
+  if (url.pathname === "/v1/me/yanm-state/component-state" && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    const componentStatePatch = normalizeYanmComponentStatePatch(payload);
+    const updatedAtUtc = normalizeOptionalIsoDate(payload.updatedAtUtc) || isoNow();
+    const result = await patchYanmComponentStateForUser(env, auth.userId, componentStatePatch, updatedAtUtc);
+    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      source: result.source,
+      updatedAtUtc,
+      changedKeys: Object.keys(componentStatePatch),
+      bytes: result.bytes,
+      viewUrl: viewUrl || null
+    });
+  }
+
   if (url.pathname === "/v1/app/update/latest" && request.method === "GET") {
     const channel = normalizeReleaseChannel(url.searchParams.get("channel"));
     const row = await env.DB.prepare(
@@ -3632,6 +3651,59 @@ async function writeYanmStateForUser(env, userId, snapshot) {
     source: isSyncWritten ? syncProvider : "cloud-config",
     bytes: dbResult.bytes
   };
+}
+
+function normalizeYanmComponentStatePatch(payload) {
+  const patch = {};
+  const source = payload && typeof payload.componentState === "object" && !Array.isArray(payload.componentState)
+    ? payload.componentState
+    : null;
+
+  if (source) {
+    for (const [key, value] of Object.entries(source)) {
+      const normalizedKey = String(key || "").trim();
+      if (normalizedKey) {
+        patch[normalizedKey] = value == null ? "" : String(value);
+      }
+    }
+  }
+
+  const explicitKey = String(payload?.stateKey || payload?.key || "").trim();
+  if (explicitKey) {
+    patch[explicitKey] = payload.value == null ? "" : String(payload.value);
+  }
+
+  if (Object.keys(patch).length === 0) {
+    throw new HttpError(400, "invalid_component_state", "componentState or stateKey/value is required");
+  }
+
+  return patch;
+}
+
+async function patchYanmComponentStateForUser(env, userId, componentStatePatch, updatedAtUtc) {
+  const current = await readYanmStateForUser(env, userId);
+  if (!current?.yanm || typeof current.yanm !== "object") {
+    throw new HttpError(404, "yanm_state_missing", "Yanm state was not found before componentState patch");
+  }
+
+  const yanm = JSON.parse(JSON.stringify(current.yanm));
+  const stateKey = yanm.componentState && typeof yanm.componentState === "object" && !Array.isArray(yanm.componentState)
+    ? "componentState"
+    : (yanm.ComponentState && typeof yanm.ComponentState === "object" && !Array.isArray(yanm.ComponentState) ? "ComponentState" : "componentState");
+  const state = {
+    ...(yanm[stateKey] && typeof yanm[stateKey] === "object" && !Array.isArray(yanm[stateKey]) ? yanm[stateKey] : {})
+  };
+
+  for (const [key, value] of Object.entries(componentStatePatch)) {
+    state[key] = value;
+  }
+
+  yanm[stateKey] = state;
+
+  return writeYanmStateForUser(env, userId, {
+    updatedAtUtc: updatedAtUtc || isoNow(),
+    yanm
+  });
 }
 
 async function ensureSystemConfigExtension(env, extensionId, metadata) {

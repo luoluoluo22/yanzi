@@ -1262,6 +1262,47 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "PUT" && path == "/v1/me/yanm-state/component-state")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                var patch = ReadYanmComponentStatePatch(payload);
+                if (patch.Count == 0)
+                {
+                    await WriteJsonAsync(response, 400, new { error = "component_state_required" });
+                    return;
+                }
+
+                var settings = AppSettingsStore.Load();
+                settings.Yanm ??= new YanmSettings();
+                settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in patch)
+                {
+                    settings.Yanm.ComponentState[item.Key] = item.Value;
+                }
+
+                var updatedAtUtc = GetString(payload, "updatedAtUtc");
+                settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
+                    ? DateTime.UtcNow.ToString("O")
+                    : updatedAtUtc;
+                AppSettingsStore.Save(settings);
+                _onSettingsChanged?.Invoke("api-yanm-component-state-updated", false);
+
+                if (_onPushToMobile != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _onPushToMobile("YanziSync", "yanm_updated");
+                        }
+                        catch {}
+                    });
+                }
+
+                await WriteYanmStateAsync(response, AppSettingsStore.Load());
+                return;
+            }
+
             if (request.HttpMethod == "GET" && path == "/v1/me/mobile/extensions")
             {
                 var settings = AppSettingsStore.Load();
@@ -1507,6 +1548,43 @@ public sealed class LocalAgentApiServer : IDisposable
         }
 
         return value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    }
+
+    private static Dictionary<string, string> ReadYanmComponentStatePatch(JsonElement payload)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (payload.TryGetProperty("componentState", out var stateElement) &&
+            stateElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var item in stateElement.EnumerateObject())
+            {
+                var key = item.Name.Trim();
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    result[key] = JsonElementToStateString(item.Value);
+                }
+            }
+        }
+
+        var explicitKey = GetString(payload, "stateKey") ?? GetString(payload, "key");
+        if (!string.IsNullOrWhiteSpace(explicitKey))
+        {
+            payload.TryGetProperty("value", out var valueElement);
+            result[explicitKey.Trim()] = JsonElementToStateString(valueElement);
+        }
+
+        return result;
+    }
+
+    private static string JsonElementToStateString(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Null => string.Empty,
+            JsonValueKind.Undefined => string.Empty,
+            _ => value.GetRawText()
+        };
     }
 
     private static LocalMobileMessageDetail CreateLocalMobileMessageDetail(DeviceMessageRecord message, bool success, string output)

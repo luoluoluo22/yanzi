@@ -16,8 +16,14 @@ public class LanDiscoveryManager {
     private static final String DISCOVER_REQUEST = "YANZI_DISCOVER_REQUEST";
     private static final int TIMEOUT_MS = 2000;
     private static final long DISCOVERY_COOL_DOWN_MS = 30000; // 30秒冷却时间
+    private static final int MAX_CONSECUTIVE_DISCOVERY_FAILURES = 3;
+    private static final long DISCOVERY_SUSPEND_MS = 5 * 60 * 1000; // 连续失败后暂停 5 分钟
+    private static final long SUPPRESSED_LOG_COOL_DOWN_MS = 60000;
 
     private static volatile long lastDiscoveryFailedTime = 0;
+    private static volatile long discoverySuspendedUntil = 0;
+    private static volatile long lastSuppressedLogTime = 0;
+    private static volatile int consecutiveDiscoveryFailures = 0;
 
     public static volatile String cachedLanBaseUrl = null;
     public static volatile String cachedLanApiToken = null;
@@ -27,8 +33,25 @@ public class LanDiscoveryManager {
     }
 
     public static String discoverSync(Context context) {
+        return discoverSync(context, false);
+    }
+
+    public static String discoverNow(Context context) {
+        return discoverSync(context, true);
+    }
+
+    private static synchronized String discoverSync(Context context, boolean force) {
         long now = System.currentTimeMillis();
-        if (now - lastDiscoveryFailedTime < DISCOVERY_COOL_DOWN_MS) {
+        if (now < discoverySuspendedUntil) {
+            long remainingSeconds = Math.max(1, (discoverySuspendedUntil - now + 999) / 1000);
+            Log.d(TAG, "Discovery is suspended, skip broadcast");
+            if (now - lastSuppressedLogTime > SUPPRESSED_LOG_COOL_DOWN_MS) {
+                lastSuppressedLogTime = now;
+                MobileDiagnostics.append(context, "局域网直连发现已暂停，剩余约 " + remainingSeconds + " 秒，期间使用云端连接。");
+            }
+            return null;
+        }
+        if (!force && now - lastDiscoveryFailedTime < DISCOVERY_COOL_DOWN_MS) {
             Log.d(TAG, "Discovery is cooling down, skip broadcast");
             return null;
         }
@@ -63,6 +86,9 @@ public class LanDiscoveryManager {
             if (!ip.isEmpty() && port > 0) {
                 cachedLanBaseUrl = "http://" + ip + ":" + port;
                 cachedLanApiToken = token;
+                consecutiveDiscoveryFailures = 0;
+                discoverySuspendedUntil = 0;
+                lastDiscoveryFailedTime = 0;
                 SharedPreferences prefs = context.getSharedPreferences("YanziPrefs", Context.MODE_PRIVATE);
                 prefs.edit()
                      .putString("lanBaseUrl", cachedLanBaseUrl)
@@ -75,8 +101,16 @@ public class LanDiscoveryManager {
 
         } catch (Exception e) {
             lastDiscoveryFailedTime = System.currentTimeMillis();
+            consecutiveDiscoveryFailures++;
+            if (consecutiveDiscoveryFailures >= MAX_CONSECUTIVE_DISCOVERY_FAILURES) {
+                discoverySuspendedUntil = lastDiscoveryFailedTime + DISCOVERY_SUSPEND_MS;
+            }
             Log.e(TAG, "Discovery failed: " + e.getMessage());
-            MobileDiagnostics.append(context, "局域网直连发现失败: " + e.getMessage());
+            if (discoverySuspendedUntil > lastDiscoveryFailedTime) {
+                MobileDiagnostics.append(context, "局域网直连发现连续失败 " + consecutiveDiscoveryFailures + " 次，暂停 5 分钟，期间使用云端连接。最后错误: " + e.getMessage());
+            } else {
+                MobileDiagnostics.append(context, "局域网直连发现失败(" + consecutiveDiscoveryFailures + "/" + MAX_CONSECUTIVE_DISCOVERY_FAILURES + "): " + e.getMessage());
+            }
         } finally {
             if (socket != null && !socket.isClosed()) {
                 socket.close();

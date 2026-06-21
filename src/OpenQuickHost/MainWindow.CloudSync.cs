@@ -17,6 +17,7 @@ public partial class MainWindow
     private DateTimeOffset _lastNetworkAddressChangedHandledAt = DateTimeOffset.MinValue;
     private static readonly object MobileMessageBridgeLock = new();
     private bool _deviceRegistered;
+    private DateTimeOffset _lastDesktopPresenceHeartbeatErrorLogAt = DateTimeOffset.MinValue;
     private const string PublicStoreOrigin = "https://yanzi.luoluoluo.cc.cd";
 
     public static string BuildExtensionStoreUrl(string extensionId)
@@ -864,7 +865,74 @@ public partial class MainWindow
         }
 
         HostAssets.AppendLog($"Mobile bridge started: reason={reason}, deviceId={_desktopDeviceId}.");
+        StartDesktopPresenceHeartbeat(reason);
         _ = PollMobileMessagesSafeAsync($"start-{reason}");
+    }
+
+    private void StartDesktopPresenceHeartbeat(string reason)
+    {
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+        {
+            return;
+        }
+
+        if (!_desktopPresenceHeartbeatTimer.IsEnabled)
+        {
+            _desktopPresenceHeartbeatTimer.Start();
+            HostAssets.AppendLog($"Desktop presence heartbeat started: reason={reason}.");
+        }
+
+        _ = SendDesktopPresenceHeartbeatSafeAsync($"start-{reason}");
+    }
+
+    private async Task SendDesktopPresenceHeartbeatSafeAsync(string reason)
+    {
+        if (_desktopPresenceHeartbeatRunning || _cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+        {
+            return;
+        }
+
+        _desktopPresenceHeartbeatRunning = true;
+        try
+        {
+            using var heartbeatTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+            await _cloudSyncClient.RegisterDeviceAsync(
+                _desktopDeviceId,
+                "desktop",
+                DeviceIdentityStore.GetDesktopDisplayName(),
+                BuildDesktopDeviceCapabilities(),
+                cancellationToken: heartbeatTimeout.Token);
+            _deviceRegistered = true;
+
+            if (reason.StartsWith("start-", StringComparison.OrdinalIgnoreCase))
+            {
+                HostAssets.AppendLog($"Desktop presence heartbeat ok: reason={reason}, deviceId={_desktopDeviceId}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (DateTimeOffset.UtcNow - _lastDesktopPresenceHeartbeatErrorLogAt > TimeSpan.FromMinutes(1))
+            {
+                _lastDesktopPresenceHeartbeatErrorLogAt = DateTimeOffset.UtcNow;
+                HostAssets.AppendLog($"Desktop presence heartbeat failed: reason={reason}, {FormatExceptionMessage(ex)}");
+            }
+        }
+        finally
+        {
+            _desktopPresenceHeartbeatRunning = false;
+        }
+    }
+
+    private static object BuildDesktopDeviceCapabilities()
+    {
+        return new
+        {
+            app = "yanzi-desktop",
+            os = Environment.OSVersion.VersionString,
+            receiveMobileMessages = true,
+            pushToMobile = true
+        };
     }
 
     private async Task MobileMessageBridgeLoopAsync(CancellationToken cancellationToken)
@@ -998,11 +1066,7 @@ public partial class MainWindow
                     _desktopDeviceId,
                     "desktop",
                     DeviceIdentityStore.GetDesktopDisplayName(),
-                    new
-                    {
-                        app = "yanzi-desktop",
-                        os = Environment.OSVersion.VersionString
-                    },
+                    BuildDesktopDeviceCapabilities(),
                     cancellationToken: pollTimeout.Token);
                 _deviceRegistered = true;
             }

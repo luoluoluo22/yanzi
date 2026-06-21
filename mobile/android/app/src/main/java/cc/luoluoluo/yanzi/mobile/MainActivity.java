@@ -140,6 +140,7 @@ import cc.luoluoluo.yanzi.mobile.MobileDiagnostics;
 import cc.luoluoluo.yanzi.mobile.MobileIconLibrary;
 import cc.luoluoluo.yanzi.mobile.PathDrawable;
 import cc.luoluoluo.yanzi.mobile.widget.ExtensionsWidgetProvider;
+import cc.luoluoluo.yanzi.mobile.widget.YanmWidgetData;
 import cc.luoluoluo.yanzi.mobile.widget.YanmWidgetProvider;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -159,6 +160,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -185,6 +187,7 @@ extends Activity {
     private static final int REQUEST_CODE_SELECT_IMAGE = 8001;
     private static final int REQUEST_CODE_SELECT_FILE = 8002;
     private static final int REQUEST_CODE_TAKE_PHOTO = 8003;
+    private static final long DESKTOP_ONLINE_WINDOW_MS = 2 * 60 * 1000L;
     private Uri cameraPhotoUri;
     private File cameraPhotoFile;
     private final ArrayList<AttachmentInfo> pendingAttachments = new ArrayList<>();
@@ -256,6 +259,10 @@ extends Activity {
     private LinearLayout offlineHintView;
     private LinearLayout mainDesktopContentLayout;
     private TextView tvDesktopConnectionStatus;
+    private TextView tvDesktopOfflineTitle;
+    private TextView tvDesktopOfflineDesc;
+    private String desktopOfflineTitle = "电脑端未上线";
+    private String desktopOfflineDesc = "请确认电脑端程序已开启并在运行中";
     private androidx.viewpager.widget.ViewPager desktopViewPager;
     private HorizontalScrollView breadcrumbsScrollView;
     private LinearLayout breadcrumbsLayout;
@@ -326,11 +333,13 @@ extends Activity {
             "\u3010\u53ef\u7528\u5de5\u5177\u5217\u8868\u3011\n" +
             "1. query_extensions: \u83b7\u53d6\u53ef\u7528\u6269\u5c55\u5217\u8868\u3002\u65e0\u53c2\u6570\u3002\n" +
             "2. execute_extension: \u6267\u884c\u67d0\u4e2a\u6269\u5c55\u3002\u53c2\u6570: id (\u6269\u5c55ID)\u3002\n" +
-            "3. view_yanm: \u67e5\u770b\u71d5\u5e55\u7ec4\u4ef6\u3002\u53c2\u6570: id (\u53ef\u9009\uff0c\u586b\u5165 id \u67e5\u770b\u7ec4\u4ef6\u8be6\u60c5\uff0c\u4e0d\u586b\u5219\u67e5\u770b\u6240\u6709\u7ec4\u4ef6\u540d)\u3002\n" +
-            "4. update_yanm_component: \u4fee\u6539\u71d5\u5e55\u7ec4\u4ef6\u3002\u53c2\u6570: id (\u7ec4\u4ef6ID), title (\u6807\u9898), html (\u5185\u5bb9)\u3002\n" +
-            "5. manage_mobile_extension: \u7ba1\u7406\u624b\u673a\u6269\u5c55\u3002\u53c2\u6570: action (list/read/create/update/delete), id, name, code, icon, description\u3002\u3010\u91cd\u8981\u3011\u624b\u673a\u6269\u5c55\u8fd0\u884c\u5728\u0020\u006d\u006f\u0062\u0069\u006c\u0065\u002d\u006a\u0073\u0020\u7684\u0020\u004a\u0061\u0076\u0061\u0053\u0063\u0072\u0069\u0070\u0074\u0020\u73af\u5883\u4e2d\uff0c\u4e25\u7981\u4f7f\u7528\u0020\u0043\u0023\u3001\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u6216\u0020\u0057\u0069\u006e\u0064\u006f\u0077\u0073\u0020\u684c\u9762\u0020\u0041\u0050\u0049\u3002\u5f53\u521b\u5efa\u6216\u66f4\u65b0\u6269\u5c55\u65f6\uff0c\u0063\u006f\u0064\u0065\u0020\u53c2\u6570\u5fc5\u987b\u662f\u7ebf\u6027\u3001\u7b80\u6d01\u7684\u0020\u004a\u0053\u0020\u4ee3\u7801\uff0c\u811a\u672c\u5165\u53e3\u4e3a\u0020\u0061\u0073\u0079\u006e\u0063\u0020\u0066\u0075\u006e\u0063\u0074\u0069\u006f\u006e\u0020\u0072\u0075\u006e\u0028\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u0029\uff0c\u53ef\u8c03\u7528\u0020\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u002e\u006d\u006f\u0062\u0069\u006c\u0065\u002e\u006f\u0070\u0065\u006e\u0055\u0072\u006c\u0028\u0075\u0072\u006c\u0029\u3001\u0074\u006f\u0061\u0073\u0074\uff0c\u8c03\u7528\u0020\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u002e\u006d\u006f\u0062\u0069\u006c\u0065\u002e\u0073\u0065\u006e\u0064\u0054\u006f\u0044\u0065\u0073\u006b\u0074\u006f\u0070\u0028\u0074\u0065\u0078\u0074\u0029\u3002\n" +
-            "6. execute_command: \u5728\u7535\u8111\u7aef\u6267\u884c\u547d\u4ee4\u884c\u547d\u4ee4\u3002\u53c2\u6570: command (\u8981\u6267\u884c\u7684\u547d\u4ee4\u6587\u672c)\u3002\u3010\u91cd\u8981\u3011\u7535\u8111\u7aef\u5df2\u9ed8\u8ba4\u5728\u0020\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u0035\u002e\u0031\u0020\u73af\u5883\u4e2d\u6267\u884c\u547d\u4ee4\uff0c\u8bf7\u76f4\u63a5\u8f93\u5165\u0020\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u7684\u0020\u0043\u006d\u0064\u006c\u0065\u0074\u0020\u6216\u8868\u8fbe\u5f0f\uff0c\u4e25\u7981\u5916\u5c42\u5d4c\u5957\u8c03\u7528\u0020\u0070\u006f\u0077\u0065\u0072\u0073\u0068\u0065\u006c\u006c\u3001\u0070\u006f\u0077\u0065\u0072\u0073\u0068\u0065\u006c\u006c\u002e\u0065\u0078\u0065\u0020\u002d\u0043\u006f\u006d\u006d\u0061\u006e\u0064\u0020\u6216\u0020\u0063\u006d\u0064\u0020\u002f\u0063\uff0c\u907f\u514d\u8f6c\u4e49\u9519\u8bef\u548c\u6267\u884c\u8d85\u65f6\u3002\n" +
-            "7. execute_mobile_command: \u5728\u624b\u673a\u672c\u5730\u6267\u884c\u0020\u004c\u0069\u006e\u0075\u0078\u0020\u547d\u4ee4\u3002\u53c2\u6570\uff1a\u0063\u006f\u006d\u006d\u0061\u006e\u0064\u0020\uff08\u8981\u6267\u884c\u7684\u547d\u4ee4\u6587\u672c\uff09\u3002\u3010\u91cd\u8981\u3011\u624b\u673a\u7aef\u672c\u5730\u65e0\u0020\u0072\u006f\u006f\u0074\u0020\u6743\u9650\uff0c\u53ea\u80fd\u6267\u884c\u666e\u901a\u7684\u0020\u004c\u0069\u006e\u0075\u0078\u0020\u547d\u4ee4\uff08\u4f8b\u5982\u0020\u006c\u0073\u002c\u0020\u0070\u006d\u0020\u006c\u0069\u0073\u0074\u0020\u0070\u0061\u0063\u006b\u0061\u0067\u0065\u0073\u002c\u0020\u0067\u0065\u0074\u0070\u0072\u006f\u0070\u0020\u7b49\uff09\uff0c\u4e25\u7981\u6267\u884c\u4efb\u4f55\u7834\u574f\u7cfb\u7edf\u5b89\u5168\u7684\u547d\u4ee4\u3002\n" +
+            "3. view_yanm: 查看燕幕组件清单/前端结构。参数: id 可选，includeHtml 可选。id 为空时只返回组件 id、标题、stateKey 和数据长度，绝不返回完整 HTML 或正文；只有明确要看前端代码时才传 includeHtml:true。\n" +
+            "4. view_yanm_state: 查看燕幕组件后端数据 componentState。参数: id 可选，stateKey 可选。不填 stateKey 时自动使用组件的 stateKey；修改便签、待办等正文前先用它确认 key/value。\n" +
+            "5. update_yanm_state: 修改燕幕组件后端数据 componentState。参数: id 可选，stateKey 可选，value。它只改正文/数据，不改前端 HTML、布局和燕幕启用状态。\n" +
+            "6. update_yanm_component: 仅修改燕幕组件前端结构。参数: id，mode 必须为 frontend，title 可选，html 可选。不要用它修改便签正文。\n" +
+            "7. manage_mobile_extension: \u7ba1\u7406\u624b\u673a\u6269\u5c55\u3002\u53c2\u6570: action (list/read/create/update/delete), id, name, code, icon, description\u3002\u3010\u91cd\u8981\u3011\u624b\u673a\u6269\u5c55\u8fd0\u884c\u5728\u0020\u006d\u006f\u0062\u0069\u006c\u0065\u002d\u006a\u0073\u0020\u7684\u0020\u004a\u0061\u0076\u0061\u0053\u0063\u0072\u0069\u0070\u0074\u0020\u73af\u5883\u4e2d\uff0c\u4e25\u7981\u4f7f\u7528\u0020\u0043\u0023\u3001\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u6216\u0020\u0057\u0069\u006e\u0064\u006f\u0077\u0073\u0020\u684c\u9762\u0020\u0041\u0050\u0049\u3002\u5f53\u521b\u5efa\u6216\u66f4\u65b0\u6269\u5c55\u65f6\uff0c\u0063\u006f\u0064\u0065\u0020\u53c2\u6570\u5fc5\u987b\u662f\u7ebf\u6027\u3001\u7b80\u6d01\u7684\u0020\u004a\u0053\u0020\u4ee3\u7801\uff0c\u811a\u672c\u5165\u53e3\u4e3a\u0020\u0061\u0073\u0079\u006e\u0063\u0020\u0066\u0075\u006e\u0063\u0074\u0069\u006f\u006e\u0020\u0072\u0075\u006e\u0028\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u0029\uff0c\u53ef\u8c03\u7528\u0020\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u002e\u006d\u006f\u0062\u0069\u006c\u0065\u002e\u006f\u0070\u0065\u006e\u0055\u0072\u006c\u0028\u0075\u0072\u006c\u0029\u3001\u0074\u006f\u0061\u0073\u0074\uff0c\u8c03\u7528\u0020\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u002e\u006d\u006f\u0062\u0069\u006c\u0065\u002e\u0073\u0065\u006e\u0064\u0054\u006f\u0044\u0065\u0073\u006b\u0074\u006f\u0070\u0028\u0074\u0065\u0078\u0074\u0029\u3002\n" +
+            "8. execute_command: \u5728\u7535\u8111\u7aef\u6267\u884c\u547d\u4ee4\u884c\u547d\u4ee4\u3002\u53c2\u6570: command (\u8981\u6267\u884c\u7684\u547d\u4ee4\u6587\u672c)\u3002\u3010\u91cd\u8981\u3011\u7535\u8111\u7aef\u5df2\u9ed8\u8ba4\u5728\u0020\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u0035\u002e\u0031\u0020\u73af\u5883\u4e2d\u6267\u884c\u547d\u4ee4\uff0c\u8bf7\u76f4\u63a5\u8f93\u5165\u0020\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u7684\u0020\u0043\u006d\u0064\u006c\u0065\u0074\u0020\u6216\u8868\u8fbe\u5f0f\uff0c\u4e25\u7981\u5916\u5c42\u5d4c\u5957\u8c03\u7528\u0020\u0070\u006f\u0077\u0065\u0072\u0073\u0068\u0065\u006c\u006c\u3001\u0070\u006f\u0077\u0065\u0072\u0073\u0068\u0065\u006c\u006c\u002e\u0065\u0078\u0065\u0020\u002d\u0043\u006f\u006d\u006d\u0061\u006e\u0064\u0020\u6216\u0020\u0063\u006d\u0064\u0020\u002f\u0063\uff0c\u907f\u514d\u8f6c\u4e49\u9519\u8bef\u548c\u6267\u884c\u8d85\u65f6\u3002\n" +
+            "9. execute_mobile_command: \u5728\u624b\u673a\u672c\u5730\u6267\u884c\u0020\u004c\u0069\u006e\u0075\u0078\u0020\u547d\u4ee4\u3002\u53c2\u6570\uff1a\u0063\u006f\u006d\u006d\u0061\u006e\u0064\u0020\uff08\u8981\u6267\u884c\u7684\u547d\u4ee4\u6587\u672c\uff09\u3002\u3010\u91cd\u8981\u3011\u624b\u673a\u7aef\u672c\u5730\u65e0\u0020\u0072\u006f\u006f\u0074\u0020\u6743\u9650\uff0c\u53ea\u80fd\u6267\u884c\u666e\u901a\u7684\u0020\u004c\u0069\u006e\u0075\u0078\u0020\u547d\u4ee4\uff08\u4f8b\u5982\u0020\u006c\u0073\u002c\u0020\u0070\u006d\u0020\u006c\u0069\u0073\u0074\u0020\u0070\u0061\u0063\u006b\u0061\u0067\u0065\u0073\u002c\u0020\u0067\u0065\u0074\u0070\u0072\u006f\u0070\u0020\u7b49\uff09\uff0c\u4e25\u7981\u6267\u884c\u4efb\u4f55\u7834\u574f\u7cfb\u7edf\u5b89\u5168\u7684\u547d\u4ee4\u3002\n" +
             "\u3010\u6ce8\u610f\u3011\u5982\u679c\u4f60\u8c03\u7528\u4e86\u5de5\u5177\uff0c\u7cfb\u7edf\u4f1a\u5728\u540e\u53f0\u771f\u5b9e\u6267\u884c\uff0c\u5e76\u5728\u6267\u884c\u5b8c\u6210\u540e\u5c06\u771f\u5b9e\u7684\u7ed3\u679c\u53cd\u9988\u7ed9\u4f60\uff0c\u4e4b\u540e\u4f60\u518d\u6839\u636e\u6267\u884c\u7ed3\u679c\u6765\u51b3\u5b9a\u662f\u7ee7\u7eed\u8c03\u7528\u5de5\u5177\u8fd8\u662f\u8f93\u51fa\u6700\u7ec8\u7684\u81ea\u7136\u8bed\u8a00\u56de\u590d\u3002";
     private SwipeRefreshLayout swipeRefresh;
     private final Set<String> expandedComponentIds = new HashSet<String>();
@@ -416,6 +425,8 @@ extends Activity {
     private JSONObject currentYanmState;
     private JSONObject currentYanmSnapshot;
     private Runnable pendingYanmSync;
+    private Runnable pendingYanmComponentStateSync;
+    private final Map<String, String> pendingYanmComponentStateUpdates = new HashMap<String, String>();
     private final StringBuilder diagnosticLog = new StringBuilder();
     private final android.content.BroadcastReceiver screenshotReceiver = new android.content.BroadcastReceiver() {
         @Override
@@ -1349,7 +1360,7 @@ extends Activity {
 
     private void setupAiTabPage() {
         String savedPrompt = this.prefs.getString("aiSystemPrompt", DEFAULT_SYSTEM_PROMPT);
-        if (!savedPrompt.contains("\u3010\u5de5\u5177\u8c03\u7528\u793a\u4f8b\u3011") || !savedPrompt.contains("PowerShell 5.1") || !savedPrompt.contains("mobile-js")) {
+        if (!savedPrompt.contains("\u3010\u5de5\u5177\u8c03\u7528\u793a\u4f8b\u3011") || !savedPrompt.contains("PowerShell 5.1") || !savedPrompt.contains("mobile-js") || !savedPrompt.contains("view_yanm_state") || !savedPrompt.contains("update_yanm_state")) {
             this.prefs.edit().putString("aiSystemPrompt", DEFAULT_SYSTEM_PROMPT).apply();
         }
         this.aiTabPage.setOrientation(1);
@@ -1968,22 +1979,22 @@ extends Activity {
         this.offlineHintView.setOrientation(1);
         this.offlineHintView.setGravity(17);
         this.offlineHintView.setPadding(0, this.dp(100), 0, this.dp(100));
-        
-        TextView tvOffline = new TextView((Context)this);
-        tvOffline.setText("电脑端未上线");
-        tvOffline.setTextColor(Color.rgb(148, 163, 184));
-        tvOffline.setTextSize(16f);
-        tvOffline.setGravity(17);
-        
-        TextView tvOfflineDesc = new TextView((Context)this);
-        tvOfflineDesc.setText("请确认电脑端程序已开启并在运行中");
-        tvOfflineDesc.setTextColor(Color.rgb(100, 116, 139));
-        tvOfflineDesc.setTextSize(13f);
-        tvOfflineDesc.setGravity(17);
-        tvOfflineDesc.setPadding(0, this.dp(8), 0, 0);
-        
-        this.offlineHintView.addView((View)tvOffline);
-        this.offlineHintView.addView((View)tvOfflineDesc);
+
+        this.tvDesktopOfflineTitle = new TextView((Context)this);
+        this.tvDesktopOfflineTitle.setText(this.desktopOfflineTitle);
+        this.tvDesktopOfflineTitle.setTextColor(Color.rgb(148, 163, 184));
+        this.tvDesktopOfflineTitle.setTextSize(16f);
+        this.tvDesktopOfflineTitle.setGravity(17);
+
+        this.tvDesktopOfflineDesc = new TextView((Context)this);
+        this.tvDesktopOfflineDesc.setText(this.desktopOfflineDesc);
+        this.tvDesktopOfflineDesc.setTextColor(Color.rgb(100, 116, 139));
+        this.tvDesktopOfflineDesc.setTextSize(13f);
+        this.tvDesktopOfflineDesc.setGravity(17);
+        this.tvDesktopOfflineDesc.setPadding(0, this.dp(8), 0, 0);
+
+        this.offlineHintView.addView((View)this.tvDesktopOfflineTitle);
+        this.offlineHintView.addView((View)this.tvDesktopOfflineDesc);
         this.desktopExtensionTabPage.addView((View)this.offlineHintView);
         
         this.mainDesktopContentLayout = new LinearLayout((Context)this);
@@ -3506,6 +3517,7 @@ extends Activity {
                 List<RemoteExtension> extensions;
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
+                LanDiscoveryManager.discoverNow((Context)this);
                 try {
                     extensions = YanziApiClient.fetchRunnableExtensions(baseUrl, token);
                 }
@@ -3983,6 +3995,8 @@ extends Activity {
         this.executor.execute(() -> {
             boolean connected = false;
             String type = "";
+            String offlineTitle = "电脑端未上线";
+            String offlineDesc = "请确认电脑端程序已开启并在运行中";
             String lanBaseUrl = cc.luoluoluo.yanzi.mobile.LanDiscoveryManager.getLanBaseUrl((Context)this);
             if (lanBaseUrl == null) {
                 lanBaseUrl = cc.luoluoluo.yanzi.mobile.LanDiscoveryManager.cachedLanBaseUrl;
@@ -4008,33 +4022,35 @@ extends Activity {
                 }
             }
             if (!connected) {
-                try {
-                    String internetBaseUrl = this.normalizedBaseUrl();
-                    if (internetBaseUrl != null && !internetBaseUrl.isEmpty()) {
-                        String cleanUrl = internetBaseUrl;
-                        if (cleanUrl.endsWith("/")) {
-                            cleanUrl = cleanUrl.substring(0, cleanUrl.length() - 1);
-                        }
-                        java.net.URL url = new java.net.URL(cleanUrl + "/health");
-                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                        conn.setRequestMethod("GET");
-                        conn.setConnectTimeout(2500);
-                        conn.setReadTimeout(2500);
-                        int code = conn.getResponseCode();
-                        if (code == 200 || code == 401) {
+                String token = this.prefs != null ? this.prefs.getString("token", "").trim() : "";
+                if (token.isEmpty()) {
+                    offlineTitle = "请先登录账号";
+                    offlineDesc = "登录后才能通过云端设备表确认电脑端是否在线。";
+                } else {
+                    try {
+                        DesktopCloudPresence presence = this.fetchDesktopCloudPresence(this.normalizedBaseUrl(), token);
+                        if (presence.online) {
                             connected = true;
-                            type = "internet";
+                            type = "cloud";
+                        } else {
+                            offlineTitle = presence.title;
+                            offlineDesc = presence.description;
                         }
-                        conn.disconnect();
+                    } catch (Exception e) {
+                        offlineTitle = "云端不可达";
+                        offlineDesc = "无法确认电脑端是否启动：" + MainActivity.shortMessage(e);
                     }
-                } catch (Exception e) {
                 }
             }
             final boolean finalConnected = connected;
             final String finalType = type;
+            final String finalOfflineTitle = offlineTitle;
+            final String finalOfflineDesc = offlineDesc;
             this.runOnUiThread(() -> {
                 this.isDesktopConnected = finalConnected;
                 this.desktopConnectionType = finalType;
+                this.desktopOfflineTitle = finalOfflineTitle;
+                this.desktopOfflineDesc = finalOfflineDesc;
                 this.updateConnectionUi();
             });
         });
@@ -4056,7 +4072,7 @@ extends Activity {
                     this.tvDesktopConnectionStatus.setText(" (局域网)");
                     this.tvDesktopConnectionStatus.setTextColor(Color.rgb(34, 197, 94));
                 } else {
-                    this.tvDesktopConnectionStatus.setText(" (在线)");
+                    this.tvDesktopConnectionStatus.setText(" (云端在线)");
                     this.tvDesktopConnectionStatus.setTextColor(Color.rgb(34, 211, 238));
                 }
             }
@@ -4071,6 +4087,100 @@ extends Activity {
                 this.tvDesktopConnectionStatus.setText(" (未上线)");
                 this.tvDesktopConnectionStatus.setTextColor(Color.rgb(239, 68, 68));
             }
+            if (this.tvDesktopOfflineTitle != null) {
+                this.tvDesktopOfflineTitle.setText(this.desktopOfflineTitle);
+            }
+            if (this.tvDesktopOfflineDesc != null) {
+                this.tvDesktopOfflineDesc.setText(this.desktopOfflineDesc);
+            }
+        }
+    }
+
+    private DesktopCloudPresence fetchDesktopCloudPresence(String baseUrl, String token) throws Exception {
+        JSONObject payload = YanziApiClient.doRequest(baseUrl, "/v1/me/devices", token, "读取电脑在线状态", "GET", null, 5000);
+        JSONArray items = payload.optJSONArray("items");
+        long newestSeenAtMs = 0L;
+        String newestDisplayName = "";
+        if (items != null) {
+            for (int i = 0; i < items.length(); ++i) {
+                JSONObject item = items.optJSONObject(i);
+                if (item == null || !"desktop".equalsIgnoreCase(item.optString("platform", ""))) {
+                    continue;
+                }
+                long seenAtMs = MainActivity.parseIsoTimeMs(item.optString("lastSeenAt", ""));
+                if (seenAtMs > newestSeenAtMs) {
+                    newestSeenAtMs = seenAtMs;
+                    newestDisplayName = item.optString("displayName", item.optString("deviceId", "电脑端"));
+                }
+            }
+        }
+        if (newestSeenAtMs <= 0L) {
+            return DesktopCloudPresence.offline("未发现电脑端设备", "请在电脑端登录同一账号，并保持燕子电脑端程序运行。");
+        }
+        long ageMs = Math.max(0L, System.currentTimeMillis() - newestSeenAtMs);
+        if (ageMs <= DESKTOP_ONLINE_WINDOW_MS) {
+            return DesktopCloudPresence.online(newestDisplayName);
+        }
+        return DesktopCloudPresence.offline("电脑端疑似未启动", newestDisplayName + " 最后在线 " + MainActivity.formatRelativeDuration(ageMs) + "，请确认电脑端程序已开启并联网。");
+    }
+
+    private static long parseIsoTimeMs(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return 0L;
+        }
+        try {
+            return Instant.parse(value.trim()).toEpochMilli();
+        }
+        catch (Exception ex) {
+            return 0L;
+        }
+    }
+
+    private static String formatRelativeDuration(long durationMs) {
+        long seconds = Math.max(1L, durationMs / 1000L);
+        if (seconds < 60L) {
+            return seconds + " 秒前";
+        }
+        long minutes = seconds / 60L;
+        if (minutes < 60L) {
+            return minutes + " 分钟前";
+        }
+        long hours = minutes / 60L;
+        if (hours < 24L) {
+            return hours + " 小时前";
+        }
+        return (hours / 24L) + " 天前";
+    }
+
+    private static String shortMessage(Exception e) {
+        String message = e.getMessage();
+        if (message == null || message.trim().isEmpty()) {
+            message = e.toString();
+        }
+        message = message.replace('\n', ' ').replace('\r', ' ').trim();
+        if (message.length() > 90) {
+            return message.substring(0, 90) + "...";
+        }
+        return message;
+    }
+
+    private static final class DesktopCloudPresence {
+        final boolean online;
+        final String title;
+        final String description;
+
+        private DesktopCloudPresence(boolean online, String title, String description) {
+            this.online = online;
+            this.title = title;
+            this.description = description;
+        }
+
+        static DesktopCloudPresence online(String displayName) {
+            return new DesktopCloudPresence(true, "电脑端在线", displayName == null || displayName.trim().isEmpty() ? "云端心跳正常。" : displayName + " 云端心跳正常。");
+        }
+
+        static DesktopCloudPresence offline(String title, String description) {
+            return new DesktopCloudPresence(false, title, description);
         }
     }
 
@@ -4508,7 +4618,7 @@ extends Activity {
     }
 
     private boolean isKnownAiTool(String toolName) {
-        return "query_extensions".equals(toolName) || "execute_extension".equals(toolName) || "view_yanm".equals(toolName) || "update_yanm_component".equals(toolName) || "manage_mobile_extension".equals(toolName) || "execute_command".equals(toolName) || "execute_mobile_command".equals(toolName);
+        return "query_extensions".equals(toolName) || "execute_extension".equals(toolName) || "view_yanm".equals(toolName) || "view_yanm_state".equals(toolName) || "update_yanm_state".equals(toolName) || "update_yanm_component".equals(toolName) || "manage_mobile_extension".equals(toolName) || "execute_command".equals(toolName) || "execute_mobile_command".equals(toolName);
     }
 
     private String parseToolName(String content) {
@@ -4549,10 +4659,14 @@ extends Activity {
         String action = toolCall.optString("action", "");
         String title = toolCall.optString("title", "");
         String html = toolCall.optString("html", "");
+        String mode = toolCall.optString("mode", "");
+        String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+        String value = toolCall.has("value") ? toolCall.optString("value", "") : "";
         String code = toolCall.optString("code", "");
         int htmlHash = html.isEmpty() ? 0 : html.hashCode();
+        int valueHash = value.isEmpty() ? 0 : value.hashCode();
         int codeHash = code.isEmpty() ? 0 : code.hashCode();
-        return toolName + "|id=" + id + "|action=" + action + "|title=" + title + "|html=" + htmlHash + "|code=" + codeHash;
+        return toolName + "|id=" + id + "|action=" + action + "|title=" + title + "|mode=" + mode + "|stateKey=" + stateKey + "|html=" + htmlHash + "|value=" + valueHash + "|code=" + codeHash;
     }
 
     /*
@@ -4992,18 +5106,54 @@ extends Activity {
                                 }
                                 if ("view_yanm".equals(toolName)) {
                                     String id = toolCall.optString("id");
+                                    boolean includeHtml = toolCall.optBoolean("includeHtml", false) || "frontend".equalsIgnoreCase(toolCall.optString("mode", ""));
                                     this.runOnUiThread(() -> {
                                         try {
-                                            JSONObject yanmObj;
-                                            JSONObject comp;
                                             this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:view_yanm", content, Color.rgb((int)167, (int)243, (int)208), true);
-                                            String resultStr = "";
-                                            String yanmStr = this.prefs.getString(CACHE_YANM, "{}");
-                                            resultStr = id != null && !id.isEmpty() ? ((comp = (yanmObj = new JSONObject(yanmStr)).optJSONObject(id)) != null ? "\u7ec4\u4ef6\u8be6\u60c5: " + comp.toString() : "\u672a\u627e\u5230 ID \u4e3a " + id + " \u7684\u7ec4\u4ef6\u3002") : yanmStr;
+                                            JSONObject yanm = this.readCachedYanmSnapshotForAi();
+                                            String resultStr = this.buildYanmViewResult(yanm, id, includeHtml).toString();
                                             this.sendAiSystemFeedback("view_yanm", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u67e5\u8be2\u7ed3\u679c\uff1a" + resultStr + "\n\u8bf7\u6839\u636e\u7ed3\u679c\u5224\u65ad\u662f\u5426\u9700\u8981\u7ee7\u7eed\u8c03\u7528\u5de5\u5177\uff0c\u6216\u8005\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u56de\u590d\u7528\u6237\u3002");
                                         }
                                         catch (Exception e) {
-                                            this.sendAiSystemFeedback("view_yanm", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u67e5\u8be2\u7ed3\u679c\uff1a\u89e3\u6790\u5931\u8d25\n\u8bf7\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u56de\u590d\u7528\u6237\u3002");
+                                            this.sendAiSystemFeedback("view_yanm", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u67e5\u8be2\u5931\u8d25\uff1a" + e.getMessage() + "\n\u8bf7\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u56de\u590d\u7528\u6237\u3002");
+                                        }
+                                        finally {
+                                            this.finishAiToolCall(activeToolCallKey);
+                                        }
+                                    });
+                                    return;
+                                }
+                                if ("view_yanm_state".equals(toolName)) {
+                                    String id = toolCall.optString("id");
+                                    String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                                    this.runOnUiThread(() -> {
+                                        try {
+                                            this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:view_yanm_state", content, Color.rgb((int)167, (int)243, (int)208), true);
+                                            JSONObject yanm = this.readCachedYanmSnapshotForAi();
+                                            String resultStr = this.buildYanmStateViewResult(yanm, id, stateKey).toString();
+                                            this.sendAiSystemFeedback("view_yanm_state", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u71d5\u5e55\u540e\u7aef\u6570\u636e\u67e5\u8be2\u7ed3\u679c\uff1a" + resultStr + "\n\u8bf7\u6839\u636e\u7ed3\u679c\u5224\u65ad\u662f\u5426\u9700\u8981\u7ee7\u7eed\u8c03\u7528\u5de5\u5177\uff0c\u6216\u8005\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u56de\u590d\u7528\u6237\u3002");
+                                        }
+                                        catch (Exception e) {
+                                            this.sendAiSystemFeedback("view_yanm_state", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u71d5\u5e55\u540e\u7aef\u6570\u636e\u67e5\u8be2\u5931\u8d25\uff1a" + e.getMessage());
+                                        }
+                                        finally {
+                                            this.finishAiToolCall(activeToolCallKey);
+                                        }
+                                    });
+                                    return;
+                                }
+                                if ("update_yanm_state".equals(toolName)) {
+                                    String id = toolCall.optString("id");
+                                    String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                                    String value = this.readAiToolString(toolCall, "value", "text", "content");
+                                    this.runOnUiThread(() -> {
+                                        this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:update_yanm_state", content, Color.rgb((int)167, (int)243, (int)208), true);
+                                        try {
+                                            String resultStr = this.updateYanmStateFromAi(id, stateKey, value).toString();
+                                            this.sendAiSystemFeedback("update_yanm_state", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u5df2\u66f4\u65b0\u71d5\u5e55\u540e\u7aef\u6570\u636e\uff1a" + resultStr + "\n\u8bf7\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u603b\u7ed3\u56de\u590d\u7528\u6237\uff0c\u4e0d\u8981\u518d\u8c03\u7528\u5de5\u5177\u3002");
+                                        }
+                                        catch (Exception e) {
+                                            this.sendAiSystemFeedback("update_yanm_state", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u66f4\u65b0\u71d5\u5e55\u540e\u7aef\u6570\u636e\u5931\u8d25\uff1a" + e.getMessage());
                                         }
                                         finally {
                                             this.finishAiToolCall(activeToolCallKey);
@@ -5013,19 +5163,18 @@ extends Activity {
                                 }
                                 if ("update_yanm_component".equals(toolName)) {
                                     String id = toolCall.optString("id");
-                                    String title = toolCall.optString("title");
-                                    String html = toolCall.optString("html");
                                     this.runOnUiThread(() -> {
                                         this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:update_yanm_component", content, Color.rgb((int)167, (int)243, (int)208), true);
                                         try {
-                                            JSONObject yanm = new JSONObject(this.prefs.getString(CACHE_YANM, "{}"));
-                                            JSONObject comp = new JSONObject();
-                                            comp.put("title", (Object)title);
-                                            comp.put("html", (Object)html);
-                                            yanm.put(id, (Object)comp);
-                                            this.prefs.edit().putString(CACHE_YANM, yanm.toString()).apply();
-                                            this.refreshYanm(true);
-                                            this.sendAiSystemFeedback("update_yanm_component", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u5df2\u6210\u529f\u66f4\u65b0\u71d5\u5e55\u7ec4\u4ef6 " + id + " \u5e76\u5728\u9875\u9762\u70ed\u5237\u65b0\u663e\u793a\u3002\u8bf7\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u603b\u7ed3\u56de\u590d\u7528\u6237\uff0c\u4e0d\u8981\u518d\u8c03\u7528\u5de5\u5177\u3002");
+                                            JSONObject result;
+                                            if (toolCall.has("value") || toolCall.has("stateKey") || toolCall.has("key")) {
+                                                String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                                                String value = this.readAiToolString(toolCall, "value", "text", "content");
+                                                result = this.updateYanmStateFromAi(id, stateKey, value);
+                                            } else {
+                                                result = this.updateYanmComponentFrontendFromAi(toolCall);
+                                            }
+                                            this.sendAiSystemFeedback("update_yanm_component", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u71d5\u5e55\u7ec4\u4ef6\u66f4\u65b0\u7ed3\u679c\uff1a" + result.toString() + "\n\u8bf7\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u603b\u7ed3\u56de\u590d\u7528\u6237\uff0c\u4e0d\u8981\u518d\u8c03\u7528\u5de5\u5177\u3002");
                                         }
                                         catch (Exception e) {
                                             this.sendAiSystemFeedback("update_yanm_component", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u66f4\u65b0\u71d5\u5e55\u5931\u8d25\uff1a" + e.getMessage());
@@ -5497,6 +5646,14 @@ extends Activity {
                     JSONObject toolCall = new JSONObject(jsonContent);
                     if ("execute_extension".equals(toolName)) {
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: execute_extension (id: " + toolCall.optString("id") + ")";
+                    } else if ("view_yanm_state".equals(toolName)) {
+                        String toolId = toolCall.optString("id");
+                        String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                        displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: view_yanm_state" + (toolId.isEmpty() ? "" : " (id: " + toolId + ")") + (stateKey.isEmpty() ? "" : " (key: " + stateKey + ")");
+                    } else if ("update_yanm_state".equals(toolName)) {
+                        String toolId = toolCall.optString("id");
+                        String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                        displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: update_yanm_state" + (toolId.isEmpty() ? "" : " (id: " + toolId + ")") + (stateKey.isEmpty() ? "" : " (key: " + stateKey + ")");
                     } else if ("update_yanm_component".equals(toolName)) {
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: update_yanm_component (id: " + toolCall.optString("id") + ")";
                     } else if ("manage_mobile_extension".equals(toolName)) {
@@ -6103,6 +6260,415 @@ extends Activity {
                 });
             }
         });
+    }
+
+    private void scheduleYanmComponentStateCloudSync(String stateKey, String value, String reason) {
+        String key = stateKey == null ? "" : stateKey.trim();
+        if (key.isEmpty()) {
+            return;
+        }
+        synchronized (this.pendingYanmComponentStateUpdates) {
+            this.pendingYanmComponentStateUpdates.put(key, value == null ? "" : value);
+        }
+        if (this.pendingYanmComponentStateSync != null) {
+            this.yanmSyncHandler.removeCallbacks(this.pendingYanmComponentStateSync);
+        }
+        this.pendingYanmComponentStateSync = () -> this.syncYanmComponentStateToCloud(reason);
+        this.yanmSyncHandler.postDelayed(this.pendingYanmComponentStateSync, 1000L);
+        this.setStatus("\u71d5\u5e55\u540e\u7aef\u6570\u636e\u5f85\u540c\u6b65\u5230\u4e91\u7aef\uff1a" + reason);
+    }
+
+    private void syncYanmComponentStateToCloud(String reason) {
+        JSONObject patch = new JSONObject();
+        synchronized (this.pendingYanmComponentStateUpdates) {
+            try {
+                for (Map.Entry<String, String> entry : this.pendingYanmComponentStateUpdates.entrySet()) {
+                    patch.put(entry.getKey(), (Object)(entry.getValue() == null ? "" : entry.getValue()));
+                }
+                this.pendingYanmComponentStateUpdates.clear();
+            }
+            catch (Exception ex) {
+                this.setStatus("\u71d5\u5e55\u540e\u7aef\u6570\u636e\u540c\u6b65\u8df3\u8fc7\uff1a" + ex.getMessage());
+                return;
+            }
+        }
+        if (patch.length() == 0) {
+            return;
+        }
+        this.executor.execute(() -> {
+            try {
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+                try {
+                    YanziApiClient.putYanmComponentState(baseUrl, token, patch);
+                }
+                catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) {
+                        throw ex;
+                    }
+                    token = this.refreshToken();
+                    YanziApiClient.putYanmComponentState(baseUrl, token, patch);
+                }
+                this.runOnUiThread(() -> {
+                    this.setStatus("\u71d5\u5e55\u540e\u7aef\u6570\u636e\u5df2\u540c\u6b65\u5230\u4e91\u7aef\uff1a" + reason);
+                    MobileDiagnostics.append((Context)this, "燕幕后端数据已增量同步到云端：" + reason + ", keys=" + patch.length());
+                });
+            }
+            catch (Exception ex) {
+                synchronized (this.pendingYanmComponentStateUpdates) {
+                    Iterator<String> keys = patch.keys();
+                    while (keys.hasNext()) {
+                        String key = keys.next();
+                        this.pendingYanmComponentStateUpdates.put(key, patch.optString(key, ""));
+                    }
+                }
+                this.runOnUiThread(() -> {
+                    this.setStatus("\u71d5\u5e55\u540e\u7aef\u6570\u636e\u540c\u6b65\u5931\u8d25\uff1a" + ex.getMessage());
+                    MobileDiagnostics.append((Context)this, "燕幕后端数据增量同步失败：" + ex.getMessage());
+                });
+            }
+        });
+    }
+
+    private JSONObject readCachedYanmSnapshotForAi() throws Exception {
+        String cached = this.prefs.getString(CACHE_YANM, "");
+        if (cached != null && !cached.trim().isEmpty() && !"{}".equals(cached.trim())) {
+            return new JSONObject(cached);
+        }
+        if (this.currentYanmSnapshot != null) {
+            return new JSONObject(this.currentYanmSnapshot.toString());
+        }
+        throw new IllegalStateException("燕幕缓存为空，请先刷新燕幕。");
+    }
+
+    private JSONObject buildYanmViewResult(JSONObject yanm, String id, boolean includeHtml) throws Exception {
+        if (id == null || id.trim().isEmpty()) {
+            JSONObject result = new JSONObject();
+            JSONArray items = new JSONArray();
+            JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+            JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+            if (state == null) {
+                state = new JSONObject();
+            }
+            int count = components == null ? 0 : components.length();
+            for (int i = 0; i < count; ++i) {
+                JSONObject component = components.optJSONObject(i);
+                if (component == null) {
+                    continue;
+                }
+                items.put((Object)this.buildYanmComponentSummary(yanm, component, i, false, state));
+            }
+            result.put("mode", "component_list");
+            result.put("componentCount", items.length());
+            result.put("components", (Object)items);
+            result.put("htmlIncluded", false);
+            result.put("note", (Object)"组件清单不包含完整 HTML。需要前端代码时，对指定 id 调用 view_yanm 并传 includeHtml:true。修改便签/待办正文请用 view_yanm_state/update_yanm_state。");
+            return result;
+        }
+
+        int index = MainActivity.findYanmComponentIndex(yanm, id);
+        if (index < 0) {
+            throw new IllegalStateException("未找到 ID 或标题为 " + id + " 的燕幕组件。");
+        }
+        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONObject component = components.optJSONObject(index);
+        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        if (state == null) {
+            state = new JSONObject();
+        }
+        JSONObject result = this.buildYanmComponentSummary(yanm, component, index, includeHtml, state);
+        result.put("mode", "component_detail");
+        result.put("htmlIncluded", includeHtml);
+        if (!includeHtml) {
+            result.put("note", (Object)"详情默认不包含完整 HTML，避免把前端代码误当正文。修改正文请使用 componentState 工具。");
+        }
+        return result;
+    }
+
+    private JSONObject buildYanmStateViewResult(JSONObject yanm, String id, String stateKey) throws Exception {
+        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        if (state == null) {
+            state = new JSONObject();
+        }
+        String trimmedId = id == null ? "" : id.trim();
+        String resolvedKey = stateKey == null ? "" : stateKey.trim();
+        JSONObject result = new JSONObject();
+
+        if (trimmedId.isEmpty() && resolvedKey.isEmpty()) {
+            JSONArray keys = new JSONArray();
+            Iterator<String> iterator = state.keys();
+            while (iterator.hasNext()) {
+                String key = iterator.next();
+                String value = state.optString(key, "");
+                keys.put((Object)new JSONObject()
+                        .put("stateKey", (Object)key)
+                        .put("valueLength", value.length())
+                        .put("valuePreview", (Object)MainActivity.trimForAi(value, 240)));
+            }
+            result.put("mode", "state_key_list");
+            result.put("keyCount", keys.length());
+            result.put("keys", (Object)keys);
+            result.put("note", (Object)"未指定组件或 key，因此只返回后端数据 key 列表和摘要。");
+            return result;
+        }
+
+        JSONObject component = null;
+        int index = -1;
+        if (!trimmedId.isEmpty()) {
+            index = MainActivity.findYanmComponentIndex(yanm, trimmedId);
+            if (index < 0) {
+                throw new IllegalStateException("未找到 ID 或标题为 " + trimmedId + " 的燕幕组件。");
+            }
+            JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+            component = components.optJSONObject(index);
+            String componentId = MainActivity.getYanmComponentId(component, index);
+            if (resolvedKey.isEmpty()) {
+                resolvedKey = YanmWidgetData.resolveStateKey(component, componentId);
+            }
+            result.put("id", (Object)componentId);
+            result.put("title", (Object)MainActivity.getYanmComponentTitle(component, index));
+        }
+
+        if (resolvedKey.isEmpty()) {
+            throw new IllegalStateException("缺少 stateKey；请传 stateKey，或传可解析出 stateKey 的组件 id。");
+        }
+
+        String value = state.optString(resolvedKey, "");
+        result.put("mode", "state_detail");
+        result.put("stateKey", (Object)resolvedKey);
+        result.put("value", (Object)value);
+        result.put("valueLength", value.length());
+        result.put("valuePreview", (Object)MainActivity.trimForAi(value, 240));
+        if (component != null) {
+            result.put("component", (Object)this.buildYanmComponentSummary(yanm, component, index, false, state));
+        }
+        return result;
+    }
+
+    private JSONObject updateYanmStateFromAi(String id, String stateKey, String value) throws Exception {
+        JSONObject yanm = this.readCachedYanmSnapshotForAi();
+        String trimmedId = id == null ? "" : id.trim();
+        String resolvedKey = stateKey == null ? "" : stateKey.trim();
+        JSONObject component = null;
+        int index = -1;
+        if (!trimmedId.isEmpty()) {
+            index = MainActivity.findYanmComponentIndex(yanm, trimmedId);
+            if (index < 0) {
+                throw new IllegalStateException("未找到 ID 或标题为 " + trimmedId + " 的燕幕组件。");
+            }
+            JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+            component = components.optJSONObject(index);
+            String componentId = MainActivity.getYanmComponentId(component, index);
+            if (resolvedKey.isEmpty()) {
+                resolvedKey = YanmWidgetData.resolveStateKey(component, componentId);
+            }
+        }
+        if (resolvedKey.isEmpty()) {
+            throw new IllegalStateException("缺少 stateKey；修改燕幕正文必须指定 stateKey 或组件 id。");
+        }
+
+        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        if (state == null) {
+            state = new JSONObject();
+        }
+        String safeValue = value == null ? "" : value;
+        state.put(resolvedKey, (Object)safeValue);
+        yanm.put("componentState", (Object)state);
+
+        String title = component == null ? "" : MainActivity.getYanmComponentTitle(component, index);
+        this.commitYanmComponentStateFromAi(yanm, resolvedKey, safeValue, "AI-state:" + (title.isEmpty() ? resolvedKey : title + "/" + resolvedKey));
+
+        JSONObject result = new JSONObject()
+                .put("ok", true)
+                .put("changed", (Object)"componentState")
+                .put("stateKey", (Object)resolvedKey)
+                .put("valueLength", safeValue.length())
+                .put("valuePreview", (Object)MainActivity.trimForAi(safeValue, 240));
+        if (component != null) {
+            result.put("id", (Object)MainActivity.getYanmComponentId(component, index));
+            result.put("title", (Object)title);
+        }
+        return result;
+    }
+
+    private JSONObject updateYanmComponentFrontendFromAi(JSONObject toolCall) throws Exception {
+        boolean allowed = "frontend".equalsIgnoreCase(toolCall.optString("mode", "")) || toolCall.optBoolean("allowFrontendEdit", false);
+        if (!allowed) {
+            throw new IllegalStateException("已拒绝修改组件前端结构。修改便签/待办正文请用 update_yanm_state；如果确实要改 HTML，请传 mode:\"frontend\"。");
+        }
+        String id = toolCall.optString("id", "").trim();
+        if (id.isEmpty()) {
+            throw new IllegalStateException("缺少组件 id。");
+        }
+        JSONObject yanm = this.readCachedYanmSnapshotForAi();
+        int index = MainActivity.findYanmComponentIndex(yanm, id);
+        if (index < 0) {
+            throw new IllegalStateException("未找到 ID 或标题为 " + id + " 的燕幕组件。");
+        }
+        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONObject component = components.optJSONObject(index);
+        boolean titleChanged = false;
+        boolean htmlChanged = false;
+        if (toolCall.has("title")) {
+            MainActivity.putYanmStringProperty(component, "title", "Title", toolCall.optString("title", ""));
+            titleChanged = true;
+        }
+        if (toolCall.has("html")) {
+            MainActivity.putYanmStringProperty(component, "html", "Html", toolCall.optString("html", ""));
+            htmlChanged = true;
+        }
+        if (!titleChanged && !htmlChanged) {
+            throw new IllegalStateException("没有可更新的前端字段；请传 title 或 html。");
+        }
+        this.commitYanmSnapshotFromAi(yanm, "AI-frontend:" + MainActivity.getYanmComponentTitle(component, index));
+        String html = MainActivity.getYanmComponentHtml(component);
+        return new JSONObject()
+                .put("ok", true)
+                .put("changed", (Object)"frontend")
+                .put("id", (Object)MainActivity.getYanmComponentId(component, index))
+                .put("title", (Object)MainActivity.getYanmComponentTitle(component, index))
+                .put("titleChanged", titleChanged)
+                .put("htmlChanged", htmlChanged)
+                .put("htmlLength", html.length())
+                .put("note", (Object)"本次只改 components[] 中的前端字段，未修改 componentState 和燕幕启用状态。");
+    }
+
+    private void commitYanmSnapshotFromAi(JSONObject yanm, String reason) throws Exception {
+        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        if (state == null) {
+            state = new JSONObject();
+            yanm.put("componentState", (Object)state);
+        }
+        this.currentYanmSnapshot = yanm;
+        this.currentYanmState = state;
+        this.prefs.edit().putString(CACHE_YANM, yanm.toString()).apply();
+        this.updateAllAppWidgets();
+        YanmWidgetData.refreshComponentWidgets((Context)this);
+        this.renderYanm(yanm);
+        this.scheduleYanmCloudSync(reason);
+    }
+
+    private void commitYanmComponentStateFromAi(JSONObject yanm, String stateKey, String value, String reason) throws Exception {
+        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        if (state == null) {
+            state = new JSONObject();
+            yanm.put("componentState", (Object)state);
+        }
+        this.currentYanmSnapshot = yanm;
+        this.currentYanmState = state;
+        this.prefs.edit().putString(CACHE_YANM, yanm.toString()).apply();
+        this.updateAllAppWidgets();
+        YanmWidgetData.refreshComponentWidgets((Context)this);
+        this.renderYanm(yanm);
+        this.scheduleYanmComponentStateCloudSync(stateKey, value, reason);
+    }
+
+    private JSONObject buildYanmComponentSummary(JSONObject yanm, JSONObject component, int index, boolean includeHtml, JSONObject state) throws Exception {
+        String componentId = MainActivity.getYanmComponentId(component, index);
+        String title = MainActivity.getYanmComponentTitle(component, index);
+        String stateKey = YanmWidgetData.resolveStateKey(component, componentId);
+        String stateValue = state == null ? "" : state.optString(stateKey, "");
+        String html = MainActivity.getYanmComponentHtml(component);
+        JSONObject result = new JSONObject()
+                .put("id", (Object)componentId)
+                .put("title", (Object)title)
+                .put("type", (Object)MainActivity.firstNonEmpty(component.optString("type"), component.optString("Type"), component.optString("kind"), component.optString("Kind"), "component"))
+                .put("stateKey", (Object)stateKey)
+                .put("stateLength", stateValue.length())
+                .put("hasHtml", !html.isEmpty())
+                .put("htmlLength", html.length())
+                .put("locked", component.optBoolean("locked", component.optBoolean("Locked", false)));
+        if (component.has("x") || component.has("X")) {
+            result.put("x", component.optDouble("x", component.optDouble("X", 0)));
+        }
+        if (component.has("y") || component.has("Y")) {
+            result.put("y", component.optDouble("y", component.optDouble("Y", 0)));
+        }
+        if (component.has("width") || component.has("Width")) {
+            result.put("width", component.optDouble("width", component.optDouble("Width", 0)));
+        }
+        if (component.has("height") || component.has("Height")) {
+            result.put("height", component.optDouble("height", component.optDouble("Height", 0)));
+        }
+        if (includeHtml) {
+            result.put("html", (Object)html);
+        }
+        return result;
+    }
+
+    private String readAiToolString(JSONObject toolCall, String ... keys) {
+        for (String key : keys) {
+            if (toolCall.has(key)) {
+                return toolCall.optString(key, "");
+            }
+        }
+        return "";
+    }
+
+    private static int findYanmComponentIndex(JSONObject yanm, String componentIdOrTitle) {
+        if (yanm == null || componentIdOrTitle == null || componentIdOrTitle.trim().isEmpty()) {
+            return -1;
+        }
+        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        if (components == null) {
+            return -1;
+        }
+        String target = componentIdOrTitle.trim();
+        for (int i = 0; i < components.length(); ++i) {
+            JSONObject component = components.optJSONObject(i);
+            if (component == null) {
+                continue;
+            }
+            String id = MainActivity.getYanmComponentId(component, i);
+            String title = MainActivity.getYanmComponentTitle(component, i);
+            if (target.equalsIgnoreCase(id) || target.equalsIgnoreCase(title)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static String getYanmComponentId(JSONObject component, int index) {
+        return MainActivity.firstNonEmpty(
+                component == null ? "" : component.optString("id"),
+                component == null ? "" : component.optString("Id"),
+                component == null ? "" : component.optString("title"),
+                component == null ? "" : component.optString("Title"),
+                component == null ? "" : component.optString("name"),
+                component == null ? "" : component.optString("Name"),
+                "comp_" + index);
+    }
+
+    private static String getYanmComponentTitle(JSONObject component, int index) {
+        return MainActivity.firstNonEmpty(
+                component == null ? "" : component.optString("title"),
+                component == null ? "" : component.optString("Title"),
+                component == null ? "" : component.optString("name"),
+                component == null ? "" : component.optString("Name"),
+                "组件 " + (index + 1));
+    }
+
+    private static String getYanmComponentHtml(JSONObject component) {
+        return MainActivity.firstNonEmpty(
+                component == null ? "" : component.optString("html"),
+                component == null ? "" : component.optString("Html"),
+                component == null ? "" : component.optString("markup"),
+                component == null ? "" : component.optString("Markup"),
+                component == null ? "" : component.optString("contentHtml"),
+                component == null ? "" : component.optString("ContentHtml"));
+    }
+
+    private static void putYanmStringProperty(JSONObject object, String lowerKey, String upperKey, String value) throws Exception {
+        String targetKey = object.has(upperKey) && !object.has(lowerKey) ? upperKey : lowerKey;
+        object.put(targetKey, (Object)(value == null ? "" : value));
+    }
+
+    private static String trimForAi(String value, int maxLength) {
+        String text = value == null ? "" : value.replace("\r\n", "\n").replace('\r', '\n');
+        if (maxLength <= 0 || text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...";
     }
 
     private void pushMobileExtensionsToCloud() {
@@ -7320,8 +7886,11 @@ extends Activity {
                 }
                 MainActivity.this.currentYanmSnapshot.put("componentState", (Object)MainActivity.this.currentYanmState);
                 MainActivity.this.runOnUiThread(() -> {
+                    MainActivity.this.prefs.edit().putString(CACHE_YANM, MainActivity.this.currentYanmSnapshot.toString()).apply();
+                    MainActivity.this.updateAllAppWidgets();
+                    YanmWidgetData.refreshComponentWidgets((Context)MainActivity.this);
                     MainActivity.this.setStatus("\u71d5\u5e55\u72b6\u6001\u5df2\u5728\u624b\u673a\u7aef\u66f4\u65b0\uff1a" + this.componentTitle + " / " + key);
-                    MainActivity.this.scheduleYanmCloudSync(this.componentTitle + " / " + key);
+                    MainActivity.this.scheduleYanmComponentStateCloudSync(key, value, this.componentTitle + " / " + key);
                 });
             }
             catch (Exception exception) {
@@ -7499,6 +8068,18 @@ extends Activity {
         static JSONObject putYanmState(String baseUrl, String token, JSONObject yanm) throws Exception {
             JSONObject payload = new JSONObject().put("updatedAtUtc", (Object)new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).format(new Date())).put("yanm", (Object)yanm);
             JSONObject res = YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state", payload, token, "\u540c\u6b65\u71d5\u5e55");
+            String viewUrl = res.optString("viewUrl", "");
+            if (!viewUrl.isEmpty() && sContext != null) {
+                sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
+            }
+            return res;
+        }
+
+        static JSONObject putYanmComponentState(String baseUrl, String token, JSONObject componentState) throws Exception {
+            JSONObject payload = new JSONObject()
+                    .put("updatedAtUtc", (Object)new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).format(new Date()))
+                    .put("componentState", (Object)componentState);
+            JSONObject res = YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state/component-state", payload, token, "\u540c\u6b65\u71d5\u5e55\u540e\u7aef\u6570\u636e");
             String viewUrl = res.optString("viewUrl", "");
             if (!viewUrl.isEmpty() && sContext != null) {
                 sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();

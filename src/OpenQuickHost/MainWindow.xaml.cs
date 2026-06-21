@@ -82,6 +82,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _backgroundWebDavSyncTimer;
     private readonly DispatcherTimer _backgroundWebDavSyncDelayTimer;
     private readonly DispatcherTimer _cloudReconnectTimer;
+    private readonly DispatcherTimer _desktopPresenceHeartbeatTimer;
     private readonly DispatcherTimer _mobileMessagePollTimer;
     private readonly DispatcherTimer _fileSearchDebounceTimer;
     private int _fileSearchRequestVersion;
@@ -91,6 +92,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isReplacingLocalExtensions;
     private string? _pendingBackgroundWebDavSyncReason;
     private bool _cloudReconnectInProgress;
+    private bool _desktopPresenceHeartbeatRunning;
     private bool _mobileMessagePollRunning;
     private CancellationTokenSource? _mobileMessageBridgeCts;
     private Task? _mobileMessageBridgeTask;
@@ -163,6 +165,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _cloudReconnectTimer = new DispatcherTimer();
         _cloudReconnectTimer.Tick += CloudReconnectTimer_Tick;
 
+        _desktopPresenceHeartbeatTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(30)
+        };
+        _desktopPresenceHeartbeatTimer.Tick += async (_, _) => await SendDesktopPresenceHeartbeatSafeAsync("timer");
+
         _mobileMessagePollTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(5)
@@ -227,6 +235,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _windowBoundExtensionsService.Stop();
             _windowSnapAssistService.Stop();
             _mobileMessageBridgeCts?.Cancel();
+            _desktopPresenceHeartbeatTimer.Stop();
             _mobileMessagePollTimer.Stop();
         };
 
