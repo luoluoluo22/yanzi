@@ -535,6 +535,8 @@ async function handleRequest(request, env) {
       throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in account cloud snapshot");
     }
 
+    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
+
     return json({
       ok: true,
       userId: auth.userId,
@@ -543,7 +545,8 @@ async function handleRequest(request, env) {
       diagnostics: snapshot.diagnostics || null,
       updatedAtUtc: snapshot.updatedAtUtc || null,
       yanm: snapshot.yanm || null,
-      bytes: snapshot.bytes
+      bytes: snapshot.bytes,
+      viewUrl: viewUrl || null
     });
   }
 
@@ -573,12 +576,15 @@ async function handleRequest(request, env) {
       yanm: payload.yanm
     });
 
+    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
+
     return json({
       ok: true,
       userId: auth.userId,
       source: result.source,
       updatedAtUtc,
-      bytes: result.bytes
+      bytes: result.bytes,
+      viewUrl: viewUrl || null
     });
   }
 
@@ -3984,4 +3990,72 @@ class WebDavHttpError extends HttpError {
     super(status, code, message);
     this.diagnostics = diagnostics;
   }
+}
+
+async function getYanmStateViewUrl(env, userId) {
+  try {
+    const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    const provider = syncConfig.provider;
+    if (provider === "github") {
+      const { owner, repo, branch, pathPrefix } = await resolveGitHubRepoTarget(syncConfig);
+      const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+      return `https://github.com/${owner}/${repo}/blob/${branch}/${path}`;
+    }
+    if (provider === "gitee") {
+      const gitee = syncConfig.settings.Gitee || syncConfig.settings.gitee || {};
+      const repoRaw = String(gitee.repo || gitee.Repo || "yanzi-sync").trim();
+      const branch = String(gitee.branch || gitee.Branch || "master").trim();
+      const pathPrefix = String(gitee.pathPrefix || gitee.PathPrefix || "").trim();
+      let owner = String(gitee.username || gitee.Username || "").trim();
+      let repo = repoRaw;
+      if (repoRaw.includes("/")) {
+        const parts = repoRaw.split("/");
+        owner = parts[0].trim();
+        repo = parts[1].trim();
+      }
+      const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+      return `https://gitee.com/${owner}/${repo}/blob/${branch}/${path}`;
+    }
+    if (provider === "gitlab") {
+      const gitlab = syncConfig.settings.GitLab || syncConfig.settings.gitlab || {};
+      const projectPath = String(gitlab.projectPath || gitlab.ProjectPath || "").trim();
+      const branch = String(gitlab.branch || gitlab.Branch || "main").trim();
+      const pathPrefix = String(gitlab.pathPrefix || gitlab.PathPrefix || "").trim();
+      let baseUrl = String(gitlab.baseUrl || gitlab.BaseUrl || "https://gitlab.com").trim();
+      while (baseUrl.endsWith("/")) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+      }
+      const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+      return `${baseUrl}/${projectPath}/-/blob/${branch}/${path}`;
+    }
+    if (provider === "gitea") {
+      const gitea = syncConfig.settings.Gitea || syncConfig.settings.gitea || {};
+      const repoRaw = String(gitea.repo || gitea.Repo || "yanzi-sync").trim();
+      const branch = String(gitea.branch || gitea.Branch || "main").trim();
+      const pathPrefix = String(gitea.pathPrefix || gitea.PathPrefix || "").trim();
+      let baseUrl = String(gitea.baseUrl || gitea.BaseUrl || "https://gitea.com").trim();
+      while (baseUrl.endsWith("/")) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+      }
+      let owner = String(gitea.username || gitea.Username || "").trim();
+      let repo = repoRaw;
+      if (repoRaw.includes("/")) {
+        const parts = repoRaw.split("/");
+        owner = parts[0].trim();
+        repo = parts[1].trim();
+      }
+      const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+      return `${baseUrl}/${owner}/${repo}/src/branch/${branch}/${path}`;
+    }
+    if (provider === "webdav") {
+      const webdav = syncConfig.settings.WebDAV || syncConfig.settings.webdav || {};
+      let serverUrl = String(webdav.serverUrl || webdav.ServerUrl || "").trim();
+      if (serverUrl) {
+        return serverUrl;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return null;
 }

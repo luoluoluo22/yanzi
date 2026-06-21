@@ -1230,6 +1230,19 @@ public sealed class LocalAgentApiServer : IDisposable
                     : updatedAtUtc;
                 AppSettingsStore.Save(settings);
                 _onSettingsChanged?.Invoke("api-yanm-state-updated", true);
+                
+                if (_onPushToMobile != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _onPushToMobile("YanziSync", "yanm_updated");
+                        }
+                        catch {}
+                    });
+                }
+                
                 await WriteYanmStateAsync(response, AppSettingsStore.Load());
                 return;
             }

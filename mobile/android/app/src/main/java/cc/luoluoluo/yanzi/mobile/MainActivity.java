@@ -177,6 +177,7 @@ import org.json.JSONObject;
 public class MainActivity
 extends Activity {
     public static Context sContext;
+    public static MainActivity sInstance;
     private static final String DEFAULT_BASE_URL = "https://sync.luoluoluo.cc.cd";
     private static final String CACHE_REMOTE_EXTENSIONS = "cacheRemoteExtensionsJson";
     private static final String CACHE_YANM = "cacheYanmJson";
@@ -199,6 +200,27 @@ extends Activity {
     private EditText passwordInput;
     private EditText textInput;
     private TextView statusText;
+    private final android.content.BroadcastReceiver yanmSyncReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            MainActivity.this.runOnUiThread(() -> {
+                MainActivity.this.setStatus("\u5c40\u57df\u7f51\u6536\u5230\u71d5\u5e55\u66f4\u65b0\u901a\u77e5\uff0c\u6b63\u5728\u540c\u6b65...");
+                MainActivity.this.refreshYanm(true);
+            });
+        }
+    };
+    private final android.content.BroadcastReceiver chatMessageReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String msg = intent.getStringExtra("message");
+            android.util.Log.i("MainActivity", "Received CHAT_MESSAGE broadcast, msg=" + msg);
+            if (msg != null) {
+                MainActivity.this.runOnUiThread(() -> {
+                    MainActivity.this.renderChatMessage("desktop", "text", msg, true);
+                });
+            }
+        }
+    };
     private EditText mobileExtensionInput;
     private EditText mobileExtensionIdInput;
     private EditText mobileExtensionNameInput;
@@ -215,6 +237,11 @@ extends Activity {
     private LinearLayout mobileExtensionTabPage;
     private LinearLayout desktopExtensionTabPage;
     private LinearLayout profileTabPage;
+    private android.widget.ImageView profileAvatarView;
+    private android.widget.TextView profileNameView;
+    private android.widget.TextView profileSubtextView;
+    private final android.os.Handler autoCloudUpdateHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable autoCloudUpdateRunnable;
     private LinearLayout aiTabPage;
     private View yanmTabButton;
     private View mobileExtensionTabButton;
@@ -235,6 +262,7 @@ extends Activity {
     private EditText fsSearchInput;
     private boolean isFsUploading = false;
     private Button loginButton;
+    private AlertDialog accountDialog;
     private Button overlayButton;
     private EditText searchDesktopExtensionsInput;
     private LinearLayout aiChatHistory;
@@ -332,11 +360,24 @@ extends Activity {
     private android.widget.ImageView wakeToggleBtn;
     private Button ttsStopButton;
     private android.widget.Button holdToSpeakBtn;
+    private android.widget.Button chatHoldToSpeakBtn;
+    private boolean isChatVoiceActive;
+    private android.widget.ImageView chatVoiceToggleBtn;
+    private android.widget.ImageView chatAttachBtn;
     private android.widget.ImageView voiceToggleBtn;
     private final java.util.Set<String> failedSpeechPackages = new java.util.HashSet<String>();
     private String currentSpeechPackage = null;
     private int speechRetryCount = 0;
     private android.widget.Button btnShowExtensions;
+    private android.widget.Button btnShowChat;
+    private LinearLayout chatContainerLayout;
+    private LinearLayout chatMessageListLayout;
+    private EditText chatInputEditText;
+    private Button chatSendButton;
+    private Button chatPhotoButton;
+    private Button chatFileButton;
+    private TextView flatLogTv;
+    private androidx.core.widget.NestedScrollView flatLogScrollView;
     private android.widget.Button btnShowFileManager;
     private android.widget.Button btnShowShell;
     private android.view.View extensionsContainer;
@@ -442,7 +483,9 @@ extends Activity {
                 new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS"));
         }
         sContext = this;
+        sInstance = this;
         LanDiscoveryManager.discover((Context)this);
+        this.startService(new Intent((Context)this, FloatingWheelService.class));
         this.prefs = this.getSharedPreferences("yanzi-mobile", 0);
         this.isTtsEnabled = this.prefs.getBoolean("isTtsEnabled", false);
         MobileIconLibrary.init((Context)this);
@@ -482,12 +525,39 @@ extends Activity {
                 MainActivity.this.connectionCheckHandler.postDelayed(this, 8000L);
             }
         };
+        this.autoCloudUpdateRunnable = new Runnable() {
+            @Override
+            public void run() {
+                boolean autoUpdate = MainActivity.this.prefs.getBoolean("auto_cloud_update", false);
+                if (autoUpdate) {
+                    MainActivity.this.refreshYanm(true);
+                }
+                int interval = MainActivity.this.prefs.getInt("auto_cloud_update_interval", 60);
+                if (interval < 10) {
+                    interval = 10;
+                }
+                MainActivity.this.autoCloudUpdateHandler.postDelayed(this, (long)interval * 1000L);
+            }
+        };
     }
 
     protected void onResume() {
         super.onResume();
         if (this.overlayButton != null) {
             this.overlayButton.setText((CharSequence)(FloatingWheelService.isRunning ? "\u5173\u95ed\u60ac\u6d6e\u8f6e\u76d8" : "\u6253\u5f00\u60ac\u6d6e\u8f6e\u76d8"));
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            this.registerReceiver(this.yanmSyncReceiver, 
+                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SYNC_YANM"), 
+                Context.RECEIVER_NOT_EXPORTED);
+            this.registerReceiver(this.chatMessageReceiver, 
+                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.CHAT_MESSAGE"), 
+                Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            this.registerReceiver(this.yanmSyncReceiver, 
+                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SYNC_YANM"));
+            this.registerReceiver(this.chatMessageReceiver, 
+                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.CHAT_MESSAGE"));
         }
         LanDiscoveryManager.discover((Context)this);
         this.syncClipboard();
@@ -500,6 +570,11 @@ extends Activity {
         if (this.connectionCheckHandler != null && this.connectionCheckRunnable != null) {
             this.connectionCheckHandler.post(this.connectionCheckRunnable);
         }
+        if (this.prefs.getBoolean("auto_cloud_update", false)) {
+            this.refreshYanm(true);
+        }
+        this.updateProfileHeader();
+        this.loadChatHistory();
     }
 
     private void syncClipboard() {
@@ -737,6 +812,12 @@ extends Activity {
         if (this.connectionCheckHandler != null && this.connectionCheckRunnable != null) {
             this.connectionCheckHandler.removeCallbacks(this.connectionCheckRunnable);
         }
+        try {
+            this.unregisterReceiver(this.yanmSyncReceiver);
+        } catch (Exception ignored) {}
+        try {
+            this.unregisterReceiver(this.chatMessageReceiver);
+        } catch (Exception ignored) {}
         super.onPause();
     }
 
@@ -754,6 +835,9 @@ extends Activity {
         }
         this.destroySpeechRecognizer();
         this.releaseWakeListening();
+        if (sInstance == this) {
+            sInstance = null;
+        }
         super.onDestroy();
     }
 
@@ -788,6 +872,14 @@ extends Activity {
         }
         if (requestCode == 4101 && resultCode == -1 && data != null && (uri = data.getData()) != null) {
             this.sendPhotoToDesktop(uri);
+        } else if (requestCode == 4103 && resultCode == -1 && data != null && (uri = data.getData()) != null) {
+            this.sendPhotoToDesktopChat(uri);
+        } else if (requestCode == 4102 && resultCode == -1 && data != null && (uri = data.getData()) != null) {
+            this.sendFileToDesktopChat(uri);
+        } else if (requestCode == 4104 && resultCode == -1) {
+            if (this.cameraPhotoUri != null && this.cameraPhotoFile != null && this.cameraPhotoFile.exists()) {
+                this.sendPhotoToDesktopChat(this.cameraPhotoUri);
+            }
         } else if ((requestCode == REQUEST_CODE_SELECT_IMAGE || requestCode == REQUEST_CODE_SELECT_FILE) && resultCode == -1 && data != null && (uri = data.getData()) != null) {
             this.handleAttachmentSelected(uri, requestCode == REQUEST_CODE_SELECT_IMAGE);
         } else if (requestCode == REQUEST_CODE_TAKE_PHOTO && resultCode == -1) {
@@ -799,9 +891,15 @@ extends Activity {
                 ArrayList<String> matches = data.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS);
                 if (matches != null && !matches.isEmpty()) {
                     String text = matches.get(0);
-                    this.aiChatInput.setText((CharSequence)text);
-                    this.aiChatInput.setSelection(text.length());
-                    this.handleAiSendButtonClick();
+                    if (this.isChatVoiceActive) {
+                        this.chatInputEditText.setText((CharSequence)text);
+                        this.chatInputEditText.setSelection(text.length());
+                        this.handleSendChatMessageClick();
+                    } else {
+                        this.aiChatInput.setText((CharSequence)text);
+                        this.aiChatInput.setSelection(text.length());
+                        this.handleAiSendButtonClick();
+                    }
                 }
             }
             if (this.isWakeTriggeredSpeech || this.isWakeTriggeredSpeechSessionActive) {
@@ -821,9 +919,19 @@ extends Activity {
             } else {
                 Toast.makeText(this, "需要相机权限才能拍照", Toast.LENGTH_SHORT).show();
             }
+        } else if (requestCode == 9002) {
+            if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                this.launchCameraForChat();
+            } else {
+                Toast.makeText(this, "需要相机权限才能拍照", Toast.LENGTH_SHORT).show();
+            }
         } else if (requestCode == 102) {
             if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                this.switchToVoiceInput();
+                if (this.isChatVoiceActive) {
+                    this.switchToChatVoiceInput();
+                } else {
+                    this.switchToVoiceInput();
+                }
             } else {
                 Toast.makeText(this, "需要麦克风录音权限才能使用语音输入", Toast.LENGTH_SHORT).show();
             }
@@ -1469,7 +1577,7 @@ extends Activity {
         androidx.core.widget.NestedScrollView scrollView;
         LinearLayout shell = new LinearLayout((Context)this);
         shell.setOrientation(1);
-        shell.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
+        shell.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
         shell.setFitsSystemWindows(true);
         this.mainScrollView = scrollView = new androidx.core.widget.NestedScrollView((Context)this);
         LinearLayout root = new LinearLayout((Context)this);
@@ -1538,14 +1646,86 @@ extends Activity {
         root.addView((View)this.mobileExtensionTabPage);
         root.addView((View)this.desktopExtensionTabPage);
         root.addView((View)this.profileTabPage);
+        LinearLayout yanmHeader = new LinearLayout((Context)this);
+        yanmHeader.setOrientation(LinearLayout.HORIZONTAL);
+        yanmHeader.setGravity(Gravity.CENTER_VERTICAL);
+        
         TextView yanmTitle = this.textView("\u71d5\u5e55", 28, -1, true);
-        this.yanmTabPage.addView((View)yanmTitle);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
+        yanmHeader.addView((View)yanmTitle, (ViewGroup.LayoutParams)titleParams);
+        
+        Button btnSyncLog = new Button((Context)this);
+        btnSyncLog.setText((CharSequence)"\u540c\u6b65\u8bb0\u5f55");
+        btnSyncLog.setTextColor(Color.rgb(34, 211, 238));
+        btnSyncLog.setBackgroundColor(Color.TRANSPARENT);
+        btnSyncLog.setTextSize(14f);
+        btnSyncLog.setAllCaps(false);
+        this.yanmTabPage.addView((View)yanmHeader);
+        
         this.yanmTabPage.addView((View)this.textView("\u67e5\u770b\u548c\u64cd\u4f5c\u7535\u8111\u7aef\u540c\u6b65\u7684\u71d5\u5e55\u7ec4\u4ef6\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
         this.yanmList = new GridLayout((Context)this);
         this.yanmList.setColumnCount(1);
         this.yanmList.setAlignmentMode(0);
         this.yanmList.setUseDefaultMargins(false);
         this.yanmTabPage.addView((View)this.yanmList, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout flatLogPanel = new LinearLayout((Context)this);
+        flatLogPanel.setOrientation(LinearLayout.VERTICAL);
+        flatLogPanel.setPadding(0, this.dp(16), 0, 0);
+        
+        LinearLayout flatLogHeader = new LinearLayout((Context)this);
+        flatLogHeader.setOrientation(LinearLayout.HORIZONTAL);
+        flatLogHeader.setGravity(Gravity.CENTER_VERTICAL);
+        flatLogHeader.setPadding(0, 0, 0, this.dp(8));
+        
+        TextView flatLogTitle = this.textView("\u540c\u6b65\u4e0e\u8fde\u63a5\u65e5\u5fd7", 16, ThemeConfig.COLOR_TEXT_PRIMARY, true);
+        flatLogHeader.addView((View)flatLogTitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        
+        Button btnCopyLog = this.button("\u590d\u5236");
+        btnCopyLog.setTextSize(12f);
+        btnCopyLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
+        btnCopyLog.setOnClickListener(v -> {
+            String logText = this.getYanmSyncLogs();
+            ClipboardManager manager = (ClipboardManager)this.getSystemService("clipboard");
+            if (manager != null) {
+                manager.setPrimaryClip(ClipData.newPlainText("logs", logText));
+                Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u590d\u5236", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        Button btnClearLog = this.button("\u6e05\u7a7a");
+        btnClearLog.setTextSize(12f);
+        btnClearLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
+        btnClearLog.setOnClickListener(v -> {
+            MobileDiagnostics.clear((Context)this);
+            this.flatLogTv.setText("");
+            Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u6e05\u7a7a", Toast.LENGTH_SHORT).show();
+        });
+        
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(this.dp(60), this.dp(32));
+        btnLp.leftMargin = this.dp(8);
+        flatLogHeader.addView((View)btnCopyLog, (ViewGroup.LayoutParams)btnLp);
+        flatLogHeader.addView((View)btnClearLog, (ViewGroup.LayoutParams)btnLp);
+        flatLogPanel.addView((View)flatLogHeader);
+        
+        this.flatLogScrollView = new androidx.core.widget.NestedScrollView((Context)this);
+        this.flatLogScrollView.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
+        this.flatLogScrollView.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
+        
+        GradientDrawable gdLog = new GradientDrawable();
+        gdLog.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
+        gdLog.setCornerRadius((float)this.dp(8));
+        this.flatLogScrollView.setBackground((Drawable)gdLog);
+        
+        this.flatLogTv = new TextView((Context)this);
+        this.flatLogTv.setTextSize(11f);
+        this.flatLogTv.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
+        this.flatLogTv.setTypeface(Typeface.MONOSPACE);
+        this.flatLogTv.setText((CharSequence)this.getYanmSyncLogs());
+        this.flatLogScrollView.addView((View)this.flatLogTv);
+        
+        flatLogPanel.addView((View)this.flatLogScrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(180)));
+        this.yanmTabPage.addView((View)flatLogPanel);
         // 手机端子 Tab 栏
         this.mobileSubTabBar = new LinearLayout((Context)this);
         mobileSubTabBar.setOrientation(0);
@@ -1721,17 +1901,25 @@ extends Activity {
         subTabBar.setGravity(16);
         subTabBar.setPadding(0, 0, 0, this.dp(12));
         
-        this.btnShowExtensions = new Button((Context)this);
-        this.btnShowExtensions.setText((CharSequence)"电脑扩展");
-        this.btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
-        this.btnShowExtensions.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
-        this.btnShowExtensions.setAllCaps(false);
-        this.btnShowExtensions.setTextSize(13f);
+        this.btnShowChat = new Button((Context)this);
+        this.btnShowChat.setText((CharSequence)"聊天");
+        this.btnShowChat.setTextColor(Color.rgb(34, 211, 238));
+        this.btnShowChat.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        this.btnShowChat.setAllCaps(false);
+        this.btnShowChat.setTextSize(13f);
         
         GradientDrawable activeBg = new GradientDrawable();
         activeBg.setCornerRadius((float)this.dp(8));
         activeBg.setColor(Color.argb(20, 34, 211, 238));
-        this.btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
+        this.btnShowChat.setBackground((android.graphics.drawable.Drawable)activeBg);
+
+        this.btnShowExtensions = new Button((Context)this);
+        this.btnShowExtensions.setText((CharSequence)"电脑扩展");
+        this.btnShowExtensions.setTextColor(Color.rgb(148, 163, 184));
+        this.btnShowExtensions.setBackgroundColor(Color.TRANSPARENT);
+        this.btnShowExtensions.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        this.btnShowExtensions.setAllCaps(false);
+        this.btnShowExtensions.setTextSize(13f);
         
         this.btnShowFileManager = new Button((Context)this);
         this.btnShowFileManager.setText((CharSequence)"文件管理");
@@ -1751,6 +1939,7 @@ extends Activity {
         
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, this.dp(36));
         btnParams.rightMargin = this.dp(8);
+        subTabBar.addView((View)this.btnShowChat, (ViewGroup.LayoutParams)btnParams);
         subTabBar.addView((View)this.btnShowExtensions, (ViewGroup.LayoutParams)btnParams);
         subTabBar.addView((View)this.btnShowFileManager, (ViewGroup.LayoutParams)btnParams);
         subTabBar.addView((View)this.btnShowShell, (ViewGroup.LayoutParams)btnParams);
@@ -1820,7 +2009,10 @@ extends Activity {
         this.desktopViewPager = new androidx.viewpager.widget.ViewPager((Context)this);
         this.desktopViewPager.setId(android.view.View.generateViewId());
         
+        LinearLayout chatContainer = this.buildChatContainer();
+        
         final List<View> pages = new java.util.ArrayList<>();
+        pages.add(chatContainer);
         pages.add(extensionsContainer);
         pages.add(fileManagerContainer);
         pages.add(shellContainer);
@@ -1859,9 +2051,10 @@ extends Activity {
             public void onPageScrollStateChanged(int state) {}
         });
         
-        this.btnShowExtensions.setOnClickListener(v -> this.selectSubTab(0));
-        this.btnShowFileManager.setOnClickListener(v -> this.selectSubTab(1));
-        this.btnShowShell.setOnClickListener(v -> this.selectSubTab(2));
+        this.btnShowChat.setOnClickListener(v -> this.selectSubTab(0));
+        this.btnShowExtensions.setOnClickListener(v -> this.selectSubTab(1));
+        this.btnShowFileManager.setOnClickListener(v -> this.selectSubTab(2));
+        this.btnShowShell.setOnClickListener(v -> this.selectSubTab(3));
         
         this.mainDesktopContentLayout.addView((View)this.desktopViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, pagerHeight));
 
@@ -2273,8 +2466,7 @@ extends Activity {
                 this.loadFileList(parent);
             }
         });
-        this.profileTabPage.addView((View)this.textView("\u6211\u7684", 28, -1, true));
-        this.profileTabPage.addView((View)this.textView("\u767b\u5f55\u3001\u53d1\u9001\u6d88\u606f\u3001\u60ac\u6d6e\u8f6e\u76d8\u548c\u8bca\u65ad\u4fe1\u606f\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
+
         this.baseUrlInput = this.input("\u4e91\u7aef\u5730\u5740", this.prefs.getString("baseUrl", DEFAULT_BASE_URL));
         this.emailInput = this.input("\u90ae\u7bb1", this.prefs.getString("email", ""));
         this.passwordInput = this.input("\u5bc6\u7801", this.prefs.getString("password", ""));
@@ -2282,117 +2474,114 @@ extends Activity {
         String initialText = sharedText == null || sharedText.trim().isEmpty() ? "hi" : sharedText;
         this.textInput = this.multiInput("\u53d1\u9001\u7ed9\u7535\u8111\u7684\u6587\u672c / \u94fe\u63a5", initialText);
         this.loginButton = this.button("\u767b\u5f55");
+        this.loginButton.setOnClickListener(v -> this.loginAndRegister());
         this.statusText = this.textView("", 14, Color.rgb((int)147, (int)197, (int)253), false);
         this.statusText.setTextIsSelectable(true);
         this.statusText.setMinLines(3);
-        Button loginSettingsButton = this.button("\u8d26\u53f7");
-        this.profileTabPage.addView((View)loginSettingsButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(48)));
-        loginSettingsButton.setOnClickListener(v -> {
-            LinearLayout dialogLayout = new LinearLayout((Context)this);
-            dialogLayout.setOrientation(1);
-            dialogLayout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
-            dialogLayout.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
-            if (this.baseUrlInput.getParent() != null) {
-                ((ViewGroup)this.baseUrlInput.getParent()).removeView((View)this.baseUrlInput);
-            }
-            if (this.emailInput.getParent() != null) {
-                ((ViewGroup)this.emailInput.getParent()).removeView((View)this.emailInput);
-            }
-            if (this.passwordInput.getParent() != null) {
-                ((ViewGroup)this.passwordInput.getParent()).removeView((View)this.passwordInput);
-            }
-            this.baseUrlInput.setVisibility(0);
-            dialogLayout.addView((View)this.baseUrlInput);
-            dialogLayout.addView((View)this.emailInput);
-            dialogLayout.addView((View)this.passwordInput);
-            LinearLayout buttonsLayout = new LinearLayout((Context)this);
-            buttonsLayout.setOrientation(0);
-            buttonsLayout.setPadding(0, this.dp(10), 0, 0);
-            Button logoutBtn = this.button("\u9000\u51fa");
-            if (this.loginButton.getParent() != null) {
-                ((ViewGroup)this.loginButton.getParent()).removeView((View)this.loginButton);
-            }
-            buttonsLayout.addView((View)this.loginButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
-            buttonsLayout.addView((View)logoutBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
-            dialogLayout.addView((View)buttonsLayout);
-            AlertDialog dialog = new AlertDialog.Builder((Context)this, 16974545).setTitle((CharSequence)"\u8d26\u53f7").setView((View)dialogLayout).setPositiveButton((CharSequence)"\u5173\u95ed", null).show();
-            logoutBtn.setOnClickListener(v1 -> {
-                this.prefs.edit().putString("token", "").apply();
-                this.setStatus("\u5df2\u6e05\u9664\u672c\u5730\u767b\u5f55\u6001\u3002");
-                if (this.loginButton != null) {
-                    this.loginButton.setEnabled(true);
-                }
-                dialog.dismiss();
-            });
-        });
-        Button sendTextButton = this.button("\u5411\u7535\u8111\u53d1\u9001\u6587\u672c");
-        this.profileTabPage.addView((View)sendTextButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(48)));
-        sendTextButton.setOnClickListener(v -> {
-            LinearLayout dialogLayout = new LinearLayout((Context)this);
-            dialogLayout.setOrientation(1);
-            dialogLayout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
-            dialogLayout.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
-            if (this.textInput.getParent() != null) {
-                ((ViewGroup)this.textInput.getParent()).removeView((View)this.textInput);
-            }
-            dialogLayout.addView((View)this.textInput);
-            Button sendBtn = this.button("\u53d1\u9001");
-            dialogLayout.addView((View)sendBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(48)));
-            AlertDialog dialog = new AlertDialog.Builder((Context)this, 16974545).setTitle((CharSequence)"\u53d1\u9001\u6d88\u606f\u5230\u7535\u8111").setView((View)dialogLayout).setPositiveButton((CharSequence)"\u5173\u95ed", null).show();
-            sendBtn.setOnClickListener(v1 -> {
-                this.sendToDesktop();
-                dialog.dismiss();
-            });
-        });
-        this.profileTabPage.addView((View)this.sectionTitle("\u5168\u5c40\u8f6e\u76d8"));
-        LinearLayout wheelButtons = new LinearLayout((Context)this);
-        wheelButtons.setOrientation(1);
         this.overlayButton = this.button(FloatingWheelService.isRunning ? "\u5173\u95ed\u60ac\u6d6e\u8f6e\u76d8" : "\u6253\u5f00\u60ac\u6d6e\u8f6e\u76d8");
         Button accessibilityButton = this.button("\u65e0\u969c\u788d\u670d\u52a1");
-        wheelButtons.addView((View)this.overlayButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(44)));
-        wheelButtons.addView((View)accessibilityButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(44)));
-        this.profileTabPage.addView((View)wheelButtons);
-        this.profileTabPage.addView((View)this.statusText);
-        LinearLayout logButtons = new LinearLayout((Context)this);
-        logButtons.setOrientation(0);
-        Button copyLogButton = this.button("\u590d\u5236");
-        Button clearLogButton = this.button("\u6e05\u7a7a");
-        logButtons.addView((View)copyLogButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
-        logButtons.addView((View)clearLogButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
-        this.profileTabPage.addView((View)logButtons);
-        this.profileTabPage.addView((View)this.textView("\u8bbe\u5907 ID\uff1a" + this.deviceId, 11, Color.rgb((int)100, (int)116, (int)139), false));
-        long installTime = 0L;
-        try {
-            installTime = this.getPackageManager().getPackageInfo((String)this.getPackageName(), (int)0).lastUpdateTime;
-        }
-        catch (Exception exception) {
-            // empty catch block
-        }
-        if (installTime > 0L) {
-            String timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date(installTime));
-            this.profileTabPage.addView((View)this.textView("\u7f16\u8bd1\u5b89\u88c5\uff1a" + timeStr, 11, Color.rgb((int)100, (int)116, (int)139), false));
-        }
-        this.loginButton.setOnClickListener(v -> this.loginAndRegister());
-        this.overlayButton.setOnClickListener(v -> {
-            if (FloatingWheelService.isRunning) {
-                this.stopService(new Intent((Context)this, FloatingWheelService.class));
-                this.overlayButton.setText((CharSequence)"\u6253\u5f00\u60ac\u6d6e\u8f6e\u76d8");
-                this.setStatus("\u60ac\u6d6e\u8f6e\u76d8\u5df2\u5173\u95ed\u3002");
-                this.prefs.edit().putBoolean("floatingWheelEnabled", false).apply();
-            } else {
+
+        this.setupProfileHeader();
+        boolean autoUpdate = this.prefs.getBoolean("auto_cloud_update", false);
+        LinearLayout itemCloud = this.createSwitchListItem("\u542f\u52a8\u65f6\u81ea\u52a8\u540c\u6b65\u71d5\u5e55", autoUpdate, (buttonView, isChecked) -> {
+            this.prefs.edit().putBoolean("auto_cloud_update", isChecked).apply();
+            this.setStatus(isChecked ? "\u5df2\u542f\u7528\u542f\u52a8\u65f6\u81ea\u52a8\u540c\u6b65" : "\u5df2\u5173\u95ed\u542f\u52a8\u65f6\u81ea\u52a8\u540c\u6b65");
+        });
+        
+        LinearLayout group1 = this.createListGroup(itemCloud);
+        this.profileTabPage.addView((View)group1);
+        
+        boolean wheelEnabled = this.prefs.getBoolean("floatingWheelEnabled", true);
+        LinearLayout itemWheel = this.createSwitchListItem("\u60ac\u6d6e\u8f6e\u76d8", wheelEnabled, (buttonView, isChecked) -> {
+            this.prefs.edit().putBoolean("floatingWheelEnabled", isChecked).apply();
+            this.startService(new Intent((Context)this, FloatingWheelService.class));
+            if (isChecked) {
                 this.startFloatingWheel();
+                this.setStatus("\u60ac\u6d6e\u8f6e\u76d8\u5df2\u5f00\u542f\u3002");
                 this.overlayButton.setText((CharSequence)"\u5173\u95ed\u60ac\u6d6e\u8f6e\u76d8");
-                this.prefs.edit().putBoolean("floatingWheelEnabled", true).apply();
+            } else {
+                this.setStatus("\u60ac\u6d6e\u8f6e\u76d8\u5df2\u5173\u95ed\u3002");
+                this.overlayButton.setText((CharSequence)"\u6253\u5f00\u60ac\u6d6e\u8f6e\u76d8");
             }
         });
-        accessibilityButton.setOnClickListener(v -> this.openAccessibilitySettings());
-        copyLogButton.setOnClickListener(v -> this.copyDiagnostics());
-        clearLogButton.setOnClickListener(v -> {
+        
+        LinearLayout itemAccessibility = this.createListItem("\u65e0\u969c\u788d\u670d\u52a1", null, () -> this.openAccessibilitySettings());
+        
+        LinearLayout group2 = this.createListGroup(itemWheel, itemAccessibility);
+        this.profileTabPage.addView((View)group2);
+
+        LinearLayout runLogPanel = new LinearLayout((Context)this);
+        runLogPanel.setOrientation(LinearLayout.VERTICAL);
+        runLogPanel.setPadding(0, this.dp(16), 0, 0);
+        
+        LinearLayout runLogHeader = new LinearLayout((Context)this);
+        runLogHeader.setOrientation(LinearLayout.HORIZONTAL);
+        runLogHeader.setGravity(Gravity.CENTER_VERTICAL);
+        runLogHeader.setPadding(0, 0, 0, this.dp(8));
+        
+        TextView runLogTitle = this.textView("\u8fd0\u884c\u65e5\u5fd7", 16, ThemeConfig.COLOR_TEXT_PRIMARY, true);
+        runLogHeader.addView((View)runLogTitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        
+        Button btnCopyRunLog = this.button("\u590d\u5236");
+        btnCopyRunLog.setTextSize(12f);
+        btnCopyRunLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
+        btnCopyRunLog.setOnClickListener(v -> {
+            this.copyDiagnostics();
+            Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u590d\u5236", Toast.LENGTH_SHORT).show();
+        });
+        
+        Button btnClearRunLog = this.button("\u6e05\u7a7a");
+        btnClearRunLog.setTextSize(12f);
+        btnClearRunLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
+        btnClearRunLog.setOnClickListener(v -> {
             this.diagnosticLog.setLength(0);
             MobileDiagnostics.clear((Context)this);
             this.statusText.setText((CharSequence)"");
             this.setStatus("\u65e5\u5fd7\u5df2\u6e05\u7a7a\u3002");
+            Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u6e05\u7a7a", Toast.LENGTH_SHORT).show();
         });
+        
+        LinearLayout.LayoutParams runBtnLp = new LinearLayout.LayoutParams(this.dp(60), this.dp(32));
+        runBtnLp.leftMargin = this.dp(8);
+        runLogHeader.addView((View)btnCopyRunLog, (ViewGroup.LayoutParams)runBtnLp);
+        runLogHeader.addView((View)btnClearRunLog, (ViewGroup.LayoutParams)runBtnLp);
+        runLogPanel.addView((View)runLogHeader);
+        
+        androidx.core.widget.NestedScrollView runLogScroll = new androidx.core.widget.NestedScrollView((Context)this);
+        runLogScroll.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
+        runLogScroll.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
+        
+        GradientDrawable gdRunLog = new GradientDrawable();
+        gdRunLog.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
+        gdRunLog.setCornerRadius((float)this.dp(8));
+        runLogScroll.setBackground((Drawable)gdRunLog);
+        
+        this.statusText.setTextSize(11f);
+        this.statusText.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
+        this.statusText.setTypeface(Typeface.MONOSPACE);
+        this.statusText.setText((CharSequence)this.diagnosticLog.toString());
+        runLogScroll.addView((View)this.statusText);
+        
+        runLogPanel.addView((View)runLogScroll, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(150)));
+        this.profileTabPage.addView((View)runLogPanel);
+        
+        TextView tvAbout = new TextView((Context)this);
+        tvAbout.setTextSize(12f);
+        tvAbout.setTextColor(Color.rgb(100, 116, 139));
+        tvAbout.setGravity(Gravity.CENTER);
+        
+        long installTime = 0L;
+        try {
+            installTime = this.getPackageManager().getPackageInfo((String)this.getPackageName(), (int)0).lastUpdateTime;
+        } catch (Exception e) {}
+        String timeStr = "";
+        if (installTime > 0L) {
+            timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date(installTime));
+        }
+        String aboutText = "\u8bbe\u5907 ID: " + this.deviceId + "\n\u7f16\u8bd1\u5b89\u88c5: " + timeStr;
+        tvAbout.setText((CharSequence)aboutText);
+        tvAbout.setPadding(0, this.dp(16), 0, this.dp(24));
+        this.profileTabPage.addView((View)tvAbout);
         shell.addView((View)this.swipeRefresh, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
         this.setupAiTabPage();
         this.loadAiHistory();
@@ -2423,7 +2612,7 @@ extends Activity {
         tabs.setOrientation(0);
         tabs.setGravity(16);
         tabs.setPadding(this.dp(4), this.dp(2), this.dp(4), this.dp(2));
-        tabs.setBackgroundColor(Color.rgb((int)17, (int)17, (int)17));
+        tabs.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
         this.yanmTabButton = this.tabButton("燕幕", "dashboard", "yanm");
         this.mobileExtensionTabButton = this.tabButton("手机", "cellphone", "mobile");
         this.aiTabButton = this.tabButton("AI", "chat", "ai");
@@ -3117,11 +3306,14 @@ extends Activity {
         }
         this.setStatus("\u6b63\u5728\u767b\u5f55...");
         this.executor.execute(() -> {
-            String token;
+            String token = "";
+            String username = "";
             String baseUrl = this.normalizedBaseUrl();
             String email = this.emailInput.getText().toString().trim();
             try {
-                token = YanziApiClient.login(baseUrl, email, this.passwordInput.getText().toString());
+                JSONObject loginRes = YanziApiClient.loginResponse(baseUrl, email, this.passwordInput.getText().toString());
+                token = loginRes.getString("accessToken");
+                username = loginRes.optString("username", "");
             }
             catch (Exception ex) {
                 this.runOnUiThread(() -> {
@@ -3132,10 +3324,12 @@ extends Activity {
                 });
                 return;
             }
+            final String finalToken = token;
+            final String finalUsername = username;
             this.runOnUiThread(() -> this.setStatus("\u767b\u5f55\u6210\u529f\uff0c\u6b63\u5728\u6ce8\u518c\u624b\u673a\u8bbe\u5907..."));
             try {
-                YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
-                this.prefs.edit().putString("baseUrl", baseUrl).putString("email", email).putString("password", this.passwordInput.getText().toString()).putString("token", token).apply();
+                YanziApiClient.registerDevice(baseUrl, finalToken, this.deviceId, this.buildDeviceName());
+                this.prefs.edit().putString("baseUrl", baseUrl).putString("email", email).putString("password", this.passwordInput.getText().toString()).putString("token", finalToken).putString("username", finalUsername).apply();
                 this.runOnUiThread(() -> {
                     this.setStatus("\u767b\u5f55\u6210\u529f\uff0c\u8bbe\u5907\u5df2\u6ce8\u518c\u3002");
                     if (this.loginButton != null) {
@@ -3143,14 +3337,24 @@ extends Activity {
                     }
                     this.refreshExtensions();
                     this.refreshYanm();
+                    this.updateProfileHeader();
+                    if (MainActivity.this.accountDialog != null) {
+                        MainActivity.this.accountDialog.dismiss();
+                        MainActivity.this.accountDialog = null;
+                    }
                 });
             }
             catch (Exception ex) {
-                this.prefs.edit().putString("baseUrl", baseUrl).putString("email", email).putString("password", this.passwordInput.getText().toString()).putString("token", token).apply();
+                this.prefs.edit().putString("baseUrl", baseUrl).putString("email", email).putString("password", this.passwordInput.getText().toString()).putString("token", finalToken).putString("username", finalUsername).apply();
                 this.runOnUiThread(() -> {
                     this.setStatus("\u767b\u5f55\u6210\u529f\uff0c\u4f46\u8bbe\u5907\u6ce8\u518c\u5931\u8d25\uff1a" + ex.getMessage());
                     if (this.loginButton != null) {
                         this.loginButton.setEnabled(true);
+                    }
+                    this.updateProfileHeader();
+                    if (MainActivity.this.accountDialog != null) {
+                        MainActivity.this.accountDialog.dismiss();
+                        MainActivity.this.accountDialog = null;
                     }
                 });
             }
@@ -3598,6 +3802,7 @@ extends Activity {
                     this.prefs.edit().putString(CACHE_YANM, loadedYanm.toString()).apply();
                     this.updateAllAppWidgets();
                     this.renderYanm(loadedYanm);
+                    MobileDiagnostics.append((Context)this, "读取云端燕幕状态成功");
                     if (this.swipeRefresh != null) {
                         this.swipeRefresh.setRefreshing(false);
                     }
@@ -3610,6 +3815,7 @@ extends Activity {
                         this.yanmList.addView((View)this.textView("\u71d5\u5e55\u8bfb\u53d6\u5931\u8d25\u3002", 13, Color.rgb((int)248, (int)113, (int)113), false));
                     }
                     this.setStatus("\u71d5\u5e55\u8bfb\u53d6\u5931\u8d25\uff1a" + ex.getMessage());
+                    MobileDiagnostics.append((Context)this, "读取云端燕幕状态失败：" + ex.getMessage());
                     if (this.swipeRefresh != null) {
                         this.swipeRefresh.setRefreshing(false);
                     }
@@ -3671,7 +3877,7 @@ extends Activity {
     }
 
     private void selectSubTab(int index) {
-        if (index < 0 || index > 2) return;
+        if (index < 0 || index > 3) return;
         this.currentSubTabIndex = index;
         
         this.runOnUiThread(() -> {
@@ -3683,6 +3889,10 @@ extends Activity {
             activeBg.setCornerRadius((float)this.dp(8));
             activeBg.setColor(Color.argb(20, 34, 211, 238));
             
+            if (this.btnShowChat != null) {
+                this.btnShowChat.setTextColor(Color.rgb(148, 163, 184));
+                this.btnShowChat.setBackgroundColor(Color.TRANSPARENT);
+            }
             if (this.btnShowExtensions != null) {
                 this.btnShowExtensions.setTextColor(Color.rgb(148, 163, 184));
                 this.btnShowExtensions.setBackgroundColor(Color.TRANSPARENT);
@@ -3697,11 +3907,16 @@ extends Activity {
             }
             
             if (index == 0) {
+                if (this.btnShowChat != null) {
+                    this.btnShowChat.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowChat.setBackground((android.graphics.drawable.Drawable)activeBg);
+                }
+            } else if (index == 1) {
                 if (this.btnShowExtensions != null) {
                     this.btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
                     this.btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
-            } else if (index == 1) {
+            } else if (index == 2) {
                 if (this.btnShowFileManager != null) {
                     this.btnShowFileManager.setTextColor(Color.rgb(34, 211, 238));
                     this.btnShowFileManager.setBackground((android.graphics.drawable.Drawable)activeBg);
@@ -3709,7 +3924,7 @@ extends Activity {
                 if (this.currentPath == null) {
                     this.loadFileList("");
                 }
-            } else if (index == 2) {
+            } else if (index == 3) {
                 if (this.btnShowShell != null) {
                     this.btnShowShell.setTextColor(Color.rgb(34, 211, 238));
                     this.btnShowShell.setBackground((android.graphics.drawable.Drawable)activeBg);
@@ -3724,10 +3939,12 @@ extends Activity {
         int index = this.desktopViewPager.getCurrentItem();
         View view = null;
         if (index == 0) {
-            view = this.extensionsContainer;
+            view = this.chatContainerLayout;
         } else if (index == 1) {
-            view = this.fileManagerContainer;
+            view = this.extensionsContainer;
         } else if (index == 2) {
+            view = this.fileManagerContainer;
+        } else if (index == 3) {
             view = this.shellContainer;
         }
         if (view == null) return;
@@ -4856,7 +5073,7 @@ extends Activity {
         LinearLayout dialogLayout = new LinearLayout((Context)this);
         dialogLayout.setOrientation(1);
         dialogLayout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
-        dialogLayout.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
+        dialogLayout.setBackgroundColor(ThemeConfig.COLOR_CARD_BACKGROUND);
         EditText promptInput = this.multiInput("\u7cfb\u7edf\u63d0\u793a\u8bcd", this.prefs.getString("aiSystemPrompt", DEFAULT_SYSTEM_PROMPT));
         dialogLayout.addView((View)promptInput);
         LinearLayout buttonsLayout = new LinearLayout((Context)this);
@@ -4880,7 +5097,7 @@ extends Activity {
         LinearLayout dialogLayout = new LinearLayout((Context)this);
         dialogLayout.setOrientation(1);
         dialogLayout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
-        dialogLayout.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
+        dialogLayout.setBackgroundColor(ThemeConfig.COLOR_CARD_BACKGROUND);
         EditText baseUrlInputLocal = this.input("Base URL", this.prefs.getString("aiBaseUrl", ""));
         EditText apiKeyInputLocal = this.input("API Key", this.prefs.getString("aiApiKey", ""));
         EditText modelInputLocal = this.input("Model", this.prefs.getString("aiModel", ""));
@@ -5775,6 +5992,14 @@ extends Activity {
         this.diagnosticLog.setLength(0);
         this.diagnosticLog.append(MobileDiagnostics.append((Context)this, status));
         this.statusText.setText((CharSequence)this.diagnosticLog.toString());
+        this.runOnUiThread(() -> {
+            if (this.flatLogTv != null) {
+                this.flatLogTv.setText((CharSequence)this.getYanmSyncLogs());
+                if (this.flatLogScrollView != null) {
+                    this.flatLogScrollView.post(() -> this.flatLogScrollView.fullScroll(View.FOCUS_DOWN));
+                }
+            }
+        });
     }
 
     private void refreshDiagnosticLogFromStore() {
@@ -5834,10 +6059,16 @@ extends Activity {
                     token = this.refreshToken();
                     YanziApiClient.putYanmState(baseUrl, token, snapshot);
                 }
-                this.runOnUiThread(() -> this.setStatus("\u71d5\u5e55\u72b6\u6001\u5df2\u540c\u6b65\u5230\u4e91\u7aef\uff1a" + reason));
+                this.runOnUiThread(() -> {
+                    this.setStatus("\u71d5\u5e55\u72b6\u6001\u5df2\u540c\u6b65\u5230\u4e91\u7aef\uff1a" + reason);
+                    MobileDiagnostics.append((Context)this, "燕幕状态已同步到云端：" + reason);
+                });
             }
             catch (Exception ex) {
-                this.runOnUiThread(() -> this.setStatus("\u71d5\u5e55\u72b6\u6001\u540c\u6b65\u5931\u8d25\uff1a" + ex.getMessage()));
+                this.runOnUiThread(() -> {
+                    this.setStatus("\u71d5\u5e55\u72b6\u6001\u540c\u6b65\u5931\u8d25\uff1a" + ex.getMessage());
+                    MobileDiagnostics.append((Context)this, "燕幕状态同步失败：" + ex.getMessage());
+                });
             }
         });
     }
@@ -5864,7 +6095,7 @@ extends Activity {
         LinearLayout card = new LinearLayout((Context)this);
         card.setOrientation(1);
         card.setPadding(this.dp(14), this.dp(12), this.dp(14), this.dp(12));
-        card.setBackgroundColor(Color.rgb((int)30, (int)30, (int)30));
+        card.setBackgroundColor(ThemeConfig.COLOR_CARD_BACKGROUND);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.setMargins(0, this.dp(8), 0, this.dp(8));
         card.setLayoutParams((ViewGroup.LayoutParams)params);
@@ -5884,8 +6115,8 @@ extends Activity {
         input.setHint((CharSequence)hint);
         input.setText((CharSequence)(value == null ? "" : value));
         input.setSingleLine(true);
-        input.setTextColor(-1);
-        input.setHintTextColor(Color.rgb((int)148, (int)163, (int)184));
+        input.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+        input.setHintTextColor(ThemeConfig.COLOR_HINT);
         input.setPadding(this.dp(12), this.dp(10), this.dp(12), this.dp(10));
         return input;
     }
@@ -5901,6 +6132,12 @@ extends Activity {
     private Button button(String text) {
         Button button = new Button((Context)this);
         button.setText((CharSequence)text);
+        button.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+        button.setAllCaps(false);
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(ThemeConfig.COLOR_BUTTON_BG);
+        gd.setCornerRadius((float)this.dp(8));
+        button.setBackground((Drawable)gd);
         return button;
     }
 
@@ -6872,8 +7109,12 @@ extends Activity {
 
     public static final class YanziApiClient {
         static String login(String baseUrl, String email, String password) throws Exception {
+            return loginResponse(baseUrl, email, password).getString("accessToken");
+        }
+
+        static JSONObject loginResponse(String baseUrl, String email, String password) throws Exception {
             JSONObject payload = new JSONObject().put("email", (Object)email).put("password", (Object)password);
-            return YanziApiClient.postJson(baseUrl, "/v1/auth/login", payload, null, "\u767b\u5f55").getString("accessToken");
+            return YanziApiClient.postJson(baseUrl, "/v1/auth/login", payload, null, "\u767b\u5f55");
         }
 
         static void registerDevice(String baseUrl, String token, String deviceId, String displayName) throws Exception {
@@ -7006,6 +7247,10 @@ extends Activity {
             if (yanm == null) {
                 throw new IllegalStateException("\u8d26\u53f7\u4e91\u7aef\u6ca1\u6709\u71d5\u5e55\u6570\u636e\u3002");
             }
+            String viewUrl = payload.optString("viewUrl", "");
+            if (!viewUrl.isEmpty() && sContext != null) {
+                sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
+            }
             return yanm;
         }
 
@@ -7020,7 +7265,12 @@ extends Activity {
 
         static JSONObject putYanmState(String baseUrl, String token, JSONObject yanm) throws Exception {
             JSONObject payload = new JSONObject().put("updatedAtUtc", (Object)new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).format(new Date())).put("yanm", (Object)yanm);
-            return YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state", payload, token, "\u540c\u6b65\u71d5\u5e55");
+            JSONObject res = YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state", payload, token, "\u540c\u6b65\u71d5\u5e55");
+            String viewUrl = res.optString("viewUrl", "");
+            if (!viewUrl.isEmpty() && sContext != null) {
+                sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
+            }
+            return res;
         }
 
         private static JSONObject putJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
@@ -7605,7 +7855,8 @@ extends Activity {
     }
 
     private void updateSpeechVolumeWave(float rmsdB) {
-        if (this.holdToSpeakBtn == null) return;
+        Button targetBtn = this.isChatVoiceActive ? this.chatHoldToSpeakBtn : this.holdToSpeakBtn;
+        if (targetBtn == null) return;
         float normalized = Math.max(0.0f, Math.min(1.0f, rmsdB / 10.0f));
         int baseRed = this.isWakeTriggeredSpeechSessionActive ? 14 : 59;
         int baseGreen = this.isWakeTriggeredSpeechSessionActive ? 165 : 130;
@@ -7617,10 +7868,10 @@ extends Activity {
         bg.setColor(Color.rgb(red, green, blue));
         bg.setCornerRadius((float)this.dp(8 + (int)(8.0f * normalized)));
         bg.setStroke(this.dp(1 + (int)(2.0f * normalized)), Color.argb(120 + (int)(90.0f * normalized), 125, 211, 252));
-        this.holdToSpeakBtn.setBackground((Drawable)bg);
+        targetBtn.setBackground((Drawable)bg);
         float scale = 1.0f + 0.035f * normalized;
-        this.holdToSpeakBtn.setScaleX(scale);
-        this.holdToSpeakBtn.setScaleY(scale);
+        targetBtn.setScaleX(scale);
+        targetBtn.setScaleY(scale);
     }
 
     private void toggleWakeListening() {
@@ -7946,7 +8197,11 @@ extends Activity {
             if (duration < 500) {
                 Log.d("YanziVoice", "Speech duration too short: " + duration + "ms, accumulatedLength=" + this.speechAccumulatedText.length());
                 this.destroySpeechRecognizer();
-                this.switchToTextInput();
+                if (this.isChatVoiceActive) {
+                    this.switchToChatTextInput();
+                } else {
+                    this.switchToTextInput();
+                }
                 if (this.speechAccumulatedText.length() == 0) {
                     Toast.makeText((Context)this, "说话时间太短", Toast.LENGTH_SHORT).show();
                 }
@@ -7954,7 +8209,11 @@ extends Activity {
             }
             if (this.isSpeechFinished) {
                 Log.d("YanziVoice", "Speech already finished when ActionUp, switching UI");
-                this.switchToTextInput();
+                if (this.isChatVoiceActive) {
+                    this.switchToChatTextInput();
+                } else {
+                    this.switchToTextInput();
+                }
             } else {
                 if (this.speechRecognizer != null) {
                     if (this.isSpeechListening) {
@@ -7969,7 +8228,11 @@ extends Activity {
             }
         } catch (Exception e) {
             Log.e("YanziVoice", "Failed to stop speech recognition", e);
-            this.switchToTextInput();
+            if (this.isChatVoiceActive) {
+                this.switchToChatTextInput();
+            } else {
+                this.switchToTextInput();
+            }
             this.destroySpeechRecognizer();
         }
     }
@@ -8304,8 +8567,17 @@ extends Activity {
         }
         this.speechAccumulatedText.append(normalized);
         String fullText = this.speechAccumulatedText.toString();
-        this.aiChatInput.setText((CharSequence)fullText);
-        this.aiChatInput.setSelection(fullText.length());
+        if (this.isChatVoiceActive) {
+            if (this.chatInputEditText != null) {
+                this.chatInputEditText.setText((CharSequence)fullText);
+                this.chatInputEditText.setSelection(fullText.length());
+            }
+        } else {
+            if (this.aiChatInput != null) {
+                this.aiChatInput.setText((CharSequence)fullText);
+                this.aiChatInput.setSelection(fullText.length());
+            }
+        }
     }
 
     private void scheduleSpeechRecognitionRestart() {
@@ -8720,4 +8992,1018 @@ extends Activity {
             this.example = example;
         }
     }
+
+    private String getYanmSyncLogs() {
+        String allLogs = MobileDiagnostics.get((Context)this);
+        if (allLogs == null || allLogs.trim().isEmpty()) {
+            return "\u6682\u65e0\u540c\u6b65\u8bb0\u5f55\u3002";
+        }
+        String[] lines = allLogs.split("\n");
+        StringBuilder sb = new StringBuilder();
+        for (String line : lines) {
+            if (line.contains("\u71d5\u5e55") || line.contains("yanm") || line.contains("\u540c\u6b65") || line.contains("\u76f4\u8fde") || line.contains("LAN")) {
+                sb.append(line).append("\n");
+            }
+        }
+        return sb.length() == 0 ? "\u6682\u65e0\u76f8\u5173\u7684\u540c\u6b65\u8bb0\u5f55\u3002" : sb.toString().trim();
+    }
+
+    private void showYanmSyncLogsDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder((Context)this);
+        
+        LinearLayout layout = new LinearLayout((Context)this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
+        layout.setBackgroundColor(ThemeConfig.COLOR_CARD_BACKGROUND);
+        
+        LinearLayout titleBar = new LinearLayout((Context)this);
+        titleBar.setOrientation(LinearLayout.HORIZONTAL);
+        titleBar.setGravity(Gravity.CENTER_VERTICAL);
+        
+        TextView titleTv = new TextView((Context)this);
+        titleTv.setText((CharSequence)"\u71d5\u5e55\u540c\u6b65\u4e0e\u8fde\u63a5\u65e5\u5fd7");
+        titleTv.setTextSize(18f);
+        titleTv.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+        titleTv.setTypeface(null, Typeface.BOLD);
+        titleBar.addView((View)titleTv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        
+        Button btnRefresh = new Button((Context)this);
+        btnRefresh.setText((CharSequence)"\u5237\u65b0");
+        btnRefresh.setTextSize(12f);
+        btnRefresh.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
+        btnRefresh.setBackgroundColor(Color.TRANSPARENT);
+        btnRefresh.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
+        titleBar.addView((View)btnRefresh, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+        
+        layout.addView((View)titleBar);
+        
+        View divider = new View((Context)this);
+        divider.setBackgroundColor(ThemeConfig.COLOR_DIVIDER);
+        LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(-1, this.dp(1));
+        divParams.topMargin = this.dp(10);
+        divParams.bottomMargin = this.dp(10);
+        layout.addView(divider, (ViewGroup.LayoutParams)divParams);
+        
+        androidx.core.widget.NestedScrollView scrollView = new androidx.core.widget.NestedScrollView((Context)this);
+        scrollView.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
+        scrollView.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
+        
+        TextView logTv = new TextView((Context)this);
+        logTv.setTextSize(12f);
+        logTv.setTextColor(Color.rgb(212, 212, 216));
+        logTv.setTypeface(Typeface.MONOSPACE);
+        
+        logTv.setText((CharSequence)this.getYanmSyncLogs());
+        scrollView.addView((View)logTv);
+        layout.addView((View)scrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(300)));
+        
+        LinearLayout actionsLayout = new LinearLayout((Context)this);
+        actionsLayout.setOrientation(LinearLayout.HORIZONTAL);
+        actionsLayout.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        actionsLayout.setPadding(0, this.dp(12), 0, 0);
+        
+        String viewUrl = this.getSharedPreferences("yanzi-mobile", 0).getString("yanm_view_url", "");
+        if (viewUrl != null && !viewUrl.trim().isEmpty()) {
+            Button btnGoCloud = new Button((Context)this);
+            btnGoCloud.setText((CharSequence)"\u524d\u5f80\u4e91\u7aef");
+            btnGoCloud.setTextSize(13f);
+            btnGoCloud.setTextColor(Color.rgb(16, 185, 129)); // emerald-500
+            btnGoCloud.setBackgroundColor(Color.TRANSPARENT);
+            btnGoCloud.setOnClickListener(v -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(viewUrl.trim()));
+                    this.startActivity(intent);
+                } catch (Exception e) {
+                    Toast.makeText((Context)this, (CharSequence)"\u65e0\u6cd5\u6263\u5f00\u94fe\u63a5", (int)0).show();
+                }
+            });
+            actionsLayout.addView((View)btnGoCloud);
+        }
+        
+        Button btnClear = new Button((Context)this);
+        btnClear.setText((CharSequence)"\u6e05\u9664");
+        btnClear.setTextSize(13f);
+        btnClear.setTextColor(Color.rgb(239, 68, 68));
+        btnClear.setBackgroundColor(Color.TRANSPARENT);
+        actionsLayout.addView((View)btnClear);
+        
+        Button btnCopy = new Button((Context)this);
+        btnCopy.setText((CharSequence)"\u590d\u5236");
+        btnCopy.setTextSize(13f);
+        btnCopy.setTextColor(Color.rgb(34, 211, 238));
+        btnCopy.setBackgroundColor(Color.TRANSPARENT);
+        actionsLayout.addView((View)btnCopy);
+        
+        Button btnClose = new Button((Context)this);
+        btnClose.setText((CharSequence)"\u5173\u95ed");
+        btnClose.setTextSize(13f);
+        btnClose.setTextColor(Color.WHITE);
+        btnClose.setBackgroundColor(Color.TRANSPARENT);
+        actionsLayout.addView((View)btnClose);
+        
+        layout.addView((View)actionsLayout);
+        
+        builder.setView((View)layout);
+        AlertDialog dialog = builder.create();
+        
+        btnRefresh.setOnClickListener(v -> {
+            logTv.setText((CharSequence)this.getYanmSyncLogs());
+        });
+        btnClear.setOnClickListener(v -> {
+            MobileDiagnostics.clear((Context)this);
+            logTv.setText((CharSequence)"\u6e05\u9664\u6210\u529f");
+        });
+        btnCopy.setOnClickListener(v -> {
+            ClipboardManager manager = (ClipboardManager)this.getSystemService("clipboard");
+            if (manager != null) {
+                manager.setPrimaryClip(ClipData.newPlainText((CharSequence)"Yanm Sync Logs", logTv.getText()));
+                Toast.makeText((Context)this, (CharSequence)"\u540c\u6b65\u65e5\u5fd7\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f", (int)0).show();
+            }
+        });
+        btnClose.setOnClickListener(v -> dialog.dismiss());
+        
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            GradientDrawable drawable = new GradientDrawable();
+            drawable.setColor(Color.rgb(24, 24, 27));
+            drawable.setCornerRadius((float)this.dp(12));
+            dialog.getWindow().setBackgroundDrawable((android.graphics.drawable.Drawable)drawable);
+        }
+    }
+
+    private LinearLayout createListItem(String title, final String subText, final Runnable onClick) {
+        LinearLayout row = new LinearLayout((Context)this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(this.dp(16), this.dp(14), this.dp(16), this.dp(14));
+        row.setClickable(true);
+        row.setFocusable(true);
+        
+        TextView titleTv = new TextView((Context)this);
+        titleTv.setText((CharSequence)title);
+        titleTv.setTextSize(15f);
+        titleTv.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+        row.addView((View)titleTv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        
+        LinearLayout rightLayout = new LinearLayout((Context)this);
+        rightLayout.setOrientation(LinearLayout.HORIZONTAL);
+        rightLayout.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        
+        final TextView subTv = new TextView((Context)this);
+        subTv.setText((CharSequence)(subText == null ? "" : subText));
+        subTv.setTextSize(13f);
+        subTv.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
+        subTv.setPadding(0, 0, this.dp(8), 0);
+        rightLayout.addView((View)subTv);
+        
+        TextView chevron = new TextView((Context)this);
+        chevron.setText((CharSequence)">");
+        chevron.setTextSize(14f);
+        chevron.setTextColor(ThemeConfig.COLOR_TEXT_MUTED);
+        rightLayout.addView((View)chevron);
+        
+        row.addView((View)rightLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+        
+        row.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    v.setBackgroundColor(ThemeConfig.COLOR_ITEM_PRESSED);
+                } else if (event.getAction() == android.view.MotionEvent.ACTION_UP || event.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
+                    v.setBackgroundColor(Color.TRANSPARENT);
+                }
+                return false;
+            }
+        });
+        
+        row.setOnClickListener(v -> {
+            if (onClick != null) {
+                onClick.run();
+            }
+        });
+        
+        row.setTag(subTv);
+        return row;
+    }
+
+    private LinearLayout createListGroup(LinearLayout... items) {
+        LinearLayout group = new LinearLayout((Context)this);
+        group.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable gd = new GradientDrawable();
+        gd.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
+        gd.setCornerRadius((float)this.dp(12));
+        group.setBackground((Drawable)gd);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = this.dp(12);
+        group.setLayoutParams((ViewGroup.LayoutParams)lp);
+        
+        for (int i = 0; i < items.length; i++) {
+            group.addView((View)items[i]);
+            if (i < items.length - 1) {
+                View divider = new View((Context)this);
+                divider.setBackgroundColor(ThemeConfig.COLOR_DIVIDER);
+                LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(-1, this.dp(1));
+                divLp.leftMargin = this.dp(16);
+                divLp.rightMargin = this.dp(16);
+                group.addView(divider, (ViewGroup.LayoutParams)divLp);
+            }
+        }
+        return group;
+    }
+
+    private void setupProfileHeader() {
+        LinearLayout header = new LinearLayout((Context)this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(this.dp(8), this.dp(16), this.dp(8), this.dp(24));
+        header.setClickable(true);
+        header.setFocusable(true);
+        
+        this.profileAvatarView = new android.widget.ImageView((Context)this);
+        int avatarSize = this.dp(60);
+        LinearLayout.LayoutParams avatarParams = new LinearLayout.LayoutParams(avatarSize, avatarSize);
+        avatarParams.rightMargin = this.dp(16);
+        this.profileAvatarView.setLayoutParams((ViewGroup.LayoutParams)avatarParams);
+        
+        int resId = this.getResources().getIdentifier("yanzi_launcher_bitmap", "drawable", this.getPackageName());
+        if (resId == 0) {
+            resId = this.getResources().getIdentifier("yanzi_launcher", "drawable", this.getPackageName());
+        }
+        if (resId == 0) {
+            resId = this.getResources().getIdentifier("ic_launcher", "drawable", this.getPackageName());
+        }
+        if (resId != 0) {
+            this.profileAvatarView.setImageResource(resId);
+        }
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            this.profileAvatarView.setClipToOutline(true);
+            this.profileAvatarView.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override
+                public void getOutline(View view, android.graphics.Outline outline) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), (float)MainActivity.this.dp(12));
+                }
+            });
+        }
+        
+        LinearLayout textLayout = new LinearLayout((Context)this);
+        textLayout.setOrientation(LinearLayout.VERTICAL);
+        
+        this.profileNameView = new android.widget.TextView((Context)this);
+        this.profileNameView.setTextSize(18f);
+        this.profileNameView.setTextColor(-1);
+        this.profileNameView.setTypeface(null, Typeface.BOLD);
+        
+        this.profileSubtextView = new android.widget.TextView((Context)this);
+        this.profileSubtextView.setTextSize(13f);
+        this.profileSubtextView.setTextColor(Color.rgb(161, 161, 170));
+        this.profileSubtextView.setPadding(0, this.dp(4), 0, 0);
+        
+        textLayout.addView((View)this.profileNameView);
+        textLayout.addView((View)this.profileSubtextView);
+        
+        header.addView((View)this.profileAvatarView);
+        header.addView((View)textLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        
+        header.setOnClickListener(v -> this.showAccountSettingsDialog());
+        
+        this.profileTabPage.addView((View)header);
+    }
+
+    private void updateProfileHeader() {
+        if (this.profileAvatarView == null || this.profileNameView == null || this.profileSubtextView == null) {
+            return;
+        }
+        String email = this.prefs.getString("email", "");
+        String username = this.prefs.getString("username", "");
+        if (username == null || username.trim().isEmpty()) {
+            if (email != null && !email.trim().isEmpty()) {
+                if (email.contains("@")) {
+                    username = email.substring(0, email.indexOf("@"));
+                } else {
+                    username = email;
+                }
+            }
+        }
+        if (username != null && !username.trim().isEmpty()) {
+            this.profileNameView.setText((CharSequence)username);
+            this.profileSubtextView.setVisibility(View.GONE);
+            this.profileAvatarView.setAlpha(1.0f);
+        } else {
+            this.profileNameView.setText((CharSequence)"\u672a\u767b\u5f55");
+            this.profileSubtextView.setText((CharSequence)"\u70b9\u51fb\u767b\u5f55\u540c\u6b65\u670d\u52a1");
+            this.profileSubtextView.setVisibility(View.VISIBLE);
+            this.profileAvatarView.setAlpha(0.6f);
+        }
+    }
+
+    private void showAccountSettingsDialog() {
+        LinearLayout dialogLayout = new LinearLayout((Context)this);
+        dialogLayout.setOrientation(1);
+        dialogLayout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
+        dialogLayout.setBackgroundColor(ThemeConfig.COLOR_CARD_BACKGROUND);
+        if (this.emailInput.getParent() != null) {
+            ((ViewGroup)this.emailInput.getParent()).removeView((View)this.emailInput);
+        }
+        if (this.passwordInput.getParent() != null) {
+            ((ViewGroup)this.passwordInput.getParent()).removeView((View)this.passwordInput);
+        }
+        dialogLayout.addView((View)this.emailInput);
+        dialogLayout.addView((View)this.passwordInput);
+        LinearLayout buttonsLayout = new LinearLayout((Context)this);
+        buttonsLayout.setOrientation(0);
+        buttonsLayout.setPadding(0, this.dp(10), 0, 0);
+        Button logoutBtn = this.button("\u9000\u51fa");
+        if (this.loginButton.getParent() != null) {
+            ((ViewGroup)this.loginButton.getParent()).removeView((View)this.loginButton);
+        }
+        buttonsLayout.addView((View)this.loginButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
+        buttonsLayout.addView((View)logoutBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
+        dialogLayout.addView((View)buttonsLayout);
+        
+        AlertDialog dialog = new AlertDialog.Builder((Context)this, 16974545)
+            .setTitle((CharSequence)"\u8d26\u53f7")
+            .setView((View)dialogLayout)
+            .setCancelable(true)
+            .show();
+        this.accountDialog = dialog;
+        dialog.setOnDismissListener(d -> {
+            this.accountDialog = null;
+        });
+            
+        logoutBtn.setOnClickListener(v1 -> {
+            this.prefs.edit().putString("token", "").putString("email", "").putString("username", "").apply();
+            this.setStatus("\u5df2\u6e05\u9664\u67ac\u5730\u767b\u5f55\u6001\u3002");
+            if (this.loginButton != null) {
+                this.loginButton.setEnabled(true);
+            }
+            this.updateProfileHeader();
+            this.accountDialog = null;
+            dialog.dismiss();
+        });
+    }
+
+    private void showSendTextToDesktopDialog() {
+        LinearLayout dialogLayout = new LinearLayout((Context)this);
+        dialogLayout.setOrientation(1);
+        dialogLayout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
+        dialogLayout.setBackgroundColor(ThemeConfig.COLOR_CARD_BACKGROUND);
+        if (this.textInput.getParent() != null) {
+            ((ViewGroup)this.textInput.getParent()).removeView((View)this.textInput);
+        }
+        dialogLayout.addView((View)this.textInput);
+        Button sendBtn = this.button("\u53d1\u9001");
+        dialogLayout.addView((View)sendBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(48)));
+        AlertDialog dialog = new AlertDialog.Builder((Context)this, 16974545)
+            .setTitle((CharSequence)"\u53d1\u9001\u6d88\u606f\u5230\u7535\u8111")
+            .setView((View)dialogLayout)
+            .setPositiveButton((CharSequence)"\u5173\u95ed", null)
+            .show();
+        sendBtn.setOnClickListener(v1 -> {
+            this.sendToDesktop();
+            dialog.dismiss();
+        });
+    }
+
+    private void showCloudSyncUpdateSettingsDialog(final TextView statusTv) {
+        LinearLayout dialogLayout = new LinearLayout((Context)this);
+        dialogLayout.setOrientation(LinearLayout.VERTICAL);
+        dialogLayout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
+        dialogLayout.setBackgroundColor(ThemeConfig.COLOR_CARD_BACKGROUND);
+        
+        LinearLayout rowSwitch = new LinearLayout((Context)this);
+        rowSwitch.setOrientation(LinearLayout.HORIZONTAL);
+        rowSwitch.setGravity(Gravity.CENTER_VERTICAL);
+        rowSwitch.setPadding(0, 0, 0, this.dp(16));
+        
+        TextView labelSwitch = this.textView("\u5f00\u542f\u4e91\u7aef\u81ea\u52a8\u66f4\u65b0", 15, -1, false);
+        android.widget.Switch sw = new android.widget.Switch((Context)this);
+        sw.setChecked(this.prefs.getBoolean("auto_cloud_update", false));
+        
+        rowSwitch.addView((View)labelSwitch, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        rowSwitch.addView((View)sw, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+        dialogLayout.addView((View)rowSwitch);
+        
+        LinearLayout rowFreq = new LinearLayout((Context)this);
+        rowFreq.setOrientation(LinearLayout.VERTICAL);
+        
+        TextView labelFreq = this.textView("\u66f4\u65b0\u9891\u7387\u0020\u0028\u79d2\u0029", 14, Color.rgb(148, 163, 184), false);
+        rowFreq.addView((View)labelFreq);
+        
+        final EditText etInterval = new EditText((Context)this);
+        etInterval.setInputType(2);
+        etInterval.setTextColor(-1);
+        int currentInterval = this.prefs.getInt("auto_cloud_update_interval", 60);
+        etInterval.setText((CharSequence)String.valueOf(currentInterval));
+        etInterval.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+        etInterval.setBackgroundColor(Color.rgb(30, 30, 30));
+        
+        rowFreq.addView((View)etInterval, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
+        dialogLayout.addView((View)rowFreq);
+        
+        AlertDialog dialog = new AlertDialog.Builder((Context)this, 16974545)
+            .setTitle((CharSequence)"\u4e91\u7aef\u81ea\u52a8\u66f4\u65b0\u914d\u7f6e")
+            .setView((View)dialogLayout)
+            .setPositiveButton((CharSequence)"\u4fdd\u5b58", (dialogInterface, which) -> {
+                boolean autoUpdate = sw.isChecked();
+                String val = etInterval.getText().toString().trim();
+                int interval = 60;
+                try {
+                    interval = Integer.parseInt(val);
+                } catch (Exception e) {}
+                if (interval < 10) {
+                    interval = 10;
+                }
+                
+                this.prefs.edit()
+                    .putBoolean("auto_cloud_update", autoUpdate)
+                    .putInt("auto_cloud_update_interval", interval)
+                    .apply();
+                
+                this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
+                if (autoUpdate) {
+                    this.autoCloudUpdateHandler.postDelayed(this.autoCloudUpdateRunnable, 1000L);
+                    Toast.makeText(this.getApplicationContext(), (CharSequence)"\u5df2\u542f\u7528\u81ea\u52a8\u66f4\u65b0", Toast.LENGTH_SHORT).show();
+                    if (statusTv != null) {
+                        statusTv.setText((CharSequence)("\u5df2\u542f\u7528(" + interval + "\u79d2)"));
+                    }
+                } else {
+                    Toast.makeText(this.getApplicationContext(), (CharSequence)"\u5df2\u5173\u95ed\u81ea\u52a8\u66f4\u65b0", Toast.LENGTH_SHORT).show();
+                    if (statusTv != null) {
+                        statusTv.setText((CharSequence)"\u5df2\u5173\u95ed");
+                    }
+                }
+            })
+            .setNegativeButton((CharSequence)"\u5356\u5b50", null) //这里在原有代码中实际上是"取消"的Unicode转义
+            .setNegativeButton((CharSequence)"\u53d6\u6d88", null)
+            .show();
+    }
+
+    private void pickChatPhoto() {
+        try {
+            Intent intent = new Intent("android.intent.action.OPEN_DOCUMENT");
+            intent.addCategory("android.intent.category.OPENABLE");
+            intent.setType("image/*");
+            this.startActivityForResult(intent, 4103);
+        }
+        catch (Exception ex) {
+            this.setStatus("\u6253\u5f00\u76f8\u518c\u5931\u8d25\uff1a" + ex.getMessage());
+        }
+    }
+
+    private void pickChatFile() {
+        try {
+            Intent intent = new Intent("android.intent.action.GET_CONTENT");
+            intent.setType("*/*");
+            intent.addCategory("android.intent.category.OPENABLE");
+            this.startActivityForResult(intent, 4102);
+        }
+        catch (Exception ex) {
+            this.setStatus("\u6253\u5f00\u6587\u4ef6\u7ba1\u7406\u5668\u5931\u8d25\uff1a" + ex.getMessage());
+        }
+    }
+
+    private void sendPhotoToDesktopChat(Uri uri) {
+        this.setStatus("\u6b63\u5728\u5904\u7406\u7167\u7247...");
+        this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u7167\u7247...");
+        this.renderChatMessage("self", "photo", uri.toString(), true);
+        this.saveChatMessageToLocal("self", "photo", uri.toString());
+        
+        this.executor.execute(() -> {
+            try {
+                byte[] jpegBytes = this.readJpegBytesFromUri(uri);
+                int[] size = MainActivity.readImageSizeFromJpegBytes(jpegBytes);
+                int width = size[0];
+                int height = size[1];
+                
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+                String messageId;
+                try {
+                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
+                    messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
+                } catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) {
+                        throw ex;
+                    }
+                    token = this.refreshToken();
+                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
+                    messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
+                }
+                final String finalMsgId = messageId;
+                this.runOnUiThread(() -> {
+                    this.hidePhotoProgress();
+                    this.setStatus("\u7167\u7247\u5df2\u53d1\u9001\uff0cid=" + finalMsgId);
+                });
+            } catch (Exception ex) {
+                this.runOnUiThread(() -> {
+                    this.hidePhotoProgress();
+                    this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
+                    this.renderChatMessage("system", "text", "\u7167\u7247\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
+                });
+            }
+        });
+    }
+
+    private void sendFileToDesktopChat(Uri uri) {
+        this.setStatus("\u6b63\u5728\u5904\u7406\u6587\u4ef6...");
+        this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u6587\u4ef6...");
+        
+        this.executor.execute(() -> {
+            try {
+                String fileName = "file_" + System.currentTimeMillis();
+                long fileSize = 0;
+                android.database.Cursor cursor = this.getContentResolver().query(uri, null, null, null, null);
+                if (cursor != null) {
+                    try {
+                        if (cursor.moveToFirst()) {
+                            int nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                            if (nameIndex != -1) {
+                                String name = cursor.getString(nameIndex);
+                                if (name != null && !name.isEmpty()) {
+                                    fileName = name;
+                                }
+                            }
+                            int sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE);
+                            if (sizeIndex != -1) {
+                                fileSize = cursor.getLong(sizeIndex);
+                            }
+                        }
+                    } finally {
+                        cursor.close();
+                    }
+                }
+                
+                final String finalFileName = fileName;
+                if (fileSize > 30 * 1024 * 1024) {
+                    throw new IllegalStateException("\u4e0d\u652f\u6301\u53d1\u9001\u8d85\u8fc7 30MB \u7684\u5927\u6587\u4ef6");
+                }
+                
+                java.io.InputStream inputStream = this.getContentResolver().openInputStream(uri);
+                if (inputStream == null) {
+                    throw new java.io.IOException("\u65e0\u6cd5\u6253\u5f00\u8f93\u5165\u6d41");
+                }
+                java.io.ByteArrayOutputStream byteBuffer = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = inputStream.read(buffer)) != -1) {
+                    byteBuffer.write(buffer, 0, len);
+                }
+                inputStream.close();
+                byte[] bytes = byteBuffer.toByteArray();
+                
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+                YanziApiClient.WebDavConfig config;
+                try {
+                    config = YanziApiClient.fetchWebDavConfig(baseUrl, token);
+                } catch (Exception ex) {
+                    if (MainActivity.isUnauthorized(ex)) {
+                        token = this.refreshToken();
+                        config = YanziApiClient.fetchWebDavConfig(baseUrl, token);
+                    } else {
+                        throw new IllegalStateException("\u65e0\u6cd5\u83b7\u53d6 WebDAV \u914d\u7f6e\uff0c\u8bf7\u786e\u8ba4\u5df2\u5728\u7535\u8111\u6216\u6211\u7684\u9875\u9762\u914d\u7f6e\u4e86\u575a\u679c\u4e91\u670d\u52a1\uff1a" + ex.getMessage());
+                    }
+                }
+                
+                String relativePath = "temp-mobile-upload-" + System.currentTimeMillis() + "-" + finalFileName;
+                this.runOnUiThread(() -> this.setStatus("\u6b63\u5728\u4e0a\u4f20\u5230\u4e91\u7aef..."));
+                YanziApiClient.putWebDavBytes(config, relativePath, bytes, "application/octet-stream");
+                
+                this.runOnUiThread(() -> {
+                    this.renderChatMessage("self", "file", finalFileName, true);
+                    this.saveChatMessageToLocal("self", "file", finalFileName);
+                });
+                
+                JSONObject payload = new JSONObject();
+                payload.put("sourceDeviceId", (Object)this.deviceId);
+                payload.put("targetPlatform", (Object)"desktop");
+                payload.put("kind", (Object)"file");
+                payload.put("title", (Object)finalFileName);
+                payload.put("text", (Object)("\u624b\u673a\u6587\u4ef6\uff1a" + finalFileName));
+                
+                JSONObject innerPayload = new JSONObject();
+                innerPayload.put("source", (Object)"android");
+                innerPayload.put("sourceDeviceName", (Object)MainActivity.buildDeviceDisplayName());
+                innerPayload.put("createdAt", System.currentTimeMillis());
+                innerPayload.put("webDavPath", (Object)relativePath);
+                payload.put("payload", (Object)innerPayload);
+                
+                String messageId = YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u53d1\u9001\u6587\u4ef6").optString("messageId", "unknown");
+                
+                this.runOnUiThread(() -> {
+                    this.hidePhotoProgress();
+                    this.setStatus("\u6587\u4ef6\u5df2\u6210\u529f\u53d1\u9001\uff0cid=" + messageId);
+                });
+            } catch (Exception ex) {
+                this.runOnUiThread(() -> {
+                    this.hidePhotoProgress();
+                    this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
+                    this.renderChatMessage("system", "text", "\u6587\u4ef6\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
+                });
+            }
+        });
+    }
+
+    private void handleSendChatMessageClick() {
+        if (this.chatInputEditText == null) return;
+        String text = this.chatInputEditText.getText().toString().trim();
+        if (text.isEmpty()) return;
+        
+        this.chatInputEditText.setText("");
+        this.setStatus("\u6b63\u5728\u53d1\u9001\u5230\u7535\u8111...");
+        this.renderChatMessage("self", "text", text, true);
+        this.saveChatMessageToLocal("self", "text", text);
+        
+        this.executor.execute(() -> {
+            try {
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+                String messageId = "";
+                try {
+                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
+                    messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
+                } catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) {
+                        throw ex;
+                    }
+                    token = this.refreshToken();
+                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
+                    messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
+                }
+                final String finalMsgId = messageId;
+                this.runOnUiThread(() -> this.setStatus("\u6d88\u606f\u5df2\u53d1\u9001\uff0cid=" + finalMsgId));
+            } catch (Exception ex) {
+                this.runOnUiThread(() -> {
+                    this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
+                    this.renderChatMessage("system", "text", "\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
+                });
+            }
+        });
+    }
+
+    private LinearLayout buildChatContainer() {
+        this.chatContainerLayout = new LinearLayout((Context)this);
+        this.chatContainerLayout.setOrientation(LinearLayout.VERTICAL);
+        
+        ScrollView scroll = new ScrollView((Context)this);
+        this.chatMessageListLayout = new LinearLayout((Context)this);
+        this.chatMessageListLayout.setOrientation(LinearLayout.VERTICAL);
+        this.chatMessageListLayout.setPadding(0, this.dp(8), 0, this.dp(8));
+        scroll.addView((View)this.chatMessageListLayout);
+        
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
+        this.chatContainerLayout.addView((View)scroll, (ViewGroup.LayoutParams)scrollParams);
+        
+        LinearLayout inputRow = new LinearLayout((Context)this);
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
+        inputRow.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+        
+        this.chatVoiceToggleBtn = new ImageView((Context)this);
+        this.chatVoiceToggleBtn.setClickable(true);
+        this.chatVoiceToggleBtn.setFocusable(true);
+        this.chatVoiceToggleBtn.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+        this.chatVoiceToggleBtn.setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault("microphone"), Color.rgb(200, 200, 200)));
+        this.chatVoiceToggleBtn.setOnClickListener(v -> {
+            if (this.chatHoldToSpeakBtn.getVisibility() == View.GONE) {
+                this.isChatVoiceActive = true;
+                if (this.checkAudioPermission()) {
+                    if (this.isBackendSpeechRecognizerWorkable()) {
+                        this.switchToChatVoiceInput();
+                    } else {
+                        Toast.makeText((Context)this, "拉起系统语音输入...", Toast.LENGTH_SHORT).show();
+                        this.startSpeechIntent();
+                    }
+                }
+            } else {
+                this.switchToChatTextInput();
+            }
+        });
+        LinearLayout.LayoutParams voiceToggleParams = new LinearLayout.LayoutParams(this.dp(40), this.dp(40));
+        voiceToggleParams.rightMargin = this.dp(8);
+        inputRow.addView((View)this.chatVoiceToggleBtn, (ViewGroup.LayoutParams)voiceToggleParams);
+
+        this.chatInputEditText = this.input("发送给电脑...", "");
+        GradientDrawable inputBg = new GradientDrawable();
+        inputBg.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
+        inputBg.setCornerRadius((float)this.dp(8));
+        this.chatInputEditText.setBackground((Drawable)inputBg);
+        
+        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(0, this.dp(40), 1.0f);
+        editParams.rightMargin = this.dp(8);
+        inputRow.addView((View)this.chatInputEditText, (ViewGroup.LayoutParams)editParams);
+
+        this.chatHoldToSpeakBtn = new Button((Context)this);
+        this.chatHoldToSpeakBtn.setText("按住 说话");
+        this.chatHoldToSpeakBtn.setTextColor(-1);
+        this.chatHoldToSpeakBtn.setTextSize(14f);
+        GradientDrawable speakBg = new GradientDrawable();
+        speakBg.setColor(Color.rgb(59, 130, 246));
+        speakBg.setCornerRadius((float)this.dp(8));
+        this.chatHoldToSpeakBtn.setBackground((Drawable)speakBg);
+        this.chatHoldToSpeakBtn.setVisibility(View.GONE);
+        this.chatHoldToSpeakBtn.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case 0: // ACTION_DOWN
+                    this.isChatVoiceActive = true;
+                    this.chatHoldToSpeakBtn.setText("松开 结束");
+                    GradientDrawable downBg = new GradientDrawable();
+                    downBg.setColor(Color.rgb(220, 68, 68));
+                    downBg.setCornerRadius((float)this.dp(8));
+                    this.chatHoldToSpeakBtn.setBackground((Drawable)downBg);
+                    try {
+                        android.os.Vibrator vibrator = (android.os.Vibrator) this.getSystemService(Context.VIBRATOR_SERVICE);
+                        if (vibrator != null) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                vibrator.vibrate(android.os.VibrationEffect.createOneShot(50L, -1));
+                            } else {
+                                vibrator.vibrate(50L);
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                    this.startSpeechRecognition();
+                    return true;
+                case 1: // ACTION_UP
+                case 3: // ACTION_CANCEL
+                    this.chatHoldToSpeakBtn.setText("按住 说话");
+                    GradientDrawable upBg = new GradientDrawable();
+                    upBg.setColor(Color.rgb(59, 130, 246));
+                    upBg.setCornerRadius((float)this.dp(8));
+                    this.chatHoldToSpeakBtn.setBackground((Drawable)upBg);
+                    this.stopSpeechRecognition();
+                    return true;
+            }
+            return false;
+        });
+        LinearLayout.LayoutParams speakParams = new LinearLayout.LayoutParams(0, this.dp(40), 1.0f);
+        speakParams.rightMargin = this.dp(8);
+        inputRow.addView((View)this.chatHoldToSpeakBtn, (ViewGroup.LayoutParams)speakParams);
+        
+        this.chatAttachBtn = new ImageView((Context)this);
+        this.chatAttachBtn.setClickable(true);
+        this.chatAttachBtn.setFocusable(true);
+        this.chatAttachBtn.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+        this.chatAttachBtn.setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault("plus"), Color.rgb(200, 200, 200)));
+        this.chatAttachBtn.setOnClickListener(v -> {
+            PopupMenu popup = new PopupMenu((Context)this, this.chatAttachBtn);
+            popup.getMenu().add(0, 1, 0, "照片");
+            popup.getMenu().add(0, 2, 0, "文件");
+            popup.getMenu().add(0, 3, 0, "拍照");
+            popup.setOnMenuItemClickListener(item -> {
+                int id = item.getItemId();
+                if (id == 1) {
+                    this.pickChatPhoto();
+                } else if (id == 2) {
+                    this.pickChatFile();
+                } else if (id == 3) {
+                    this.takeCameraPhotoForChat();
+                }
+                return true;
+            });
+            popup.show();
+        });
+        LinearLayout.LayoutParams attachParams = new LinearLayout.LayoutParams(this.dp(40), this.dp(40));
+        attachParams.rightMargin = this.dp(8);
+        inputRow.addView((View)this.chatAttachBtn, (ViewGroup.LayoutParams)attachParams);
+
+        this.chatSendButton = this.button("发送");
+        this.chatSendButton.setOnClickListener(v -> this.handleSendChatMessageClick());
+        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(this.dp(60), this.dp(40));
+        inputRow.addView((View)this.chatSendButton, (ViewGroup.LayoutParams)sendParams);
+        
+        this.chatContainerLayout.addView((View)inputRow);
+        
+        this.loadChatHistory();
+        return this.chatContainerLayout;
+    }
+
+    private void switchToChatVoiceInput() {
+        this.isChatVoiceActive = true;
+        this.chatHoldToSpeakBtn.setVisibility(View.VISIBLE);
+        this.chatHoldToSpeakBtn.setText("按住 说话");
+        this.chatInputEditText.setVisibility(View.GONE);
+        this.chatVoiceToggleBtn.setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault("keyboard"), Color.rgb(200, 200, 200)));
+        this.hideKeyboard((View)this.chatInputEditText);
+    }
+
+    private void switchToChatTextInput() {
+        this.isChatVoiceActive = false;
+        this.chatHoldToSpeakBtn.setVisibility(View.GONE);
+        this.chatInputEditText.setVisibility(View.VISIBLE);
+        this.chatVoiceToggleBtn.setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault("microphone"), Color.rgb(200, 200, 200)));
+    }
+
+    private void takeCameraPhotoForChat() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (this.checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                this.requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 9002);
+                return;
+            }
+        }
+        this.launchCameraForChat();
+    }
+
+    private void launchCameraForChat() {
+        Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+        if (intent.resolveActivity(this.getPackageManager()) != null) {
+            try {
+                String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+                String imageFileName = "JPEG_" + timeStamp + "_";
+                File storageDir = this.getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+                this.cameraPhotoFile = File.createTempFile(imageFileName, ".jpg", storageDir);
+                
+                this.cameraPhotoUri = androidx.core.content.FileProvider.getUriForFile(this, 
+                        "cc.luoluoluo.yanzi.mobile.fileprovider", this.cameraPhotoFile);
+                
+                intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, this.cameraPhotoUri);
+                this.startActivityForResult(intent, 4104);
+            } catch (Exception e) {
+                this.setStatus("拍照初始化失败: " + e.getMessage());
+            }
+        }
+    }
+
+    private void saveChatMessageToLocal(String role, String kind, String content) {
+        try {
+            String historyJson = this.prefs.getString("desktop_chat_history", "[]");
+            JSONArray arr = new JSONArray(historyJson);
+            JSONObject obj = new JSONObject();
+            obj.put("role", (Object)role);
+            obj.put("kind", (Object)kind);
+            obj.put("content", (Object)content);
+            obj.put("time", System.currentTimeMillis());
+            arr.put((Object)obj);
+            
+            if (arr.length() > 50) {
+                JSONArray newArr = new JSONArray();
+                for (int i = arr.length() - 50; i < arr.length(); ++i) {
+                    newArr.put(arr.get(i));
+                }
+                arr = newArr;
+            }
+            this.prefs.edit().putString("desktop_chat_history", arr.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+    
+    private void loadChatHistory() {
+        android.util.Log.i("MainActivity", "loadChatHistory: chatMessageListLayout=" + this.chatMessageListLayout);
+        if (this.chatMessageListLayout == null) return;
+        this.chatMessageListLayout.removeAllViews();
+        String historyJson = this.prefs.getString("desktop_chat_history", "[]");
+        android.util.Log.i("MainActivity", "loadChatHistory: historyJson=" + historyJson);
+        try {
+            JSONArray arr = new JSONArray(historyJson);
+            for (int i = 0; i < arr.length(); ++i) {
+                JSONObject obj = arr.getJSONObject(i);
+                this.renderChatMessage(obj.optString("role"), obj.optString("kind"), obj.optString("content"), false);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("MainActivity", "loadChatHistory error", e);
+        }
+    }
+
+    public static void onReceivedChatMessage(String msg) {
+        onReceivedChatMessage("text", msg);
+    }
+
+    public static void onReceivedChatMessage(String kind, String msg) {
+        android.util.Log.i("MainActivity", "onReceivedChatMessage static callback, kind=" + kind + ", msg=" + msg + ", sInstance=" + sInstance);
+        if (sInstance != null) {
+            sInstance.runOnUiThread(() -> {
+                sInstance.renderChatMessage("desktop", kind, msg, true);
+            });
+        }
+    }
+
+    private void renderChatMessage(String role, String kind, String content, boolean scrollToBottom) {
+        this.runOnUiThread(() -> {
+            if (this.chatMessageListLayout == null) return;
+            
+            LinearLayout bubbleContainer = new LinearLayout((Context)this);
+            bubbleContainer.setOrientation(LinearLayout.HORIZONTAL);
+            bubbleContainer.setPadding(0, this.dp(4), 0, this.dp(4));
+            
+            boolean isSelf = "self".equals(role);
+            bubbleContainer.setGravity(isSelf ? Gravity.END : Gravity.START);
+            
+            LinearLayout bubble = new LinearLayout((Context)this);
+            bubble.setOrientation(LinearLayout.VERTICAL);
+            bubble.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+            
+            GradientDrawable gd = new GradientDrawable();
+            gd.setColor(isSelf ? Color.rgb(30, 41, 59) : ThemeConfig.COLOR_CARD_BACKGROUND);
+            gd.setCornerRadius((float)this.dp(12));
+            bubble.setBackground((Drawable)gd);
+            
+            if ("photo".equals(kind)) {
+                TextView label = new TextView((Context)this);
+                label.setText((CharSequence)"[\u7167\u7247]");
+                label.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+                label.setTextSize(14f);
+                bubble.addView((View)label);
+                
+                if (content.startsWith("content://") || content.startsWith("file://")) {
+                    try {
+                        ImageView iv = new ImageView((Context)this);
+                        iv.setPadding(0, this.dp(4), 0, 0);
+                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(this.dp(120), this.dp(120));
+                        iv.setLayoutParams((ViewGroup.LayoutParams)imgLp);
+                        iv.setImageURI(Uri.parse(content));
+                        bubble.addView((View)iv);
+                    } catch (Exception ignored) {}
+                }
+            } else if ("file".equals(kind)) {
+                TextView fileLabel = new TextView((Context)this);
+                fileLabel.setText((CharSequence)("[\u6587\u4ef6] " + content));
+                fileLabel.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+                fileLabel.setTextSize(14f);
+                bubble.addView((View)fileLabel);
+            } else {
+                TextView text = new TextView((Context)this);
+                text.setText((CharSequence)content);
+                text.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+                text.setTextSize(14f);
+                bubble.addView((View)text);
+            }
+            
+            bubble.setOnLongClickListener(v -> {
+                PopupMenu popup = new PopupMenu((Context)MainActivity.this, bubble);
+                popup.getMenu().add(0, 1, 0, "复制消息");
+                popup.getMenu().add(0, 2, 0, "清理全部消息");
+                popup.setOnMenuItemClickListener(item -> {
+                    int id = item.getItemId();
+                    if (id == 1) {
+                        try {
+                            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) MainActivity.this.getSystemService(Context.CLIPBOARD_SERVICE);
+                            if (clipboard != null) {
+                                String clipText = content;
+                                if ("photo".equals(kind)) {
+                                    clipText = "[图片] " + content;
+                                } else if ("file".equals(kind)) {
+                                    clipText = "[文件] " + content;
+                                }
+                                android.content.ClipData clip = android.content.ClipData.newPlainText("Copied Chat Message", clipText);
+                                clipboard.setPrimaryClip(clip);
+                                Toast.makeText(MainActivity.this, "消息已复制到剪贴板", Toast.LENGTH_SHORT).show();
+                            }
+                        } catch (Exception ex) {
+                            Toast.makeText(MainActivity.this, "复制失败: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+                        }
+                    } else if (id == 2) {
+                        new android.app.AlertDialog.Builder((Context)MainActivity.this)
+                            .setTitle("提示")
+                            .setMessage("确定要清理全部聊天消息吗？")
+                            .setPositiveButton("确定", (dialog, which) -> {
+                                MainActivity.this.prefs.edit().putString("desktop_chat_history", "[]").apply();
+                                MainActivity.this.loadChatHistory();
+                                Toast.makeText(MainActivity.this, "聊天历史已清理", Toast.LENGTH_SHORT).show();
+                            })
+                            .setNegativeButton("取消", null)
+                            .show();
+                    }
+                    return true;
+                });
+                popup.show();
+                return true;
+            });
+            
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            if (isSelf) {
+                lp.leftMargin = this.dp(60);
+            } else {
+                lp.rightMargin = this.dp(60);
+            }
+            bubbleContainer.addView((View)bubble, (ViewGroup.LayoutParams)lp);
+            this.chatMessageListLayout.addView((View)bubbleContainer);
+            
+            if (scrollToBottom) {
+                if (this.chatMessageListLayout.getParent() instanceof ScrollView) {
+                    ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
+                    sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+                }
+            }
+        });
+    }
+
+    private LinearLayout createSwitchListItem(String title, boolean checked, android.widget.CompoundButton.OnCheckedChangeListener listener) {
+        LinearLayout row = new LinearLayout((Context)this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(this.dp(16), this.dp(10), this.dp(16), this.dp(10));
+        
+        TextView titleTv = new TextView((Context)this);
+        titleTv.setText((CharSequence)title);
+        titleTv.setTextSize(15f);
+        titleTv.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+        row.addView((View)titleTv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        
+        android.widget.Switch sw = new android.widget.Switch((Context)this);
+        sw.setChecked(checked);
+        sw.setOnCheckedChangeListener(listener);
+        row.addView((View)sw, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+        
+        return row;
+    }
 }
+

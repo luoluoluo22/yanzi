@@ -292,9 +292,13 @@
                     
                     <StackPanel Grid.Row="4" VerticalAlignment="Bottom" HorizontalAlignment="Center">
                         <Button Style="{StaticResource SidebarButtonStyle}" Margin="0,0,0,6" Click="MobileMessagesButton_Click" Width="32" Height="32" ToolTip="手机消息">
-                            <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry mobile}" Fill="#FF67E8F9" Stretch="Uniform"/>
-                            </Viewbox>
+                            <Grid Width="20" Height="20">
+                                <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Path Data="{local:IconGeometry mobile}" Fill="#FFFFFFFF" Stretch="Uniform"/>
+                                </Viewbox>
+                                <Ellipse x:Name="MobileDiscoverBadge" Width="6" Height="6" Fill="#FF22C55E" Margin="0,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
+                                <Ellipse x:Name="MobileMessageBadge" Width="6" Height="6" Fill="#FFE11D48" Margin="0,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
+                            </Grid>
                         </Button>
                         <Button Style="{StaticResource SidebarButtonStyle}" Click="SettingsButton_Click" Width="32" Height="32" ToolTip="设置">
                             <Viewbox Width="16" Height="16">

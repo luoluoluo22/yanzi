@@ -1755,7 +1755,9 @@ public partial class MainWindow
 
             _mobileMessageToastWindow = new MobileMessageToastWindow();
             _mobileMessageToastWindow.Closed += (_, _) => _mobileMessageToastWindow = null;
+            _mobileMessageToastWindow.ShowActivated = true;
             _mobileMessageToastWindow.Show();
+            _mobileMessageToastWindow.Activate();
         }
         catch (Exception ex)
         {
@@ -1767,15 +1769,22 @@ public partial class MainWindow
     {
         try
         {
+            var sourceLabel = MobileDeviceNameNormalizer.Normalize(sourceDeviceId);
             if (_mobileMessageToastWindow is { IsVisible: true })
             {
                 _mobileMessageToastWindow.AppendMessage(title, text, sourceDeviceId, DateTimeOffset.Now, screenshotDataUrl, screenshotFilePath);
+                
+                if (!_mobileMessageToastWindow.IsActive)
+                {
+                    QuickPanelWindow.HasUnreadMessages = true;
+                }
                 return;
             }
 
-            _mobileMessageToastWindow = new MobileMessageToastWindow(title, text, sourceDeviceId, DateTimeOffset.Now, screenshotDataUrl, screenshotFilePath);
-            _mobileMessageToastWindow.Closed += (_, _) => _mobileMessageToastWindow = null;
-            _mobileMessageToastWindow.Show();
+            QuickPanelWindow.HasUnreadMessages = true;
+            
+            var notificationCard = new MobileMessageNotificationCard(sourceLabel, text);
+            notificationCard.Show();
         }
         catch (Exception ex)
         {

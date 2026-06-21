@@ -15,6 +15,9 @@ public class LanDiscoveryManager {
     private static final int DISCOVERY_PORT = 42980;
     private static final String DISCOVER_REQUEST = "YANZI_DISCOVER_REQUEST";
     private static final int TIMEOUT_MS = 2000;
+    private static final long DISCOVERY_COOL_DOWN_MS = 30000; // 30秒冷却时间
+
+    private static volatile long lastDiscoveryFailedTime = 0;
 
     public static volatile String cachedLanBaseUrl = null;
     public static volatile String cachedLanApiToken = null;
@@ -24,6 +27,11 @@ public class LanDiscoveryManager {
     }
 
     public static String discoverSync(Context context) {
+        long now = System.currentTimeMillis();
+        if (now - lastDiscoveryFailedTime < DISCOVERY_COOL_DOWN_MS) {
+            Log.d(TAG, "Discovery is cooling down, skip broadcast");
+            return null;
+        }
         DatagramSocket socket = null;
         try {
             socket = new DatagramSocket();
@@ -66,6 +74,7 @@ public class LanDiscoveryManager {
             }
 
         } catch (Exception e) {
+            lastDiscoveryFailedTime = System.currentTimeMillis();
             Log.e(TAG, "Discovery failed: " + e.getMessage());
             MobileDiagnostics.append(context, "局域网直连发现失败: " + e.getMessage());
         } finally {

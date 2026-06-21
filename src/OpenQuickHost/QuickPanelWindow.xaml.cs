@@ -79,6 +79,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private DateTimeOffset _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.MinValue;
     private DateTimeOffset _suspendOutsideClickHideUntilUtc = DateTimeOffset.MinValue;
 
+    public static bool HasUnreadMessages { get; set; } = false;
+
     public QuickPanelWindow(MainWindow mainWindow)
     {
         InitializeComponent();
@@ -95,6 +97,27 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             Interval = TimeSpan.FromSeconds(2)
         };
         _folderCreationTimer.Tick += FolderCreationTimer_Tick;
+        
+        var mobileDetectTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(2)
+        };
+        mobileDetectTimer.Tick += (_, _) =>
+        {
+            if (HasUnreadMessages)
+            {
+                MobileMessageBadge.Visibility = Visibility.Visible;
+                MobileDiscoverBadge.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                MobileMessageBadge.Visibility = Visibility.Collapsed;
+                MobileDiscoverBadge.Visibility = LanDiscoveryService.LastKnownMobileIp != null
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
+        };
+        mobileDetectTimer.Start();
         
         LoadSlots();
         DataContext = this;
@@ -532,6 +555,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private void MobileMessagesButton_Click(object sender, RoutedEventArgs e)
     {
         HidePanelIfAllowed();
+        HasUnreadMessages = false;
         _mainWindow.ShowMobileInboxWindow();
     }
 

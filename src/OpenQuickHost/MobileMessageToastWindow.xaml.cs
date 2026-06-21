@@ -22,9 +22,16 @@ public partial class MobileMessageToastWindow : Window
         @"https?://[^\s<>""]+|www\.[^\s<>""]+",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, uint dwExtraInfo);
+
+    private const byte VK_LWIN = 0x5B;
+    private const byte VK_H = 0x48;
+    private const byte KEYEVENTF_KEYUP = 0x0002;
+
     private readonly StringBuilder _conversationText = new();
     private string? _lastUrl;
-    private System.Windows.Threading.DispatcherTimer? _autoCloseTimer;
+    private DateTimeOffset? _lastMessageTime;
 
     public MobileMessageToastWindow()
     {
@@ -34,7 +41,6 @@ public partial class MobileMessageToastWindow : Window
         Loaded += (_, _) =>
         {
             PositionBottomRight();
-            InitializeAutoCloseTimer();
         };
     }
 
@@ -47,7 +53,6 @@ public partial class MobileMessageToastWindow : Window
         Loaded += (_, _) =>
         {
             PositionBottomRight();
-            InitializeAutoCloseTimer();
         };
     }
 
@@ -61,11 +66,12 @@ public partial class MobileMessageToastWindow : Window
         MessageStack.Children.Clear();
         _conversationText.Clear();
         _lastUrl = null;
-
-        TitleText.Text = "手机聊天记录";
-        MetaText.Text = "手机与电脑对话";
+        _lastMessageTime = null;
 
         var entries = ReadInboxHistory();
+        var lastMobile = entries.FindLast(e => e.SourceDeviceName != "\u6211(\u7535\u8111)" && e.SourceDeviceName != "desktop");
+        TitleText.Text = lastMobile != null ? lastMobile.SourceDeviceName : "\u624b\u673a\u804a\u5929"; // "手机聊天"
+        
         if (entries.Count == 0)
         {
             MessageStack.Children.Add(new TextBlock
@@ -92,8 +98,6 @@ public partial class MobileMessageToastWindow : Window
                 updateHeader: false);
         }
 
-        var latest = entries[^1];
-        MetaText.Text = $"共 {entries.Count} 条 · 最近来自 {latest.SourceDeviceName} · {latest.ReceivedAt:MM-dd HH:mm}";
         UpdateUrlActions();
         Dispatcher.InvokeAsync(() => MessageScrollViewer.ScrollToEnd());
     }
@@ -112,50 +116,59 @@ public partial class MobileMessageToastWindow : Window
 
         if (updateHeader)
         {
-            TitleText.Text = string.IsNullOrWhiteSpace(title) ? "手机发来消息" : title.Trim();
-            MetaText.Text = $"最近来自 {sourceLabel} · {receivedAt:HH:mm:ss}";
+            if (sourceLabel != "\u6211(\u7535\u8111)" && sourceLabel != "desktop")
+            {
+                TitleText.Text = sourceLabel;
+            }
+        }
+
+        if (_lastMessageTime == null || (receivedAt - _lastMessageTime.Value).Duration() > TimeSpan.FromMinutes(3))
+        {
+            _lastMessageTime = receivedAt;
+            AddChatTimeDivider(receivedAt);
         }
 
         AddMessageBubble(messageText, sourceLabel, receivedAt, screenshotDataUrl, screenshotFilePath);
         UpdateUrlActions();
-        if (AutoCloseCheckBox != null && AutoCloseCheckBox.IsChecked == true)
-        {
-            ResetAutoCloseTimer();
-        }
         Dispatcher.InvokeAsync(() => MessageScrollViewer.ScrollToEnd());
     }
 
     private void AddMessageBubble(string messageText, string sourceDeviceId, DateTimeOffset receivedAt, string? screenshotDataUrl, string? screenshotFilePath)
     {
+        bool isSelf = sourceDeviceId == "\u6211(\u7535\u8111)" || sourceDeviceId == "desktop";
         var container = new Border
         {
-            Margin = new Thickness(0, 0, 0, 10),
-            Padding = new Thickness(10),
+            Margin = isSelf ? new Thickness(50, 0, 0, 10) : new Thickness(0, 0, 50, 10),
+            Padding = new Thickness(12, 10, 12, 10),
             CornerRadius = new CornerRadius(12),
-            Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(190, 17, 24, 39)),
-            BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(36, 56, 189, 248)),
-            BorderThickness = new Thickness(1)
+            HorizontalAlignment = isSelf ? System.Windows.HorizontalAlignment.Right : System.Windows.HorizontalAlignment.Left,
+            BorderThickness = isSelf ? new Thickness(0) : new Thickness(1),
+            BorderBrush = isSelf ? null : new SolidColorBrush(System.Windows.Media.Color.FromArgb(36, 56, 189, 248))
         };
 
-        var panel = new StackPanel();
-        panel.Children.Add(new TextBlock
+        if (isSelf)
         {
-            Text = $"{sourceDeviceId} · {receivedAt:HH:mm:ss}",
-            Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184)),
-            FontSize = 11
-        });
+            container.SetResourceReference(Border.BackgroundProperty, "BrushAccent");
+        }
+        else
+        {
+            container.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(190, 31, 41, 55));
+        }
+
+        var panel = new StackPanel();
         panel.Children.Add(new System.Windows.Controls.TextBox
         {
             Text = messageText,
-            Margin = new Thickness(0, 6, 0, 0),
+            Margin = new Thickness(0),
             TextWrapping = TextWrapping.Wrap,
             AcceptsReturn = true,
             IsReadOnly = true,
             BorderThickness = new Thickness(0),
             Background = System.Windows.Media.Brushes.Transparent,
-            Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(229, 231, 235)),
+            Foreground = isSelf ? System.Windows.Media.Brushes.White : new SolidColorBrush(System.Windows.Media.Color.FromRgb(229, 231, 235)),
             FontSize = 14,
-            Padding = new Thickness(0)
+            Padding = new Thickness(0),
+            HorizontalAlignment = isSelf ? System.Windows.HorizontalAlignment.Right : System.Windows.HorizontalAlignment.Left
         });
 
         var screenshot = TryCreateScreenshotImage(screenshotDataUrl, screenshotFilePath, receivedAt);
@@ -167,7 +180,7 @@ public partial class MobileMessageToastWindow : Window
         {
             panel.Children.Add(new TextBlock
             {
-                Text = "截图预览加载失败，详情请查看 host.log。",
+                Text = "\u622a\u56fe\u9884\u89c8\u52a0\u8f7d\u5931\u8d25\uff0c\u8be6\u60c5\u8bf7\u67e5\u770b host.log\u3002",
                 Margin = new Thickness(0, 8, 0, 0),
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(251, 191, 36)),
                 FontSize = 12,
@@ -178,7 +191,7 @@ public partial class MobileMessageToastWindow : Window
         {
             var pathBox = new System.Windows.Controls.TextBox
             {
-                Text = $"已保存：{screenshot.FilePath}",
+                Text = $"\u5df2\u4fdd\u5b58\uff1a{screenshot.FilePath}",
                 Margin = new Thickness(0, 6, 0, 0),
                 TextWrapping = TextWrapping.Wrap,
                 IsReadOnly = true,
@@ -189,7 +202,7 @@ public partial class MobileMessageToastWindow : Window
                 Padding = new Thickness(0)
             };
             pathBox.Cursor = System.Windows.Input.Cursors.Hand;
-            pathBox.ToolTip = "双击打开文件";
+            pathBox.ToolTip = "\u53cc\u51fb\u6253\u5f00\u6587\u4ef6";
             pathBox.MouseDoubleClick += (_, e) =>
             {
                 TryOpenFilePath(screenshot.FilePath);
@@ -569,13 +582,255 @@ public partial class MobileMessageToastWindow : Window
             Directory.CreateDirectory(Path.GetDirectoryName(HostAssets.MobileInboxPath)!);
             File.WriteAllText(HostAssets.MobileInboxPath, string.Empty);
             LoadInboxHistory();
-            MetaText.Text = "手机聊天记录已清理";
             HostAssets.AppendLog("Mobile inbox history cleared by user.");
         }
         catch (Exception ex)
         {
-            MetaText.Text = "清理失败，详情见日志";
             HostAssets.AppendLog($"Mobile inbox history clear failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private void VoiceButton_Click(object sender, RoutedEventArgs e)
+    {
+        InputTextBox.Focus();
+        keybd_event(VK_LWIN, 0, 0, 0);
+        keybd_event(VK_H, 0, 0, 0);
+        keybd_event(VK_H, 0, KEYEVENTF_KEYUP, 0);
+        keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, 0);
+    }
+
+    private void AttachButton_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new System.Windows.Controls.ContextMenu();
+        var photoItem = new System.Windows.Controls.MenuItem { Header = "选择照片" };
+        photoItem.Click += PhotoItem_Click;
+        var fileItem = new System.Windows.Controls.MenuItem { Header = "选择文件" };
+        fileItem.Click += FileItem_Click;
+        menu.Items.Add(photoItem);
+        menu.Items.Add(fileItem);
+        
+        menu.PlacementTarget = sender as System.Windows.Controls.Button;
+        menu.IsOpen = true;
+    }
+
+    private async void PhotoItem_Click(object sender, RoutedEventArgs e)
+    {
+        using var dialog = new SaveFileDialog // 虽然叫SaveFileDialog，但是在WinForms中实际我们更常用OpenFileDialog。等等！上面的 code 里 11 行导入了 using System.Windows.Forms; 我们得用 OpenFileDialog。
+        {
+            // 在 WPF 里由于导入了 System.Windows.Forms，为了避免和 WPF 自己的 OpenFileDialog 冲突，
+            // 既然 direct using System.Windows.Forms; 存在，且 LoadInboxHistory 等里面在另存为时用了 SaveFileDialog，
+            // 我们可以直接使用 System.Windows.Forms.OpenFileDialog。
+        };
+        
+        using var ofd = new System.Windows.Forms.OpenFileDialog
+        {
+            Filter = "图片文件 (*.jpg;*.jpeg;*.png;*.gif;*.bmp)|*.jpg;*.jpeg;*.png;*.gif;*.bmp|所有文件 (*.*)|*.*",
+            Title = "选择要发送的照片"
+        };
+        if (ofd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            await SendFileOrPhotoToMobileAsync(ofd.FileName, isPhoto: true);
+        }
+    }
+
+    private async void FileItem_Click(object sender, RoutedEventArgs e)
+    {
+        using var ofd = new System.Windows.Forms.OpenFileDialog
+        {
+            Filter = "所有文件 (*.*)|*.*",
+            Title = "选择要发送的文件"
+        };
+        if (ofd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            await SendFileOrPhotoToMobileAsync(ofd.FileName, isPhoto: false);
+        }
+    }
+
+    private async Task SendFileOrPhotoToMobileAsync(string filePath, bool isPhoto)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return;
+
+        try
+        {
+            var fileName = Path.GetFileName(filePath);
+            var fileBytes = await File.ReadAllBytesAsync(filePath);
+            var base64Data = Convert.ToBase64String(fileBytes);
+            var extension = Path.GetExtension(filePath).ToLowerInvariant();
+            var mimeType = extension switch
+            {
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                ".bmp" => "image/bmp",
+                _ => "application/octet-stream"
+            };
+            var dataUrl = $"data:{mimeType};base64,{base64Data}";
+
+            var kind = isPhoto ? "photo" : "file";
+            var sent = await SendMessageToMobileAsync(message: fileName, kind: kind, dataUrl: dataUrl);
+            if (sent)
+            {
+                var receivedAt = DateTimeOffset.Now;
+                if (isPhoto)
+                {
+                    AddMessageBubble($"[照片] {fileName}", "\u6211(\u7535\u8111)", receivedAt, dataUrl, filePath);
+                }
+                else
+                {
+                    AddMessageBubble($"[文件] {fileName}", "\u6211(\u7535\u8111)", receivedAt, null, filePath);
+                }
+
+                try
+                {
+                    var record = new
+                    {
+                        messageId = Guid.NewGuid().ToString(),
+                        sourceDeviceId = "desktop",
+                        sourceDeviceName = "\u6211(\u7535\u8111)",
+                        kind = kind,
+                        title = "\u7535\u8111\u53d1\u5f80\u624b\u673a\u7684" + (isPhoto ? "\u7167\u7247" : "\u6587\u4ef6"),
+                        text = fileName,
+                        payload = "",
+                        screenshotDataUrl = isPhoto ? dataUrl : (string?)null,
+                        localFilePath = filePath,
+                        receivedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                        createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    };
+                    File.AppendAllText(
+                        HostAssets.MobileInboxPath,
+                        JsonSerializer.Serialize(record) + Environment.NewLine);
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Failed to append sent chat photo/file history: {ex.Message}");
+                }
+            }
+            else
+            {
+                System.Windows.MessageBox.Show("\u53d1\u9001\u5931\u8d25\uff0c\u624b\u673a\u53ef\u80fd\u672a\u5904\u4e8e\u5c40\u57df\u7f51\u76f4\u8fde\u72b6\u6001\u3002", "\u53d1\u9001\u5931\u8d25", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to process file send: {ex.Message}");
+            System.Windows.MessageBox.Show($"发送失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void SendButton_Click(object sender, RoutedEventArgs e)
+    {
+        await TriggerSendMessageAsync();
+    }
+
+    private async void InputTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            e.Handled = true;
+            await TriggerSendMessageAsync();
+        }
+    }
+
+    private async Task TriggerSendMessageAsync()
+    {
+        var text = InputTextBox.Text;
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        InputTextBox.Text = string.Empty;
+        var sent = await SendMessageToMobileAsync(text);
+        if (sent)
+        {
+            var receivedAt = DateTimeOffset.Now;
+            AddMessageBubble(text, "\u6211(\u7535\u8111)", receivedAt, null, null);
+            
+            try
+            {
+                var record = new
+                {
+                    messageId = Guid.NewGuid().ToString(),
+                    sourceDeviceId = "desktop",
+                    sourceDeviceName = "\u6211(\u7535\u8111)",
+                    kind = "text",
+                    title = "\u7535\u8111\u53d1\u5f80\u624b\u673a\u7684\u6d88\u606f",
+                    text = text,
+                    payload = "",
+                    screenshotDataUrl = (string?)null,
+                    localFilePath = (string?)null,
+                    receivedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                    createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                };
+                File.AppendAllText(
+                    HostAssets.MobileInboxPath,
+                    JsonSerializer.Serialize(record) + Environment.NewLine);
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to append sent chat history: {ex.Message}");
+            }
+        }
+        else
+        {
+            System.Windows.MessageBox.Show("\u6d88\u606f\u53d1\u9001\u5931\u8d25\uff0c\u624b\u673a\u53ef\u80fd\u672a\u5904\u4e8e\u5c40\u57df\u7f51\u76f4\u8fde\u72b6\u6001\u3002", "\u53d1\u9001\u5931\u8d25", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private static async Task<bool> SendMessageToMobileAsync(string message, string kind = "text", string? dataUrl = null)
+    {
+        var mobileIp = LanDiscoveryService.LastKnownMobileIp;
+        if (mobileIp == null)
+        {
+            HostAssets.AppendLog("Send message skipped: mobile IP is not discovered.");
+            return false;
+        }
+
+        try
+        {
+            using var client = new System.Net.Http.HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(10);
+            
+            object payloadObj;
+            if (kind == "photo")
+            {
+                payloadObj = new
+                {
+                    title = "YanziChat",
+                    message = message,
+                    kind = kind,
+                    screenshotDataUrl = dataUrl
+                };
+            }
+            else if (kind == "file")
+            {
+                payloadObj = new
+                {
+                    title = "YanziChat",
+                    message = message,
+                    kind = kind,
+                    fileDataUrl = dataUrl,
+                    fileName = message
+                };
+            }
+            else
+            {
+                payloadObj = new
+                {
+                    title = "YanziChat",
+                    message = message,
+                    kind = kind
+                };
+            }
+
+            var payload = JsonSerializer.Serialize(payloadObj);
+            var content = new System.Net.Http.StringContent(payload, Encoding.UTF8, "application/json");
+            using var response = await client.PostAsync($"http://{mobileIp}:42981/", content);
+            response.EnsureSuccessStatusCode();
+            HostAssets.AppendLog($"Message sent directly to mobile via LAN: IP={mobileIp}, content={message}, kind={kind}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to send message to mobile: {ex.Message}");
+            return false;
         }
     }
 
@@ -584,56 +839,46 @@ public partial class MobileMessageToastWindow : Window
         Close();
     }
 
-    private void InitializeAutoCloseTimer()
+    private static string FormatChatTime(DateTimeOffset time)
     {
-        if (AutoCloseCheckBox == null) return;
-        var settings = AppSettingsStore.Load();
-        AutoCloseCheckBox.IsChecked = settings.AutoCloseToastEnabled;
-
-        if (settings.AutoCloseToastEnabled)
+        var localTime = time.ToLocalTime();
+        var now = DateTimeOffset.Now.ToLocalTime();
+        if (localTime.Date == now.Date)
         {
-            ResetAutoCloseTimer();
+            return localTime.ToString("HH:mm");
         }
-    }
-
-    private void ResetAutoCloseTimer()
-    {
-        if (_autoCloseTimer == null)
+        if (localTime.Date == now.Date.AddDays(-1))
         {
-            _autoCloseTimer = new System.Windows.Threading.DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(5)
-            };
-            _autoCloseTimer.Tick += (s, e) => Close();
+            return "昨天 " + localTime.ToString("HH:mm");
         }
-        else
+        if (localTime.Year == now.Year)
         {
-            _autoCloseTimer.Stop();
+            return localTime.ToString("MM-dd HH:mm");
         }
-        _autoCloseTimer.Start();
+        return localTime.ToString("yyyy-MM-dd HH:mm");
     }
 
-    private void StopAutoCloseTimer()
+    private void AddChatTimeDivider(DateTimeOffset receivedAt)
     {
-        _autoCloseTimer?.Stop();
-    }
+        var border = new Border
+        {
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            Margin = new Thickness(0, 10, 0, 10),
+            Padding = new Thickness(8, 4, 8, 4),
+            CornerRadius = new CornerRadius(4),
+            Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(25, 255, 255, 255))
+        };
 
-    private void AutoCloseCheckBox_Checked(object sender, RoutedEventArgs e)
-    {
-        var settings = AppSettingsStore.Load();
-        settings.AutoCloseToastEnabled = true;
-        AppSettingsStore.Save(settings);
+        var textBlock = new TextBlock
+        {
+            Text = FormatChatTime(receivedAt),
+            Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175)),
+            FontSize = 11,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center
+        };
 
-        ResetAutoCloseTimer();
-    }
-
-    private void AutoCloseCheckBox_Unchecked(object sender, RoutedEventArgs e)
-    {
-        var settings = AppSettingsStore.Load();
-        settings.AutoCloseToastEnabled = false;
-        AppSettingsStore.Save(settings);
-
-        StopAutoCloseTimer();
+        border.Child = textBlock;
+        MessageStack.Children.Add(border);
     }
 
     private static string? ExtractUrl(string text)
