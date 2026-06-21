@@ -27,6 +27,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private string? _activeProcessName;
     private bool _isEditHoverActive;
     private bool _isAddHoverActive;
+    private bool _isDeleteHoverActive;
+    private bool _isSearchHoverActive;
     private readonly Stack<string> _pageStack = new();
     private bool _isExecuting;
     private string _activeTitle = "取消";
@@ -321,6 +323,38 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF10B981")!
         : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
 
+    public bool IsDeleteHoverActive
+    {
+        get => _isDeleteHoverActive;
+        private set
+        {
+            if (value == _isDeleteHoverActive) return;
+            _isDeleteHoverActive = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DeleteButtonBrush));
+        }
+    }
+
+    public System.Windows.Media.Brush DeleteButtonBrush => _isDeleteHoverActive
+        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFEF4444")!
+        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+
+    public bool IsSearchHoverActive
+    {
+        get => _isSearchHoverActive;
+        private set
+        {
+            if (value == _isSearchHoverActive) return;
+            _isSearchHoverActive = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SearchButtonBrush));
+        }
+    }
+
+    public System.Windows.Media.Brush SearchButtonBrush => _isSearchHoverActive
+        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF8B5CF6")!
+        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+
     public bool IsEditHoverActive
     {
         get => _isEditHoverActive;
@@ -561,6 +595,18 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (IsDeleteHoverActive)
+        {
+            DeleteCurrentPage();
+            return;
+        }
+
+        if (IsSearchHoverActive)
+        {
+            ShowSearchRadialMenuContextMenu();
+            return;
+        }
+
         var selected = _selectedItem;
         var selectedChild = _selectedChildItem;
         var selectedGrandChild = _selectedGrandChildItem;
@@ -770,6 +816,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             IsPinHoverActive = false;
             IsAddHoverActive = false;
+            IsDeleteHoverActive = false;
+            IsSearchHoverActive = false;
             IsCenterHovered = false;
             Cursor = System.Windows.Input.Cursors.Hand;
             return;
@@ -779,6 +827,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             IsEditHoverActive = false;
             IsAddHoverActive = false;
+            IsDeleteHoverActive = false;
+            IsSearchHoverActive = false;
             IsCenterHovered = false;
             Cursor = System.Windows.Input.Cursors.Hand;
             return;
@@ -788,6 +838,30 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             IsEditHoverActive = false;
             IsPinHoverActive = false;
+            IsDeleteHoverActive = false;
+            IsSearchHoverActive = false;
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
+            return;
+        }
+
+        if (UpdateDeleteHoverState(cursorPoint))
+        {
+            IsEditHoverActive = false;
+            IsPinHoverActive = false;
+            IsAddHoverActive = false;
+            IsSearchHoverActive = false;
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
+            return;
+        }
+
+        if (UpdateSearchHoverState(cursorPoint))
+        {
+            IsEditHoverActive = false;
+            IsPinHoverActive = false;
+            IsAddHoverActive = false;
+            IsDeleteHoverActive = false;
             IsCenterHovered = false;
             Cursor = System.Windows.Input.Cursors.Hand;
             return;
@@ -2155,6 +2229,79 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         HostAssets.AppendLog($"New app-specific page added: name={newPage.Name}, id={newPage.Id}, process={normalizedProcess}");
     }
 
+    private void DeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        DeleteCurrentPage();
+        e.Handled = true;
+    }
+
+    private void DeleteCurrentPage()
+    {
+        var settings = AppSettingsStore.Load();
+        settings.RadialMenu ??= new RadialMenuSettings();
+        settings.RadialMenu.Pages ??= [];
+
+        var pageToDelete = settings.RadialMenu.Pages.FirstOrDefault(p => p.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
+        if (pageToDelete == null) return;
+
+        var result = System.Windows.MessageBox.Show(
+            $"确定要删除当前轮盘“{pageToDelete.Name}”吗？",
+            "确认删除",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+
+        if (result == System.Windows.MessageBoxResult.Yes)
+        {
+            settings.RadialMenu.Pages.Remove(pageToDelete);
+            AppSettingsStore.Save(settings);
+
+            _mainWindow.RefreshAppSettings();
+            _mainWindow.NotifyQuickPanelSettingsChanged("radial-inline-edit");
+
+            LoadRadialMenuPages();
+            
+            _currentPageId = _pages.FirstOrDefault()?.Id ?? string.Empty;
+            BuildItems(_lastRadiusPixels);
+
+            HostAssets.AppendLog($"Radial page deleted: name={pageToDelete.Name}, id={pageToDelete.Id}");
+        }
+    }
+
+    private void SearchButton_Click(object sender, RoutedEventArgs e)
+    {
+        ShowSearchRadialMenuContextMenu();
+        e.Handled = true;
+    }
+
+    private void ShowSearchRadialMenuContextMenu()
+    {
+        var contextMenu = new ContextMenu();
+
+        foreach (var page in _pages)
+        {
+            var isApp = !string.IsNullOrEmpty(page.ContextProcessName);
+            var header = isApp ? $"[专属] {page.Name}" : $"[全局] {page.Name}";
+            
+            var item = new MenuItem { Header = header };
+            var pageId = page.Id;
+            item.Click += (s, e) =>
+            {
+                _currentPageId = pageId;
+                BuildItems(_lastRadiusPixels);
+            };
+            contextMenu.Items.Add(item);
+        }
+
+        if (contextMenu.Items.Count == 0)
+        {
+            contextMenu.Items.Add(new MenuItem { Header = "无可用轮盘", IsEnabled = false });
+        }
+
+        contextMenu.PlacementTarget = SearchButton;
+        contextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        contextMenu.IsOpen = true;
+    }
+
     private bool UpdatePinHoverState(System.Windows.Point cursorPoint)
     {
         var hovered = IsPointInPinButton(cursorPoint);
@@ -2233,6 +2380,60 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         var topLeft = AddButton.TranslatePoint(new System.Windows.Point(0, 0), this);
         var bounds = new Rect(topLeft.X, topLeft.Y, AddButton.ActualWidth, AddButton.ActualHeight);
+        return bounds.Contains(point);
+    }
+
+    private bool UpdateDeleteHoverState(System.Windows.Point cursorPoint)
+    {
+        var hovered = IsPointInDeleteButton(cursorPoint);
+        IsDeleteHoverActive = hovered;
+        if (!hovered)
+        {
+            return false;
+        }
+
+        SetSelectedItem(null);
+        ClearChildRing();
+        ActiveTitle = "松开删除当前轮盘";
+        return true;
+    }
+
+    private bool IsPointInDeleteButton(System.Windows.Point point)
+    {
+        if (DeleteButton == null || !DeleteButton.IsLoaded)
+        {
+            return false;
+        }
+
+        var topLeft = DeleteButton.TranslatePoint(new System.Windows.Point(0, 0), this);
+        var bounds = new Rect(topLeft.X, topLeft.Y, DeleteButton.ActualWidth, DeleteButton.ActualHeight);
+        return bounds.Contains(point);
+    }
+
+    private bool UpdateSearchHoverState(System.Windows.Point cursorPoint)
+    {
+        var hovered = IsPointInSearchButton(cursorPoint);
+        IsSearchHoverActive = hovered;
+        if (!hovered)
+        {
+            return false;
+        }
+
+        SetSelectedItem(null);
+        ClearChildRing();
+        ActiveTitle = "松开查询与切换轮盘";
+        return true;
+    }
+
+    private bool IsPointInSearchButton(System.Windows.Point point)
+    {
+        if (SearchButton == null || !SearchButton.IsLoaded)
+        {
+            return false;
+        }
+
+        var topLeft = SearchButton.TranslatePoint(new System.Windows.Point(0, 0), this);
+        var bounds = new Rect(topLeft.X, topLeft.Y, SearchButton.ActualWidth, SearchButton.ActualHeight);
         return bounds.Contains(point);
     }
 

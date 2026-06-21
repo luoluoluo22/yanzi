@@ -305,6 +305,74 @@
             </Viewbox>
         </Button>
 
+        <Button x:Name="DeleteButton"
+                Width="34"
+                Height="34"
+                Padding="0"
+                Background="#E6101010"
+                BorderThickness="1"
+                BorderBrush="{Binding DeleteButtonBrush}"
+                ToolTip="删除当前轮盘"
+                Click="DeleteButton_Click"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+            <Button.RenderTransform>
+                <TranslateTransform X="298" Y="-154" />
+            </Button.RenderTransform>
+            <Button.Style>
+                <Style TargetType="Button">
+                    <Setter Property="Opacity" Value="0.88" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsDeleteHoverActive}" Value="True">
+                            <Setter Property="Opacity" Value="1" />
+                            <Setter Property="Background" Value="#F0EF4444" />
+                            <Setter Property="BorderBrush" Value="#FFFECACA" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <Viewbox Width="16"
+                     Height="16"
+                     Stretch="Uniform">
+                <Path Data="{local:IconGeometry delete}"
+                      Fill="{Binding DeleteButtonBrush}" />
+            </Viewbox>
+        </Button>
+
+        <Button x:Name="SearchButton"
+                Width="34"
+                Height="34"
+                Padding="0"
+                Background="#E6101010"
+                BorderThickness="1"
+                BorderBrush="{Binding SearchButtonBrush}"
+                ToolTip="查询轮盘"
+                Click="SearchButton_Click"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+            <Button.RenderTransform>
+                <TranslateTransform X="340" Y="-154" />
+            </Button.RenderTransform>
+            <Button.Style>
+                <Style TargetType="Button">
+                    <Setter Property="Opacity" Value="0.88" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsSearchHoverActive}" Value="True">
+                            <Setter Property="Opacity" Value="1" />
+                            <Setter Property="Background" Value="#F08B5CF6" />
+                            <Setter Property="BorderBrush" Value="#FFDDD6FE" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <Viewbox Width="16"
+                     Height="16"
+                     Stretch="Uniform">
+                <Path Data="{local:IconGeometry search}"
+                      Fill="{Binding SearchButtonBrush}" />
+            </Viewbox>
+        </Button>
+
         <ItemsControl ItemsSource="{Binding OuterItems}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
