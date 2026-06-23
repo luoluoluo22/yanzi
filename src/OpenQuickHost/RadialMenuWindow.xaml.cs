@@ -396,7 +396,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             _mainWindow.RefreshAppSettings();
         }
 
-        if ((_editModeLocked || Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) && !string.IsNullOrWhiteSpace(_activeProcessName))
+        if (_editModeLocked && !string.IsNullOrWhiteSpace(_activeProcessName))
         {
             var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
             var appPage = settings.RadialMenu.Pages.FirstOrDefault(item => 
@@ -2563,6 +2563,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         _editModeLocked = false;
         _editInteractionActive = false;
         OnPropertyChanged(nameof(EditButtonBrush));
+        Opacity = 0;
         base.Hide();
     }
 
