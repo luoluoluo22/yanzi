@@ -2753,7 +2753,7 @@
 
                                                 <Ellipse Width="226"
                                                          Height="226"
-                                                         Fill="{DynamicResource BrushRadialInnerBG}"
+                                                         Fill="Transparent"
                                                          Stroke="{DynamicResource BrushRadialBorder}"
                                                          StrokeThickness="1"
                                                          Canvas.Left="67"

@@ -58,7 +58,7 @@
 
         <Ellipse Width="244"
                  Height="244"
-                 Fill="{DynamicResource BrushRadialInnerBG}"
+                 Fill="Transparent"
                  Stroke="{DynamicResource BrushRadialBorder}"
                  StrokeThickness="1"
                  HorizontalAlignment="Center"
