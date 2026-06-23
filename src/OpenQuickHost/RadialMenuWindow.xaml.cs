@@ -432,8 +432,19 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         _editModeLocked = false;
         _editInteractionActive = false;
         _selectionTimer.Stop();
+
+        // 立即清空上次残留的图标和列表，防止窗口重显时出现旧内容闪烁
+        CenterIcon = null;
+        Items.Clear();
+        OuterItems.Clear();
+        ChildItems.Clear();
+        GrandChildItems.Clear();
+        PageTitle = "燕环";
+
         var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
         _lastRadiusPixels = settings.RadiusPixels;
+
+        // 获取前台窗口，但要跳过轮盘本身（避免拿到自身进程作为目标应用）
         _previousForegroundWindow = RadialMenuNativeMethods.GetForegroundWindow();
         _activeProcessName = null;
         if (_previousForegroundWindow != IntPtr.Zero)
@@ -442,7 +453,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             {
                 RadialMenuNativeMethods.GetWindowThreadProcessId(_previousForegroundWindow, out var processId);
                 using var process = System.Diagnostics.Process.GetProcessById((int)processId);
-                _activeProcessName = process.ProcessName;
+                var name = process.ProcessName;
+                // 跳过轮盘宿主自身，避免把 OpenQuickHost 识别为目标应用
+                if (!name.Equals("OpenQuickHost", StringComparison.OrdinalIgnoreCase))
+                {
+                    _activeProcessName = name;
+                }
             }
             catch (Exception ex)
             {
@@ -450,6 +466,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             }
         }
         LoadRadialMenuPages();
+        // 精确匹配当前活动进程的专属页面（LoadRadialMenuPages 已过滤，firstAppPage 一定是当前进程的）
         var firstAppPage = _pages.FirstOrDefault(page => !string.IsNullOrEmpty(page.ContextProcessName));
         if (firstAppPage != null)
         {
@@ -492,7 +509,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             _selectionTimer.Start();
             UpdateSelectionFromCursor();
         }, DispatcherPriority.Render);
-        HostAssets.AppendLog($"Radial menu shown: page={_currentPageId}, items={Items.Count}, center=({_centerPixels.X},{_centerPixels.Y}).");
+        HostAssets.AppendLog($"Radial menu shown: page={_currentPageId}, process={_activeProcessName ?? "(none)"}, items={Items.Count}, center=({_centerPixels.X},{_centerPixels.Y}).");
     }
 
     private void RebuildItemsForCurrentLayout(string reason)
