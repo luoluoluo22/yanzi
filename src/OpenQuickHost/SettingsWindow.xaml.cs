@@ -6000,7 +6000,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     center + Math.Cos(angle) * radius - (isOuter ? 31 : 38),
                     center + Math.Sin(angle) * radius - (isOuter ? 25 : 30),
                     isOuter,
-                    BuildRadialSectorGeometry(center, center, isOuter ? 113.0 : 28.0, isOuter ? 176.0 : 113.0, startAngleDegrees, step),
+                    BuildRadialSectorGeometry(center, center, isOuter ? 113.0 : 35.0, isOuter ? 180.0 : 113.0, startAngleDegrees, step),
                     runtimeCommand?.IconSource,
                     runtimeCommand?.VectorIcon,
                     runtimeCommand?.AccentBrush ?? System.Windows.Media.Brushes.Transparent,
@@ -6191,8 +6191,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             var angle = (-112.5 + index * 45) * Math.PI / 180.0;
             RadialMenuPreviewSeparators.Add(new RadialSeparatorViewModel(
-                center + Math.Cos(angle) * 28,
-                center + Math.Sin(angle) * 28,
+                center + Math.Cos(angle) * 35.0,
+                center + Math.Sin(angle) * 35.0,
                 center + Math.Cos(angle) * 113,
                 center + Math.Sin(angle) * 113));
         }
@@ -6203,8 +6203,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             RadialMenuPreviewSeparators.Add(new RadialSeparatorViewModel(
                 center + Math.Cos(angle) * 113,
                 center + Math.Sin(angle) * 113,
-                center + Math.Cos(angle) * 176,
-                center + Math.Sin(angle) * 176));
+                center + Math.Cos(angle) * 180.0,
+                center + Math.Sin(angle) * 180.0));
         }
     }
 

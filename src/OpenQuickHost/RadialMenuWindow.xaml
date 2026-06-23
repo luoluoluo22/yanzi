@@ -425,13 +425,15 @@
                                 
                                 <!-- Show normal content for filled slots -->
                                 <Grid Width="23" Height="23" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <Grid ClipToBounds="True">
-                                        <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                        <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
-                                        </Viewbox>
-                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="{DynamicResource BrushRadialText}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                    </Grid>
+                                    <Border Width="23" Height="23" CornerRadius="6" Background="{Binding AccentBrush}">
+                                        <Grid ClipToBounds="True">
+                                            <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                            </Viewbox>
+                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        </Grid>
+                                    </Border>
                                     <!-- Running indicator (Green Dot) -->
                                     <Border Width="6"
                                             Height="6"
@@ -515,26 +517,28 @@
                                       Height="32"
                                       HorizontalAlignment="Center"
                                       Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <Grid ClipToBounds="True">
-                                        <Image Source="{Binding IconSource}"
-                                               Stretch="UniformToFill"
-                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                        <Viewbox Width="19"
-                                                 Height="19"
-                                                 Stretch="Uniform"
-                                                 HorizontalAlignment="Center"
-                                                 VerticalAlignment="Center"
-                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
-                                        </Viewbox>
-                                        <TextBlock Text="{Binding DisplayGlyph}"
-                                                   Foreground="{DynamicResource BrushRadialText}"
-                                                   FontSize="{DynamicResource FontSizeNormal}"
-                                                   FontWeight="SemiBold"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                    </Grid>
+                                    <Border Width="32" Height="32" CornerRadius="8" Background="{Binding AccentBrush}">
+                                        <Grid ClipToBounds="True">
+                                            <Image Source="{Binding IconSource}"
+                                                   Stretch="UniformToFill"
+                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Viewbox Width="19"
+                                                     Height="19"
+                                                     Stretch="Uniform"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center"
+                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                            </Viewbox>
+                                            <TextBlock Text="{Binding DisplayGlyph}"
+                                                       Foreground="White"
+                                                       FontSize="{DynamicResource FontSizeNormal}"
+                                                       FontWeight="SemiBold"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        </Grid>
+                                    </Border>
                                     <!-- Running indicator (Green Dot) -->
                                     <Border Width="8"
                                             Height="8"
@@ -669,26 +673,28 @@
                                           Height="26"
                                           HorizontalAlignment="Center"
                                           Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Grid ClipToBounds="True">
-                                            <Image Source="{Binding IconSource}"
-                                                   Stretch="UniformToFill"
-                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <Viewbox Width="16"
-                                                     Height="16"
-                                                     Stretch="Uniform"
-                                                     HorizontalAlignment="Center"
-                                                     VerticalAlignment="Center"
-                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
-                                            </Viewbox>
-                                            <TextBlock Text="{Binding DisplayGlyph}"
-                                                       Foreground="{DynamicResource BrushRadialText}"
-                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                       FontWeight="SemiBold"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                        </Grid>
+                                        <Border Width="26" Height="26" CornerRadius="7" Background="{Binding AccentBrush}">
+                                            <Grid ClipToBounds="True">
+                                                <Image Source="{Binding IconSource}"
+                                                       Stretch="UniformToFill"
+                                                       Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                <Viewbox Width="16"
+                                                         Height="16"
+                                                         Stretch="Uniform"
+                                                         HorizontalAlignment="Center"
+                                                         VerticalAlignment="Center"
+                                                         Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                </Viewbox>
+                                                <TextBlock Text="{Binding DisplayGlyph}"
+                                                           Foreground="White"
+                                                           FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                           FontWeight="SemiBold"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            </Grid>
+                                        </Border>
                                         <!-- Running indicator (Green Dot) -->
                                         <Border Width="7"
                                                 Height="7"
@@ -821,13 +827,15 @@
                                     
                                     <!-- Show normal content for filled slots -->
                                     <Grid Width="23" Height="23" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Grid ClipToBounds="True">
-                                            <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
-                                            </Viewbox>
-                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="{DynamicResource BrushRadialText}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                        </Grid>
+                                        <Border Width="23" Height="23" CornerRadius="6" Background="{Binding AccentBrush}">
+                                            <Grid ClipToBounds="True">
+                                                <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                </Viewbox>
+                                                <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            </Grid>
+                                        </Border>
                                         <!-- Running indicator (Green Dot) -->
                                         <Border Width="6"
                                                 Height="6"
