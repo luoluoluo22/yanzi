@@ -3998,7 +3998,16 @@ public class BooleanToColorConverter : System.Windows.Data.IValueConverter
         if (value is not bool val) return System.Windows.Media.Brushes.Transparent;
         string[] colors = (parameter as string ?? "#FF555555|White").Split('|');
         var colorStr = val ? colors[0] : colors[1];
-        return (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(colorStr)!;
+        if (colorStr.StartsWith("#"))
+        {
+            return (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(colorStr)!;
+        }
+        else
+        {
+            var brush = System.Windows.Application.Current.TryFindResource(colorStr);
+            if (brush is System.Windows.Media.Brush b) return b;
+            return System.Windows.Media.Brushes.Transparent;
+        }
     }
     public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotImplementedException();
 }

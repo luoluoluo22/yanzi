@@ -2721,12 +2721,19 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 
     public string DisplayGlyph => !string.IsNullOrWhiteSpace(ChildPageId) ? "›" : Command?.DisplayGlyph ?? "+";
 
-    public System.Windows.Media.Brush AccentBrush => Command?.AccentBrush ?? (HasChildPage ? ChildPageAccentBrush : System.Windows.Media.Brushes.Transparent);
+    private System.Windows.Media.Brush GetThemeBrush(string resourceKey, System.Windows.Media.Brush fallback)
+    {
+        var brush = System.Windows.Application.Current.TryFindResource(resourceKey);
+        if (brush is System.Windows.Media.Brush b) return b;
+        return fallback;
+    }
+
+    public System.Windows.Media.Brush AccentBrush => Command?.AccentBrush ?? (HasChildPage ? GetThemeBrush("BrushRadialChildAccentSector", ChildPageAccentBrush) : System.Windows.Media.Brushes.Transparent);
 
     public System.Windows.Media.Brush SectorBrush => IsEmpty
-        ? EmptySlotSectorBrush
+        ? GetThemeBrush("BrushRadialEmptySector", EmptySlotSectorBrush)
         : IsTransparentBrush(AccentBrush)
-            ? FilledSlotFallbackSectorBrush
+            ? GetThemeBrush("BrushRadialFallbackSector", FilledSlotFallbackSectorBrush)
             : AccentBrush;
 
     public double SectorOpacity => IsSelected ? 0.58 : IsHovered ? 0.44 : IsEmpty ? 0.0 : 0.32;

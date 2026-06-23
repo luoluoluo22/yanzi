@@ -2745,16 +2745,16 @@
                                             <Canvas Width="360" Height="360">
                                                 <Ellipse Width="360"
                                                          Height="360"
-                                                         Fill="#AA101010"
-                                                         Stroke="#22FFFFFF"
+                                                         Fill="{DynamicResource BrushRadialOuterBG}"
+                                                         Stroke="{DynamicResource BrushRadialBorder}"
                                                          StrokeThickness="1"
                                                          Canvas.Left="0"
                                                          Canvas.Top="0"/>
 
                                                 <Ellipse Width="226"
                                                          Height="226"
-                                                         Fill="#CC101010"
-                                                         Stroke="#22FFFFFF"
+                                                         Fill="{DynamicResource BrushRadialInnerBG}"
+                                                         Stroke="{DynamicResource BrushRadialBorder}"
                                                          StrokeThickness="1"
                                                          Canvas.Left="67"
                                                          Canvas.Top="67"/>
@@ -2762,7 +2762,7 @@
                                                 <Ellipse Width="226"
                                                          Height="226"
                                                          Fill="Transparent"
-                                                         Stroke="#33FFFFFF"
+                                                         Stroke="{DynamicResource BrushRadialBorderActive}"
                                                          StrokeThickness="1.5"
                                                          Canvas.Left="67"
                                                          Canvas.Top="67"
@@ -2776,7 +2776,7 @@
                                                     </ItemsControl.ItemsPanel>
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
-                                                            <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="#2DFFFFFF" StrokeThickness="1"/>
+                                                            <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
@@ -2796,8 +2796,8 @@
                                                         </ContextMenu>
                                                     </Border.ContextMenu>
                                                     <Grid>
-                                                        <Ellipse Fill="#F2161616"
-                                                                 Stroke="#33FFFFFF"
+                                                        <Ellipse Fill="{DynamicResource BrushRadialCenterBG}"
+                                                                 Stroke="{DynamicResource BrushRadialBorderActive}"
                                                                  StrokeThickness="1"
                                                                  IsHitTestVisible="False"/>
                                                         <TextBlock Text="{Binding SelectedRadialMenuPageName}"
@@ -2821,7 +2821,7 @@
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
                                                             <Path Data="{Binding SectorGeometry}"
-                                                                  Stroke="#1FFFFFFF"
+                                                                  Stroke="{DynamicResource BrushRadialSlotBorder}"
                                                                   StrokeThickness="1"
                                                                   Fill="Transparent"
                                                                   MouseLeftButtonDown="RadialSlot_MouseLeftButtonDown"
@@ -2836,8 +2836,8 @@
                                                                         <Setter Property="Fill" Value="Transparent"/>
                                                                         <Style.Triggers>
                                                                             <DataTrigger Binding="{Binding IsHovered}" Value="True">
-                                                                                <Setter Property="Fill" Value="#16FFFFFF"/>
-                                                                                <Setter Property="Stroke" Value="#40FFFFFF"/>
+                                                                                <Setter Property="Fill" Value="{DynamicResource BrushRadialSlotHover}"/>
+                                                                                <Setter Property="Stroke" Value="{DynamicResource BrushRadialSlotHoverBorder}"/>
                                                                             </DataTrigger>
                                                                         </Style.Triggers>
                                                                     </Style>
@@ -2886,7 +2886,7 @@
                                                                 <Grid>
                                                                     <StackPanel>
                                                                         <TextBlock Text="➕"
-                                                                                   Foreground="#90FFFFFF"
+                                                                                   Foreground="{DynamicResource BrushRadialTextMuted}"
                                                                                    FontSize="{Binding PlusFontSize}"
                                                                                    HorizontalAlignment="Center"
                                                                                    VerticalAlignment="Center">
@@ -2927,7 +2927,7 @@
                                                                                              HorizontalAlignment="Center"
                                                                                              VerticalAlignment="Center"
                                                                                              Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                                                        <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                                                        <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
                                                                                     </Viewbox>
                                                                                     <TextBlock Text="{Binding DisplayGlyph}"
                                                                                                Foreground="{DynamicResource BrushTextMain}"
@@ -2939,7 +2939,7 @@
                                                                                 </Grid>
                                                                             </Border>
                                                                             <TextBlock Text="{Binding Label}"
-                                                                                       Foreground="#FF60A5FA"
+                                                                                       Foreground="{DynamicResource BrushAccent}"
                                                                                        FontWeight="SemiBold"
                                                                                        HorizontalAlignment="Center"
                                                                                        FontSize="{DynamicResource FontSizeTiny}"

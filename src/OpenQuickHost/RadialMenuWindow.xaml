@@ -20,8 +20,8 @@
     <Grid>
         <Ellipse Width="392"
                  Height="392"
-                 Fill="#AA101010"
-                 Stroke="#22FFFFFF"
+                 Fill="{DynamicResource BrushRadialOuterBG}"
+                 Stroke="{DynamicResource BrushRadialBorder}"
                  StrokeThickness="1"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
@@ -51,15 +51,15 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="#22FFFFFF" StrokeThickness="1"/>
+                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorder}" StrokeThickness="1"/>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
         <Ellipse Width="244"
                  Height="244"
-                 Fill="#CC101010"
-                 Stroke="#22FFFFFF"
+                 Fill="{DynamicResource BrushRadialInnerBG}"
+                 Stroke="{DynamicResource BrushRadialBorder}"
                  StrokeThickness="1"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
@@ -85,7 +85,7 @@
         <Ellipse Width="244"
                  Height="244"
                  Fill="Transparent"
-                 Stroke="#33FFFFFF"
+                 Stroke="{DynamicResource BrushRadialBorderActive}"
                  StrokeThickness="1.5"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
@@ -98,22 +98,22 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="#2DFFFFFF" StrokeThickness="1"/>
+                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
         <Ellipse Width="58"
                  Height="58"
-                 Stroke="#33FFFFFF"
+                 Stroke="{DynamicResource BrushRadialBorderActive}"
                  StrokeThickness="1"
-                 Fill="#F2161616"
+                 Fill="{DynamicResource BrushRadialCenterBG}"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center" />
 
         <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Width="52" Height="52">
             <TextBlock Text="{Binding CenterPrimaryText}"
-                       Foreground="White"
+                       Foreground="{DynamicResource BrushRadialText}"
                        FontSize="11"
                        FontWeight="SemiBold"
                        HorizontalAlignment="Center"
@@ -150,7 +150,7 @@
         </Grid>
 
         <TextBlock Text="{Binding ActiveTitle}"
-                   Foreground="#FF8E8E8E"
+                   Foreground="{DynamicResource BrushTextSec}"
                    FontSize="{DynamicResource FontSizeSmall}"
                    Width="220"
                    HorizontalAlignment="Center"
@@ -178,10 +178,10 @@
                     <Ellipse Width="6" Height="6" Margin="4,0" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Ellipse.Style>
                             <Style TargetType="Ellipse">
-                                <Setter Property="Fill" Value="#44FFFFFF" />
+                                <Setter Property="Fill" Value="{DynamicResource BrushRadialTextMuted}" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                        <Setter Property="Fill" Value="White" />
+                                        <Setter Property="Fill" Value="{DynamicResource BrushRadialText}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -192,7 +192,7 @@
         </ItemsControl>
 
         <TextBlock Text="{Binding PageDisplaySummary}"
-                   Foreground="#80FFFFFF"
+                   Foreground="{DynamicResource BrushRadialTextMuted}"
                    FontSize="10"
                    Width="350"
                    HorizontalAlignment="Center"
@@ -207,7 +207,7 @@
                 Width="34"
                 Height="34"
                 Padding="0"
-                Background="#E6101010"
+                Background="{DynamicResource BrushRadialButtonBG}"
                 BorderThickness="1"
                 BorderBrush="{Binding EditButtonBrush}"
                 ToolTip="进入编辑模式"
@@ -241,7 +241,7 @@
                 Width="34"
                 Height="34"
                 Padding="0"
-                Background="#E6101010"
+                Background="{DynamicResource BrushRadialButtonBG}"
                 BorderThickness="1"
                 BorderBrush="{Binding PinButtonBrush}"
                 ToolTip="{Binding PinButtonTooltip}"
@@ -275,7 +275,7 @@
                 Width="34"
                 Height="34"
                 Padding="0"
-                Background="#E6101010"
+                Background="{DynamicResource BrushRadialButtonBG}"
                 BorderThickness="1"
                 BorderBrush="{Binding AddButtonBrush}"
                 ToolTip="添加轮盘"
@@ -309,7 +309,7 @@
                 Width="34"
                 Height="34"
                 Padding="0"
-                Background="#E6101010"
+                Background="{DynamicResource BrushRadialButtonBG}"
                 BorderThickness="1"
                 BorderBrush="{Binding DeleteButtonBrush}"
                 ToolTip="删除当前轮盘"
@@ -343,7 +343,7 @@
                 Width="34"
                 Height="34"
                 Padding="0"
-                Background="#E6101010"
+                Background="{DynamicResource BrushRadialButtonBG}"
                 BorderThickness="1"
                 BorderBrush="{Binding SearchButtonBrush}"
                 ToolTip="查询轮盘"
@@ -407,7 +407,7 @@
                         <Grid>
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <TextBlock Text="➕" 
-                                           Foreground="#80FFFFFF" 
+                                           Foreground="{DynamicResource BrushRadialTextMuted}" 
                                            FontSize="{DynamicResource FontSizeTitle}" 
                                            HorizontalAlignment="Center" 
                                            VerticalAlignment="Center">
@@ -428,9 +428,9 @@
                                     <Grid ClipToBounds="True">
                                         <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                         <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                            <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
                                         </Viewbox>
-                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="{DynamicResource BrushRadialText}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                     </Grid>
                                     <!-- Running indicator (Green Dot) -->
                                     <Border Width="6"
@@ -446,7 +446,7 @@
                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
-                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF60A5FA|#FFFFFFFF'}"
+                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
                                            FontSize="9"
                                            Width="50"
                                            TextAlignment="Center"
@@ -494,7 +494,7 @@
                         <Grid>
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <TextBlock Text="➕" 
-                                           Foreground="#80FFFFFF" 
+                                           Foreground="{DynamicResource BrushRadialTextMuted}" 
                                            FontSize="{DynamicResource FontSizeHeader}" 
                                            HorizontalAlignment="Center" 
                                            VerticalAlignment="Center">
@@ -525,10 +525,10 @@
                                                  HorizontalAlignment="Center"
                                                  VerticalAlignment="Center"
                                                  Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                            <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
                                         </Viewbox>
                                         <TextBlock Text="{Binding DisplayGlyph}"
-                                                   Foreground="White"
+                                                   Foreground="{DynamicResource BrushRadialText}"
                                                    FontSize="{DynamicResource FontSizeNormal}"
                                                    FontWeight="SemiBold"
                                                    HorizontalAlignment="Center"
@@ -549,7 +549,7 @@
                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
-                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF60A5FA|#FFFFFFFF'}"
+                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            Width="60"
                                            TextAlignment="Center"
@@ -568,8 +568,8 @@
                      Height="240"
                      Canvas.Left="{Binding ChildRingEllipseX}"
                      Canvas.Top="{Binding ChildRingEllipseY}"
-                     Fill="#BB101010"
-                     Stroke="#33FFFFFF"
+                     Fill="{DynamicResource BrushRadialInnerBG}"
+                     Stroke="{DynamicResource BrushRadialBorderActive}"
                      StrokeThickness="1"/>
             <ItemsControl ItemsSource="{Binding ChildItems}"
                           IsHitTestVisible="False">
@@ -595,7 +595,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="#2DFFFFFF" StrokeThickness="1"/>
+                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -603,15 +603,15 @@
                      Height="64"
                      Canvas.Left="{Binding ChildRingCenterEllipseX}"
                      Canvas.Top="{Binding ChildRingCenterEllipseY}"
-                     Fill="#F2161616"
-                     Stroke="#33FFFFFF"
+                     Fill="{DynamicResource BrushRadialCenterBG}"
+                     Stroke="{DynamicResource BrushRadialBorderActive}"
                      StrokeThickness="1"/>
             <TextBlock Text="{Binding ChildRingTitle}"
                        Canvas.Left="{Binding ChildRingTitleX}"
                        Canvas.Top="{Binding ChildRingTitleY}"
                        Width="150"
                        TextAlignment="Center"
-                       Foreground="White"
+                       Foreground="{DynamicResource BrushRadialText}"
                        FontSize="{DynamicResource FontSizeLarge}"
                        FontWeight="SemiBold"/>
             <ItemsControl ItemsSource="{Binding ChildItems}">
@@ -648,7 +648,7 @@
                             <Grid>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <TextBlock Text="➕" 
-                                               Foreground="#80FFFFFF" 
+                                               Foreground="{DynamicResource BrushRadialTextMuted}" 
                                                FontSize="22" 
                                                HorizontalAlignment="Center" 
                                                VerticalAlignment="Center">
@@ -679,10 +679,10 @@
                                                      HorizontalAlignment="Center"
                                                      VerticalAlignment="Center"
                                                      Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
                                             </Viewbox>
                                             <TextBlock Text="{Binding DisplayGlyph}"
-                                                       Foreground="White"
+                                                       Foreground="{DynamicResource BrushRadialText}"
                                                        FontSize="{DynamicResource FontSizeSmallPlus}"
                                                        FontWeight="SemiBold"
                                                        HorizontalAlignment="Center"
@@ -703,7 +703,7 @@
                                                 Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
-                                               Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF60A5FA|#FFFFFFFF'}"
+                                               Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
                                                FontSize="9"
                                                Width="54"
                                                TextAlignment="Center"
@@ -723,8 +723,8 @@
                      Height="196"
                      Canvas.Left="{Binding GrandChildRingEllipseX}"
                      Canvas.Top="{Binding GrandChildRingEllipseY}"
-                     Fill="#B3101010"
-                     Stroke="#33FFFFFF"
+                     Fill="{DynamicResource BrushRadialInnerBG}"
+                     Stroke="{DynamicResource BrushRadialBorderActive}"
                      StrokeThickness="1"/>
             <ItemsControl ItemsSource="{Binding GrandChildItems}"
                           IsHitTestVisible="False">
@@ -750,7 +750,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="#2DFFFFFF" StrokeThickness="1"/>
+                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -758,15 +758,15 @@
                      Height="54"
                      Canvas.Left="{Binding GrandChildRingCenterEllipseX}"
                      Canvas.Top="{Binding GrandChildRingCenterEllipseY}"
-                     Fill="#F2161616"
-                     Stroke="#33FFFFFF"
+                     Fill="{DynamicResource BrushRadialCenterBG}"
+                     Stroke="{DynamicResource BrushRadialBorderActive}"
                      StrokeThickness="1"/>
             <TextBlock Text="{Binding GrandChildRingTitle}"
                        Canvas.Left="{Binding GrandChildRingTitleX}"
                        Canvas.Top="{Binding GrandChildRingTitleY}"
                        Width="128"
                        TextAlignment="Center"
-                       Foreground="White"
+                       Foreground="{DynamicResource BrushRadialText}"
                        FontSize="{DynamicResource FontSizeNormalPlus}"
                        FontWeight="SemiBold"/>
             <ItemsControl ItemsSource="{Binding GrandChildItems}">
@@ -824,9 +824,9 @@
                                         <Grid ClipToBounds="True">
                                             <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                             <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
                                             </Viewbox>
-                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="{DynamicResource BrushRadialText}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                         </Grid>
                                         <!-- Running indicator (Green Dot) -->
                                         <Border Width="6"
@@ -842,7 +842,7 @@
                                                 Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
-                                               Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='#FF60A5FA|#FFFFFFFF'}"
+                                               Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
                                                FontSize="9"
                                                Width="50"
                                                TextAlignment="Center"
