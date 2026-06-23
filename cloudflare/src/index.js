@@ -1042,7 +1042,7 @@ async function handleRequest(request, env) {
         publisher_user_id = coalesce(extensions.publisher_user_id, excluded.publisher_user_id),
         publisher_username = excluded.publisher_username,
         published_at = coalesce(extensions.published_at, excluded.published_at),
-        is_published = 1,
+        is_published = coalesce(extensions.is_published, excluded.is_published),
         updated_at = excluded.updated_at`
     )
       .bind(
@@ -1053,7 +1053,7 @@ async function handleRequest(request, env) {
         auth.userId,
         auth.username,
         now,
-        1,
+        0,
         now
       )
       .run();
