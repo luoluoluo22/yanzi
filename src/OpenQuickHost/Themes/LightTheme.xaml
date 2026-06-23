@@ -43,9 +43,9 @@
     <SolidColorBrush x:Key="BrushRadialOuterBG" Color="#AAF3F4F6"/>
     <SolidColorBrush x:Key="BrushRadialInnerBG" Color="#CCF3F4F6"/>
     <SolidColorBrush x:Key="BrushRadialCenterBG" Color="#F2FFFFFF"/>
-    <SolidColorBrush x:Key="BrushRadialBorder" Color="#FFD1D5DB"/>
-    <SolidColorBrush x:Key="BrushRadialBorderActive" Color="#FF9CA3AF"/>
-    <SolidColorBrush x:Key="BrushRadialBorderSec" Color="#FFE5E7EB"/>
+    <SolidColorBrush x:Key="BrushRadialBorder" Color="#FFB9B9B9"/>
+    <SolidColorBrush x:Key="BrushRadialBorderActive" Color="#FF8E8E8E"/>
+    <SolidColorBrush x:Key="BrushRadialBorderSec" Color="#FFD6D6D6"/>
     <SolidColorBrush x:Key="BrushRadialText" Color="#FF111827"/>
     <SolidColorBrush x:Key="BrushRadialTextMuted" Color="#FF6B7280"/>
     <SolidColorBrush x:Key="BrushRadialIcon" Color="#FF374151"/>

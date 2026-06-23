@@ -484,11 +484,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         UpdateLayout();
         PositionAroundCursor();
-        BuildItems(_lastRadiusPixels);
+
         _ = Dispatcher.InvokeAsync(() =>
         {
-            PositionAroundCursor();
-            BuildItems(_lastRadiusPixels);
             Opacity = 1;
             Activate();
             _selectionTimer.Start();
@@ -2540,6 +2538,24 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         _editInteractionActive = false;
         OnPropertyChanged(nameof(EditButtonBrush));
         Opacity = 0;
+
+        // 默认状态清理工作，还原页面与应用关联属性，消除上一次轮盘的“遗像”残留
+        _activeProcessName = null;
+        _currentPageId = "default";
+        _pageStack.Clear();
+
+        // 重置 UI 文本及绑定的图像，确保其在下一次呼出前即为默认初始态
+        PageDisplaySummary = string.Empty;
+        PageTitle = "燕环";
+        CenterIcon = null;
+        ActiveTitle = "取消";
+
+        // 彻底清空图形缓存项，释放 UI 控件
+        Items.Clear();
+        OuterItems.Clear();
+        ChildItems.Clear();
+        GrandChildItems.Clear();
+
         base.Hide();
     }
 
