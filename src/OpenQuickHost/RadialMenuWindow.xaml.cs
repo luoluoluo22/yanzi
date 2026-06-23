@@ -396,31 +396,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             _mainWindow.RefreshAppSettings();
         }
 
-        if (_editModeLocked && !string.IsNullOrWhiteSpace(_activeProcessName))
-        {
-            var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
-            var appPage = settings.RadialMenu.Pages.FirstOrDefault(item => 
-                !string.IsNullOrEmpty(item.ContextProcessName) && 
-                item.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase));
 
-            if (appPage == null)
-            {
-                appPage = new RadialMenuPageSettings
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    Name = $"{_activeProcessName}",
-                    ContextProcessName = normalizedProcess,
-                    ContextDisplayName = _activeProcessName,
-                    Slots = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
-                    SlotTitles = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
-                    ChildPageIds = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList()
-                };
-                settings.RadialMenu.Pages.Add(appPage);
-                AppSettingsStore.Save(settings);
-                _mainWindow.RefreshAppSettings();
-                _mainWindow.NotifyQuickPanelSettingsChanged("radial-inline-edit");
-            }
-        }
 
         var normalizedProcessForFilter = string.IsNullOrWhiteSpace(_activeProcessName)
             ? ""
