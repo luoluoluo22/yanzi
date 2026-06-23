@@ -10,6 +10,8 @@ artifacts/
 cloudflare/.wrangler/
 cloudflare/node_modules/
 website/downloads/*.zip
+!website/downloads/open-yanzi-github.zip
+!website/downloads/open-yanzi-homepage.zip
 build-verify*/
 mobile/android/.gradle/
 mobile/android/local.properties
