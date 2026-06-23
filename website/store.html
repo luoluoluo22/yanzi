@@ -326,8 +326,8 @@
           article.className = "store-card";
 
         article.innerHTML = `
-          <div class="store-card-icon-wrapper">
-            <div class="store-card-icon">${renderIconMarkup(item, 60)}</div>
+          <div class="store-card-icon-wrapper" style="${getIconWrapperStyle(item, false)}">
+            <div class="store-card-icon" style="color: inherit;">${renderIconMarkup(item, 60)}</div>
           </div>
           <div class="store-card-name">${escapeHtml(item.display_name)}</div>
           <div class="store-card-version">v${escapeHtml(item.latest_version)}</div>
@@ -375,8 +375,8 @@
           </button>
         </div>
         <div class="detail-head">
-          <div class="store-card-icon-wrapper" style="width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0;">
-            <div class="store-card-icon" style="font-size: 2rem; width: 72px; height: 72px;">${renderIconMarkup(item, 72)}</div>
+          <div class="store-card-icon-wrapper" style="${getIconWrapperStyle(item, true)}">
+            <div class="store-card-icon" style="font-size: 2rem; width: 72px; height: 72px; color: inherit;">${renderIconMarkup(item, 72)}</div>
           </div>
           <div class="detail-title">
             <h2>${escapeHtml(item.display_name)}</h2>
@@ -652,6 +652,24 @@
 
         const firstChar = (item.display_name || item.extension_id).charAt(0).toUpperCase();
         return escapeHtml(firstChar);
+      }
+
+      function getIconWrapperStyle(item, isDetail = false) {
+        const icon = String(item.icon || item.manifest?.icon || "").trim();
+        const isImage = icon && /^https?:\/\//i.test(icon);
+        const color = item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex || "#8B5CF6";
+        
+        if (isImage) {
+          if (isDetail) {
+            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background: transparent; border: 1px solid var(--border);`;
+          }
+          return `background: transparent; border: 1px solid var(--border);`;
+        } else {
+          if (isDetail) {
+            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background-color: ${color}; border: none; color: white;`;
+          }
+          return `background-color: ${color}; border: none; color: white;`;
+        }
       }
 
       async function loadMdiIconPaths() {

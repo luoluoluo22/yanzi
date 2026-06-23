@@ -156,6 +156,9 @@ public sealed class CloudExtensionRecord
     [JsonPropertyName("icon")]
     public string? Icon { get; init; }
 
+    [JsonPropertyName("accent_hex")]
+    public string? AccentHex { get; init; }
+
     [JsonPropertyName("keywords")]
     public IReadOnlyList<string> Keywords { get; init; } = [];
 

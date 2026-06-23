@@ -2301,6 +2301,7 @@ function serializeExtensionRecord(url, row) {
     description: manifest.description || "",
     category: manifest.category || "扩展",
     icon: resolveStoreIcon(url, row, manifest.icon || "", row.extension_id),
+    accent_hex: manifest.accentHex || manifest.accent_hex || "",
     keywords: Array.isArray(manifest.keywords) ? manifest.keywords : [],
     manifest,
     archive_download_url: row.archive_key
@@ -2330,6 +2331,7 @@ function serializeExtensionListItem(url, row, publicDefinition = null) {
       description: full.description,
       category: full.category,
       icon: full.icon,
+      accent_hex: full.accent_hex,
       keywords: full.keywords,
       archive_download_url: full.archive_download_url,
       install_protocol_url: full.install_protocol_url
@@ -2349,6 +2351,7 @@ function serializeExtensionListItem(url, row, publicDefinition = null) {
     description: full.description,
     category: full.category,
     icon: full.icon,
+    accent_hex: full.accent_hex,
     keywords: full.keywords,
     archive_download_url: full.archive_download_url,
     install_protocol_url: full.install_protocol_url
@@ -2403,6 +2406,7 @@ function serializeStoreExtensionRecord(url, row, definition) {
     description: definition.description,
     category: definition.category,
     icon: resolveStoreIcon(url, row, definition.icon || rowManifest.icon || "", definition.extension_id),
+    accent_hex: manifest.accentHex || manifest.accent_hex || "",
     keywords: definition.keywords,
     manifest,
     archive_download_url: archiveUrl,

@@ -57,7 +57,7 @@ public partial class MainWindow
                     title: string.IsNullOrWhiteSpace(ext.DisplayName) ? "未知扩展" : ext.DisplayName,
                     subtitle: string.Join(" · ", subtitleParts),
                     category: category,
-                    accentHex: "#FF8B5CF6", // 商店颜色
+                    accentHex: string.IsNullOrWhiteSpace(ext.AccentHex) ? "#FF8B5CF6" : ext.AccentHex, // 商店颜色
                     openTarget: null,
                     keywords: BuildStoreKeywords(ext),
                     source: CommandSource.Cloud,
