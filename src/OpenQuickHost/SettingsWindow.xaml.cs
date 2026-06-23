@@ -2561,6 +2561,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SettingsWindow_Closing(object? sender, CancelEventArgs e)
     {
+        e.Cancel = true;
+        Hide();
+        
         // 关闭时立即保存，不使用防抖
         _windowBoundsPersistTimer?.Stop();
         PersistWindowBounds();

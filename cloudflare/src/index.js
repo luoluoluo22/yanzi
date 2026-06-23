@@ -194,6 +194,26 @@ async function handleRequest(request, env) {
     return withCors(new Response(null, { status: 204 }));
   }
 
+  if (url.pathname.startsWith("/downloads/") && request.method === "GET") {
+    const key = url.pathname.substring(1);
+    const object = await env.PACKAGES.get(key);
+    if (!object) {
+      return new Response("File not found in storage bucket", { status: 404 });
+    }
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", object.httpEtag || "");
+    headers.set("Content-Type", "application/zip");
+    headers.set("Access-Control-Allow-Origin", "*");
+    return new Response(object.body, { headers });
+  }
+
+  if (url.pathname === "/v1/debug/list-packages" && request.method === "GET") {
+    const list = await env.PACKAGES.list();
+    const keys = list.objects.map(obj => obj.key);
+    return json({ count: keys.length, keys });
+  }
+
   if (url.pathname === "/health") {
     const result = await env.DB.prepare("select datetime('now') as now").first();
     return json({ ok: true, now: result?.now ?? null });
@@ -1219,21 +1239,39 @@ async function handleRequest(request, env) {
       .bind(extensionId)
       .first();
 
-    if (!row?.archive_key) {
+    let archiveKey = null;
+    let latestVersion = "latest";
+    let sha256 = "";
+
+    if (row?.archive_key) {
+      archiveKey = row.archive_key;
+      latestVersion = row.latest_version || "latest";
+      sha256 = row.archive_sha256 || "";
+    } else {
+      const preset = PUBLIC_STORE_EXTENSION_MAP.get(extensionId);
+      if (preset && preset.package_path) {
+        archiveKey = preset.package_path.startsWith("/") 
+          ? preset.package_path.substring(1) 
+          : preset.package_path;
+        latestVersion = preset.latest_version || "latest";
+      }
+    }
+
+    if (!archiveKey) {
       return json({ error: "not_found", message: "Archive not found" }, 404);
     }
 
-    const object = await env.PACKAGES.get(row.archive_key);
+    const object = await env.PACKAGES.get(archiveKey);
     if (!object) {
-      return json({ error: "not_found", message: "Stored package is missing" }, 404);
+      return json({ error: "not_found", message: `Stored package is missing: ${archiveKey}` }, 404);
     }
 
     const headers = new Headers();
     object.writeHttpMetadata(headers);
-    headers.set("etag", row.archive_sha256 || "");
+    headers.set("etag", sha256 || object.httpEtag || "");
     headers.set(
       "content-disposition",
-      `attachment; filename="${extensionId}-${row.latest_version || "latest"}.zip"`
+      `attachment; filename="${extensionId}-${latestVersion}.zip"`
     );
     return withCors(new Response(object.body, { headers }));
   }

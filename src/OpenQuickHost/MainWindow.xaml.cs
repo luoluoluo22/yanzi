@@ -131,6 +131,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public MainWindow()
     {
         InitializeComponent();
+        CleanAllTemporaryExtensions();
         UpdateFooterMenuHint(isMenuOpen: false);
         _defaultWindowWidth = Width;
         _defaultWindowHeight = Height;
@@ -308,6 +309,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsAiChatMode));
             OnPropertyChanged(nameof(AiChatVisibility));
+            OnPropertyChanged(nameof(IsStoreMode));
+            OnPropertyChanged(nameof(StoreVisibility));
             OnPropertyChanged(nameof(NormalLauncherVisibility));
             OnPropertyChanged(nameof(AiChatModelDisplayText));
 
@@ -317,15 +320,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             ApplyFilter(SearchBox.Text);
+            
+            if (wasAiMode && !IsAiChatMode)
+            {
+                // 从 AI Chat 模式切换到其他模式时，恢复窗口尺寸
+                RestoreDefaultWindowSize();
+                if (!IsStoreMode) 
+                {
+                    SetSearchScopePopupOpen(true);
+                }
+            }
+
             if (IsAiChatMode)
             {
                 ActivateAiChatMode();
             }
-            else if (wasAiMode)
+            else if (IsStoreMode)
             {
-                // 从 AI Chat 模式切换到其他模式时，恢复窗口尺寸
-                RestoreDefaultWindowSize();
-                SetSearchScopePopupOpen(true);
+                _ = LoadStoreExtensionsAsync();
             }
         }
     }
@@ -339,6 +351,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         yield return new SearchScopeTab(SearchScopeSystem, "系统", "Windows 系统与设置");
         yield return new SearchScopeTab(SearchScopeYanyu, "燕语", "文本指令与扩展触发词");
         yield return new SearchScopeTab(SearchScopeAi, "AI对话", "切换到 AI 对话模式");
+        yield return new SearchScopeTab(SearchScopeStore, "扩展商店", "浏览与安装云端扩展");
 
         foreach (var pinnedCommand in GetPinnedSearchScopeCommands())
         {
@@ -972,6 +985,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CommandList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
+        if (CommandList.SelectedItem is CommandItem item && item.Source == CommandSource.Cloud)
+        {
+            ShowStoreExtensionDetail(item);
+            e.Handled = true;
+            return;
+        }
         RunSelectedCommand();
     }
 
@@ -2141,6 +2160,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 ShowInTaskbar = true
             };
+
+            if (runnable.ExtensionDirectoryPath != null && runnable.ExtensionDirectoryPath.Contains("_temp_run_"))
+            {
+                window.Closed += (s, e) =>
+                {
+                    Task.Run(async () =>
+                    {
+                        await Task.Delay(2000); // 延时以释放WebView/进程锁定的文件
+                        try
+                        {
+                            if (Directory.Exists(runnable.ExtensionDirectoryPath))
+                            {
+                                Directory.Delete(runnable.ExtensionDirectoryPath, recursive: true);
+                            }
+                        }
+                        catch {}
+                    });
+                };
+            }
+
             window.Show();
             HostAssets.AppendRecent(runnable.Title);
             LastRunMessage = $"已打开应用扩展：{runnable.Title}";
@@ -2189,6 +2228,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (ScriptExtensionRunner.CanExecute(runnable))
         {
             await ExecuteScriptCommandAsync(runnable, explicitInput ?? BuildScriptInput(runnable, SearchBox.Text), launchSource);
+
+            if (runnable.ExtensionDirectoryPath != null && runnable.ExtensionDirectoryPath.Contains("_temp_run_"))
+            {
+                Task.Run(async () =>
+                {
+                    await Task.Delay(2000); // 延时以释放文件进程锁
+                    try
+                    {
+                        if (Directory.Exists(runnable.ExtensionDirectoryPath))
+                        {
+                            Directory.Delete(runnable.ExtensionDirectoryPath, recursive: true);
+                        }
+                    }
+                    catch {}
+                });
+            }
             return;
         }
 
@@ -2224,10 +2279,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (runnable.Source == CommandSource.Cloud)
+        {
+            HostAssets.AppendLog($"Triggering download for cloud extension: {runnable.Title}");
+            LastRunMessage = $"正在安装扩展：{runnable.Title} ...";
+            _ = InstallStoreExtensionAsync(runnable.ExtensionId).ContinueWith(t => 
+            {
+                if (t.IsCompletedSuccessfully)
+                {
+                    Dispatcher.Invoke(() => LastRunMessage = t.Result.ok ? $"已安装扩展：{runnable.Title}" : $"安装失败：{t.Result.message}");
+                }
+            });
+            return;
+        }
+
         HostAssets.AppendLog($"Command has no executable target: {runnable.Title}");
-        LastRunMessage = runnable.Source == CommandSource.Cloud
-            ? $"云端记录已存在，但当前机器没有安装对应扩展：{runnable.ExtensionId}。先下载扩展包或放入本地扩展目录。"
-            : $"当前命令没有 openTarget，也没有脚本入口：{runnable.Title}";
+        LastRunMessage = $"当前命令没有 openTarget，也没有脚本入口：{runnable.Title}";
     }
 
     private void OpenQueryCommandInLauncher(CommandItem command)
@@ -3475,6 +3542,20 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public string? LocalPackagePath { get; private set; }
 
+    public int InstallCount { get; private set; }
+
+    public double Rating { get; private set; }
+
+    public bool IsInstalled => InstalledForUser;
+
+    public string InstallCountLabel => InstallCount >= 1000000 
+        ? $"{(double)InstallCount / 1000000:F1}M" 
+        : (InstallCount >= 1000 
+            ? $"{(double)InstallCount / 1000:F1}K" 
+            : InstallCount.ToString());
+
+    public string RatingLabel => Rating > 0 ? Rating.ToString("F1") : "4.8";
+
     public string VersionLabel => string.IsNullOrWhiteSpace(CloudVersion) ? SourceLabel : $"v{CloudVersion}";
 
     public string ItemKindLabel => Source == CommandSource.Cloud
@@ -3531,12 +3612,14 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public void ApplyCloudData(string? displayName, string? version, bool existsInCloud, bool installedForUser, string? archiveKey)
+    public void ApplyCloudData(string? displayName, string? version, bool existsInCloud, bool installedForUser, string? archiveKey, int installCount = 0, double rating = 0.0)
     {
         CloudVersion = version;
         ExistsInCloud = existsInCloud;
         InstalledForUser = installedForUser;
         HasArchive = !string.IsNullOrWhiteSpace(archiveKey);
+        InstallCount = installCount;
+        Rating = rating;
         NotifyCloudChanged();
     }
 
@@ -3624,6 +3707,11 @@ public sealed class CommandItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(VersionLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CloudSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LocalPackagePath)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsInstalled)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(InstallCount)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rating)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(InstallCountLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RatingLabel)));
     }
 }
 

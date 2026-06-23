@@ -13,7 +13,7 @@
         MinWidth="900"
         MinHeight="620"
         WindowStartupLocation="CenterScreen"
-        Background="{x:Null}"
+        Background="{DynamicResource BrushBG}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display"

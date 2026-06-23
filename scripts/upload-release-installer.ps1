@@ -42,6 +42,17 @@ $hash = (Get-FileHash -LiteralPath $installerSetupPath -Algorithm SHA256).Hash.T
 $notesPath = Join-Path ([IO.Path]::GetTempPath()) "yanzi-release-$plainVersion.md"
 
 $notesContent = @"
+# 燕子 Yanzi v$plainVersion 更新内容
+
+**✨ 界面与交互优化**
+- 【修复】设置界面第二次打开时无响应或报错退出的问题。
+- 【修复】初次呼出设置面板瞬间出现的白屏/闪屏问题，改为全局底色提前渲染。
+- 【性能】彻底重构了设置面板的生命周期为“后台常驻”，首次加载后每次打开均为秒级展现，不再有由于大量数据加载带来的鼠标卡顿感。
+
+**🎛️ 轮盘功能升级**
+- 【增强】调整了燕环（轮盘）的“目标应用”智能判定逻辑。过去仅依赖“前台激活窗口”；现在已支持自动嗅探并提取**鼠标指针悬停位置**下的窗口进程。即使它处于后台非激活状态，依然能精准唤出针对该应用的专属轮盘工具。
+
+---
 一键安装包：$fileName
 
 SHA256: $hash

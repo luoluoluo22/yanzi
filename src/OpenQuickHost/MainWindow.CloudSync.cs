@@ -1,4 +1,5 @@
 using System.IO;
+using System.IO.Compression;
 using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Net.Http;
@@ -90,10 +91,16 @@ public partial class MainWindow
             var me = await _cloudSyncClient.GetMeAsync();
             var pulledConfig = await PullWebDavConfigFromCloudAsync();
             var pulledQuickPanelConfig = await PullQuickPanelConfigFromCloudAsync();
-            _allCommands.RemoveAll(x => x.Source == CommandSource.Cloud);
+            if (!IsStoreMode)
+            {
+                _allCommands.RemoveAll(x => x.Source == CommandSource.Cloud);
+            }
             foreach (var command in _allCommands)
             {
-                command.ClearCloudData();
+                if (command.Source != CommandSource.Cloud)
+                {
+                    command.ClearCloudData();
+                }
             }
             ApplyFilter(SearchBox.Text);
             SyncStatus = $"已登录 {me?.Username ?? _cloudSyncClient.CurrentUserLabel}";
@@ -3602,6 +3609,187 @@ public partial class MainWindow
         InputHookService.ReloadSettings();
         message = $"燕环快捷键已更新为 {settings.RadialMenu.CustomShortcut}";
         return true;
+    }
+
+    // ------------------ 商店扩展详情 & 试运行 ------------------
+
+    private void ShowStoreExtensionDetail(CommandItem item)
+    {
+        StoreExtensionDetailOverlay.DataContext = item;
+        StoreExtensionDetailOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void CloseStoreDetailButton_Click(object sender, RoutedEventArgs e)
+    {
+        StoreExtensionDetailOverlay.Visibility = Visibility.Collapsed;
+        StoreExtensionDetailOverlay.DataContext = null;
+    }
+
+    private async void StoreDryRunButton_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is FrameworkElement fe && fe.Tag is CommandItem item)
+        {
+            if (!item.HasArchive)
+            {
+                System.Windows.MessageBox.Show("当前扩展在云端没有上传可下载的安装包归档。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+            LastRunMessage = $"正在下载并试运行扩展：{item.Title} ...";
+            SyncStatus = $"正在试运行 {item.Title}...";
+            
+            // 禁用按钮防重复点击
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn != null) btn.IsEnabled = false;
+
+            var result = await RunStoreExtensionTemporaryAsync(item.ExtensionId);
+            
+            if (btn != null) btn.IsEnabled = true;
+
+            if (result.ok)
+            {
+                LastRunMessage = result.message;
+                SyncStatus = "试运行已启动。";
+            }
+            else
+            {
+                LastRunMessage = $"试运行失败：{result.message}";
+                SyncStatus = $"试运行失败：{result.message}";
+                System.Windows.MessageBox.Show($"试运行失败：{result.message}", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+    }
+
+    private async void StoreInstallButton_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is FrameworkElement fe && fe.Tag is CommandItem item)
+        {
+            if (!item.HasArchive)
+            {
+                System.Windows.MessageBox.Show("当前扩展在云端没有上传可下载的安装包归档。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                return;
+            }
+            LastRunMessage = $"正在安装扩展：{item.Title} ...";
+            SyncStatus = $"正在安装 {item.Title}...";
+
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn != null) btn.IsEnabled = false;
+
+            var result = await InstallStoreExtensionAsync(item.ExtensionId);
+
+            if (btn != null) btn.IsEnabled = true;
+
+            if (result.ok)
+            {
+                LastRunMessage = result.message;
+                SyncStatus = "安装成功。";
+                // 刷新 UI 的已安装状态
+                item.ApplyCloudData(item.Title, item.CloudVersion, true, true, item.HasArchive ? "archive" : null, item.InstallCount, item.Rating);
+            }
+            else
+            {
+                LastRunMessage = $"安装失败：{result.message}";
+                SyncStatus = $"安装失败：{result.message}";
+                System.Windows.MessageBox.Show($"安装失败：{result.message}", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+    }
+
+    public async Task<(bool ok, string message)> RunStoreExtensionTemporaryAsync(string extensionId)
+    {
+        if (string.IsNullOrWhiteSpace(extensionId))
+        {
+            return (false, "缺少扩展 ID");
+        }
+
+        try
+        {
+            if (_cloudSyncClient == null)
+            {
+                return (false, "同步客户端未初始化");
+            }
+            // 1. 下载扩展包
+            var packageBytes = await _cloudSyncClient.DownloadExtensionArchiveAsync(extensionId);
+            if (packageBytes == null || packageBytes.Length == 0)
+            {
+                return (false, "下载的数据为空");
+            }
+
+            // 2. 解压到 _temp_run_ 开头的临时目录
+            var tempDirectoryPath = Path.Combine(HostAssets.ExtensionsPath, $"_temp_run_{extensionId}_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempDirectoryPath);
+
+            await using (var stream = new MemoryStream(packageBytes, writable: false))
+            {
+                using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
+                {
+                    archive.ExtractToDirectory(tempDirectoryPath, overwriteFiles: true);
+                }
+            }
+
+            var manifestPath = Path.Combine(tempDirectoryPath, "manifest.json");
+            if (!File.Exists(manifestPath))
+            {
+                throw new InvalidOperationException("扩展包里缺少 manifest.json。");
+            }
+
+            var manifestJson = await File.ReadAllTextAsync(manifestPath);
+            var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(manifestJson, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (manifest == null || string.IsNullOrWhiteSpace(manifest.Id) || string.IsNullOrWhiteSpace(manifest.Name))
+            {
+                throw new InvalidOperationException("扩展包中的 manifest.json 无效。");
+            }
+
+            // 3. 转化为本地 CommandItem，但目录指向这个 _temp_run_ 目录
+            var entry = new LocalExtensionCatalogEntry(manifestPath, manifest);
+            var tempCommand = LocalExtensionCatalog.CreateCommand(entry);
+
+            // 4. 运行扩展
+            await Dispatcher.InvokeAsync(async () =>
+            {
+                MarkExtensionAsSeen(tempCommand);
+                var runnable = ResolveRunnableCommand(tempCommand);
+                var explicitInput = runnable.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
+                    ? _activeQueryArgument
+                    : null;
+                
+                await ExecuteCommandAsync(runnable, explicitInput);
+            });
+
+            return (true, $"已启动临时试运行：{tempCommand.Title}。文件将在运行结束后自动移除。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"运行失败：{ex.Message}");
+        }
+    }
+
+    public static void CleanAllTemporaryExtensions()
+    {
+        try
+        {
+            if (Directory.Exists(HostAssets.ExtensionsPath))
+            {
+                foreach (var dir in Directory.GetDirectories(HostAssets.ExtensionsPath, "_temp_run_*"))
+                {
+                    try
+                    {
+                        Directory.Delete(dir, recursive: true);
+                    }
+                    catch
+                    {
+                        // 忽略正在被占用的文件删除失败，下次启动时会再次清理
+                    }
+                }
+            }
+        }
+        catch {}
     }
 
 }

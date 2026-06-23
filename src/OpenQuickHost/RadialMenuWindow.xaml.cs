@@ -461,8 +461,22 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
         _lastRadiusPixels = settings.RadiusPixels;
 
-        // 获取前台窗口，但要跳过轮盘本身（避免拿到自身进程作为目标应用）
-        _previousForegroundWindow = RadialMenuNativeMethods.GetForegroundWindow();
+        // 获取鼠标所在位置的顶级窗口，而不是当前前台窗口（更符合直觉）
+        _previousForegroundWindow = IntPtr.Zero;
+        if (RadialMenuNativeMethods.GetCursorPos(out var pt))
+        {
+            var hwndUnderMouse = RadialMenuNativeMethods.WindowFromPoint(pt);
+            if (hwndUnderMouse != IntPtr.Zero)
+            {
+                _previousForegroundWindow = RadialMenuNativeMethods.GetAncestor(hwndUnderMouse, RadialMenuNativeMethods.GA_ROOT);
+            }
+        }
+        
+        // 兜底方案
+        if (_previousForegroundWindow == IntPtr.Zero)
+        {
+            _previousForegroundWindow = RadialMenuNativeMethods.GetForegroundWindow();
+        }
         _activeProcessName = null;
         if (_previousForegroundWindow != IntPtr.Zero)
         {
@@ -2916,6 +2930,25 @@ internal static partial class RadialMenuNativeMethods
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern bool DestroyIcon(IntPtr handle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT Point);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+
+    public const uint GA_ROOT = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT
+    {
+        public int X;
+        public int Y;
+    }
 }
 
 public class PaginationDotViewModel : INotifyPropertyChanged

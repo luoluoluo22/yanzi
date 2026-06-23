@@ -687,150 +687,532 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Grid.Style>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
 
-                                <!-- Icon Area -->
-                                <Grid VerticalAlignment="Center" Margin="0,0,12,0">
-                                    <Border Width="32"
-                                            Height="32"
-                                            CornerRadius="8"
-                                            ClipToBounds="True">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="Background" Value="{Binding AccentBrush}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
-                                                        <Setter Property="Background" Value="Transparent" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                        <Grid>
-                                            <Image Source="{Binding IconSource}"
-                                                   Stretch="UniformToFill"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"
-                                                   SnapsToDevicePixels="True"
-                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                            <Viewbox Margin="6"
-                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Path Width="24"
-                                                      Height="24"
-                                                      Data="{Binding VectorIcon}"
-                                                      Fill="White"
-                                                      Stretch="Uniform" />
-                                            </Viewbox>
-                                            <TextBlock Text="{Binding DisplayGlyph}"
+                                <!-- 1. 普通扩展/应用/文件布局 (Source != Cloud) -->
+                                <Grid x:Name="NormalExtensionLayout">
+                                    <Grid.Style>
+                                        <Style TargetType="Grid">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Source}" Value="Cloud">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Grid.Style>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Icon Area -->
+                                    <Grid VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <Border Width="32"
+                                                Height="32"
+                                                CornerRadius="8"
+                                                ClipToBounds="True">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{Binding AccentBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                            <Setter Property="Background" Value="Transparent" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Image Source="{Binding IconSource}"
+                                                       Stretch="UniformToFill"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                                       SnapsToDevicePixels="True"
+                                                       Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Viewbox Margin="6"
+                                                         Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Width="24"
+                                                          Height="24"
+                                                          Data="{Binding VectorIcon}"
+                                                          Fill="White"
+                                                          Stretch="Uniform" />
+                                                </Viewbox>
+                                                <TextBlock Text="{Binding DisplayGlyph}"
+                                                       FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                       Foreground="{DynamicResource BrushTextMain}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       FontWeight="Bold"
+                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Border Width="9"
+                                                        Height="9"
+                                                        CornerRadius="4.5"
+                                                        Background="#FFFF5A7A"
+                                                        BorderBrush="#CCFFFFFF"
+                                                        BorderThickness="1"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Top"
+                                                        Margin="0,1,1,0"
+                                                        Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Border Background="{DynamicResource BrushDialogBG}"
+                                                        Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Viewbox Width="18"
+                                                         Height="18"
+                                                         HorizontalAlignment="Center"
+                                                         VerticalAlignment="Center"
+                                                         Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Data="{local:IconGeometry sync}"
+                                                          Fill="{DynamicResource BrushTextMain}"
+                                                          Stretch="Uniform"
+                                                          RenderTransformOrigin="0.5,0.5">
+                                                        <Path.RenderTransform>
+                                                            <RotateTransform Angle="0" />
+                                                        </Path.RenderTransform>
+                                                        <Path.Triggers>
+                                                            <EventTrigger RoutedEvent="Loaded">
+                                                                <BeginStoryboard>
+                                                                    <Storyboard RepeatBehavior="Forever">
+                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                         From="0"
+                                                                                         To="360"
+                                                                                         Duration="0:0:0.9" />
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </EventTrigger>
+                                                        </Path.Triggers>
+                                                    </Path>
+                                                </Viewbox>
+                                            </Grid>
+                                        </Border>
+                                        <!-- Running indicator (Green Dot) -->
+                                        <Border Width="9"
+                                                Height="9"
+                                                CornerRadius="4.5"
+                                                Background="#FF10B981"
+                                                BorderBrush="#CCFFFFFF"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Bottom"
+                                                Margin="-2,0,0,-2"
+                                                IsHitTestVisible="False"
+                                                Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    </Grid>
+
+                                    <!-- Text Area -->
+                                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="{Binding Title}"
+                                                   Grid.Row="0"
                                                    FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                   FontWeight="Medium"
                                                    Foreground="{DynamicResource BrushTextMain}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   FontWeight="Bold"
-                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                            <Border Width="9"
-                                                    Height="9"
-                                                    CornerRadius="4.5"
-                                                    Background="#FFFF5A7A"
-                                                    BorderBrush="#CCFFFFFF"
-                                                    BorderThickness="1"
-                                                    HorizontalAlignment="Right"
-                                                    VerticalAlignment="Top"
-                                                    Margin="0,1,1,0"
-                                                    Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                            <Border Background="{DynamicResource BrushDialogBG}"
-                                                    Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                            <Viewbox Width="18"
-                                                     Height="18"
-                                                     HorizontalAlignment="Center"
-                                                     VerticalAlignment="Center"
-                                                     Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Path Data="{local:IconGeometry sync}"
-                                                      Fill="{DynamicResource BrushTextMain}"
-                                                      Stretch="Uniform"
-                                                      RenderTransformOrigin="0.5,0.5">
-                                                    <Path.RenderTransform>
-                                                        <RotateTransform Angle="0" />
-                                                    </Path.RenderTransform>
-                                                    <Path.Triggers>
-                                                        <EventTrigger RoutedEvent="Loaded">
-                                                            <BeginStoryboard>
-                                                                <Storyboard RepeatBehavior="Forever">
-                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                     From="0"
-                                                                                     To="360"
-                                                                                     Duration="0:0:0.9" />
-                                                                </Storyboard>
-                                                            </BeginStoryboard>
-                                                        </EventTrigger>
-                                                    </Path.Triggers>
-                                                </Path>
-                                            </Viewbox>
-                                        </Grid>
-                                    </Border>
-                                    <!-- Running indicator (Green Dot) -->
-                                    <Border Width="9"
-                                            Height="9"
-                                            CornerRadius="4.5"
-                                            Background="#FF10B981"
-                                            BorderBrush="#CCFFFFFF"
-                                            BorderThickness="1"
-                                            HorizontalAlignment="Left"
-                                            VerticalAlignment="Bottom"
-                                            Margin="-2,0,0,-2"
-                                            IsHitTestVisible="False"
-                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                </Grid>
-
-                                <!-- Text Area -->
-                                <Grid Grid.Column="1" VerticalAlignment="Center">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Text="{Binding Title}"
-                                               Grid.Row="0"
-                                               FontSize="{DynamicResource FontSizeNormalPlus}"
-                                               FontWeight="Medium"
-                                               Foreground="{DynamicResource BrushTextMain}"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding EffectiveSubtitle}"
-                                               Grid.Row="1"
-                                               Margin="0,2,0,0"
-                                               Foreground="{DynamicResource BrushTextSec}"
-                                               FontSize="{DynamicResource FontSizeSmall}"
-                                               TextTrimming="CharacterEllipsis" />
-                                </Grid>
-
-                                <!-- Action Label -->
-                                <StackPanel Grid.Column="2"
-                                            Orientation="Horizontal"
-                                            VerticalAlignment="Center"
-                                            Margin="8,0,5,0">
-                                    <Border Background="{DynamicResource BrushBG}"
-                                            BorderBrush="{DynamicResource BrushBorderStrong}"
-                                            BorderThickness="1"
-                                            CornerRadius="6"
-                                            Padding="8,4"
-                                            Margin="0,0,8,0"
-                                            Visibility="{Binding HasGlobalShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <TextBlock Text="{Binding ShortcutLabel}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding EffectiveSubtitle}"
+                                                   Grid.Row="1"
+                                                   Margin="0,2,0,0"
                                                    Foreground="{DynamicResource BrushTextSec}"
-                                                   FontSize="{DynamicResource FontSizeTiny}"
-                                                   FontWeight="SemiBold" />
-                                    </Border>
-                                    <TextBlock Text="{Binding DisplayTypeLabel}" 
-                                               Foreground="{DynamicResource BrushTextSec}" 
-                                               FontSize="{DynamicResource FontSizeSmallPlus}" 
-                                               VerticalAlignment="Center"
-                                               Visibility="{Binding HasDisplayTypeLabel, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                </StackPanel>
+                                                   FontSize="{DynamicResource FontSizeSmall}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+
+                                     <!-- Action Label -->
+                                     <StackPanel Grid.Column="2"
+                                                 Orientation="Horizontal"
+                                                 VerticalAlignment="Center"
+                                                 Margin="8,0,5,0">
+                                        <Border Background="{DynamicResource BrushBG}"
+                                                BorderBrush="{DynamicResource BrushBorderStrong}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="8,4"
+                                                Margin="0,0,8,0"
+                                                Visibility="{Binding HasGlobalShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <TextBlock Text="{Binding ShortcutLabel}"
+                                                       Foreground="{DynamicResource BrushTextSec}"
+                                                       FontSize="{DynamicResource FontSizeTiny}"
+                                                       FontWeight="SemiBold" />
+                                        </Border>
+                                        <TextBlock Text="{Binding DisplayTypeLabel}" 
+                                                   Foreground="{DynamicResource BrushTextSec}" 
+                                                   FontSize="{DynamicResource FontSizeSmallPlus}" 
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding HasDisplayTypeLabel, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- 2. 商店扩展专用布局 (Source == Cloud) -->
+                                <Grid x:Name="CloudExtensionLayout">
+                                    <Grid.Style>
+                                        <Style TargetType="Grid">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Source}" Value="Cloud">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Grid.Style>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Icon Area -->
+                                    <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <Border Width="32"
+                                                Height="32"
+                                                CornerRadius="8"
+                                                ClipToBounds="True">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{Binding AccentBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                            <Setter Property="Background" Value="Transparent" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Image Source="{Binding IconSource}"
+                                                       Stretch="UniformToFill"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                                       SnapsToDevicePixels="True"
+                                                       Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Viewbox Margin="6"
+                                                         Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Width="24"
+                                                          Height="24"
+                                                          Data="{Binding VectorIcon}"
+                                                          Fill="White"
+                                                          Stretch="Uniform" />
+                                                </Viewbox>
+                                                <TextBlock Text="{Binding DisplayGlyph}"
+                                                       FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                       Foreground="{DynamicResource BrushTextMain}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       FontWeight="Bold"
+                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- Text Area -->
+                                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="{Binding Title}"
+                                                   Grid.Row="0"
+                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                   FontWeight="Medium"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding EffectiveSubtitle}"
+                                                   Grid.Row="1"
+                                                   Margin="0,2,0,0"
+                                                   Foreground="{DynamicResource BrushTextSec}"
+                                                   FontSize="{DynamicResource FontSizeSmall}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+
+                                    <!-- Action & Stats Area -->
+                                    <StackPanel Grid.Column="2" 
+                                                Orientation="Vertical" 
+                                                VerticalAlignment="Center" 
+                                                HorizontalAlignment="Right" 
+                                                Margin="8,0,5,0">
+                                        <!-- Stats (下载量 & 评分) -->
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,4">
+                                            <!-- 下载量 -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,10,0" VerticalAlignment="Center">
+                                                <TextBlock Text="⤓ " Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <!-- 评分 -->
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="★ " Foreground="#FFFFB000" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- Buttons -->
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <!-- 试运行：始终显示，是否可用由 HasArchive 决定 -->
+                                            <Button Content="试运行"
+                                                    Click="StoreDryRunButton_Click"
+                                                    Tag="{Binding}"
+                                                    IsEnabled="{Binding HasArchive}"
+                                                    Height="22"
+                                                    Padding="8,0"
+                                                    Margin="0,0,6,0"
+                                                    FontSize="11"
+                                                    Background="#20FFFFFF"
+                                                    Foreground="{DynamicResource BrushTextMain}"
+                                                    BorderBrush="#30FFFFFF"
+                                                    BorderThickness="1"
+                                                    Cursor="Hand"
+                                                    Focusable="False">
+                                                <Button.Resources>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="CornerRadius" Value="4"/>
+                                                    </Style>
+                                                </Button.Resources>
+                                            </Button>
+
+                                            <Grid>
+                                                <!-- 未安装时显示：安装按钮 -->
+                                                <Button Content="安装"
+                                                        Click="StoreInstallButton_Click"
+                                                        Tag="{Binding}"
+                                                        IsEnabled="{Binding HasArchive}"
+                                                        Height="22"
+                                                        Padding="10,0"
+                                                        FontSize="11"
+                                                        Background="{DynamicResource BrushAccent}"
+                                                        Foreground="White"
+                                                        BorderThickness="0"
+                                                        Cursor="Hand"
+                                                        Focusable="False">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                    <Button.Resources>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="CornerRadius" Value="4"/>
+                                                        </Style>
+                                                    </Button.Resources>
+                                                </Button>
+
+                                                <!-- 已安装时显示：已安装标签 -->
+                                                <Border Background="#12FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="4" Padding="8,3">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="已安装" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                                                </Border>
+                                            </Grid>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+
+                <!-- 4. 商店加载中 Loading Overlay -->
+                <Grid x:Name="StoreLoadingOverlay"
+                      Panel.ZIndex="15"
+                      Visibility="Collapsed"
+                      Background="#D518181A">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="160"
+                                     Height="6"
+                                     Foreground="#FF8B5CF6"
+                                     Background="#33FFFFFF"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Center" />
+                        <TextBlock Text="正在加载扩展商店..."
+                                   Foreground="{DynamicResource BrushTextSec}"
+                                   FontSize="{DynamicResource FontSizeNormal}"
+                                   Margin="0,12,0,0"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- 3. 商店扩展二级详情 Overlay -->
+                <Grid x:Name="StoreExtensionDetailOverlay"
+                      Panel.ZIndex="20"
+                      Visibility="Collapsed"
+                      Background="#F018181A">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" /> <!-- 顶部导航 -->
+                        <RowDefinition Height="*" />    <!-- 内容区域 -->
+                    </Grid.RowDefinitions>
+                    
+                    <Grid.Style>
+                        <!-- 我们加一个简单的淡入动画或者简单的样式 -->
+                        <Style TargetType="Grid">
+                            <Setter Property="Opacity" Value="1"/>
+                        </Style>
+                    </Grid.Style>
+
+                    <!-- 顶部导航栏 -->
+                    <Border Grid.Row="0" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Padding="15,10">
+                        <Grid>
+                            <Button x:Name="CloseStoreDetailButton"
+                                    Click="CloseStoreDetailButton_Click"
+                                    Width="32" Height="32"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Focusable="False">
+                                <TextBlock Text="←" Foreground="{DynamicResource BrushTextMain}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
+                            <TextBlock Text="扩展详情" Foreground="{DynamicResource BrushTextMain}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- 主体内容 -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="20">
+                        <StackPanel>
+                            <!-- 头部基本信息 (图标 & 标题 & 版本 & 作者) -->
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- 大图标 (48x48) -->
+                                <Border Grid.Column="0" Width="48" Height="48" CornerRadius="10" ClipToBounds="True" Background="{Binding AccentBrush}" Margin="0,0,16,0" VerticalAlignment="Top">
+                                    <Grid>
+                                        <Image Source="{Binding IconSource}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <Viewbox Margin="9" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Path Width="24" Height="24" Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform" />
+                                        </Viewbox>
+                                        <TextBlock Text="{Binding DisplayGlyph}" FontSize="20" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    </Grid>
+                                </Border>
+
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <TextBlock Text="{Binding VersionLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,0,12,0"/>
+                                        <TextBlock Text="{Binding ItemKindLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,0,12,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 统计胶囊 (下载量 & 评分) -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
+                                <!-- 下载量胶囊 -->
+                                <Border Background="#153B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="12" Padding="12,5" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="⤓ " Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text=" 次下载" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="2,1,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                                <!-- 评分星级胶囊 -->
+                                <Border Background="#15FFB000" BorderBrush="#30FFB000" BorderThickness="1" CornerRadius="12" Padding="12,5">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="★ " Foreground="#FFFFB000" FontSize="12"/>
+                                        <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text=" 评分" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="2,1,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- 详细说明 -->
+                            <TextBlock Text="扩展介绍" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <Border Background="#10FFFFFF" CornerRadius="8" Padding="12" Margin="0,0,24,0">
+                                <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" TextWrapping="Wrap" LineHeight="18"/>
+                            </Border>
+
+                            <!-- 操作大按钮 -->
+                            <Grid Margin="0,24,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Button Grid.Column="0" 
+                                        Content="试运行" 
+                                        Click="StoreDryRunButton_Click" 
+                                        Tag="{Binding}"
+                                         IsEnabled="{Binding HasArchive}" 
+                                        Height="36" 
+                                        Margin="0,0,6,0" 
+                                        Background="#20FFFFFF" 
+                                        Foreground="{DynamicResource BrushTextMain}" 
+                                        BorderBrush="#35FFFFFF" 
+                                        BorderThickness="1" 
+                                        Cursor="Hand"
+                                        Focusable="False">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="6"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                
+                                <Button Grid.Column="1" 
+                                        Content="安装到本机" 
+                                        Click="StoreInstallButton_Click" 
+                                        Tag="{Binding}"
+                                        IsEnabled="{Binding HasArchive}" 
+                                        Height="36" 
+                                        Margin="6,0,0,0" 
+                                        Background="{DynamicResource BrushAccent}" 
+                                        Foreground="White" 
+                                        BorderThickness="0" 
+                                        Cursor="Hand"
+                                        Focusable="False">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="6"/>
+                                        </Style>
+                                    </Button.Resources>
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+
+                                <!-- 已安装置灰状态：只占右侧一列 -->
+                                <Border Grid.Column="1" 
+                                        Background="#15FFFFFF" 
+                                        BorderBrush="#20FFFFFF" 
+                                        BorderThickness="1" 
+                                        CornerRadius="6" 
+                                        Height="36" 
+                                        Margin="6,0,0,0"
+                                        HorizontalAlignment="Stretch"
+                                        VerticalAlignment="Center">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="已安装此扩展" Foreground="{DynamicResource BrushTextMuted}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
 
             <Grid Grid.RowSpan="3"
@@ -1681,6 +2063,8 @@
                     </Popup>
                 </Grid>
             </Border>
+
+
         </Grid>
     </Border>
 </Window>

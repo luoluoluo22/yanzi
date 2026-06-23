@@ -98,9 +98,9 @@ public partial class MainWindow
 
         var localCommands = parsed.IsEmpty
             ? EnumerateScopeCommands(parsed.ScopeKey)
-                .Where(command => IsExtensionEnabled(command.ExtensionId))
+                .Where(IsSearchResultEnabled)
             : EnumerateScopeCommands(parsed.ScopeKey)
-                .Where(command => IsExtensionEnabled(command.ExtensionId))
+                .Where(IsSearchResultEnabled)
                 .Select(command => new
                 {
                     Command = command,
@@ -578,6 +578,7 @@ public partial class MainWindow
         {
             SearchScopeAll => true,
             SearchScopeExtension => command.Source == CommandSource.LocalExtension || command.Source == CommandSource.WebSearch,
+            SearchScopeStore => command.Source == CommandSource.Cloud,
             SearchScopeApplication => command.Source == CommandSource.Application,
             SearchScopeFile => command.Source == CommandSource.File,
             SearchScopeSystem => command.Category.Contains("系统", StringComparison.OrdinalIgnoreCase),
@@ -650,10 +651,13 @@ public partial class MainWindow
         var commandCount = query.IsEmpty
             ? 0
             : EnumerateScopeCommands(query.ScopeKey).Count(command =>
-                IsExtensionEnabled(command.ExtensionId) &&
+                IsSearchResultEnabled(command) &&
                 BuildCommandMatch(command, query.Term, AllowsRawQueryArgument(query.ScopeKey)).IsMatch);
         return commandCount;
     }
+
+    private bool IsSearchResultEnabled(CommandItem command) =>
+        command.Source == CommandSource.Cloud || IsExtensionEnabled(command.ExtensionId);
 
     private static bool AllowsRawQueryArgument(string scopeKey) => false;
 

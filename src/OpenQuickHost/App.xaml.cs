@@ -980,10 +980,6 @@ public partial class App : WpfApplication
             if (_settingsWindow == null)
             {
                 _settingsWindow = new SettingsWindow(mainWindow);
-                _settingsWindow.Closed += (s, e) =>
-                {
-                    _settingsWindow = null;
-                };
                 HostAssets.AppendLog("Settings window created.");
             }
 

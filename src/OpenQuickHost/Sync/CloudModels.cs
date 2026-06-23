@@ -83,6 +83,21 @@ public sealed class AppUpdateInfoResponse
 public sealed class ExtensionListResponse
 {
     public IReadOnlyList<CloudExtensionRecord> Items { get; init; } = [];
+
+    [JsonPropertyName("page")]
+    public int Page { get; init; } = 1;
+
+    [JsonPropertyName("page_size")]
+    public int PageSize { get; init; }
+
+    [JsonPropertyName("total")]
+    public int Total { get; init; }
+
+    [JsonPropertyName("total_pages")]
+    public int TotalPages { get; init; } = 1;
+
+    [JsonPropertyName("has_more")]
+    public bool HasMore { get; init; }
 }
 
 public sealed class UploadIconResponse
@@ -131,6 +146,21 @@ public sealed class CloudExtensionRecord
 
     [JsonPropertyName("updated_at")]
     public string UpdatedAt { get; init; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("category")]
+    public string? Category { get; init; }
+
+    [JsonPropertyName("icon")]
+    public string? Icon { get; init; }
+
+    [JsonPropertyName("keywords")]
+    public IReadOnlyList<string> Keywords { get; init; } = [];
+
+    [JsonPropertyName("install_count")]
+    public int InstallCount { get; init; }
 }
 
 public sealed class UserExtensionListResponse

@@ -594,6 +594,25 @@ public sealed class CloudSyncClient
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
     }
 
+    public async Task<bool> CheckExtensionArchiveExistsAsync(string extensionId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await SendAsyncWithFallback(
+                HttpMethod.Get,
+                $"/v1/extensions/{Uri.EscapeDataString(extensionId)}/archive",
+                includeAuth: false,
+                cancellationToken: cancellationToken);
+            HostAssets.AppendLog($"[StoreCheck] {extensionId} StatusCode={(int)response.StatusCode} ({response.StatusCode})");
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[StoreCheck] {extensionId} Check FAILED with exception: {ex.Message}");
+            return false;
+        }
+    }
+
     public static string CreateExtensionId(CommandItem command)
     {
         var chars = command.Title
