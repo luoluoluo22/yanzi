@@ -354,6 +354,19 @@
             ? "更新到最新版"
             : "安装到燕子";
 
+        const hasArchive = !!(item.archive_download_url || item.package_path);
+        const installBtnMarkup = hasArchive
+          ? `<button class="button primary" style="flex: 1;" type="button" data-install-protocol="${escapeHtml(getProtocolUrl(item))}">${escapeHtml(installLabel)}</button>`
+          : `<button class="button primary" style="flex: 1; opacity: 0.5; cursor: not-allowed;" type="button" disabled>暂无安装包</button>`;
+
+        const downloadBtnMarkup = hasArchive
+          ? `<a class="button secondary" style="flex: 1; text-align: center; display: inline-flex; align-items: center; justify-content: center;" href="${escapeHtml(getPackageUrl(item))}">下载扩展包</a>`
+          : `<a class="button secondary" style="flex: 1; opacity: 0.5; cursor: not-allowed; pointer-events: none; text-align: center; display: inline-flex; align-items: center; justify-content: center;" href="javascript:void(0);" disabled>暂无扩展包</a>`;
+
+        const archiveNoticeMarkup = hasArchive
+          ? ""
+          : `<p style="margin-top: 1rem; font-size: 0.9rem; color: #ffaa00;">提示：该扩展的发布者尚未上传安装包。</p>`;
+
         storeDetail.innerHTML = `
         <div class="back-nav">
           <button class="back-button" onclick="goBack()">
@@ -377,9 +390,10 @@
           <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--accent);">${escapeHtml(getLocalStatusLabel(item))}</p>
           
           <div style="display: flex; gap: 1rem; margin-top: 2.5rem;">
-            <button class="button primary" style="flex: 1;" type="button" data-install-protocol="${escapeHtml(getProtocolUrl(item))}">${escapeHtml(installLabel)}</button>
-            <a class="button secondary" style="flex: 1;" href="${escapeHtml(getPackageUrl(item))}">下载扩展包</a>
+            ${installBtnMarkup}
+            ${downloadBtnMarkup}
           </div>
+          ${archiveNoticeMarkup}
 
           ${buildInstallAssist(item)}
           

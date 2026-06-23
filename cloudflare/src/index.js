@@ -2330,7 +2330,9 @@ function serializeExtensionListItem(url, row, publicDefinition = null) {
       description: full.description,
       category: full.category,
       icon: full.icon,
-      keywords: full.keywords
+      keywords: full.keywords,
+      archive_download_url: full.archive_download_url,
+      install_protocol_url: full.install_protocol_url
     };
   }
 
@@ -2347,7 +2349,9 @@ function serializeExtensionListItem(url, row, publicDefinition = null) {
     description: full.description,
     category: full.category,
     icon: full.icon,
-    keywords: full.keywords
+    keywords: full.keywords,
+    archive_download_url: full.archive_download_url,
+    install_protocol_url: full.install_protocol_url
   };
 }
 
