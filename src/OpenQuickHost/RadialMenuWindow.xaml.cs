@@ -29,6 +29,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private bool _isAddHoverActive;
     private bool _isDeleteHoverActive;
     private bool _isSearchHoverActive;
+    private bool _isCloseHoverActive;
     private readonly Stack<string> _pageStack = new();
     private bool _isExecuting;
     private string _activeTitle = "取消";
@@ -353,6 +354,22 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public System.Windows.Media.Brush SearchButtonBrush => _isSearchHoverActive
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF8B5CF6")!
+        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+
+    public bool IsCloseHoverActive
+    {
+        get => _isCloseHoverActive;
+        private set
+        {
+            if (value == _isCloseHoverActive) return;
+            _isCloseHoverActive = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CloseButtonBrush));
+        }
+    }
+
+    public System.Windows.Media.Brush CloseButtonBrush => _isCloseHoverActive
+        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFEF4444")!
         : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
 
     public bool IsEditHoverActive
@@ -809,6 +826,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             IsAddHoverActive = false;
             IsDeleteHoverActive = false;
             IsSearchHoverActive = false;
+            IsCloseHoverActive = false;
             IsCenterHovered = false;
             Cursor = System.Windows.Input.Cursors.Hand;
             return;
@@ -820,6 +838,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             IsAddHoverActive = false;
             IsDeleteHoverActive = false;
             IsSearchHoverActive = false;
+            IsCloseHoverActive = false;
             IsCenterHovered = false;
             Cursor = System.Windows.Input.Cursors.Hand;
             return;
@@ -831,6 +850,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             IsPinHoverActive = false;
             IsDeleteHoverActive = false;
             IsSearchHoverActive = false;
+            IsCloseHoverActive = false;
             IsCenterHovered = false;
             Cursor = System.Windows.Input.Cursors.Hand;
             return;
@@ -842,6 +862,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             IsPinHoverActive = false;
             IsAddHoverActive = false;
             IsSearchHoverActive = false;
+            IsCloseHoverActive = false;
             IsCenterHovered = false;
             Cursor = System.Windows.Input.Cursors.Hand;
             return;
@@ -853,6 +874,19 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             IsPinHoverActive = false;
             IsAddHoverActive = false;
             IsDeleteHoverActive = false;
+            IsCloseHoverActive = false;
+            IsCenterHovered = false;
+            Cursor = System.Windows.Input.Cursors.Hand;
+            return;
+        }
+
+        if (UpdateCloseHoverState(cursorPoint))
+        {
+            IsEditHoverActive = false;
+            IsPinHoverActive = false;
+            IsAddHoverActive = false;
+            IsDeleteHoverActive = false;
+            IsSearchHoverActive = false;
             IsCenterHovered = false;
             Cursor = System.Windows.Input.Cursors.Hand;
             return;
@@ -1720,24 +1754,32 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             Owner = this
         };
-        if (picker.ShowDialog() != true)
+        try
         {
-            return;
-        }
+            if (picker.ShowDialog() != true)
+            {
+                return;
+            }
 
-        if (picker.SelectedAction == RadialSlotPickerWindow.PickerAction.AddChildPage)
+            if (picker.SelectedAction == RadialSlotPickerWindow.PickerAction.AddChildPage)
+            {
+                AddChildPageToTarget(target);
+                return;
+            }
+
+            if (picker.SelectedCommand == null)
+            {
+                return;
+            }
+
+            SaveRadialSlotCommand(target.PageId, target.Index, picker.SelectedCommand.ExtensionId, string.Empty);
+            HostAssets.AppendLog($"Radial edit assigned command: page={target.PageId}, index={target.Index + 1}, command={picker.SelectedCommand.Title}.");
+        }
+        finally
         {
-            AddChildPageToTarget(target);
-            return;
+            _editModeLocked = false;
+            UpdateCenterText();
         }
-
-        if (picker.SelectedCommand == null)
-        {
-            return;
-        }
-
-        SaveRadialSlotCommand(target.PageId, target.Index, picker.SelectedCommand.ExtensionId, string.Empty);
-        HostAssets.AppendLog($"Radial edit assigned command: page={target.PageId}, index={target.Index + 1}, command={picker.SelectedCommand.Title}.");
     }
 
     private void SetSimulatedKeyForTarget(RadialEditTarget target)
@@ -2264,6 +2306,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         e.Handled = true;
     }
 
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        Hide();
+        e.Handled = true;
+    }
+
     private void ShowSearchRadialMenuContextMenu()
     {
         var contextMenu = new ContextMenu();
@@ -2425,6 +2473,33 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         var topLeft = SearchButton.TranslatePoint(new System.Windows.Point(0, 0), this);
         var bounds = new Rect(topLeft.X, topLeft.Y, SearchButton.ActualWidth, SearchButton.ActualHeight);
+        return bounds.Contains(point);
+    }
+
+    private bool UpdateCloseHoverState(System.Windows.Point cursorPoint)
+    {
+        var hovered = IsPointInCloseButton(cursorPoint);
+        IsCloseHoverActive = hovered;
+        if (!hovered)
+        {
+            return false;
+        }
+
+        SetSelectedItem(null);
+        ClearChildRing();
+        ActiveTitle = "松开关闭燕环";
+        return true;
+    }
+
+    private bool IsPointInCloseButton(System.Windows.Point point)
+    {
+        if (CloseButton == null || !CloseButton.IsLoaded)
+        {
+            return false;
+        }
+
+        var topLeft = CloseButton.TranslatePoint(new System.Windows.Point(0, 0), this);
+        var bounds = new Rect(topLeft.X, topLeft.Y, CloseButton.ActualWidth, CloseButton.ActualHeight);
         return bounds.Contains(point);
     }
 
