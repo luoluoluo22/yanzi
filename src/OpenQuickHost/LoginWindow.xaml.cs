@@ -304,9 +304,9 @@ public partial class LoginWindow : Window
             throw new InvalidOperationException("请输入用户名。");
         }
 
-        if (username.Length < 3 || !Regex.IsMatch(username, "^[a-zA-Z0-9_-]{3,32}$"))
+        if (!Regex.IsMatch(username, @"^[\p{L}\p{N}_-]{3,32}$"))
         {
-            throw new InvalidOperationException("用户名至少 3 位，只能使用字母、数字、下划线或短横线。");
+            throw new InvalidOperationException("用户名需 3-32 位，可使用中文、字母、数字、下划线或短横线。");
         }
     }
 

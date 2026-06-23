@@ -1894,9 +1894,9 @@ async function hashVerificationCode(email, code, salt) {
 }
 
 function normalizeUsername(value) {
-  const username = String(value || "").trim().toLowerCase();
-  if (!/^[a-z0-9_\-]{3,32}$/.test(username)) {
-    throw new HttpError(400, "invalid_username", "Username must be 3-32 chars: a-z, 0-9, _, -");
+  const username = String(value || "").trim();
+  if (!/^[\p{L}\p{N}_-]{3,32}$/u.test(username)) {
+    throw new HttpError(400, "invalid_username", "Username must be 3-32 chars: letters, numbers, _, -");
   }
 
   return username;

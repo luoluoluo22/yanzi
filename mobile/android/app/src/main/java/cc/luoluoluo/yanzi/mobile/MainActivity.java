@@ -335,7 +335,7 @@ extends Activity {
             "2. execute_extension: \u6267\u884c\u67d0\u4e2a\u6269\u5c55\u3002\u53c2\u6570: id (\u6269\u5c55ID)\u3002\n" +
             "3. view_yanm: 查看燕幕组件清单/前端结构。参数: id 可选，includeHtml 可选。id 为空时只返回组件 id、标题、stateKey 和数据长度，绝不返回完整 HTML 或正文；只有明确要看前端代码时才传 includeHtml:true。\n" +
             "4. view_yanm_state: 查看燕幕组件后端数据 componentState。参数: id 可选，stateKey 可选。不填 stateKey 时自动使用组件的 stateKey；修改便签、待办等正文前先用它确认 key/value。\n" +
-            "5. update_yanm_state: 修改燕幕组件后端数据 componentState。参数: id 可选，stateKey 可选，value。它只改正文/数据，不改前端 HTML、布局和燕幕启用状态。\n" +
+            "5. update_yanm_state: 修改燕幕组件后端数据 componentState。参数: id 可选，stateKey 可选，value。它只改正文/数据，不改前端 HTML、布局和燕幕启用状态。【格式约束】便签的值为纯文本字符串；待办的值为 JSON 数组字符串，其 Item 必须为 {\"text\":\"任务\",\"done\":false}，键名必须是 text 和 done，不要用 title 或 completed。\n" +
             "6. update_yanm_component: 仅修改燕幕组件前端结构。参数: id，mode 必须为 frontend，title 可选，html 可选。不要用它修改便签正文。\n" +
             "7. manage_mobile_extension: \u7ba1\u7406\u624b\u673a\u6269\u5c55\u3002\u53c2\u6570: action (list/read/create/update/delete), id, name, code, icon, description\u3002\u3010\u91cd\u8981\u3011\u624b\u673a\u6269\u5c55\u8fd0\u884c\u5728\u0020\u006d\u006f\u0062\u0069\u006c\u0065\u002d\u006a\u0073\u0020\u7684\u0020\u004a\u0061\u0076\u0061\u0053\u0063\u0072\u0069\u0070\u0074\u0020\u73af\u5883\u4e2d\uff0c\u4e25\u7981\u4f7f\u7528\u0020\u0043\u0023\u3001\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u6216\u0020\u0057\u0069\u006e\u0064\u006f\u0077\u0073\u0020\u684c\u9762\u0020\u0041\u0050\u0049\u3002\u5f53\u521b\u5efa\u6216\u66f4\u65b0\u6269\u5c55\u65f6\uff0c\u0063\u006f\u0064\u0065\u0020\u53c2\u6570\u5fc5\u987b\u662f\u7ebf\u6027\u3001\u7b80\u6d01\u7684\u0020\u004a\u0053\u0020\u4ee3\u7801\uff0c\u811a\u672c\u5165\u53e3\u4e3a\u0020\u0061\u0073\u0079\u006e\u0063\u0020\u0066\u0075\u006e\u0063\u0074\u0069\u006f\u006e\u0020\u0072\u0075\u006e\u0028\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u0029\uff0c\u53ef\u8c03\u7528\u0020\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u002e\u006d\u006f\u0062\u0069\u006c\u0065\u002e\u006f\u0070\u0065\u006e\u0055\u0072\u006c\u0028\u0075\u0072\u006c\u0029\u3001\u0074\u006f\u0061\u0073\u0074\uff0c\u8c03\u7528\u0020\u0063\u006f\u006e\u0074\u0065\u0078\u0074\u002e\u006d\u006f\u0062\u0069\u006c\u0065\u002e\u0073\u0065\u006e\u0064\u0054\u006f\u0044\u0065\u0073\u006b\u0074\u006f\u0070\u0028\u0074\u0065\u0078\u0074\u0029\u3002\n" +
             "8. execute_command: \u5728\u7535\u8111\u7aef\u6267\u884c\u547d\u4ee4\u884c\u547d\u4ee4\u3002\u53c2\u6570: command (\u8981\u6267\u884c\u7684\u547d\u4ee4\u6587\u672c)\u3002\u3010\u91cd\u8981\u3011\u7535\u8111\u7aef\u5df2\u9ed8\u8ba4\u5728\u0020\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u0035\u002e\u0031\u0020\u73af\u5883\u4e2d\u6267\u884c\u547d\u4ee4\uff0c\u8bf7\u76f4\u63a5\u8f93\u5165\u0020\u0050\u006f\u0077\u0065\u0072\u0053\u0068\u0065\u006c\u006c\u0020\u7684\u0020\u0043\u006d\u0064\u006c\u0065\u0074\u0020\u6216\u8868\u8fbe\u5f0f\uff0c\u4e25\u7981\u5916\u5c42\u5d4c\u5957\u8c03\u7528\u0020\u0070\u006f\u0077\u0065\u0072\u0073\u0068\u0065\u006c\u006c\u3001\u0070\u006f\u0077\u0065\u0072\u0073\u0068\u0065\u006c\u006c\u002e\u0065\u0078\u0065\u0020\u002d\u0043\u006f\u006d\u006d\u0061\u006e\u0064\u0020\u6216\u0020\u0063\u006d\u0064\u0020\u002f\u0063\uff0c\u907f\u514d\u8f6c\u4e49\u9519\u8bef\u548c\u6267\u884c\u8d85\u65f6\u3002\n" +
@@ -1360,7 +1360,7 @@ extends Activity {
 
     private void setupAiTabPage() {
         String savedPrompt = this.prefs.getString("aiSystemPrompt", DEFAULT_SYSTEM_PROMPT);
-        if (!savedPrompt.contains("\u3010\u5de5\u5177\u8c03\u7528\u793a\u4f8b\u3011") || !savedPrompt.contains("PowerShell 5.1") || !savedPrompt.contains("mobile-js") || !savedPrompt.contains("view_yanm_state") || !savedPrompt.contains("update_yanm_state")) {
+        if (!savedPrompt.contains("\u3010\u5de5\u5177\u8c03\u7528\u793a\u4f8b\u3011") || !savedPrompt.contains("PowerShell 5.1") || !savedPrompt.contains("mobile-js") || !savedPrompt.contains("view_yanm_state") || !savedPrompt.contains("update_yanm_state") || !savedPrompt.contains("\u3010\u683c\u5f0f\u7ea6\u675f\u3011")) {
             this.prefs.edit().putString("aiSystemPrompt", DEFAULT_SYSTEM_PROMPT).apply();
         }
         this.aiTabPage.setOrientation(1);
@@ -4511,8 +4511,8 @@ extends Activity {
         this.isAiLoading = loading;
         if (this.aiSendButton != null) {
             if (loading) {
-                this.aiSendButton.setBackground(null);
-                this.aiSendButton.setCompoundDrawablesWithIntrinsicBounds(null, null, this.createStopIconDrawable(), null);
+                this.aiSendButton.setBackground(this.createStopIconDrawable());
+                this.aiSendButton.setCompoundDrawablesWithIntrinsicBounds(null, null, null, null);
                 this.aiSendButton.setText((CharSequence)"");
                 this.addAiChatMessage("AI", "\u56de\u590d\u4e2d...", Color.rgb((int)156, (int)163, (int)175), false);
                 if (this.aiChatHistory.getChildCount() > 0) {
@@ -6240,11 +6240,84 @@ extends Activity {
     private void syncYanmStateToCloud(String reason) {
         JSONObject snapshot = this.currentYanmSnapshot;
         if (snapshot == null) {
-            this.setStatus("\u71d5\u5e55\u540c\u6b65\u8df3\u8fc7\uff1a\u6ca1\u6709\u5b8c\u6574\u5feb\u7167\u3002");
+            this.setStatus("燕幕同步跳过：没有完整快照。");
             return;
         }
         this.executor.execute(() -> {
             try {
+                String configStr = this.prefs.getString("personalSyncConfig", "{}");
+                JSONObject cloudConfig = new JSONObject(configStr);
+                boolean enabled = cloudConfig.optBoolean("enabled", false);
+                String provider = cloudConfig.optString("provider", "none");
+                
+                if (enabled && !"none".equals(provider)) {
+                    JSONObject secrets = cloudConfig.optJSONObject("secrets");
+                    JSONObject settings = cloudConfig.optJSONObject("settings");
+                    if (secrets == null) secrets = new JSONObject();
+                    if (settings == null) settings = new JSONObject();
+                    
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT);
+                    sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                    String timeStr = sdf.format(new Date());
+                    JSONObject wrapper = new JSONObject()
+                            .put("updatedAtUtc", (Object)timeStr)
+                            .put("yanm", (Object)snapshot);
+                    String wrapperStr = wrapper.toString();
+                    
+                    if ("webdav".equals(provider)) {
+                        JSONObject webDav = settings.optJSONObject("webDav");
+                        String password = secrets.optString("webDavPassword", "");
+                        if (webDav != null) {
+                            YanziApiClient.WebDavConfig config = new YanziApiClient.WebDavConfig();
+                            config.serverUrl = webDav.optString("url", "");
+                            config.rootPath = webDav.optString("pathPrefix", "");
+                            config.username = webDav.optString("username", "");
+                            config.password = password;
+                            
+                            YanziApiClient.putWebDavBytes(config, "state/yanm-state.json", wrapperStr.getBytes(StandardCharsets.UTF_8), "application/json");
+                            this.runOnUiThread(() -> {
+                                this.setStatus("燕幕状态已同步到云端(WebDAV)：" + reason);
+                                MobileDiagnostics.append((Context)this, "燕幕状态已同步到 WebDAV：" + reason);
+                            });
+                            return;
+                        }
+                    } else if ("github".equals(provider)) {
+                        JSONObject gitHub = settings.optJSONObject("github");
+                        String token = secrets.optString("githubToken", "");
+                        if (gitHub != null && !token.isEmpty()) {
+                            String owner = gitHub.optString("username", "");
+                            String repo = gitHub.optString("repo", "yanzi-sync");
+                            String branch = gitHub.optString("branch", "main");
+                            String pathPrefix = gitHub.optString("pathPrefix", "");
+                            String relPath = pathPrefix.isEmpty() ? "state/yanm-state.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "state/yanm-state.json";
+                            
+                            YanziApiClient.uploadFileToGitHub(token, owner, repo, branch, relPath, wrapperStr);
+                            this.runOnUiThread(() -> {
+                                this.setStatus("燕幕状态已同步到云端(GitHub)：" + reason);
+                                MobileDiagnostics.append((Context)this, "燕幕状态已同步到 GitHub：" + reason);
+                            });
+                            return;
+                        }
+                    } else if ("gitee".equals(provider)) {
+                        JSONObject gitee = settings.optJSONObject("gitee");
+                        String token = secrets.optString("giteeToken", "");
+                        if (gitee != null && !token.isEmpty()) {
+                            String owner = gitee.optString("username", "");
+                            String repo = gitee.optString("repo", "yanzi-sync");
+                            String branch = gitee.optString("branch", "master");
+                            String pathPrefix = gitee.optString("pathPrefix", "");
+                            String relPath = pathPrefix.isEmpty() ? "state/yanm-state.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "state/yanm-state.json";
+                            
+                            YanziApiClient.uploadFileToGitee(token, owner, repo, branch, relPath, wrapperStr);
+                            this.runOnUiThread(() -> {
+                                this.setStatus("燕幕状态已同步到云端(Gitee)：" + reason);
+                                MobileDiagnostics.append((Context)this, "燕幕状态已同步到 Gitee：" + reason);
+                            });
+                            return;
+                        }
+                    }
+                }
+                
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 try {
@@ -6258,13 +6331,13 @@ extends Activity {
                     YanziApiClient.putYanmState(baseUrl, token, snapshot);
                 }
                 this.runOnUiThread(() -> {
-                    this.setStatus("\u71d5\u5e55\u72b6\u6001\u5df2\u540c\u6b65\u5230\u4e91\u7aef\uff1a" + reason);
+                    this.setStatus("燕幕状态已同步到云端：" + reason);
                     MobileDiagnostics.append((Context)this, "燕幕状态已同步到云端：" + reason);
                 });
             }
             catch (Exception ex) {
                 this.runOnUiThread(() -> {
-                    this.setStatus("\u71d5\u5e55\u72b6\u6001\u540c\u6b65\u5931\u8d25\uff1a" + ex.getMessage());
+                    this.setStatus("燕幕状态同步失败：" + ex.getMessage());
                     MobileDiagnostics.append((Context)this, "燕幕状态同步失败：" + ex.getMessage());
                 });
             }
@@ -6451,6 +6524,13 @@ extends Activity {
         if (component != null) {
             result.put("component", (Object)this.buildYanmComponentSummary(yanm, component, index, false, state));
         }
+        if (resolvedKey.contains("todo")) {
+            result.put("formatHint", "待办组件的值必须为 JSON 数组字符串，格式如：[{\"text\":\"完成任务\",\"done\":false}]。切记内容字段键名必须是 \"text\"，完成状态键名必须是 \"done\"，布尔值。");
+        } else if (resolvedKey.contains("note")) {
+            result.put("formatHint", "便签组件的值通常是纯文本字符串。");
+        } else if (resolvedKey.contains("bookmark")) {
+            result.put("formatHint", "书签组件的值必须为 JSON 数组字符串，如：[\"https://github.com\"]。");
+        }
         return result;
     }
 
@@ -6570,6 +6650,7 @@ extends Activity {
         YanmWidgetData.refreshComponentWidgets((Context)this);
         this.renderYanm(yanm);
         this.scheduleYanmComponentStateCloudSync(stateKey, value, reason);
+        this.scheduleYanmCloudSync(reason);
     }
 
     private JSONObject buildYanmComponentSummary(JSONObject yanm, JSONObject component, int index, boolean includeHtml, JSONObject state) throws Exception {
@@ -7047,12 +7128,9 @@ extends Activity {
         if (trimmed.toLowerCase(Locale.ROOT).contains("<html")) {
             String lower = trimmed.toLowerCase(Locale.ROOT);
             int headEnd = lower.indexOf("</head>");
-            String withHead = headEnd >= 0 ? trimmed.substring(0, headEnd) + mobileHead + trimmed.substring(headEnd) : trimmed.replaceFirst("(?i)<html[^>]*>", "$0<head>" + mobileHead + "</head>");
-            String lowerWithHead = withHead.toLowerCase(Locale.ROOT);
-            int bodyEnd = lowerWithHead.lastIndexOf("</body>");
-            return bodyEnd >= 0 ? withHead.substring(0, bodyEnd) + bridge + withHead.substring(bodyEnd) : withHead + bridge;
+            return headEnd >= 0 ? trimmed.substring(0, headEnd) + mobileHead + bridge + trimmed.substring(headEnd) : trimmed.replaceFirst("(?i)<html[^>]*>", "$0<head>" + mobileHead + bridge + "</head>");
         }
-        return "<!doctype html><html><head>" + mobileHead + "</head><body>" + trimmed + bridge + "</body></html>";
+        return "<!doctype html><html><head>" + mobileHead + bridge + "</head><body>" + trimmed + "</body></html>";
     }
 
     private String buildMobileScriptHtml(String source) {
@@ -7900,6 +7978,7 @@ extends Activity {
                     YanmWidgetData.refreshComponentWidgets((Context)MainActivity.this);
                     MainActivity.this.setStatus("\u71d5\u5e55\u72b6\u6001\u5df2\u5728\u624b\u673a\u7aef\u66f4\u65b0\uff1a" + this.componentTitle + " / " + key);
                     MainActivity.this.scheduleYanmComponentStateCloudSync(key, value, this.componentTitle + " / " + key);
+                    MainActivity.this.scheduleYanmCloudSync(this.componentTitle + " / " + key);
                 });
             }
             catch (Exception exception) {

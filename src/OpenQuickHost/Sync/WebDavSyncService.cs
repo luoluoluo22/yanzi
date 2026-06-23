@@ -507,6 +507,12 @@ public sealed class WebDavSyncService
 
         if (remote?.Config == null)
         {
+            if (CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(localConfig))
+            {
+                HostAssets.AppendLog("WebDAV launcher config upload skipped: local snapshot has no user content and remote is missing.");
+                return (false, false);
+            }
+
             var uploadedAtUtc = DateTime.UtcNow;
             await UploadLauncherConfigAsync(localConfig, uploadedAtUtc, cancellationToken);
             SaveLauncherConfigUpdatedAtUtc(uploadedAtUtc);
@@ -515,7 +521,19 @@ public sealed class WebDavSyncService
         }
 
         var remoteUpdatedAtUtc = TryParseUtc(remote.UpdatedAtUtc) ?? DateTime.MinValue;
+        var localTime = localConfig.UpdatedAtUtc;
+        var remoteTime = remote.Config.UpdatedAtUtc;
+        localConfig.UpdatedAtUtc = null;
+        remote.Config.UpdatedAtUtc = null;
+        var localMetadata = CaptureMetadata(localConfig);
+        var remoteMetadata = CaptureMetadata(remote.Config);
+        ClearMetadataForComparison(localConfig);
+        ClearMetadataForComparison(remote.Config);
         var equivalent = AreJsonPayloadsEqual(localConfig, remote.Config);
+        localConfig.UpdatedAtUtc = localTime;
+        remote.Config.UpdatedAtUtc = remoteTime;
+        RestoreMetadata(localConfig, localMetadata);
+        RestoreMetadata(remote.Config, remoteMetadata);
         if (equivalent)
         {
             if (explicitLocalUpdatedAtUtc == null && remoteUpdatedAtUtc > DateTime.MinValue)
@@ -543,6 +561,14 @@ public sealed class WebDavSyncService
             return (false, true);
         }
 
+        if (IsLikelyFreshLocalLauncherConfig(localConfig) && HasMeaningfulLauncherConfig(remote.Config))
+        {
+            ApplyLauncherConfigSnapshot(remote.Config, remoteUpdatedAtUtc);
+            HostAssets.AppendLog(
+                $"WebDAV launcher config pulled over fresh local config: remoteUpdated={remoteUpdatedAtUtc:O}, localUpdated={localUpdatedAtUtc:O}.");
+            return (false, true);
+        }
+
         var updatedAtUtc = DateTime.UtcNow;
         await UploadLauncherConfigAsync(localConfig, updatedAtUtc, cancellationToken);
         SaveLauncherConfigUpdatedAtUtc(updatedAtUtc);
@@ -556,6 +582,11 @@ public sealed class WebDavSyncService
         DateTime updatedAtUtc,
         CancellationToken cancellationToken)
     {
+        config.UpdatedAtUtc = updatedAtUtc.ToString("O");
+        config.SourceDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+        config.SourceDeviceName = DeviceIdentityStore.GetDesktopDisplayName();
+        config.HasUserContent = CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(config);
+        config.IsInitialDefaultConfig = !config.HasUserContent;
         var snapshot = new WebDavLauncherConfigSnapshot
         {
             UpdatedAtUtc = updatedAtUtc.ToString("O"),
@@ -610,6 +641,12 @@ public sealed class WebDavSyncService
     {
         var settings = AppSettingsStore.Load();
         var incoming = snapshot.ToAppSettings();
+        settings.ThemeMode = incoming.ThemeMode;
+        settings.LauncherHotkey = incoming.LauncherHotkey;
+        settings.LaunchAtStartup = incoming.LaunchAtStartup;
+        settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;
+        settings.CloseToTray = incoming.CloseToTray;
+        settings.QuickPanelTrigger = incoming.QuickPanelTrigger;
         settings.QuickPanelSlots = incoming.QuickPanelSlots;
         settings.QuickPanelGlobalGroups = incoming.QuickPanelGlobalGroups;
         settings.QuickPanelContextGroups = incoming.QuickPanelContextGroups;
@@ -617,7 +654,17 @@ public sealed class WebDavSyncService
         settings.SelectedQuickPanelContextGroupId = incoming.SelectedQuickPanelContextGroupId;
         settings.GlobalFavoriteExtensionIds = incoming.GlobalFavoriteExtensionIds;
         settings.ContextFavoriteExtensionIds = incoming.ContextFavoriteExtensionIds;
+        settings.DisabledExtensionIds = incoming.DisabledExtensionIds;
+        settings.PinnedSearchScopeCommandIds = incoming.PinnedSearchScopeCommandIds;
         settings.QuickPanelMouseTriggers = incoming.QuickPanelMouseTriggers;
+        settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(incoming.MouseGestureTriggerMode);
+        settings.WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(incoming.WindowSnapAssistMouseTriggerMode);
+        settings.EnableWindowSnapAssist = incoming.EnableWindowSnapAssist;
+        settings.WindowSnapAssistHotkey = incoming.WindowSnapAssistHotkey;
+        settings.WindowSnapAssistCustomLayouts = incoming.WindowSnapAssistCustomLayouts;
+        settings.WindowBindings = incoming.WindowBindings;
+        settings.EnableAgentApi = incoming.EnableAgentApi;
+        settings.AgentApiPort = incoming.AgentApiPort;
         if (snapshot.YarnSelect != null)
         {
             settings.YarnSelect = incoming.YarnSelect;
@@ -631,6 +678,14 @@ public sealed class WebDavSyncService
         if (snapshot.YanyuRules != null)
         {
             settings.YanyuRules = incoming.YanyuRules;
+        }
+
+        if (snapshot.Yanm != null)
+        {
+            settings.Yanm = incoming.Yanm;
+            settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(settings.YanmStateUpdatedAtUtc)
+                ? updatedAtUtc.ToString("O")
+                : settings.YanmStateUpdatedAtUtc;
         }
 
         if (HasAiConfigPayload(snapshot))
@@ -692,15 +747,12 @@ public sealed class WebDavSyncService
 
     private static bool HasMeaningfulLauncherConfig(CloudQuickPanelConfigSnapshot config)
     {
-        return config.QuickPanelSlots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
-               HasGroupContent(config.QuickPanelGlobalGroups) ||
-               HasGroupContent(config.QuickPanelContextGroups) ||
-               config.GlobalFavoriteExtensionIds.Count > 0 ||
-               config.ContextFavoriteExtensionIds.Count > 0 ||
-               config.YanyuRules?.Count > 0 ||
-               HasAiSettings(config) ||
-               HasRadialContent(config.RadialMenu) ||
-               HasYanmComponentState(config.Yanm);
+        return CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(config);
+    }
+
+    private static bool IsLikelyFreshLocalLauncherConfig(CloudQuickPanelConfigSnapshot config)
+    {
+        return CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(config);
     }
 
     private static bool HasAiSettings(CloudQuickPanelConfigSnapshot snapshot)
@@ -736,8 +788,36 @@ public sealed class WebDavSyncService
 
     private static bool HasYanmComponentState(YanmSettings? settings)
     {
-        return settings?.ComponentState?.Any(static item => !string.IsNullOrEmpty(item.Value)) == true;
+        return settings?.ComponentState?.Count > 0;
     }
+
+    private static SnapshotMetadata CaptureMetadata(CloudQuickPanelConfigSnapshot config) =>
+        new(config.SchemaVersion, config.SourceDeviceId, config.SourceDeviceName, config.IsInitialDefaultConfig, config.HasUserContent);
+
+    private static void ClearMetadataForComparison(CloudQuickPanelConfigSnapshot config)
+    {
+        config.SchemaVersion = 0;
+        config.SourceDeviceId = null;
+        config.SourceDeviceName = null;
+        config.IsInitialDefaultConfig = false;
+        config.HasUserContent = false;
+    }
+
+    private static void RestoreMetadata(CloudQuickPanelConfigSnapshot config, SnapshotMetadata metadata)
+    {
+        config.SchemaVersion = metadata.SchemaVersion;
+        config.SourceDeviceId = metadata.SourceDeviceId;
+        config.SourceDeviceName = metadata.SourceDeviceName;
+        config.IsInitialDefaultConfig = metadata.IsInitialDefaultConfig;
+        config.HasUserContent = metadata.HasUserContent;
+    }
+
+    private sealed record SnapshotMetadata(
+        int SchemaVersion,
+        string? SourceDeviceId,
+        string? SourceDeviceName,
+        bool IsInitialDefaultConfig,
+        bool HasUserContent);
 
     private async Task SyncSearchMemoryAsync(CancellationToken cancellationToken)
     {

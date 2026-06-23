@@ -36,25 +36,57 @@ Known working deployment:
 - Commit: `568ef01`
 - Worker version: `aa1f2f57-8675-4161-a6fc-337e68f4ca25`
 
-## Required Secret
+## Required Secrets
 
-The Worker requires this secret:
+The Worker requires these secrets:
 
 - `AUTH_TOKEN_SECRET`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
 
-If it is missing or empty, login fails with:
+If `AUTH_TOKEN_SECRET` is missing or empty, login fails with:
 
 ```text
 Imported HMAC key length (0) must be a non-zero value up to 7 bits less than,
 and no greater than, the bit length of the raw key data (0).
 ```
 
-Set it with:
+Set `AUTH_TOKEN_SECRET` with:
 
 ```powershell
 $env:CLOUDFLARE_API_TOKEN = "<token>"
 $secret = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
 $secret | npx wrangler secret put AUTH_TOKEN_SECRET --config wrangler.jsonc
+```
+
+Registration and password-reset verification emails use Resend:
+
+- API endpoint: `https://api.resend.com/emails`
+- API key binding: `RESEND_API_KEY`
+- Sender binding: `RESEND_FROM_EMAIL`
+
+If either Resend binding is missing or empty, sending a registration code fails
+with:
+
+```json
+{
+  "error": "email_provider_not_configured",
+  "message": "Email provider is not configured"
+}
+```
+
+Check configured Worker secrets:
+
+```powershell
+npx wrangler secret list --config wrangler.jsonc
+```
+
+Set the Resend values:
+
+```powershell
+$env:CLOUDFLARE_API_TOKEN = "<token>"
+"re_xxx" | npx wrangler secret put RESEND_API_KEY --config wrangler.jsonc
+"Yanzi <noreply@your-verified-domain.example>" | npx wrangler secret put RESEND_FROM_EMAIL --config wrangler.jsonc
 ```
 
 Do not commit the secret value.

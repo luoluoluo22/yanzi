@@ -2371,8 +2371,16 @@ public partial class MainWindow
         var shouldBackfillAiConfig = !HasAiConfigPayload(snapshot) && HasAiSettings(settings);
         var incoming = snapshot.ToAppSettings();
         var changed =
+            !string.Equals(settings.ThemeMode, incoming.ThemeMode, StringComparison.Ordinal) ||
+            !string.Equals(settings.LauncherHotkey, incoming.LauncherHotkey, StringComparison.Ordinal) ||
+            settings.LaunchAtStartup != incoming.LaunchAtStartup ||
+            settings.RefreshCloudOnStartup != incoming.RefreshCloudOnStartup ||
+            settings.CloseToTray != incoming.CloseToTray ||
+            !string.Equals(settings.QuickPanelTrigger, incoming.QuickPanelTrigger, StringComparison.Ordinal) ||
             !AreStringListsEqual(settings.GlobalFavoriteExtensionIds, incoming.GlobalFavoriteExtensionIds) ||
             !AreStringListsEqual(settings.ContextFavoriteExtensionIds, incoming.ContextFavoriteExtensionIds) ||
+            !AreStringListsEqual(settings.DisabledExtensionIds, incoming.DisabledExtensionIds) ||
+            !AreStringListsEqual(settings.PinnedSearchScopeCommandIds, incoming.PinnedSearchScopeCommandIds) ||
             !AreNullableStringListsEqual(settings.QuickPanelSlots, incoming.QuickPanelSlots) ||
             !string.Equals(settings.SelectedQuickPanelGlobalGroupId, incoming.SelectedQuickPanelGlobalGroupId, StringComparison.Ordinal) ||
             !string.Equals(settings.SelectedQuickPanelContextGroupId, incoming.SelectedQuickPanelContextGroupId, StringComparison.Ordinal) ||
@@ -2381,9 +2389,16 @@ public partial class MainWindow
             !AreQuickPanelMouseTriggersEqual(settings.QuickPanelMouseTriggers, incoming.QuickPanelMouseTriggers) ||
             !string.Equals(MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode), MouseGestureTriggerModes.Normalize(incoming.MouseGestureTriggerMode), StringComparison.Ordinal) ||
             !string.Equals(MouseTriggerModes.Normalize(settings.WindowSnapAssistMouseTriggerMode), MouseTriggerModes.Normalize(incoming.WindowSnapAssistMouseTriggerMode), StringComparison.Ordinal) ||
+            settings.EnableWindowSnapAssist != incoming.EnableWindowSnapAssist ||
+            !string.Equals(settings.WindowSnapAssistHotkey, incoming.WindowSnapAssistHotkey, StringComparison.Ordinal) ||
+            !AreJsonPayloadsEqual(settings.WindowSnapAssistCustomLayouts, incoming.WindowSnapAssistCustomLayouts) ||
+            !AreJsonPayloadsEqual(settings.WindowBindings, incoming.WindowBindings) ||
+            settings.EnableAgentApi != incoming.EnableAgentApi ||
+            settings.AgentApiPort != incoming.AgentApiPort ||
             snapshot.YarnSelect != null && !AreJsonPayloadsEqual(settings.YarnSelect, incoming.YarnSelect) ||
             snapshot.RadialMenu != null && !AreJsonPayloadsEqual(settings.RadialMenu, incoming.RadialMenu) ||
             snapshot.YanyuRules != null && !AreJsonPayloadsEqual(settings.YanyuRules, incoming.YanyuRules) ||
+            snapshot.Yanm != null && !AreJsonPayloadsEqual(settings.Yanm, incoming.Yanm) ||
             HasAiConfigPayload(snapshot) && !AreAiSettingsEqual(settings, incoming);
         var localUpdatedAtUtc = TryParseCloudTimestamp(settings.LauncherConfigUpdatedAtUtc);
         var remoteUpdatedAtUtc = TryParseCloudTimestamp(snapshot.UpdatedAtUtc);
@@ -2391,6 +2406,30 @@ public partial class MainWindow
             localUpdatedAtUtc != null &&
             (remoteUpdatedAtUtc == null || remoteUpdatedAtUtc.Value <= localUpdatedAtUtc.Value.AddSeconds(1)))
         {
+            if (IsLikelyFreshLocalLauncherConfig(settings) && HasMeaningfulCloudLauncherConfig(snapshot))
+            {
+                ApplyCloudLauncherSettings(settings, incoming, snapshot);
+                settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+                AppSettingsStore.Save(settings);
+                RefreshRuntimeAfterCloudLauncherPull(settings, snapshot);
+                HostAssets.AppendLog(
+                    $"Quick panel cloud pull applied over fresh local config: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
+                return true;
+            }
+
+            if (MergeMissingAiSettings(settings, incoming, snapshot))
+            {
+                settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+                AppSettingsStore.Save(settings);
+                _appSettings = AppSettingsStore.Load();
+                NotifySettingsWindowAiConfigChanged();
+                OnPropertyChanged(nameof(AiChatModelDisplayText));
+                HostAssets.AppendLog(
+                    $"Quick panel cloud pull: merged missing AI config from older cloud snapshot, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
+                await PushQuickPanelConfigToCloudAsync("cloud-refresh-local-newer-ai-merged");
+                return true;
+            }
+
             HostAssets.AppendLog(
                 $"Quick panel cloud pull skipped: local config is newer, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
             await PushQuickPanelConfigToCloudAsync("cloud-refresh-local-newer");
@@ -2410,6 +2449,54 @@ public partial class MainWindow
             return false;
         }
 
+        ApplyCloudLauncherSettings(settings, incoming, snapshot);
+        settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+
+        AppSettingsStore.Save(settings);
+        RefreshRuntimeAfterCloudLauncherPull(settings, snapshot);
+        HostAssets.AppendLog(
+            $"Quick panel cloud pull applied: globalGroups={settings.QuickPanelGlobalGroups.Count}, contextGroups={settings.QuickPanelContextGroups.Count}, globalFavs={settings.GlobalFavoriteExtensionIds.Count}, contextFavs={settings.ContextFavoriteExtensionIds.Count}, yanyu={settings.YanyuRules.Count}, radialPages={settings.RadialMenu?.Pages?.Count ?? 0}, aiConfig={HasAiConfigPayload(snapshot)}");
+        if (shouldBackfillAiConfig)
+        {
+            await PushQuickPanelConfigToCloudAsync("cloud-pull-ai-backfill");
+            HostAssets.AppendLog("Quick panel cloud pull applied: backfilled missing AI config fields.");
+        }
+
+        return true;
+    }
+
+    private void RefreshRuntimeAfterCloudLauncherPull(AppSettings settings, CloudQuickPanelConfigSnapshot snapshot)
+    {
+        _appSettings = AppSettingsStore.Load();
+        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
+        if (!_listenerServicesPaused)
+        {
+            InputHookService.ReloadSettings();
+            ReloadMouseGestureRegistrations();
+            RefreshYanyuRules();
+            KeyboardDoubleTapService.ApplyYanmSettings(_appSettings.Yanm);
+            RefreshYanmHotkeyRegistration();
+            RefreshRadialHotkeyRegistration();
+            RefreshLauncherHotkeyRegistration();
+            RefreshWindowSnapAssistHotkeyRegistration();
+            _windowSnapAssistService.ReloadCustomLayouts();
+        }
+
+        _quickPanel?.RefreshSettingsFromStore();
+        _yanmOverlay?.ReloadSettings();
+        NotifySettingsWindowAiConfigChanged();
+        NotifySettingsWindowWebDavConfigChanged();
+        OnPropertyChanged(nameof(AiChatModelDisplayText));
+    }
+
+    private static void ApplyCloudLauncherSettings(AppSettings settings, AppSettings incoming, CloudQuickPanelConfigSnapshot snapshot)
+    {
+        settings.ThemeMode = incoming.ThemeMode;
+        settings.LauncherHotkey = incoming.LauncherHotkey;
+        settings.LaunchAtStartup = incoming.LaunchAtStartup;
+        settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;
+        settings.CloseToTray = incoming.CloseToTray;
+        settings.QuickPanelTrigger = incoming.QuickPanelTrigger;
         settings.QuickPanelSlots = incoming.QuickPanelSlots;
         settings.QuickPanelGlobalGroups = incoming.QuickPanelGlobalGroups;
         settings.QuickPanelContextGroups = incoming.QuickPanelContextGroups;
@@ -2417,9 +2504,17 @@ public partial class MainWindow
         settings.SelectedQuickPanelContextGroupId = incoming.SelectedQuickPanelContextGroupId;
         settings.GlobalFavoriteExtensionIds = incoming.GlobalFavoriteExtensionIds;
         settings.ContextFavoriteExtensionIds = incoming.ContextFavoriteExtensionIds;
+        settings.DisabledExtensionIds = incoming.DisabledExtensionIds;
+        settings.PinnedSearchScopeCommandIds = incoming.PinnedSearchScopeCommandIds;
         settings.QuickPanelMouseTriggers = incoming.QuickPanelMouseTriggers;
         settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(incoming.MouseGestureTriggerMode);
         settings.WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(incoming.WindowSnapAssistMouseTriggerMode);
+        settings.EnableWindowSnapAssist = incoming.EnableWindowSnapAssist;
+        settings.WindowSnapAssistHotkey = incoming.WindowSnapAssistHotkey;
+        settings.WindowSnapAssistCustomLayouts = incoming.WindowSnapAssistCustomLayouts;
+        settings.WindowBindings = incoming.WindowBindings;
+        settings.EnableAgentApi = incoming.EnableAgentApi;
+        settings.AgentApiPort = incoming.AgentApiPort;
         if (snapshot.YarnSelect != null)
         {
             settings.YarnSelect = incoming.YarnSelect;
@@ -2435,37 +2530,20 @@ public partial class MainWindow
             settings.YanyuRules = incoming.YanyuRules;
         }
 
+        if (snapshot.Yanm != null)
+        {
+            settings.Yanm = incoming.Yanm;
+            settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(settings.YanmStateUpdatedAtUtc)
+                ? settings.LauncherConfigUpdatedAtUtc
+                : settings.YanmStateUpdatedAtUtc;
+        }
+
         if (HasAiConfigPayload(snapshot))
         {
             settings.AiBaseUrl = incoming.AiBaseUrl;
             settings.AiApiKey = incoming.AiApiKey;
             settings.AiModel = incoming.AiModel;
         }
-
-        settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
-
-        AppSettingsStore.Save(settings);
-        _appSettings = AppSettingsStore.Load();
-        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
-        if (!_listenerServicesPaused)
-        {
-            InputHookService.ReloadSettings();
-            ReloadMouseGestureRegistrations();
-            RefreshYanyuRules();
-        }
-
-        _quickPanel?.RefreshSettingsFromStore();
-        NotifySettingsWindowAiConfigChanged();
-        OnPropertyChanged(nameof(AiChatModelDisplayText));
-        HostAssets.AppendLog(
-            $"Quick panel cloud pull applied: globalGroups={settings.QuickPanelGlobalGroups.Count}, contextGroups={settings.QuickPanelContextGroups.Count}, globalFavs={settings.GlobalFavoriteExtensionIds.Count}, contextFavs={settings.ContextFavoriteExtensionIds.Count}, yanyu={settings.YanyuRules.Count}, radialPages={settings.RadialMenu?.Pages?.Count ?? 0}, aiConfig={HasAiConfigPayload(snapshot)}");
-        if (shouldBackfillAiConfig)
-        {
-            await PushQuickPanelConfigToCloudAsync("cloud-pull-ai-backfill");
-            HostAssets.AppendLog("Quick panel cloud pull applied: backfilled missing AI config fields.");
-        }
-
-        return true;
     }
 
     private async Task PushQuickPanelConfigToCloudAsync(string reason)
@@ -2478,7 +2556,22 @@ public partial class MainWindow
 
         await _cloudSyncClient.EnsureAuthenticatedAsync();
         var settings = AppSettingsStore.Load();
-        await _cloudSyncClient.UpsertUserConfigAsync(CloudQuickPanelConfigId, CloudQuickPanelConfigSnapshot.FromSettings(settings));
+        var localSnapshot = CloudQuickPanelConfigSnapshot.FromSettings(settings);
+        if (CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(localSnapshot))
+        {
+            var remoteSnapshot = await _cloudSyncClient.GetUserConfigAsync<CloudQuickPanelConfigSnapshot>(CloudQuickPanelConfigId);
+            if (CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(remoteSnapshot))
+            {
+                HostAssets.AppendLog(
+                    $"Quick panel cloud push blocked: local snapshot is default but remote has user content, reason={reason}, remoteDevice={remoteSnapshot?.SourceDeviceId ?? "unknown"}.");
+                return;
+            }
+
+            HostAssets.AppendLog($"Quick panel cloud push skipped: local snapshot has no user content, reason={reason}.");
+            return;
+        }
+
+        await _cloudSyncClient.UpsertUserConfigAsync(CloudQuickPanelConfigId, localSnapshot);
     }
 
     private async Task PushYanmStateToCloudAsync(string reason)
@@ -2604,19 +2697,8 @@ public partial class MainWindow
 
     private static bool ShouldSyncLocalQuickPanelConfigToCloud()
     {
-        var settings = AppSettingsStore.Load();
-        return settings.QuickPanelGlobalGroups.Any(group => group.SlotItems.Any(static slot => slot != null)) ||
-               settings.QuickPanelContextGroups.Any(group => group.SlotItems.Any(static slot => slot != null)) ||
-               settings.GlobalFavoriteExtensionIds.Count > 0 ||
-               settings.ContextFavoriteExtensionIds.Count > 0 ||
-               settings.YanyuRules.Count > 0 ||
-               settings.YarnSelect.Rules.Count > 0 ||
-            settings.RadialMenu.Enabled ||
-               settings.Yanm.Components.Count > 0 ||
-               HasAiSettings(settings) ||
-               settings.RadialMenu.Pages.Any(static page =>
-                   page.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
-                   page.ChildPageIds.Any(static childPageId => !string.IsNullOrWhiteSpace(childPageId)));
+        return CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(
+            CloudQuickPanelConfigSnapshot.FromSettings(AppSettingsStore.Load()));
     }
 
     private static bool HasAiConfigPayload(CloudQuickPanelConfigSnapshot snapshot)
@@ -2631,6 +2713,46 @@ public partial class MainWindow
         return !string.IsNullOrWhiteSpace(settings.AiBaseUrl) ||
                !string.IsNullOrWhiteSpace(settings.AiApiKey) ||
                !string.IsNullOrWhiteSpace(settings.AiModel);
+    }
+
+    private static bool IsLikelyFreshLocalLauncherConfig(AppSettings settings)
+    {
+        return CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(
+            CloudQuickPanelConfigSnapshot.FromSettings(settings));
+    }
+
+    private static bool HasMeaningfulCloudLauncherConfig(CloudQuickPanelConfigSnapshot snapshot)
+    {
+        return CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(snapshot);
+    }
+
+    private static bool MergeMissingAiSettings(AppSettings target, AppSettings incoming, CloudQuickPanelConfigSnapshot snapshot)
+    {
+        if (!HasAiConfigPayload(snapshot))
+        {
+            return false;
+        }
+
+        var changed = false;
+        if (string.IsNullOrWhiteSpace(target.AiBaseUrl) && !string.IsNullOrWhiteSpace(incoming.AiBaseUrl))
+        {
+            target.AiBaseUrl = incoming.AiBaseUrl;
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(target.AiApiKey) && !string.IsNullOrWhiteSpace(incoming.AiApiKey))
+        {
+            target.AiApiKey = incoming.AiApiKey;
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(target.AiModel) && !string.IsNullOrWhiteSpace(incoming.AiModel))
+        {
+            target.AiModel = incoming.AiModel;
+            changed = true;
+        }
+
+        return changed;
     }
 
     private static bool AreAiSettingsEqual(AppSettings left, AppSettings right)

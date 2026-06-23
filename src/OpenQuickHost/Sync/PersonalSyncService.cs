@@ -65,9 +65,18 @@ public sealed class PersonalSyncService
                     continue;
                 }
 
-                if (await ApplyRemoteEntryAsync(remoteEntry, cancellationToken))
+                try
                 {
-                    pulled++;
+                    if (await ApplyRemoteEntryAsync(remoteEntry, cancellationToken))
+                    {
+                        pulled++;
+                    }
+                }
+                catch (FileNotFoundException ex)
+                {
+                    HostAssets.AppendLog($"Personal sync remote package missing; removing stale index entry: id={remoteEntry.ExtensionId}, path={remoteEntry.PackagePath}, error={ex.Message}");
+                    remoteIndexChanged = true;
+                    continue;
                 }
 
                 mergedMap[extensionId] = remoteEntry;
@@ -106,10 +115,29 @@ public sealed class PersonalSyncService
             }
             else
             {
-                if (await ApplyRemoteEntryAsync(winner, cancellationToken))
+                try
                 {
-                    pulled++;
+                    if (await ApplyRemoteEntryAsync(winner, cancellationToken))
+                    {
+                        pulled++;
+                    }
                 }
+                catch (FileNotFoundException ex)
+                {
+                    HostAssets.AppendLog($"Personal sync remote package missing; keeping local entry and repairing remote index: id={winner.ExtensionId}, path={winner.PackagePath}, error={ex.Message}");
+                    if (localEntry is { Deleted: false })
+                    {
+                        await UploadPackageIfNeededAsync(localEntry, snapshot.PackageBytesByExtensionId, cancellationToken);
+                        uploaded++;
+                        winner = localEntry;
+                    }
+                    else
+                    {
+                        remoteIndexChanged = true;
+                        continue;
+                    }
+                }
+
             }
 
             if (!EntriesEquivalent(winner, remoteEntry))
@@ -236,6 +264,12 @@ public sealed class PersonalSyncService
 
         if (remote?.Config == null)
         {
+            if (CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(localConfig))
+            {
+                HostAssets.AppendLog("Personal sync launcher config upload skipped: local snapshot has no user content and remote is missing.");
+                return (false, false);
+            }
+
             var uploadedAtUtc = DateTime.UtcNow;
             await UploadLauncherConfigAsync(localConfig, uploadedAtUtc, cancellationToken);
             SaveLauncherConfigUpdatedAtUtc(uploadedAtUtc);
@@ -249,12 +283,18 @@ public sealed class PersonalSyncService
         var remoteTime = remote.Config.UpdatedAtUtc;
         localConfig.UpdatedAtUtc = null;
         remote.Config.UpdatedAtUtc = null;
+        var localMetadata = CaptureMetadata(localConfig);
+        var remoteMetadata = CaptureMetadata(remote.Config);
+        ClearMetadataForComparison(localConfig);
+        ClearMetadataForComparison(remote.Config);
 
         var equivalent = AreJsonPayloadsEqual(localConfig, remote.Config);
 
         // 还原时间戳以保证后续时间戳判断逻辑正确
         localConfig.UpdatedAtUtc = localTime;
         remote.Config.UpdatedAtUtc = remoteTime;
+        RestoreMetadata(localConfig, localMetadata);
+        RestoreMetadata(remote.Config, remoteMetadata);
 
         if (equivalent)
         {
@@ -274,6 +314,12 @@ public sealed class PersonalSyncService
         }
 
         if (remoteUpdatedAtUtc > localUpdatedAtUtc.AddSeconds(1))
+        {
+            ApplyLauncherConfigSnapshot(remote.Config, remoteUpdatedAtUtc);
+            return (false, true);
+        }
+
+        if (IsLikelyFreshLocalLauncherConfig(localConfig) && HasMeaningfulLauncherConfig(remote.Config))
         {
             ApplyLauncherConfigSnapshot(remote.Config, remoteUpdatedAtUtc);
             return (false, true);
@@ -302,6 +348,11 @@ public sealed class PersonalSyncService
 
     private Task UploadLauncherConfigAsync(CloudQuickPanelConfigSnapshot config, DateTime updatedAtUtc, CancellationToken cancellationToken)
     {
+        config.UpdatedAtUtc = updatedAtUtc.ToString("O");
+        config.SourceDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+        config.SourceDeviceName = DeviceIdentityStore.GetDesktopDisplayName();
+        config.HasUserContent = CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(config);
+        config.IsInitialDefaultConfig = !config.HasUserContent;
         var snapshot = new WebDavLauncherConfigSnapshot
         {
             UpdatedAtUtc = updatedAtUtc.ToString("O"),
@@ -328,6 +379,12 @@ public sealed class PersonalSyncService
     {
         var settings = AppSettingsStore.Load();
         var incoming = snapshot.ToAppSettings();
+        settings.ThemeMode = incoming.ThemeMode;
+        settings.LauncherHotkey = incoming.LauncherHotkey;
+        settings.LaunchAtStartup = incoming.LaunchAtStartup;
+        settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;
+        settings.CloseToTray = incoming.CloseToTray;
+        settings.QuickPanelTrigger = incoming.QuickPanelTrigger;
         settings.QuickPanelSlots = incoming.QuickPanelSlots;
         settings.QuickPanelGlobalGroups = incoming.QuickPanelGlobalGroups;
         settings.QuickPanelContextGroups = incoming.QuickPanelContextGroups;
@@ -335,9 +392,17 @@ public sealed class PersonalSyncService
         settings.SelectedQuickPanelContextGroupId = incoming.SelectedQuickPanelContextGroupId;
         settings.GlobalFavoriteExtensionIds = incoming.GlobalFavoriteExtensionIds;
         settings.ContextFavoriteExtensionIds = incoming.ContextFavoriteExtensionIds;
+        settings.DisabledExtensionIds = incoming.DisabledExtensionIds;
+        settings.PinnedSearchScopeCommandIds = incoming.PinnedSearchScopeCommandIds;
         settings.QuickPanelMouseTriggers = incoming.QuickPanelMouseTriggers;
         settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(incoming.MouseGestureTriggerMode);
         settings.WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(incoming.WindowSnapAssistMouseTriggerMode);
+        settings.EnableWindowSnapAssist = incoming.EnableWindowSnapAssist;
+        settings.WindowSnapAssistHotkey = incoming.WindowSnapAssistHotkey;
+        settings.WindowSnapAssistCustomLayouts = incoming.WindowSnapAssistCustomLayouts;
+        settings.WindowBindings = incoming.WindowBindings;
+        settings.EnableAgentApi = incoming.EnableAgentApi;
+        settings.AgentApiPort = incoming.AgentApiPort;
         if (snapshot.YarnSelect != null)
         {
             settings.YarnSelect = incoming.YarnSelect;
@@ -351,6 +416,14 @@ public sealed class PersonalSyncService
         if (snapshot.YanyuRules != null)
         {
             settings.YanyuRules = incoming.YanyuRules;
+        }
+
+        if (snapshot.Yanm != null)
+        {
+            settings.Yanm = incoming.Yanm;
+            settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(settings.YanmStateUpdatedAtUtc)
+                ? updatedAtUtc.ToString("O")
+                : settings.YanmStateUpdatedAtUtc;
         }
 
         if (HasAiConfigPayload(snapshot))
@@ -411,22 +484,12 @@ public sealed class PersonalSyncService
 
     private static bool HasMeaningfulLauncherConfig(CloudQuickPanelConfigSnapshot config)
     {
-        return config.QuickPanelSlots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
-               HasGroupContent(config.QuickPanelGlobalGroups) ||
-               HasGroupContent(config.QuickPanelContextGroups) ||
-               config.GlobalFavoriteExtensionIds.Count > 0 ||
-               config.ContextFavoriteExtensionIds.Count > 0 ||
-               config.YarnSelect != null ||
-               config.RadialMenu != null ||
-               (config.YanyuRules?.Count ?? 0) > 0 ||
-               config.Yanm != null;
+        return CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(config);
     }
 
-    private static bool HasGroupContent(IEnumerable<QuickPanelGroupSettings> groups)
+    private static bool IsLikelyFreshLocalLauncherConfig(CloudQuickPanelConfigSnapshot config)
     {
-        return groups.Any(group =>
-            group.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
-            group.SlotItems.Any(static item => item != null));
+        return CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(config);
     }
 
     private static bool HasAiConfigPayload(CloudQuickPanelConfigSnapshot snapshot)
@@ -436,10 +499,38 @@ public sealed class PersonalSyncService
                !string.IsNullOrWhiteSpace(snapshot.AiModel);
     }
 
-    private static bool HasYanmComponentState(YanmSettings yanm)
+    private static bool HasYanmComponentState(YanmSettings? yanm)
     {
-        return yanm.ComponentState != null && yanm.ComponentState.Count > 0;
+        return yanm?.ComponentState?.Count > 0;
     }
+
+    private static SnapshotMetadata CaptureMetadata(CloudQuickPanelConfigSnapshot config) =>
+        new(config.SchemaVersion, config.SourceDeviceId, config.SourceDeviceName, config.IsInitialDefaultConfig, config.HasUserContent);
+
+    private static void ClearMetadataForComparison(CloudQuickPanelConfigSnapshot config)
+    {
+        config.SchemaVersion = 0;
+        config.SourceDeviceId = null;
+        config.SourceDeviceName = null;
+        config.IsInitialDefaultConfig = false;
+        config.HasUserContent = false;
+    }
+
+    private static void RestoreMetadata(CloudQuickPanelConfigSnapshot config, SnapshotMetadata metadata)
+    {
+        config.SchemaVersion = metadata.SchemaVersion;
+        config.SourceDeviceId = metadata.SourceDeviceId;
+        config.SourceDeviceName = metadata.SourceDeviceName;
+        config.IsInitialDefaultConfig = metadata.IsInitialDefaultConfig;
+        config.HasUserContent = metadata.HasUserContent;
+    }
+
+    private sealed record SnapshotMetadata(
+        int SchemaVersion,
+        string? SourceDeviceId,
+        string? SourceDeviceName,
+        bool IsInitialDefaultConfig,
+        bool HasUserContent);
 
     private static WebDavSyncIndex LoadLocalIndex()
     {
@@ -500,10 +591,7 @@ public sealed class PersonalSyncService
                 Deleted = false
             };
             items.Add(entry);
-            if (previous == null || previous.Deleted || !string.Equals(previous.PackageHash, packageHash, StringComparison.OrdinalIgnoreCase))
-            {
-                packageBytesByExtensionId[command.ExtensionId] = packageBytes;
-            }
+            packageBytesByExtensionId[command.ExtensionId] = packageBytes;
         }
 
         foreach (var stateEntry in stateMap.Values)

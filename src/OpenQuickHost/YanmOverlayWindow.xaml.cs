@@ -48,6 +48,7 @@ public partial class YanmOverlayWindow : Window
     private bool _webDavStateRefreshPendingForce;
     private string _webDavStateRefreshPendingReason = string.Empty;
     private DateTime _lastWebDavStateRefreshUtc = DateTime.MinValue;
+    private string? _lastAppliedStateUpdatedAtUtc;
     private bool _interactiveOutsideClickCandidate;
     private WpfPoint _interactiveOutsideClickStart;
     private bool _isWebView2Available = true;
@@ -153,7 +154,8 @@ public partial class YanmOverlayWindow : Window
 
     public void ReloadSettings()
     {
-        _settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
+        var appSettings = AppSettingsStore.Load();
+        _settings = appSettings.Yanm ?? new YanmSettings();
         if (!_settings.Enabled)
         {
             HideOverlay();
@@ -166,12 +168,20 @@ public partial class YanmOverlayWindow : Window
             ApplyScreenBounds();
             UpdateDynamicTexts();
             RenderAll();
+            
+            var currentUtc = appSettings.YanmStateUpdatedAtUtc;
+            if (_lastAppliedStateUpdatedAtUtc != currentUtc)
+            {
+                _lastAppliedStateUpdatedAtUtc = currentUtc;
+                ReloadAllComponentBrowsers();
+            }
         }
     }
 
     private void ShowOverlay(bool pinned)
     {
-        _settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
+        var appSettings = AppSettingsStore.Load();
+        _settings = appSettings.Yanm ?? new YanmSettings();
         if (!_settings.Enabled)
         {
             HostAssets.AppendLog("Yanm: show skipped because feature is disabled.");
@@ -196,6 +206,14 @@ public partial class YanmOverlayWindow : Window
         UpdateCornerHint();
         HostAssets.AppendLog($"Yanm: showing overlay, pinned={pinned}, editMode={_isEditMode}, components={_settings.Components.Count}, bounds=({Left},{Top},{Width},{Height}).");
         RenderAll();
+        
+        var currentUtc = appSettings.YanmStateUpdatedAtUtc;
+        if (_lastAppliedStateUpdatedAtUtc != currentUtc)
+        {
+            _lastAppliedStateUpdatedAtUtc = currentUtc;
+            ReloadAllComponentBrowsers();
+        }
+
         Show();
         ApplyScreenBounds();
         Activate();
@@ -324,18 +342,28 @@ public partial class YanmOverlayWindow : Window
         SyncStatusPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void ApplyWebDavStateRefreshToComponents()
+    private void ReloadAllComponentBrowsers()
     {
-        if (!IsVisible)
+        foreach (var view in _componentViews.Values)
         {
-            return;
+            if (view.Browser.CoreWebView2 != null)
+            {
+                try
+                {
+                    view.Browser.CoreWebView2.Reload();
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Yanm: failed to reload component browser {view.Id}: {ex.Message}");
+                }
+            }
         }
+        HostAssets.AppendLog($"Yanm: all component browsers reloaded to apply new state, count={_componentViews.Count}.");
+    }
 
-        _settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
+    private void BroadcastAllComponentStates()
+    {
         _settings.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        UpdateDynamicTexts();
-        RenderAll();
-
         var keys = _settings.ComponentState.Keys.ToList();
         foreach (var view in _componentViews.Values)
         {
@@ -344,8 +372,25 @@ public partial class YanmOverlayWindow : Window
                 SendComponentState(view.Id, key);
             }
         }
+        HostAssets.AppendLog($"Yanm: component state broadcast, components={_componentViews.Count}, keys={keys.Count}.");
+    }
 
-        HostAssets.AppendLog($"Yanm: component state broadcast after WebDAV refresh, components={_componentViews.Count}, keys={keys.Count}.");
+    private void ApplyWebDavStateRefreshToComponents()
+    {
+        if (!IsVisible)
+        {
+            return;
+        }
+
+        var appSettings = AppSettingsStore.Load();
+        _settings = appSettings.Yanm ?? new YanmSettings();
+        UpdateDynamicTexts();
+        RenderAll();
+
+        var currentUtc = appSettings.YanmStateUpdatedAtUtc;
+        _lastAppliedStateUpdatedAtUtc = currentUtc;
+        BroadcastAllComponentStates();
+        HostAssets.AppendLog("Yanm: cloud state applied via broadcast (no page reload).");
     }
 
     private void ApplyScreenBounds()
@@ -836,6 +881,40 @@ public partial class YanmOverlayWindow : Window
 """;
 
         var html = component.Html;
+        var headBridge = $$"""
+<script>
+  window.yanm = window.yanm || {};
+  window.yanm.componentId = '{{component.Id}}';
+  window.yanm.componentTitle = {{JsonSerializer.Serialize(component.Title)}};
+  window.__yanmComponentId = '{{component.Id}}';
+</script>
+""";
+        var trimmed = html == null ? "" : html.Trim();
+        if (trimmed.Contains("<html", StringComparison.OrdinalIgnoreCase))
+        {
+            int headEnd = trimmed.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+            if (headEnd >= 0)
+            {
+                html = trimmed.Insert(headEnd, headBridge);
+            }
+            else
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(?i)<html[^>]*>");
+                if (match.Success)
+                {
+                    html = trimmed.Insert(match.Index + match.Length, "<head>" + headBridge + "</head>");
+                }
+                else
+                {
+                    html = headBridge + trimmed;
+                }
+            }
+        }
+        else
+        {
+            html = headBridge + trimmed;
+        }
+
         var bodyEnd = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
         return bodyEnd >= 0
             ? html.Insert(bodyEnd, script)
