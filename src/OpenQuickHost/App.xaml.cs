@@ -202,6 +202,22 @@ public partial class App : WpfApplication
             // 4. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
             _isAppFullyInitialized = true;
 
+            // 预加载设置窗口以避免第一次打开时解析庞大 XAML 导致 UI 线程和鼠标卡顿
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_settingsWindow == null && MainWindow is MainWindow mainWindow)
+                {
+                    try
+                    {
+                        _settingsWindow = new SettingsWindow(mainWindow);
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Settings window pre-load failed: {ex.Message}");
+                    }
+                }
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
             // 启动 5 秒后在后台静默发起更新流程
             _ = Task.Delay(5000).ContinueWith(async _ =>
             {
@@ -964,80 +980,22 @@ public partial class App : WpfApplication
             if (_settingsWindow == null)
             {
                 _settingsWindow = new SettingsWindow(mainWindow);
-                
-                // 采用 Opacity=0 离屏静慢加载方案：静慢在目标位置完成布局和数据绑定后淡入，彻底消除闪烁
-                bool isFirstRender = true;
-                _settingsWindow.Opacity = 0;
-
                 _settingsWindow.Closed += (s, e) =>
                 {
                     _settingsWindow = null;
                 };
-
-                _settingsWindow.ContentRendered += (s, e) =>
-                {
-                    if (!isFirstRender) return;
-                    isFirstRender = false;
-
-                    var handle = new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Handle;
-                    if (handle != IntPtr.Zero)
-                    {
-                        int disableTransitions = 1;
-                        DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
-                    }
-
-                    // 启动淡入动画，保证显示平滑且无任何由于重绘或位移引起的闪烁
-                    var anim = new System.Windows.Media.Animation.DoubleAnimation
-                    {
-                        From = 0,
-                        To = 1,
-                        Duration = new Duration(TimeSpan.FromSeconds(0.15)),
-                        EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
-                    };
-                    _settingsWindow.BeginAnimation(UIElement.OpacityProperty, anim);
-
-                    _settingsWindow.Activate();
-                    _settingsWindow.Focus();
-
-                    if (handle != IntPtr.Zero)
-                    {
-                        int disableTransitions = 0;
-                        DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
-                    }
-                };
-
-
-                
                 HostAssets.AppendLog("Settings window created.");
             }
-            else if (_settingsWindow.WindowState == WindowState.Minimized || !_settingsWindow.IsVisible)
+
+            if (_settingsWindow.WindowState == WindowState.Minimized)
             {
-                var handle = new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Handle;
-                if (handle != IntPtr.Zero)
-                {
-                    int disableTransitions = 1;
-                    DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
-                }
-                
-                _settingsWindow.ShowInTaskbar = true;
                 _settingsWindow.WindowState = WindowState.Normal;
-                
-                if (handle != IntPtr.Zero)
-                {
-                    int disableTransitions = 0;
-                    DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
-                }
             }
 
             if (!_settingsWindow.IsVisible)
             {
                 _settingsWindow.Show();
                 HostAssets.AppendLog("Settings window shown.");
-            }
-
-            if (_settingsWindow.WindowState == System.Windows.WindowState.Minimized)
-            {
-                _settingsWindow.WindowState = System.Windows.WindowState.Normal;
             }
 
             _settingsWindow.NavigateTo(sectionKey);
