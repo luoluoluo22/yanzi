@@ -640,7 +640,13 @@
 
       function renderIconMarkup(item, size) {
         const icon = String(item.icon || item.manifest?.icon || "").trim();
-        if (icon && /^https?:\/\//i.test(icon)) {
+        const isDefaultLogo = !icon || icon.includes("logo-white-transparent") || icon.includes("logo-white.png");
+        
+        if (isDefaultLogo) {
+          return `<img src="/assets/logo-white-transparent.png" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy">`;
+        }
+
+        if (/^https?:\/\//i.test(icon)) {
           return `<img src="${escapeHtml(icon)}" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy" referrerpolicy="no-referrer">`;
         }
 
@@ -650,13 +656,13 @@
           return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${escapeHtml(mdiPath)}" fill="currentColor"></path></svg>`;
         }
 
-        const firstChar = (item.display_name || item.extension_id).charAt(0).toUpperCase();
-        return escapeHtml(firstChar);
+        return `<img src="/assets/logo-white-transparent.png" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy">`;
       }
 
       function getIconWrapperStyle(item, isDetail = false) {
         const icon = String(item.icon || item.manifest?.icon || "").trim();
-        const isImage = icon && /^https?:\/\//i.test(icon);
+        const isDefaultLogo = !icon || icon.includes("logo-white-transparent") || icon.includes("logo-white.png") || !/^https?:\/\//i.test(icon);
+        const isImage = !isDefaultLogo && /^https?:\/\//i.test(icon);
         const color = item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex || "#8B5CF6";
         
         if (isImage) {
@@ -666,9 +672,9 @@
           return `background: transparent; border: 1px solid var(--border);`;
         } else {
           if (isDetail) {
-            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background-color: ${color}; border: none; color: white;`;
+            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background-color: ${color}; border: none; color: white; display: flex; align-items: center; justify-content: center;`;
           }
-          return `background-color: ${color}; border: none; color: white;`;
+          return `background-color: ${color}; border: none; color: white; display: flex; align-items: center; justify-content: center;`;
         }
       }
 
