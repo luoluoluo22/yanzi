@@ -965,14 +965,9 @@ public partial class App : WpfApplication
             {
                 _settingsWindow = new SettingsWindow(mainWindow);
                 
-                // 离屏渲染大法：使用 Minimized 静默加载，等待 WPF 渲染完毕后再恢复
-                double targetLeft = _settingsWindow.Left;
-                double targetTop = _settingsWindow.Top;
-                var startupLocation = _settingsWindow.WindowStartupLocation;
+                // 采用 Opacity=0 离屏静慢加载方案：静慢在目标位置完成布局和数据绑定后淡入，彻底消除闪烁
                 bool isFirstRender = true;
-
-                _settingsWindow.WindowState = WindowState.Minimized;
-                _settingsWindow.ShowInTaskbar = false;
+                _settingsWindow.Opacity = 0;
 
                 _settingsWindow.Closed += (s, e) =>
                 {
@@ -991,22 +986,16 @@ public partial class App : WpfApplication
                         DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
                     }
 
-                    _settingsWindow.WindowState = WindowState.Normal;
-
-                    if (!double.IsNaN(targetLeft) && !double.IsNaN(targetTop))
+                    // 启动淡入动画，保证显示平滑且无任何由于重绘或位移引起的闪烁
+                    var anim = new System.Windows.Media.Animation.DoubleAnimation
                     {
-                        _settingsWindow.Left = targetLeft;
-                        _settingsWindow.Top = targetTop;
-                    }
-                    else if (startupLocation == WindowStartupLocation.CenterScreen)
-                    {
-                        var screenWidth = SystemParameters.PrimaryScreenWidth;
-                        var screenHeight = SystemParameters.PrimaryScreenHeight;
-                        _settingsWindow.Left = (screenWidth - _settingsWindow.Width) / 2;
-                        _settingsWindow.Top = (screenHeight - _settingsWindow.Height) / 2;
-                    }
+                        From = 0,
+                        To = 1,
+                        Duration = new Duration(TimeSpan.FromSeconds(0.15)),
+                        EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+                    };
+                    _settingsWindow.BeginAnimation(UIElement.OpacityProperty, anim);
 
-                    _settingsWindow.ShowInTaskbar = true;
                     _settingsWindow.Activate();
                     _settingsWindow.Focus();
 
