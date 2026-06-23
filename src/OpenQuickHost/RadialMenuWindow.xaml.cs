@@ -663,7 +663,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         InputHookService.MarkCapsLockAsUsed();
         try
         {
-            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            await Task.Delay(50);
 
             if (_previousForegroundWindow != IntPtr.Zero)
             {

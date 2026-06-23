@@ -1428,7 +1428,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             }
 
             HidePanelIfAllowed();
-            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            await Task.Delay(50);
             if (_previousForegroundWindow != IntPtr.Zero)
             {
                 var restored = NativeMethods.SetForegroundWindow(_previousForegroundWindow);
