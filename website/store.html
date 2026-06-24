@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 
 <head>
@@ -87,34 +87,34 @@
     }
 
     .store-card-icon-wrapper {
-      width: 56px;
-      height: 56px;
-      border-radius: 14px;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
       border: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 1.25rem;
+      margin-bottom: 1rem;
       transition: all 0.3s ease;
-      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
       background: transparent;
       position: relative;
     }
 
     .store-card:hover .store-card-icon-wrapper {
       border-color: var(--accent);
-      box-shadow: 0 0 30px var(--accent-glow);
+      box-shadow: 0 0 20px var(--accent-glow);
     }
 
     .store-card-icon {
-      width: 30px;
-      height: 30px;
-      font-size: 1.25rem;
+      width: 20px;
+      height: 20px;
+      font-size: 1.1rem;
       display: flex;
       align-items: center;
       justify-content: center;
       color: var(--accent);
-      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
     }
 
     .store-card-icon-wrapper svg {
@@ -386,7 +386,7 @@
         </div>
         <div class="detail-head">
           <div class="store-card-icon-wrapper" style="${getIconWrapperStyle(item, true)}">
-            <div class="store-card-icon" style="font-size: 2rem; width: 72px; height: 72px; color: inherit;">${renderIconMarkup(item, 72)}</div>
+            <div class="store-card-icon" style="font-size: 1.5rem; width: 32px; height: 32px; color: inherit;">${renderIconMarkup(item, 32)}</div>
           </div>
           <div class="detail-title">
             <h2>${escapeHtml(item.display_name)}</h2>
@@ -688,12 +688,12 @@
         
         if (isImage) {
           if (isDetail) {
-            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background: transparent !important; border: 1px solid var(--border) !important;`;
+            return `width: 48px; height: 48px; border-radius: 12px; margin-bottom: 0; background: transparent !important; border: 1px solid var(--border) !important;`;
           }
           return `background: transparent !important; border: 1px solid var(--border) !important;`;
         } else {
           if (isDetail) {
-            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background: ${color} !important; border: none !important; color: white !important; display: flex; align-items: center; justify-content: center;`;
+            return `width: 48px; height: 48px; border-radius: 12px; margin-bottom: 0; background: ${color} !important; border: none !important; color: white !important; display: flex; align-items: center; justify-content: center;`;
           }
           return `background: ${color} !important; border: none !important; color: white !important; display: flex; align-items: center; justify-content: center;`;
         }
