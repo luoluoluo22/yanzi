@@ -1028,7 +1028,7 @@
                         <ProgressBar IsIndeterminate="True"
                                      Width="160"
                                      Height="6"
-                                     Foreground="#FF8B5CF6"
+                                     Foreground="#FF3B82F6"
                                      Background="#33FFFFFF"
                                      BorderThickness="0"
                                      HorizontalAlignment="Center" />

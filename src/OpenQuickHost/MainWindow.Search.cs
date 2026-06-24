@@ -490,7 +490,7 @@ public partial class MainWindow
                 title: normalized,
                 subtitle: $"计算结果   ·   {input}",
                 category: "计算",
-                accentHex: "#FF8B5CF6",
+                accentHex: "#FF3B82F6",
                 openTarget: null,
                 keywords: [input, normalized, "计算", "calculator"],
                 source: CommandSource.Local,

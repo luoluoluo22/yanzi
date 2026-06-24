@@ -2584,7 +2584,7 @@ public partial class AddJsonExtensionWindow : Window
             EntryMode = "inline",
             Permissions = ["clipboard"],
             Icon = "mdi:code-tags",
-            AccentHex = "#FF8B5CF6",
+            AccentHex = "#FF3B82F6",
             Script = new LocalExtensionInlineScriptManifest
             {
                 Source = "public static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        return Task.FromResult(\"收到输入：\" + context.InputText);\n    }\n}"

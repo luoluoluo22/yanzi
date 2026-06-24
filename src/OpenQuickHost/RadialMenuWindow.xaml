@@ -359,8 +359,8 @@
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding IsSearchHoverActive}" Value="True">
                             <Setter Property="Opacity" Value="1" />
-                            <Setter Property="Background" Value="#F08B5CF6" />
-                            <Setter Property="BorderBrush" Value="#FFDDD6FE" />
+                            <Setter Property="Background" Value="#F03B82F6" />
+                            <Setter Property="BorderBrush" Value="#FFDBEAFE" />
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>

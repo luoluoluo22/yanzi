@@ -1807,7 +1807,7 @@
                                 <Run Text="选择呼出快捷方式的手势，并将它们分配给 "/>
                                 <Run Text="面板" Foreground="#FF3B82F6"/>
                                 <Run Text="、"/>
-                                <Run Text="燕环" Foreground="#FFA855F7"/>
+                                <Run Text="燕环" Foreground="#FF3B82F6"/>
                                 <Run Text=" 或 "/>
                                 <Run Text="燕幕" Foreground="#FF10B981"/>
                                 <Run Text="。"/>

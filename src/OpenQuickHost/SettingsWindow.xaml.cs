@@ -97,16 +97,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         NavigationItems =
         [
             new SettingsNavigationItem("general", "mdi:settings", "常规", "#FF3B82F6"),
-            new SettingsNavigationItem("ai", "mdi:ai", "AI", "#FF8B5CF6"),
+            new SettingsNavigationItem("ai", "mdi:ai", "AI", "#FF3B82F6"),
             new SettingsNavigationItem("environment", "mdi:key", "环境变量", "#FF14B8A6"),
             new SettingsNavigationItem("sync", "mdi:sync", "同步与备份", "#FF22C55E"),
             new SettingsNavigationItem("extensions", "mdi:dashboard", "扩展", "#FFF97316"),
             new SettingsNavigationItem("quickpanel", "mdi:mouse-panel", "鼠标触发", "#FFEC4899"),
             new SettingsNavigationItem("mousegestures", "mdi:gesture-tap", "鼠标手势", "#FFFB923C"),
-            new SettingsNavigationItem("radial", "mdi:circle-outline", "燕环", "#FFA855F7"),
+            new SettingsNavigationItem("radial", "mdi:circle-outline", "燕环", "#FF3B82F6"),
             new SettingsNavigationItem("yarnselect", "mdi:shortcut", "燕选", "#FF14B8A6"),
             new SettingsNavigationItem("yanm", "mdi:monitor-dashboard", "燕幕", "#FF60A5FA"),
-            new SettingsNavigationItem("about", "mdi:about", "关于", "#FF8B5CF6")
+            new SettingsNavigationItem("about", "mdi:about", "关于", "#FF3B82F6")
         ];
         _selectedNavigation = NavigationItems.First();
         LaunchAtStartup = _settings.LaunchAtStartup;

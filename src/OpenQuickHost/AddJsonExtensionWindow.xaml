@@ -567,10 +567,10 @@
                             <RadioButton Style="{StaticResource TypeCardStyle}" GroupName="ExtType"
                                          Tag="script-cs" Checked="TypeCard_Checked">
                                 <StackPanel Background="Transparent">
-                                    <Border Width="34" Height="34" CornerRadius="9" Background="#1A8B5CF6" HorizontalAlignment="Left">
+                                    <Border Width="34" Height="34" CornerRadius="9" Background="#1A3B82F6" HorizontalAlignment="Left">
                                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Path Data="M8.59,16.59L4,12L8.59,7.41L10,8.83L6.83,12L10,15.17L8.59,16.59M15.41,16.59L14,15.17L17.17,12L14,8.83L15.41,7.41L20,12L15.41,16.59Z"
-                                                  Fill="#FF8B5CF6" Stretch="Uniform" />
+                                                  Fill="#FF3B82F6" Stretch="Uniform" />
                                         </Viewbox>
                                     </Border>
                                     <TextBlock Text="C# 脚本" Margin="0,10,0,0"
@@ -1227,7 +1227,7 @@
                             <WrapPanel x:Name="ColorSwatchPanel">
                                 <Button Tag="#FF3B82F6" Width="26" Height="26" Background="#FF3B82F6"
                                         BorderThickness="0" Margin="0,0,6,6" Click="AccentSwatch_Click" Cursor="Hand" />
-                                <Button Tag="#FF8B5CF6" Width="26" Height="26" Background="#FF8B5CF6"
+                                <Button Tag="#FF60A5FA" Width="26" Height="26" Background="#FF60A5FA"
                                         BorderThickness="0" Margin="0,0,6,6" Click="AccentSwatch_Click" Cursor="Hand" />
                                 <Button Tag="#FF10B981" Width="26" Height="26" Background="#FF10B981"
                                         BorderThickness="0" Margin="0,0,6,6" Click="AccentSwatch_Click" Cursor="Hand" />

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -114,7 +114,7 @@ public partial class AddJsonExtensionWindow
             Category: "脚本",
             Keywords: "csharp, 脚本, dotnet",
             Icon: "mdi:code",
-            AccentHex: "#FF8B5CF6",
+            AccentHex: "#FF3B82F6",
             Runtime: "csharp",
             EntryMode: "inline"),
 

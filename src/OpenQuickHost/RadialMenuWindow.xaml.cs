@@ -353,7 +353,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     }
 
     public System.Windows.Media.Brush SearchButtonBrush => _isSearchHoverActive
-        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF8B5CF6")!
+        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF3B82F6")!
         : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
 
     public bool IsCloseHoverActive
