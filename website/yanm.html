@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 
 <head>
@@ -60,14 +60,7 @@
       max-width: 720px;
     }
 
-    .yanm-auth-card {
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 28px;
-      padding: 1.25rem;
-      background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.035));
-      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.28);
-      backdrop-filter: blur(20px);
-    }
+
 
     .yanm-field {
       display: grid;
@@ -292,14 +285,7 @@
         </p>
       </div>
 
-      <article class="yanm-auth-card" id="auth-card" style="text-align: center; padding: 2.5rem 2rem;">
-        <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
-        <h3 style="margin-top: 0; margin-bottom: 0.5rem; font-size: 1.25rem;">需要登录燕子账号</h3>
-        <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.6; text-align: left;">
-          请通过页面右上角导航栏的<strong>登录</strong>按钮登录您的燕子账号。登录后即可自动同步您的云端燕幕快照，并为您实时渲染布局和组件状态。
-        </p>
-        <button class="button primary" id="prompt-login-btn" type="button" style="width: 100%;">立即登录</button>
-      </article>
+
     </section>
 
     <section class="yanm-toolbar">
@@ -313,7 +299,7 @@
       <div class="yanm-toolbar-actions">
         <button class="button secondary" id="scale-mode-button" type="button">显示: 适应窗口</button>
         <button class="button secondary" id="refresh-button" type="button">刷新燕幕</button>
-        <button class="button secondary" id="logout-button" type="button">退出登录</button>
+
       </div>
     </section>
 
@@ -336,10 +322,7 @@
   <script>
     const API_BASE = "https://sync.luoluoluo.cc.cd";
     
-    const authCard = document.getElementById("auth-card");
-    const promptLoginBtn = document.getElementById("prompt-login-btn");
     const refreshButton = document.getElementById("refresh-button");
-    const logoutButton = document.getElementById("logout-button");
     const scaleModeButton = document.getElementById("scale-mode-button");
     const userLabel = document.getElementById("user-label");
     const syncLabel = document.getElementById("sync-label");
@@ -373,7 +356,6 @@
     function renderUser() {
       const user = getUser();
       userLabel.textContent = user ? (user.username || user.email) : "未登录";
-      authCard.classList.toggle("yanm-hidden", Boolean(user));
       document.body.classList.toggle("yanm-logged-in", Boolean(user));
     }
 
@@ -630,14 +612,6 @@
       }
     }
 
-    if (promptLoginBtn) {
-      promptLoginBtn.addEventListener("click", () => {
-        if (window.YanziAuth) {
-          window.YanziAuth.showLogin();
-        }
-      });
-    }
-
     function updateScaleModeButton() {
       if (scaleMode === "fit") {
         scaleModeButton.textContent = "显示: 适应窗口";
@@ -656,13 +630,7 @@
     });
 
     refreshButton.addEventListener("click", loadYanm);
-    if (logoutButton) {
-      logoutButton.addEventListener("click", function () {
-        if (window.YanziAuth) {
-          window.YanziAuth.logout();
-        }
-      });
-    }
+
     window.addEventListener("resize", function () {
       if (currentSnapshot) {
         renderYanm(currentSnapshot.yanm);

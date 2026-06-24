@@ -176,7 +176,9 @@
           ${initial}
         </div>
       `;
-      document.getElementById("global-user-profile").addEventListener("click", showProfileModal);
+      document.getElementById("global-user-profile").addEventListener("click", () => {
+        window.location.href = "/profile.html";
+      });
     } else {
       container.innerHTML = `
         <button id="global-login-btn" class="button secondary" style="padding: 6px 16px; font-size: 0.85rem; line-height: 1.4; border-radius: 6px; margin: 0; cursor: pointer;">
@@ -278,22 +280,6 @@
 
   function hideLoginModal() {
     if (loginModal) loginModal.classList.remove("is-visible");
-  }
-
-  function showProfileModal() {
-    if (!profileModal) injectModals();
-    const user = getUser();
-    if (!user) return;
-
-    document.getElementById("profile-username").textContent = user.username || "未设置";
-    document.getElementById("profile-email").textContent = user.email || "-";
-    document.getElementById("profile-role").textContent = user.isAdmin ? "系统管理员" : "普通用户";
-
-    profileModal.classList.add("is-visible");
-  }
-
-  function hideProfileModal() {
-    if (profileModal) profileModal.classList.remove("is-visible");
   }
 
   async function performLogin() {
