@@ -4039,7 +4039,7 @@ function withCors(response) {
   response.headers.set("access-control-allow-methods", "GET,POST,PUT,DELETE,OPTIONS");
   response.headers.set(
     "access-control-allow-headers",
-    "content-type,authorization,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
+    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
   );
   return response;
 }
