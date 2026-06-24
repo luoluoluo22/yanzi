@@ -21,12 +21,6 @@
       "new_sqlite_classes": [
         "DeviceRelayRoom"
       ]
-    },
-    {
-      "tag": "delete-relay-room",
-      "deleted_classes": [
-        "DeviceRelayRoom"
-      ]
     }
   ]
 }
