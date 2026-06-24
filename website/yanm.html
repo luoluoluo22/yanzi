@@ -13,6 +13,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/assets/auth.css">
   <style>
     body {
       min-height: 100vh;
@@ -291,17 +292,13 @@
         </p>
       </div>
 
-      <article class="yanm-auth-card" id="auth-card">
-        <div class="yanm-field">
-          <label for="email">邮箱</label>
-          <input id="email" class="yanm-input" type="email" autocomplete="username" placeholder="you@example.com">
-        </div>
-        <div class="yanm-field">
-          <label for="password">密码</label>
-          <input id="password" class="yanm-input" type="password" autocomplete="current-password" placeholder="燕子账号密码">
-        </div>
-        <button class="button primary" id="login-button" type="button">登录并读取燕幕</button>
-        <div class="yanm-status" id="auth-status"></div>
+      <article class="yanm-auth-card" id="auth-card" style="text-align: center; padding: 2.5rem 2rem;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
+        <h3 style="margin-top: 0; margin-bottom: 0.5rem; font-size: 1.25rem;">需要登录燕子账号</h3>
+        <p style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 1.5rem; line-height: 1.6; text-align: left;">
+          请通过页面右上角导航栏的<strong>登录</strong>按钮登录您的燕子账号。登录后即可自动同步您的云端燕幕快照，并为您实时渲染布局和组件状态。
+        </p>
+        <button class="button primary" id="prompt-login-btn" type="button" style="width: 100%;">立即登录</button>
       </article>
     </section>
 
@@ -338,17 +335,12 @@
 
   <script>
     const API_BASE = "https://sync.luoluoluo.cc.cd";
-    const TOKEN_KEY = "yanzi.yanm.token";
-    const USER_KEY = "yanzi.yanm.user";
-
+    
     const authCard = document.getElementById("auth-card");
-    const emailInput = document.getElementById("email");
-    const passwordInput = document.getElementById("password");
-    const loginButton = document.getElementById("login-button");
+    const promptLoginBtn = document.getElementById("prompt-login-btn");
     const refreshButton = document.getElementById("refresh-button");
     const logoutButton = document.getElementById("logout-button");
     const scaleModeButton = document.getElementById("scale-mode-button");
-    const authStatus = document.getElementById("auth-status");
     const userLabel = document.getElementById("user-label");
     const syncLabel = document.getElementById("sync-label");
     const debugPanel = document.getElementById("debug-panel");
@@ -363,32 +355,19 @@
     let scaleMode = localStorage.getItem(SCALE_MODE_KEY) || "fit"; // "fit" or "actual"
 
     function getToken() {
-      return localStorage.getItem(TOKEN_KEY) || "";
+      return window.YanziAuth ? window.YanziAuth.getToken() : "";
     }
 
     function setToken(token) {
-      if (token) {
-        localStorage.setItem(TOKEN_KEY, token);
-      } else {
-        localStorage.removeItem(TOKEN_KEY);
-      }
+      // 由全局 auth.js 管理
     }
 
     function setUser(user) {
-      if (user) {
-        localStorage.setItem(USER_KEY, JSON.stringify(user));
-      } else {
-        localStorage.removeItem(USER_KEY);
-      }
       renderUser();
     }
 
     function getUser() {
-      try {
-        return JSON.parse(localStorage.getItem(USER_KEY) || "null");
-      } catch {
-        return null;
-      }
+      return window.YanziAuth ? window.YanziAuth.getUser() : null;
     }
 
     function renderUser() {
@@ -398,10 +377,7 @@
       document.body.classList.toggle("yanm-logged-in", Boolean(user));
     }
 
-    function setStatus(message, isError = false) {
-      authStatus.textContent = message || "";
-      authStatus.classList.toggle("error", Boolean(isError));
-    }
+
 
     function setDiagnostics(diagnostics) {
       if (!diagnostics) {
@@ -424,90 +400,8 @@
       }
     }
 
-    async function api(path, options = {}) {
-      const headers = new Headers(options.headers || {});
-      headers.set("accept", "application/json");
-      headers.set("x-yanzi-client", "web");
-      headers.set("x-yanzi-client-version", "0.1.0");
-      if (options.body && !headers.has("content-type")) {
-        headers.set("content-type", "application/json");
-      }
-
-      const token = getToken();
-      if (token) {
-        headers.set("authorization", `Bearer ${token}`);
-      }
-
-      let response;
-      try {
-        response = await fetch(`${API_BASE}${path}`, {
-          ...options,
-          headers
-        });
-      } catch (error) {
-        const diagnostics = {
-          code: "network_fetch_failed",
-          message: error.message || "Failed to fetch",
-          apiBase: API_BASE,
-          path,
-          method: options.method || "GET",
-          online: navigator.onLine,
-          pageOrigin: location.origin
-        };
-        setDiagnostics(diagnostics);
-        throw new Error(`网络请求失败：${diagnostics.message}`);
-      }
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setDiagnostics({
-          code: payload.error || "api_error",
-          status: response.status,
-          message: payload.message || `请求失败：${response.status}`,
-          path,
-          method: options.method || "GET"
-        });
-        throw new Error(payload.message || `请求失败：${response.status}`);
-      }
-      return payload;
-    }
-
-    async function login() {
-      setBusy(loginButton, true, "登录中...");
-      setStatus("");
-      try {
-        const auth = await api("/v1/auth/login", {
-          method: "POST",
-          body: JSON.stringify({
-            email: emailInput.value.trim(),
-            password: passwordInput.value
-          })
-        });
-        setToken(auth.accessToken || "");
-        const me = await api("/v1/auth/me");
-        setUser(me);
-        passwordInput.value = "";
-        await loadYanm();
-      } catch (error) {
-        setStatus(error.message || "登录失败", true);
-      } finally {
-        setBusy(loginButton, false);
-      }
-    }
-
-    async function restoreSession() {
-      if (!getToken()) {
-        renderUser();
-        return;
-      }
-
-      try {
-        const me = await api("/v1/auth/me");
-        setUser(me);
-        await loadYanm();
-      } catch {
-        setToken("");
-        setUser(null);
-      }
+    function api(path, options = {}) {
+      return window.YanziAuth.api(path, options);
     }
 
     async function loadYanm() {
@@ -736,12 +630,14 @@
       }
     }
 
-    loginButton.addEventListener("click", login);
-    passwordInput.addEventListener("keydown", function (event) {
-      if (event.key === "Enter") {
-        login();
-      }
-    });
+    if (promptLoginBtn) {
+      promptLoginBtn.addEventListener("click", () => {
+        if (window.YanziAuth) {
+          window.YanziAuth.showLogin();
+        }
+      });
+    }
+
     function updateScaleModeButton() {
       if (scaleMode === "fit") {
         scaleModeButton.textContent = "显示: 适应窗口";
@@ -760,24 +656,39 @@
     });
 
     refreshButton.addEventListener("click", loadYanm);
-    logoutButton.addEventListener("click", function () {
-      setToken("");
-      setUser(null);
-      currentSnapshot = null;
-      setDiagnostics(null);
-      stage.innerHTML = "";
-      empty.classList.remove("yanm-hidden");
-      syncLabel.textContent = "已退出登录";
-    });
+    if (logoutButton) {
+      logoutButton.addEventListener("click", function () {
+        if (window.YanziAuth) {
+          window.YanziAuth.logout();
+        }
+      });
+    }
     window.addEventListener("resize", function () {
       if (currentSnapshot) {
         renderYanm(currentSnapshot.yanm);
       }
     });
 
+    window.addEventListener("yanzi-auth-changed", function (e) {
+      renderUser();
+      if (e.detail.token) {
+        loadYanm();
+      } else {
+        currentSnapshot = null;
+        setDiagnostics(null);
+        stage.innerHTML = "";
+        empty.classList.remove("yanm-hidden");
+        syncLabel.textContent = "请登录后查看云端数据";
+      }
+    });
+
     updateScaleModeButton();
-    restoreSession();
+    renderUser();
+    if (getToken()) {
+      loadYanm();
+    }
   </script>
+  <script src="/assets/auth.js"></script>
 </body>
 
 </html>
