@@ -181,7 +181,7 @@
       });
     } else {
       container.innerHTML = `
-        <button id="global-login-btn" class="button secondary" style="padding: 6px 16px; font-size: 0.85rem; line-height: 1.4; border-radius: 6px; margin: 0; cursor: pointer;">
+        <button id="global-login-btn" class="button secondary" style="padding: 0 12px; height: 32px; font-size: 0.85rem; border-radius: 6px; margin: 0; cursor: pointer;">
           登录
         </button>
       `;
