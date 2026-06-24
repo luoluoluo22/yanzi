@@ -116,6 +116,15 @@
       filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
     }
 
+    .store-card-icon-wrapper svg {
+      color: inherit !important;
+      fill: currentColor !important;
+    }
+    
+    .store-card-icon-wrapper svg path {
+      fill: currentColor !important;
+    }
+
     .store-card-icon img {
       width: 100%;
       height: 100%;
@@ -659,22 +668,33 @@
         return `<img src="/assets/logo-white-transparent.png" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy">`;
       }
 
+      function normalizeCssColor(hex) {
+        if (!hex || typeof hex !== "string") return "#8B5CF6";
+        hex = hex.trim();
+        if (hex.startsWith("#") && hex.length === 9) {
+          // #FFEC4899 (ARGB) -> #EC4899 (RGB)
+          return "#" + hex.slice(3);
+        }
+        return hex;
+      }
+
       function getIconWrapperStyle(item, isDetail = false) {
         const icon = String(item.icon || item.manifest?.icon || "").trim();
         const isDefaultLogo = !icon || icon.includes("logo-white-transparent") || icon.includes("logo-white.png") || !/^https?:\/\//i.test(icon);
         const isImage = !isDefaultLogo && /^https?:\/\//i.test(icon);
-        const color = item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex || "#8B5CF6";
+        const rawColor = item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex || "#8B5CF6";
+        const color = normalizeCssColor(rawColor);
         
         if (isImage) {
           if (isDetail) {
-            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background: transparent; border: 1px solid var(--border);`;
+            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background: transparent !important; border: 1px solid var(--border) !important;`;
           }
-          return `background: transparent; border: 1px solid var(--border);`;
+          return `background: transparent !important; border: 1px solid var(--border) !important;`;
         } else {
           if (isDetail) {
-            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background-color: ${color}; border: none; color: white; display: flex; align-items: center; justify-content: center;`;
+            return `width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0; background: ${color} !important; border: none !important; color: white !important; display: flex; align-items: center; justify-content: center;`;
           }
-          return `background-color: ${color}; border: none; color: white; display: flex; align-items: center; justify-content: center;`;
+          return `background: ${color} !important; border: none !important; color: white !important; display: flex; align-items: center; justify-content: center;`;
         }
       }
 
