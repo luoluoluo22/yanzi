@@ -87,6 +87,13 @@ rm -rf dmg_temp && mkdir -p dmg_temp && ditto Yanzi.app dmg_temp/Yanzi.app && ln
 
 官网是纯静态文件，源码在 `website/`。
 
+> [!NOTE]
+> **自动部署**：本项目已在 Cloudflare Pages 绑定了 GitHub 仓库。因此，**只需将最新修改推送到 GitHub 仓库的 `main` 分支，Cloudflare 就会自动触发构建与部署更新，无需任何手动部署操作**。
+
+### 本地手动发布（备份方案）
+
+如果遇到特殊情况需要进行本地手动发布或紧急回退，可以使用以下脚本：
+
 ```powershell
 .\scripts\publish-website.ps1
 ```

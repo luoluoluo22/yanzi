@@ -12,11 +12,13 @@ This file records the Cloudflare deployment details that were verified during th
 - Root config used by Cloudflare Builds: `wrangler.jsonc`
 - Backend folder config: `cloudflare/wrangler.toml`
 
-## Cloudflare Builds
+## Cloudflare Builds (Auto Deployment)
 
-The backend Worker is connected to GitHub repository `luoluoluo22/yanzi`.
+The GitHub repository `luoluoluo22/yanzi` is connected directly to Cloudflare. Pushing new commits to the `main` branch will automatically trigger builds and deployments for both the Worker and the Pages website on Cloudflare.
 
-Use these Build settings for the backend Worker:
+### Backend Worker
+
+Use these Build settings for the backend Worker (`openquickhost-sync`) in the Cloudflare dashboard:
 
 - Build command: empty
 - Deploy command: `npx wrangler deploy`
@@ -31,7 +33,16 @@ Both cause `root directory not found`.
 Do not use `cd cloudflare && npx wrangler deploy` when Cloudflare Builds already
 has a root directory configured.
 
-Known working deployment:
+### Website (Cloudflare Pages)
+
+The Pages project `openquickhost-site` is also connected to the repository:
+
+- Production branch: `main`
+- Build command: empty (static assets only)
+- Output directory: `/website`
+- Git deployments are active; pushing changes to the `website/` directory will automatically update the live site.
+
+Known working worker deployment:
 
 - Commit: `568ef01`
 - Worker version: `aa1f2f57-8675-4161-a6fc-337e68f4ca25`
