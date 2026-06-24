@@ -86,9 +86,9 @@
     }
 
     .store-card-icon-wrapper {
-      width: 110px;
-      height: 110px;
-      border-radius: 28px;
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
       border: 1px solid var(--border);
       display: flex;
       align-items: center;
@@ -106,9 +106,9 @@
     }
 
     .store-card-icon {
-      width: 60px;
-      height: 60px;
-      font-size: 2.5rem;
+      width: 30px;
+      height: 30px;
+      font-size: 1.25rem;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -336,7 +336,7 @@
 
         article.innerHTML = `
           <div class="store-card-icon-wrapper" style="${getIconWrapperStyle(item, false)}">
-            <div class="store-card-icon" style="color: inherit;">${renderIconMarkup(item, 60)}</div>
+            <div class="store-card-icon" style="color: inherit;">${renderIconMarkup(item, 30)}</div>
           </div>
           <div class="store-card-name">${escapeHtml(item.display_name)}</div>
           <div class="store-card-version">v${escapeHtml(item.latest_version)}</div>
@@ -669,7 +669,7 @@
       }
 
       function normalizeCssColor(hex) {
-        if (!hex || typeof hex !== "string") return "#8B5CF6";
+        if (!hex || typeof hex !== "string") return "#38BDF8";
         hex = hex.trim();
         if (hex.startsWith("#") && hex.length === 9) {
           // #FFEC4899 (ARGB) -> #EC4899 (RGB)
@@ -682,7 +682,7 @@
         const icon = String(item.icon || item.manifest?.icon || "").trim();
         const isDefaultLogo = !icon || icon.includes("logo-white-transparent") || icon.includes("logo-white.png") || !/^https?:\/\//i.test(icon);
         const isImage = !isDefaultLogo && /^https?:\/\//i.test(icon);
-        const rawColor = item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex || "#8B5CF6";
+        const rawColor = item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex || "#38BDF8";
         const color = normalizeCssColor(rawColor);
         
         if (isImage) {
