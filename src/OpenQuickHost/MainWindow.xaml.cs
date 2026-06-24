@@ -202,6 +202,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _selectedSearchScope = SearchScopes.First();
         SelectedCommand = FilteredCommands.FirstOrDefault();
         DataContext = this;
+        ExtensionIconLibrary.RemoteIconDownloaded += (url, image) =>
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                var matchedItems = _allCommands
+                    .Where(x => string.Equals(x.IconReference, url, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                foreach (var item in matchedItems)
+                {
+                    item.SetIconSource(image);
+                }
+            });
+        };
         ApplyFilter(string.Empty);
         Loaded += MainWindow_Loaded;
         Activated += MainWindow_Activated;

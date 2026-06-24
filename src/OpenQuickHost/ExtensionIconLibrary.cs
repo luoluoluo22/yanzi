@@ -14,7 +14,7 @@ internal static class ExtensionIconLibrary
 {
     private static readonly HttpClient IconHttpClient = new()
     {
-        Timeout = TimeSpan.FromSeconds(3)
+        Timeout = TimeSpan.FromSeconds(15)
     };
 
     private static readonly IReadOnlyDictionary<string, string> MdiIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -173,6 +173,8 @@ internal static class ExtensionIconLibrary
 
     private static readonly Dictionary<string, Geometry> GeometryCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, ImageSource?> ImageCache = new(StringComparer.OrdinalIgnoreCase);
+    public static event Action<string, ImageSource?>? RemoteIconDownloaded;
+    private static readonly HashSet<string> DownloadingUrls = [];
     private static readonly Lazy<IReadOnlyDictionary<string, string>> FullMdiIcons = new(LoadFullMdiIcons);
 
     public static IReadOnlyList<ExtensionIconOption> GetBuiltInOptions()
@@ -362,7 +364,8 @@ internal static class ExtensionIconLibrary
                extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase) ||
                extension.Equals(".gif", StringComparison.OrdinalIgnoreCase) ||
                extension.Equals(".webp", StringComparison.OrdinalIgnoreCase) ||
-               extension.Equals(".ico", StringComparison.OrdinalIgnoreCase);
+               extension.Equals(".ico", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".img", StringComparison.OrdinalIgnoreCase);
     }
 
     private static BitmapImage LoadBitmapImage(string resolvedPath)
@@ -606,7 +609,7 @@ internal static class ExtensionIconLibrary
         }
     }
 
-    private static string ResolveCachedRemoteImage(Uri uri)
+    private static string? ResolveCachedRemoteImage(Uri uri)
     {
         var cacheDirectory = Path.Combine(HostAssets.RootPath, "icon-cache");
         Directory.CreateDirectory(cacheDirectory);
@@ -616,21 +619,59 @@ internal static class ExtensionIconLibrary
             return new Uri(cachePath).AbsoluteUri;
         }
 
-        try
+        var url = uri.AbsoluteUri;
+        lock (DownloadingUrls)
         {
-            var bytes = IconHttpClient.GetByteArrayAsync(uri).GetAwaiter().GetResult();
-            if (bytes.Length > 0)
+            if (DownloadingUrls.Contains(url))
             {
-                File.WriteAllBytes(cachePath, bytes);
-                return new Uri(cachePath).AbsoluteUri;
+                return null;
             }
-        }
-        catch
-        {
-            // Fall back to direct URL so WPF can still attempt to load the icon.
+            DownloadingUrls.Add(url);
         }
 
-        return uri.AbsoluteUri;
+        Task.Run(async () =>
+        {
+            try
+            {
+                var bytes = await IconHttpClient.GetByteArrayAsync(uri);
+                if (bytes.Length > 0)
+                {
+                    File.WriteAllBytes(cachePath, bytes);
+
+                    var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                    if (dispatcher != null)
+                    {
+                        dispatcher.Invoke(() =>
+                        {
+                            var resolvedPath = new Uri(cachePath).AbsoluteUri;
+                            var bitmap = LoadBitmapImage(resolvedPath);
+                            ImageCache[resolvedPath] = bitmap;
+                            RemoteIconDownloaded?.Invoke(url, bitmap);
+                        });
+                    }
+                    else
+                    {
+                        var resolvedPath = new Uri(cachePath).AbsoluteUri;
+                        var bitmap = LoadBitmapImage(resolvedPath);
+                        ImageCache[resolvedPath] = bitmap;
+                        RemoteIconDownloaded?.Invoke(url, bitmap);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to download remote icon {url}: {ex.Message}");
+            }
+            finally
+            {
+                lock (DownloadingUrls)
+                {
+                    DownloadingUrls.Remove(url);
+                }
+            }
+        });
+
+        return null;
     }
 
     private static string ComputeCacheName(string value)
