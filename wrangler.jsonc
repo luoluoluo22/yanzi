@@ -1,26 +1,7 @@
 {
-  "name": "openquickhost-sync",
-  "main": "cloudflare/src/index.js",
-  "compatibility_date": "2026-04-23",
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "openquickhost-sync-db",
-      "database_id": "512f99ac-4f5f-4e30-affb-58fc4da94bfa"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "PACKAGES",
-      "bucket_name": "openquickhost-sync-assets"
-    }
-  ],
-  "migrations": [
-    {
-      "tag": "v1_device_relay",
-      "new_sqlite_classes": [
-        "DeviceRelayRoom"
-      ]
-    }
-  ]
+  "name": "yanzi",
+  "compatibility_date": "2026-06-19",
+  "assets": {
+    "directory": "./website"
+  }
 }
