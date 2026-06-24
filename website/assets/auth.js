@@ -282,6 +282,10 @@
     if (loginModal) loginModal.classList.remove("is-visible");
   }
 
+  function hideProfileModal() {
+    if (profileModal) profileModal.classList.remove("is-visible");
+  }
+
   async function performLogin() {
     const email = document.getElementById("modal-email").value.trim();
     const password = document.getElementById("modal-password").value;
