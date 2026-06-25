@@ -197,7 +197,7 @@
   transform: scale(1.05);
 }
 
-/* 首页下载区：使用内置平台图标，并隐藏按钮上方标题 */
+/* 首页下载区：使用真实平台图标，并隐藏按钮上方标题 */
 #download.download-section-minimal .download-panel > strong {
   display: none !important;
 }
@@ -210,11 +210,11 @@
 }
 
 #download.download-section-minimal .minimal-download-grid .download-panel:not(.download-panel-mobile) .download-platform-icon {
-  background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"%3E%3Cpath fill="%2300A4EF" d="M3 5.1 10.9 4v7.5H3V5.1Z"/%3E%3Cpath fill="%237FBA00" d="M11.9 3.85 21 2.55v8.95h-9.1V3.85Z"/%3E%3Cpath fill="%23F25022" d="M3 12.5h7.9V20L3 18.9v-6.4Z"/%3E%3Cpath fill="%23FFB900" d="M11.9 12.5H21v8.95l-9.1-1.3V12.5Z"/%3E%3C/svg%3E') !important;
+  background-image: url("https://api.iconify.design/logos:microsoft-windows-icon.svg") !important;
 }
 
 #download.download-section-minimal .minimal-download-grid .download-panel.download-panel-mobile .download-platform-icon {
-  background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"%3E%3Cpath fill="%23A4C639" d="M17.6 9.48l1.84-3.18a.5.5 0 0 0-.86-.5l-1.88 3.26A7.7 7.7 0 0 0 12 7.5a7.7 7.7 0 0 0-4.7 1.56L5.42 5.8a.5.5 0 0 0-.86.5L6.4 9.48A7.7 7.7 0 0 0 4.5 14.5V16h15v-1.5a7.7 7.7 0 0 0-1.9-5.02ZM8.5 13a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm7 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2ZM5.5 17h13v3A1.5 1.5 0 0 1 17 21.5H7A1.5 1.5 0 0 1 5.5 20v-3Z"/%3E%3C/svg%3E') !important;
+  background-image: url("https://api.iconify.design/logos:android-icon.svg") !important;
 }
 
 #download.download-section-minimal .button.primary {
