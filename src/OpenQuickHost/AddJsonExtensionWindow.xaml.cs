@@ -102,6 +102,14 @@ public partial class AddJsonExtensionWindow : Window
                 AdvancedModeTab.IsChecked = true;
                 SimpleModePanel.Visibility = Visibility.Collapsed;
                 AdvancedModePanel.Visibility = Visibility.Visible;
+                _manualMode = true;
+            }
+            else
+            {
+                SimpleModeTab.IsChecked = true;
+                SimpleModePanel.Visibility = Visibility.Visible;
+                AdvancedModePanel.Visibility = Visibility.Collapsed;
+                _manualMode = false;
             }
 
             // 确保 AI 编辑模式下 JSON 输入框为空（新增模式）
@@ -157,9 +165,7 @@ public partial class AddJsonExtensionWindow : Window
             using var document = JsonDocument.Parse(initialJson);
             var root = document.RootElement;
             return root.ValueKind == JsonValueKind.Object &&
-                   (root.TryGetProperty("app", out _) ||
-                    root.TryGetProperty("hostedViewXaml", out _) ||
-                    root.TryGetProperty("hostedViewV2", out _));
+                   root.TryGetProperty("app", out _);
         }
         catch
         {
@@ -645,11 +651,6 @@ public partial class AddJsonExtensionWindow : Window
         if (!string.IsNullOrWhiteSpace(HotkeyBehaviorBox.Text))
         {
             parts.Add($"热键行为是：{HotkeyBehaviorBox.Text.Trim()}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(IdBox.Text))
-        {
-            parts.Add($"扩展 ID 倾向于使用：{IdBox.Text.Trim()}");
         }
 
         return parts.Count == 0
@@ -1397,11 +1398,6 @@ public partial class AddJsonExtensionWindow : Window
 
     private LocalExtensionManifest BuildManifestFromForm()
     {
-        if (string.IsNullOrWhiteSpace(IdBox.Text))
-        {
-            throw new InvalidOperationException("扩展 ID 不能为空。");
-        }
-
         if (string.IsNullOrWhiteSpace(NameBox.Text))
         {
             throw new InvalidOperationException("扩展名称不能为空。");
@@ -1414,7 +1410,7 @@ public partial class AddJsonExtensionWindow : Window
 
         return new LocalExtensionManifest
         {
-            Id = IdBox.Text.Trim(),
+            Id = GetOrCreateFormExtensionId(),
             Name = NameBox.Text.Trim(),
             Version = string.IsNullOrWhiteSpace(VersionBox.Text) ? "0.1.0" : VersionBox.Text.Trim(),
             Category = NullIfEmpty(CategoryBox.Text),
@@ -1450,6 +1446,18 @@ public partial class AddJsonExtensionWindow : Window
             SearchProvider = _manualSearchProvider,
             MouseGesture = NormalizeMouseGestureForManifest(_manualMouseGesture)
         };
+    }
+
+    private string GetOrCreateFormExtensionId()
+    {
+        if (!string.IsNullOrWhiteSpace(IdBox.Text))
+        {
+            return IdBox.Text.Trim();
+        }
+
+        var id = LocalExtensionCatalog.CreateSystemExtensionId();
+        IdBox.Text = id;
+        return id;
     }
 
     private LocalExtensionManifest? TryParsePreservedManifest()
@@ -1508,7 +1516,9 @@ public partial class AddJsonExtensionWindow : Window
 
     private void ApplyManifestToForm(LocalExtensionManifest manifest)
     {
-        IdBox.Text = manifest.Id;
+        IdBox.Text = string.IsNullOrWhiteSpace(manifest.Id)
+            ? LocalExtensionCatalog.CreateSystemExtensionId()
+            : manifest.Id;
         NameBox.Text = manifest.Name;
         VersionBox.Text = manifest.Version;
         CategoryBox.Text = manifest.Category ?? string.Empty;

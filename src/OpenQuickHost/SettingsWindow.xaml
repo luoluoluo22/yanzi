@@ -3403,17 +3403,12 @@
                                                                 </Grid>
                                                             </Border>
 
-                                                            <!-- Title and ID -->
+                                                            <!-- Title -->
                                                             <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
                                                                 <TextBlock Text="{Binding Title}" 
                                                                            Foreground="{DynamicResource BrushTextMain}" 
                                                                            FontSize="{DynamicResource FontSizeNormalPlus}" 
                                                                            FontWeight="SemiBold" 
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                                <TextBlock Text="{Binding ExtensionId}" 
-                                                                           Foreground="#FF6B7280" 
-                                                                           FontSize="{DynamicResource FontSizeSmall}" 
-                                                                           Margin="0,2,0,0"
                                                                            TextTrimming="CharacterEllipsis"/>
                                                             </StackPanel>
 
@@ -3539,7 +3534,6 @@
                                                         </Border>
                                                         <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
                                                             <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                                            <TextBlock Text="{Binding ExtensionId}" Foreground="#FF6B7280" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
                                                             <TextBlock Text="{Binding DeletedAtLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
@@ -3614,7 +3608,6 @@
 
                                             <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding ExtensionId}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
                                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                                     <Border Style="{StaticResource PublishedBadgeStyle}" Margin="0,0,6,0" Visibility="{Binding PublishedBadgeVisibility}">
                                                         <TextBlock Text="已发布" Foreground="#FF16A34A" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold"/>

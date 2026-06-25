@@ -100,3 +100,19 @@ Notion、聊天软件、协作文档和浏览器书签类产品通常有几个�
 - 引入增量变更日志。
 - 支持离线编辑队列和对象级冲突提示。
 - 支持用户选择恢复某个对象或某个时间点的配置。
+
+## 第三阶段实施记录
+
+当前先在个人同步仓库落地可审计增量记录，暂不改变账号云端 API：
+
+- `state/config-manifest.json`
+  - 记录当前配置对象索引、对象 hash、大小、更新时间、来源设备和 revision。
+- `state/config-changes/*.json`
+  - 每次主配置同步都会追加一条 change set。
+  - change set 包含 revision、来源设备、同步原因、对象 id、操作类型、路径和 hash。
+- `state/config-objects/*.json`
+  - 继续作为对象化配置的实际数据源。
+- `state/launcher-config.json`
+  - 继续写入，作为旧版本客户端兼容 fallback。
+
+这一阶段的价值是先让同步具备“可诊断、可审计、可回滚基础数据”。后续设置页可以读取 manifest 和 changes，展示最后同步来源、对象版本、历史恢复点；再进一步接入本地 pending queue 和 Cloudflare 对象级 API。

@@ -701,7 +701,19 @@ public partial class App : WpfApplication
 
         notifyIcon.Icon = TryCreateNotifyIcon() ?? SystemIcons.Application;
         
-        notifyIcon.DoubleClick += (_, _) => ToggleListenerServices();
+        notifyIcon.MouseClick += (_, e) =>
+        {
+            if (e.Button == Forms.MouseButtons.Left)
+            {
+                window.ShowMousePanel();
+            }
+        };
+
+        notifyIcon.DoubleClick += (_, _) =>
+        {
+            ToggleListenerServices();
+            window.HideMousePanel();
+        };
         
         // 右键弹出 WPF ContextMenu
         notifyIcon.MouseUp += (s, e) =>
@@ -720,6 +732,8 @@ public partial class App : WpfApplication
 
         return notifyIcon;
     }
+
+
 
     public void ShowDesktopNotification(string title, string message, Forms.ToolTipIcon icon = Forms.ToolTipIcon.Info)
     {

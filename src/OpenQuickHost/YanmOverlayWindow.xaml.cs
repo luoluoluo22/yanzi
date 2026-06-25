@@ -369,7 +369,16 @@ public partial class YanmOverlayWindow : Window
         {
             foreach (var key in keys)
             {
-                SendComponentState(view.Id, key);
+                if (TryGetPublicComponentStateKey(view.Id, key, out var publicKey))
+                {
+                    SendComponentState(view.Id, publicKey);
+                    continue;
+                }
+
+                if (!IsScopedComponentStateKey(key))
+                {
+                    SendComponentState(view.Id, key);
+                }
             }
         }
         HostAssets.AppendLog($"Yanm: component state broadcast, components={_componentViews.Count}, keys={keys.Count}.");
@@ -980,6 +989,7 @@ public partial class YanmOverlayWindow : Window
                     var setStateValue = root.TryGetProperty("value", out var setValueProperty) ? setValueProperty.GetString() ?? string.Empty : string.Empty;
                     HostAssets.AppendLog($"Yanm: component state queued, component={component.Title}, key={setStateKey}, valueLength={setStateValue.Length}.");
                     QueueComponentStateSave(
+                        componentId,
                         setStateKey,
                         setStateValue);
                     break;
@@ -1026,7 +1036,7 @@ public partial class YanmOverlayWindow : Window
         {
             "system.info" => BuildSystemInfoResult(),
             "state.get" => BuildStateGetResult(componentId, args),
-            "state.set" => BuildStateSetResult(args),
+            "state.set" => BuildStateSetResult(componentId, args),
             "clipboard.read" => ClipboardService.GetText() ?? string.Empty,
             "clipboard.write" => BuildClipboardWriteResult(args),
             "desktop.list" => BuildDesktopListResult(),
@@ -1062,12 +1072,17 @@ public partial class YanmOverlayWindow : Window
 
         var settings = AppSettingsStore.Load();
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        settings.Yanm.ComponentState.TryGetValue(key, out var value);
+        var scopedKey = ToComponentStateStorageKey(componentId, key);
+        if (!settings.Yanm.ComponentState.TryGetValue(scopedKey, out var value))
+        {
+            settings.Yanm.ComponentState.TryGetValue(key, out value);
+        }
+
         HostAssets.AppendLog($"Yanm: state.get, component={FindCurrentComponent(componentId)?.Title ?? componentId}, key={key}.");
         return new { key, value = value ?? string.Empty };
     }
 
-    private object BuildStateSetResult(JsonElement args)
+    private object BuildStateSetResult(string componentId, JsonElement args)
     {
         var key = GetInvokeString(args, "key");
         var value = GetInvokeString(args, "value");
@@ -1076,7 +1091,7 @@ public partial class YanmOverlayWindow : Window
             throw new InvalidOperationException("state.set 缺少 key。");
         }
 
-        QueueComponentStateSave(key, value);
+        QueueComponentStateSave(componentId, key, value);
         return new { key, value };
     }
 
@@ -1183,19 +1198,24 @@ public partial class YanmOverlayWindow : Window
 
         var settings = AppSettingsStore.Load();
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        settings.Yanm.ComponentState.TryGetValue(key, out var value);
+        var scopedKey = ToComponentStateStorageKey(componentId, key);
+        if (!settings.Yanm.ComponentState.TryGetValue(scopedKey, out var value))
+        {
+            settings.Yanm.ComponentState.TryGetValue(key, out value);
+        }
+
         HostAssets.AppendLog($"Yanm: component state read, component={FindCurrentComponent(componentId)?.Title ?? componentId}, key={key}, valueLength={value?.Length ?? 0}.");
         return value ?? string.Empty;
     }
 
-    private void QueueComponentStateSave(string key, string value)
+    private void QueueComponentStateSave(string componentId, string key, string value)
     {
-        if (string.IsNullOrWhiteSpace(key))
+        if (string.IsNullOrWhiteSpace(componentId) || string.IsNullOrWhiteSpace(key))
         {
             return;
         }
 
-        _pendingComponentState[key] = value ?? string.Empty;
+        _pendingComponentState[ToComponentStateStorageKey(componentId, key)] = value ?? string.Empty;
         _componentStateSaveTimer ??= new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(800)
@@ -1204,6 +1224,47 @@ public partial class YanmOverlayWindow : Window
         _componentStateSaveTimer.Tick += ComponentStateSaveTimer_Tick;
         _componentStateSaveTimer.Stop();
         _componentStateSaveTimer.Start();
+    }
+
+    private static string ToComponentStateStorageKey(string componentId, string key)
+    {
+        var normalizedComponentId = (componentId ?? string.Empty).Trim();
+        var normalizedKey = (key ?? string.Empty).Trim();
+        return $"component:{normalizedComponentId}:{normalizedKey}";
+    }
+
+    private static bool TryGetPublicComponentStateKey(string componentId, string storageKey, out string key)
+    {
+        var prefix = $"component:{(componentId ?? string.Empty).Trim()}:";
+        if (!string.IsNullOrWhiteSpace(storageKey) &&
+            storageKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            key = storageKey[prefix.Length..];
+            return !string.IsNullOrWhiteSpace(key);
+        }
+
+        key = string.Empty;
+        return false;
+    }
+
+    private static bool IsScopedComponentStateKey(string key)
+    {
+        return !string.IsNullOrWhiteSpace(key) &&
+               key.StartsWith("component:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void RemoveComponentState(Dictionary<string, string> state, string componentId)
+    {
+        if (string.IsNullOrWhiteSpace(componentId))
+        {
+            return;
+        }
+
+        var prefix = $"component:{componentId.Trim()}:";
+        foreach (var key in state.Keys.Where(item => item.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            state.Remove(key);
+        }
     }
 
     private void ComponentStateSaveTimer_Tick(object? sender, EventArgs e)
@@ -1881,6 +1942,8 @@ public partial class YanmOverlayWindow : Window
 
         var settings = AppSettingsStore.Load();
         settings.Yanm.Components.RemoveAll(item => item.Id.Equals(component.Id, StringComparison.OrdinalIgnoreCase));
+        RemoveComponentState(settings.Yanm.ComponentState, component.Id);
+        RemoveComponentState(_pendingComponentState, component.Id);
         SaveSettings(settings, "yanm-component-deleted");
     }
 

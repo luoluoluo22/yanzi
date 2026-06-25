@@ -22,6 +22,8 @@ public static class LocalExtensionCatalog
 
     public static string CatalogRootPath => ExtensionPackageService.ExtensionsRootPath;
 
+    public static string CreateSystemExtensionId() => $"ext_{Guid.NewGuid():N}";
+
     public static void EnsureSampleExtension()
     {
         Directory.CreateDirectory(CatalogRootPath);
@@ -587,11 +589,15 @@ public static class YanziAction
             });
     }
 
-    public static CommandItem SaveJsonExtension(string json)
+    public static CommandItem SaveJsonExtension(string json, bool forceNewSystemId = false)
     {
         Directory.CreateDirectory(CatalogRootPath);
 
         var manifest = ParseManifest(json);
+        if (forceNewSystemId || string.IsNullOrWhiteSpace(manifest.Id))
+        {
+            manifest = manifest with { Id = CreateAvailableSystemExtensionId() };
+        }
 
         var extensionDirectory = Path.Combine(CatalogRootPath, manifest.Id);
         Directory.CreateDirectory(extensionDirectory);
@@ -795,7 +801,7 @@ public static class YanziAction
 
         if (string.IsNullOrWhiteSpace(manifest.Id))
         {
-            throw new InvalidOperationException("扩展必须包含 id。");
+            manifest = manifest with { Id = CreateSystemExtensionId() };
         }
 
         if (string.IsNullOrWhiteSpace(manifest.Name))
@@ -817,6 +823,18 @@ public static class YanziAction
         }
 
         return manifest;
+    }
+
+    private static string CreateAvailableSystemExtensionId()
+    {
+        string id;
+        do
+        {
+            id = CreateSystemExtensionId();
+        }
+        while (Directory.Exists(Path.Combine(CatalogRootPath, id)));
+
+        return id;
     }
 
     private static LocalExtensionManifest NormalizeManifestForPersistence(LocalExtensionManifest manifest, string extensionDirectory)

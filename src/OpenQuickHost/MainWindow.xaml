@@ -401,6 +401,9 @@
                                                       Tag="{Binding}"
                                                       Click="RemovePinnedSearchScopeMenuItem_Click"
                                                       Visibility="{Binding IsPinnedCommand, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <MenuItem Header="编辑标签..."
+                                                      Tag="{Binding}"
+                                                      Click="EditSearchScopesMenuItem_Click" />
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                     <Button.Style>
@@ -428,8 +431,8 @@
                                                         </Border>
                                                         <ControlTemplate.Triggers>
                                                             <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
-                                                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushTagHoverBG}" />
+                                                                <Setter TargetName="Root" Property="BorderBrush" Value="#403B82F6" />
                                                                 <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                                             </Trigger>
                                                         </ControlTemplate.Triggers>
@@ -438,9 +441,9 @@
                                             </Setter>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource BrushListViewItemSelectedBorder}" />
-                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTagSelectedText}" />
+                                                    <Setter Property="Background" Value="#FF3B82F6" />
+                                                    <Setter Property="BorderBrush" Value="#FF3B82F6" />
+                                                    <Setter Property="Foreground" Value="White" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>

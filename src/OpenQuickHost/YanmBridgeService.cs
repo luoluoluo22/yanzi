@@ -24,7 +24,7 @@ public sealed class YanmBridgeService
     private readonly Func<string, string, string> _getComponentState;
     private readonly Action<string, string> _sendComponentState;
     private readonly Action<string> _sendSystemInfo;
-    private readonly Action<string, string> _queueComponentStateSave;
+    private readonly Action<string, string, string> _queueComponentStateSave;
     private readonly Action<string, string, bool, object?, string?> _sendReply;
     private readonly Action<CommandItem, string?, string> _executeCommandExternally;
     private readonly Action<string> _log;
@@ -35,7 +35,7 @@ public sealed class YanmBridgeService
         Func<string, string, string> getComponentState,
         Action<string, string> sendComponentState,
         Action<string> sendSystemInfo,
-        Action<string, string> queueComponentStateSave,
+        Action<string, string, string> queueComponentStateSave,
         Action<string, string, bool, object?, string?> sendReply,
         Action<CommandItem, string?, string> executeCommandExternally,
         Action<string> log)
@@ -82,7 +82,7 @@ public sealed class YanmBridgeService
         {
             "system.info" => BuildSystemInfoResult(),
             "state.get" => BuildStateGetResult(componentId, args),
-            "state.set" => BuildStateSetResult(args),
+            "state.set" => BuildStateSetResult(componentId, args),
             "clipboard.read" => ClipboardService.GetText() ?? string.Empty,
             "clipboard.write" => BuildClipboardWriteResult(args),
             "desktop.list" => BuildDesktopListResult(),
@@ -132,7 +132,7 @@ public sealed class YanmBridgeService
         return new { key, value };
     }
 
-    private object BuildStateSetResult(JsonElement args)
+    private object BuildStateSetResult(string componentId, JsonElement args)
     {
         var key = GetArgString(args, "key");
         var value = GetArgString(args, "value");
@@ -141,7 +141,7 @@ public sealed class YanmBridgeService
             throw new InvalidOperationException("state.set 缺少 key。");
         }
 
-        _queueComponentStateSave(key, value);
+        _queueComponentStateSave(componentId, key, value);
         return new { key, value };
     }
 

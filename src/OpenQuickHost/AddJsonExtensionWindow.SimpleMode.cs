@@ -548,15 +548,9 @@ public partial class AddJsonExtensionWindow
     {
         if (!TypeTemplates.TryGetValue(typeKey, out var tpl)) return;
 
-        var newId = $"{tpl.IdPrefix}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
-
-        if (_isEditMode && !string.IsNullOrWhiteSpace(IdBox.Text))
+        if (!_isEditMode && string.IsNullOrWhiteSpace(IdBox.Text))
         {
-            _lastTemplateSnapshot["Id"] = IdBox.Text;
-        }
-        else
-        {
-            SetIfDefaultOrEmpty(IdBox, newId, "Id", forceOverride, prefixMatch: tpl.IdPrefix);
+            IdBox.Text = LocalExtensionCatalog.CreateSystemExtensionId();
         }
 
         SetIfDefaultOrEmpty(NameBox, tpl.Name, "Name", forceOverride);
@@ -586,12 +580,6 @@ public partial class AddJsonExtensionWindow
         if (!TypeTemplates.TryGetValue(typeKey, out var tpl))
         {
             return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(IdBox.Text) &&
-            IdBox.Text.StartsWith(tpl.IdPrefix + "-", StringComparison.Ordinal))
-        {
-            _lastTemplateSnapshot["Id"] = IdBox.Text;
         }
 
         _lastTemplateSnapshot["Name"] = tpl.Name;
@@ -1597,7 +1585,6 @@ public partial class AddJsonExtensionWindow
             DescriptionSimpleBox.Text = DescriptionBox.Text;
             IconSimpleBox.Text = IconBox.Text;
             AccentHexSimpleBox.Text = AccentHexBox.Text;
-            IdSimpleBox.Text = IdBox.Text;
             VersionSimpleBox.Text = VersionBox.Text;
             CategorySimpleBox.Text = CategoryBox.Text;
             KeywordsSimpleBox.Text = KeywordsBox.Text;

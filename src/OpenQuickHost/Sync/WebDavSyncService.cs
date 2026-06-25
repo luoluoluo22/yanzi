@@ -504,6 +504,10 @@ public sealed class WebDavSyncService
         var remote = remoteBytes is { Length: > 0 }
             ? JsonSerializer.Deserialize<WebDavLauncherConfigSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions)
             : null;
+        var hasRemoteObjects = await HasLauncherConfigObjectsAsync(cancellationToken);
+        remote = hasRemoteObjects
+            ? await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken) ?? remote
+            : remote;
 
         if (remote?.Config == null)
         {
@@ -536,6 +540,15 @@ public sealed class WebDavSyncService
         RestoreMetadata(remote.Config, remoteMetadata);
         if (equivalent)
         {
+            if (!hasRemoteObjects && remote?.Config != null)
+            {
+                var backfillUpdatedAtUtc = remoteUpdatedAtUtc == DateTime.MinValue ? DateTime.UtcNow : remoteUpdatedAtUtc;
+                await UploadLauncherConfigAsync(localConfig, backfillUpdatedAtUtc, cancellationToken);
+                SaveLauncherConfigUpdatedAtUtc(backfillUpdatedAtUtc);
+                HostAssets.AppendLog("WebDAV launcher config objects backfilled from legacy snapshot.");
+                return (true, false);
+            }
+
             if (explicitLocalUpdatedAtUtc == null && remoteUpdatedAtUtc > DateTime.MinValue)
             {
                 SaveLauncherConfigUpdatedAtUtc(remoteUpdatedAtUtc);
@@ -592,6 +605,45 @@ public sealed class WebDavSyncService
             UpdatedAtUtc = updatedAtUtc.ToString("O"),
             Config = config
         };
+        var writes = LauncherConfigObjectStore.PrepareWrites(config, updatedAtUtc);
+        foreach (var write in writes)
+        {
+            using var objectRequest = CreateRequest(HttpMethod.Put, write.Path);
+            objectRequest.Content = new ByteArrayContent(write.Bytes);
+            objectRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            using var objectResponse = await _httpClient.SendAsync(objectRequest, cancellationToken);
+            if (!objectResponse.IsSuccessStatusCode)
+            {
+                await ThrowWebDavFailureAsync(objectRequest, objectResponse, cancellationToken);
+            }
+        }
+
+        var manifestBytes = LauncherConfigObjectStore.SerializeManifest(
+            LauncherConfigObjectStore.CreateManifest(writes, updatedAtUtc));
+        using (var manifestRequest = CreateRequest(HttpMethod.Put, LauncherConfigObjectStore.ManifestPath))
+        {
+            manifestRequest.Content = new ByteArrayContent(manifestBytes);
+            manifestRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            using var manifestResponse = await _httpClient.SendAsync(manifestRequest, cancellationToken);
+            if (!manifestResponse.IsSuccessStatusCode)
+            {
+                await ThrowWebDavFailureAsync(manifestRequest, manifestResponse, cancellationToken);
+            }
+        }
+
+        var changeBytes = LauncherConfigObjectStore.SerializeChangeSet(
+            LauncherConfigObjectStore.CreateChangeSet(writes, updatedAtUtc, "launcher-config-sync"));
+        using (var changeRequest = CreateRequest(HttpMethod.Put, LauncherConfigObjectStore.GetChangePath(updatedAtUtc)))
+        {
+            changeRequest.Content = new ByteArrayContent(changeBytes);
+            changeRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            using var changeResponse = await _httpClient.SendAsync(changeRequest, cancellationToken);
+            if (!changeResponse.IsSuccessStatusCode)
+            {
+                await ThrowWebDavFailureAsync(changeRequest, changeResponse, cancellationToken);
+            }
+        }
+
         var json = JsonSerializer.Serialize(snapshot, JsonOptions);
         using var request = CreateRequest(HttpMethod.Put, "state/launcher-config.json");
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -608,6 +660,7 @@ public sealed class WebDavSyncService
         var remote = remoteBytes is { Length: > 0 }
             ? JsonSerializer.Deserialize<WebDavLauncherConfigSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions)
             : null;
+        remote = await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken) ?? remote;
         return remote?.Config?.Yanm == null
             ? null
             : new WebDavYanmStateSnapshot
@@ -615,6 +668,48 @@ public sealed class WebDavSyncService
                 UpdatedAtUtc = remote.UpdatedAtUtc,
                 Yanm = remote.Config.Yanm
             };
+    }
+
+    private async Task<WebDavLauncherConfigSnapshot?> TryLoadLauncherConfigObjectsAsync(
+        CloudQuickPanelConfigSnapshot? baseSnapshot,
+        CancellationToken cancellationToken)
+    {
+        var objects = new List<LauncherConfigObjectEnvelope>();
+        foreach (var definition in LauncherConfigObjectStore.Definitions)
+        {
+            var bytes = await TryGetBytesAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+            var obj = LauncherConfigObjectStore.Deserialize(bytes);
+            if (obj != null)
+            {
+                objects.Add(obj);
+            }
+        }
+
+        var snapshot = LauncherConfigObjectStore.Compose(baseSnapshot, objects, out var updatedAtUtc);
+        return snapshot == null
+            ? null
+            : new WebDavLauncherConfigSnapshot
+            {
+                SchemaVersion = 2,
+                UpdatedAtUtc = updatedAtUtc == DateTime.MinValue
+                    ? snapshot.UpdatedAtUtc ?? string.Empty
+                    : updatedAtUtc.ToString("O"),
+                Config = snapshot
+            };
+    }
+
+    private async Task<bool> HasLauncherConfigObjectsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var definition in LauncherConfigObjectStore.Definitions)
+        {
+            var bytes = await TryGetBytesAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+            if (bytes is { Length: > 0 })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task UploadYanmStateAsync(

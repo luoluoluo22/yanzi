@@ -26,6 +26,7 @@
     
     <!-- Other Helper Theme Colors -->
     <SolidColorBrush x:Key="BrushListViewItemMouseOver" Color="#0D000000"/>
+    <SolidColorBrush x:Key="BrushTagHoverBG" Color="#FFE2ECFC"/>
     <SolidColorBrush x:Key="BrushListViewItemHeaderBG" Color="#FFF3F4F6"/>
     <SolidColorBrush x:Key="BrushListViewItemSelectedBG" Color="#202563EB"/>
     <SolidColorBrush x:Key="BrushListViewItemSelectedBorder" Color="#402563EB"/>

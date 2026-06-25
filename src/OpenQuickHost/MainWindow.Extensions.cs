@@ -60,7 +60,7 @@ public partial class MainWindow
     public CommandItem PersistJsonExtensionFromDialog(string json, bool isEditMode)
     {
         HostAssets.AppendLog($"PersistJsonExtensionFromDialog: start, editMode={isEditMode}.");
-        var command = LocalExtensionCatalog.SaveJsonExtension(json);
+        var command = LocalExtensionCatalog.SaveJsonExtension(json, forceNewSystemId: !isEditMode);
         QueueCSharpPrebuild(command, isEditMode ? "extension-edit" : "extension-add");
 
         if (!isEditMode)
@@ -260,7 +260,7 @@ public partial class MainWindow
             try
             {
                 HostAssets.AppendLog("ShowJsonExtensionEditorForOwner: persisting after dialog return.");
-                var command = LocalExtensionCatalog.SaveJsonExtension(dialog.JsonContent);
+                var command = LocalExtensionCatalog.SaveJsonExtension(dialog.JsonContent, forceNewSystemId: !isEditMode);
                 QueueCSharpPrebuild(command, isEditMode ? "extension-edit-fallback" : "extension-add-fallback");
                 UpsertLocalExtensionCommand(command);
                 StartMouseGestureService();
@@ -507,6 +507,11 @@ public partial class MainWindow
     public void ShowMousePanel()
     {
         _quickPanel?.ShowAtMouse();
+    }
+
+    public void HideMousePanel()
+    {
+        _quickPanel?.Hide();
     }
 
     private void BringMainWindowToFront()

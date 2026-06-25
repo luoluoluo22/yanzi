@@ -1002,7 +1002,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     return;
                 }
 
-                var command = LocalExtensionCatalog.SaveJsonExtension(manifest);
+                var command = LocalExtensionCatalog.SaveJsonExtension(manifest, forceNewSystemId: true);
                 _onMutated(command.ExtensionId);
                 MainWindow.QueueCSharpPrebuild(command, "api-add");
                 await WriteJsonAsync(response, 201, new { item = ToDto(command) });
@@ -1061,7 +1061,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     return;
                 }
 
-                var command = LocalExtensionCatalog.SaveJsonExtension(manifest);
+                var command = LocalExtensionCatalog.SaveJsonExtension(manifest, forceNewSystemId: false);
                 _onMutated(command.ExtensionId);
                 MainWindow.QueueCSharpPrebuild(command, "api-edit");
                 await WriteJsonAsync(response, 200, new { item = ToDto(command) });

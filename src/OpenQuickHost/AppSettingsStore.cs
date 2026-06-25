@@ -359,9 +359,10 @@ public static class AppSettingsStore
             settings.Yanm.DefaultComponentVersion = YanmSettings.CurrentDefaultComponentVersion;
         }
 
+        var yanmComponentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var component in settings.Yanm.Components)
         {
-            component.Id = string.IsNullOrWhiteSpace(component.Id) ? Guid.NewGuid().ToString("N") : component.Id;
+            component.Id = NormalizeYanmComponentId(component.Id, yanmComponentIds);
             component.Title = string.IsNullOrWhiteSpace(component.Title) ? "燕幕组件" : component.Title.Trim();
             component.X = Math.Max(0, component.X);
             component.Y = Math.Max(0, component.Y);
@@ -389,7 +390,56 @@ public static class AppSettingsStore
         settings.LastAutoBackupTime = (settings.LastAutoBackupTime ?? string.Empty).Trim();
         settings.CustomBackupDirectory = (settings.CustomBackupDirectory ?? string.Empty).Trim();
 
+        settings.SearchScopeConfigs ??= [];
+        var defaultList = new List<(string Key, string Label)>
+        {
+            ("all", "全部"),
+            ("extension", "扩展"),
+            ("application", "应用"),
+            ("file", "文件"),
+            ("system", "系统"),
+            ("yanyu", "燕语"),
+            ("ai", "AI对话"),
+            ("store", "扩展商店")
+        };
+
+        foreach (var def in defaultList)
+        {
+            if (!settings.SearchScopeConfigs.Any(c => string.Equals(c.Key, def.Key, StringComparison.OrdinalIgnoreCase)))
+            {
+                settings.SearchScopeConfigs.Add(new SearchScopeConfigItem { Key = def.Key, Label = def.Label, IsVisible = true, IsPinned = false });
+            }
+        }
+
+        settings.PinnedSearchScopeCommandIds ??= [];
+        foreach (var id in settings.PinnedSearchScopeCommandIds)
+        {
+            var key = $"pinned_{id}";
+            if (!settings.SearchScopeConfigs.Any(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase)))
+            {
+                settings.SearchScopeConfigs.Add(new SearchScopeConfigItem { Key = key, Label = $"固定:{id}", IsVisible = true, IsPinned = true });
+            }
+        }
+
+        settings.SearchScopeConfigs.RemoveAll(c => c.IsPinned && !settings.PinnedSearchScopeCommandIds.Contains(c.Key.Replace("pinned_", ""), StringComparer.OrdinalIgnoreCase));
+
         return settings;
+    }
+
+    private static string NormalizeYanmComponentId(string? id, HashSet<string> usedIds)
+    {
+        var normalized = id?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized) || usedIds.Contains(normalized))
+        {
+            do
+            {
+                normalized = YanmComponentSettings.CreateSystemComponentId();
+            }
+            while (usedIds.Contains(normalized));
+        }
+
+        usedIds.Add(normalized);
+        return normalized;
     }
 
     private static QuickPanelSlotItem? NormalizeSlotItem(QuickPanelSlotItem? item)
@@ -593,6 +643,8 @@ public sealed record AppSettings
 
     public List<string> PinnedSearchScopeCommandIds { get; set; } = new();
 
+    public List<SearchScopeConfigItem> SearchScopeConfigs { get; set; } = new();
+
     public List<string> RecentlyAddedExtensionIds { get; set; } = new();
 
     public List<string> UnreadNewExtensionIds { get; set; } = new();
@@ -677,6 +729,14 @@ public sealed class WindowSnapAssistCustomLayoutSettings
     public double WidthRatio { get; set; }
 
     public double HeightRatio { get; set; }
+}
+
+public sealed class SearchScopeConfigItem
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public bool IsVisible { get; set; } = true;
+    public bool IsPinned { get; set; } = false;
 }
 
 public sealed class QuickPanelGroupSettings
@@ -1062,7 +1122,7 @@ public static class MouseGestureTriggerModes
 
 public sealed class YanmComponentSettings
 {
-    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Id { get; set; } = CreateSystemComponentId();
 
     public string Title { get; set; } = "燕幕组件";
 
@@ -1081,6 +1141,8 @@ public sealed class YanmComponentSettings
     public string ScriptSource { get; set; } = string.Empty;
 
     public int RefreshIntervalSeconds { get; set; } = 300;
+
+    public static string CreateSystemComponentId() => $"cmp_{Guid.NewGuid():N}";
 
     public static List<YanmComponentSettings> CreateDefaultComponents()
     {

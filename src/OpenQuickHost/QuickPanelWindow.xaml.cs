@@ -58,6 +58,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private QuickPanelGroupItem? _selectedGlobalGroup;
     private QuickPanelGroupItem? _selectedContextGroup;
     private bool _isShowingGlobalFavorites;
+    private string? _lastLoadedContextGroupId;
+    private string? _lastLoadedGlobalGroupId;
+    private bool _needsReload = true;
     private bool _isShowingContextFavorites;
     private DateTime _suppressAutoHideUntilUtc = DateTime.MinValue;
     private DateTime _lastContextMenuClosedAt = DateTime.MinValue;
@@ -390,6 +393,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         _allGlobalSlots.AddRange(GlobalSlots);
         _allContextSlots.Clear();
         _allContextSlots.AddRange(ContextSlots);
+
+        var currentContextGroup = GetSelectedContextGroupSettings();
+        var currentGlobalGroup = GetSelectedGlobalGroupSettings();
+        _lastLoadedContextGroupId = currentContextGroup?.Id;
+        _lastLoadedGlobalGroupId = currentGlobalGroup?.Id;
+        _needsReload = false;
     }
 
     private SlotViewModel CreateSlotViewModel(
@@ -1907,9 +1916,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         try
         {
             _mainWindow.SyncStatus = "正在创建并注册副本...";
-            var timestamp = DateTime.Now.ToString("yyyyMMddHHmmssfff");
-            var originalId = parentCommand.ExtensionId;
-            var newId = $"{originalId}_copy_{timestamp}";
+            var newId = LocalExtensionCatalog.CreateSystemExtensionId();
             var catalogRoot = LocalExtensionCatalog.CatalogRootPath;
             var newDir = Path.Combine(catalogRoot, newId);
 
@@ -1939,10 +1946,10 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 HotkeyBehavior = null
             };
 
-            var newJson = JsonSerializer.Serialize(manifest, JsonOptions);
-            File.WriteAllText(manifestPath, newJson);
-
-            var newCommand = _mainWindow.PersistJsonExtensionFromDialog(newJson, isEditMode: false);
+            File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions));
+            _mainWindow.ReloadLocalExtensionsFromExternal();
+            var newCommand = _mainWindow.GetAllCommands()
+                .FirstOrDefault(item => string.Equals(item.ExtensionId, newId, StringComparison.OrdinalIgnoreCase));
             if (newCommand == null)
             {
                 _mainWindow.SyncStatus = "注册新扩展失败。";
@@ -2212,7 +2219,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             var cursorDips = DeviceToDips(cursorPixels);
 
             var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)cursorPixels.X, (int)cursorPixels.Y));
-            var screenBounds = DeviceRectToDips(screen.Bounds);
+            var screenBounds = DeviceRectToDips(screen.WorkingArea);
             var safeAnchorY = Height / 2;
             var requestedTop = cursorDips.Y - safeAnchorY;
             var topConstrained = requestedTop <= screenBounds.Top;
@@ -2223,7 +2230,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
             HubSearchBox.Text = string.Empty; // Reset search on show
             _hoveredSlot = null;
-            LoadSlots(); // Refresh
+            var currentContextGroup = GetSelectedContextGroupSettings();
+            var currentGlobalGroup = GetSelectedGlobalGroupSettings();
+            if (_needsReload || 
+                currentContextGroup?.Id != _lastLoadedContextGroupId || 
+                currentGlobalGroup?.Id != _lastLoadedGlobalGroupId)
+            {
+                LoadSlots(); // Refresh only when context changes or reload is requested
+            }
             var occupiedGlobal = GlobalSlots.Count(slot => slot.IsOccupied);
             var occupiedContext = ContextSlots.Count(slot => slot.IsOccupied);
             HostAssets.AppendLog($"Quick panel showing at ({Left:0},{Top:0}), cursorPixels=({cursorPixels.X:0},{cursorPixels.Y:0}), cursorDips=({cursorDips.X:0},{cursorDips.Y:0}), cursorLocalX={cursorDips.X - Left:0}, topConstrained={topConstrained}, screenDips=({screenBounds.Left:0},{screenBounds.Top:0},{screenBounds.Right:0},{screenBounds.Bottom:0}), occupiedGlobal={occupiedGlobal}, occupiedContext={occupiedContext}, totalGlobal={GlobalSlots.Count}, totalContext={ContextSlots.Count}, previousFocus={DescribeWindow(_previousFocusWindow)}.");
@@ -2303,6 +2317,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     public void ReloadSlots()
     {
+        _needsReload = true;
         LoadSlots();
     }
 

@@ -756,6 +756,14 @@ public partial class MainWindow
         }
 
         settings.PinnedSearchScopeCommandIds.Add(command.ExtensionId);
+        settings.SearchScopeConfigs ??= new();
+        settings.SearchScopeConfigs.Add(new SearchScopeConfigItem
+        {
+            Key = $"pinned_{command.ExtensionId}",
+            Label = command.Title,
+            IsVisible = true,
+            IsPinned = true
+        });
         AppSettingsStore.Save(settings);
         _appSettings = settings;
         _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
@@ -776,6 +784,10 @@ public partial class MainWindow
         var settings = AppSettingsStore.Load();
         settings.PinnedSearchScopeCommandIds ??= [];
         var removed = settings.PinnedSearchScopeCommandIds.RemoveAll(id => id.Equals(scope.PinnedCommandId, StringComparison.OrdinalIgnoreCase));
+        if (settings.SearchScopeConfigs != null)
+        {
+            settings.SearchScopeConfigs.RemoveAll(c => c.IsPinned && string.Equals(c.Key, $"pinned_{scope.PinnedCommandId}", StringComparison.OrdinalIgnoreCase));
+        }
         if (removed == 0)
         {
             return;

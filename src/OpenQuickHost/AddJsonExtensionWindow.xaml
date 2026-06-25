@@ -914,7 +914,7 @@
 
 
                         <Expander x:Name="AdvancedSimpleExpander"
-                                  Header="更多高级选项 · ID、版本、关键词、权限"
+                                  Header="更多高级选项 · 版本、关键词、权限"
                                   Foreground="{DynamicResource BrushTextSec}"
                                   Background="{DynamicResource BrushSecondaryBtnBG}"
                                   Margin="0,12,0,0" Padding="6" FontSize="12.5">
@@ -925,7 +925,7 @@
                                         <ColumnDefinition Width="14" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel>
+                                    <StackPanel Visibility="Collapsed">
                                         <TextBlock Text="扩展 ID（英文小写、短横线）" Style="{StaticResource FieldLabelStyle}" />
                                         <TextBox x:Name="IdSimpleBox" Style="{StaticResource FormTextBoxStyle}"
                                                  TextChanged="IdSimpleBox_TextChanged" />

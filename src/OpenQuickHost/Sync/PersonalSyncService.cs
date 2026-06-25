@@ -242,6 +242,11 @@ public sealed class PersonalSyncService
         await _backend.DeleteFileAsync(RemoteIndexPath, cancellationToken);
         await _backend.DeleteFileAsync("state/launcher-config.json", cancellationToken);
         await _backend.DeleteFileAsync("state/yanm-state.json", cancellationToken);
+        foreach (var definition in LauncherConfigObjectStore.Definitions)
+        {
+            await _backend.DeleteFileAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+        }
+
         if (File.Exists(HostAssets.WebDavSyncStatePath))
         {
             File.Delete(HostAssets.WebDavSyncStatePath);
@@ -261,6 +266,10 @@ public sealed class PersonalSyncService
         var remote = remoteBytes is { Length: > 0 }
             ? JsonSerializer.Deserialize<WebDavLauncherConfigSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions)
             : null;
+        var hasRemoteObjects = await HasLauncherConfigObjectsAsync(cancellationToken);
+        remote = hasRemoteObjects
+            ? await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken) ?? remote
+            : remote;
 
         if (remote?.Config == null)
         {
@@ -298,8 +307,17 @@ public sealed class PersonalSyncService
 
         if (equivalent)
         {
+            if (!hasRemoteObjects && remote?.Config != null)
+            {
+                var backfillUpdatedAtUtc = remoteUpdatedAtUtc == DateTime.MinValue ? DateTime.UtcNow : remoteUpdatedAtUtc;
+                await UploadLauncherConfigAsync(localConfig, backfillUpdatedAtUtc, cancellationToken);
+                SaveLauncherConfigUpdatedAtUtc(backfillUpdatedAtUtc);
+                HostAssets.AppendLog("Personal sync launcher config objects backfilled from legacy snapshot.");
+                return (true, false);
+            }
+
             // 如果内容完全等价，但本地时间戳与云端存在偏差，则直接将本地时间戳同步为云端时间戳，以防以后再次触发多余的重复判断
-            if (localSettings.LauncherConfigUpdatedAtUtc != remote.UpdatedAtUtc)
+            if (remote != null && localSettings.LauncherConfigUpdatedAtUtc != remote.UpdatedAtUtc)
             {
                 SaveLauncherConfigUpdatedAtUtc(remoteUpdatedAtUtc);
             }
@@ -337,6 +355,7 @@ public sealed class PersonalSyncService
         var remote = remoteBytes is { Length: > 0 }
             ? JsonSerializer.Deserialize<WebDavLauncherConfigSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions)
             : null;
+        remote = await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken) ?? remote;
         return remote?.Config?.Yanm == null
             ? null
             : new WebDavYanmStateSnapshot
@@ -346,7 +365,7 @@ public sealed class PersonalSyncService
             };
     }
 
-    private Task UploadLauncherConfigAsync(CloudQuickPanelConfigSnapshot config, DateTime updatedAtUtc, CancellationToken cancellationToken)
+    private async Task UploadLauncherConfigAsync(CloudQuickPanelConfigSnapshot config, DateTime updatedAtUtc, CancellationToken cancellationToken)
     {
         config.UpdatedAtUtc = updatedAtUtc.ToString("O");
         config.SourceDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
@@ -360,7 +379,67 @@ public sealed class PersonalSyncService
         };
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(snapshot, JsonOptions));
         HostAssets.AppendLog($"Personal sync write started: path=state/launcher-config.json, bytes={bytes.Length}, contentType=application/json");
-        return _backend.WriteBytesAsync("state/launcher-config.json", bytes, "application/json", cancellationToken);
+        var writes = LauncherConfigObjectStore.PrepareWrites(config, updatedAtUtc);
+        foreach (var write in writes)
+        {
+            HostAssets.AppendLog($"Personal sync write started: path={write.Path}, bytes={write.Bytes.Length}, contentType=application/json");
+            await _backend.WriteBytesAsync(write.Path, write.Bytes, "application/json", cancellationToken);
+        }
+
+        var manifestBytes = LauncherConfigObjectStore.SerializeManifest(
+            LauncherConfigObjectStore.CreateManifest(writes, updatedAtUtc));
+        HostAssets.AppendLog($"Personal sync write started: path={LauncherConfigObjectStore.ManifestPath}, bytes={manifestBytes.Length}, contentType=application/json");
+        await _backend.WriteBytesAsync(LauncherConfigObjectStore.ManifestPath, manifestBytes, "application/json", cancellationToken);
+
+        var changeBytes = LauncherConfigObjectStore.SerializeChangeSet(
+            LauncherConfigObjectStore.CreateChangeSet(writes, updatedAtUtc, "launcher-config-sync"));
+        var changePath = LauncherConfigObjectStore.GetChangePath(updatedAtUtc);
+        HostAssets.AppendLog($"Personal sync write started: path={changePath}, bytes={changeBytes.Length}, contentType=application/json");
+        await _backend.WriteBytesAsync(changePath, changeBytes, "application/json", cancellationToken);
+
+        await _backend.WriteBytesAsync("state/launcher-config.json", bytes, "application/json", cancellationToken);
+    }
+
+    private async Task<WebDavLauncherConfigSnapshot?> TryLoadLauncherConfigObjectsAsync(
+        CloudQuickPanelConfigSnapshot? baseSnapshot,
+        CancellationToken cancellationToken)
+    {
+        var objects = new List<LauncherConfigObjectEnvelope>();
+        foreach (var definition in LauncherConfigObjectStore.Definitions)
+        {
+            var bytes = await _backend.TryReadBytesAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+            var obj = LauncherConfigObjectStore.Deserialize(bytes);
+            if (obj != null)
+            {
+                objects.Add(obj);
+            }
+        }
+
+        var snapshot = LauncherConfigObjectStore.Compose(baseSnapshot, objects, out var updatedAtUtc);
+        return snapshot == null
+            ? null
+            : new WebDavLauncherConfigSnapshot
+            {
+                SchemaVersion = 2,
+                UpdatedAtUtc = updatedAtUtc == DateTime.MinValue
+                    ? snapshot.UpdatedAtUtc ?? string.Empty
+                    : updatedAtUtc.ToString("O"),
+                Config = snapshot
+            };
+    }
+
+    private async Task<bool> HasLauncherConfigObjectsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var definition in LauncherConfigObjectStore.Definitions)
+        {
+            var bytes = await _backend.TryReadBytesAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+            if (bytes is { Length: > 0 })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private Task UploadYanmStateAsync(YanmSettings yanm, DateTime updatedAtUtc, CancellationToken cancellationToken)

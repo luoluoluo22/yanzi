@@ -357,18 +357,56 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private IEnumerable<SearchScopeTab> BuildSearchScopes()
     {
-        yield return new SearchScopeTab(SearchScopeAll, "全部", "所有结果", true);
-        yield return new SearchScopeTab(SearchScopeExtension, "扩展", "所有扩展");
-        yield return new SearchScopeTab(SearchScopeApplication, "应用", "已安装应用");
-        yield return new SearchScopeTab(SearchScopeFile, "文件", "Everything 文件结果");
-        yield return new SearchScopeTab(SearchScopeSystem, "系统", "Windows 系统与设置");
-        yield return new SearchScopeTab(SearchScopeYanyu, "燕语", "文本指令与扩展触发词");
-        yield return new SearchScopeTab(SearchScopeAi, "AI对话", "切换到 AI 对话模式");
-        yield return new SearchScopeTab(SearchScopeStore, "扩展商店", "浏览与安装云端扩展");
+        var settings = AppSettingsStore.Load();
+        var allCommands = GetAllCommands();
+        settings.SearchScopeConfigs ??= [];
 
-        foreach (var pinnedCommand in GetPinnedSearchScopeCommands())
+        foreach (var config in settings.SearchScopeConfigs)
         {
-            yield return SearchScopeTab.CreatePinnedCommand(pinnedCommand.ExtensionId, pinnedCommand.Title, $"固定扩展：{pinnedCommand.Title}");
+            if (config == null || !config.IsVisible)
+            {
+                continue;
+            }
+
+            if (!config.IsPinned)
+            {
+                switch (config.Key)
+                {
+                    case SearchScopeAll:
+                        yield return new SearchScopeTab(SearchScopeAll, "全部", "所有结果");
+                        break;
+                    case SearchScopeExtension:
+                        yield return new SearchScopeTab(SearchScopeExtension, "扩展", "所有扩展");
+                        break;
+                    case SearchScopeApplication:
+                        yield return new SearchScopeTab(SearchScopeApplication, "应用", "已安装应用");
+                        break;
+                    case SearchScopeFile:
+                        yield return new SearchScopeTab(SearchScopeFile, "文件", "Everything 文件结果");
+                        break;
+                    case SearchScopeSystem:
+                        yield return new SearchScopeTab(SearchScopeSystem, "系统", "Windows 系统与设置");
+                        break;
+                    case SearchScopeYanyu:
+                        yield return new SearchScopeTab(SearchScopeYanyu, "燕语", "文本指令与扩展触发词");
+                        break;
+                    case SearchScopeAi:
+                        yield return new SearchScopeTab(SearchScopeAi, "AI对话", "切换到 AI 对话模式");
+                        break;
+                    case SearchScopeStore:
+                        yield return new SearchScopeTab(SearchScopeStore, "扩展商店", "浏览与安装云端扩展");
+                        break;
+                }
+            }
+            else
+            {
+                var commandId = config.Key.Replace("pinned_", "");
+                var pinnedCommand = allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, commandId, StringComparison.OrdinalIgnoreCase));
+                if (pinnedCommand != null)
+                {
+                    yield return SearchScopeTab.CreatePinnedCommand(pinnedCommand.ExtensionId, pinnedCommand.Title, $"固定扩展：{pinnedCommand.Title}");
+                }
+            }
         }
     }
 
@@ -986,6 +1024,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         AddCurrentCommandToPinnedSearchScopes();
         SearchBox.Focus();
         SearchBox.CaretIndex = SearchBox.Text.Length;
+    }
+
+    private void EditSearchScopesMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SearchScopesManagerWindow(this);
+        dialog.Owner = this;
+        if (dialog.ShowDialog() == true)
+        {
+            ReloadSearchScopes();
+        }
     }
 
     private void CommandList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
