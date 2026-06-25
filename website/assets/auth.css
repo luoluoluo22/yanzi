@@ -196,3 +196,33 @@
 .user-avatar-circle:hover {
   transform: scale(1.05);
 }
+
+/* 首页下载区：使用真实平台图标，并隐藏按钮上方标题 */
+#download.download-section-minimal .download-panel > strong {
+  display: none !important;
+}
+
+#download.download-section-minimal .download-platform-icon {
+  font-size: 0 !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: 42px 42px !important;
+}
+
+#download.download-section-minimal .minimal-download-grid .download-panel:not(.download-panel-mobile) .download-platform-icon {
+  background-image: url("https://api.iconify.design/logos:microsoft-windows-icon.svg") !important;
+}
+
+#download.download-section-minimal .minimal-download-grid .download-panel.download-panel-mobile .download-platform-icon {
+  background-image: url("https://api.iconify.design/logos:android-icon.svg") !important;
+}
+
+#download.download-section-minimal .button.primary {
+  text-decoration: none !important;
+}
+
+#download.download-section-minimal .button.primary:hover,
+#download.download-section-minimal .button.primary:focus,
+#download.download-section-minimal .button.primary:visited {
+  text-decoration: none !important;
+}
