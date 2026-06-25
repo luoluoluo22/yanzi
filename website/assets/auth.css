@@ -231,3 +231,35 @@
 #download.download-section-minimal .button.primary:visited {
   text-decoration: none !important;
 }
+
+/* 首屏下载按钮：改为 Windows 图标 + Windows下载 */
+.hero-actions .js-update-download-link {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  color: transparent !important;
+  text-decoration: none !important;
+}
+
+.hero-actions .js-update-download-link::before {
+  content: "";
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
+  background-image: url("https://api.iconify.design/logos:microsoft-windows-icon.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+.hero-actions .js-update-download-link::after {
+  content: "Windows下载";
+  color: #111827;
+}
+
+.hero-actions .js-update-download-link:hover,
+.hero-actions .js-update-download-link:focus,
+.hero-actions .js-update-download-link:visited {
+  text-decoration: none !important;
+}
