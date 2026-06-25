@@ -130,10 +130,15 @@
 
   let loginModal = null;
   let profileModal = null;
+  let downloadObserver = null;
+  let simplifyingDownload = false;
 
   function init() {
     injectModals();
     renderNavbarAuth();
+    simplifyHomeDownloadSection();
+    setTimeout(simplifyHomeDownloadSection, 300);
+    setTimeout(simplifyHomeDownloadSection, 1200);
     
     // 自动恢复会话
     if (getToken()) {
@@ -149,6 +154,68 @@
           setUser(null);
           notifyStateChanged();
         });
+    }
+  }
+
+  function simplifyHomeDownloadSection() {
+    const section = document.getElementById("download");
+    if (!section || simplifyingDownload) return;
+
+    simplifyingDownload = true;
+    try {
+      section.classList.add("download-section-minimal");
+
+      const sectionHead = section.querySelector(".section-head");
+      if (sectionHead) sectionHead.remove();
+
+      const desktopPanel = section.querySelector(".download-panel:not(.download-panel-mobile)");
+      const mobilePanel = section.querySelector(".download-panel-mobile");
+
+      if (desktopPanel) {
+        const title = desktopPanel.querySelector("strong");
+        const meta = desktopPanel.querySelector("#download-meta");
+        const releaseLink = desktopPanel.querySelector(".release-link");
+        const button = desktopPanel.querySelector(".button.primary");
+        const password = desktopPanel.querySelector(".download-password");
+
+        if (title) title.textContent = "Windows 版本下载";
+        if (meta) meta.remove();
+        if (releaseLink) releaseLink.remove();
+        if (button) {
+          button.classList.remove("js-update-download-link");
+          button.removeAttribute("data-default-label");
+          button.textContent = "Windows 版本下载";
+        }
+        if (password) {
+          password.classList.remove("js-update-password-wrap");
+          password.innerHTML = "蓝奏云提取码：<strong>62yn</strong>";
+        }
+      }
+
+      if (mobilePanel) {
+        const title = mobilePanel.querySelector("strong");
+        const meta = mobilePanel.querySelector("span");
+        const button = mobilePanel.querySelector(".button.primary");
+        const password = mobilePanel.querySelector(".download-password");
+
+        if (title) title.textContent = "手机端下载";
+        if (meta) meta.remove();
+        if (button) button.textContent = "手机端下载";
+        if (password) password.innerHTML = "蓝奏云提取码：<strong>92ty</strong>";
+      }
+
+      if (!downloadObserver) {
+        downloadObserver = new MutationObserver(() => {
+          if (!simplifyingDownload) simplifyHomeDownloadSection();
+        });
+        downloadObserver.observe(section, {
+          childList: true,
+          subtree: true,
+          characterData: true
+        });
+      }
+    } finally {
+      simplifyingDownload = false;
     }
   }
 
