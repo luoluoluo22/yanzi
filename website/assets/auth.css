@@ -238,6 +238,8 @@
   align-items: center;
   justify-content: center;
   gap: 0.55rem;
+  font-size: 0 !important;
+  line-height: 1;
   color: transparent !important;
   text-decoration: none !important;
 }
@@ -256,10 +258,33 @@
 .hero-actions .js-update-download-link::after {
   content: "Windows下载";
   color: #111827;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .hero-actions .js-update-download-link:hover,
 .hero-actions .js-update-download-link:focus,
 .hero-actions .js-update-download-link:visited {
   text-decoration: none !important;
+}
+
+/* GitHub 源码链接图标 */
+.release-link {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  text-decoration: none;
+}
+
+.release-link::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  background-image: url("https://api.iconify.design/logos:github-icon.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  filter: invert(1);
 }
