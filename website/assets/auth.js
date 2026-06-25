@@ -181,18 +181,21 @@
         text-align: center;
       }
       #download.download-section-minimal .download-platform-icon {
-        width: 62px;
-        height: 62px;
+        width: 64px;
+        height: 64px;
         display: grid;
         place-items: center;
         border-radius: 18px;
         border: 1px solid rgba(255,255,255,0.12);
         background: rgba(59,130,246,0.12);
-        color: #dbeafe;
-        font-size: 2rem;
         box-shadow: 0 16px 36px rgba(59,130,246,0.18);
       }
-      #download.download-section-minimal .download-panel strong { font-size: 1.35rem; }
+      #download.download-section-minimal .download-platform-icon img {
+        width: 36px;
+        height: 36px;
+        display: block;
+      }
+      #download.download-section-minimal .download-panel > strong { display: none !important; }
       #download.download-section-minimal .button.primary { min-width: 190px; text-decoration: none !important; }
       #download.download-section-minimal .button.primary:hover,
       #download.download-section-minimal .button.primary:focus,
@@ -223,12 +226,20 @@
     });
   }
 
+  function getPlatformIconMarkup(platform) {
+    const isAndroid = platform === "android";
+    const src = isAndroid
+      ? "https://cdn.simpleicons.org/android/ffffff"
+      : "https://cdn.simpleicons.org/windows/ffffff";
+    const alt = isAndroid ? "Android" : "Windows";
+    return `<div class="download-platform-icon"><img src="${src}" alt="${alt} 图标" loading="lazy"></div>`;
+  }
+
   function prepareDownloadPanel(panel, platform) {
     if (!panel) return;
 
     const isAndroid = platform === "android";
-    const titleText = isAndroid ? "安卓版下载" : "Windows 版本下载";
-    const iconText = isAndroid ? "🤖" : "⊞";
+    const buttonText = isAndroid ? "安卓版下载" : "Windows 版本下载";
     const code = isAndroid ? "92ty" : "62yn";
 
     const title = panel.querySelector("strong");
@@ -238,15 +249,15 @@
     const password = panel.querySelector(".download-password");
 
     if (!panel.querySelector(".download-platform-icon")) {
-      panel.insertAdjacentHTML("afterbegin", `<div class="download-platform-icon" aria-hidden="true">${iconText}</div>`);
+      panel.insertAdjacentHTML("afterbegin", getPlatformIconMarkup(platform));
     }
-    if (title) title.textContent = titleText;
+    if (title) title.remove();
     if (meta) meta.remove();
     if (releaseLink) releaseLink.remove();
     if (button) {
       button.classList.remove("js-update-download-link");
       button.removeAttribute("data-default-label");
-      button.textContent = titleText;
+      button.textContent = buttonText;
       button.style.textDecoration = "none";
       installDownloadClick(button, code);
     }
