@@ -130,7 +130,6 @@
 
   let loginModal = null;
   let profileModal = null;
-  let downloadObserver = null;
   let simplifyingDownload = false;
 
   function init() {
@@ -139,6 +138,7 @@
     simplifyHomeDownloadSection();
     setTimeout(simplifyHomeDownloadSection, 300);
     setTimeout(simplifyHomeDownloadSection, 1200);
+    setTimeout(simplifyHomeDownloadSection, 2500);
     
     // 自动恢复会话
     if (getToken()) {
@@ -202,17 +202,6 @@
         if (meta) meta.remove();
         if (button) button.textContent = "手机端下载";
         if (password) password.innerHTML = "蓝奏云提取码：<strong>92ty</strong>";
-      }
-
-      if (!downloadObserver) {
-        downloadObserver = new MutationObserver(() => {
-          if (!simplifyingDownload) simplifyHomeDownloadSection();
-        });
-        downloadObserver.observe(section, {
-          childList: true,
-          subtree: true,
-          characterData: true
-        });
       }
     } finally {
       simplifyingDownload = false;
