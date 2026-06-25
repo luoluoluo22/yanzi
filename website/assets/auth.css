@@ -197,24 +197,24 @@
   transform: scale(1.05);
 }
 
-/* 首页下载区：使用真实平台图标，并隐藏按钮上方标题 */
+/* 首页下载区：图标仅使用 JS 插入的 img，避免与 CSS 背景图重叠 */
 #download.download-section-minimal .download-panel > strong {
   display: none !important;
 }
 
 #download.download-section-minimal .download-platform-icon {
-  font-size: 0 !important;
+  background-image: none !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
-  background-size: 42px 42px !important;
+  display: grid !important;
+  place-items: center !important;
 }
 
-#download.download-section-minimal .minimal-download-grid .download-panel:not(.download-panel-mobile) .download-platform-icon {
-  background-image: url("https://api.iconify.design/logos:microsoft-windows-icon.svg") !important;
-}
-
-#download.download-section-minimal .minimal-download-grid .download-panel.download-panel-mobile .download-platform-icon {
-  background-image: url("https://api.iconify.design/logos:android-icon.svg") !important;
+#download.download-section-minimal .download-platform-icon img {
+  width: 42px !important;
+  height: 42px !important;
+  display: block !important;
+  object-fit: contain !important;
 }
 
 #download.download-section-minimal .button.primary {
