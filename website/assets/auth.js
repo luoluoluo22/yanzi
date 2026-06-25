@@ -157,12 +157,112 @@
     }
   }
 
+  function injectMinimalDownloadStyles() {
+    if (document.getElementById("minimal-download-style")) return;
+    const style = document.createElement("style");
+    style.id = "minimal-download-style";
+    style.textContent = `
+      #download.download-section-minimal { padding-top: 4rem; }
+      #download.download-section-minimal .minimal-download-grid {
+        width: min(100%, 980px);
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1.5rem;
+      }
+      #download.download-section-minimal .download-panel {
+        margin: 0 !important;
+        min-height: 260px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.1rem;
+        text-align: center;
+      }
+      #download.download-section-minimal .download-platform-icon {
+        width: 62px;
+        height: 62px;
+        display: grid;
+        place-items: center;
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(59,130,246,0.12);
+        color: #dbeafe;
+        font-size: 2rem;
+        box-shadow: 0 16px 36px rgba(59,130,246,0.18);
+      }
+      #download.download-section-minimal .download-panel strong { font-size: 1.35rem; }
+      #download.download-section-minimal .button.primary { min-width: 190px; text-decoration: none !important; }
+      #download.download-section-minimal .button.primary:hover,
+      #download.download-section-minimal .button.primary:focus,
+      #download.download-section-minimal .button.primary:visited { text-decoration: none !important; }
+      #download.download-section-minimal .download-password { margin: 0; }
+      @media (max-width: 760px) {
+        #download.download-section-minimal .minimal-download-grid { grid-template-columns: 1fr; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function installDownloadClick(button, code) {
+    if (!button || button.dataset.copyCodeBound === "1") return;
+    button.dataset.copyCodeBound = "1";
+    button.addEventListener("click", async function(event) {
+      event.preventDefault();
+      const href = button.href;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(code);
+        }
+        alert(`提取码 ${code} 已复制，打开蓝奏云后直接粘贴提取码即可。`);
+      } catch {
+        alert(`蓝奏云提取码：${code}。请复制后粘贴到蓝奏云。`);
+      }
+      if (href) window.location.href = href;
+    });
+  }
+
+  function prepareDownloadPanel(panel, platform) {
+    if (!panel) return;
+
+    const isAndroid = platform === "android";
+    const titleText = isAndroid ? "安卓版下载" : "Windows 版本下载";
+    const iconText = isAndroid ? "🤖" : "⊞";
+    const code = isAndroid ? "92ty" : "62yn";
+
+    const title = panel.querySelector("strong");
+    const meta = isAndroid ? panel.querySelector("span") : panel.querySelector("#download-meta");
+    const releaseLink = panel.querySelector(".release-link");
+    const button = panel.querySelector(".button.primary");
+    const password = panel.querySelector(".download-password");
+
+    if (!panel.querySelector(".download-platform-icon")) {
+      panel.insertAdjacentHTML("afterbegin", `<div class="download-platform-icon" aria-hidden="true">${iconText}</div>`);
+    }
+    if (title) title.textContent = titleText;
+    if (meta) meta.remove();
+    if (releaseLink) releaseLink.remove();
+    if (button) {
+      button.classList.remove("js-update-download-link");
+      button.removeAttribute("data-default-label");
+      button.textContent = titleText;
+      button.style.textDecoration = "none";
+      installDownloadClick(button, code);
+    }
+    if (password) {
+      password.classList.remove("js-update-password-wrap");
+      password.innerHTML = `蓝奏云提取码：<strong>${code}</strong>`;
+    }
+  }
+
   function simplifyHomeDownloadSection() {
     const section = document.getElementById("download");
     if (!section || simplifyingDownload) return;
 
     simplifyingDownload = true;
     try {
+      injectMinimalDownloadStyles();
       section.classList.add("download-section-minimal");
 
       const sectionHead = section.querySelector(".section-head");
@@ -171,38 +271,17 @@
       const desktopPanel = section.querySelector(".download-panel:not(.download-panel-mobile)");
       const mobilePanel = section.querySelector(".download-panel-mobile");
 
-      if (desktopPanel) {
-        const title = desktopPanel.querySelector("strong");
-        const meta = desktopPanel.querySelector("#download-meta");
-        const releaseLink = desktopPanel.querySelector(".release-link");
-        const button = desktopPanel.querySelector(".button.primary");
-        const password = desktopPanel.querySelector(".download-password");
-
-        if (title) title.textContent = "Windows 版本下载";
-        if (meta) meta.remove();
-        if (releaseLink) releaseLink.remove();
-        if (button) {
-          button.classList.remove("js-update-download-link");
-          button.removeAttribute("data-default-label");
-          button.textContent = "Windows 版本下载";
-        }
-        if (password) {
-          password.classList.remove("js-update-password-wrap");
-          password.innerHTML = "蓝奏云提取码：<strong>62yn</strong>";
-        }
+      let grid = section.querySelector(".minimal-download-grid");
+      if (!grid) {
+        grid = document.createElement("div");
+        grid.className = "minimal-download-grid";
+        if (desktopPanel) grid.appendChild(desktopPanel);
+        if (mobilePanel) grid.appendChild(mobilePanel);
+        section.appendChild(grid);
       }
 
-      if (mobilePanel) {
-        const title = mobilePanel.querySelector("strong");
-        const meta = mobilePanel.querySelector("span");
-        const button = mobilePanel.querySelector(".button.primary");
-        const password = mobilePanel.querySelector(".download-password");
-
-        if (title) title.textContent = "手机端下载";
-        if (meta) meta.remove();
-        if (button) button.textContent = "手机端下载";
-        if (password) password.innerHTML = "蓝奏云提取码：<strong>92ty</strong>";
-      }
+      prepareDownloadPanel(desktopPanel, "windows");
+      prepareDownloadPanel(mobilePanel, "android");
     } finally {
       simplifyingDownload = false;
     }
