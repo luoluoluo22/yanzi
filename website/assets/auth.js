@@ -135,10 +135,11 @@
   function init() {
     injectModals();
     renderNavbarAuth();
+    bindTopDownloadLinks();
     simplifyHomeDownloadSection();
-    setTimeout(simplifyHomeDownloadSection, 300);
-    setTimeout(simplifyHomeDownloadSection, 1200);
-    setTimeout(simplifyHomeDownloadSection, 2500);
+    setTimeout(() => { bindTopDownloadLinks(); simplifyHomeDownloadSection(); }, 300);
+    setTimeout(() => { bindTopDownloadLinks(); simplifyHomeDownloadSection(); }, 1200);
+    setTimeout(() => { bindTopDownloadLinks(); simplifyHomeDownloadSection(); }, 2500);
     
     // 自动恢复会话
     if (getToken()) {
@@ -211,6 +212,8 @@
   function installDownloadClick(button, code) {
     if (!button || button.dataset.copyCodeBound === "1") return;
     button.dataset.copyCodeBound = "1";
+    button.target = "_blank";
+    button.rel = "noopener noreferrer";
     button.addEventListener("click", async function(event) {
       event.preventDefault();
       const href = button.href;
@@ -222,7 +225,17 @@
       } catch {
         alert(`蓝奏云提取码：${code}。请复制后粘贴到蓝奏云。`);
       }
-      if (href) window.location.href = href;
+      if (href) window.open(href, "_blank", "noopener,noreferrer");
+    });
+  }
+
+  function bindTopDownloadLinks() {
+    const windowsUrl = "https://wwbnh.lanzout.com/b0pnkaj6j";
+    document.querySelectorAll('.site-header nav a[href="#download"], .hero-actions .js-update-download-link').forEach((link) => {
+      link.href = windowsUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      installDownloadClick(link, "62yn");
     });
   }
 
@@ -241,6 +254,7 @@
     const isAndroid = platform === "android";
     const buttonText = isAndroid ? "安卓版下载" : "Windows 版本下载";
     const code = isAndroid ? "92ty" : "62yn";
+    const downloadUrl = isAndroid ? "https://wwbnh.lanzout.com/b0pnm6z2j" : "https://wwbnh.lanzout.com/b0pnkaj6j";
 
     const title = panel.querySelector("strong");
     const meta = isAndroid ? panel.querySelector("span") : panel.querySelector("#download-meta");
@@ -257,6 +271,9 @@
     if (button) {
       button.classList.remove("js-update-download-link");
       button.removeAttribute("data-default-label");
+      button.href = downloadUrl;
+      button.target = "_blank";
+      button.rel = "noopener noreferrer";
       button.textContent = buttonText;
       button.style.textDecoration = "none";
       installDownloadClick(button, code);
