@@ -15,10 +15,14 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/assets/auth.css">
   <style>
+    .profile-page {
+      padding: 2rem 1.25rem 5rem;
+    }
+
     .profile-container {
-      max-width: 600px;
-      margin: 4rem auto;
-      padding: 2.5rem;
+      max-width: 1120px;
+      margin: 2.5rem auto;
+      padding: 2rem;
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 28px;
       background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
@@ -29,8 +33,17 @@
     .profile-header {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 1.5rem;
       margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .profile-identity {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      min-width: 260px;
     }
 
     .profile-avatar-large {
@@ -44,11 +57,12 @@
       align-items: center;
       justify-content: center;
       font-weight: 600;
+      box-shadow: 0 16px 40px rgba(59, 130, 246, 0.32);
     }
 
     .profile-title h1 {
       margin: 0 0 0.25rem 0;
-      font-size: 1.75rem;
+      font-size: 1.9rem;
     }
 
     .profile-title p {
@@ -56,28 +70,197 @@
       color: var(--text-dim);
     }
 
-    .profile-info-grid {
-      display: grid;
-      gap: 1.5rem;
-      margin-bottom: 2.5rem;
+    .profile-actions {
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
     }
 
-    .info-item {
+    .profile-section {
+      margin-top: 1.6rem;
+      padding: 1.35rem;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .section-header h2 {
+      margin: 0;
+      font-size: 1.12rem;
+    }
+
+    .section-note {
+      margin: 0.35rem 0 0;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+
+    .profile-info-grid,
+    .profile-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .info-item,
+    .stat-card {
+      min-width: 0;
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 0.45rem;
+      padding: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 18px;
+      background: rgba(0, 0, 0, 0.16);
     }
 
-    .info-label {
-      font-size: 0.85rem;
-      color: rgba(255, 255, 255, 0.6);
+    .info-label,
+    .stat-label {
+      font-size: 0.78rem;
+      color: rgba(255, 255, 255, 0.58);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
 
-    .info-value {
-      font-size: 1.1rem;
+    .info-value,
+    .stat-value {
+      font-size: 1rem;
       color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    .stat-value {
+      font-size: 1.9rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .profile-list {
+      display: grid;
+      gap: 0.85rem;
+    }
+
+    .record-card {
+      padding: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 18px;
+      background: rgba(0, 0, 0, 0.14);
+    }
+
+    .record-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 0.8rem;
+    }
+
+    .record-title {
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .record-subtitle {
+      color: var(--text-dim);
+      font-size: 0.86rem;
+      margin-top: 0.2rem;
+      overflow-wrap: anywhere;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0.25rem 0.65rem;
+      font-size: 0.78rem;
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text);
+    }
+
+    .badge.ok {
+      background: rgba(34, 197, 94, 0.14);
+      border-color: rgba(34, 197, 94, 0.3);
+    }
+
+    .badge.warn {
+      background: rgba(245, 158, 11, 0.14);
+      border-color: rgba(245, 158, 11, 0.32);
+    }
+
+    .record-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .json-block {
+      margin: 0.85rem 0 0;
+      padding: 0.8rem;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.24);
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 0.82rem;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      max-height: 240px;
+      overflow: auto;
+    }
+
+    .empty-state,
+    .loading-state,
+    .error-state {
+      padding: 1rem;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.14);
+      color: var(--text-dim);
+    }
+
+    .error-state {
+      color: #fca5a5;
+    }
+
+    .profile-login-prompt {
+      text-align: center;
+      margin-top: 6rem;
+    }
+
+    @media (max-width: 900px) {
+      .profile-info-grid,
+      .profile-stats-grid,
+      .record-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      .profile-container {
+        padding: 1.2rem;
+        margin: 1.2rem auto;
+      }
+
+      .profile-info-grid,
+      .profile-stats-grid,
+      .record-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .profile-actions {
+        width: 100%;
+      }
+
+      .profile-actions .button {
+        flex: 1;
+      }
     }
   </style>
 </head>
@@ -109,26 +292,123 @@
   <main class="profile-page">
     <div class="profile-container" id="profile-container" style="display: none;">
       <div class="profile-header">
-        <div class="profile-avatar-large" id="page-profile-initial">?</div>
-        <div class="profile-title">
-          <h1 id="page-profile-username">加载中...</h1>
-          <p id="page-profile-role">加载中...</p>
+        <div class="profile-identity">
+          <div class="profile-avatar-large" id="page-profile-initial">?</div>
+          <div class="profile-title">
+            <h1 id="page-profile-username">加载中...</h1>
+            <p id="page-profile-role">加载中...</p>
+          </div>
+        </div>
+        <div class="profile-actions">
+          <button class="button secondary" id="profile-refresh-btn" type="button">刷新数据</button>
+          <button class="button secondary" onclick="window.YanziAuth.logout()" type="button">退出登录</button>
         </div>
       </div>
 
-      <div class="profile-info-grid">
-        <div class="info-item">
-          <span class="info-label">邮箱地址</span>
-          <span class="info-value" id="page-profile-email">-</span>
+      <section class="profile-section">
+        <div class="section-header">
+          <div>
+            <h2>账号概览</h2>
+            <p class="section-note">来自当前登录账号和后端身份接口。</p>
+          </div>
         </div>
-      </div>
+        <div class="profile-info-grid">
+          <div class="info-item">
+            <span class="info-label">用户 ID</span>
+            <span class="info-value" id="page-profile-user-id">-</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">用户名</span>
+            <span class="info-value" id="page-profile-name-value">-</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">邮箱地址</span>
+            <span class="info-value" id="page-profile-email">-</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">账号角色</span>
+            <span class="info-value" id="page-profile-role-value">-</span>
+          </div>
+        </div>
+      </section>
 
-      <div style="display: flex; gap: 1rem;">
-        <button class="button secondary" onclick="window.YanziAuth.logout()" style="flex: 1; padding: 0.8rem;">退出登录</button>
-      </div>
+      <section class="profile-section">
+        <div class="section-header">
+          <div>
+            <h2>数据统计</h2>
+            <p class="section-note">汇总后端已保存的扩展、配置、设备和云端状态。</p>
+          </div>
+        </div>
+        <div class="profile-stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">扩展总数</span>
+            <span class="stat-value" id="stat-extension-total">-</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">已启用</span>
+            <span class="stat-value" id="stat-extension-enabled">-</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">配置项</span>
+            <span class="stat-value" id="stat-config-total">-</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">绑定设备</span>
+            <span class="stat-value" id="stat-device-total">-</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="profile-section">
+        <div class="section-header">
+          <div>
+            <h2>同步配置</h2>
+            <p class="section-note">只显示密码是否已设置，不展示明文密码。</p>
+          </div>
+        </div>
+        <div class="profile-info-grid" id="webdav-grid">
+          <div class="loading-state">正在读取同步配置...</div>
+        </div>
+      </section>
+
+      <section class="profile-section">
+        <div class="section-header">
+          <div>
+            <h2>我的扩展</h2>
+            <p class="section-note">包含扩展 ID、版本、启用状态、配置 JSON 和更新时间。</p>
+          </div>
+        </div>
+        <div class="profile-list" id="extensions-list">
+          <div class="loading-state">正在读取扩展数据...</div>
+        </div>
+      </section>
+
+      <section class="profile-section">
+        <div class="section-header">
+          <div>
+            <h2>我的设备</h2>
+            <p class="section-note">展示账号绑定设备、平台、能力和最后在线时间。</p>
+          </div>
+        </div>
+        <div class="profile-list" id="devices-list">
+          <div class="loading-state">正在读取设备数据...</div>
+        </div>
+      </section>
+
+      <section class="profile-section">
+        <div class="section-header">
+          <div>
+            <h2>燕幕云端状态</h2>
+            <p class="section-note">展示云端快照来源、更新时间、大小和诊断信息。</p>
+          </div>
+        </div>
+        <div id="yanm-state-panel">
+          <div class="loading-state">正在读取燕幕状态...</div>
+        </div>
+      </section>
     </div>
-    
-    <div id="profile-login-prompt" style="text-align: center; margin-top: 6rem;">
+
+    <div id="profile-login-prompt" class="profile-login-prompt">
       <h2>尚未登录</h2>
       <p style="color: var(--text-muted); margin-bottom: 2rem;">请先登录以查看个人信息</p>
       <button class="button primary" onclick="window.YanziAuth.showLogin()">登录燕子账号</button>
@@ -137,21 +417,308 @@
 
   <script src="/assets/auth.js"></script>
   <script>
-    function renderProfilePage() {
+    const PROFILE_ENDPOINTS = {
+      me: "/v1/auth/me",
+      extensions: "/v1/me/extensions",
+      devices: "/v1/me/devices",
+      webdav: "/v1/sync/webdav-config",
+      yanm: "/v1/me/yanm-state"
+    };
+
+    function text(value, fallback = "-") {
+      if (value === null || value === undefined || value === "") return fallback;
+      return String(value);
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString("zh-CN", { hour12: false });
+    }
+
+    function formatBytes(bytes) {
+      const value = Number(bytes || 0);
+      if (!Number.isFinite(value) || value <= 0) return "-";
+      if (value < 1024) return `${value} B`;
+      if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+      return `${(value / 1024 / 1024).toFixed(2)} MB`;
+    }
+
+    function escapeHtml(value) {
+      return text(value, "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function parseJsonObject(value) {
+      if (!value) return null;
+      if (typeof value === "object") return value;
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+
+    function prettyJson(value) {
+      const parsed = parseJsonObject(value);
+      if (!parsed) return text(value, "{}");
+      return JSON.stringify(parsed, null, 2);
+    }
+
+    function isEnabled(record) {
+      return record.enabled === true || Number(record.enabled) === 1 || String(record.enabled).toLowerCase() === "true";
+    }
+
+    function isConfigExtension(record) {
+      const id = String(record.extension_id || record.extensionId || "").toLowerCase();
+      const settings = parseJsonObject(record.settings_json || record.settingsJson) || {};
+      return id.includes("settings") || id.includes("config") || id === "yanzi-webdav-settings" || id === "yanzi-quickpanel-settings" || settings.source === "openquickhost-desktop-config";
+    }
+
+    function setInfoGrid(containerId, items) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = items.map(item => `
+        <div class="info-item">
+          <span class="info-label">${escapeHtml(item.label)}</span>
+          <span class="info-value">${escapeHtml(item.value)}</span>
+        </div>
+      `).join("");
+    }
+
+    async function safeApi(path) {
+      try {
+        return { ok: true, data: await window.YanziAuth.api(path) };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    }
+
+    async function loadProfileData() {
+      const [me, extensions, devices, webdav, yanm] = await Promise.all([
+        safeApi(PROFILE_ENDPOINTS.me),
+        safeApi(PROFILE_ENDPOINTS.extensions),
+        safeApi(PROFILE_ENDPOINTS.devices),
+        safeApi(PROFILE_ENDPOINTS.webdav),
+        safeApi(PROFILE_ENDPOINTS.yanm)
+      ]);
+
+      return {
+        me,
+        extensions,
+        devices,
+        webdav,
+        yanm
+      };
+    }
+
+    function renderAccount(user, meResult) {
+      const me = meResult.ok ? meResult.data : user;
+      const displayName = me?.username || user?.username || "未设置用户名";
+      const email = me?.email || user?.email || "-";
+      const isAdmin = !!(me?.isAdmin || user?.isAdmin);
+      const role = isAdmin ? "系统管理员" : "普通用户";
+
+      document.getElementById("page-profile-initial").textContent = (displayName || email || "?").substring(0, 1).toUpperCase();
+      document.getElementById("page-profile-username").textContent = displayName;
+      document.getElementById("page-profile-role").textContent = role;
+      document.getElementById("page-profile-user-id").textContent = text(me?.userId || user?.userId);
+      document.getElementById("page-profile-name-value").textContent = displayName;
+      document.getElementById("page-profile-email").textContent = email;
+      document.getElementById("page-profile-role-value").textContent = role;
+    }
+
+    function renderStats(extensionsResult, devicesResult) {
+      const extensions = extensionsResult.ok ? (extensionsResult.data.items || []) : [];
+      const devices = devicesResult.ok ? (devicesResult.data.items || []) : [];
+      const enabled = extensions.filter(isEnabled).length;
+      const configs = extensions.filter(isConfigExtension).length;
+
+      document.getElementById("stat-extension-total").textContent = extensionsResult.ok ? extensions.length : "-";
+      document.getElementById("stat-extension-enabled").textContent = extensionsResult.ok ? enabled : "-";
+      document.getElementById("stat-config-total").textContent = extensionsResult.ok ? configs : "-";
+      document.getElementById("stat-device-total").textContent = devicesResult.ok ? devices.length : "-";
+    }
+
+    function renderWebdav(webdavResult) {
+      if (!webdavResult.ok) {
+        document.getElementById("webdav-grid").innerHTML = `<div class="error-state">同步配置读取失败：${escapeHtml(webdavResult.error?.message || "未知错误")}</div>`;
+        return;
+      }
+
+      const config = webdavResult.data || {};
+      setInfoGrid("webdav-grid", [
+        { label: "是否启用", value: config.enabled ? "已启用" : "未启用" },
+        { label: "服务器地址", value: config.serverUrl || "-" },
+        { label: "根路径", value: config.rootPath || "-" },
+        { label: "用户名", value: config.username || "-" },
+        { label: "密码状态", value: config.password ? "已设置" : "未设置" }
+      ]);
+    }
+
+    function renderExtensions(extensionsResult) {
+      const container = document.getElementById("extensions-list");
+      if (!extensionsResult.ok) {
+        container.innerHTML = `<div class="error-state">扩展数据读取失败：${escapeHtml(extensionsResult.error?.message || "未知错误")}</div>`;
+        return;
+      }
+
+      const items = extensionsResult.data.items || [];
+      if (items.length === 0) {
+        container.innerHTML = `<div class="empty-state">当前账号还没有保存扩展数据。</div>`;
+        return;
+      }
+
+      container.innerHTML = items.map(item => {
+        const extensionId = item.extension_id || item.extensionId || "-";
+        const enabled = isEnabled(item);
+        const settings = prettyJson(item.settings_json || item.settingsJson || {});
+        return `
+          <article class="record-card">
+            <div class="record-title-row">
+              <div>
+                <div class="record-title">${escapeHtml(extensionId)}</div>
+                <div class="record-subtitle">版本：${escapeHtml(item.installed_version || item.installedVersion || "-")}</div>
+              </div>
+              <span class="badge ${enabled ? "ok" : "warn"}">${enabled ? "已启用" : "已停用"}</span>
+            </div>
+            <div class="record-grid">
+              <div class="info-item">
+                <span class="info-label">更新时间</span>
+                <span class="info-value">${escapeHtml(formatDate(item.updated_at || item.updatedAt))}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">类型判断</span>
+                <span class="info-value">${isConfigExtension(item) ? "系统/配置项" : "普通扩展"}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">启用值</span>
+                <span class="info-value">${escapeHtml(item.enabled)}</span>
+              </div>
+            </div>
+            <pre class="json-block">${escapeHtml(settings)}</pre>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderDevices(devicesResult) {
+      const container = document.getElementById("devices-list");
+      if (!devicesResult.ok) {
+        container.innerHTML = `<div class="error-state">设备数据读取失败：${escapeHtml(devicesResult.error?.message || "未知错误")}</div>`;
+        return;
+      }
+
+      const items = devicesResult.data.items || [];
+      if (items.length === 0) {
+        container.innerHTML = `<div class="empty-state">当前账号还没有绑定设备。</div>`;
+        return;
+      }
+
+      container.innerHTML = items.map(item => {
+        const deviceId = item.deviceId || item.device_id || "-";
+        const displayName = item.displayName || item.display_name || deviceId;
+        const capabilities = prettyJson(item.capabilities || item.capabilities_json || {});
+        return `
+          <article class="record-card">
+            <div class="record-title-row">
+              <div>
+                <div class="record-title">${escapeHtml(displayName)}</div>
+                <div class="record-subtitle">设备 ID：${escapeHtml(deviceId)}</div>
+              </div>
+              <span class="badge">${escapeHtml(item.platform || "未知平台")}</span>
+            </div>
+            <div class="record-grid">
+              <div class="info-item">
+                <span class="info-label">最后在线</span>
+                <span class="info-value">${escapeHtml(formatDate(item.lastSeenAt || item.last_seen_at))}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">创建时间</span>
+                <span class="info-value">${escapeHtml(formatDate(item.createdAt || item.created_at))}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">更新时间</span>
+                <span class="info-value">${escapeHtml(formatDate(item.updatedAt || item.updated_at))}</span>
+              </div>
+            </div>
+            <pre class="json-block">${escapeHtml(capabilities)}</pre>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderYanmState(yanmResult) {
+      const container = document.getElementById("yanm-state-panel");
+      if (!yanmResult.ok) {
+        const message = yanmResult.error?.message || "暂无云端快照";
+        container.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
+        return;
+      }
+
+      const state = yanmResult.data || {};
+      const diagnostics = prettyJson(state.diagnostics || {});
+      container.innerHTML = `
+        <div class="profile-info-grid">
+          <div class="info-item">
+            <span class="info-label">快照来源</span>
+            <span class="info-value">${escapeHtml(state.source || "-")}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">更新时间</span>
+            <span class="info-value">${escapeHtml(formatDate(state.updatedAtUtc))}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">快照大小</span>
+            <span class="info-value">${escapeHtml(formatBytes(state.bytes))}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">查看链接</span>
+            <span class="info-value">${state.viewUrl ? `<a href="${escapeHtml(state.viewUrl)}" target="_blank" rel="noopener noreferrer">打开快照</a>` : "-"}</span>
+          </div>
+        </div>
+        <pre class="json-block">${escapeHtml(diagnostics)}</pre>
+      `;
+    }
+
+    async function renderProfilePage() {
       const user = window.YanziAuth ? window.YanziAuth.getUser() : null;
       const container = document.getElementById("profile-container");
       const prompt = document.getElementById("profile-login-prompt");
 
-      if (user) {
-        container.style.display = "block";
-        prompt.style.display = "none";
-        document.getElementById("page-profile-initial").textContent = (user.username || user.email || "?").substring(0, 1).toUpperCase();
-        document.getElementById("page-profile-username").textContent = user.username || "未设置用户名";
-        document.getElementById("page-profile-email").textContent = user.email || "-";
-        document.getElementById("page-profile-role").textContent = user.isAdmin ? "系统管理员" : "普通用户";
-      } else {
+      if (!user) {
         container.style.display = "none";
         prompt.style.display = "block";
+        return;
+      }
+
+      container.style.display = "block";
+      prompt.style.display = "none";
+      renderAccount(user, { ok: true, data: user });
+
+      const refreshBtn = document.getElementById("profile-refresh-btn");
+      if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "正在刷新...";
+      }
+
+      try {
+        const data = await loadProfileData();
+        renderAccount(user, data.me);
+        renderStats(data.extensions, data.devices);
+        renderWebdav(data.webdav);
+        renderExtensions(data.extensions);
+        renderDevices(data.devices);
+        renderYanmState(data.yanm);
+      } finally {
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = "刷新数据";
+        }
       }
     }
 
@@ -160,6 +727,7 @@
     });
 
     document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("profile-refresh-btn")?.addEventListener("click", renderProfilePage);
       renderProfilePage();
     });
   </script>
