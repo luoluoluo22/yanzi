@@ -469,6 +469,33 @@
       overflow-wrap: anywhere;
     }
 
+    .json-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin: 1.4rem 0 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .json-toolbar h3 {
+      margin: 0;
+    }
+
+    .json-toolbar-note {
+      display: block;
+      margin-top: 0.2rem;
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    .json-toolbar-actions {
+      display: flex;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+    }
+
     .json-block {
       margin: 0;
       padding: 1rem;
@@ -481,6 +508,10 @@
       overflow-wrap: anywhere;
       max-height: 460px;
       overflow: auto;
+    }
+
+    .json-block.collapsed {
+      max-height: 190px;
     }
 
     .empty-state,
@@ -775,6 +806,8 @@
       yanm: "/v1/me/yanm-state"
     };
 
+    const SENSITIVE_KEY_PATTERN = /(password|passwd|pwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|authorization|credential|cookie|session)/i;
+
     const profileState = {
       activeView: "overview",
       extensions: [],
@@ -832,6 +865,54 @@
       const parsed = parseJsonObject(value);
       if (!parsed) return text(value, "{}");
       return JSON.stringify(parsed, null, 2);
+    }
+
+    function redactSensitiveData(value, parentKey = "") {
+      if (Array.isArray(value)) {
+        return value.map(item => redactSensitiveData(item, parentKey));
+      }
+
+      if (value && typeof value === "object") {
+        const result = {};
+        for (const [key, nestedValue] of Object.entries(value)) {
+          result[key] = SENSITIVE_KEY_PATTERN.test(key)
+            ? "********"
+            : redactSensitiveData(nestedValue, key);
+        }
+        return result;
+      }
+
+      if (SENSITIVE_KEY_PATTERN.test(parentKey) && value !== null && value !== undefined && value !== "") {
+        return "********";
+      }
+
+      return value;
+    }
+
+    function redactSensitiveJsonString(value) {
+      const parsed = parseJsonObject(value);
+      if (parsed) {
+        return JSON.stringify(redactSensitiveData(parsed), null, 2);
+      }
+
+      return text(value, "{}").replace(/("(?:password|passwd|pwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|authorization|credential|cookie|session)"\s*:\s*")[^"]*(")/gi, "$1********$2");
+    }
+
+    async function copyText(value) {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      return copied;
     }
 
     function getExtensionId(record) {
@@ -1125,7 +1206,8 @@
       if (!item) return;
       profileState.selectedExtensionId = extensionId;
       const enabled = isEnabled(item);
-      const settings = prettyJson(item.settings_json || item.settingsJson || {});
+      const rawSettings = item.settings_json || item.settingsJson || {};
+      const settings = redactSensitiveJsonString(rawSettings);
       const meta = getStoreMeta(item);
 
       document.getElementById("extension-list-card").style.display = "none";
@@ -1159,8 +1241,17 @@
             <span class="info-value">${escapeHtml(formatDate(item.updated_at || item.updatedAt))}</span>
           </div>
         </div>
-        <h3 style="margin:1.4rem 0 0.75rem;">配置 JSON</h3>
-        <pre class="json-block">${escapeHtml(settings)}</pre>
+        <div class="json-toolbar">
+          <div>
+            <h3>配置 JSON</h3>
+            <span class="json-toolbar-note">已自动隐藏 password、token、secret、apiKey、authorization 等敏感字段。</span>
+          </div>
+          <div class="json-toolbar-actions">
+            <button class="text-btn" type="button" data-copy-json="extension-settings-json">复制 JSON</button>
+            <button class="text-btn" type="button" data-toggle-json="extension-settings-json">展开全部</button>
+          </div>
+        </div>
+        <pre class="json-block collapsed" id="extension-settings-json">${escapeHtml(settings)}</pre>
       `;
     }
 
@@ -1211,7 +1302,7 @@
           </table>
         </div>
         <h3 style="margin:1.4rem 0 0.75rem;">设备能力明细</h3>
-        <pre class="json-block">${escapeHtml(prettyJson(items.map(item => ({
+        <pre class="json-block">${escapeHtml(redactSensitiveJsonString(items.map(item => ({
           deviceId: item.deviceId || item.device_id,
           displayName: item.displayName || item.display_name,
           platform: item.platform,
@@ -1249,7 +1340,7 @@
           </div>
         </div>
         <h3 style="margin:1.4rem 0 0.75rem;">诊断信息</h3>
-        <pre class="json-block">${escapeHtml(prettyJson(state.diagnostics || {}))}</pre>
+        <pre class="json-block">${escapeHtml(redactSensitiveJsonString(state.diagnostics || {}))}</pre>
       `;
     }
 
@@ -1322,6 +1413,29 @@
           const haystack = `${btn.textContent || ""} ${btn.dataset.keywords || ""}`.toLowerCase();
           btn.style.display = !query || haystack.includes(query) ? "flex" : "none";
         });
+      });
+
+      document.addEventListener("click", async event => {
+        const copyButton = event.target.closest("[data-copy-json]");
+        if (copyButton) {
+          const target = document.getElementById(copyButton.dataset.copyJson);
+          if (!target) return;
+          const originalLabel = copyButton.textContent;
+          const copied = await copyText(target.textContent || "");
+          copyButton.textContent = copied ? "已复制" : "复制失败";
+          window.setTimeout(() => {
+            copyButton.textContent = originalLabel;
+          }, 1200);
+          return;
+        }
+
+        const toggleButton = event.target.closest("[data-toggle-json]");
+        if (toggleButton) {
+          const target = document.getElementById(toggleButton.dataset.toggleJson);
+          if (!target) return;
+          const collapsed = target.classList.toggle("collapsed");
+          toggleButton.textContent = collapsed ? "展开全部" : "收起 JSON";
+        }
       });
     }
 
