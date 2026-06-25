@@ -167,21 +167,25 @@ export default {
       return await handleRequest(request, env);
     } catch (error) {
       if (error instanceof HttpError) {
-        return json(
-          {
-            error: error.code,
-            message: error.message
-          },
-          error.status
+        return withCors(
+          json(
+            {
+              error: error.code,
+              message: error.message
+            },
+            error.status
+          )
         );
       }
 
-      return json(
-        {
-          error: "internal_error",
-          message: error instanceof Error ? error.message : "Unknown error"
-        },
-        500
+      return withCors(
+        json(
+          {
+            error: "internal_error",
+            message: error instanceof Error ? error.message : "Unknown error"
+          },
+          500
+        )
       );
     }
   }
