@@ -4,13 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>产品说明 - 燕子在线文档</title>
-  <meta name="description" content="燕子启动器产品说明。">
+  <meta name="description" content="燕子启动器架构与核心特征，免费开源的 Windows 效率工具。">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/assets/auth.css">
 </head>
 <body>
   <div class="noise"></div>
@@ -30,7 +29,93 @@
     </nav>
   </header>
   <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
-  <main class="doc-page"><div class="doc-layout"><aside class="doc-sidebar"></aside><div class="guide-stack"></div><aside class="doc-outline"><strong>本页目录</strong><ul id="outline-list"></ul></aside></div></main>
+  <main class="doc-page">
+    <div class="doc-layout">
+      <aside class="doc-sidebar">
+        <!-- 侧边栏由 docs.js 动态生成 -->
+      </aside>
+      <div class="guide-stack">
+        <div class="doc-content-header" style="margin-bottom: 2rem;">
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">产品说明</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;"></p>
+        </div>
+        <article class="guide-card">
+  <h2>产品定位</h2>
+<p>这是一个以“万物皆扩展”为核心思路的桌面启动器。</p>
+<p>目标方向：</p>
+<ol>
+<li>主程序和扩展彻底分离</li>
+<li>普通用户也能低门槛创建自己的扩展</li>
+<li>主界面、鼠标面板、工作区扩展共用一套宿主能力</li>
+<li>扩展可以在多设备之间云同步</li>
+<li>简单需求用单文件 JSON，复杂需求再扩展到压缩包或更完整的项目结构</li>
+</ol>
+</article>
+
+<article class="guide-card">
+  <h2>当前能力</h2>
+<ul>
+<li>全局热键 <code>Ctrl+Shift+Space</code> 呼出</li>
+<li>搜索、筛选、键盘选择、回车执行</li>
+<li>内置命令与本地扩展统一展示</li>
+<li>单文件 JSON 扩展新增、编辑、删除</li>
+<li>条目右键管理：桌面快捷方式、重命名、删除、添加到鼠标面板</li>
+<li>鼠标面板分组、收藏、扩展布局复制 / 剪切 / 粘贴</li>
+<li>Cloudflare 用户登录、扩展元数据同步、扩展包上传下载</li>
+<li>参数化命令：支持“命令前缀 + 参数”，例如 <code>谷歌 今天的新闻</code></li>
+<li>前缀脚本：支持“前缀 + 内容”把后半段传给脚本扩展</li>
+<li>宿主工作区：支持 <code>hostedViewXaml</code> 和 <code>hostedViewV2</code></li>
+<li>扩展 JSON 可直接从系统剪贴板导入</li>
+</ul>
+</article>
+
+<article class="guide-card">
+  <h2>设计原则</h2>
+<h3>1. 命令优先</h3>
+<p>用户输入时，应优先命中可执行动作，而不是先进入复杂界面。</p>
+<h3>2. 扩展优先</h3>
+<p>宿主只负责：</p>
+<ul>
+<li>命令索引</li>
+<li>执行入口</li>
+<li>鼠标面板布局</li>
+<li>设置与同步</li>
+<li>扩展管理</li>
+</ul>
+<p>真正的业务动作由扩展提供。</p>
+<h3>3. 低门槛优先</h3>
+<p>简单扩展应允许用户只写一个 <code>manifest.json</code> 就能完成。</p>
+<h3>4. 云同步优先</h3>
+<p>用户自己的扩展、安装记录和基础配置应能跨设备同步。</p>
+</article>
+
+<article class="guide-card">
+  <h2>后续方向</h2>
+<ul>
+<li>支持更多参数化动作类型，如 <code>url</code>、<code>shell</code>、<code>http</code></li>
+<li>支持压缩包扩展和复杂项目扩展</li>
+<li>扩展市场与版本发布</li>
+<li>自定义热键与主题</li>
+<li>更完善的扩展权限与签名模型</li>
+</ul>
+</article>
+
+
+        
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          
+          <a href="/docs/getting-started.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
+            下一页: 快速上手
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+        </div>
+      </div>
+      <aside class="doc-outline">
+        <strong>本页目录</strong>
+        <ul id="outline-list"></ul>
+      </aside>
+    </div>
+  </main>
   <script src="/assets/docs-data.js"></script>
   <script src="/assets/docs.js"></script>
 </body>

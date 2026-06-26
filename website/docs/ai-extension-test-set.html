@@ -3,20 +3,296 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 扩展测试集 - 燕子在线文档</title>
-  <meta name="description" content="燕子 AI 扩展测试集。">
+  <title>AI 扩展生成测试集 - 燕子在线文档</title>
+  <meta name="description" content="验证本机 AI Agent 自动为燕子生成 manifest.json 扩展质量的 10 项基准测试。">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/assets/auth.css">
 </head>
 <body>
   <div class="noise"></div>
-  <header class="site-header"><div class="brand"><a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;"><img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));"><span style="font-weight:600;">燕子启动器</span></a></div><nav><a href="/">首页</a><a href="/store.html">扩展商店</a><a href="/yanm.html">燕幕</a><a href="/docs/product-overview.html" class="active">文档</a><a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a></nav></header>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));">
+        <span style="font-weight:600;">燕子启动器</span>
+      </a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/docs/product-overview.html" class="active">文档</a>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>
+    </nav>
+  </header>
   <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
-  <main class="doc-page"><div class="doc-layout"><aside class="doc-sidebar"></aside><div class="guide-stack"></div><aside class="doc-outline"><strong>本页目录</strong><ul id="outline-list"></ul></aside></div></main>
-  <script src="/assets/docs-data.js"></script><script src="/assets/docs.js"></script>
+  <main class="doc-page">
+    <div class="doc-layout">
+      <aside class="doc-sidebar">
+        <!-- 侧边栏由 docs.js 动态生成 -->
+      </aside>
+      <div class="guide-stack">
+        <div class="doc-content-header" style="margin-bottom: 2rem;">
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">AI 扩展生成测试集</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">这份测试集用于验证 AI 是否能为 Yanzi 生成可导入、可测试、可运行的扩展 JSON。<br><br>统一要求：<br><br>1. AI 只能返回一个完整 JSON，不要解释，不要 Markdown 代码块。<br>2. JSON 必须能被 `System.Text.Json` 直接解析。<br>3. 除非案例明确要求，否则不要输出 `x:Class`、事件处理函数、代码隐藏文件路径。<br>4. `hostedViewXaml` 必须按 WPF 可解析子集来写，避免 `LetterSpacing`、`LineHeight` 这类当前宿主不兼容属性。<br>5. 按需求优先选择最简单稳定的实现：能用 `openTarget` 就不要上脚本，能用脚本就不要硬上复杂 XAML。<br><br>---</p>
+        </div>
+        <article class="guide-card">
+  <h2>测试 1：打开桌面目录</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请生成一个扩展，名字叫“打开桌面”，点击后直接打开 <code>F:\\Desktop</code>。</p>
+</blockquote>
+<p>验收点：</p>
+<ul>
+<li>使用 <code>openTarget</code></li>
+<li><code>id</code>、<code>name</code>、<code>version</code>、<code>category</code>、<code>description</code>、<code>keywords</code> 完整</li>
+<li>不要误用脚本或 <code>hostedViewXaml</code></li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>把路径写成不存在的 Linux 风格路径</li>
+<li>误输出说明文字而不是 JSON</li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>测试 2：网页搜索扩展</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请生成一个网页搜索扩展，前缀是“bing”和“必应”，输入关键词后打开 Bing 搜索结果。</p>
+</blockquote>
+<p>验收点：</p>
+<ul>
+<li>使用 <code>queryPrefixes</code></li>
+<li>使用 <code>queryTargetTemplate</code></li>
+<li>模板中包含 <code>{query}</code></li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>把搜索词直接写死</li>
+<li>忘记配置 <code>queryPrefixes</code></li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>测试 3：打开记事本</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请生成一个扩展，点击后打开 Windows 记事本。</p>
+</blockquote>
+<p>验收点：</p>
+<ul>
+<li>使用 <code>openTarget</code></li>
+<li><code>openTarget</code> 可以是 <code>notepad.exe</code></li>
+<li>不需要脚本</li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>硬编码用户机器上不稳定的绝对路径</li>
+<li>误用 PowerShell 启动进程</li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>测试 4：C# 输入回显</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请生成一个 C# 内联脚本扩展，把用户输入的文本原样返回，并额外显示长度。</p>
+</blockquote>
+<p>验收点：</p>
+<ul>
+<li><code>runtime</code> 为 <code>csharp</code></li>
+<li><code>entryMode</code> 为 <code>inline</code></li>
+<li><code>script.source</code> 中包含 <code>RunAsync</code></li>
+<li>读取 <code>context.InputText</code></li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>输出多文件项目结构</li>
+<li>使用宿主不存在的命名空间</li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>测试 5：PowerShell 剪贴板读取</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请生成一个 PowerShell 扩展，读取当前剪贴板文本，如果没有文本就返回“剪贴板为空”。</p>
+</blockquote>
+<p>验收点：</p>
+<ul>
+<li><code>runtime</code> 为 <code>powershell</code></li>
+<li><code>entryMode</code> 为 <code>inline</code></li>
+<li>脚本返回字符串结果</li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>调用不存在的模块</li>
+<li>把脚本写成需要外部 <code>.ps1</code> 文件</li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>测试 6：前台窗口标题读取</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请生成一个扩展，读取当前前台窗口标题并返回，方便我查看当前工作窗口。</p>
+</blockquote>
+<p>验收点：</p>
+<ul>
+<li>优先使用 <code>csharp</code> 内联脚本</li>
+<li>返回标题文本</li>
+<li>JSON 能直接导入测试</li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>直接假设可以调用任意 NuGet 包</li>
+<li>写成控制台程序入口而不是内联动作</li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>测试 7：宿主便签工作区</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请生成一个 hostedViewXaml 扩展，左侧是多行便签编辑框，右侧是实时预览，打开时加载本地存储，点击按钮后保存到本地和云端。</p>
+</blockquote>
+<p>验收点：</p>
+<ul>
+<li>使用 <code>hostedViewXaml</code></li>
+<li>根元素或按钮动作使用 <code>oqh:HostedViewBridge.Action</code></li>
+<li>至少包含 <code>loadStorage</code> 和 <code>saveStorage</code></li>
+<li>XAML 只使用当前宿主兼容属性</li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>使用 <code>x:Class</code></li>
+<li>使用 <code>Click=&quot;...&quot;</code> 事件</li>
+<li>使用 <code>LetterSpacing</code>、<code>LineHeight</code></li>
+<li>忘记声明 <code>xmlns:oqh</code></li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>测试 8：翻译工作区</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请生成一个宿主工作区扩展，左侧输入原文，点击按钮后通过脚本把结果输出到右侧。先用假翻译占位，不调用真实 API。</p>
+</blockquote>
+<p>验收点：</p>
+<ul>
+<li>可选择 <code>hostedViewXaml + runScript</code></li>
+<li>或使用结构化 hosted view</li>
+<li>输出区可显示脚本结果</li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>直接依赖外网 API</li>
+<li>没有状态字段，导致输出区无法绑定</li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>测试 9：时间戳工具</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请生成一个扩展，把当前时间格式化为 <code>yyyy-MM-dd HH:mm:ss</code> 返回，并附带用户输入内容。</p>
+</blockquote>
+<p>验收点：</p>
+<ul>
+<li>可用 <code>csharp</code> 或 <code>powershell</code></li>
+<li>返回值同时包含时间和输入</li>
+<li>不需要 <code>hostedViewXaml</code></li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>忘记处理空输入</li>
+<li>返回对象而不是字符串</li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>测试 10：错误修复回归</h2>
+<p>给 AI 的需求：</p>
+<blockquote>
+<p>请修复下面这份 hostedViewXaml JSON。要求保留“沉浸式笔记工作区”的交互意图，去掉宿主不兼容写法，只返回最终修复后的完整 JSON。</p>
+</blockquote>
+<p>建议附上的故障样例：</p>
+<ul>
+<li>使用 <code>LetterSpacing</code></li>
+<li>使用 <code>LineHeight</code></li>
+<li>使用 <code>x:Class</code></li>
+<li>使用 <code>Click=&quot;Save_Click&quot;</code></li>
+</ul>
+<p>验收点：</p>
+<ul>
+<li>AI 能保留原有功能意图</li>
+<li>删除或替换不兼容属性</li>
+<li>返回一个可再次测试的完整 JSON</li>
+</ul>
+<p>常见错误：</p>
+<ul>
+<li>直接把复杂界面退化成普通 <code>openTarget</code></li>
+<li>删除存储动作，导致功能退化</li>
+</ul>
+<hr>
+</article>
+
+<article class="guide-card">
+  <h2>推荐使用方式</h2>
+<p>可以把这 10 条逐条喂给 AI，观察：</p>
+<ol>
+<li>首次生成是否可解析</li>
+<li>点击“测试扩展运行”是否通过</li>
+<li>失败后是否能根据日志二次修复</li>
+<li>是否倾向于选择过度复杂的实现</li>
+<li>是否会输出宿主当前不支持的 WPF 属性</li>
+</ol>
+</article>
+
+<article class="guide-card">
+  <h2>建议记录字段</h2>
+<p>每次测试建议记录：</p>
+<ul>
+<li>模型名称</li>
+<li>测试编号</li>
+<li>首次是否通过 JSON 解析</li>
+<li>首次是否通过运行测试</li>
+<li>是否需要二次修复</li>
+<li>最终是否可用</li>
+<li>典型错误类型</li>
+</ul>
+</article>
+
+
+        
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          <a href="/docs/agent-skill-spec.html" class="button secondary" style="gap: 8px; height: 46px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            上一页: Agent Skill 规范
+          </a>
+          
+        </div>
+      </div>
+      <aside class="doc-outline">
+        <strong>本页目录</strong>
+        <ul id="outline-list"></ul>
+      </aside>
+    </div>
+  </main>
+  <script src="/assets/docs-data.js"></script>
+  <script src="/assets/docs.js"></script>
 </body>
 </html>

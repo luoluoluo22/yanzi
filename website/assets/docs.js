@@ -35,7 +35,7 @@ function renderDocsPage() {
   document.title = `${page.title} - 燕子在线文档`;
 
   renderDocsSidebar(data.nav, path);
-  renderDocsContent(page);
+  // renderDocsContent(page);
 }
 
 function renderDocsSidebar(nav, activePath) {

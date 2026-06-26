@@ -3,20 +3,110 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>快速上手 - 燕子在线文档</title>
-  <meta name="description" content="燕子启动器快速上手。">
+  <title>使用说明 - 燕子在线文档</title>
+  <meta name="description" content="燕子启动器的安装说明、快捷键与云同步配置。">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/assets/auth.css">
 </head>
 <body>
   <div class="noise"></div>
-  <header class="site-header"><div class="brand"><a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;"><img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));"><span style="font-weight:600;">燕子启动器</span></a></div><nav><a href="/">首页</a><a href="/store.html">扩展商店</a><a href="/yanm.html">燕幕</a><a href="/docs/product-overview.html" class="active">文档</a><a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a></nav></header>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));">
+        <span style="font-weight:600;">燕子启动器</span>
+      </a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/docs/product-overview.html" class="active">文档</a>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>
+    </nav>
+  </header>
   <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
-  <main class="doc-page"><div class="doc-layout"><aside class="doc-sidebar"></aside><div class="guide-stack"></div><aside class="doc-outline"><strong>本页目录</strong><ul id="outline-list"></ul></aside></div></main>
-  <script src="/assets/docs-data.js"></script><script src="/assets/docs.js"></script>
+  <main class="doc-page">
+    <div class="doc-layout">
+      <aside class="doc-sidebar">
+        <!-- 侧边栏由 docs.js 动态生成 -->
+      </aside>
+      <div class="guide-stack">
+        <div class="doc-content-header" style="margin-bottom: 2rem;">
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">使用说明</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;"></p>
+        </div>
+        <article class="guide-card">
+  <h2>安装与启动</h2>
+<ol>
+<li>从蓝奏云下载 Windows 安装包：<a href="https://wwbnh.lanzout.com/b0pnkaj6j">https://wwbnh.lanzout.com/b0pnkaj6j</a></li>
+<li>输入提取密码：<code>62yn</code></li>
+<li>运行 <code>YanziSetup-0.1.0.exe</code> 完成安装</li>
+<li>启动 <code>Yanzi.exe</code></li>
+<li>使用 <code>Ctrl+Shift+Space</code> 呼出启动器</li>
+</ol>
+</article>
+
+<article class="guide-card">
+  <h2>基本操作</h2>
+<ul>
+<li>输入关键字搜索命令</li>
+<li><code>Up / Down</code> 切换条目</li>
+<li><code>Enter</code> 执行命令</li>
+<li><code>Esc</code> 收起启动器</li>
+<li>右键条目打开更多操作</li>
+</ul>
+</article>
+
+<article class="guide-card">
+  <h2>添加扩展</h2>
+<h3>方法一：顶部 <code>+</code></h3>
+<p>点击顶部标签栏右侧 <code>+</code>，可以把当前选中项固定到顶部标签。</p>
+<h3>方法二：设置页管理</h3>
+<p>在设置页中后续会继续补完整扩展管理入口。</p>
+</article>
+
+<article class="guide-card">
+  <h2>参数化命令示例</h2>
+<ul>
+<li><code>谷歌 今天的新闻</code></li>
+<li><code>gg cloudflare pages deploy</code></li>
+<li><code>guge openai api</code></li>
+</ul>
+</article>
+
+<article class="guide-card">
+  <h2>云同步</h2>
+<ol>
+<li>在设置窗口登录账号</li>
+<li>本地扩展会在刷新时自动同步</li>
+<li>其他设备登录后可以拉取相同扩展记录</li>
+</ol>
+</article>
+
+
+        
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          <a href="/docs/product-overview.html" class="button secondary" style="gap: 8px; height: 46px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            上一页: 产品说明
+          </a>
+          <a href="/docs/extension-authoring-guide.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
+            下一页: 开发指南
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+        </div>
+      </div>
+      <aside class="doc-outline">
+        <strong>本页目录</strong>
+        <ul id="outline-list"></ul>
+      </aside>
+    </div>
+  </main>
+  <script src="/assets/docs-data.js"></script>
+  <script src="/assets/docs.js"></script>
 </body>
 </html>

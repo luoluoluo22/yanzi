@@ -4,19 +4,584 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>扩展规范 - 燕子在线文档</title>
-  <meta name="description" content="燕子扩展规范。">
+  <meta name="description" content="燕子启动器 manifest.json 声明式规范及字段定义。">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/assets/auth.css">
 </head>
 <body>
   <div class="noise"></div>
-  <header class="site-header"><div class="brand"><a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;"><img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));"><span style="font-weight:600;">燕子启动器</span></a></div><nav><a href="/">首页</a><a href="/store.html">扩展商店</a><a href="/yanm.html">燕幕</a><a href="/docs/product-overview.html" class="active">文档</a><a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a></nav></header>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));">
+        <span style="font-weight:600;">燕子启动器</span>
+      </a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/docs/product-overview.html" class="active">文档</a>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>
+    </nav>
+  </header>
   <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
-  <main class="doc-page"><div class="doc-layout"><aside class="doc-sidebar"></aside><div class="guide-stack"></div><aside class="doc-outline"><strong>本页目录</strong><ul id="outline-list"></ul></aside></div></main>
-  <script src="/assets/docs-data.js"></script><script src="/assets/docs.js"></script>
+  <main class="doc-page">
+    <div class="doc-layout">
+      <aside class="doc-sidebar">
+        <!-- 侧边栏由 docs.js 动态生成 -->
+      </aside>
+      <div class="guide-stack">
+        <div class="doc-content-header" style="margin-bottom: 2rem;">
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">扩展规范</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">当前版本支持这些扩展：<br><br>- 单文件 JSON 扩展<br>- C# 动作扩展<br>- PowerShell 脚本扩展<br>- 宿主视图扩展<br>- 应用型 WebView 扩展<br><br>脚本扩展又分两种入口模式：<br><br>- `entryMode: inline`<br>  轻量扩展，C# 或 PowerShell 源码直接写在 `manifest.json` 的 `script.source`<br>- `entry`<br>  目录脚本入口，适合复杂项目或压缩包分发<br><br>每个扩展存放在独立目录下，最小结构如下：<br><br>```text<br>Extensions/<br>  my-extension/<br>    manifest.json<br>```</p>
+        </div>
+        <article class="guide-card">
+  <h2>最小示例</h2>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;my-json-extension&quot;,
+  &quot;name&quot;: &quot;我的 JSON 扩展&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;扩展&quot;,
+  &quot;description&quot;: &quot;示例：打开本地文档或目录。&quot;,
+  &quot;keywords&quot;: [&quot;json&quot;, &quot;extension&quot;],
+  &quot;openTarget&quot;: &quot;F:\\Desktop\\OpenQuickHost\\docs\\README.txt&quot;
+}
+</code></pre>
+</article>
+
+<article class="guide-card">
+  <h2>脚本扩展</h2>
+<p>如果你把燕子当作脚本管理器来用，可以让扩展直接执行脚本。</p>
+<p>当前脚本运行时支持：</p>
+<ul>
+<li><code>csharp</code></li>
+<li><code>powershell</code></li>
+</ul>
+<h3>单 JSON 内联 C# 动作</h3>
+<p>这是轻量脚本扩展的推荐方式。</p>
+<p>示例：</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;csharp-echo&quot;,
+  &quot;name&quot;: &quot;C# 输入回显&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;C#&quot;,
+  &quot;description&quot;: &quot;读取宿主传入的 InputText 并返回。&quot;,
+  &quot;keywords&quot;: [&quot;csharp&quot;, &quot;dotnet&quot;, &quot;输入&quot;],
+  &quot;icon&quot;: &quot;mdi:code&quot;,
+  &quot;runtime&quot;: &quot;csharp&quot;,
+  &quot;entryMode&quot;: &quot;inline&quot;,
+  &quot;permissions&quot;: [],
+  &quot;script&quot;: {
+    &quot;source&quot;: &quot;public static class YanziAction\\n{\\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(string.IsNullOrWhiteSpace(context.InputText) ? \\\&quot;没有收到输入\\\&quot; : context.InputText.Trim());\\n    }\\n}&quot;
+  }
+}
+</code></pre>
+<h3>单 JSON 内联 PowerShell 脚本</h3>
+<p>PowerShell 适合调用 Windows 系统命令、剪贴板、进程和文件自动化。</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;inline-clipboard&quot;,
+  &quot;name&quot;: &quot;内联读取剪贴板&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;脚本&quot;,
+  &quot;description&quot;: &quot;单 JSON 内联 PowerShell 示例：读取当前剪贴板文本。&quot;,
+  &quot;keywords&quot;: [&quot;clipboard&quot;, &quot;剪贴板&quot;, &quot;inline&quot;, &quot;powershell&quot;],
+  &quot;runtime&quot;: &quot;powershell&quot;,
+  &quot;entryMode&quot;: &quot;inline&quot;,
+  &quot;permissions&quot;: [&quot;clipboard.read&quot;],
+  &quot;script&quot;: {
+    &quot;source&quot;: &quot;param([string]$InputText = \&quot;\&quot;, [string]$ContextPath = \&quot;\&quot;)\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n$text = Get-Clipboard -Raw\nif ([string]::IsNullOrWhiteSpace($text)) { Write-Output \&quot;当前剪贴板为空。\&quot; } else { Write-Output $text.Trim() }&quot;
+  }
+}
+</code></pre>
+<h3>目录脚本入口</h3>
+<p>复杂脚本、带资源文件的项目、压缩包扩展，继续使用目录脚本入口。</p>
+<p>目录结构示例：</p>
+<pre><code class="language-text">Extensions/
+  foreground-window/
+    manifest.json
+    main.ps1
+</code></pre>
+<p>示例：</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;foreground-window&quot;,
+  &quot;name&quot;: &quot;前台窗口信息&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;脚本&quot;,
+  &quot;description&quot;: &quot;读取当前前台窗口标题和进程。&quot;,
+  &quot;keywords&quot;: [&quot;window&quot;, &quot;foreground&quot;, &quot;前台窗口&quot;],
+  &quot;runtime&quot;: &quot;powershell&quot;,
+  &quot;entry&quot;: &quot;main.ps1&quot;,
+  &quot;permissions&quot;: [&quot;window.foreground&quot;],
+  &quot;globalShortcut&quot;: &quot;Ctrl+Alt+W&quot;
+}
+</code></pre>
+<p>脚本入口会收到这些参数和环境变量：</p>
+<ul>
+<li>参数 <code>-InputText</code></li>
+<li>参数 <code>-ContextPath</code></li>
+<li>环境变量 <code>YANZI_INPUT</code></li>
+<li>环境变量 <code>YANZI_CONTEXT_PATH</code></li>
+<li>环境变量 <code>YANZI_EXTENSION_ID</code></li>
+<li>环境变量 <code>YANZI_EXTENSION_DIR</code></li>
+<li>环境变量 <code>YANZI_LAUNCH_SOURCE</code></li>
+</ul>
+<p><code>ContextPath</code> 指向一个临时 JSON 文件，里面包含：</p>
+<ul>
+<li><code>extensionId</code></li>
+<li><code>title</code></li>
+<li><code>extensionDirectory</code></li>
+<li><code>inputText</code></li>
+<li><code>launchSource</code></li>
+<li><code>now</code></li>
+<li><code>permissions</code></li>
+</ul>
+</article>
+
+<article class="guide-card">
+  <h2>宿主视图扩展</h2>
+<p>当扩展不仅要“执行一次动作”，还需要在启动器内部承载一个交互界面时，可以声明 <code>hostedView</code>。</p>
+<p>当前版本先支持一种宿主视图：</p>
+<ul>
+<li><code>split-workbench</code>
+启动后在当前窗口切换为双栏工作区
+左侧输入
+右侧输出</li>
+</ul>
+<p>示例：</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;sample-translate&quot;,
+  &quot;name&quot;: &quot;双栏翻译&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;扩展&quot;,
+  &quot;description&quot;: &quot;在当前窗口中打开翻译工作区。&quot;,
+  &quot;keywords&quot;: [&quot;翻译&quot;, &quot;translate&quot;, &quot;translator&quot;],
+  &quot;globalShortcut&quot;: &quot;Ctrl+Alt+T&quot;,
+  &quot;hostedView&quot;: {
+    &quot;type&quot;: &quot;split-workbench&quot;,
+    &quot;title&quot;: &quot;双栏翻译&quot;,
+    &quot;description&quot;: &quot;左侧输入原文，右侧显示插件输出。&quot;,
+    &quot;inputLabel&quot;: &quot;原文&quot;,
+    &quot;inputPlaceholder&quot;: &quot;输入要处理的文本...&quot;,
+    &quot;outputLabel&quot;: &quot;译文&quot;,
+    &quot;actionButtonText&quot;: &quot;开始翻译&quot;,
+    &quot;actionType&quot;: &quot;mock-translate&quot;,
+    &quot;emptyState&quot;: &quot;这里会显示插件结果。&quot;
+  }
+}
+</code></pre>
+</article>
+
+<article class="guide-card">
+  <h2>应用型 WebView 扩展</h2>
+<p>复杂、小应用型扩展优先使用 <code>app.type = webview</code>。它会打开独立 WebView2 窗口，加载扩展目录内的 HTML，并注入 <code>window.yanzi</code> 桥接对象。是否本地优先、是否同步，由 <code>app.storage</code> 描述。</p>
+<p>适合：</p>
+<ul>
+<li>笔记、待办、书签、代码片段、阅读列表</li>
+<li>需要漂亮界面、富文本、复杂列表、快捷键和前端生态的应用</li>
+<li>本地优先、后台坚果云 / WebDAV 同步的小应用</li>
+</ul>
+<p>目录结构示例：</p>
+<pre><code class="language-text">Extensions/
+  notion-like-notes/
+    manifest.json
+    app/
+      index.html
+      app.js
+      styles.css
+</code></pre>
+<p>最小 manifest：</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;notion-like-notes&quot;,
+  &quot;name&quot;: &quot;独立笔记&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;应用&quot;,
+  &quot;description&quot;: &quot;local-first WebView 笔记应用。&quot;,
+  &quot;keywords&quot;: [&quot;笔记&quot;, &quot;note&quot;, &quot;notion&quot;],
+  &quot;icon&quot;: &quot;mdi:note-text-outline&quot;,
+  &quot;runtime&quot;: &quot;web-app&quot;,
+  &quot;app&quot;: {
+    &quot;type&quot;: &quot;webview&quot;,
+    &quot;entry&quot;: &quot;app/index.html&quot;,
+    &quot;window&quot;: {
+      &quot;width&quot;: 1180,
+      &quot;height&quot;: 760,
+      &quot;minWidth&quot;: 900,
+      &quot;minHeight&quot;: 600
+    },
+    &quot;storage&quot;: {
+      &quot;mode&quot;: &quot;local-first&quot;,
+      &quot;engine&quot;: &quot;files&quot;,
+      &quot;sync&quot;: &quot;webdav&quot;,
+      &quot;namespace&quot;: &quot;notes&quot;
+    },
+    &quot;bridge&quot;: {
+      &quot;apis&quot;: [&quot;storage&quot;, &quot;sync&quot;, &quot;env&quot;]
+    }
+  },
+  &quot;permissions&quot;: [&quot;storage&quot;, &quot;sync&quot;]
+}
+</code></pre>
+<p>前端可用桥接 API：</p>
+<pre><code class="language-js">const page = await window.yanzi.storage.get(&quot;pages/page-1.json&quot;);
+await window.yanzi.storage.put(&quot;pages/page-1.json&quot;, JSON.stringify({ title: &quot;首页&quot; }));
+const files = await window.yanzi.storage.list(&quot;pages/&quot;);
+const notionToken = await window.yanzi.env.get(&quot;NOTION_TOKEN&quot;);
+</code></pre>
+<p>当前 <code>storage.put</code> 会先写本地，并在 WebDAV 开启时按 <code>scope=both</code> 入队同步。启动时建议优先读取本地数据，远端刷新放到后台做。</p>
+</article>
+
+<article class="guide-card">
+  <h2>字段说明</h2>
+<h3><code>id</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>必填</li>
+<li>扩展唯一标识</li>
+<li>建议使用短横线命名，例如 <code>google-search</code></li>
+</ul>
+<h3><code>name</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>必填</li>
+<li>启动器展示名称</li>
+</ul>
+<h3><code>version</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>默认 <code>0.1.0</code></li>
+</ul>
+<h3><code>category</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>启动器展示分类，例如 <code>扩展</code>、<code>搜索</code>、<code>目录</code></li>
+</ul>
+<h3><code>description</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>条目说明文字</li>
+</ul>
+<h3><code>keywords</code></h3>
+<ul>
+<li>类型：<code>string[]</code></li>
+<li>选填</li>
+<li>用于搜索命中</li>
+<li>建议同时写中文、英文、拼音缩写</li>
+</ul>
+<h3><code>icon</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>用于启动器、快捷面板和扩展编辑器展示图标</li>
+<li>支持：<ul>
+<li>内置图标，例如 <code>mdi:search</code>、<code>mdi:folder</code>、<code>mdi:clipboard</code>、<code>mdi:code</code></li>
+<li>应用别名，例如 <code>app:wechat</code>、<code>app:qq</code>、<code>app:google</code>、<code>app:selection</code></li>
+<li>扩展目录下的相对图片路径，例如 <code>icons/logo.png</code></li>
+<li>绝对路径或 HTTPS 图片地址</li>
+</ul>
+</li>
+</ul>
+<h3><code>accentHex</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>用于启动器、鼠标面板和燕环中的扩展按钮 / 卡片底色</li>
+<li>支持 <code>#RRGGBB</code> 或 <code>#AARRGGBB</code>，例如 <code>#10B981</code>、<code>#FFF97316</code></li>
+<li>未填写或格式无效时回退为默认蓝色</li>
+</ul>
+<h3><code>openTarget</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>执行目标</li>
+<li>可用于：<ul>
+<li>本地文件</li>
+<li>本地目录</li>
+<li>URL</li>
+<li>系统协议，例如 <code>ms-settings:</code></li>
+</ul>
+</li>
+</ul>
+<h3><code>hostedView</code></h3>
+<ul>
+<li>类型：<code>object</code></li>
+<li>选填</li>
+<li>用于声明插件自己的宿主界面</li>
+<li>如果存在，用户执行该扩展时，启动器不会关闭，而是在当前窗口切换到插件视图</li>
+</ul>
+<p>当前支持字段：</p>
+<ul>
+<li><code>type</code>
+当前支持 <code>split-workbench</code></li>
+<li><code>title</code>
+视图标题</li>
+<li><code>description</code>
+视图说明</li>
+<li><code>inputLabel</code>
+左侧输入区标题</li>
+<li><code>inputPlaceholder</code>
+左侧输入区占位文案</li>
+<li><code>outputLabel</code>
+右侧输出区标题</li>
+<li><code>actionButtonText</code>
+右下角动作按钮文字</li>
+<li><code>actionType</code>
+宿主内置执行器类型</li>
+<li><code>outputTemplate</code>
+当 <code>actionType = template</code> 时，用 <code>{input}</code> 作为替换占位符</li>
+<li><code>emptyState</code>
+输入为空时显示的默认说明</li>
+</ul>
+<p>当前宿主内置的 <code>actionType</code>：</p>
+<ul>
+<li><code>mock-translate</code></li>
+<li><code>template</code></li>
+<li><code>uppercase</code></li>
+<li><code>reverse</code></li>
+<li><code>script</code></li>
+</ul>
+<p>当 <code>actionType = script</code> 时，宿主会执行当前扩展的脚本入口，并把标准输出显示在右侧结果区。</p>
+<h3><code>globalShortcut</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>为扩展注册系统级全局快捷键</li>
+<li>当前支持组合键形式：<ul>
+<li><code>Ctrl+Alt+T</code></li>
+<li><code>Ctrl+Shift+1</code></li>
+<li><code>Alt+Space</code></li>
+</ul>
+</li>
+</ul>
+<p>规则：</p>
+<ul>
+<li>至少包含一个修饰键：<code>Ctrl / Alt / Shift / Win</code></li>
+<li>最后一个片段必须是主键</li>
+<li>不建议和系统保留快捷键冲突</li>
+</ul>
+<p>行为：</p>
+<ul>
+<li>如果扩展声明了 <code>hostedView</code>，触发快捷键后会直接打开对应插件界面</li>
+<li>如果扩展是普通动作型扩展，触发快捷键后会直接执行，不拉起启动器</li>
+</ul>
+<h3><code>runtime</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>当前支持：<code>csharp</code>、<code>powershell</code></li>
+<li>建议新扩展优先使用 <code>csharp</code></li>
+</ul>
+<h3><code>entry</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>脚本入口文件，相对于扩展目录</li>
+<li>例如：<code>main.ps1</code></li>
+</ul>
+<h3><code>entryMode</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>当前支持：<ul>
+<li><code>inline</code></li>
+</ul>
+</li>
+<li>当 <code>entryMode = inline</code> 时，宿主会忽略 <code>entry</code>，改为执行 <code>script.source</code></li>
+</ul>
+<h3><code>script</code></h3>
+<ul>
+<li>类型：<code>object</code></li>
+<li>选填</li>
+<li>当前用于单 JSON 内联动作</li>
+</ul>
+<p>当前支持字段：</p>
+<ul>
+<li><code>source</code>
+C# 动作源码或 PowerShell 脚本源码</li>
+</ul>
+<p>推荐组合：</p>
+<pre><code class="language-json">{
+  &quot;runtime&quot;: &quot;csharp&quot;,
+  &quot;entryMode&quot;: &quot;inline&quot;,
+  &quot;script&quot;: {
+    &quot;source&quot;: &quot;...&quot;
+  }
+}
+</code></pre>
+<p>C# 内联动作需要提供 <code>YanziAction</code> 类：</p>
+<pre><code class="language-csharp">public static class YanziAction
+{
+    public static Task&lt;string&gt; RunAsync(YanziActionContext context)
+    {
+        return Task.FromResult(context.InputText);
+    }
+}
+</code></pre>
+<h3><code>permissions</code></h3>
+<ul>
+<li>类型：<code>string[]</code></li>
+<li>选填</li>
+<li>用于声明脚本可能使用的系统能力</li>
+<li>当前不会阻止执行，只用于描述和后续分享展示</li>
+<li>示例：<ul>
+<li><code>clipboard.read</code></li>
+<li><code>window.foreground</code></li>
+<li><code>filesystem</code></li>
+<li><code>network</code></li>
+</ul>
+</li>
+</ul>
+<h3><code>hotkeyBehavior</code></h3>
+<ul>
+<li>类型：<code>string</code></li>
+<li>选填</li>
+<li>用于覆盖快捷键触发时的默认行为</li>
+</ul>
+<p>当前保留值：</p>
+<ul>
+<li><code>show-view</code>
+强制在快捷键触发时先显示宿主界面</li>
+</ul>
+</article>
+
+<article class="guide-card">
+  <h2>参数化命令</h2>
+<p>当前宿主已经支持“命令前缀 + 参数”的执行模型。</p>
+<p>例如：</p>
+<pre><code class="language-text">谷歌 今天的新闻
+</code></pre>
+<p>含义是：</p>
+<ul>
+<li><code>谷歌</code> 命中某个参数化命令</li>
+<li><code>今天的新闻</code> 作为剩余参数</li>
+<li>最终拼接到命令模板中执行</li>
+</ul>
+<p>后续建议扩展规范支持下面两个字段：</p>
+<pre><code class="language-json">{
+  &quot;queryPrefixes&quot;: [&quot;谷歌&quot;, &quot;guge&quot;, &quot;gg&quot;, &quot;google&quot;],
+  &quot;queryTargetTemplate&quot;: &quot;https://www.google.com/search?q={query}&quot;
+}
+</code></pre>
+<p>这样扩展作者就能自己定义：</p>
+<ul>
+<li>中文前缀</li>
+<li>拼音前缀</li>
+<li>英文缩写</li>
+<li>参数执行模板</li>
+</ul>
+</article>
+
+<article class="guide-card">
+  <h2>云同步行为</h2>
+<p>当用户在客户端中新增或修改扩展后，宿主会：</p>
+<ol>
+<li>写入本地扩展目录</li>
+<li>加载到命令列表</li>
+<li>在已登录状态下自动同步到云端</li>
+</ol>
+</article>
+
+<article class="guide-card">
+  <h2>开发与调试</h2>
+<p>为了让 AI 编写扩展后的调试链路更直接，当前 JSON 扩展编辑器已经提供：</p>
+<ul>
+<li><code>测试执行</code>
+在不关闭编辑窗口的情况下执行当前草稿</li>
+<li><code>查看日志</code>
+打开当前日志文件</li>
+<li><code>从 JSON 解析</code>
+把 AI 返回内容提取成可保存的 manifest</li>
+<li><code>从表单生成</code>
+把左侧字段重新生成 JSON</li>
+</ul>
+<h3>测试执行规则</h3>
+<ul>
+<li>如果当前草稿是单 JSON 内联脚本：<ul>
+<li>会按 <code>runtime + entryMode + script.source</code> 直接执行</li>
+<li><code>测试输入</code> 会作为 <code>InputText</code> 传给脚本</li>
+</ul>
+</li>
+<li>如果当前草稿是普通 <code>openTarget</code> 扩展：<ul>
+<li>会直接触发对应目标</li>
+</ul>
+</li>
+<li>如果当前草稿是目录脚本扩展：<ul>
+<li>需要对应扩展目录里已经存在脚本入口文件</li>
+</ul>
+</li>
+</ul>
+<h3>脚本调试建议</h3>
+<p>PowerShell 扩展建议遵守：</p>
+<ul>
+<li><code>param(...)</code> 必须放在文件第一段</li>
+<li>显式设置：<ul>
+<li><code>[Console]::OutputEncoding = [System.Text.Encoding]::UTF8</code></li>
+</ul>
+</li>
+<li>成功结果写到 <code>stdout</code></li>
+<li>错误写到 <code>stderr</code> 或直接 <code>throw</code></li>
+</ul>
+<h3>日志位置</h3>
+<p>运行日志：</p>
+<ul>
+<li><code>logs/host.log</code></li>
+</ul>
+<p>开发调试日志：</p>
+<ul>
+<li><code>logs/dev-debug.log</code></li>
+</ul>
+<p>其中 <code>dev-debug.log</code> 只会在开发机目录 <code>F:\Desktop\kaifa\OpenQuickHost</code> 存在时写入，正式用户不会生成这份日志。</p>
+<p>当前会写开发日志的链路包括：</p>
+<ul>
+<li>JSON 解析</li>
+<li>保存扩展</li>
+<li>复制提示词</li>
+<li>编辑器内测试执行</li>
+</ul>
+<p>云端当前存储：</p>
+<ul>
+<li>扩展元数据</li>
+<li>当前用户安装记录</li>
+<li>扩展包归档</li>
+</ul>
+</article>
+
+<article class="guide-card">
+  <h2>兼容建议</h2>
+<ul>
+<li><code>id</code> 一旦发布后尽量不要修改</li>
+<li><code>name</code> 可以修改</li>
+<li><code>keywords</code> 里同时保留中文和拼音别名</li>
+<li>路径类 <code>openTarget</code> 尽量指向稳定位置</li>
+</ul>
+</article>
+
+
+        
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          <a href="/docs/extension-authoring-guide.html" class="button secondary" style="gap: 8px; height: 46px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            上一页: 开发指南
+          </a>
+          <a href="/docs/agent-skill-spec.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
+            下一页: Agent Skill 规范
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+        </div>
+      </div>
+      <aside class="doc-outline">
+        <strong>本页目录</strong>
+        <ul id="outline-list"></ul>
+      </aside>
+    </div>
+  </main>
+  <script src="/assets/docs-data.js"></script>
+  <script src="/assets/docs.js"></script>
 </body>
 </html>
