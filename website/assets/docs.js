@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+  renderDocsPage();
   initSidebarSearch();
   initSidebarCollapse();
   initTOCAndScrollspy();
@@ -7,40 +8,118 @@ document.addEventListener('DOMContentLoaded', () => {
   initMobileMenu();
 });
 
-/**
- * 1. 左侧文档目录搜索过滤
- */
+function currentDocPath() {
+  const path = window.location.pathname.replace(/\/$/, '');
+  return path || '/docs/product-overview.html';
+}
+
+function make(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined && text !== null) el.textContent = text;
+  return el;
+}
+
+function renderDocsPage() {
+  const data = window.YANZI_DOCS;
+  if (!data) return;
+
+  const path = currentDocPath();
+  const page = data.pages[path] || data.pages['/docs/product-overview.html'];
+  document.title = `${page.title} - 燕子在线文档`;
+
+  renderDocsSidebar(data.nav, path);
+  renderDocsContent(page);
+}
+
+function renderDocsSidebar(nav, activePath) {
+  const sidebar = document.querySelector('.doc-sidebar');
+  if (!sidebar) return;
+  sidebar.textContent = '';
+
+  const header = make('div', 'sidebar-header');
+  header.appendChild(make('strong', null, '文档目录'));
+  const toggle = make('button', 'sidebar-toggle-btn');
+  toggle.id = 'sidebar-toggle';
+  toggle.type = 'button';
+  toggle.title = '折叠侧边栏';
+  toggle.textContent = '‹';
+  header.appendChild(toggle);
+  sidebar.appendChild(header);
+
+  const searchWrap = make('div', 'sidebar-search-container');
+  const input = make('input', 'sidebar-search-input');
+  input.id = 'directory-search';
+  input.placeholder = '搜索目录... (/)';
+  input.type = 'text';
+  searchWrap.appendChild(input);
+  sidebar.appendChild(searchWrap);
+
+  nav.forEach(group => {
+    const groupEl = make('div', 'doc-toc-group');
+    groupEl.appendChild(make('span', 'doc-toc-title', group.group));
+    const links = make('div', 'doc-toc-links');
+    group.items.forEach((item, index) => {
+      const a = make('a', item.path === activePath ? 'active' : '', `${index + 1}. ${item.title}`);
+      a.href = item.path;
+      links.appendChild(a);
+    });
+    groupEl.appendChild(links);
+    sidebar.appendChild(groupEl);
+  });
+}
+
+function renderDocsContent(page) {
+  const stack = document.querySelector('.guide-stack');
+  if (!stack) return;
+  stack.textContent = '';
+
+  const head = make('div', 'doc-content-header');
+  const h1 = make('h1', null, page.title);
+  const desc = make('p', null, page.description);
+  head.appendChild(h1);
+  head.appendChild(desc);
+  stack.appendChild(head);
+
+  page.sections.forEach((section, index) => {
+    const article = make('article', 'guide-card');
+    const h2 = make('h2', null, section.title);
+    h2.id = `section-${index + 1}`;
+    article.appendChild(h2);
+
+    if (section.body) {
+      section.body.forEach(text => article.appendChild(make('p', null, text)));
+    }
+
+    if (section.cards) {
+      const grid = make('div', 'guide-grid');
+      section.cards.forEach(card => {
+        const mini = make('div', 'guide-mini');
+        mini.appendChild(make('strong', null, card[0]));
+        mini.appendChild(make('span', null, card[1]));
+        grid.appendChild(mini);
+      });
+      article.appendChild(grid);
+    }
+
+    stack.appendChild(article);
+  });
+}
+
 function initSidebarSearch() {
   const searchInput = document.getElementById('directory-search');
   if (!searchInput) return;
-
   searchInput.addEventListener('input', (e) => {
     const query = e.target.value.toLowerCase().trim();
-    const links = document.querySelectorAll('.doc-toc-links a');
-    
-    links.forEach(link => {
-      const text = link.textContent.toLowerCase();
-      if (text.includes(query)) {
-        link.style.display = '';
-        const group = link.closest('.doc-toc-group');
-        if (group) group.style.display = '';
-      } else {
-        link.style.display = 'none';
-      }
+    document.querySelectorAll('.doc-toc-links a').forEach(link => {
+      const visible = link.textContent.toLowerCase().includes(query);
+      link.style.display = visible ? '' : 'none';
     });
-
-    const groups = document.querySelectorAll('.doc-toc-group');
-    groups.forEach(group => {
+    document.querySelectorAll('.doc-toc-group').forEach(group => {
       const visibleLinks = group.querySelectorAll('.doc-toc-links a:not([style*="display: none"])');
-      if (visibleLinks.length === 0) {
-        group.style.display = 'none';
-      } else {
-        group.style.display = '';
-      }
+      group.style.display = visibleLinks.length ? '' : 'none';
     });
   });
-
-  // 支持快捷键 / 聚焦搜索框
   document.addEventListener('keydown', (e) => {
     if (e.key === '/' && document.activeElement !== searchInput) {
       e.preventDefault();
@@ -49,9 +128,6 @@ function initSidebarSearch() {
   });
 }
 
-/**
- * 2. 侧边栏折叠/展开逻辑（支持 localStorage 记忆）
- */
 function initSidebarCollapse() {
   const sidebar = document.querySelector('.doc-sidebar');
   const toggleBtn = document.getElementById('sidebar-toggle');
@@ -59,264 +135,93 @@ function initSidebarCollapse() {
   const docLayout = document.querySelector('.doc-layout');
   if (!sidebar || !docLayout) return;
 
-  // 从本地存储读取折叠状态
-  const isCollapsed = localStorage.getItem('doc-sidebar-collapsed') === 'true';
-  if (isCollapsed && window.innerWidth > 900) {
+  if (localStorage.getItem('doc-sidebar-collapsed') === 'true' && window.innerWidth > 900) {
     sidebar.classList.add('collapsed');
     docLayout.classList.add('sidebar-collapsed');
     if (expandBtn) expandBtn.classList.add('visible');
   }
 
-  // 折叠按钮点击事件
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-      sidebar.classList.add('collapsed');
-      docLayout.classList.add('sidebar-collapsed');
-      if (expandBtn) expandBtn.classList.add('visible');
-      localStorage.setItem('doc-sidebar-collapsed', 'true');
-    });
-  }
+  if (toggleBtn) toggleBtn.addEventListener('click', () => {
+    sidebar.classList.add('collapsed');
+    docLayout.classList.add('sidebar-collapsed');
+    if (expandBtn) expandBtn.classList.add('visible');
+    localStorage.setItem('doc-sidebar-collapsed', 'true');
+  });
 
-  // 展开悬浮按钮点击事件
-  if (expandBtn) {
-    expandBtn.addEventListener('click', () => {
-      sidebar.classList.remove('collapsed');
-      docLayout.classList.remove('sidebar-collapsed');
-      expandBtn.classList.remove('visible');
-      localStorage.setItem('doc-sidebar-collapsed', 'false');
-    });
-  }
+  if (expandBtn) expandBtn.addEventListener('click', () => {
+    sidebar.classList.remove('collapsed');
+    docLayout.classList.remove('sidebar-collapsed');
+    expandBtn.classList.remove('visible');
+    localStorage.setItem('doc-sidebar-collapsed', 'false');
+  });
 }
 
-/**
- * 3. 动态生成右侧大纲（TOC）与滚动监听（Scrollspy）
- */
 function initTOCAndScrollspy() {
   const outlineList = document.getElementById('outline-list');
   const content = document.querySelector('.guide-stack');
   if (!outlineList || !content) return;
-
-  // 1. 获取文章正文中的 h2 和 h3 标题
+  outlineList.textContent = '';
   const headings = content.querySelectorAll('article h2, article h3');
-  if (headings.length === 0) {
+  if (!headings.length) {
     const parent = outlineList.closest('.doc-outline');
     if (parent) parent.style.display = 'none';
     return;
   }
-
-  // 2. 动态构建 TOC 树
   headings.forEach((heading, index) => {
-    if (!heading.id) {
-      heading.id = `heading-${index}`;
-    }
-
-    const li = document.createElement('li');
-    li.className = heading.tagName.toLowerCase() === 'h3' ? 'toc-item depth-3' : 'toc-item depth-2';
-    
-    const a = document.createElement('a');
+    if (!heading.id) heading.id = `heading-${index}`;
+    const li = make('li', heading.tagName.toLowerCase() === 'h3' ? 'toc-item depth-3' : 'toc-item depth-2');
+    const a = make('a', null, heading.innerText.replace(/#$/, '').trim());
     a.href = `#${heading.id}`;
-    a.textContent = heading.innerText.replace(/#$/, '').trim();
-    
     a.addEventListener('click', (e) => {
       e.preventDefault();
-      const target = document.getElementById(heading.id);
-      if (target) {
-        const topOffset = target.getBoundingClientRect().top + window.scrollY - 90;
-        window.scrollTo({
-          top: topOffset,
-          behavior: 'smooth'
-        });
-        history.pushState(null, null, `#${heading.id}`);
-      }
+      const topOffset = heading.getBoundingClientRect().top + window.scrollY - 90;
+      window.scrollTo({ top: topOffset, behavior: 'smooth' });
+      history.pushState(null, null, `#${heading.id}`);
     });
-
     li.appendChild(a);
     outlineList.appendChild(li);
   });
-
-  // 3. 滚动监听实现 (Scrollspy)
-  const tocLinks = outlineList.querySelectorAll('a');
-  
-  function updateActiveHeading() {
-    const scrollPosition = window.scrollY + 120;
-    let activeId = null;
-
-    for (let i = 0; i < headings.length; i++) {
-      const heading = headings[i];
-      const top = heading.getBoundingClientRect().top + window.scrollY;
-      
-      if (scrollPosition >= top) {
-        activeId = heading.id;
-      }
-    }
-
-    if (!activeId && headings.length > 0 && scrollPosition < (headings[0].getBoundingClientRect().top + window.scrollY)) {
-      activeId = headings[0].id;
-    }
-
-    tocLinks.forEach(link => {
-      const href = link.getAttribute('href').substring(1);
-      if (href === activeId) {
-        link.classList.add('active');
-        const li = link.parentElement;
-        const container = outlineList.parentElement;
-        const offsetTop = li.offsetTop - container.offsetTop;
-        if (offsetTop < container.scrollTop || offsetTop > container.scrollTop + container.clientHeight) {
-          container.scrollTo({ top: offsetTop - 40, behavior: 'smooth' });
-        }
-      } else {
-        link.classList.remove('active');
-      }
-    });
-  }
-
-  window.addEventListener('scroll', updateActiveHeading);
-  window.addEventListener('resize', updateActiveHeading);
-  updateActiveHeading();
 }
 
-/**
- * 4. 为代码块动态生成复制按钮与语言标签
- */
 function initCodeCopyButtons() {
-  const codeBlocks = document.querySelectorAll('pre code');
-  
-  codeBlocks.forEach(code => {
+  document.querySelectorAll('pre code').forEach(code => {
     const pre = code.parentElement;
-    if (pre.tagName.toLowerCase() !== 'pre') return;
-    
+    if (!pre || pre.tagName.toLowerCase() !== 'pre') return;
     pre.style.position = 'relative';
-
-    let lang = 'CODE';
-    const classes = Array.from(code.classList);
-    const langClass = classes.find(c => c.startsWith('language-') || c.startsWith('lang-'));
-    if (langClass) {
-      lang = langClass.replace(/^(language-|lang-)/, '').toUpperCase();
-    } else {
-      const text = code.textContent.trim();
-      if (text.startsWith('{') && text.endsWith('}')) {
-        lang = 'JSON';
-      }
-    }
-
-    const langBadge = document.createElement('span');
-    langBadge.className = 'code-lang-badge';
-    langBadge.textContent = lang;
-    pre.appendChild(langBadge);
-
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'copy-code-btn';
+    const copyBtn = make('button', 'copy-code-btn', '复制');
     copyBtn.type = 'button';
-    copyBtn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-      </svg>
-      <span>复制</span>
-    `;
-
     copyBtn.addEventListener('click', () => {
-      const textToCopy = code.innerText;
-      
-      navigator.clipboard.writeText(textToCopy).then(() => {
-        copyBtn.classList.add('copied');
-        copyBtn.querySelector('span').textContent = '已复制!';
-        setTimeout(() => {
-          copyBtn.classList.remove('copied');
-          copyBtn.querySelector('span').textContent = '复制';
-        }, 2000);
-      }).catch(err => {
-        console.error('复制失败: ', err);
-        copyBtn.querySelector('span').textContent = '失败';
+      navigator.clipboard.writeText(code.innerText).then(() => {
+        copyBtn.textContent = '已复制!';
+        setTimeout(() => { copyBtn.textContent = '复制'; }, 2000);
       });
     });
-
     pre.appendChild(copyBtn);
   });
 }
 
-/**
- * 5. 标题 Hover 锚点链接支持
- */
 function initHeadingAnchors() {
-  const content = document.querySelector('.guide-stack');
-  if (!content) return;
-
-  const headings = content.querySelectorAll('article h2, article h3');
-  headings.forEach(heading => {
+  document.querySelectorAll('.guide-stack article h2, .guide-stack article h3').forEach(heading => {
     if (!heading.id) return;
-    
-    const anchor = document.createElement('a');
-    anchor.className = 'heading-anchor-link';
+    const anchor = make('a', 'heading-anchor-link', '#');
     anchor.href = `#${heading.id}`;
-    anchor.title = '复制该章节的直接链接';
-    anchor.innerHTML = '#';
-    
-    anchor.addEventListener('click', (e) => {
-      e.preventDefault();
-      const fullUrl = window.location.origin + window.location.pathname + `#${heading.id}`;
-      
-      navigator.clipboard.writeText(fullUrl).then(() => {
-        const tooltip = document.createElement('span');
-        tooltip.className = 'anchor-copied-tooltip';
-        tooltip.textContent = '链接已复制!';
-        heading.appendChild(tooltip);
-        
-        setTimeout(() => {
-          tooltip.remove();
-        }, 1500);
-        
-        const topOffset = heading.getBoundingClientRect().top + window.scrollY - 90;
-        window.scrollTo({ top: topOffset, behavior: 'smooth' });
-        history.pushState(null, null, `#${heading.id}`);
-      });
-    });
-
     heading.appendChild(anchor);
   });
 }
 
-/**
- * 6. 移动端侧边栏抽屉与悬浮按钮
- */
 function initMobileMenu() {
   const sidebar = document.querySelector('.doc-sidebar');
-  if (!sidebar) return;
-
-  // 创建悬浮菜单按钮
-  const menuBtn = document.createElement('button');
-  menuBtn.className = 'mobile-menu-btn';
-  menuBtn.innerHTML = `
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="3" y1="12" x2="21" y2="12"></line>
-      <line x1="3" y1="6" x2="21" y2="6"></line>
-      <line x1="3" y1="18" x2="21" y2="18"></line>
-    </svg>
-  `;
+  if (!sidebar || document.querySelector('.mobile-menu-btn')) return;
+  const menuBtn = make('button', 'mobile-menu-btn', '☰');
+  const overlay = make('div', 'mobile-menu-overlay');
   document.body.appendChild(menuBtn);
-
-  // 创建暗色虚化背景遮罩
-  const overlay = document.createElement('div');
-  overlay.className = 'mobile-menu-overlay';
   document.body.appendChild(overlay);
-
-  // 绑定点击事件，控制显示/隐藏
   menuBtn.addEventListener('click', () => {
     sidebar.classList.toggle('mobile-open');
     overlay.classList.toggle('visible');
   });
-
   overlay.addEventListener('click', () => {
     sidebar.classList.remove('mobile-open');
     overlay.classList.remove('visible');
-  });
-
-  // 点击任何一个侧边栏链接后自动收起
-  const sidebarLinks = sidebar.querySelectorAll('a');
-  sidebarLinks.forEach(link => {
-    link.addEventListener('click', () => {
-      sidebar.classList.remove('mobile-open');
-      overlay.classList.remove('visible');
-    });
   });
 }
