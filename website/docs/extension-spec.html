@@ -1,239 +1,25 @@
 <!doctype html>
 <html lang="zh-CN">
-
 <head>
-  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>扩展规范 - 燕子在线文档</title>
-  <meta name="description" content="燕子启动�?manifest.json 声明式规范及字段定义�?>
+  <meta name="description" content="燕子扩展规范。">
+  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-<link rel="stylesheet" href="/assets/auth.css">`r`n</head>
-
+  <link rel="stylesheet" href="/assets/auth.css">
+</head>
 <body>
   <div class="noise"></div>
   <header class="site-header">
-    <div class="brand">
-      <a href="/" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit;">
-        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动�?Logo" class="brand-logo"
-          style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
-        <span style="font-weight: 600;">燕子启动�?/span>
-      </a>
-    </div>
-        <nav>
-      <a href="/">首页</a>
-      <a href="/store.html">扩展商店</a>
-      <a href="/yanm.html">燕幕</a>
-      <a href="/docs/product-overview.html" class="active">文档</a>
-      <a href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载</a>
-      <span id="global-auth-container" style="margin-left: 16px; display: inline-flex; align-items: center; vertical-align: middle;">
-        <button id="global-login-btn" class="button secondary" style="padding: 0 12px; height: 32px; font-size: 0.85rem; border-radius: 6px; margin: 0; cursor: pointer;">
-          登录
-        </button>
-      </span>
-    </nav>
+    <div class="brand"><a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;"><img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));"><span style="font-weight:600;">燕子启动器</span></a></div>
+    <nav><a href="/">首页</a><a href="/store.html">扩展商店</a><a href="/yanm.html">燕幕</a><a href="/docs/product-overview.html" class="active">文档</a><a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a><span id="global-auth-container" style="margin-left:16px;display:inline-flex;align-items:center;vertical-align:middle;"></span></nav>
   </header>
-
-  <!-- Sidebar Expand Hover Button -->
-  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边�?>
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="9 18 15 12 9 6"></polyline>
-    </svg>
-  </button>
-
-  <main class="doc-page">
-    <div class="doc-layout">
-      <!-- Left Sidebar Directory -->
-      <aside class="doc-sidebar">
-        <div class="sidebar-header">
-          <strong>文档目录</strong>
-          <button id="sidebar-toggle" class="sidebar-toggle-btn" title="折叠侧边�?>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
-          </button>
-        </div>
-
-        <div class="sidebar-search-container">
-          <input type="text" id="directory-search" class="sidebar-search-input" placeholder="搜索目录... (/)">
-          <svg class="sidebar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-        </div>
-
-        <div class="doc-toc-group">
-          <span class="doc-toc-title">用户手册</span>
-          <div class="doc-toc-links">
-            <a href="/docs/product-overview.html">1. 产品说明</a>
-            <a href="/docs/getting-started.html">2. 快速上�?/a>
-          </div>
-        </div>
-
-        <div class="doc-toc-group">
-          <span class="doc-toc-title">开发者文�?/span>
-          <div class="doc-toc-links">
-            <a href="/docs/extension-authoring-guide.html">3. 开发指�?/a>
-            <a href="/docs/extension-spec.html" class="active">4. 扩展规范</a>
-            <a href="/docs/agent-skill-spec.html">5. Agent Skill 规范</a>
-            <a href="/docs/ai-extension-test-set.html">6. AI 扩展测试�?/a>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Center Reading Area -->
-      <div class="guide-stack">
-        <div class="doc-content-header" style="margin-bottom: 2rem;">
-          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">扩展规范</h1>
-          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">本章详细说明燕子扩展�?manifest.json 的各字段类型、定义范围以及支持的系统运行期权限�?/p>
-        </div>
-        
-        <article class="guide-card">
-          <h2>1. 典型声明示例</h2>
-          <p>以下为一个完整的标准搜索引擎前缀传参扩展 manifest 声明�?/p>
-          <div class="code-card" style="margin-top: 1rem; margin-bottom: 1rem;">
-<pre><code>{
-  "id": "google-search",
-  "name": "谷歌搜索",
-  "version": "0.1.0",
-  "category": "搜索",
-  "description": "使用默认浏览器快捷进�?Google 搜索�?,
-  "keywords": ["谷歌", "guge", "google", "gg"],
-  "icon": "mdi:search",
-  "openTarget": "https://www.google.com",
-  "queryPrefixes": ["谷歌", "guge", "google", "gg"],
-  "queryTargetTemplate": "https://www.google.com/search?q={query}"
-}</code></pre>
-          </div>
-        </article>
-
-        <article class="guide-card">
-          <h2>2. 属性字典定义说�?/h2>
-          <table style="width: 100%; border-collapse: collapse; margin-top: 1.25rem;">
-            <thead>
-              <tr style="border-bottom: 1px solid var(--border); text-align: left;">
-                <th style="padding: 0.75rem 0.5rem; color: var(--text);">字段 Key</th>
-                <th style="padding: 0.75rem 0.5rem; color: var(--text);">类型</th>
-                <th style="padding: 0.75rem 0.5rem; color: var(--text);">是否必填</th>
-                <th style="padding: 0.75rem 0.5rem; color: var(--text);">描述定义</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>id</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem; color: #10b981;">必填</td>
-                <td style="padding: 0.75rem 0.5rem;">扩展的唯一全局 ID。建议使用小写字母、数字及中划线命名�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>name</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem; color: #10b981;">必填</td>
-                <td style="padding: 0.75rem 0.5rem;">展示给用户的名称�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>version</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem; color: #10b981;">必填</td>
-                <td style="padding: 0.75rem 0.5rem;">版本号。遵循语义化版本规范（例�?<code>0.1.0</code>）�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>category</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">类别。例�?<code>工具</code>�?code>搜索</code>�?code>脚本</code> 等�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>description</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">扩展功能用途的详细描述�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>keywords</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">Array</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">用户搜索该扩展时被命中的关键字列表，支持中文及拼音缩写�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>icon</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">图标声明。可以是 <code>mdi:search</code>（内置图标）、本地相对路径图片或 Web 链接�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>openTarget</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">打开目标。配置后，点击扩展会自动打开该本地目录、文件或网页地址�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>queryPrefixes</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">Array</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">在主启动器输入匹配的前缀词列表�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>queryTargetTemplate</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">前缀搜索的跳�?URL 模板。剩余的搜索关键字会自动替代 <code>{query}</code> 占位符�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>runtime</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">运行引擎类型。支�?<code>csharp</code> �?<code>powershell</code>�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>entryMode</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">String</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">执行方式。目前推荐使�?<code>inline</code>（内联代码直接运行）�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><code>permissions</code></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">Array</td>
-                <td style="padding: 0.75rem 0.5rem;">选填</td>
-                <td style="padding: 0.75rem 0.5rem;">申请的特定运行时权限，例�?<code>context.read</code>�?code>clipboard.read</code>�?/td>
-              </tr>
-            </tbody>
-          </table>
-        </article>
-        
-        <article class="guide-card">
-          <h2>3. 权限列表声明说明</h2>
-          <ul>
-            <li><strong><code>context.read</code></strong>：允许扩展动作读取宿主传入的选中文件路径、当前软件窗口等上下文信息�?/li>
-            <li><strong><code>clipboard.read</code></strong>：允许扩展脚本读�?Windows 系统剪贴板内容�?/li>
-            <li><strong><code>clipboard.write</code></strong>：允许扩展脚本写�?覆盖 Windows 系统剪贴板�?/li>
-          </ul>
-        </article>
-
-        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-          <a href="/docs/extension-authoring-guide.html" class="button secondary" style="gap: 8px; height: 46px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-            上一�? 开发指�?
-          </a>
-          <a href="/docs/product-overview.html" class="button primary" style="gap: 8px; height: 46px;">
-            回到第一�?
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-          </a>
-        </div>
-      </div>
-
-      <!-- Right Outline (Dynamic TOC) -->
-      <aside class="doc-outline">
-        <strong>当前章节大纲</strong>
-        <ul id="outline-list"></ul>
-      </aside>
-    </div>
-  </main>
-  
-  <script src="/assets/docs.js" defer></script>
-<script src="/assets/auth.js"></script>`r`n</body>
-
+  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
+  <main class="doc-page"><div class="doc-layout"><aside class="doc-sidebar"></aside><div class="guide-stack"></div><aside class="doc-outline"><strong>本页目录</strong><ul id="outline-list"></ul></aside></div></main>
+  <script src="/assets/docs-data.js"></script><script src="/assets/auth.js"></script><script src="/assets/docs.js"></script>
+</body>
 </html>
