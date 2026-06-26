@@ -85,6 +85,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _desktopPresenceHeartbeatTimer;
     private readonly DispatcherTimer _mobileMessagePollTimer;
     private readonly DispatcherTimer _fileSearchDebounceTimer;
+    private readonly DispatcherTimer _searchDebounceTimer;
     private int _fileSearchRequestVersion;
     private DateTimeOffset _lastFileSearchManualInitPromptAt = DateTimeOffset.MinValue;
     private bool _backgroundWebDavSyncRunning;
@@ -183,6 +184,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Interval = TimeSpan.FromMilliseconds(120)
         };
         _fileSearchDebounceTimer.Tick += FileSearchDebounceTimer_Tick;
+
+        _searchDebounceTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(120)
+        };
+        _searchDebounceTimer.Tick += (s, e) =>
+        {
+            _searchDebounceTimer.Stop();
+            ApplyFilter(SearchBox.Text);
+            UpdateSearchInlineCompletion();
+        };
 
         _allCommands = CreateSeedCommands();
         _allCommands.AddRange(LocalExtensionCatalog.LoadCommands());
@@ -757,8 +769,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
-        ApplyFilter(SearchBox.Text);
-        UpdateSearchInlineCompletion();
+        _searchDebounceTimer.Stop();
+        if (string.IsNullOrEmpty(SearchBox.Text))
+        {
+            ApplyFilter(string.Empty);
+            UpdateSearchInlineCompletion();
+        }
+        else
+        {
+            _searchDebounceTimer.Start();
+        }
     }
 
     private void SearchBox_DragEnter(object sender, System.Windows.DragEventArgs e)
@@ -809,6 +829,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (e.Key == Key.Enter)
         {
+            if (_searchDebounceTimer.IsEnabled)
+            {
+                _searchDebounceTimer.Stop();
+                ApplyFilter(SearchBox.Text);
+                UpdateSearchInlineCompletion();
+            }
             RunSelectedCommand();
             e.Handled = true;
         }
