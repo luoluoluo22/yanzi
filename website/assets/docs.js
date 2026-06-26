@@ -221,7 +221,14 @@ function initMobileMenu() {
   const menuBtn = make('button', 'mobile-menu-btn', '☰');
   const overlay = make('div', 'mobile-menu-overlay');
   document.body.appendChild(menuBtn);
-  document.body.appendChild(overlay);
+  
+  const layout = document.querySelector('.doc-layout');
+  if (layout) {
+    layout.appendChild(overlay);
+  } else {
+    document.body.appendChild(overlay);
+  }
+
   menuBtn.addEventListener('click', () => {
     sidebar.classList.toggle('mobile-open');
     overlay.classList.toggle('visible');

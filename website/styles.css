@@ -1331,9 +1331,9 @@ pre {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 240px;
   gap: 2.5rem;
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 8rem;
+  max-width: 100%;
+  margin: 0;
+  padding: 2rem 3rem 8rem;
   align-items: start;
   transition: grid-template-columns 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1534,9 +1534,9 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 2rem;
-  max-width: 820px;
+  max-width: 100%;
   width: 100%;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .guide-card {
