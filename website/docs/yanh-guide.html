@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3. 燕环与鼠标面板 - 燕子在线文档</title>
+  <meta name="description" content="区分燕环快捷轮盘与鼠标网格面板，介绍添加项目和管理布局的方法。">
+  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));">
+        <span style="font-weight:600;">燕子启动器</span>
+      </a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/docs/product-overview.html" class="active">文档</a>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>
+    </nav>
+  </header>
+  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
+  <main class="doc-page">
+    <div class="doc-layout">
+      <aside class="doc-sidebar">
+        <!-- 侧边栏由 docs.js 动态生成 -->
+      </aside>
+      <div class="guide-stack">
+        <div class="doc-content-header" style="margin-bottom: 2rem;">
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">3. 燕环与鼠标面板</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">针对鼠标用户设计的两套高效交互模块：燕环轮盘与网格鼠标面板。</p>
+        </div>
+
+        <article class="guide-card">
+          <h2>模块区分</h2>
+          <blockquote> [!IMPORTANT]
+          > **燕环与鼠标面板是完全两个不同的模块，使用前请进行区分：**
+          > 
+          > 1. **燕环（快捷轮盘）**：长按鼠标右键约 300 毫秒后，在光标旁弹出的圆形轮盘菜单，通过向对应方向划动鼠标一划即达，适合极高频的几个核心系统操作。
+          > 2. **鼠标面板（网格面板）**：网格化平铺的快捷启动板，能够容纳更多的自定义应用、网站或自动化扩展，支持分组和自由拖拽管理。</blockquote>
+        </article>
+
+        <article class="guide-card">
+          <h2>燕环（快捷轮盘）的使用</h2>
+          <ul>
+            <li><strong>触发唤出</strong>：在屏幕任意位置长按鼠标右键约 300 毫秒，轮盘将在光标位置中心弹出。</li>
+            <li><strong>快速触发</strong>：鼠标向特定动作扇区方向快速滑动，松开右键即可立即触发对应动作。</li>
+            <li><strong>自定义配置</strong>：可在燕子启动器设置页面中，对燕环轮盘的各个方向扇区绑定的功能进行更改。</li>
+          </ul>
+        </article>
+
+        <article class="guide-card">
+          <h2>鼠标面板（网格面板）的项目添加</h2>
+          <p>鼠标面板支持两种非常方便的添加项目方式：</p>
+          <ol>
+            <li><strong>空白槽位直接添加</strong>：
+              <p>唤出鼠标面板后，直接鼠标左键点击任意<strong>空白的 `+` 槽位</strong>，系统将弹出选择器，支持快速关联你本地的应用程序、常用文件或网页链接。</p>
+            </li>
+            <li><strong>从启动器（燕子搜索）中右键添加</strong>：
+              <p>按下 <code>Alt+Space</code> 打开搜索栏，输入要添加的程序名称（如“微信”）。在检索出的结果上<strong>右键点击</strong>，在弹出的菜单中选择<strong>“添加到鼠标面板”</strong>即可。</p>
+            </li>
+          </ol>
+        </article>
+
+        <article class="guide-card">
+          <h2>管理与调整鼠标面板布局</h2>
+          <ul>
+            <li><strong>分组页面管理</strong>：面板支持多个分组页面，可以根据“工作”、“娱乐”或“日常”等类别划分不同页签。</li>
+            <li><strong>拖动排列</strong>：长按鼠标面板上的图标不放，即可拖拽到新的网格位置或新的分组标签中。</li>
+            <li><strong>右键项目操作</strong>：右键点击鼠标面板上的项目，可以进行“剪切”、“复制”、“粘贴”以及“删除（移除项目）”等操作。</li>
+          </ul>
+        </article>
+
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          <a href="search-guide.html" class="button secondary" style="gap: 8px; height: 46px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            上一页: 2. 燕子搜索
+          </a>
+          <a href="yanm-guide.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
+            下一页: 4. 燕幕小组件
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+        </div>
+      </div>
+      <aside class="doc-outline">
+        <strong>本页目录</strong>
+        <ul id="outline-list"></ul>
+      </aside>
+    </div>
+  </main>
+  <script src="../assets/docs-data.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

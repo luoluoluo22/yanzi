@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>1. 下载与安装 - 燕子在线文档</title>
-  <meta name="description" content="介绍如何下载和安装燕子启动器，以及基础系统要求。">
+  <title>4. 燕幕小组件 - 燕子在线文档</title>
+  <meta name="description" content="常驻桌面浮动小组件的开启、类型和自定义布局方式说明。">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -36,43 +36,47 @@
       </aside>
       <div class="guide-stack">
         <div class="doc-content-header" style="margin-bottom: 2rem;">
-          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">1. 下载与安装</h1>
-          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">开始使用燕子启动器的第一步：获取软件并完成安装。</p>
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">4. 燕幕（桌面小组件）</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">燕幕是将信息常驻在桌面上的浮动小组件窗口，保持在其他窗口上方或嵌入桌面背景。</p>
         </div>
 
         <article class="guide-card">
-          <h2>下载安装包</h2>
-          <p>前往蓝奏云下载最新版 Windows 安装包：</p>
+          <h2>开启燕幕</h2>
+          <p>您可以通过以下两种方式来启用桌面小组件：</p>
           <ul>
-            <li>下载地址：<a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">https://wwbnh.lanzout.com/b0pnkaj6j</a></li>
-            <li>提取密码：<code>62yn</code></li>
+            <li><strong>托盘图标启用</strong>：右键点击系统右下角的燕子托盘图标，选择“开启燕幕”。</li>
+            <li><strong>设置页面启用</strong>：打开燕子主设置，在“桌面组件（燕幕）”选项卡中勾选“启用燕幕”。</li>
           </ul>
         </article>
 
         <article class="guide-card">
-          <h2>系统要求与依赖</h2>
+          <h2>支持的小组件类型</h2>
           <ul>
-            <li><strong>支持系统</strong>：Windows 10 / 11（64 位）</li>
-            <li><strong>独立无依赖</strong>：安装包采用自包含构建（Self-Contained），不需要另外安装 .NET 运行时，双击即可直接运行</li>
+            <li><strong>时钟与日期</strong>：在桌面显示精美的数字/模拟时钟及当前日期。</li>
+            <li><strong>系统监控</strong>：实时展示当前的 CPU 使用率、内存占用率及上传下载网速。</li>
+            <li><strong>便签</strong>：常驻于桌面的快捷记事本，点击即可打字记录临时灵感或计划。</li>
+            <li><strong>快捷入口</strong>：快捷启动指定网页或应用程序的小按钮列表。</li>
+            <li><strong>自定义小组件</strong>：开发者及高级用户可以通过编写 HTML 扩展实现任意自定义样式的组件。</li>
           </ul>
         </article>
 
         <article class="guide-card">
-          <h2>安装流程</h2>
-          <ol>
-            <li>下载后双击运行 <code>YanziSetup.exe</code> 安装程序。</li>
-            <li>安装完成后，燕子启动器会自动在后台运行，并在系统托盘区（屏幕右下角）显示图标。</li>
-            <li>此时，软件已经准备就绪。</li>
-          </ol>
+          <h2>自定义组件布局</h2>
+          <ul>
+            <li><strong>拖动位置</strong>：鼠标左键长按小组件的空白处，可以直接拖动到桌面的任意位置。</li>
+            <li><strong>调整大小</strong>：将鼠标悬停在小组件的边缘，当指针形状改变时，按住并拖动即可任意调整显示大小。</li>
+            <li><strong>可见性控制</strong>：在主设置中可以单独勾选需要显示哪些小组件，以及隐藏哪些小组件。</li>
+          </ul>
+          <p>小组件的布局位置、大小等所有状态都会被燕子自动记录保存。若开启了云同步，还会在多台电脑间实时同步该布局样式。</p>
         </article>
 
         <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-          <a href="product-overview.html" class="button secondary" style="gap: 8px; height: 46px;">
+          <a href="yanh-guide.html" class="button secondary" style="gap: 8px; height: 46px;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-            上一页: 产品说明
+            上一页: 3. 燕环与鼠标面板
           </a>
-          <a href="search-guide.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
-            下一页: 2. 燕子搜索
+          <a href="sync-guide.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
+            下一页: 5. 云同步配置
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
           </a>
         </div>

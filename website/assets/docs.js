@@ -8,15 +8,21 @@ document.addEventListener('DOMContentLoaded', () => {
   initMobileMenu();
 });
 
+function getLinkHref(targetPath) {
+  if (window.location.protocol === 'file:') {
+    const parts = targetPath.split('/');
+    return parts[parts.length - 1];
+  }
+  return targetPath;
+}
+
 function currentDocPath() {
-  let path = window.location.pathname.replace(/\/$/, '');
-  if (!path || path === '/docs') {
-    return '/docs/product-overview.html';
+  let path = window.location.pathname;
+  const match = path.match(/(\/docs\/[^\/]+\.html)$/i);
+  if (match) {
+    return match[1].toLowerCase();
   }
-  if (!path.endsWith('.html')) {
-    path += '.html';
-  }
-  return path;
+  return '/docs/product-overview.html';
 }
 
 function make(tag, className, text) {
@@ -67,7 +73,7 @@ function renderDocsSidebar(nav, activePath) {
     const links = make('div', 'doc-toc-links');
     group.items.forEach((item, index) => {
       const a = make('a', item.path === activePath ? 'active' : '', `${index + 1}. ${item.title}`);
-      a.href = item.path;
+      a.href = getLinkHref(item.path);
       links.appendChild(a);
     });
     groupEl.appendChild(links);

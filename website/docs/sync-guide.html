@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>5. 云同步配置 - 燕子在线文档</title>
+  <meta name="description" content="如何配置 WebDAV（以坚果云为例）与 GitHub 私有仓库进行多端数据同步。">
+  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));">
+        <span style="font-weight:600;">燕子启动器</span>
+      </a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/docs/product-overview.html" class="active">文档</a>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>
+    </nav>
+  </header>
+  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
+  <main class="doc-page">
+    <div class="doc-layout">
+      <aside class="doc-sidebar">
+        <!-- 侧边栏由 docs.js 动态生成 -->
+      </aside>
+      <div class="guide-stack">
+        <div class="doc-content-header" style="margin-bottom: 2rem;">
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">5. 配置云同步</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">配置私有云盘同步，让扩展、面板布局与个人偏好设置在多台电脑间自动保持一致。</p>
+        </div>
+
+        <article class="guide-card">
+          <h2>云同步概述</h2>
+          <p>燕子支持个人私有云端同步，数据完全存放在您自己掌握的空间中，不经过任何第三方中转，保护隐私安全。目前支持 WebDAV 与 GitHub 两种备份同步方案。</p>
+        </article>
+
+        <article class="guide-card">
+          <h2>方案 A：使用 WebDAV（推荐坚果云）</h2>
+          <p>坚果云是国内对 WebDAV 支持较好的网盘，免费额度足够满足日常的同步数据量。</p>
+          <ol>
+            <li>注册并登录 <a href="https://www.jianguoyun.com" target="_blank" rel="noopener noreferrer">坚果云网页版</a>，点击右上角昵称进入“账户信息”。</li>
+            <li>点击“安全选项”，在下方的“第三方应用管理”中点击“添加应用”。</li>
+            <li>输入应用名称（如 <code>yanzi</code>），点击生成，系统会提供一串专用的<strong>授权密码</strong>。</li>
+            <li>打开燕子客户端的主设置页面，进入“云同步”选项。</li>
+            <li>选择“WebDAV”，并填入以下信息：
+              <ul>
+                <li><strong>服务器地址</strong>：<code>https://dav.jianguoyun.com/dav/</code></li>
+                <li><strong>用户名</strong>：您的坚果云登录邮箱</li>
+                <li><strong>密码</strong>：刚刚生成的坚果云<strong>授权密码</strong>（注意：不是坚果云登录密码！）</li>
+              </ul>
+            </li>
+            <li>点击“保存配置”即可。燕子将自动在云端创建文件夹并完成首次同步。</li>
+          </ol>
+        </article>
+
+        <article class="guide-card">
+          <h2>方案 B：使用 GitHub 私有仓库同步</h2>
+          <p>若您习惯使用 Git，可将数据托管在 GitHub 私有仓库。</p>
+          <ol>
+            <li>登录 GitHub，创建一个新的仓库（例如命名为 <code>yanzi-sync</code>），务必勾选将其设为 <strong>Private（私有）</strong>。</li>
+            <li>进入 GitHub 的 Settings → Developer settings → Personal access tokens，生成一个新的 Token（需勾选 <code>repo</code> 范围所有权限）。</li>
+            <li>打开燕子设置页面的“云同步”选项。</li>
+            <li>选择“GitHub”同步方式，并填入以下信息：
+              <ul>
+                <li><strong>用户名</strong>：您的 GitHub 用户名</li>
+                <li><strong>仓库名</strong>：<code>yanzi-sync</code></li>
+                <li><strong>分支</strong>：<code>main</code></li>
+                <li><strong>Token</strong>：刚才生成的 Personal Access Token</li>
+              </ul>
+            </li>
+            <li>保存设置，数据将自动进行版本控制备份与同步。</li>
+          </ol>
+        </article>
+
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          <a href="yanm-guide.html" class="button secondary" style="gap: 8px; height: 46px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            上一页: 4. 燕幕小组件
+          </a>
+          <a href="extension-guide.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
+            下一页: 6. 扩展安装与管理
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+        </div>
+      </div>
+      <aside class="doc-outline">
+        <strong>本页目录</strong>
+        <ul id="outline-list"></ul>
+      </aside>
+    </div>
+  </main>
+  <script src="../assets/docs-data.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>
