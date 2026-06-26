@@ -1,195 +1,25 @@
 <!doctype html>
 <html lang="zh-CN">
-
 <head>
-  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>快速上�?- 燕子在线文档</title>
-  <meta name="description" content="燕子启动器的安装说明、快捷键与云同步配置�?>
+  <title>快速上手 - 燕子在线文档</title>
+  <meta name="description" content="燕子启动器快速上手。">
+  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-<link rel="stylesheet" href="/assets/auth.css">`r`n</head>
-
+  <link rel="stylesheet" href="/assets/auth.css">
+</head>
 <body>
   <div class="noise"></div>
   <header class="site-header">
-    <div class="brand">
-      <a href="/" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit;">
-        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动�?Logo" class="brand-logo"
-          style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
-        <span style="font-weight: 600;">燕子启动�?/span>
-      </a>
-    </div>
-        <nav>
-      <a href="/">首页</a>
-      <a href="/store.html">扩展商店</a>
-      <a href="/yanm.html">燕幕</a>
-      <a href="/docs/product-overview.html" class="active">文档</a>
-      <a href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载</a>
-      <span id="global-auth-container" style="margin-left: 16px; display: inline-flex; align-items: center; vertical-align: middle;">
-        <button id="global-login-btn" class="button secondary" style="padding: 0 12px; height: 32px; font-size: 0.85rem; border-radius: 6px; margin: 0; cursor: pointer;">
-          登录
-        </button>
-      </span>
-    </nav>
+    <div class="brand"><a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;"><img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));"><span style="font-weight:600;">燕子启动器</span></a></div>
+    <nav><a href="/">首页</a><a href="/store.html">扩展商店</a><a href="/yanm.html">燕幕</a><a href="/docs/product-overview.html" class="active">文档</a><a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a><span id="global-auth-container" style="margin-left:16px;display:inline-flex;align-items:center;vertical-align:middle;"></span></nav>
   </header>
-
-  <!-- Sidebar Expand Hover Button -->
-  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边�?>
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="9 18 15 12 9 6"></polyline>
-    </svg>
-  </button>
-
-  <main class="doc-page">
-    <div class="doc-layout">
-      <!-- Left Sidebar Directory -->
-      <aside class="doc-sidebar">
-        <div class="sidebar-header">
-          <strong>文档目录</strong>
-          <button id="sidebar-toggle" class="sidebar-toggle-btn" title="折叠侧边�?>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
-          </button>
-        </div>
-
-        <div class="sidebar-search-container">
-          <input type="text" id="directory-search" class="sidebar-search-input" placeholder="搜索目录... (/)">
-          <svg class="sidebar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-        </div>
-
-        <div class="doc-toc-group">
-          <span class="doc-toc-title">用户手册</span>
-          <div class="doc-toc-links">
-            <a href="/docs/product-overview.html">1. 产品说明</a>
-            <a href="/docs/getting-started.html" class="active">2. 快速上�?/a>
-          </div>
-        </div>
-
-        <div class="doc-toc-group">
-          <span class="doc-toc-title">开发者文�?/span>
-          <div class="doc-toc-links">
-            <a href="/docs/extension-authoring-guide.html">3. 开发指�?/a>
-            <a href="/docs/extension-spec.html">4. 扩展规范</a>
-            <a href="/docs/agent-skill-spec.html">5. Agent Skill 规范</a>
-            <a href="/docs/ai-extension-test-set.html">6. AI 扩展测试�?/a>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Center Reading Area -->
-      <div class="guide-stack">
-        <div class="doc-content-header" style="margin-bottom: 2rem;">
-          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">快速上�?/h1>
-          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">本章将引导你下载并安装燕子客户端，了解高频使用的基础快捷键，以及如何配置个人多端云同步�?/p>
-        </div>
-        
-        <article class="guide-card">
-          <h2>1. 下载与安�?/h2>
-          <p>从蓝奏云盘下载最新一键安装版�?/p>
-          <div style="margin-top: 1rem; margin-bottom: 1rem;">
-            <a class="button primary" href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" style="height: 46px;">
-              前往蓝奏云下�?
-            </a>
-          </div>
-          <p class="download-password" style="font-size: 0.95rem;">
-            蓝奏云提取密码：<strong style="color: var(--accent);">62yn</strong>
-          </p>
-          <h3 style="margin-top: 1.5rem;">系统运行要求</h3>
-          <ul>
-            <li><strong>支持系统</strong>：Windows 10 / 11�?4位）</li>
-            <li><strong>无额外依�?/strong>：安装包采用自包含构建（Self-Contained），不需要另外下载并安装 .NET 运行时，双击即可直接运行�?/li>
-          </ul>
-        </article>
-
-        <article class="guide-card">
-          <h2>2. 快捷键与基本操作</h2>
-          <table style="width: 100%; border-collapse: collapse; margin-top: 1.25rem;">
-            <thead>
-              <tr style="border-bottom: 1px solid var(--border); text-align: left;">
-                <th style="padding: 0.75rem 0.5rem; color: var(--text);">操作行为</th>
-                <th style="padding: 0.75rem 0.5rem; color: var(--text);">默认快捷�?/ 触发方式</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><strong>唤出主启动器</strong></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);"><code>Alt + Space</code> (双击 Alt 可在设置中修�?</td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><strong>中文/拼音检�?/strong></td>
-                <td style="padding: 0.75rem 0.5rem;">直接在启动器内打字，支持首字母拼音缩�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><strong>导航选择条目</strong></td>
-                <td style="padding: 0.75rem 0.5rem;">键盘 <code>Up / Down</code> 上下切换�?code>Enter</code> 执行选中</td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><strong>执行动作菜单</strong></td>
-                <td style="padding: 0.75rem 0.5rem;">选中项按 <code>Ctrl + K</code> 可查看更多进阶操�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><strong>右键面板快捷管理</strong></td>
-                <td style="padding: 0.75rem 0.5rem;">对条目鼠标右键，可选择删除、编辑配置或固定到顶�?/td>
-              </tr>
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.03);">
-                <td style="padding: 0.75rem 0.5rem;"><strong>唤出鼠标快捷面板</strong></td>
-                <td style="padding: 0.75rem 0.5rem; color: var(--accent);">长按鼠标右键，或在屏幕边缘划动鼠标即可弹出面�?/td>
-              </tr>
-            </tbody>
-          </table>
-        </article>
-
-        <article class="guide-card">
-          <h2>3. 配置多设备云同步</h2>
-          <p>燕子支持个人私有云盘同步，免去了数据被收集到第三方公共服务器的安全忧虑。目前主要支�?WebDAV �?GitHub 两种同步方案�?/p>
-          
-          <h3 style="margin-top: 1.5rem;">方案 A：通过 WebDAV (坚果�? 同步</h3>
-          <ol>
-            <li>登录你的<strong>坚果云网页版</strong>，进�?“账户信息�?-> “安全选项”�?/li>
-            <li>�?“第三方应用管理�?中，点击 “添加应用密码”，输入应用名称，生成一个授权密码�?/li>
-            <li>打开燕子客户端设置页面，输入服务器地址 <code>https://dav.jianguoyun.com/dav/</code>，用户名填写你的坚果云账号邮箱，密码填写刚才生成�?*授权密码**�?/li>
-            <li>点击“保存”即可开启同步�?/li>
-          </ol>
-
-          <h3 style="margin-top: 1.5rem;">方案 B：通过 GitHub 同步</h3>
-          <ol>
-            <li>前往你的 GitHub 账号，建立一个新的空私有/公有仓库（例如命名为 <code>yanzi-sync</code>）�?/li>
-            <li>进入 GitHub Settings -> Developer settings -> Personal access tokens，生成一个包�?<code>repo</code> 权限�?Token�?/li>
-            <li>在燕子中选择 GitHub，填写你�?GitHub 用户名（Username）、新建的仓库名（Repo）、分支名（通常�?<code>main</code>）以及生成的 Token�?/li>
-            <li>保存设置，即可实现安全的代码库备份与同步�?/li>
-          </ol>
-        </article>
-
-        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-          <a href="/docs/product-overview.html" class="button secondary" style="gap: 8px; height: 46px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-            上一�? 产品说明
-          </a>
-          <a href="/docs/extension-authoring-guide.html" class="button primary" style="gap: 8px; height: 46px;">
-            下一�? 开发指�?
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-          </a>
-        </div>
-      </div>
-
-      <!-- Right Outline (Dynamic TOC) -->
-      <aside class="doc-outline">
-        <strong>当前章节大纲</strong>
-        <ul id="outline-list"></ul>
-      </aside>
-    </div>
-  </main>
-  
-  <script src="/assets/docs.js" defer></script>
-<script src="/assets/auth.js"></script>`r`n</body>
-
+  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
+  <main class="doc-page"><div class="doc-layout"><aside class="doc-sidebar"></aside><div class="guide-stack"></div><aside class="doc-outline"><strong>本页目录</strong><ul id="outline-list"></ul></aside></div></main>
+  <script src="/assets/docs-data.js"></script><script src="/assets/auth.js"></script><script src="/assets/docs.js"></script>
+</body>
 </html>
-
