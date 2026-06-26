@@ -9,8 +9,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function currentDocPath() {
-  const path = window.location.pathname.replace(/\/$/, '');
-  return path || '/docs/product-overview.html';
+  let path = window.location.pathname.replace(/\/$/, '');
+  if (!path || path === '/docs') {
+    return '/docs/product-overview.html';
+  }
+  if (!path.endsWith('.html')) {
+    path += '.html';
+  }
+  return path;
 }
 
 function make(tag, className, text) {
