@@ -17,10 +17,10 @@ function getLinkHref(targetPath) {
 }
 
 function currentDocPath() {
-  let path = window.location.pathname;
-  const match = path.match(/(\/docs\/[^\/]+\.html)$/i);
+  let path = window.location.pathname.replace(/\/$/, '');
+  const match = path.match(/\/docs\/([^\/\.]+)/i);
   if (match) {
-    return match[1].toLowerCase();
+    return `/docs/${match[1].toLowerCase()}.html`;
   }
   return '/docs/product-overview.html';
 }
@@ -72,7 +72,7 @@ function renderDocsSidebar(nav, activePath) {
     groupEl.appendChild(make('span', 'doc-toc-title', group.group));
     const links = make('div', 'doc-toc-links');
     group.items.forEach((item, index) => {
-      const a = make('a', item.path === activePath ? 'active' : '', `${index + 1}. ${item.title}`);
+      const a = make('a', item.path === activePath ? 'active' : '', item.title);
       a.href = getLinkHref(item.path);
       links.appendChild(a);
     });
