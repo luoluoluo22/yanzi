@@ -6,7 +6,7 @@
 2. 输入提取密码：`62yn`
 3. 运行 `YanziSetup-0.1.0.exe` 完成安装
 4. 启动 `Yanzi.exe`
-5. 使用 `Ctrl+Shift+Space` 呼出启动器
+5. 使用 `Alt+Space` 呼出启动器
 
 ## 基本操作
 

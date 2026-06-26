@@ -1315,6 +1315,9 @@ pre {
 
 .doc-page {
   padding-top: 80px;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
 }
 
 .doc-hero {
