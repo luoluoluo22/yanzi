@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:OpenQuickHost"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
-        Title="Settings"
+        Title="设置"
         WindowStyle="SingleBorderWindow"
         Width="1024"
         Height="768"
@@ -23,6 +23,7 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <local:BoolToColorConverter x:Key="BoolToColorConverter" />
+        <local:ModelNameFirstCharConverter x:Key="ModelNameFirstCharConverter" />
 
         <!-- Colors -->
         <Color x:Key="SidebarBG">#FF1E1E1E</Color>
@@ -417,19 +418,12 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Margin="22,18,22,12"
-                               Text="设置"
-                               FontSize="{DynamicResource FontSizeNormalPlus}"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource BrushTextSec}" />
-
                     <!-- Account Section -->
-                    <Button Grid.Row="1"
-                            Margin="10,0,10,10"
+                    <Button Grid.Row="0"
+                            Margin="10,15,10,10"
                             Background="Transparent"
                             BorderThickness="0"
                             Click="AccountButton_Click">
@@ -479,7 +473,7 @@
                     </Button>
 
                     <!-- Global Search Box -->
-                    <Border Grid.Row="2"
+                    <Border Grid.Row="1"
                             Margin="10,0,10,15" 
                             Background="{DynamicResource BrushBG}" 
                             CornerRadius="6" 
@@ -528,7 +522,7 @@
                         </Grid>
                     </Border>
 
-                    <ListBox Grid.Row="3"
+                    <ListBox Grid.Row="2"
                              ItemsSource="{Binding NavigationItems}"
                              SelectedItem="{Binding SelectedNavigation, Mode=TwoWay}"
                              Style="{StaticResource SidebarListBoxStyle}"
@@ -582,22 +576,7 @@
                         <ColumnDefinition Width="140" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Orientation="Horizontal" shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                        <Button Style="{DynamicResource GhostButtonStyle}" Margin="0,0,5,0">
-                            <Viewbox Width="12" Height="12">
-                                <Path Data="{local:IconGeometry arrow-left}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform"/>
-                            </Viewbox>
-                        </Button>
-                        <Button Style="{DynamicResource GhostButtonStyle}">
-                            <Viewbox Width="12" Height="12">
-                                <Path Data="{local:IconGeometry arrow-left}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform" RenderTransformOrigin="0.5,0.5">
-                                    <Path.RenderTransform>
-                                        <RotateTransform Angle="180"/>
-                                    </Path.RenderTransform>
-                                </Path>
-                            </Viewbox>
-                        </Button>
-                    </StackPanel>
+
 
                     <Button Grid.Column="2"
                             HorizontalAlignment="Right"
@@ -640,12 +619,12 @@
                     </Button>
                 </Grid>
 
-                <ScrollViewer x:Name="MainContentScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer x:Name="MainContentScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="{Binding IsNormalSettingsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <StackPanel Margin="30,10,30,30">
                         
                         <!-- General Settings View -->
                         <StackPanel Visibility="{Binding IsGeneralSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="常规" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
                             
                             <Grid Margin="0,5">
                                 <TextBlock Text="主题模式" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
@@ -767,37 +746,10 @@
 
                         </StackPanel>
 
-                        <StackPanel Visibility="{Binding IsAiSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="AI" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,15"/>
-
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16">
-                                <StackPanel>
-                                    <TextBlock Text="AI 对话配置" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="用于 AI 对话和后续 AI 扩展调用，支持本地或远程 OpenAI 兼容接口。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
-
-                                    <TextBlock Text="服务地址" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,16,0,0" />
-                                    <TextBox x:Name="AiBaseUrlTextBox" Text="{Binding AiBaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" TextChanged="AiSettings_TextChanged"/>
-
-                                    <TextBlock Text="API Key" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,14,0,0" />
-                                    <TextBox x:Name="AiApiKeyTextBox" Text="{Binding AiApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" TextChanged="AiSettings_TextChanged"/>
-
-                                    <TextBlock Text="模型名" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,14,0,0" />
-                                    <TextBox x:Name="AiModelTextBox" Text="{Binding AiModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" TextChanged="AiSettings_TextChanged"/>
-
-                                    <Grid Margin="0,16,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding AiSettingsStatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                        <Button x:Name="SaveAiButton" Grid.Column="1" Content="保存" Style="{StaticResource PrimaryBtn}" Click="SaveAiSettingsButton_Click" IsEnabled="{Binding HasAiSettingsChanged}"/>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                        <!-- AI Settings Grid Moved -->
 
                         <StackPanel Visibility="{Binding IsEnvironmentSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="环境变量" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16">
                                 <StackPanel>
@@ -1425,7 +1377,7 @@
 
                         <!-- Yanm View -->
                         <StackPanel Visibility="{Binding IsYanmSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="燕幕" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
 
                             <Grid Margin="0,5">
                                 <StackPanel>
@@ -1796,7 +1748,7 @@
 
                         <!-- Mouse Panel View -->
 <StackPanel Visibility="{Binding IsQuickPanelSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="鼠标触发" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
                             
                             <Grid Margin="0,5">
                                 <StackPanel Orientation="Horizontal">
@@ -2412,7 +2364,7 @@
 
                         <!-- Mouse Gestures View -->
                         <StackPanel Visibility="{Binding IsMouseGesturesSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="鼠标手势" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,0,0,16">
                                 <Grid>
@@ -2556,7 +2508,7 @@
 
                         <!-- Radial View -->
                         <StackPanel Visibility="{Binding IsRadialSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="燕环" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
 
                             <Grid Margin="0,5">
                                 <StackPanel>
@@ -3048,7 +3000,7 @@
 
                         <!-- Yarn Select View -->
                         <StackPanel Visibility="{Binding IsYarnSelectSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="燕选" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
 
                             <Grid Margin="0,5">
                                 <StackPanel>
@@ -3226,7 +3178,7 @@
 
                             <!-- Main Content Area -->
                             <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                                <TextBlock Text="扩展管理" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,15"/>
+
 
                                 <!-- Top Info Card -->
                                 <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,0,0,16">
@@ -3764,6 +3716,213 @@
                         </Grid>
                     </StackPanel>
                 </ScrollViewer>
+
+                <Grid Grid.Row="1"
+                      Margin="30,10,30,30"
+                      Visibility="{Binding IsAiSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="280" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Grid Grid.Column="0" Margin="0,0,14,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBox x:Name="SearchProviderTextBox"
+                                 Height="36"
+                                 Margin="0,0,0,10"
+                                 Padding="10,8"
+                                 VerticalContentAlignment="Center"
+                                 Text="{Binding ProviderSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 Tag="搜索模型平台..." />
+                        <ListBox Grid.Row="1"
+                                 x:Name="ProvidersListBox"
+                                 ItemsSource="{Binding FilteredProviders}"
+                                 SelectedItem="{Binding SelectedServiceProvider, Mode=TwoWay}"
+                                 Style="{StaticResource SidebarListBoxStyle}"
+                                 ItemContainerStyle="{StaticResource SidebarListBoxItemStyle}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Height="40">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Width="26" Height="26" CornerRadius="13" Background="#1A3B82F6" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding AvatarChar}"
+                                                       Foreground="#FF60A5FA"
+                                                       FontSize="12"
+                                                       FontWeight="Bold"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Name}"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0,0,0" />
+                                        <Border Grid.Column="2"
+                                                Visibility="{Binding IsEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                Background="#1A22C55E"
+                                                BorderBrush="#FF22C55E"
+                                                BorderThickness="1"
+                                                CornerRadius="4"
+                                                Padding="5,2"
+                                                VerticalAlignment="Center">
+                                            <TextBlock Text="ON" Foreground="#FF22C55E" FontSize="8" FontWeight="Bold" />
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <Button Grid.Row="2"
+                                Content="+ 添加提供商"
+                                Style="{StaticResource SecondaryBtn}"
+                                Height="38"
+                                Margin="0,10,0,0"
+                                VerticalAlignment="Bottom"
+                                Click="AddProviderButton_Click" />
+                    </Grid>
+
+                    <Border Grid.Column="1" Background="{DynamicResource BrushBorder}" Width="1" VerticalAlignment="Stretch" />
+
+                    <ScrollViewer Grid.Column="2" Margin="14,0,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="True" PanningMode="VerticalOnly">
+                        <StackPanel>
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16"
+                                    Visibility="{Binding DataContext.SelectPromptVisibility, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <TextBlock Text="请在左侧选择或添加一个模型服务提供商以配置。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" HorizontalAlignment="Center" />
+                            </Border>
+
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16"
+                                    DataContext="{Binding SelectedServiceProvider}"
+                                    Visibility="{Binding DataContext.DetailsVisibility, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock Text=" 配置" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="启用平台 " Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding IsEnabled, Mode=TwoWay}" Click="SaveSettingsToggle_Click" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <TextBlock Text="平台名称" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,16,0,0" />
+                                    <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" TextChanged="AiSettings_TextChanged"/>
+
+                                    <TextBlock Text="API 密钥" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,14,0,0" />
+                                    <Grid Margin="0,6,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Text="{Binding ApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,0" Height="36" VerticalContentAlignment="Center" Padding="10,0" TextChanged="AiSettings_TextChanged"/>
+                                        <Button Grid.Column="1" Content="检测" Height="36" Margin="8,0,0,0" Style="{StaticResource SecondaryBtn}" Padding="16,0" Click="CheckApiKeyButton_Click"/>
+                                    </Grid>
+                                    <TextBlock Text="多个密钥使用逗号分隔" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0"/>
+
+                                    <TextBlock Text="API 地址" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,14,0,0" />
+                                    <TextBox Text="{Binding BaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" TextChanged="AiSettings_TextChanged"/>
+                                    <TextBlock Text="{Binding PreviewUrl, FallbackValue=预览：http://127.0.0.1/v1/chat/completions}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0"/>
+
+                                    <Grid Margin="0,18,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="模型列表" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock Text=" (" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Models.Count}" Foreground="#FF60A5FA" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <TextBlock Text=" 个)" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <TextBlock Text="默认激活模型" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,14,0,0" />
+                                    <ComboBox ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel, Mode=TwoWay}" Margin="0,6,0,0" Height="36" Style="{StaticResource DarkComboBoxStyle}" VerticalContentAlignment="Center" SelectionChanged="AiModelComboBox_SelectionChanged"/>
+
+                                    <ItemsControl ItemsSource="{Binding Models}" Margin="0,12,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{DynamicResource BrushContentBG}" CornerRadius="6" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="10,8" Margin="0,0,0,6">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Width="20" Height="20" CornerRadius="10" Background="#1AFF3B82" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Converter={StaticResource ModelNameFirstCharConverter}}"
+                                                                       Foreground="#FFFF3B82" FontSize="9" FontWeight="Bold"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1" Text="{Binding}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                            <Border Width="14" Height="14" CornerRadius="7" Background="#1A22C55E" ToolTip="支持视觉" Margin="0,0,3,0">
+                                                                <TextBlock Text="👁" Foreground="#FF22C55E" FontSize="8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            </Border>
+                                                            <Border Width="14" Height="14" CornerRadius="7" Background="#1A3B82F6" ToolTip="支持联网" Margin="0,0,3,0">
+                                                                <TextBlock Text="🌐" Foreground="#FF3B82F6" FontSize="8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            </Border>
+                                                            <Border Width="14" Height="14" CornerRadius="7" Background="#1AFABF2C" ToolTip="支持画图" Margin="0,0,3,0">
+                                                                <TextBlock Text="☀️" Foreground="#FFFABF2C" FontSize="8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            </Border>
+                                                            <Border Width="14" Height="14" CornerRadius="7" Background="#1AF97316" ToolTip="支持工具">
+                                                                <TextBlock Text="🔧" Foreground="#FFF97316" FontSize="8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="3" Content="-" Width="20" Height="20" Style="{StaticResource IconButtonStyle}" Click="DeleteModelButton_Click" Tag="{Binding}" Padding="0" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button Content="管理" Style="{StaticResource SecondaryBtn}" Height="28" Padding="12,0" Click="ManageModelsButton_Click" />
+                                        <Button Content="+ 添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="12,0" Margin="8,0,0,0" Click="AddNewModelButton_Click" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,16,0,0">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="系统提示词配置" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Content="独立窗口编辑" Style="{StaticResource SecondaryBtn}" Padding="10,4" Click="EditSystemPromptInNewWindow_Click"/>
+                                    </Grid>
+                                    <TextBlock Text="配置 AI 助手的全局人格、工作指令和可用工具规范。修改后请点击“保存”按钮保存。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                    <TextBox x:Name="AiSystemPromptTextBox" Text="{Binding AiSystemPrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,12,0,0" Height="180" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextChanged="AiSettings_TextChanged"/>
+                                    <Grid Margin="0,16,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="1" Content="重置" Style="{StaticResource SecondaryBtn}" Click="ResetSystemPromptButton_Click" Margin="0,0,10,0" />
+                                        <Button Grid.Column="2" Content="保存" Style="{StaticResource PrimaryBtn}" Click="SaveAiSettingsButton_Click" IsEnabled="{Binding HasAiSettingsChanged}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
 
             <Thumb Grid.ColumnSpan="2"

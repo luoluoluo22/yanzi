@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -44,7 +45,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _aiBaseUrl = string.Empty;
     private string _aiApiKey = string.Empty;
     private string _aiModel = string.Empty;
+    private string _aiSystemPrompt = string.Empty;
     private string _aiSettingsStatusText = "尚未配置 AI。";
+    private ObservableCollection<SettingsAiProviderVM> _aiServiceProvidersList = new();
+    private string _providerSearchText = string.Empty;
+    private SettingsAiProviderVM? _selectedServiceProvider;
+    private string _checkApiKeyButtonText = "检测";
     private string _environmentStatusText = "尚未配置环境变量。";
     private string _radialPreviewDebugLog = "预览日志：等待交互。";
     private string _recycleBinSummary = "回收站为空。";
@@ -76,6 +82,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _originalAiBaseUrl = string.Empty;
     private string _originalAiApiKey = string.Empty;
     private string _originalAiModel = string.Empty;
+    private string _originalAiSystemPrompt = string.Empty;
     private bool _hasAiSettingsChanged;
     private PersonalSyncSettings _personalSyncSettings = new();
     private PersonalSyncSecretBag _personalSyncSecrets = new();
@@ -97,7 +104,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         NavigationItems =
         [
             new SettingsNavigationItem("general", "mdi:settings", "常规", "#FF3B82F6"),
-            new SettingsNavigationItem("ai", "mdi:ai", "AI", "#FF3B82F6"),
+            new SettingsNavigationItem("ai", "mdi:ai", "模型服务", "#FF3B82F6"),
             new SettingsNavigationItem("environment", "mdi:key", "环境变量", "#FF14B8A6"),
             new SettingsNavigationItem("sync", "mdi:sync", "同步与备份", "#FF22C55E"),
             new SettingsNavigationItem("extensions", "mdi:dashboard", "扩展", "#FFF97316"),
@@ -119,6 +126,24 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AiBaseUrl = _settings.AiBaseUrl;
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
+        AiSystemPrompt = _settings.AiSystemPrompt;
+
+        _settings.AiServiceProviders ??= [];
+        foreach (var provider in _settings.AiServiceProviders)
+        {
+            var vm = new SettingsAiProviderVM(provider);
+            if (provider.Models != null)
+            {
+                foreach (var m in provider.Models)
+                {
+                    vm.Models.Add(m);
+                }
+            }
+            _aiServiceProvidersList.Add(vm);
+        }
+        SelectedServiceProvider = _aiServiceProvidersList.FirstOrDefault(p => p.Id == _settings.ActiveServiceProviderId)
+                                 ?? _aiServiceProvidersList.FirstOrDefault();
+
 
         SubscribeUpdateEvents();
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
@@ -680,6 +705,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(SelectedSectionTitle));
             OnPropertyChanged(nameof(SelectedSectionDescription));
+            OnPropertyChanged(nameof(IsNormalSettingsVisible));
             OnPropertyChanged(nameof(IsGeneralSelected));
             OnPropertyChanged(nameof(IsAiSelected));
             OnPropertyChanged(nameof(IsEnvironmentSelected));
@@ -1302,6 +1328,22 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string AiSystemPrompt
+    {
+        get => _aiSystemPrompt;
+        set
+        {
+            if (value == _aiSystemPrompt)
+            {
+                return;
+            }
+
+            _aiSystemPrompt = value;
+            OnPropertyChanged();
+            CheckAiSettingsChanged();
+        }
+    }
+
     public bool HasAiSettingsChanged
     {
         get => _hasAiSettingsChanged;
@@ -1331,6 +1373,73 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
         }
     }
+
+    public ObservableCollection<SettingsAiProviderVM> AiServiceProvidersList => _aiServiceProvidersList;
+
+    public string ProviderSearchText
+    {
+        get => _providerSearchText;
+        set
+        {
+            if (_providerSearchText != value)
+            {
+                _providerSearchText = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(FilteredProviders));
+            }
+        }
+    }
+
+    public IEnumerable<SettingsAiProviderVM> FilteredProviders
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(ProviderSearchText))
+                return AiServiceProvidersList;
+            return AiServiceProvidersList.Where(p => p.Name.Contains(ProviderSearchText, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public SettingsAiProviderVM? SelectedServiceProvider
+    {
+        get => _selectedServiceProvider;
+        set
+        {
+            if (_selectedServiceProvider != value)
+            {
+                if (_selectedServiceProvider != null)
+                {
+                    _selectedServiceProvider.PropertyChanged -= SelectedServiceProvider_PropertyChanged;
+                }
+                
+                _selectedServiceProvider = value;
+                
+                if (_selectedServiceProvider != null)
+                {
+                    _selectedServiceProvider.PropertyChanged += SelectedServiceProvider_PropertyChanged;
+                }
+                
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(DetailsVisibility));
+                OnPropertyChanged(nameof(SelectPromptVisibility));
+            }
+        }
+    }
+
+    public Visibility DetailsVisibility => SelectedServiceProvider == null ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility SelectPromptVisibility => SelectedServiceProvider == null ? Visibility.Visible : Visibility.Collapsed;
+
+    public string CheckApiKeyButtonText
+    {
+        get => _checkApiKeyButtonText;
+        set { _checkApiKeyButtonText = value; OnPropertyChanged(); }
+    }
+
+    private void SelectedServiceProvider_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        HasAiSettingsChanged = true;
+    }
+
 
     public int PersonalSyncAutoSyncDelaySeconds
     {
@@ -2235,6 +2344,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public bool IsGeneralSelected => SelectedNavigation?.Key == "general";
 
+    public bool IsNormalSettingsVisible => !IsAiSelected;
+
     public bool IsAiSelected => SelectedNavigation?.Key == "ai";
 
     public bool IsEnvironmentSelected => SelectedNavigation?.Key == "environment";
@@ -2280,6 +2391,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _originalAiBaseUrl = _settings.AiBaseUrl;
         _originalAiApiKey = _settings.AiApiKey;
         _originalAiModel = _settings.AiModel;
+        _originalAiSystemPrompt = _settings.AiSystemPrompt;
         
         RefreshAccountSummary();
         RefreshQuickPanelTriggerBindings();
@@ -2339,6 +2451,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AiBaseUrl = _settings.AiBaseUrl;
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
+        AiSystemPrompt = _settings.AiSystemPrompt;
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
         
         // 加载已保存的密码
@@ -3385,29 +3498,364 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SaveAiSettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        _mainWindow.SaveAiSettings(AiBaseUrl, AiApiKey, AiModel);
-        _settings = AppSettingsStore.Load();
-        
-        // 更新原始值
+        // 1. 同步服务商列表到 _settings
+        _settings.AiServiceProviders = AiServiceProvidersList.Select(vm => {
+            vm.RawSettings.Models = vm.Models.ToList();
+            return vm.RawSettings;
+        }).ToList();
+
+        // 2. 同步提示词
+        _settings.AiSystemPrompt = AiSystemPrompt;
+
+        // 3. 将当前选中的提供商设为 Active 默认提供商并同步参数
+        if (SelectedServiceProvider != null)
+        {
+            _settings.ActiveServiceProviderId = SelectedServiceProvider.Id;
+            _settings.AiBaseUrl = SelectedServiceProvider.BaseUrl;
+            _settings.AiApiKey = SelectedServiceProvider.ApiKey;
+            _settings.AiModel = SelectedServiceProvider.SelectedModel;
+        }
+
+        // 4. 保存设置并同步至主窗口
+        AppSettingsStore.Save(_settings);
+        _mainWindow.OnAiSettingsChanged();
+
+        // 5. 更新原始值
         _originalAiBaseUrl = _settings.AiBaseUrl;
         _originalAiApiKey = _settings.AiApiKey;
         _originalAiModel = _settings.AiModel;
-        
+        _originalAiSystemPrompt = _settings.AiSystemPrompt;
+
         AiBaseUrl = _settings.AiBaseUrl;
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
+        AiSystemPrompt = _settings.AiSystemPrompt;
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
-        
-        // 重置变更状态
+
+        // 6. 重置状态
         HasAiSettingsChanged = false;
-        
-        // 显示Toast消息
+
+        // 7. Toast
         ShowToast("AI 配置已保存");
     }
+
+    private void AddProviderButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new AddProviderWindow();
+        dialog.Owner = this;
+        if (dialog.ShowDialog() == true)
+        {
+            var newProvider = new AiServiceProviderSettings
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = dialog.ProviderName,
+                ProviderType = dialog.ProviderType,
+                BaseUrl = BuildDefaultProviderBaseUrl(dialog.ProviderType),
+                ApiKey = "",
+                IsEnabled = true,
+                Models = [],
+                SelectedModel = string.Empty
+            };
+
+            var vm = new SettingsAiProviderVM(newProvider);
+            _aiServiceProvidersList.Add(vm);
+            SelectedServiceProvider = vm;
+            HasAiSettingsChanged = true;
+            OnPropertyChanged(nameof(FilteredProviders));
+        }
+    }
+
+    private void DeleteModelButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string modelName && SelectedServiceProvider != null)
+        {
+            SelectedServiceProvider.Models.Remove(modelName);
+            if (SelectedServiceProvider.SelectedModel == modelName)
+            {
+                SelectedServiceProvider.SelectedModel = SelectedServiceProvider.Models.FirstOrDefault() ?? string.Empty;
+            }
+            HasAiSettingsChanged = true;
+        }
+    }
+
+    private void AddNewModelButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedServiceProvider == null) return;
+
+        var dialog = new SimpleTextInputWindow("添加模型", "请输入模型名称（如 gpt-4o, deepseek-chat）:", "");
+        dialog.Owner = this;
+        if (dialog.ShowDialog() == true)
+        {
+            var modelName = dialog.ValueText;
+            if (!string.IsNullOrWhiteSpace(modelName))
+            {
+                if (!SelectedServiceProvider.Models.Contains(modelName))
+                {
+                    SelectedServiceProvider.Models.Add(modelName);
+                    if (string.IsNullOrWhiteSpace(SelectedServiceProvider.SelectedModel))
+                    {
+                        SelectedServiceProvider.SelectedModel = modelName;
+                    }
+                    HasAiSettingsChanged = true;
+                }
+            }
+        }
+    }
+
+    private async void ManageModelsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedServiceProvider == null)
+        {
+            System.Windows.MessageBox.Show(this, "请先选择一个提供商。", "管理模型", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(SelectedServiceProvider.BaseUrl) || string.IsNullOrWhiteSpace(SelectedServiceProvider.ApiKey))
+        {
+            System.Windows.MessageBox.Show(this, "请先填写当前提供商的 API 地址和 API 密钥。", "管理模型", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+            var availableModels = await FetchAvailableModelsAsync(SelectedServiceProvider);
+            Mouse.OverrideCursor = null;
+            if (availableModels.Count == 0)
+            {
+                System.Windows.MessageBox.Show(this, "没有读取到可用模型。请检查提供商接口是否支持读取模型列表。", "管理模型", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var picker = new AiModelPickerWindow(SelectedServiceProvider.Name, availableModels, SelectedServiceProvider.Models)
+            {
+                Owner = this
+            };
+
+            if (picker.ShowDialog() == true)
+            {
+                var addedCount = 0;
+                foreach (var modelName in picker.SelectedModels)
+                {
+                    if (SelectedServiceProvider.Models.Contains(modelName))
+                    {
+                        continue;
+                    }
+
+                    SelectedServiceProvider.Models.Add(modelName);
+                    addedCount++;
+                }
+
+                if (addedCount > 0)
+                {
+                    if (string.IsNullOrWhiteSpace(SelectedServiceProvider.SelectedModel))
+                    {
+                        SelectedServiceProvider.SelectedModel = SelectedServiceProvider.Models.FirstOrDefault() ?? string.Empty;
+                    }
+
+                    HasAiSettingsChanged = true;
+                    ShowToast($"已添加 {addedCount} 个模型");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, $"读取模型列表失败：{ex.Message}", "管理模型", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            Mouse.OverrideCursor = null;
+        }
+    }
+
+    private async void CheckApiKeyButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedServiceProvider == null) return;
+        var baseUrl = SelectedServiceProvider.BaseUrl;
+        var apiKey = SelectedServiceProvider.ApiKey;
+
+        if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(apiKey))
+        {
+            System.Windows.MessageBox.Show("请先填写服务地址和 API 密钥。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        CheckApiKeyButtonText = "检测中...";
+
+        try
+        {
+            using (var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) })
+            {
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                var requestUrl = $"{baseUrl.TrimEnd('/')}/models";
+                var response = await client.GetAsync(requestUrl);
+                if (response.IsSuccessStatusCode)
+                {
+                    System.Windows.MessageBox.Show("连接检测成功！API 地址和密钥连通正常。", "检测成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    var err = await response.Content.ReadAsStringAsync();
+                    System.Windows.MessageBox.Show($"检测失败。服务器返回状态码: {(int)response.StatusCode}\n{err}", "检测失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"请求异常: {ex.Message}", "检测失败", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            CheckApiKeyButtonText = "检测";
+        }
+    }
+
+    private static string BuildDefaultProviderBaseUrl(string providerType)
+    {
+        return providerType switch
+        {
+            "Gemini" => "https://generativelanguage.googleapis.com/v1beta",
+            "Anthropic" => "https://api.anthropic.com/v1",
+            "Ollama" => "http://localhost:11434/v1",
+            _ => "https://api.openai.com/v1"
+        };
+    }
+
+    private static async Task<IReadOnlyList<string>> FetchAvailableModelsAsync(SettingsAiProviderVM provider)
+    {
+        using var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(15)
+        };
+
+        using var request = BuildModelListRequest(provider);
+        using var response = await client.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"服务器返回 {(int)response.StatusCode}：{responseBody}");
+        }
+
+        return ParseAvailableModelNames(provider.ProviderType, responseBody);
+    }
+
+    private static HttpRequestMessage BuildModelListRequest(SettingsAiProviderVM provider)
+    {
+        var baseUrl = provider.BaseUrl.Trim().TrimEnd('/');
+        var apiKey = provider.ApiKey.Trim();
+        var providerType = provider.ProviderType?.Trim() ?? string.Empty;
+
+        if (string.Equals(providerType, "Gemini", StringComparison.OrdinalIgnoreCase))
+        {
+            var separator = baseUrl.Contains('?') ? "&" : "?";
+            return new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/models{separator}key={Uri.EscapeDataString(apiKey)}");
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/models");
+        if (string.Equals(providerType, "Anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            request.Headers.Add("x-api-key", apiKey);
+            request.Headers.Add("anthropic-version", "2023-06-01");
+        }
+        else
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+        }
+
+        return request;
+    }
+
+    private static IReadOnlyList<string> ParseAvailableModelNames(string providerType, string responseBody)
+    {
+        using var document = JsonDocument.Parse(responseBody);
+        var models = new List<string>();
+
+        if (string.Equals(providerType, "Gemini", StringComparison.OrdinalIgnoreCase) &&
+            document.RootElement.TryGetProperty("models", out var geminiModels) &&
+            geminiModels.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var model in geminiModels.EnumerateArray())
+            {
+                if (!model.TryGetProperty("name", out var nameElement))
+                {
+                    continue;
+                }
+
+                var name = nameElement.GetString()?.Trim();
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                if (name.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = name["models/".Length..];
+                }
+
+                models.Add(name);
+            }
+        }
+        else if (document.RootElement.TryGetProperty("data", out var dataModels) &&
+                 dataModels.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var model in dataModels.EnumerateArray())
+            {
+                if (!model.TryGetProperty("id", out var idElement))
+                {
+                    continue;
+                }
+
+                var id = idElement.GetString()?.Trim();
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    models.Add(id);
+                }
+            }
+        }
+
+        return models
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void ResetSystemPromptButton_Click(object sender, RoutedEventArgs e)
+    {
+        AiSystemPrompt = AppSettingsStore.DefaultAiSystemPrompt;
+        AiSystemPromptTextBox.Text = AppSettingsStore.DefaultAiSystemPrompt;
+        HasAiSettingsChanged = true;
+        ShowToast("提示词已重置（需要点击保存生效）");
+    }
+
+    private void SearchProviderTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(FilteredProviders));
+    }
+
+    private void AiModelComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        HasAiSettingsChanged = true;
+    }
+
 
     private void AiSettings_TextChanged(object sender, TextChangedEventArgs e)
     {
         CheckAiSettingsChanged();
+    }
+
+    private void EditSystemPromptInNewWindow_Click(object sender, RoutedEventArgs e)
+    {
+        var editor = new SystemPromptEditorWindow(AiSystemPrompt)
+        {
+            Owner = this
+        };
+        if (editor.ShowDialog() == true)
+        {
+            AiSystemPrompt = editor.PromptText;
+            AiSystemPromptTextBox.Text = editor.PromptText;
+        }
     }
 
     private void AddEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
@@ -3455,7 +3903,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         HasAiSettingsChanged = 
             AiBaseUrl != _originalAiBaseUrl ||
             AiApiKey != _originalAiApiKey ||
-            AiModel != _originalAiModel;
+            AiModel != _originalAiModel ||
+            AiSystemPrompt != _originalAiSystemPrompt;
     }
 
     private void ShowToast(string message)
@@ -8495,3 +8944,125 @@ public sealed class EnvironmentVariableEditorItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
+public class ModelNameFirstCharConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        if (value is string s && s.Length > 0)
+        {
+            return s.Substring(0, 1).ToUpper();
+        }
+        return "?";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+public class SettingsAiProviderVM : INotifyPropertyChanged
+{
+    private readonly AiServiceProviderSettings _settings;
+    public AiServiceProviderSettings RawSettings => _settings;
+
+    public SettingsAiProviderVM(AiServiceProviderSettings settings)
+    {
+        _settings = settings;
+    }
+
+    public string Id => _settings.Id;
+
+    public string Name
+    {
+        get => _settings.Name;
+        set
+        {
+            if (_settings.Name != value)
+            {
+                _settings.Name = value;
+                OnPropertyChanged(nameof(Name));
+                OnPropertyChanged(nameof(AvatarChar));
+            }
+        }
+    }
+
+    public string ProviderType
+    {
+        get => _settings.ProviderType;
+        set
+        {
+            if (_settings.ProviderType != value)
+            {
+                _settings.ProviderType = value;
+                OnPropertyChanged(nameof(ProviderType));
+            }
+        }
+    }
+
+    public string BaseUrl
+    {
+        get => _settings.BaseUrl;
+        set
+        {
+            if (_settings.BaseUrl != value)
+            {
+                _settings.BaseUrl = value;
+                OnPropertyChanged(nameof(BaseUrl));
+                OnPropertyChanged(nameof(PreviewUrl));
+            }
+        }
+    }
+
+    public string ApiKey
+    {
+        get => _settings.ApiKey;
+        set
+        {
+            if (_settings.ApiKey != value)
+            {
+                _settings.ApiKey = value;
+                OnPropertyChanged(nameof(ApiKey));
+            }
+        }
+    }
+
+    public bool IsEnabled
+    {
+        get => _settings.IsEnabled;
+        set
+        {
+            if (_settings.IsEnabled != value)
+            {
+                _settings.IsEnabled = value;
+                OnPropertyChanged(nameof(IsEnabled));
+            }
+        }
+    }
+
+    public string SelectedModel
+    {
+        get => _settings.SelectedModel;
+        set
+        {
+            if (_settings.SelectedModel != value)
+            {
+                _settings.SelectedModel = value;
+                OnPropertyChanged(nameof(SelectedModel));
+            }
+        }
+    }
+
+    public ObservableCollection<string> Models { get; } = new();
+
+    public string AvatarChar => !string.IsNullOrEmpty(Name) ? Name.Substring(0, 1).ToUpper() : "?";
+
+    public string PreviewUrl => string.IsNullOrWhiteSpace(BaseUrl) ? "无预览" : $"{BaseUrl.TrimEnd('/')}/chat/completions";
+
+    public Visibility DetailsVisibility => Visibility.Visible; // 仅在自身 DataContext 下总是 Visible，而在外层做 Visibility 绑定
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    protected void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+

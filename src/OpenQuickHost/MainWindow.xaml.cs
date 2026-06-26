@@ -339,6 +339,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(NormalLauncherVisibility));
             OnPropertyChanged(nameof(AiChatModelDisplayText));
 
+            if (IsStoreMode)
+            {
+                if (_isStoreLoading && StoreLoadingOverlay != null)
+                {
+                    StoreLoadingOverlay.Visibility = Visibility.Visible;
+                }
+            }
+            else
+            {
+                if (StoreLoadingOverlay != null)
+                {
+                    StoreLoadingOverlay.Visibility = Visibility.Collapsed;
+                }
+            }
+
             if (!string.Equals(previousScopeKey, SearchScopeAi, StringComparison.OrdinalIgnoreCase))
             {
                 _lastNonAiSearchScopeKey = previousScopeKey;
@@ -1693,7 +1708,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = HostAssets.DocsReadmePath,
+                FileName = "https://yanzi.luoluoluo.cc.cd/docs/product-overview",
                 UseShellExecute = true
             });
             LastRunMessage = "已打开帮助文档。";

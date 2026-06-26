@@ -30,6 +30,146 @@
     </shell:WindowChrome.WindowChrome>
     
     <Window.Resources>
+        <Style x:Key="AiModelComboBoxItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="Transparent"
+                                BorderThickness="1"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#FF2F3440" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#443B82F6" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#1F3B82F6" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#803B82F6" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AiModelComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="Background" Value="#FF2D2D30" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#FF434346" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="MaxDropDownHeight" Value="320" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource AiModelComboBoxItemStyle}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          Tag="{Binding SelectedItem, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Root"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="7"
+                                                SnapsToDevicePixels="True">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="30" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Margin="10,0,4,0"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Left"
+                                                           Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                                           Foreground="{TemplateBinding Foreground}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <Path x:Name="Arrow"
+                                                      Grid.Column="1"
+                                                      Width="9"
+                                                      Height="5"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Data="M0,0 L4.5,5 L9,0 Z"
+                                                      Fill="#FF9CA3AF"
+                                                      Stretch="Fill" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="#FF4B5563" />
+                                                <Setter TargetName="Root" Property="Background" Value="#FF3F3F46" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="#FF3B82F6" />
+                                                <Setter TargetName="Root" Property="Background" Value="#FF2D2D30" />
+                                                <Setter TargetName="Arrow" Property="Fill" Value="#FF60A5FA" />
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Border Background="#FF1E1E1E"
+                                        BorderBrush="#FF434346"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Margin="0,5,0,0"
+                                        MinWidth="{TemplateBinding ActualWidth}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <ScrollViewer Padding="3"
+                                                  SnapsToDevicePixels="True"
+                                                  CanContentScroll="True"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter Property="BorderBrush" Value="#FF3B82F6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Colors -->
         <Color x:Key="WindowBackground">#FF1C1C1C</Color>
         <Color x:Key="BorderColor">#FF333333</Color>
@@ -136,6 +276,16 @@
                 <RowDefinition Height="*" />    <!-- List -->
                 <RowDefinition Height="Auto" /> <!-- Footer -->
             </Grid.RowDefinitions>
+
+            <!-- Placement target for search scope popup in AI mode -->
+            <Border x:Name="SearchPopupPlacementTarget"
+                    Grid.Row="0"
+                    Height="1"
+                    Margin="20,15,20,0"
+                    VerticalAlignment="Top"
+                    Visibility="Visible"
+                    Focusable="False"
+                    IsHitTestVisible="False" />
 
             <!-- 1. Search Bar -->
             <StackPanel Grid.Row="0"
@@ -368,7 +518,7 @@
             </StackPanel>
 
             <Popup x:Name="SearchScopePopup"
-                   PlacementTarget="{Binding ElementName=SearchBarGrid}"
+                   PlacementTarget="{Binding ElementName=SearchPopupPlacementTarget}"
                    Placement="Top"
                    HorizontalOffset="0"
                    VerticalOffset="-20"
@@ -1221,7 +1371,7 @@
             <Grid Grid.RowSpan="3"
                   Margin="18,16,18,16"
                   Panel.ZIndex="25"
-                  Visibility="{Binding AiChatVisibility}">
+Visibility="{Binding AiChatVisibility}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="280" />
                     <ColumnDefinition Width="20" />
@@ -1249,30 +1399,29 @@
                                 BorderThickness="0,0,0,1">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="对话历史"
-                                               Foreground="{DynamicResource BrushTextMain}"
-                                               FontSize="{DynamicResource FontSizeLargePlus}"
-                                               FontWeight="SemiBold" />
-                                    <TextBlock Text="{Binding AiChatModelDisplayText}"
-                                               Margin="0,5,0,0"
-                                               Foreground="{DynamicResource BrushTextSec}"
-                                               FontSize="{DynamicResource FontSizeSmall}" />
-                                </StackPanel>
-                                <Border Grid.Column="1"
+                                <Border Grid.Column="0"
                                         Background="{DynamicResource BrushSecondaryBtnBG}"
                                         BorderBrush="{DynamicResource BrushBorderStrong}"
                                         BorderThickness="1"
                                         CornerRadius="8"
                                         Padding="10,6"
-                                        VerticalAlignment="Center">
+                                        VerticalAlignment="Center"
+                                        Cursor="Hand"
+                                        MouseLeftButtonUp="EscReturnButton_Click">
                                     <TextBlock Text="Esc 返回"
                                                Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="{DynamicResource FontSizeSmall}" />
                                 </Border>
+                                <TextBlock Grid.Column="2" 
+                                           Text="对话历史"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeLargePlus}"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
                             </Grid>
                         </Border>
 
@@ -1293,29 +1442,87 @@
                                                 Cursor="Hand"
                                                 MouseLeftButtonUp="AiChatTopicItem_MouseLeftButtonUp"
                                                 MouseRightButtonUp="AiChatTopicItem_MouseRightButtonUp">
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding Title}"
-                                                           Foreground="{DynamicResource BrushTextMain}"
-                                                           FontSize="{DynamicResource FontSizeNormal}"
-                                                           FontWeight="SemiBold"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding PreviewText}"
-                                                           Margin="0,7,0,0"
-                                                           Foreground="{DynamicResource BrushTextSec}"
-                                                           FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                           TextWrapping="Wrap"
-                                                           MaxHeight="36"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding UpdatedAt, StringFormat={}{0:MM-dd HH:mm}}"
-                                                           Margin="0,8,0,0"
-                                                           Foreground="{DynamicResource BrushTextMuted}"
-                                                           FontSize="{DynamicResource FontSizeSmall}" />
-                                            </StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+ 
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4" 
+                                                                Visibility="{Binding IsPinned, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <TextBlock Text="📌" FontSize="11" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="已置顶" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Foreground="{DynamicResource BrushTextMain}"
+                                                               FontSize="{DynamicResource FontSizeNormal}"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding PreviewText}"
+                                                               Margin="0,7,0,0"
+                                                               Foreground="{DynamicResource BrushTextSec}"
+                                                               FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                               TextWrapping="Wrap"
+                                                               MaxHeight="36"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+ 
+                                                <StackPanel x:Name="ActionPanel" 
+                                                            Grid.Column="1" 
+                                                            Orientation="Vertical" 
+                                                            VerticalAlignment="Center"
+                                                            Visibility="Collapsed">
+                                                    <Button Tag="{Binding}"
+                                                            Click="PinTopicButton_Click"
+                                                            Padding="4"
+                                                            Margin="0,0,0,6"
+                                                            ToolTip="置顶/取消置顶"
+                                                            Style="{DynamicResource GhostButtonStyle}"
+                                                            Focusable="False">
+                                                        <Button.Content>
+                                                            <Path Data="{local:IconGeometry pin}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="14" Height="14" />
+                                                        </Button.Content>
+                                                    </Button>
+                                                    <Button Tag="{Binding}"
+                                                            Click="RenameTopicButton_Click"
+                                                            Padding="4"
+                                                            Margin="0,0,0,6"
+                                                            ToolTip="重命名"
+                                                            Style="{DynamicResource GhostButtonStyle}"
+                                                            Focusable="False">
+                                                        <Button.Content>
+                                                            <Path Data="{local:IconGeometry pen}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="14" Height="14" />
+                                                        </Button.Content>
+                                                    </Button>
+                                                    <Button x:Name="DeleteTopicBtn"
+                                                            Tag="{Binding}"
+                                                            Click="DeleteTopicButton_Click"
+                                                            Padding="4"
+                                                            ToolTip="删除对话"
+                                                            Focusable="False">
+                                                        <Button.Style>
+                                                            <Style TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}">
+                                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsDeleteConfirming}" Value="True">
+                                                                        <Setter Property="Foreground" Value="#FFEF4444" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Button.Style>
+                                                        <Button.Content>
+                                                            <Path Data="{local:IconGeometry delete}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform" Width="14" Height="14" />
+                                                        </Button.Content>
+                                                    </Button>
+                                                </StackPanel>
+                                            </Grid>
                                         </Border>
                                         <DataTemplate.Triggers>
                                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                 <Setter TargetName="TopicItem" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
                                                 <Setter TargetName="TopicItem" Property="BorderBrush" Value="#FF3B82F6" />
+                                                <Setter TargetName="ActionPanel" Property="Visibility" Value="Visible" />
                                             </DataTrigger>
                                             <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter TargetName="TopicItem" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
@@ -1371,10 +1578,13 @@
                                        Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="{DynamicResource FontSizeSubtitle}"
                                        FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding AiChatModelDisplayText}"
-                                       Margin="0,5,0,0"
-                                       Foreground="{DynamicResource BrushTextSec}"
-                                       FontSize="{DynamicResource FontSizeSmall}" />
+                            <ComboBox x:Name="AiModelSelectionComboBox"
+                                      Margin="0,5,0,0"
+                                      Width="240"
+                                      Height="28"
+                                      HorizontalAlignment="Left"
+                                      Style="{StaticResource AiModelComboBoxStyle}"
+                                      SelectionChanged="AiModelSelectionComboBox_SelectionChanged" />
                         </StackPanel>
 
                         <Button Grid.Column="1"
@@ -1439,7 +1649,8 @@
                             <ScrollViewer x:Name="AiChatScrollViewer"
                                           VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled">
-                                <ItemsControl ItemsSource="{Binding AiChatMessages}">
+                                <StackPanel>
+                                    <ItemsControl ItemsSource="{Binding AiChatMessages}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type local:AiChatMessage}">
                                             <StackPanel x:Name="MessageContainer" 
@@ -1452,38 +1663,82 @@
                                                         CornerRadius="14"
                                                         Cursor="Hand"
                                                         MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
-                                                    <StackPanel>
-                                                        <TextBlock Text="{Binding Text}"
-                                                                   Foreground="{DynamicResource BrushTextMain}"
-                                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
-                                                                   LineHeight="22"
-                                                                   TextWrapping="Wrap" />
-                                                        <ItemsControl ItemsSource="{Binding Attachments}"
-                                                                      Visibility="{Binding AttachmentsVisibility}">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate DataType="{x:Type local:AiChatMessageAttachment}">
-                                                                    <Border Margin="0,10,0,0"
-                                                                            Padding="10,8"
-                                                                            Background="{DynamicResource BrushSecondaryBtnBG}"
-                                                                            BorderBrush="#33FFFFFF"
-                                                                            BorderThickness="1"
-                                                                            CornerRadius="10">
-                                                                        <StackPanel>
-                                                                            <TextBlock Text="{Binding FileName}"
-                                                                                       Foreground="{DynamicResource BrushTextMain}"
-                                                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                                                       FontWeight="SemiBold"
-                                                                                       TextTrimming="CharacterEllipsis" />
-                                                                            <TextBlock Text="{Binding FileSizeText}"
-                                                                                       Margin="0,4,0,0"
-                                                                                       Foreground="{DynamicResource BrushTextMain}"
-                                                                                       FontSize="{DynamicResource FontSizeSmall}" />
-                                                                        </StackPanel>
-                                                                    </Border>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                    </StackPanel>
+                                                     <StackPanel>
+                                                         <TextBlock x:Name="NormalTextBlock"
+                                                                    local:MarkdownTextBehavior.MarkdownText="{Binding Text}"
+                                                                    Foreground="{DynamicResource BrushTextMain}"
+                                                                    FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                                    LineHeight="22"
+                                                                    TextWrapping="Wrap" />
+
+                                                         <Expander x:Name="ToolCallExpander" 
+                                                                   IsExpanded="{Binding IsExpanded, Mode=TwoWay}" 
+                                                                   Visibility="Collapsed" 
+                                                                   Background="Transparent" 
+                                                                   BorderThickness="0"
+                                                                   HorizontalAlignment="Stretch">
+                                                             <Expander.Header>
+                                                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                     <TextBlock Text="🔧" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                                     <TextBlock Text="AI 正在使用工具: " Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
+                                                                     <TextBlock Text="{Binding ToolName}" Foreground="#FF3B82F6" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                                                 </StackPanel>
+                                                             </Expander.Header>
+                                                             <StackPanel Margin="24,8,0,0" MinWidth="450" MaxWidth="560">
+                                                                 <TextBlock Text="AI 原始回复" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,2" />
+                                                                 <Border Background="#1AFFFFFF" CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+                                                                     <TextBox Text="{Binding Text, Mode=OneWay}" 
+                                                                              Foreground="{DynamicResource BrushTextSec}" 
+                                                                              FontSize="{DynamicResource FontSizeSmallPlus}" 
+                                                                              FontFamily="Consolas, Courier New"
+                                                                              IsReadOnly="True" 
+                                                                              Background="Transparent" 
+                                                                              BorderThickness="0" 
+                                                                              TextWrapping="Wrap" 
+                                                                              AcceptsReturn="True"/>
+                                                                 </Border>
+
+                                                                 <TextBlock Text="系统执行结果" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,0,0,2" />
+                                                                 <Border Background="#1AFFFFFF" CornerRadius="6" Padding="10,8">
+                                                                     <TextBox Text="{Binding ToolFeedback, Mode=OneWay}" 
+                                                                              Foreground="{DynamicResource BrushTextMain}" 
+                                                                              FontSize="{DynamicResource FontSizeSmallPlus}" 
+                                                                              FontFamily="Consolas, Courier New"
+                                                                              IsReadOnly="True" 
+                                                                              Background="Transparent" 
+                                                                              BorderThickness="0" 
+                                                                              TextWrapping="Wrap" 
+                                                                              AcceptsReturn="True"/>
+                                                                 </Border>
+                                                             </StackPanel>
+                                                         </Expander>
+
+                                                         <ItemsControl ItemsSource="{Binding Attachments}"
+                                                                       Visibility="{Binding AttachmentsVisibility}">
+                                                             <ItemsControl.ItemTemplate>
+                                                                 <DataTemplate DataType="{x:Type local:AiChatMessageAttachment}">
+                                                                     <Border Margin="0,10,0,0"
+                                                                             Padding="10,8"
+                                                                             Background="{DynamicResource BrushSecondaryBtnBG}"
+                                                                             BorderBrush="#33FFFFFF"
+                                                                             BorderThickness="1"
+                                                                             CornerRadius="10">
+                                                                         <StackPanel>
+                                                                             <TextBlock Text="{Binding FileName}"
+                                                                                        Foreground="{DynamicResource BrushTextMain}"
+                                                                                        FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                                                        FontWeight="SemiBold"
+                                                                                        TextTrimming="CharacterEllipsis" />
+                                                                             <TextBlock Text="{Binding FileSizeText}"
+                                                                                        Margin="0,4,0,0"
+                                                                                        Foreground="{DynamicResource BrushTextMain}"
+                                                                                        FontSize="{DynamicResource FontSizeSmall}" />
+                                                                         </StackPanel>
+                                                                     </Border>
+                                                                 </DataTemplate>
+                                                             </ItemsControl.ItemTemplate>
+                                                         </ItemsControl>
+                                                     </StackPanel>
                                                 </Border>
                                                 <TextBlock x:Name="TimeStamp"
                                                            Text="{Binding Timestamp, StringFormat={}{0:HH:mm}}"
@@ -1498,11 +1753,55 @@
                                                     <Setter TargetName="TimeStamp" Property="Margin" Value="0,6,12,0" />
                                                     <Setter TargetName="TimeStamp" Property="TextAlignment" Value="Right" />
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsToolCall}" Value="True">
+                                                    <Setter TargetName="NormalTextBlock" Property="Visibility" Value="Collapsed" />
+                                                    <Setter TargetName="ToolCallExpander" Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                            </ScrollViewer>
+ 
+                                <!-- 等待消息卡片 -->
+                                <Border x:Name="AiThinkingCard"
+                                        Margin="18,12,18,16"
+                                        HorizontalAlignment="Left"
+                                        MaxWidth="600"
+                                        Padding="16,12"
+                                        Background="{DynamicResource BrushSecondaryBtnBG}"
+                                        CornerRadius="14"
+                                        Visibility="{Binding IsAiChatRequestInFlight, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                                            <Path Data="{local:IconGeometry sync}"
+                                                  Fill="{DynamicResource BrushTextSec}"
+                                                  Stretch="Uniform"
+                                                  RenderTransformOrigin="0.5,0.5">
+                                                <Path.RenderTransform>
+                                                    <RotateTransform Angle="0" />
+                                                </Path.RenderTransform>
+                                                <Path.Triggers>
+                                                    <EventTrigger RoutedEvent="Loaded">
+                                                        <BeginStoryboard>
+                                                            <Storyboard RepeatBehavior="Forever">
+                                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                 From="0"
+                                                                                 To="360"
+                                                                                 Duration="0:0:1.5" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                </Path.Triggers>
+                                            </Path>
+                                        </Viewbox>
+                                        <TextBlock Text="{Binding AiChatStatusText}"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
 
                             <Grid Visibility="{Binding NoTopicVisibility}">
                                 <TextBlock Text="选择左侧话题，或创建一个新对话。"
@@ -1644,8 +1943,8 @@
                             </Grid>
 
                             <Button Grid.Column="2"
-                                    Width="42"
-                                    Height="42"
+                                    Width="36"
+                                    Height="36"
                                     Margin="14,0,0,0"
                                     Background="#FF3B82F6"
                                     BorderBrush="#00000000"
@@ -1671,20 +1970,8 @@
                         </Grid>
                     </Border>
 
-                    <!-- 底部状态栏 -->
                     <Grid Grid.Row="4" Margin="0,14,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
                         <TextBlock Text="Tab 切换标签 · Shift+Enter 换行 · Esc 返回搜索"
-                                   Foreground="{DynamicResource BrushTextMuted}"
-                                   FontSize="{DynamicResource FontSizeSmallPlus}"
-                                   VerticalAlignment="Center" />
-
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding AiChatStatusText}"
                                    Foreground="{DynamicResource BrushTextMuted}"
                                    FontSize="{DynamicResource FontSizeSmallPlus}"
                                    VerticalAlignment="Center" />
@@ -2022,7 +2309,7 @@
                                         <Path Data="{local:IconGeometry refresh}" 
                                               Stroke="{DynamicResource BrushTextMain}" StrokeThickness="1.5" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.9"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="刷新云端" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
+                                            <TextBlock Text="同步燕子云" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
                                         </StackPanel>
                                     </Grid>
                                 </Button>
