@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>使用说明 - 燕子在线文档</title>
-  <meta name="description" content="燕子启动器的安装说明、快捷键与云同步配置。">
+  <title>快速上手 - 燕子在线文档</title>
+  <meta name="description" content="从下载安装到上手全部核心功能，10 分钟完成新手入门，一步步学会使用燕子启动器的搜索、燕环、燕幕和燕语。">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -36,59 +36,240 @@
       </aside>
       <div class="guide-stack">
         <div class="doc-content-header" style="margin-bottom: 2rem;">
-          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">使用说明</h1>
-          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;"></p>
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">快速上手</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">从零开始，10 分钟上手燕子启动器的全部核心功能。</p>
         </div>
+
         <article class="guide-card">
-  <h2>安装与启动</h2>
-<ol>
-<li>从蓝奏云下载 Windows 安装包：<a href="https://wwbnh.lanzout.com/b0pnkaj6j">https://wwbnh.lanzout.com/b0pnkaj6j</a></li>
-<li>输入提取密码：<code>62yn</code></li>
-<li>运行 <code>YanziSetup-0.1.0.exe</code> 完成安装</li>
-<li>启动 <code>Yanzi.exe</code></li>
-<li>使用 <code>Alt+Space</code> 呼出启动器</li>
-</ol>
-</article>
+          <h2>第一步：下载与安装</h2>
+          <h3>下载安装包</h3>
+          <p>前往蓝奏云下载最新版 Windows 安装包：</p>
+          <ul>
+            <li>下载地址：<a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">https://wwbnh.lanzout.com/b0pnkaj6j</a></li>
+            <li>提取密码：<code>62yn</code></li>
+          </ul>
+          <h3>系统要求</h3>
+          <ul>
+            <li>支持系统：Windows 10 / 11（64 位）</li>
+            <li>无需额外依赖：采用自包含构建（Self-Contained），不需要另外安装 .NET 运行时，双击即可直接运行</li>
+          </ul>
+          <h3>安装流程</h3>
+          <ol>
+            <li>下载后双击 <code>YanziSetup.exe</code> 运行安装程序</li>
+            <li>安装完成后，燕子会自动启动并在系统托盘区（屏幕右下角）显示图标</li>
+            <li>此时你已经可以用 <code>Alt+Space</code> 唤出搜索栏了</li>
+          </ol>
+        </article>
 
-<article class="guide-card">
-  <h2>基本操作</h2>
-<ul>
-<li>输入关键字搜索命令</li>
-<li><code>Up / Down</code> 切换条目</li>
-<li><code>Enter</code> 执行命令</li>
-<li><code>Esc</code> 收起启动器</li>
-<li>右键条目打开更多操作</li>
-</ul>
-</article>
+        <article class="guide-card">
+          <h2>第二步：使用燕子搜索（启动器）</h2>
+          <p>燕子搜索是你与燕子交互的主入口——一个全局的搜索栏，随时随地都能唤出。</p>
+          <h3>唤出与关闭</h3>
+          <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">操作</th>
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">方式</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:0.5rem 0.75rem;">唤出启动器</td><td style="padding:0.5rem 0.75rem;"><code>Alt + Space</code>（也可在设置中改为双击 Alt）</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;">关闭启动器</td><td style="padding:0.5rem 0.75rem;"><code>Esc</code> 或点击窗口外部</td></tr>
+            </tbody>
+          </table>
+          <h3>搜索方式</h3>
+          <p>在搜索栏中直接打字即可，支持多种输入方式：</p>
+          <ul>
+            <li><strong>中文关键词</strong>：输入 <code>微信</code> 找到微信</li>
+            <li><strong>拼音首字母</strong>：输入 <code>wx</code> 同样能找到微信</li>
+            <li><strong>英文名称</strong>：输入 <code>chrome</code> 找到 Chrome 浏览器</li>
+            <li><strong>混合输入</strong>：输入 <code>jsq</code> 找到计算器</li>
+          </ul>
+          <h3>键盘操作</h3>
+          <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">按键</th>
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">功能</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Up / Down</code></td><td style="padding:0.5rem 0.75rem;">上下切换选中项</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Enter</code></td><td style="padding:0.5rem 0.75rem;">执行选中项</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Esc</code></td><td style="padding:0.5rem 0.75rem;">关闭搜索栏</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Ctrl + K</code></td><td style="padding:0.5rem 0.75rem;">打开动作菜单（删除、编辑、固定到面板等）</td></tr>
+            </tbody>
+          </table>
+          <h3>参数化搜索</h3>
+          <p>燕子支持"前缀 + 参数"的搜索方式，让你直接从搜索栏发起带关键词的操作：</p>
+          <ul>
+            <li><code>谷歌 今天的新闻</code> — 用 Google 搜索"今天的新闻"</li>
+            <li><code>gg cloudflare pages</code> — 同上，<code>gg</code> 是谷歌搜索的简写前缀</li>
+            <li><code>百度 天气预报</code> — 用百度搜索"天气预报"</li>
+          </ul>
+          <h3>范围搜索（@ 语法）</h3>
+          <p>把某个扩展固定到顶部标签栏后，可以用 <code>@别名 关键词</code> 在它的范围内搜索：</p>
+          <ul>
+            <li><code>@下载 report.pdf</code> — 在下载目录中搜索 report.pdf</li>
+            <li><code>@文件 设计稿</code> — 在指定文件夹里搜索包含"设计稿"的文件</li>
+          </ul>
+        </article>
 
-<article class="guide-card">
-  <h2>添加扩展</h2>
-<h3>方法一：顶部 <code>+</code></h3>
-<p>点击顶部标签栏右侧 <code>+</code>，可以把当前选中项固定到顶部标签。</p>
-<h3>方法二：设置页管理</h3>
-<p>在设置页中后续会继续补完整扩展管理入口。</p>
-</article>
+        <article class="guide-card">
+          <h2>第三步：使用燕环（鼠标快捷面板）</h2>
+          <p>燕环是为鼠标用户设计的快捷操作面板，让你不用回到桌面就能快速启动常用工具。</p>
+          <h3>触发方式</h3>
+          <ul>
+            <li><strong>长按鼠标右键</strong>：在任意位置长按鼠标右键约 300 毫秒，面板会在光标附近弹出</li>
+            <li><strong>屏幕边缘划动</strong>：将鼠标快速移向屏幕边缘也可唤出（可在设置中配置）</li>
+          </ul>
+          <h3>添加项目到面板</h3>
+          <ol>
+            <li>按 <code>Alt+Space</code> 打开搜索栏</li>
+            <li>搜索到你想添加的应用或扩展</li>
+            <li>在搜索结果上<strong>点击右键</strong></li>
+            <li>选择<strong>"添加到鼠标面板"</strong></li>
+            <li>下次长按右键时就能看到它了</li>
+          </ol>
+          <h3>管理面板布局</h3>
+          <ul>
+            <li><strong>分组</strong>：面板支持多个分组页面，按类别整理项目（如"工作"、"娱乐"、"开发"）</li>
+            <li><strong>拖拽排列</strong>：长按面板中的图标可拖拽调整位置</li>
+            <li><strong>复制 / 剪切 / 粘贴</strong>：面板项目支持复制和移动操作</li>
+            <li><strong>删除</strong>：右键面板项目可选择移除</li>
+          </ul>
+        </article>
 
-<article class="guide-card">
-  <h2>参数化命令示例</h2>
-<ul>
-<li><code>谷歌 今天的新闻</code></li>
-<li><code>gg cloudflare pages deploy</code></li>
-<li><code>guge openai api</code></li>
-</ul>
-</article>
+        <article class="guide-card">
+          <h2>第四步：使用燕幕（桌面小组件）</h2>
+          <p>燕幕让你把重要信息或常用工具以小组件的形式"钉"在桌面上，始终可见，无需切换窗口。</p>
+          <h3>开启燕幕</h3>
+          <ul>
+            <li>从系统托盘图标右键菜单中开启</li>
+            <li>或在燕子设置页面中启用</li>
+          </ul>
+          <h3>支持的小组件类型</h3>
+          <ul>
+            <li><strong>时钟与日期</strong>：在桌面显示实时时钟</li>
+            <li><strong>系统监控</strong>：CPU、内存等系统状态信息</li>
+            <li><strong>便签</strong>：桌面常驻的笔记小组件，随手记录</li>
+            <li><strong>快捷入口</strong>：常用应用和网站的一键启动按钮</li>
+            <li><strong>自定义小组件</strong>：开发者可以通过扩展创建自定义内容的小组件</li>
+          </ul>
+          <h3>自定义布局</h3>
+          <ul>
+            <li><strong>拖拽定位</strong>：直接拖动小组件到桌面任意位置</li>
+            <li><strong>调整大小</strong>：拖拽小组件边缘调整显示区域</li>
+            <li><strong>显示/隐藏</strong>：在设置中控制哪些小组件可见</li>
+          </ul>
+          <p>小组件的位置和配置会自动保存，重启后保持不变。开启云同步后，还会在多台电脑之间同步。</p>
+        </article>
 
-<article class="guide-card">
-  <h2>云同步</h2>
-<ol>
-<li>在设置窗口登录账号</li>
-<li>本地扩展会在刷新时自动同步</li>
-<li>其他设备登录后可以拉取相同扩展记录</li>
-</ol>
-</article>
+        <article class="guide-card">
+          <h2>第五步：使用燕语（AI 助手）</h2>
+          <p>燕语是燕子内置的 AI 对话助手，你可以用自然语言告诉它你想要什么功能，它会自动帮你生成对应的扩展。</p>
+          <h3>使用方式</h3>
+          <ol>
+            <li>在燕子中打开燕语面板</li>
+            <li>用自然语言描述你的需求</li>
+            <li>AI 会生成一个完整的扩展配置（<code>manifest.json</code>）</li>
+            <li>确认后扩展会自动安装并出现在搜索结果中</li>
+          </ol>
+          <h3>示例对话</h3>
+          <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">你说的话</th>
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">AI 会生成的扩展</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:0.5rem 0.75rem;">帮我做一个打开百度的扩展</td><td style="padding:0.5rem 0.75rem;">网页快捷入口扩展</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;">做一个搜索 GitHub 的扩展，前缀用 gh</td><td style="padding:0.5rem 0.75rem;">参数化搜索扩展</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;">做一个读取剪贴板内容的工具</td><td style="padding:0.5rem 0.75rem;">PowerShell 脚本扩展</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;">做一个在下载目录搜索文件的扩展</td><td style="padding:0.5rem 0.75rem;">文件夹搜索 Provider 扩展</td></tr>
+            </tbody>
+          </table>
+          <p style="margin-top:1rem;color:var(--text-muted);font-size:0.95rem;">提示：描述越具体，生成的扩展越精准。如果结果不满意，换个说法重新描述即可。</p>
+        </article>
 
+        <article class="guide-card">
+          <h2>第六步：配置云同步</h2>
+          <p>云同步让你的扩展、面板布局和个人配置在多台电脑之间自动保持一致。数据都存储在你自己的空间里，隐私有保障。</p>
+          <h3>方案 A：通过 WebDAV（坚果云）同步（推荐）</h3>
+          <p>坚果云是国内常用的支持 WebDAV 的网盘，配置简单且免费额度够用。</p>
+          <ol>
+            <li>登录 <a href="https://www.jianguoyun.com" target="_blank" rel="noopener noreferrer">坚果云网页版</a>，进入"账户信息" → "安全选项"</li>
+            <li>在"第三方应用管理"中，点击"添加应用密码"，输入应用名称（如 <code>yanzi</code>），生成授权密码</li>
+            <li>打开燕子客户端设置页面，选择 WebDAV 同步</li>
+            <li>服务器地址填写：<code>https://dav.jianguoyun.com/dav/</code></li>
+            <li>用户名填写你的坚果云账号邮箱</li>
+            <li>密码填写刚才生成的<strong>授权密码</strong>（不是你的登录密码！）</li>
+            <li>点击"保存"即可开启同步</li>
+          </ol>
+          <h3>方案 B：通过 GitHub 同步</h3>
+          <p>如果你有 GitHub 账号，可以把配置同步到一个 GitHub 仓库中。</p>
+          <ol>
+            <li>在 GitHub 新建一个空仓库（建议命名为 <code>yanzi-sync</code>，设为私有）</li>
+            <li>进入 GitHub Settings → Developer settings → Personal access tokens，生成一个包含 <code>repo</code> 权限的 Token</li>
+            <li>在燕子设置中选择 GitHub 同步方式</li>
+            <li>填写你的 GitHub 用户名、仓库名（<code>yanzi-sync</code>）、分支名（<code>main</code>）和 Token</li>
+            <li>保存设置，即可实现安全的代码库备份与同步</li>
+          </ol>
+          <h3>同步内容</h3>
+          <ul>
+            <li>已安装的扩展列表和扩展配置</li>
+            <li>燕环（鼠标快捷面板）的布局和分组</li>
+            <li>个人偏好设置</li>
+          </ul>
+        </article>
 
-        
+        <article class="guide-card">
+          <h2>第七步：安装与管理扩展</h2>
+          <h3>从扩展商店安装</h3>
+          <ol>
+            <li>在燕子中搜索"扩展商店"或访问网页版商店</li>
+            <li>浏览或搜索你感兴趣的扩展</li>
+            <li>点击安装按钮即可一键安装到本地</li>
+          </ol>
+          <h3>从剪贴板导入</h3>
+          <p>如果你从网上复制了一段扩展的 JSON 配置：</p>
+          <ol>
+            <li>把完整的 <code>manifest.json</code> 内容复制到剪贴板</li>
+            <li>在燕子中粘贴，系统会自动识别并提示导入</li>
+            <li>确认后扩展立即生效</li>
+          </ol>
+          <h3>管理已安装扩展</h3>
+          <ul>
+            <li><strong>搜索</strong>：在启动器中输入扩展名称即可找到</li>
+            <li><strong>编辑</strong>：通过 <code>Ctrl+K</code> 动作菜单进入编辑模式</li>
+            <li><strong>删除</strong>：通过右键菜单或动作菜单中的删除选项</li>
+            <li><strong>固定到面板</strong>：右键选择"添加到鼠标面板"快速访问</li>
+          </ul>
+        </article>
+
+        <article class="guide-card">
+          <h2>常用快捷键速查</h2>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">快捷键</th>
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">功能</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Alt + Space</code></td><td style="padding:0.5rem 0.75rem;">唤出 / 隐藏启动器</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Enter</code></td><td style="padding:0.5rem 0.75rem;">执行选中项</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Up / Down</code></td><td style="padding:0.5rem 0.75rem;">上下切换选中项</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Esc</code></td><td style="padding:0.5rem 0.75rem;">关闭启动器</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Ctrl + K</code></td><td style="padding:0.5rem 0.75rem;">打开动作菜单</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;">长按鼠标右键</td><td style="padding:0.5rem 0.75rem;">唤出燕环（鼠标快捷面板）</td></tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="guide-card">
+          <h2>遇到问题？</h2>
+          <ul>
+            <li><strong>启动器不弹出</strong>：检查燕子是否在系统托盘中运行，确认快捷键没有被其他软件占用</li>
+            <li><strong>搜索结果为空</strong>：等待首次索引完成，或在设置中手动刷新索引</li>
+            <li><strong>同步不生效</strong>：检查网络连接和同步配置中的用户名/密码是否正确</li>
+            <li><strong>扩展无法执行</strong>：先检查 <code>manifest.json</code> 格式是否正确，可用任意 JSON 校验工具验证</li>
+          </ul>
+        </article>
+
         <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
           <a href="/docs/product-overview.html" class="button secondary" style="gap: 8px; height: 46px;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>

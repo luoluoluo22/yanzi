@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>产品说明 - 燕子在线文档</title>
-  <meta name="description" content="燕子启动器架构与核心特征，免费开源的 Windows 效率工具。">
+  <meta name="description" content="燕子是一款免费开源的 Windows 效率启动器，通过搜索、鼠标面板、桌面小组件和 AI 助手帮你快速操作电脑。">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,71 +37,130 @@
       <div class="guide-stack">
         <div class="doc-content-header" style="margin-bottom: 2rem;">
           <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">产品说明</h1>
-          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;"></p>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">燕子是一款完全免费、开源的 Windows 效率启动器，帮你用键盘和鼠标更快地完成日常操作。</p>
         </div>
+
         <article class="guide-card">
-  <h2>产品定位</h2>
-<p>这是一个以“万物皆扩展”为核心思路的桌面启动器。</p>
-<p>目标方向：</p>
-<ol>
-<li>主程序和扩展彻底分离</li>
-<li>普通用户也能低门槛创建自己的扩展</li>
-<li>主界面、鼠标面板、工作区扩展共用一套宿主能力</li>
-<li>扩展可以在多设备之间云同步</li>
-<li>简单需求用单文件 JSON，复杂需求再扩展到压缩包或更完整的项目结构</li>
-</ol>
-</article>
+          <h2>燕子是什么</h2>
+          <p>燕子把你电脑上的应用、文件、网站、脚本和自动化流程统一整理为"扩展"，通过键盘搜索或鼠标面板一步直达，帮你省去重复的桌面翻找和鼠标点击。</p>
+          <p>它由四个核心模块组成，各司其职又互相配合：</p>
+          <ul>
+            <li><strong>燕子搜索</strong>：<code>Alt+Space</code> 全局唤出搜索栏，秒搜一切</li>
+            <li><strong>燕环</strong>（鼠标快捷面板）：长按右键弹出网格盘，一划即达</li>
+            <li><strong>燕幕</strong>（桌面信息层）：常驻桌面的浮动小组件，随时可见</li>
+            <li><strong>燕语</strong>（AI 助手）：自然语言对话，一键生成专属扩展</li>
+          </ul>
+        </article>
 
-<article class="guide-card">
-  <h2>当前能力</h2>
-<ul>
-<li>全局热键 <code>Alt+Space</code> 呼出</li>
-<li>搜索、筛选、键盘选择、回车执行</li>
-<li>内置命令与本地扩展统一展示</li>
-<li>单文件 JSON 扩展新增、编辑、删除</li>
-<li>条目右键管理：桌面快捷方式、重命名、删除、添加到鼠标面板</li>
-<li>鼠标面板分组、收藏、扩展布局复制 / 剪切 / 粘贴</li>
-<li>Cloudflare 用户登录、扩展元数据同步、扩展包上传下载</li>
-<li>参数化命令：支持“命令前缀 + 参数”，例如 <code>谷歌 今天的新闻</code></li>
-<li>前缀脚本：支持“前缀 + 内容”把后半段传给脚本扩展</li>
-<li>宿主工作区：支持 <code>hostedViewXaml</code> 和 <code>hostedViewV2</code></li>
-<li>扩展 JSON 可直接从系统剪贴板导入</li>
-</ul>
-</article>
+        <article class="guide-card">
+          <h2>燕子搜索——键盘党的主力入口</h2>
+          <p>按下 <code>Alt+Space</code> 即可在屏幕中央唤出搜索栏。直接打字就能搜到已安装的应用程序、自定义扩展、网页书签或系统命令，支持中文、拼音首字母和英文。</p>
+          <h3>支持的搜索方式</h3>
+          <ul>
+            <li>输入 <code>微信</code> 或拼音缩写 <code>wx</code> 打开微信</li>
+            <li>输入 <code>chrome</code> 或 <code>谷歌浏览器</code> 打开 Chrome</li>
+            <li>输入 <code>jsq</code>（计算器拼音首字母）打开计算器</li>
+            <li>输入 <code>谷歌 今天的新闻</code> 直接在浏览器里用 Google 搜索</li>
+            <li>输入 <code>@下载 report</code> 在下载目录里搜索文件</li>
+          </ul>
+          <h3>常用键盘操作</h3>
+          <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">按键</th>
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">功能</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Alt + Space</code></td><td style="padding:0.5rem 0.75rem;">唤出 / 隐藏启动器</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Up / Down</code></td><td style="padding:0.5rem 0.75rem;">上下切换选中项</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Enter</code></td><td style="padding:0.5rem 0.75rem;">执行选中项</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Esc</code></td><td style="padding:0.5rem 0.75rem;">关闭搜索栏</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Ctrl + K</code></td><td style="padding:0.5rem 0.75rem;">打开动作菜单（删除、编辑、固定到面板等）</td></tr>
+            </tbody>
+          </table>
+        </article>
 
-<article class="guide-card">
-  <h2>设计原则</h2>
-<h3>1. 命令优先</h3>
-<p>用户输入时，应优先命中可执行动作，而不是先进入复杂界面。</p>
-<h3>2. 扩展优先</h3>
-<p>宿主只负责：</p>
-<ul>
-<li>命令索引</li>
-<li>执行入口</li>
-<li>鼠标面板布局</li>
-<li>设置与同步</li>
-<li>扩展管理</li>
-</ul>
-<p>真正的业务动作由扩展提供。</p>
-<h3>3. 低门槛优先</h3>
-<p>简单扩展应允许用户只写一个 <code>manifest.json</code> 就能完成。</p>
-<h3>4. 云同步优先</h3>
-<p>用户自己的扩展、安装记录和基础配置应能跨设备同步。</p>
-</article>
+        <article class="guide-card">
+          <h2>燕环——鼠标党的快捷面板</h2>
+          <p>长按鼠标右键约 300 毫秒，一个网格图标面板会在光标附近弹出。把最常用的应用、网站、脚本放进去，鼠标一划就能触发，不用回到桌面找图标。</p>
+          <h3>触发方式</h3>
+          <ul>
+            <li><strong>长按鼠标右键</strong>：在任意位置长按鼠标右键约 300ms，面板在光标附近弹出</li>
+            <li><strong>屏幕边缘划动</strong>：将鼠标快速移向屏幕边缘也可唤出（可在设置中配置）</li>
+          </ul>
+          <h3>添加和管理项目</h3>
+          <ol>
+            <li>按 <code>Alt+Space</code> 打开搜索栏，找到你想添加的应用或扩展</li>
+            <li>在搜索结果上点击右键，选择"添加到鼠标面板"</li>
+            <li>下次长按右键时就能看到它了</li>
+          </ol>
+          <p>面板支持多个分组页面，按类别整理项目（如"工作"、"娱乐"、"开发"），并支持拖拽调整位置。</p>
+        </article>
 
-<article class="guide-card">
-  <h2>后续方向</h2>
-<ul>
-<li>支持更多参数化动作类型，如 <code>url</code>、<code>shell</code>、<code>http</code></li>
-<li>支持压缩包扩展和复杂项目扩展</li>
-<li>扩展市场与版本发布</li>
-<li>自定义热键与主题</li>
-<li>更完善的扩展权限与签名模型</li>
-</ul>
-</article>
+        <article class="guide-card">
+          <h2>燕幕——桌面常驻信息层</h2>
+          <p>燕幕是一组可以常驻在桌面上的浮动小组件窗口，始终保持在其他窗口上方。你可以用它来显示时钟、系统监控、便签、快捷入口等信息，省去反复切换窗口查看的麻烦。</p>
+          <h3>支持的小组件类型</h3>
+          <ul>
+            <li><strong>时钟与日期</strong>：在桌面上显示实时时钟和日期</li>
+            <li><strong>系统监控</strong>：CPU、内存等系统状态信息</li>
+            <li><strong>便签</strong>：桌面常驻的笔记小组件，随手记录</li>
+            <li><strong>快捷入口</strong>：常用应用和网站的一键启动按钮</li>
+            <li><strong>自定义小组件</strong>：开发者可通过扩展系统创建任意内容的桌面组件</li>
+          </ul>
+          <p>小组件可以自由拖拽定位和调整大小，位置配置会自动保存并在云同步中同步到其他设备。</p>
+        </article>
 
+        <article class="guide-card">
+          <h2>燕语——AI 智能助手</h2>
+          <p>燕语是燕子内置的 AI 对话助手。你可以用自然语言描述需求，AI 会自动帮你生成一个可用的扩展，无需手动编写任何代码。</p>
+          <h3>示例对话</h3>
+          <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">你说的话</th>
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">AI 会生成的扩展</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:0.5rem 0.75rem;">帮我做一个打开百度的扩展</td><td style="padding:0.5rem 0.75rem;">网页快捷入口扩展</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;">做一个搜索 GitHub 的扩展，前缀用 gh</td><td style="padding:0.5rem 0.75rem;">参数化搜索扩展</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;">做一个读取剪贴板内容的工具</td><td style="padding:0.5rem 0.75rem;">PowerShell 脚本扩展</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;">做一个在下载目录搜索文件的扩展</td><td style="padding:0.5rem 0.75rem;">文件夹搜索 Provider 扩展</td></tr>
+            </tbody>
+          </table>
+        </article>
 
-        
+        <article class="guide-card">
+          <h2>扩展系统：万物皆扩展</h2>
+          <p>燕子的核心设计理念是<strong>万物皆扩展</strong>。所有的功能、程序、网站或自动化流程都可以变成一个独立的扩展（本质上是一个 <code>manifest.json</code> 文件）：</p>
+          <ul>
+            <li><strong>安装</strong>：从扩展商店一键安装社区贡献的扩展</li>
+            <li><strong>自建</strong>：自己写一个简单的 JSON 文件就能创建扩展</li>
+            <li><strong>AI 生成</strong>：用燕语描述需求，让 AI 帮你写</li>
+            <li><strong>分享</strong>：把扩展发布到商店供其他用户使用</li>
+            <li><strong>同步</strong>：扩展随云同步在多台电脑之间自动同步</li>
+          </ul>
+          <p>扩展能力覆盖从简单的"打开一个网页"到复杂的"运行 C# 脚本并弹出自定义界面"，适合从小白到开发者的不同需求层级。</p>
+        </article>
+
+        <article class="guide-card">
+          <h2>云同步：多设备无缝衔接</h2>
+          <p>燕子支持个人私有云盘同步，你的扩展、面板布局和个人配置可以在多台电脑之间自动保持一致。目前支持两种同步方式：</p>
+          <ul>
+            <li><strong>WebDAV 同步</strong>（推荐坚果云）：把数据存在你自己的网盘里</li>
+            <li><strong>GitHub 同步</strong>：把数据备份到你自己的 GitHub 私有仓库</li>
+          </ul>
+          <p>所有数据都存储在你自己的空间，不经过任何第三方公共服务器。</p>
+        </article>
+
+        <article class="guide-card">
+          <h2>开源与安全</h2>
+          <ul>
+            <li><strong>完全开源</strong>：客户端、云端 Worker 代码全部开源，源码可审计</li>
+            <li><strong>隐私第一</strong>：没有任何隐藏上传行为，数据全部保存在你本地电脑和个人网盘中</li>
+            <li><strong>免费无广告</strong>：不设会员门槛，不加第三方广告，只做纯粹的效率引擎</li>
+            <li><strong>移动端伴侣</strong>：Android 伴侣应用可接收桌面端推送通知，实现跨设备信息联动</li>
+          </ul>
+        </article>
+
         <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
           
           <a href="/docs/getting-started.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
