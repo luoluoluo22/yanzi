@@ -1,156 +1,51 @@
 <!doctype html>
 <html lang="zh-CN">
-
 <head>
-  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>产品说明 - 燕子在线文档</title>
-  <meta name="description" content="燕子启动器架构与核心特征，免费开源的 Windows 效率工具�?>
+  <meta name="description" content="燕子启动器产品说明。">
+  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-<link rel="stylesheet" href="/assets/auth.css">`r`n</head>
-
+  <link rel="stylesheet" href="/assets/auth.css">
+</head>
 <body>
   <div class="noise"></div>
   <header class="site-header">
     <div class="brand">
-      <a href="/" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit;">
-        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动�?Logo" class="brand-logo"
-          style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
-        <span style="font-weight: 600;">燕子启动�?/span>
+      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));">
+        <span style="font-weight:600;">燕子启动器</span>
       </a>
     </div>
-        <nav>
+    <nav>
       <a href="/">首页</a>
       <a href="/store.html">扩展商店</a>
       <a href="/yanm.html">燕幕</a>
       <a href="/docs/product-overview.html" class="active">文档</a>
-      <a href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载</a>
-      <span id="global-auth-container" style="margin-left: 16px; display: inline-flex; align-items: center; vertical-align: middle;">
-        <button id="global-login-btn" class="button secondary" style="padding: 0 12px; height: 32px; font-size: 0.85rem; border-radius: 6px; margin: 0; cursor: pointer;">
-          登录
-        </button>
-      </span>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>
+      <span id="global-auth-container" style="margin-left:16px;display:inline-flex;align-items:center;vertical-align:middle;"></span>
     </nav>
   </header>
 
-  <!-- Sidebar Expand Hover Button -->
-  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边�?>
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="9 18 15 12 9 6"></polyline>
-    </svg>
-  </button>
+  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
 
   <main class="doc-page">
     <div class="doc-layout">
-      <!-- Left Sidebar Directory -->
-      <aside class="doc-sidebar">
-        <div class="sidebar-header">
-          <strong>文档目录</strong>
-          <button id="sidebar-toggle" class="sidebar-toggle-btn" title="折叠侧边�?>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
-          </button>
-        </div>
-
-        <div class="sidebar-search-container">
-          <input type="text" id="directory-search" class="sidebar-search-input" placeholder="搜索目录... (/)">
-          <svg class="sidebar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-        </div>
-
-        <div class="doc-toc-group">
-          <span class="doc-toc-title">用户手册</span>
-          <div class="doc-toc-links">
-            <a href="/docs/product-overview.html" class="active">1. 产品说明</a>
-            <a href="/docs/getting-started.html">2. 快速上�?/a>
-          </div>
-        </div>
-
-        <div class="doc-toc-group">
-          <span class="doc-toc-title">开发者文�?/span>
-          <div class="doc-toc-links">
-            <a href="/docs/extension-authoring-guide.html">3. 开发指�?/a>
-            <a href="/docs/extension-spec.html">4. 扩展规范</a>
-            <a href="/docs/agent-skill-spec.html">5. Agent Skill 规范</a>
-            <a href="/docs/ai-extension-test-set.html">6. AI 扩展测试�?/a>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Center Reading Area -->
-      <div class="guide-stack">
-        <div class="doc-content-header" style="margin-bottom: 2rem;">
-          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">产品说明</h1>
-          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">燕子是一款完全免费、开源的 Windows 效率启动器，支持鼠标右键面板呼出、全局拼音搜索，并且可以让 AI 帮你一键生成专属效率工具�?/p>
-        </div>
-
-        <article class="guide-card">
-          <h2>燕子的核心设计理�?/h2>
-          <p>
-            燕子当前的核心产品方向是<strong>“万物皆扩展�?/strong>。所有的功能、程序、网站或自动化流程都可以变成一个独立的扩展，你可以随心拼装、拖拽、修改代码，甚至�?AI 帮你编写�?
-          </p>
-          <div class="guide-grid" style="margin-top: 1.5rem;">
-            <div class="guide-mini">
-              <strong>搜索与执�?(Alt + Space)</strong>
-              <span>全局极速唤出，打字秒搜应用、文件或执行快捷扩展，支持中文和拼音缩写�?/span>
-            </div>
-            <div class="guide-mini">
-              <strong>鼠标快捷面板 (长按右键)</strong>
-              <span>鼠标物理动作唤出，将你最高频使用的操作排布在网格盘上，一划即达�?/span>
-            </div>
-            <div class="guide-mini">
-              <strong>JSON 声明式扩�?/strong>
-              <span>通过轻量级的 <code>manifest.json</code> 声明各项行为，支持前缀搜索及脚本执行�?/span>
-            </div>
-            <div class="guide-mini">
-              <strong>安全云端同步</strong>
-              <span>数据本地优先，可绑定个人 WebDAV（如坚果云）�?GitHub 仓库自动进行云备份与多端同步�?/span>
-            </div>
-          </div>
-        </article>
-
-        <article class="guide-card">
-          <h2>界面预览与视觉设�?/h2>
-          <p>燕子采用精美高保真的玻璃拟态（Glassmorphism）暗色调设计，致力于提供 Windows 平台上最高颜值的操作体验�?/p>
-          <div style="margin-top: 1.5rem;">
-            <img src="/assets/launcher-and-quick-panel.png" alt="燕子主界面与鼠标面板" class="app-screenshot" style="border-radius: 16px; border: 1px solid var(--border); box-shadow: var(--shadow-lg); max-width: 100%;">
-          </div>
-        </article>
-
-        <article class="guide-card">
-          <h2>开源与安全�?/h2>
-          <ul>
-            <li><strong>完整开�?/strong>：燕子的客户端、同步云�?Worker 代码完全开源，源码可见，永无停服和被厂商限制的隐患�?/li>
-            <li><strong>隐私第一</strong>：没有任何隐藏上传行为。数据全部保存在你本地电脑的 SQLite 数据库和个人网盘中，绝对安全�?/li>
-            <li><strong>免费无广</strong>：项目不设会员门槛，不加第三方广告，不做臃肿功能，只做纯粹的效率引擎�?/li>
-          </ul>
-        </article>
-
-        <div class="doc-page-nav" style="display: flex; justify-content: flex-end; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-          <a href="/docs/getting-started.html" class="button primary" style="gap: 8px; height: 46px;">
-            下一�? 快速上�?
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-          </a>
-        </div>
-      </div>
-
-      <!-- Right Outline (Dynamic TOC) -->
+      <aside class="doc-sidebar"></aside>
+      <div class="guide-stack"></div>
       <aside class="doc-outline">
-        <strong>当前章节大纲</strong>
+        <strong>本页目录</strong>
         <ul id="outline-list"></ul>
       </aside>
     </div>
   </main>
-  
-  <script src="/assets/docs.js" defer></script>
-<script src="/assets/auth.js"></script>`r`n</body>
 
+  <script src="/assets/docs-data.js"></script>
+  <script src="/assets/auth.js"></script>
+  <script src="/assets/docs.js"></script>
+</body>
 </html>
-
