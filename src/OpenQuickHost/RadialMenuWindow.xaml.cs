@@ -23,6 +23,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private RadialMenuItemViewModel? _selectedChildItem;
     private RadialMenuItemViewModel? _selectedGrandChildItem;
     private List<RadialMenuPageSettings> _pages = [];
+    private List<RadialMenuPageSettings> _topLevelPages = [];
     private string _currentPageId = string.Empty;
     private string? _activeProcessName;
     private bool _isEditHoverActive;
@@ -433,11 +434,18 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         _pages = sortedPages;
 
-        while (PaginationDots.Count < _pages.Count)
+        var childPageIdsSet = settings.RadialMenu.GetChildPageIdsSet();
+        _topLevelPages = _pages.Where(p => !childPageIdsSet.Contains(p.Id)).ToList();
+        if (_topLevelPages.Count == 0 && _pages.Count > 0)
+        {
+            _topLevelPages = [_pages[0]];
+        }
+
+        while (PaginationDots.Count < _topLevelPages.Count)
         {
             PaginationDots.Add(new PaginationDotViewModel { IsSelected = false });
         }
-        while (PaginationDots.Count > _pages.Count)
+        while (PaginationDots.Count > _topLevelPages.Count)
         {
             PaginationDots.RemoveAt(PaginationDots.Count - 1);
         }
@@ -824,7 +832,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 CreateSectorGeometry(center.X, center.Y, 122, 196, angleDegrees - 11.25, angleDegrees + 11.25)));
         }
 
-        var currentIndex = _pages.FindIndex(page => page.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
+        var currentIndex = _topLevelPages.FindIndex(page => page.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
         for (int i = 0; i < PaginationDots.Count; i++)
         {
             PaginationDots[i].IsSelected = (i == currentIndex);
@@ -1057,15 +1065,19 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void RadialMenuWindow_MouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (_pages.Count <= 1)
+        if (_topLevelPages.Count <= 1)
         {
             return;
         }
 
-        var currentIndex = Math.Max(0, _pages.FindIndex(page => page.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase)));
+        var currentIndex = _topLevelPages.FindIndex(page => page.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
+        if (currentIndex < 0)
+        {
+            currentIndex = 0;
+        }
         var delta = e.Delta < 0 ? 1 : -1;
-        var nextIndex = (currentIndex + delta + _pages.Count) % _pages.Count;
-        _currentPageId = _pages[nextIndex].Id;
+        var nextIndex = (currentIndex + delta + _topLevelPages.Count) % _topLevelPages.Count;
+        _currentPageId = _topLevelPages[nextIndex].Id;
         _pageStack.Clear();
         BuildItems((AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
         e.Handled = true;

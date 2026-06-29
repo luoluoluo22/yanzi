@@ -2860,10 +2860,10 @@
                                                       Height="30"
                                                       ItemsSource="{Binding RadialMenuPages}"
                                                       SelectionChanged="RadialMenuPageComboBox_SelectionChanged"
-                                                      ToolTip="滚轮会在这些轮盘页面之间切换">
+                                                      ToolTip="滚轮会在 1 级顶层轮盘之间切换">
                                                  <ComboBox.ItemTemplate>
                                                      <DataTemplate>
-                                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="{Binding IndentMargin}">
                                                              <Image Source="{Binding Icon}" 
                                                                     Width="16" 
                                                                     Height="16" 
@@ -2879,7 +2879,7 @@
                                                                      </Style>
                                                                  </Image.Style>
                                                              </Image>
-                                                             <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                                             <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
                                                          </StackPanel>
                                                      </DataTemplate>
                                                  </ComboBox.ItemTemplate>
@@ -3041,7 +3041,8 @@
                                                                         <MenuItem Header="设置模拟按键" Click="RadialSlotSetSimulatedKeyMenuItem_Click"/>
                                                                         <MenuItem Header="删除扩展/应用/系统项" Click="RadialSlotClearCommandMenuItem_Click"/>
                                                                         <Separator/>
-                                                                        <MenuItem Header="添加子环" Click="RadialSlotAddChildPageMenuItem_Click"/>
+                                                                        <MenuItem Header="进入子环编辑" Click="RadialSlotEnterChildPageMenuItem_Click"/>
+                                                                         <MenuItem Header="添加子环" Click="RadialSlotAddChildPageMenuItem_Click"/>
                                                                         <MenuItem Header="删除子环" Click="RadialSlotClearChildPageMenuItem_Click"/>
                                                                     </ContextMenu>
                                                                 </Border.ContextMenu>

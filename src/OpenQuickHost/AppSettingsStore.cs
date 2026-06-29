@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -1122,6 +1122,24 @@ public sealed class RadialMenuSettings
     public string SelectedPageId { get; set; } = "default";
 
     public List<RadialMenuPageSettings> Pages { get; set; } = [];
+
+    public HashSet<string> GetChildPageIdsSet()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Pages == null) return set;
+        foreach (var page in Pages)
+        {
+            if (page.ChildPageIds == null) continue;
+            foreach (var childId in page.ChildPageIds)
+            {
+                if (!string.IsNullOrWhiteSpace(childId) && !string.Equals(childId, page.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    set.Add(childId);
+                }
+            }
+        }
+        return set;
+    }
 }
 
 public static class RadialActivationKeys

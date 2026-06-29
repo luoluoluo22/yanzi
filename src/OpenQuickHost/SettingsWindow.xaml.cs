@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
@@ -6813,18 +6813,66 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
 
             RadialMenuPages.Clear();
-            foreach (var page in _settings.RadialMenu.Pages)
+            var allPages = _settings.RadialMenu.Pages;
+            var pageMap = allPages.ToDictionary(p => p.Id, StringComparer.OrdinalIgnoreCase);
+            var childIdsSet = _settings.RadialMenu.GetChildPageIdsSet();
+            var rootPages = allPages.Where(p => !childIdsSet.Contains(p.Id)).ToList();
+            if (rootPages.Count == 0 && allPages.Count > 0)
             {
+                rootPages = [allPages[0]];
+            }
+
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void AddPageHierarchy(RadialMenuPageSettings page, int level)
+            {
+                if (visited.Contains(page.Id)) return;
+                visited.Add(page.Id);
+
                 var isAppPage = !string.IsNullOrEmpty(page.ContextProcessName);
                 var icon = isAppPage ? GetProcessIcon(page.ContextProcessName!) : null;
-                RadialMenuPages.Add(new RadialMenuPageEditorItem(page.Id, page.Name, icon, isAppPage));
+                string prefix = level switch
+                {
+                    0 => "",
+                    1 => "└─ ",
+                    2 => "   └─ ",
+                    3 => "      └─ ",
+                    _ => new string(' ', (level - 1) * 3) + "└─ "
+                };
+                string dispName = prefix + page.Name;
+
+                RadialMenuPages.Add(new RadialMenuPageEditorItem(page.Id, page.Name, icon, isAppPage, level, dispName));
+
+                if (page.ChildPageIds != null)
+                {
+                    foreach (var childId in page.ChildPageIds)
+                    {
+                        if (!string.IsNullOrWhiteSpace(childId) && pageMap.TryGetValue(childId, out var childPage))
+                        {
+                            AddPageHierarchy(childPage, level + 1);
+                        }
+                    }
+                }
+            }
+
+            foreach (var root in rootPages)
+            {
+                AddPageHierarchy(root, 0);
+            }
+
+            foreach (var page in allPages)
+            {
+                if (!visited.Contains(page.Id))
+                {
+                    AddPageHierarchy(page, 0);
+                }
             }
 
             RadialMenuChildPageOptions.Clear();
-            RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(string.Empty, "不进入子环", null, false));
-            foreach (var page in _settings.RadialMenu.Pages)
+            RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(string.Empty, "不进入子环", null, false, 0, "不进入子环"));
+            foreach (var item in RadialMenuPages)
             {
-                RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(page.Id, page.Name, null, false));
+                RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(item.Id, item.Name, null, false, item.Level, item.DisplayName));
             }
 
             var selectedPage = _settings.RadialMenu.Pages.First(page => page.Id.Equals(_settings.RadialMenu.SelectedPageId, StringComparison.OrdinalIgnoreCase));
@@ -6852,14 +6900,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 var runtimeItem = runtimeItems.ElementAtOrDefault(index);
                 var runtimeCommand = runtimeItem?.Command;
                 var childPageId = selectedPage.ChildPageIds.ElementAtOrDefault(index) ?? string.Empty;
+                var extTitle = !string.IsNullOrWhiteSpace(childPageId) && runtimeCommand == null
+                    ? string.Empty
+                    : ResolveRadialExtensionTitle(
+                        selectedPage.Slots.ElementAtOrDefault(index),
+                        selectedPage.SlotTitles.ElementAtOrDefault(index));
                 RadialMenuSlots.Add(new RadialMenuSlotEditorItem(
                     index,
                     selectedPage.Slots.ElementAtOrDefault(index) ?? string.Empty,
                     selectedPage.SlotTitles.ElementAtOrDefault(index) ?? string.Empty,
                     childPageId,
-                    ResolveRadialExtensionTitle(
-                        selectedPage.Slots.ElementAtOrDefault(index),
-                        selectedPage.SlotTitles.ElementAtOrDefault(index)),
+                    extTitle,
                     ResolveRadialChildPageTitle(childPageId),
                     center + Math.Cos(angle) * radius - (isOuter ? 31 : 38),
                     center + Math.Sin(angle) * radius - (isOuter ? 25 : 30),
@@ -6868,7 +6919,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     runtimeCommand?.IconSource,
                     runtimeCommand?.VectorIcon,
                     runtimeCommand?.AccentBrush ?? System.Windows.Media.Brushes.Transparent,
-                    runtimeCommand?.DisplayGlyph ?? (string.IsNullOrWhiteSpace(childPageId) ? string.Empty : "环")));
+                    runtimeCommand?.DisplayGlyph ?? (string.IsNullOrWhiteSpace(childPageId) ? string.Empty : "›")));
             }
 
             OnPropertyChanged(nameof(SelectedRadialMenuPageName));
@@ -7288,6 +7339,19 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        var currentPage = _settings.RadialMenu.Pages.FirstOrDefault(page => page.Id.Equals(_settings.RadialMenu.SelectedPageId, StringComparison.OrdinalIgnoreCase));
+        var pageName = currentPage?.Name ?? "当前轮盘";
+        var result = System.Windows.MessageBox.Show(
+            $"确定要删除轮盘“{pageName}”吗？\n删除后该轮盘配置将无法恢复。",
+            "确认删除轮盘",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+
+        if (result != System.Windows.MessageBoxResult.Yes)
+        {
+            return;
+        }
+
         var removedId = _settings.RadialMenu.SelectedPageId;
         _settings.RadialMenu.Pages.RemoveAll(page => page.Id.Equals(removedId, StringComparison.OrdinalIgnoreCase));
         foreach (var page in _settings.RadialMenu.Pages)
@@ -7406,6 +7470,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (sender is FrameworkElement { DataContext: RadialMenuSlotEditorItem slot })
         {
             SelectRadialMenuSlot(slot);
+            if (slot.HasChildPageTitle && !string.IsNullOrWhiteSpace(slot.ChildPageId))
+            {
+                SelectedRadialMenuPageId = slot.ChildPageId;
+                e.Handled = true;
+                return;
+            }
+
             if (slot.IsEmpty)
             {
                 OpenRadialSlotPicker(slot);
@@ -7555,6 +7626,15 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         SaveQuickPanelTriggerSettings();
     }
 
+        private void RadialSlotEnterChildPageMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var slot = ResolveRadialSlotFromMenuSender(sender);
+        if (slot != null && slot.HasChildPageTitle && !string.IsNullOrWhiteSpace(slot.ChildPageId))
+        {
+            SelectedRadialMenuPageId = slot.ChildPageId;
+        }
+    }
+
     private void RadialSlotAddChildPageMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var slot = ResolveRadialSlotFromMenuSender(sender);
@@ -7569,7 +7649,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void CreateRadialChildPageForSlot(RadialMenuSlotEditorItem slot, string pageName)
     {
-        SaveRadialMenuSlots();
         _settings.RadialMenu ??= new RadialMenuSettings();
         _settings.RadialMenu.Pages ??= [];
         var page = new RadialMenuPageSettings
@@ -7581,6 +7660,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         slot.ChildPageId = page.Id;
         slot.ChildPageTitle = ResolveRadialChildPageTitle(page.Id);
         UpdateRadialSlotPresentation(slot);
+        
+        SaveRadialMenuSlots();
         SaveQuickPanelTriggerSettings();
         RefreshRadialMenuSlots();
     }
@@ -7662,7 +7743,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             slot.IconSource = null;
             slot.VectorIcon = null;
             slot.AccentBrush = System.Windows.Media.Brushes.Transparent;
-            slot.DisplayGlyph = "环";
+            slot.DisplayGlyph = "›";
+            slot.ExtensionTitle = string.Empty;
             return;
         }
 
@@ -7676,6 +7758,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         var slot = ResolveRadialSlotFromMenuSender(sender);
         if (slot == null)
+        {
+            return;
+        }
+
+        var result = System.Windows.MessageBox.Show(
+            $"确定要清空并删除该子环吗？\n删除后该子环配置将无法恢复。",
+            "确认清空子环",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+
+        if (result != System.Windows.MessageBoxResult.Yes)
         {
             return;
         }
@@ -7696,6 +7789,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
         }
 
+        SaveRadialMenuSlots();
         SaveQuickPanelTriggerSettings();
         RefreshRadialMenuSlots();
     }
@@ -8969,7 +9063,10 @@ public sealed class RadialMenuSlotEditorItem : INotifyPropertyChanged
 
 }
 
-public sealed record RadialMenuPageEditorItem(string Id, string Name, ImageSource? Icon = null, bool IsAppPage = false);
+public sealed record RadialMenuPageEditorItem(string Id, string Name, ImageSource? Icon = null, bool IsAppPage = false, int Level = 0, string DisplayName = "")
+{
+    public System.Windows.Thickness IndentMargin => new(Level * 14, 0, 0, 0);
+}
 
 public sealed class YarnSelectRuleItem : INotifyPropertyChanged
 {
