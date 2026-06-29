@@ -6900,6 +6900,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 var runtimeItem = runtimeItems.ElementAtOrDefault(index);
                 var runtimeCommand = runtimeItem?.Command;
                 var childPageId = selectedPage.ChildPageIds.ElementAtOrDefault(index) ?? string.Empty;
+                var hasChildPage = !string.IsNullOrWhiteSpace(childPageId);
                 var extTitle = !string.IsNullOrWhiteSpace(childPageId) && runtimeCommand == null
                     ? string.Empty
                     : ResolveRadialExtensionTitle(
@@ -6918,8 +6919,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     BuildRadialSectorGeometry(center, center, isOuter ? 113.0 : 35.0, isOuter ? 180.0 : 113.0, startAngleDegrees, step),
                     runtimeCommand?.IconSource,
                     runtimeCommand?.VectorIcon,
-                    runtimeCommand?.AccentBrush ?? System.Windows.Media.Brushes.Transparent,
-                    runtimeCommand?.DisplayGlyph ?? (string.IsNullOrWhiteSpace(childPageId) ? string.Empty : "›")));
+                    runtimeCommand?.AccentBrush ?? (hasChildPage ? ResolveRadialChildPageAccentBrush() : System.Windows.Media.Brushes.Transparent),
+                    runtimeCommand?.DisplayGlyph ?? (hasChildPage ? "›" : string.Empty)));
             }
 
             OnPropertyChanged(nameof(SelectedRadialMenuPageName));
@@ -7339,7 +7340,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var currentPage = _settings.RadialMenu.Pages.FirstOrDefault(page => page.Id.Equals(_settings.RadialMenu.SelectedPageId, StringComparison.OrdinalIgnoreCase));
+        var removePageId = ResolveSelectedRadialMenuPageIdFromEditor();
+        var currentPage = _settings.RadialMenu.Pages.FirstOrDefault(page => page.Id.Equals(removePageId, StringComparison.OrdinalIgnoreCase));
+        if (currentPage == null)
+        {
+            return;
+        }
+
         var pageName = currentPage?.Name ?? "当前轮盘";
         var result = System.Windows.MessageBox.Show(
             $"确定要删除轮盘“{pageName}”吗？\n删除后该轮盘配置将无法恢复。",
@@ -7352,7 +7359,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var removedId = _settings.RadialMenu.SelectedPageId;
+        var removedId = removePageId;
+        var parentPageId = _settings.RadialMenu.Pages.FirstOrDefault(page =>
+            page.ChildPageIds?.Any(id => string.Equals(id, removedId, StringComparison.OrdinalIgnoreCase)) == true)?.Id;
         _settings.RadialMenu.Pages.RemoveAll(page => page.Id.Equals(removedId, StringComparison.OrdinalIgnoreCase));
         foreach (var page in _settings.RadialMenu.Pages)
         {
@@ -7360,9 +7369,35 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 .Select(id => string.Equals(id, removedId, StringComparison.OrdinalIgnoreCase) ? null : id)
                 .ToList();
         }
-        _settings.RadialMenu.SelectedPageId = _settings.RadialMenu.Pages[0].Id;
+
+        var remainingChildIds = _settings.RadialMenu.GetChildPageIdsSet();
+        var fallbackPage =
+            (!string.IsNullOrWhiteSpace(parentPageId)
+                ? _settings.RadialMenu.Pages.FirstOrDefault(page => page.Id.Equals(parentPageId, StringComparison.OrdinalIgnoreCase))
+                : null)
+            ?? _settings.RadialMenu.Pages.FirstOrDefault(page =>
+                string.IsNullOrWhiteSpace(page.ContextProcessName) && !remainingChildIds.Contains(page.Id))
+            ?? _settings.RadialMenu.Pages.FirstOrDefault(page => !remainingChildIds.Contains(page.Id))
+            ?? _settings.RadialMenu.Pages.FirstOrDefault();
+        if (fallbackPage == null)
+        {
+            return;
+        }
+
+        _settings.RadialMenu.SelectedPageId = fallbackPage.Id;
         RefreshRadialMenuSlots();
         SaveQuickPanelTriggerSettings();
+    }
+
+    private string ResolveSelectedRadialMenuPageIdFromEditor()
+    {
+        if (RadialMenuPageComboBox?.SelectedItem is RadialMenuPageEditorItem selected &&
+            !string.IsNullOrWhiteSpace(selected.Id))
+        {
+            return selected.Id;
+        }
+
+        return SelectedRadialMenuPageId;
     }
 
     private void RadialMenuCenter_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -7580,7 +7615,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _suspendActivationRefresh = true;
         try
         {
-            dialogResult = dialog.ShowDialog();
+            dialogResult = dialog.ShowDialog() == true;
         }
         finally
         {
@@ -7644,22 +7679,50 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         SelectRadialMenuSlot(slot);
-        CreateRadialChildPageForSlot(slot, GetNextRadialChildPageName());
+        CreateRadialChildPageForSlot(slot, GetNextRadialChildPageName(), SelectedRadialMenuPageId);
     }
 
-    private void CreateRadialChildPageForSlot(RadialMenuSlotEditorItem slot, string pageName)
+    private void CreateRadialChildPageForSlot(RadialMenuSlotEditorItem slot, string pageName, string? parentPageId = null)
     {
         _settings.RadialMenu ??= new RadialMenuSettings();
         _settings.RadialMenu.Pages ??= [];
+        var effectiveParentPageId = string.IsNullOrWhiteSpace(parentPageId)
+            ? SelectedRadialMenuPageId
+            : parentPageId.Trim();
+        var parentPage = _settings.RadialMenu.Pages.FirstOrDefault(page =>
+            page.Id.Equals(effectiveParentPageId, StringComparison.OrdinalIgnoreCase));
+        if (parentPage == null)
+        {
+            HostAssets.AppendLog($"Settings radial child page add skipped: parent page missing, parent={effectiveParentPageId}, slot={slot.Index + 1}.");
+            return;
+        }
+
+        parentPage.Slots ??= [];
+        parentPage.SlotTitles ??= [];
+        parentPage.ChildPageIds ??= [];
+        while (parentPage.Slots.Count < RadialMenuSettings.TotalSlotCount) parentPage.Slots.Add(null);
+        while (parentPage.SlotTitles.Count < RadialMenuSettings.TotalSlotCount) parentPage.SlotTitles.Add(null);
+        while (parentPage.ChildPageIds.Count < RadialMenuSettings.TotalSlotCount) parentPage.ChildPageIds.Add(null);
+        if (!string.IsNullOrWhiteSpace(parentPage.ChildPageIds[slot.Index]))
+        {
+            HostAssets.AppendLog($"Settings radial child page add skipped: slot already has child, parent={effectiveParentPageId}, slot={slot.Index + 1}.");
+            return;
+        }
+
+        var childPageName = pageName.Trim();
         var page = new RadialMenuPageSettings
         {
             Id = Guid.NewGuid().ToString("N"),
-            Name = pageName.Trim()
+            Name = childPageName
         };
         _settings.RadialMenu.Pages.Add(page);
-        slot.ChildPageId = page.Id;
-        slot.ChildPageTitle = ResolveRadialChildPageTitle(page.Id);
-        UpdateRadialSlotPresentation(slot);
+        parentPage.ChildPageIds[slot.Index] = page.Id;
+        _settings.RadialMenu.SelectedPageId = effectiveParentPageId;
+
+        var currentSlot = RadialMenuSlots.FirstOrDefault(item => item.Index == slot.Index) ?? slot;
+        currentSlot.ChildPageId = page.Id;
+        currentSlot.ChildPageTitle = childPageName;
+        UpdateRadialSlotPresentation(currentSlot);
         
         SaveRadialMenuSlots();
         SaveQuickPanelTriggerSettings();
@@ -7675,23 +7738,32 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             Owner = this
         };
-        if (picker.ShowDialog() != true)
+        var parentPageId = SelectedRadialMenuPageId;
+        _suspendActivationRefresh = true;
+        try
         {
-            return;
-        }
+            if (picker.ShowDialog() != true)
+            {
+                return;
+            }
 
-        if (picker.SelectedAction == RadialSlotPickerWindow.PickerAction.AddChildPage)
+            if (picker.SelectedAction == RadialSlotPickerWindow.PickerAction.AddChildPage)
+            {
+                CreateRadialChildPageForSlot(slot, GetNextRadialChildPageName(), parentPageId);
+                return;
+            }
+
+            if (picker.SelectedCommand == null)
+            {
+                return;
+            }
+
+            ApplyRadialMenuCommandToSlot(slot, new YarnSelectExtensionOption(picker.SelectedCommand));
+        }
+        finally
         {
-            CreateRadialChildPageForSlot(slot, GetNextRadialChildPageName());
-            return;
+            _suspendActivationRefresh = false;
         }
-
-        if (picker.SelectedCommand == null)
-        {
-            return;
-        }
-
-        ApplyRadialMenuCommandToSlot(slot, new YarnSelectExtensionOption(picker.SelectedCommand));
     }
 
     private CommandItem? ResolveRadialSlotCommand(RadialMenuSlotEditorItem slot)
@@ -7742,7 +7814,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             slot.IconSource = null;
             slot.VectorIcon = null;
-            slot.AccentBrush = System.Windows.Media.Brushes.Transparent;
+            slot.AccentBrush = ResolveRadialChildPageAccentBrush();
             slot.DisplayGlyph = "›";
             slot.ExtensionTitle = string.Empty;
             return;
@@ -7883,6 +7955,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var name = _settings.RadialMenu?.Pages?.FirstOrDefault(page =>
             page.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase))?.Name;
         return string.IsNullOrWhiteSpace(name) ? string.Empty : name;
+    }
+
+    private static System.Windows.Media.Brush ResolveRadialChildPageAccentBrush()
+    {
+        return System.Windows.Application.Current.TryFindResource("BrushRadialChildAccentSector") as System.Windows.Media.Brush
+               ?? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF3B82F6")!;
     }
 
     private void AddYarnSelectRuleButton_Click(object sender, RoutedEventArgs e)
@@ -8864,6 +8942,10 @@ public sealed class RadialMenuSlotEditorItem : INotifyPropertyChanged
     public double TitleWidth => IsOuter ? 50 : 60;
 
     public double IconSize => IsOuter ? 23 : 32;
+
+    public double IconContainerSize => IsOuter ? 23 : 32;
+
+    public CornerRadius IconCornerRadius => IsOuter ? new CornerRadius(6) : new CornerRadius(8);
 
     public double VectorIconSize => IsOuter ? 14 : 19;
 

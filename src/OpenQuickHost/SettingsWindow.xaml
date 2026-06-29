@@ -3072,16 +3072,14 @@
                                                                         
                                                                         <!-- Show normal content for filled slots -->
                                                                         <StackPanel Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                                            <Border Width="30"
-                                                                                    Height="30"
-                                                                                    CornerRadius="8"
+                                                                            <Border Width="{Binding IconContainerSize}"
+                                                                                    Height="{Binding IconContainerSize}"
+                                                                                    CornerRadius="{Binding IconCornerRadius}"
                                                                                     Background="{Binding AccentBrush}"
                                                                                     HorizontalAlignment="Center"
                                                                                     Visibility="{Binding HasPresentationIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                                                <Grid>
+                                                                                <Grid ClipToBounds="True">
                                                                                     <Image Source="{Binding IconSource}"
-                                                                                           Width="{Binding IconSize}"
-                                                                                           Height="{Binding IconSize}"
                                                                                            Stretch="UniformToFill"
                                                                                            Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                                                     <Viewbox Width="{Binding VectorIconSize}"
@@ -3090,10 +3088,10 @@
                                                                                              HorizontalAlignment="Center"
                                                                                              VerticalAlignment="Center"
                                                                                              Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                                                        <Path Data="{Binding VectorIcon}" Fill="{DynamicResource BrushRadialIcon}" Stretch="Uniform"/>
+                                                                                        <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                                                                     </Viewbox>
                                                                                     <TextBlock Text="{Binding DisplayGlyph}"
-                                                                                               Foreground="{DynamicResource BrushTextMain}"
+                                                                                               Foreground="White"
                                                                                                FontSize="{Binding GlyphFontSize}"
                                                                                                FontWeight="SemiBold"
                                                                                                HorizontalAlignment="Center"
