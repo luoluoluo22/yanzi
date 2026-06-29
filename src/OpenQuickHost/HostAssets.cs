@@ -34,6 +34,8 @@ public static class HostAssets
 
     public static string DevDebugLogPath => Path.Combine(LogsPath, "dev-debug.log");
 
+    public static string CloudSyncDiagnosticsLogPath => Path.Combine(LogsPath, "cloud-sync-diagnostics.log");
+
     public static string RecentCommandsPath => ResolveDataFilePath("recent-commands.txt");
 
     public static string MarketplacePath => ResolveDataFilePath("marketplace.txt");
@@ -135,6 +137,16 @@ public static class HostAssets
         File.AppendAllText(
             DevDebugLogPath,
             $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+    }
+
+    public static void AppendCloudSyncDiagnosticLog(string message)
+    {
+        EnsureCreated();
+        RotateFileIfTooLarge(CloudSyncDiagnosticsLogPath, MaxLogFileBytes);
+        File.AppendAllText(
+            CloudSyncDiagnosticsLogPath,
+            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+        AppendLog($"[CloudSyncDiag] {message}");
     }
 
     public static IReadOnlyList<string> ReadHostLogTailLines(int maxBytes, int maxLines)

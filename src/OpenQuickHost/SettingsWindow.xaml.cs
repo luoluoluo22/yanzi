@@ -11,6 +11,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -128,21 +129,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AiModel = _settings.AiModel;
         AiSystemPrompt = _settings.AiSystemPrompt;
 
-        _settings.AiServiceProviders ??= [];
-        foreach (var provider in _settings.AiServiceProviders)
-        {
-            var vm = new SettingsAiProviderVM(provider);
-            if (provider.Models != null)
-            {
-                foreach (var m in provider.Models)
-                {
-                    vm.Models.Add(m);
-                }
-            }
-            _aiServiceProvidersList.Add(vm);
-        }
-        SelectedServiceProvider = _aiServiceProvidersList.FirstOrDefault(p => p.Id == _settings.ActiveServiceProviderId)
-                                 ?? _aiServiceProvidersList.FirstOrDefault();
+        ReloadAiProvidersFromSettings();
 
 
         SubscribeUpdateEvents();
@@ -218,6 +205,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public ObservableCollection<MouseGestureQuickBindItem> MouseGestureQuickBindItems { get; }
 
+    public ObservableCollection<MouseGestureAppOption> MouseGestureAppOptions { get; } = new();
     public ObservableCollection<MouseGestureExtensionOption> MouseGestureExtensionOptions { get; }
 
     public IReadOnlyList<YarnSelectActionTypeOption> YarnSelectActionOptions { get; } =
@@ -1508,7 +1496,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsSyncProviderGitLab));
             OnPropertyChanged(nameof(IsSyncProviderGitea));
             OnPropertyChanged(nameof(IsSyncProviderS3));
-            OnPropertyChanged(nameof(IsSyncProviderWebDav));
+            OnPropertyChanged(nameof(IsSyncProviderWebDav));
+
             OnPropertyChanged(nameof(IsGitSyncProvider));
             RefreshWebDavSummary();
 
@@ -1526,7 +1515,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public bool IsSyncProviderS3 => SelectedPersonalSyncProvider == PersonalSyncProviders.S3;
 
-    public bool IsSyncProviderWebDav => SelectedPersonalSyncProvider == PersonalSyncProviders.WebDav;
+    public bool IsSyncProviderWebDav => SelectedPersonalSyncProvider == PersonalSyncProviders.WebDav;
+
     public bool IsGitSyncProvider => IsSyncProviderGitHub || IsSyncProviderGitee || IsSyncProviderGitLab || IsSyncProviderGitea;
 
     public bool ShowPersonalSyncAdvancedOptions
@@ -3493,6 +3483,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _personalSyncSecrets.GiteaToken = GiteaTokenBox?.Password ?? string.Empty;
         _personalSyncSecrets.S3SecretAccessKey = S3SecretAccessKeyBox?.Password ?? string.Empty;
         _personalSyncSecrets.WebDavPassword = WebDavPasswordBox?.Password ?? string.Empty;
+        CloudSyncDiagnostics.Log(
+            "SettingsWindow.PersonalSync",
+            "Save personal sync button clicked",
+            ("selectedProvider", SelectedPersonalSyncProvider),
+            ("summary", CloudSyncDiagnostics.DescribePersonalSync(_personalSyncSettings, _personalSyncSecrets)));
         _mainWindow.SavePersonalSyncSettings(ClonePersonalSyncSettings(_personalSyncSettings), ClonePersonalSyncSecrets(_personalSyncSecrets));
         _settings = AppSettingsStore.Load();
         RefreshWebDavSummary();
@@ -3522,7 +3517,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         // 4. 保存设置并同步至主窗口
         AppSettingsStore.Save(_settings);
+        CloudSyncDiagnostics.Log(
+            "SettingsWindow.Ai",
+            "AI settings saved",
+            ("providerCount", _settings.AiServiceProviders.Count),
+            ("activeProviderId", _settings.ActiveServiceProviderId ?? string.Empty),
+            ("providerNames", string.Join(", ", _settings.AiServiceProviders.Select(static provider => provider.Name ?? string.Empty))));
         _mainWindow.OnAiSettingsChanged();
+        _mainWindow.NotifyQuickPanelSettingsChanged("ai-settings-saved", refreshYanmOverlay: false);
 
         // 5. 更新原始值
         _originalAiBaseUrl = _settings.AiBaseUrl;
@@ -4069,6 +4071,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         try
         {
+            CloudSyncDiagnostics.Log(
+                "SettingsWindow.PersonalSync",
+                "Refresh personal sync commits started",
+                ("provider", SelectedPersonalSyncProvider),
+                ("forceMessage", forceMessage),
+                ("summary", CloudSyncDiagnostics.DescribePersonalSync(_personalSyncSettings, _personalSyncSecrets)));
             if (forceMessage)
             {
                 PersonalSyncCommitStatusText = $"正在读取 {SelectedPersonalSyncProvider} 提交记录...";
@@ -4104,6 +4112,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     LastSyncStatusTextBlock.ToolTip = "暂无提交记录";
                 }
             }
+
+            CloudSyncDiagnostics.Log(
+                "SettingsWindow.PersonalSync",
+                "Refresh personal sync commits completed",
+                ("provider", SelectedPersonalSyncProvider),
+                ("count", PersonalSyncCommitItems.Count));
         }
         catch (Exception ex)
         {
@@ -4114,6 +4128,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 LastSyncStatusTextBlock.Text = "上次同步: 失败";
                 LastSyncStatusTextBlock.ToolTip = $"读取记录失败：{ex.Message}";
             }
+            CloudSyncDiagnostics.Log(
+                "SettingsWindow.PersonalSync",
+                "Refresh personal sync commits failed",
+                ("provider", SelectedPersonalSyncProvider),
+                ("error", ex.Message));
         }
     }
 
@@ -4170,7 +4189,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         try
         {
             WebDavStatusText = "正在清空云端，请稍候...（可能需要几分钟）";
-            var service = new PersonalSyncService(AppSettingsStore.Load());
+            var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
             await service.ClearCloudAsync();
             WebDavStatusText = "云端已清空。";
             RefreshSyncActivityLog();
@@ -4840,7 +4859,60 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AiBaseUrl = _settings.AiBaseUrl;
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
+        AiSystemPrompt = _settings.AiSystemPrompt;
+        ReloadAiProvidersFromSettings();
+        _originalAiBaseUrl = _settings.AiBaseUrl;
+        _originalAiApiKey = _settings.AiApiKey;
+        _originalAiModel = _settings.AiModel;
+        _originalAiSystemPrompt = _settings.AiSystemPrompt;
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
+        HasAiSettingsChanged = false;
+        CloudSyncDiagnostics.Log(
+            "SettingsWindow.Ai",
+            "AI config refreshed from external",
+            ("providerCount", _settings.AiServiceProviders.Count),
+            ("activeProviderId", _settings.ActiveServiceProviderId ?? string.Empty),
+            ("providerNames", string.Join(", ", _settings.AiServiceProviders.Select(static provider => provider.Name ?? string.Empty))));
+    }
+
+    public void ShowCloudSyncProgressToast(string message)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            CloudSyncToastMessage.Text = string.IsNullOrWhiteSpace(message) ? "正在同步云端配置..." : message;
+            CloudSyncToastNotification.Visibility = Visibility.Visible;
+        });
+    }
+
+    public void HideCloudSyncProgressToast()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            CloudSyncToastNotification.Visibility = Visibility.Collapsed;
+        });
+    }
+
+    private void ReloadAiProvidersFromSettings()
+    {
+        _settings.AiServiceProviders ??= [];
+        _aiServiceProvidersList.Clear();
+        foreach (var provider in _settings.AiServiceProviders)
+        {
+            var vm = new SettingsAiProviderVM(provider);
+            if (provider.Models != null)
+            {
+                foreach (var model in provider.Models)
+                {
+                    vm.Models.Add(model);
+                }
+            }
+
+            _aiServiceProvidersList.Add(vm);
+        }
+
+        SelectedServiceProvider = _aiServiceProvidersList.FirstOrDefault(p => p.Id == _settings.ActiveServiceProviderId)
+                                 ?? _aiServiceProvidersList.FirstOrDefault();
+        OnPropertyChanged(nameof(FilteredProviders));
     }
 
     private void EditLauncherHotkeyButton_Click(object sender, RoutedEventArgs e)
@@ -5503,6 +5575,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         MouseGestureItems.Clear();
         MouseGestureExtensionOptions.Clear();
+        MouseGestureAppOptions.Clear();
+        foreach (var app in ScanAppOptions())
+        {
+            MouseGestureAppOptions.Add(app);
+        }
         MouseGestureQuickBindItems.Clear();
 
         var commands = _mainWindow.GetExtensionsForSettings();
@@ -5552,6 +5629,31 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 command?.DisplayGlyph ?? BuildFallbackGlyph(entry.Manifest.Name)));
         }
 
+        foreach (var appBind in _settings.MouseGestureAppBindings)
+        {
+            if (string.IsNullOrWhiteSpace(appBind.Sequence)) continue;
+            var seq = MouseGestureNaming.NormalizeSequence(appBind.Sequence);
+            var appName = string.IsNullOrWhiteSpace(appBind.AppName) ? "应用程序" : appBind.AppName;
+            if (!assignedBySequence.ContainsKey(seq))
+            {
+                assignedBySequence[seq] = appName;
+            }
+            MouseGestureItems.Add(new SettingsMouseGestureItem(
+                "app:" + appBind.AppPath,
+                appName,
+                "应用程序",
+                BuildGestureTriggerLabel(),
+                seq,
+                MouseGestureNaming.GetDisplayName(seq),
+                null,
+                30,
+                null,
+                null,
+                null,
+                CreateAccentBrush("#3B82F6"),
+                BuildFallbackGlyph(appName)));
+        }
+
         foreach (var template in CommonMouseGestureTemplates)
         {
             assignedBySequence.TryGetValue(template.Sequence, out var assignedTitle);
@@ -5570,6 +5672,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         if (sender is not FrameworkElement { DataContext: SettingsMouseGestureItem item })
         {
+            return;
+        }
+
+        if (item.ExtensionId != null && item.ExtensionId.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
+        {
+            var appPath = item.ExtensionId.Substring(4);
+            _settings.MouseGestureAppBindings.RemoveAll(x => string.Equals(x.AppPath, appPath, StringComparison.OrdinalIgnoreCase) || string.Equals(x.Sequence, item.Sequence, StringComparison.OrdinalIgnoreCase));
+            AppSettingsStore.Save(_settings);
+            _mainWindow.ReloadMouseGestureRegistrations();
+            RefreshMouseGestureManagement();
+            SyncStatusText = $"已解绑应用手势 [{item.Title}]。";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(item.ExtensionId))
+        {
+            SyncStatusText = "当前手势没有可解绑的扩展。";
             return;
         }
 
@@ -5600,10 +5719,84 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+        private List<MouseGestureAppOption> ScanAppOptions()
+    {
+        var list = new List<MouseGestureAppOption>();
+        var addedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            var procs = System.Diagnostics.Process.GetProcesses();
+            foreach (var p in procs)
+            {
+                try
+                {
+                    if (p.MainWindowHandle == IntPtr.Zero) continue;
+                    var fileName = p.MainModule?.FileName;
+                    if (string.IsNullOrWhiteSpace(fileName) || !System.IO.File.Exists(fileName)) continue;
+                    if (addedPaths.Contains(fileName)) continue;
+
+                    var title = p.MainWindowTitle;
+                    var name = string.IsNullOrWhiteSpace(title) ? p.ProcessName : title;
+                    if (name.Length > 25) name = name.Substring(0, 25) + "...";
+
+                    addedPaths.Add(fileName);
+                    list.Add(new MouseGestureAppOption(name, fileName, "运行中的应用", true));
+                }
+                catch { }
+            }
+        }
+        catch { }
+
+        var commonApps = new (string Name, string Path)[]
+        {
+            ("记事本", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe")),
+            ("计算器", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "calc.exe")),
+            ("任务管理器", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "taskmgr.exe")),
+            ("命令提示符", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe")),
+            ("资源管理器", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"))
+        };
+
+        foreach (var app in commonApps)
+        {
+            if (System.IO.File.Exists(app.Path) && !addedPaths.Contains(app.Path))
+            {
+                addedPaths.Add(app.Path);
+                list.Add(new MouseGestureAppOption(app.Name, app.Path, "全部应用程序", false));
+            }
+        }
+
+        return list;
+    }
+
+    private void BindCommonMouseGestureAppButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } || item.SelectedApp == null)
+        {
+            SyncStatusText = "请选择一个应用程序后再绑定常用手势。";
+            return;
+        }
+
+        var appBindings = _settings.MouseGestureAppBindings;
+        appBindings.RemoveAll(x => string.Equals(x.Sequence, item.Sequence, StringComparison.OrdinalIgnoreCase));
+        appBindings.Add(new MouseGestureAppBinding
+        {
+            Sequence = item.Sequence,
+            AppPath = item.SelectedApp.AppPath,
+            AppName = item.SelectedApp.AppName
+        });
+
+        AppSettingsStore.Save(_settings);
+        _mainWindow.ReloadMouseGestureRegistrations();
+        RefreshMouseGestureManagement();
+        SyncStatusText = $"已将手势 [{item.DisplayName}] 成功绑定到应用 [{item.SelectedApp.AppName}]！";
+    }
+
     private async void BindCommonMouseGestureButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
-            item.SelectedExtension == null)
+            item.SelectedExtension == null ||
+            string.IsNullOrWhiteSpace(item.SelectedExtension.ExtensionId))
         {
             SyncStatusText = "请选择一个扩展后再绑定常用手势。";
             return;
@@ -5620,6 +5813,216 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         var result = await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(item.SelectedExtension.ExtensionId, gesture);
         await HandleMouseGestureUpdateResultAsync(result);
+    }
+
+    private void RefreshMouseGestureExtensionCandidates(MouseGestureQuickBindItem item, string? keyword)
+    {
+        keyword = (keyword ?? string.Empty).Trim();
+        var query = MouseGestureExtensionOptions.Where(option =>
+            string.IsNullOrWhiteSpace(keyword) ||
+            option.Label.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            option.ExtensionId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            option.Category.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+
+        item.FilteredExtensionOptions = new ObservableCollection<MouseGestureExtensionOption>(query.Take(24));
+        item.IsExtensionPopupOpen = item.FilteredExtensionOptions.Count > 0;
+    }
+
+    private void RefreshMouseGestureAppCandidates(MouseGestureQuickBindItem item, string? keyword)
+    {
+        keyword = (keyword ?? string.Empty).Trim();
+        var query = MouseGestureAppOptions.Where(option =>
+            string.IsNullOrWhiteSpace(keyword) ||
+            option.AppName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            option.AppPath.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            option.Category.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+
+        item.FilteredAppOptions = new ObservableCollection<MouseGestureAppOption>(query.Take(24));
+        item.IsAppPopupOpen = item.FilteredAppOptions.Count > 0;
+    }
+
+    private void MouseGestureExtensionSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: MouseGestureQuickBindItem item })
+        {
+            RefreshMouseGestureExtensionCandidates(item, item.ExtensionSearchText);
+        }
+    }
+
+    private void MouseGestureExtensionSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item })
+        {
+            return;
+        }
+
+        var selected = item.SelectedExtension;
+        if (selected == null ||
+            !string.Equals(selected.Label, item.ExtensionSearchText ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+        {
+            item.SelectedExtension = null;
+        }
+
+        RefreshMouseGestureExtensionCandidates(item, item.ExtensionSearchText);
+    }
+
+    private void MouseGestureExtensionSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
+            e.Key != Key.Down ||
+            item.FilteredExtensionOptions.Count == 0)
+        {
+            return;
+        }
+
+        if (FindDescendantListBox(this, item.FilteredExtensionOptions) is { } listBox)
+        {
+            listBox.SelectedIndex = 0;
+            listBox.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void MouseGestureExtensionListBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ListBox listBox)
+        {
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            CommitMouseGestureExtensionCandidate(listBox);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && listBox.DataContext is MouseGestureQuickBindItem item)
+        {
+            item.FilteredExtensionOptions = [];
+            item.IsExtensionPopupOpen = false;
+            e.Handled = true;
+        }
+    }
+
+    private void MouseGestureExtensionListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox listBox)
+        {
+            CommitMouseGestureExtensionCandidate(listBox);
+        }
+    }
+
+    private void MouseGestureExtensionListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox listBox)
+        {
+            CommitMouseGestureExtensionCandidate(listBox);
+        }
+    }
+
+    private static void CommitMouseGestureExtensionCandidate(System.Windows.Controls.ListBox listBox)
+    {
+        if (listBox.DataContext is not MouseGestureQuickBindItem item ||
+            listBox.SelectedItem is not MouseGestureExtensionOption option)
+        {
+            return;
+        }
+
+        item.SelectedExtension = option;
+        item.ExtensionSearchText = option.Label;
+        item.FilteredExtensionOptions = [];
+        item.IsExtensionPopupOpen = false;
+    }
+
+    private void MouseGestureAppSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: MouseGestureQuickBindItem item })
+        {
+            RefreshMouseGestureAppCandidates(item, item.AppSearchText);
+        }
+    }
+
+    private void MouseGestureAppSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item })
+        {
+            return;
+        }
+
+        var selected = item.SelectedApp;
+        if (selected == null ||
+            !string.Equals(selected.AppName, item.AppSearchText ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+        {
+            item.SelectedApp = null;
+        }
+
+        RefreshMouseGestureAppCandidates(item, item.AppSearchText);
+    }
+
+    private void MouseGestureAppSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
+            e.Key != Key.Down ||
+            item.FilteredAppOptions.Count == 0)
+        {
+            return;
+        }
+
+        if (FindDescendantListBox(this, item.FilteredAppOptions) is { } listBox)
+        {
+            listBox.SelectedIndex = 0;
+            listBox.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void MouseGestureAppListBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ListBox listBox)
+        {
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            CommitMouseGestureAppCandidate(listBox);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && listBox.DataContext is MouseGestureQuickBindItem item)
+        {
+            item.FilteredAppOptions = [];
+            item.IsAppPopupOpen = false;
+            e.Handled = true;
+        }
+    }
+
+    private void MouseGestureAppListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox listBox)
+        {
+            CommitMouseGestureAppCandidate(listBox);
+        }
+    }
+
+    private void MouseGestureAppListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox listBox)
+        {
+            CommitMouseGestureAppCandidate(listBox);
+        }
+    }
+
+    private static void CommitMouseGestureAppCandidate(System.Windows.Controls.ListBox listBox)
+    {
+        if (listBox.DataContext is not MouseGestureQuickBindItem item ||
+            listBox.SelectedItem is not MouseGestureAppOption option)
+        {
+            return;
+        }
+
+        item.SelectedApp = option;
+        item.AppSearchText = option.AppName;
+        item.FilteredAppOptions = [];
+        item.IsAppPopupOpen = false;
     }
 
     private void RefreshMouseGestureManagementButton_Click(object sender, RoutedEventArgs e)
@@ -7835,6 +8238,14 @@ public sealed class SettingsMouseGestureItem
 public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
 {
     private MouseGestureExtensionOption? _selectedExtension;
+    private MouseGestureAppOption? _selectedApp;
+    private string _extensionSearchText = string.Empty;
+    private string _appSearchText = string.Empty;
+    private ObservableCollection<MouseGestureExtensionOption> _filteredExtensionOptions = [];
+    private ObservableCollection<MouseGestureAppOption> _filteredAppOptions = [];
+    private ICollectionView? _filteredAppOptionsView;
+    private bool _isExtensionPopupOpen;
+    private bool _isAppPopupOpen;
 
     public MouseGestureQuickBindItem(string sequence, string displayName, string description, string? assignedTitle)
     {
@@ -7843,6 +8254,7 @@ public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
         Description = description;
         AssignedTitle = assignedTitle ?? string.Empty;
         PreviewGeometry = MouseGesturePreviewGeometryFactory.Create(sequence, data: null);
+        RebuildFilteredAppOptionsView();
     }
 
     public string Sequence { get; }
@@ -7859,7 +8271,136 @@ public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
 
     public string StatusText => IsAssigned ? $"已被 {AssignedTitle} 使用" : "未绑定";
 
-    public MouseGestureExtensionOption? SelectedExtension
+    public string ExtensionSearchText
+    {
+        get => _extensionSearchText;
+        set
+        {
+            value ??= string.Empty;
+            if (value == _extensionSearchText)
+            {
+                return;
+            }
+
+            _extensionSearchText = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ExtensionSearchText)));
+        }
+    }
+
+    public string AppSearchText
+    {
+        get => _appSearchText;
+        set
+        {
+            value ??= string.Empty;
+            if (value == _appSearchText)
+            {
+                return;
+            }
+
+            _appSearchText = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AppSearchText)));
+        }
+    }
+
+    public ObservableCollection<MouseGestureExtensionOption> FilteredExtensionOptions
+    {
+        get => _filteredExtensionOptions;
+        set
+        {
+            if (ReferenceEquals(value, _filteredExtensionOptions))
+            {
+                return;
+            }
+
+            _filteredExtensionOptions = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FilteredExtensionOptions)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FilteredExtensionListVisibility)));
+        }
+    }
+
+    public ObservableCollection<MouseGestureAppOption> FilteredAppOptions
+    {
+        get => _filteredAppOptions;
+        set
+        {
+            if (ReferenceEquals(value, _filteredAppOptions))
+            {
+                return;
+            }
+
+            _filteredAppOptions = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FilteredAppOptions)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FilteredAppListVisibility)));
+            RebuildFilteredAppOptionsView();
+        }
+    }
+
+    public ICollectionView? FilteredAppOptionsView
+    {
+        get => _filteredAppOptionsView;
+        private set
+        {
+            if (ReferenceEquals(value, _filteredAppOptionsView))
+            {
+                return;
+            }
+
+            _filteredAppOptionsView = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FilteredAppOptionsView)));
+        }
+    }
+
+    public Visibility FilteredExtensionListVisibility => FilteredExtensionOptions.Count == 0
+        ? Visibility.Collapsed
+        : Visibility.Visible;
+
+    public Visibility FilteredAppListVisibility => FilteredAppOptions.Count == 0
+        ? Visibility.Collapsed
+        : Visibility.Visible;
+
+    public bool IsExtensionPopupOpen
+    {
+        get => _isExtensionPopupOpen;
+        set
+        {
+            if (value == _isExtensionPopupOpen)
+            {
+                return;
+            }
+
+            _isExtensionPopupOpen = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExtensionPopupOpen)));
+        }
+    }
+
+    public bool IsAppPopupOpen
+    {
+        get => _isAppPopupOpen;
+        set
+        {
+            if (value == _isAppPopupOpen)
+            {
+                return;
+            }
+
+            _isAppPopupOpen = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsAppPopupOpen)));
+        }
+    }
+
+    public MouseGestureAppOption? SelectedApp
+    {
+        get => _selectedApp;
+        set
+        {
+            if (Equals(value, _selectedApp)) return;
+            _selectedApp = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedApp)));
+        }
+    }
+
+public MouseGestureExtensionOption? SelectedExtension
     {
         get => _selectedExtension;
         set
@@ -7875,6 +8416,42 @@ public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void RebuildFilteredAppOptionsView()
+    {
+        var view = CollectionViewSource.GetDefaultView(_filteredAppOptions);
+        if (view is ListCollectionView listView)
+        {
+            listView.GroupDescriptions.Clear();
+            listView.SortDescriptions.Clear();
+            listView.SortDescriptions.Add(new SortDescription(nameof(MouseGestureAppOption.IsRunning), ListSortDirection.Descending));
+            listView.SortDescriptions.Add(new SortDescription(nameof(MouseGestureAppOption.AppName), ListSortDirection.Ascending));
+            listView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(MouseGestureAppOption.GroupTitle)));
+        }
+
+        FilteredAppOptionsView = view;
+    }
+}
+
+public sealed class MouseGestureAppOption
+{
+    public MouseGestureAppOption(string appName, string appPath, string category, bool isRunning)
+    {
+        AppName = appName;
+        AppPath = appPath;
+        Category = category;
+        IsRunning = isRunning;
+        DisplayLabel = isRunning ? $"🟢 [运行中] {appName}" : $"💻 {appName}";
+    }
+
+    public string AppName { get; }
+    public string AppPath { get; }
+    public string Category { get; }
+    public bool IsRunning { get; }
+    public string DisplayLabel { get; }
+    public string GroupTitle => IsRunning ? "运行中的应用" : "全部应用";
+
+    public override string ToString() => DisplayLabel;
 }
 
 public sealed class MouseGestureExtensionOption
@@ -7990,6 +8567,98 @@ internal static class MouseGesturePreviewGeometryFactory
 
         geometry.Freeze();
         return geometry;
+    }
+}
+
+public class HighlightedTextBlock : TextBlock
+{
+    public static readonly DependencyProperty SourceTextProperty =
+        DependencyProperty.Register(
+            nameof(SourceText),
+            typeof(string),
+            typeof(HighlightedTextBlock),
+            new PropertyMetadata(string.Empty, OnHighlightPropertyChanged));
+
+    public static readonly DependencyProperty HighlightTextProperty =
+        DependencyProperty.Register(
+            nameof(HighlightText),
+            typeof(string),
+            typeof(HighlightedTextBlock),
+            new PropertyMetadata(string.Empty, OnHighlightPropertyChanged));
+
+    public static readonly DependencyProperty HighlightBrushProperty =
+        DependencyProperty.Register(
+            nameof(HighlightBrush),
+            typeof(System.Windows.Media.Brush),
+            typeof(HighlightedTextBlock),
+            new PropertyMetadata(System.Windows.Media.Brushes.DeepSkyBlue, OnHighlightPropertyChanged));
+
+    public string SourceText
+    {
+        get => (string)GetValue(SourceTextProperty);
+        set => SetValue(SourceTextProperty, value);
+    }
+
+    public string HighlightText
+    {
+        get => (string)GetValue(HighlightTextProperty);
+        set => SetValue(HighlightTextProperty, value);
+    }
+
+    public System.Windows.Media.Brush HighlightBrush
+    {
+        get => (System.Windows.Media.Brush)GetValue(HighlightBrushProperty);
+        set => SetValue(HighlightBrushProperty, value);
+    }
+
+    private static void OnHighlightPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is HighlightedTextBlock textBlock)
+        {
+            textBlock.RebuildInlines();
+        }
+    }
+
+    private void RebuildInlines()
+    {
+        Inlines.Clear();
+
+        var text = SourceText ?? string.Empty;
+        var keyword = (HighlightText ?? string.Empty).Trim();
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        if (keyword.Length == 0)
+        {
+            Inlines.Add(new Run(text) { Foreground = Foreground });
+            return;
+        }
+
+        var startIndex = 0;
+        while (startIndex < text.Length)
+        {
+            var matchIndex = text.IndexOf(keyword, startIndex, StringComparison.OrdinalIgnoreCase);
+            if (matchIndex < 0)
+            {
+                Inlines.Add(new Run(text[startIndex..]) { Foreground = Foreground });
+                break;
+            }
+
+            if (matchIndex > startIndex)
+            {
+                Inlines.Add(new Run(text[startIndex..matchIndex]) { Foreground = Foreground });
+            }
+
+            Inlines.Add(new Run(text.Substring(matchIndex, keyword.Length))
+            {
+                Foreground = HighlightBrush,
+                FontWeight = FontWeights.SemiBold
+            });
+
+            startIndex = matchIndex + keyword.Length;
+        }
     }
 }
 

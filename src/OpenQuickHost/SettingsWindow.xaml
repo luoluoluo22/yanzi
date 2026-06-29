@@ -190,11 +190,44 @@
                     </Grid>
                 </Border>
                 <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Category}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextTrimming="CharacterEllipsis"/>
+                    <local:HighlightedTextBlock SourceText="{Binding Label}"
+                                                HighlightText="{Binding DataContext.ExtensionSearchText, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                Foreground="{DynamicResource BrushTextMain}"
+                                                HighlightBrush="#FF60A5FA"
+                                                FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                TextTrimming="CharacterEllipsis"/>
+                    <local:HighlightedTextBlock SourceText="{Binding Category}"
+                                                HighlightText="{Binding DataContext.ExtensionSearchText, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                Foreground="{DynamicResource BrushTextSec}"
+                                                HighlightBrush="#FF93C5FD"
+                                                FontSize="{DynamicResource FontSizeTiny}"
+                                                TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
             </Grid>
         </DataTemplate>
+        <DataTemplate x:Key="MouseGestureAppOptionTemplate">
+            <Grid Margin="0,2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <local:HighlightedTextBlock SourceText="{Binding AppName}"
+                                            HighlightText="{Binding DataContext.AppSearchText, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            Foreground="{DynamicResource BrushTextMain}"
+                                            HighlightBrush="#FF60A5FA"
+                                            FontSize="{DynamicResource FontSizeSmallPlus}"
+                                            TextTrimming="CharacterEllipsis"/>
+                <local:HighlightedTextBlock Grid.Row="1"
+                                            SourceText="{Binding AppPath}"
+                                            HighlightText="{Binding DataContext.AppSearchText, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            Foreground="{DynamicResource BrushTextSec}"
+                                            HighlightBrush="#FF93C5FD"
+                                            FontSize="{DynamicResource FontSizeTiny}"
+                                            TextTrimming="CharacterEllipsis"
+                                            Margin="0,2,0,0"/>
+            </Grid>
+        </DataTemplate>
+
 
         <Style x:Key="DarkComboBoxItemStyle" TargetType="ComboBoxItem">
             <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
@@ -2497,18 +2530,184 @@
                                                         <TextBlock Text="{Binding StatusText}" Foreground="#FFFB923C" FontSize="{DynamicResource FontSizeTiny}" Margin="0,5,0,0"/>
                                                     </StackPanel>
                                                 </Grid>
-                                                <Grid Margin="0,12,0,0">
+                                                <Grid Margin="0,10,0,0">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <ComboBox ItemsSource="{Binding DataContext.MouseGestureExtensionOptions, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedItem="{Binding SelectedExtension, Mode=TwoWay}"
-                                                              ItemTemplate="{StaticResource MouseGestureExtensionOptionTemplate}"
-                                                              Style="{DynamicResource GlobalComboBoxStyle}"
-                                                              Height="32"
-                                                              Margin="0,0,8,0"/>
-                                                    <Button Grid.Column="1" Content="绑定" Style="{StaticResource PrimaryBtn}" Height="32" Padding="12,0" Click="BindCommonMouseGestureButton_Click"/>
+                                                    <Grid Margin="0,0,8,0">
+                                                        <Border x:Name="ExtensionSearchAnchor"
+                                                                Height="30"
+                                                                Background="{DynamicResource BrushBG}"
+                                                                BorderBrush="{DynamicResource BrushBorder}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="6">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="30"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <Viewbox Width="14" Height="14" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                                    <Path Data="{local:IconGeometry search}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform"/>
+                                                                </Viewbox>
+                                                                <TextBox Grid.Column="1"
+                                                                         x:Name="ExtensionSearchBox"
+                                                                         Text="{Binding ExtensionSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                         Background="Transparent"
+                                                                         BorderThickness="0"
+                                                                         Foreground="{DynamicResource BrushTextMain}"
+                                                                         CaretBrush="White"
+                                                                         VerticalContentAlignment="Center"
+                                                                         ToolTip="搜索扩展；不输入时显示全部扩展"
+                                                                         GotKeyboardFocus="MouseGestureExtensionSearchBox_GotKeyboardFocus"
+                                                                         TextChanged="MouseGestureExtensionSearchBox_TextChanged"
+                                                                         PreviewKeyDown="MouseGestureExtensionSearchBox_PreviewKeyDown"/>
+                                                                <TextBlock Grid.Column="1"
+                                                                           Text="搜索扩展..."
+                                                                           Foreground="#FF666666"
+                                                                           VerticalAlignment="Center"
+                                                                           IsHitTestVisible="False"
+                                                                           Margin="2,0,0,0">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Text, ElementName=ExtensionSearchBox}" Value="">
+                                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Grid>
+                                                        </Border>
+                                                        <Popup PlacementTarget="{Binding ElementName=ExtensionSearchAnchor}"
+                                                               Placement="Bottom"
+                                                               AllowsTransparency="True"
+                                                               PopupAnimation="Slide"
+                                                               StaysOpen="False"
+                                                               IsOpen="{Binding IsExtensionPopupOpen, Mode=TwoWay}">
+                                                            <Border Width="{Binding ActualWidth, ElementName=ExtensionSearchAnchor}"
+                                                                    MaxHeight="260"
+                                                                    Margin="0,4,0,0"
+                                                                    Background="{DynamicResource BrushBG}"
+                                                                    BorderBrush="{DynamicResource BrushBorder}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="8"
+                                                                    SnapsToDevicePixels="True">
+                                                                <ListBox ItemsSource="{Binding FilteredExtensionOptions}"
+                                                                         Background="Transparent"
+                                                                         BorderThickness="0"
+                                                                         Foreground="{DynamicResource BrushTextMain}"
+                                                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                                         PreviewKeyDown="MouseGestureExtensionListBox_PreviewKeyDown"
+                                                                         MouseDoubleClick="MouseGestureExtensionListBox_MouseDoubleClick"
+                                                                         MouseLeftButtonUp="MouseGestureExtensionListBox_PreviewMouseLeftButtonUp">
+                                                                    <ListBox.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource MouseGestureExtensionOptionTemplate}"/>
+                                                                        </DataTemplate>
+                                                                    </ListBox.ItemTemplate>
+                                                                </ListBox>
+                                                            </Border>
+                                                        </Popup>
+                                                    </Grid>
+                                                    <Button Grid.Column="1" Content="绑定扩展" Style="{StaticResource SecondaryBtn}" Height="30" Padding="10,0" Click="BindCommonMouseGestureButton_Click"/>
+                                                </Grid>
+                                                <Grid Margin="0,8,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid Margin="0,0,8,0">
+                                                        <Border x:Name="AppSearchAnchor"
+                                                                Height="30"
+                                                                Background="{DynamicResource BrushBG}"
+                                                                BorderBrush="{DynamicResource BrushBorder}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="6">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="30"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <Viewbox Width="14" Height="14" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                                    <Path Data="{local:IconGeometry search}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform"/>
+                                                                </Viewbox>
+                                                                <TextBox Grid.Column="1"
+                                                                         x:Name="AppSearchBox"
+                                                                         Text="{Binding AppSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                         Background="Transparent"
+                                                                         BorderThickness="0"
+                                                                         Foreground="{DynamicResource BrushTextMain}"
+                                                                         CaretBrush="White"
+                                                                         VerticalContentAlignment="Center"
+                                                                         ToolTip="搜索应用；不输入时显示全部应用"
+                                                                         GotKeyboardFocus="MouseGestureAppSearchBox_GotKeyboardFocus"
+                                                                         TextChanged="MouseGestureAppSearchBox_TextChanged"
+                                                                         PreviewKeyDown="MouseGestureAppSearchBox_PreviewKeyDown"/>
+                                                                <TextBlock Grid.Column="1"
+                                                                           Text="搜索应用..."
+                                                                           Foreground="#FF666666"
+                                                                           VerticalAlignment="Center"
+                                                                           IsHitTestVisible="False"
+                                                                           Margin="2,0,0,0">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding Text, ElementName=AppSearchBox}" Value="">
+                                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Grid>
+                                                        </Border>
+                                                        <Popup PlacementTarget="{Binding ElementName=AppSearchAnchor}"
+                                                               Placement="Bottom"
+                                                               AllowsTransparency="True"
+                                                               PopupAnimation="Slide"
+                                                               StaysOpen="False"
+                                                               IsOpen="{Binding IsAppPopupOpen, Mode=TwoWay}">
+                                                            <Border Width="{Binding ActualWidth, ElementName=AppSearchAnchor}"
+                                                                    MaxHeight="260"
+                                                                    Margin="0,4,0,0"
+                                                                    Background="{DynamicResource BrushBG}"
+                                                                    BorderBrush="{DynamicResource BrushBorder}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="8"
+                                                                    SnapsToDevicePixels="True">
+                                                                <ListBox ItemsSource="{Binding FilteredAppOptionsView}"
+                                                                         Background="Transparent"
+                                                                         BorderThickness="0"
+                                                                         Foreground="{DynamicResource BrushTextMain}"
+                                                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                                         PreviewKeyDown="MouseGestureAppListBox_PreviewKeyDown"
+                                                                         MouseDoubleClick="MouseGestureAppListBox_MouseDoubleClick"
+                                                                         MouseLeftButtonUp="MouseGestureAppListBox_PreviewMouseLeftButtonUp">
+                                                                    <ListBox.GroupStyle>
+                                                                        <GroupStyle>
+                                                                            <GroupStyle.HeaderTemplate>
+                                                                                <DataTemplate>
+                                                                                    <Border Background="{DynamicResource BrushSecondaryBtnBG}" Padding="10,6,10,4">
+                                                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold"/>
+                                                                                    </Border>
+                                                                                </DataTemplate>
+                                                                            </GroupStyle.HeaderTemplate>
+                                                                        </GroupStyle>
+                                                                    </ListBox.GroupStyle>
+                                                                    <ListBox.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource MouseGestureAppOptionTemplate}"/>
+                                                                        </DataTemplate>
+                                                                    </ListBox.ItemTemplate>
+                                                                </ListBox>
+                                                            </Border>
+                                                        </Popup>
+                                                    </Grid>
+                                                    <Button Grid.Column="1" Content="绑定应用" Style="{StaticResource PrimaryBtn}" Height="30" Padding="10,0" Click="BindCommonMouseGestureAppButton_Click"/>
                                                 </Grid>
                                             </StackPanel>
                                         </Border>
@@ -4069,6 +4268,35 @@
                                FontWeight="Medium"
                                Margin="10,0,0,0"
                                VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <Border x:Name="CloudSyncToastNotification"
+                    Grid.ColumnSpan="2"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,20,20"
+                    Background="#FF2563EB"
+                    CornerRadius="12"
+                    Padding="16,14"
+                    Visibility="Collapsed"
+                    Panel.ZIndex="1001">
+                <Border.Effect>
+                    <DropShadowEffect Color="Black" Opacity="0.22" BlurRadius="18" ShadowDepth="6" Direction="270"/>
+                </Border.Effect>
+                <StackPanel Width="240">
+                    <TextBlock x:Name="CloudSyncToastMessage"
+                               Text="正在同步云端配置..."
+                               Foreground="White"
+                               FontSize="{DynamicResource FontSizeNormal}"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"/>
+                    <ProgressBar x:Name="CloudSyncToastProgress"
+                                 Margin="0,10,0,0"
+                                 Height="4"
+                                 IsIndeterminate="True"
+                                 Foreground="#FFBFDBFE"
+                                 Background="#33475569"/>
                 </StackPanel>
             </Border>
         </Grid>

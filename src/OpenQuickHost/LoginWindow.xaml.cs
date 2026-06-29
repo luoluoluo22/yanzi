@@ -104,6 +104,12 @@ public partial class LoginWindow : Window
         try
         {
             SendCodeButton.IsEnabled = false;
+            CloudSyncDiagnostics.Log(
+                "LoginWindow",
+                "Send code requested",
+                ("mode", Mode.ToString()),
+                ("username", Username),
+                ("email", Mode == AuthDialogMode.Register ? Email : LoginEmail));
 
             if (Mode == AuthDialogMode.Register)
             {
@@ -137,6 +143,11 @@ public partial class LoginWindow : Window
         }
         catch (Exception ex)
         {
+            CloudSyncDiagnostics.Log(
+                "LoginWindow",
+                "Send code failed",
+                ("mode", Mode.ToString()),
+                ("error", ex.Message));
             ShowError(ex.Message);
         }
         finally
@@ -150,6 +161,15 @@ public partial class LoginWindow : Window
         try
         {
             ConfirmButton.IsEnabled = false;
+            CloudSyncDiagnostics.Log(
+                "LoginWindow",
+                "Confirm requested",
+                ("mode", Mode.ToString()),
+                ("remember", RememberCredential),
+                ("loginEmail", LoginEmail),
+                ("registerEmail", Email),
+                ("hasPassword", !string.IsNullOrWhiteSpace(Password)),
+                ("hasCode", !string.IsNullOrWhiteSpace(VerificationCode)));
 
             if (Mode == AuthDialogMode.SignIn)
             {
@@ -207,6 +227,11 @@ public partial class LoginWindow : Window
         }
         catch (Exception ex)
         {
+            CloudSyncDiagnostics.Log(
+                "LoginWindow",
+                "Confirm failed",
+                ("mode", Mode.ToString()),
+                ("error", ex.Message));
             var isRateLimit = false;
             var seconds = 60;
             var match = Regex.Match(ex.Message ?? string.Empty, @"请在\s*(\d+)\s*秒后重试");
@@ -247,6 +272,7 @@ public partial class LoginWindow : Window
     private void UpdateMode(AuthDialogMode mode)
     {
         Mode = mode;
+        CloudSyncDiagnostics.Log("LoginWindow", "Mode changed", ("mode", mode.ToString()));
         HeaderText.Text = mode switch
         {
             AuthDialogMode.Register => "注册燕子账号",
@@ -272,8 +298,10 @@ public partial class LoginWindow : Window
         };
         SendCodeButton.Content = mode == AuthDialogMode.Register ? "发送验证码" : "发送重置码";
         StatusText.Visibility = Visibility.Collapsed;
-        SignInModeButton.Opacity = mode == AuthDialogMode.SignIn ? 1 : 0.7;
-        RegisterModeButton.Opacity = mode == AuthDialogMode.Register ? 1 : 0.7;
+        SignInModeButton.Style = (Style)FindResource(mode == AuthDialogMode.SignIn ? "PrimaryBtn" : "SecondaryBtn");
+        RegisterModeButton.Style = (Style)FindResource(mode == AuthDialogMode.Register ? "PrimaryBtn" : "SecondaryBtn");
+        SignInModeButton.Opacity = mode == AuthDialogMode.SignIn ? 1 : 0.88;
+        RegisterModeButton.Opacity = mode == AuthDialogMode.Register ? 1 : 0.88;
 
         if (mode == AuthDialogMode.Register)
         {

@@ -9,11 +9,12 @@ namespace OpenQuickHost.Sync;
 public sealed class PersonalSyncService
 {
     private const string RemoteIndexPath = "index.json";
+    private static readonly SemaphoreSlim OperationLock = new(1, 1);
     private readonly IPersonalSyncBackend _backend;
 
-    public PersonalSyncService(AppSettings settings)
+    public PersonalSyncService(AppSettings settings, bool requireEnabled = true)
     {
-        _backend = PersonalSyncBackendFactory.Create(settings)
+        _backend = PersonalSyncBackendFactory.Create(settings, requireEnabled)
             ?? throw new InvalidOperationException("个人同步未完整配置。");
     }
 
@@ -21,7 +22,14 @@ public sealed class PersonalSyncService
 
     public async Task ProbeAsync(CancellationToken cancellationToken = default)
     {
-        await _backend.ProbeAsync(cancellationToken);
+        await RunExclusiveAsync(
+            "probe",
+            async () =>
+            {
+                await ProbeCoreAsync(cancellationToken);
+                return true;
+            },
+            cancellationToken);
     }
 
     public async Task<string?> TryReadExtensionDataTextAsync(string extensionId, string key, CancellationToken cancellationToken = default)
@@ -41,7 +49,39 @@ public sealed class PersonalSyncService
 
     public async Task<WebDavSyncResult> SyncExtensionsAsync(CancellationToken cancellationToken = default)
     {
-        await ProbeAsync(cancellationToken);
+        return await RunExclusiveAsync(
+            "sync-extensions",
+            () => SyncExtensionsCoreAsync(cancellationToken),
+            cancellationToken);
+    }
+
+    public async Task<WebDavYanmStateSyncResult> SyncYanmStateAsync(CancellationToken cancellationToken = default)
+    {
+        return await RunExclusiveAsync(
+            "sync-yanm-state",
+            () => SyncYanmStateCoreAsync(cancellationToken),
+            cancellationToken);
+    }
+
+    public async Task ClearCloudAsync(CancellationToken cancellationToken = default)
+    {
+        await RunExclusiveAsync(
+            "clear-cloud",
+            () => ClearCloudCoreAsync(cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task ProbeCoreAsync(CancellationToken cancellationToken)
+    {
+        CloudSyncDiagnostics.Log("PersonalSyncService", "Probe started", ("root", SyncRootDisplay));
+        await _backend.ProbeAsync(cancellationToken);
+        CloudSyncDiagnostics.Log("PersonalSyncService", "Probe completed", ("root", SyncRootDisplay));
+    }
+
+    private async Task<WebDavSyncResult> SyncExtensionsCoreAsync(CancellationToken cancellationToken)
+    {
+        CloudSyncDiagnostics.Log("PersonalSyncService", "Extension sync started", ("root", SyncRootDisplay));
+        await ProbeCoreAsync(cancellationToken);
 
         var remoteIndex = await LoadRemoteIndexAsync(cancellationToken);
         var localState = LoadLocalIndex();
@@ -162,13 +202,24 @@ public sealed class PersonalSyncService
 
         await CleanupPurgedRemotePackagesAsync(mergedIndex, cancellationToken);
         SaveLocalIndex(ClearLocalPendingFlags(mergedIndex));
-        var (configUploaded, configPulled) = await SyncLauncherConfigAsync(cancellationToken);
+        var preferRemoteConfigOnConflict = pulled > 0 && uploaded == 0;
+        var (configUploaded, configPulled) = await SyncLauncherConfigAsync(preferRemoteConfigOnConflict, cancellationToken);
+        CloudSyncDiagnostics.Log(
+            "PersonalSyncService",
+            "Extension sync completed",
+            ("uploaded", uploaded),
+            ("pulled", pulled),
+            ("configUploaded", configUploaded),
+            ("configPulled", configPulled),
+            ("preferRemoteConfigOnConflict", preferRemoteConfigOnConflict),
+            ("root", SyncRootDisplay));
         return new WebDavSyncResult(uploaded, pulled, SyncRootDisplay, configUploaded, configPulled);
     }
 
-    public async Task<WebDavYanmStateSyncResult> SyncYanmStateAsync(CancellationToken cancellationToken = default)
+    private async Task<WebDavYanmStateSyncResult> SyncYanmStateCoreAsync(CancellationToken cancellationToken)
     {
-        await ProbeAsync(cancellationToken);
+        CloudSyncDiagnostics.Log("PersonalSyncService", "Yanm state sync started", ("root", SyncRootDisplay));
+        await ProbeCoreAsync(cancellationToken);
 
         var localSettings = AppSettingsStore.Load();
         localSettings.Yanm ??= new YanmSettings();
@@ -227,9 +278,9 @@ public sealed class PersonalSyncService
         return new WebDavYanmStateSyncResult(true, false, SyncRootDisplay, updatedAtUtc, uploadBytes);
     }
 
-    public async Task ClearCloudAsync(CancellationToken cancellationToken = default)
+    private async Task<bool> ClearCloudCoreAsync(CancellationToken cancellationToken)
     {
-        await ProbeAsync(cancellationToken);
+        await ProbeCoreAsync(cancellationToken);
         var remoteIndex = await LoadRemoteIndexAsync(cancellationToken);
         foreach (var entry in remoteIndex.Items)
         {
@@ -251,9 +302,27 @@ public sealed class PersonalSyncService
         {
             File.Delete(HostAssets.WebDavSyncStatePath);
         }
+
+        return true;
     }
 
-    private async Task<(bool uploaded, bool pulled)> SyncLauncherConfigAsync(CancellationToken cancellationToken)
+    private async Task<T> RunExclusiveAsync<T>(string operation, Func<Task<T>> action, CancellationToken cancellationToken)
+    {
+        CloudSyncDiagnostics.Log("PersonalSyncService", "Operation waiting", ("operation", operation), ("root", SyncRootDisplay));
+        await OperationLock.WaitAsync(cancellationToken);
+        CloudSyncDiagnostics.Log("PersonalSyncService", "Operation acquired", ("operation", operation), ("root", SyncRootDisplay));
+        try
+        {
+            return await action();
+        }
+        finally
+        {
+            OperationLock.Release();
+            CloudSyncDiagnostics.Log("PersonalSyncService", "Operation released", ("operation", operation), ("root", SyncRootDisplay));
+        }
+    }
+
+    private async Task<(bool uploaded, bool pulled)> SyncLauncherConfigAsync(bool preferRemoteOnConflict, CancellationToken cancellationToken)
     {
         var localSettings = AppSettingsStore.Load();
         var localConfig = CloudQuickPanelConfigSnapshot.FromSettings(localSettings);
@@ -323,6 +392,14 @@ public sealed class PersonalSyncService
             }
 
             return (false, false);
+        }
+
+        if (preferRemoteOnConflict && HasMeaningfulLauncherConfig(remote.Config))
+        {
+            HostAssets.AppendLog(
+                $"Personal sync launcher config preferred remote after package pull: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc:O}, remoteSource={remote.Config.SourceDeviceName ?? remote.Config.SourceDeviceId ?? "unknown"}");
+            ApplyLauncherConfigSnapshot(remote.Config, remoteUpdatedAtUtc);
+            return (false, true);
         }
 
         if (explicitLocalUpdatedAtUtc == null && legacyLocalUpdatedAtUtc == null)
@@ -510,6 +587,9 @@ public sealed class PersonalSyncService
             settings.AiBaseUrl = incoming.AiBaseUrl;
             settings.AiApiKey = incoming.AiApiKey;
             settings.AiModel = incoming.AiModel;
+            settings.AiSystemPrompt = incoming.AiSystemPrompt;
+            settings.AiServiceProviders = incoming.AiServiceProviders;
+            settings.ActiveServiceProviderId = incoming.ActiveServiceProviderId;
         }
 
         settings.LauncherConfigUpdatedAtUtc = updatedAtUtc.ToString("O");
@@ -575,7 +655,10 @@ public sealed class PersonalSyncService
     {
         return !string.IsNullOrWhiteSpace(snapshot.AiBaseUrl) ||
                !string.IsNullOrWhiteSpace(snapshot.AiApiKey) ||
-               !string.IsNullOrWhiteSpace(snapshot.AiModel);
+               !string.IsNullOrWhiteSpace(snapshot.AiModel) ||
+               !string.IsNullOrWhiteSpace(snapshot.AiSystemPrompt) ||
+               !string.IsNullOrWhiteSpace(snapshot.ActiveServiceProviderId) ||
+               snapshot.AiServiceProviders.Count > 0;
     }
 
     private static bool HasYanmComponentState(YanmSettings? yanm)

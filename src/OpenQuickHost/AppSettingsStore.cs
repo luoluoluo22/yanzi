@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -445,10 +445,21 @@ public static class AppSettingsStore
         settings.PersonalSync.WebDav.Username = settings.PersonalSync.WebDav.Username?.Trim() ?? string.Empty;
         settings.PersonalSync.WebDav.PathPrefix = string.IsNullOrWhiteSpace(settings.PersonalSync.WebDav.PathPrefix) ? "/yanzi" : settings.PersonalSync.WebDav.PathPrefix.Trim();
 
-        if (hasLegacyWebDavConfig &&
+        var shouldAdoptLegacyWebDavConfig =
+            hasLegacyWebDavConfig &&
             (settings.PersonalSync.Provider == PersonalSyncProviders.None ||
-             string.IsNullOrWhiteSpace(settings.PersonalSync.WebDav.Username)))
+             (settings.PersonalSync.Provider == PersonalSyncProviders.WebDav &&
+              string.IsNullOrWhiteSpace(settings.PersonalSync.WebDav.Username)));
+        if (shouldAdoptLegacyWebDavConfig)
         {
+            CloudSyncDiagnostics.Log(
+                "AppSettingsStore",
+                "Adopting legacy WebDAV config into personal sync settings",
+                ("providerBefore", settings.PersonalSync.Provider),
+                ("enableWebDavSync", settings.EnableWebDavSync),
+                ("webDavUrl", settings.WebDavServerUrl),
+                ("webDavRootPath", settings.WebDavRootPath),
+                ("webDavUsername", settings.WebDavUsername));
             settings.PersonalSync.Provider = PersonalSyncProviders.WebDav;
             settings.PersonalSync.Enabled = settings.EnableWebDavSync;
             settings.PersonalSync.WebDav.Url = string.IsNullOrWhiteSpace(settings.WebDavServerUrl)
@@ -790,9 +801,10 @@ public sealed record AppSettings
 
     public string QuickPanelTrigger { get; set; } = "MiddleButtonLongPress";
 
-    public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
+        public List<MouseGestureAppBinding> MouseGestureAppBindings { get; set; } = new();
+public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
 
-    public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.RightDrag;
+    public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.None;
 
     public YarnSelectSettings YarnSelect { get; set; } = new();
 
@@ -956,9 +968,9 @@ public sealed record QuickPanelMouseTriggerSettings
     
     public bool CtrlMiddleClick { get; set; } = false;
 
-    public bool MiddleButtonLongPress { get; set; } = true;
+    public bool MiddleButtonLongPress { get; set; } = false;
 
-    public bool RightButtonLongPress { get; set; } = false;
+    public bool RightButtonLongPress { get; set; } = true;
 
     public bool RightButtonDrag { get; set; } = false;
 
@@ -973,6 +985,13 @@ public sealed record QuickPanelMouseTriggerSettings
     public int LongPressMilliseconds { get; set; } = 350;
 
     public int DragThresholdPixels { get; set; } = 26;
+}
+
+public sealed class MouseGestureAppBinding
+{
+    public string Sequence { get; set; } = string.Empty;
+    public string AppPath { get; set; } = string.Empty;
+    public string AppName { get; set; } = string.Empty;
 }
 
 public sealed class YarnSelectSettings
@@ -1056,7 +1075,7 @@ public sealed class RadialMenuSettings
 
     public const int TotalSlotCount = InnerSlotCount + OuterSlotCount;
 
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; } = true;
 
     public bool TriggerRightButtonDrag { get; set; } = true;
 

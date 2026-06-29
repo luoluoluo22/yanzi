@@ -38,6 +38,12 @@ public sealed class CloudSyncClient
 
     public void SetCredential(string email, string password, bool remember)
     {
+        CloudSyncDiagnostics.Log(
+            "CloudSyncClient.Auth",
+            "Credential updated",
+            ("email", email),
+            ("remember", remember),
+            ("passwordLength", password?.Length ?? 0));
         _credential = new SavedCredential
         {
             Email = email.Trim(),
@@ -58,6 +64,7 @@ public sealed class CloudSyncClient
 
     public void ClearCredential()
     {
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Credential cleared");
         _credential = null;
         SecureCredentialStore.Clear();
         ClearSession();
@@ -65,6 +72,7 @@ public sealed class CloudSyncClient
 
     public void ClearSessionOnly()
     {
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Session cleared only");
         ClearSession();
     }
 
@@ -72,16 +80,20 @@ public sealed class CloudSyncClient
     {
         if (HasValidSession())
         {
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Using existing session", ("user", CurrentUserLabel));
             return;
         }
 
         if (!HasCredential)
         {
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication blocked: missing credential");
             throw new InvalidOperationException("缺少登录凭据，请先登录。");
         }
 
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authenticating with saved credential", ("email", _credential?.LoginEmail));
         _session = await LoginAsync(_credential!.LoginEmail, _credential.Password, cancellationToken);
         SyncSessionStore.Save(_session);
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication completed", ("userId", _session.UserId), ("username", _session.Username));
     }
 
     public async Task<SendCodeResponse> SendRegistrationCodeAsync(string email, string username, CancellationToken cancellationToken = default)
@@ -100,6 +112,7 @@ public sealed class CloudSyncClient
 
     public async Task<SyncSession> RegisterAsync(string email, string username, string password, string code, CancellationToken cancellationToken = default)
     {
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register requested", ("email", email), ("username", username), ("passwordLength", password?.Length ?? 0), ("codeLength", code?.Length ?? 0));
         var payload = new
         {
             email = email.Trim(),
@@ -112,11 +125,13 @@ public sealed class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
         _session = await ReadSessionAsync(response, cancellationToken);
         SyncSessionStore.Save(_session);
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", _session.UserId), ("username", _session.Username));
         return _session;
     }
 
     public async Task<SyncSession> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login requested", ("email", email), ("passwordLength", password?.Length ?? 0));
         var payload = new
         {
             email = email.Trim(),
@@ -129,12 +144,14 @@ public sealed class CloudSyncClient
             ClearSession();
             // 登录失败时不清除本地加密记住的凭据文件，避免因后端暂时网络波动或接口不可用导致本地凭据被强行抹除。
             // 这样既能在网络恢复后自动重连，也能在需要重新登录时在弹窗中保留自动填充邮箱的能力。
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login rejected", ("email", email), ("statusCode", (int)response.StatusCode));
             throw new InvalidOperationException("邮箱或密码错误。");
         }
 
         await EnsureSuccessAsync(response, cancellationToken);
         _session = await ReadSessionAsync(response, cancellationToken);
         SyncSessionStore.Save(_session);
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login completed", ("userId", _session.UserId), ("username", _session.Username));
         return _session;
     }
 
@@ -153,6 +170,7 @@ public sealed class CloudSyncClient
 
     public async Task<SyncSession> ResetPasswordAsync(string email, string password, string code, CancellationToken cancellationToken = default)
     {
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password requested", ("email", email), ("passwordLength", password?.Length ?? 0), ("codeLength", code?.Length ?? 0));
         var payload = new
         {
             email = email.Trim(),
@@ -164,6 +182,7 @@ public sealed class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
         _session = await ReadSessionAsync(response, cancellationToken);
         SyncSessionStore.Save(_session);
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password completed", ("userId", _session.UserId), ("username", _session.Username));
         return _session;
     }
 
@@ -713,10 +732,24 @@ public sealed class CloudSyncClient
             catch (Exception ex) when (IsRetryableTransportException(ex) && index < attempts.Length - 1)
             {
                 lastError = ex;
+                CloudSyncDiagnostics.Log(
+                    "CloudSyncClient.Http",
+                    "Retryable request failure",
+                    ("method", request.Method.Method),
+                    ("uri", request.RequestUri?.ToString()),
+                    ("attempt", index + 1),
+                    ("channel", attempts[index].label),
+                    ("error", ex.Message));
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
             }
         }
 
+        CloudSyncDiagnostics.Log(
+            "CloudSyncClient.Http",
+            "Request failed after fallback",
+            ("method", request.Method.Method),
+            ("uri", request.RequestUri?.ToString()),
+            ("error", lastError?.Message));
         throw lastError ?? new HttpRequestException("Cloud request failed before receiving a response.");
     }
 
@@ -800,6 +833,7 @@ public sealed class CloudSyncClient
     {
         if (!HasValidSession())
         {
+            CloudSyncDiagnostics.Log("CloudSyncClient.Config", "Fetch legacy WebDAV config skipped: no valid session");
             return null;
         }
 
@@ -813,15 +847,25 @@ public sealed class CloudSyncClient
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 // No WebDAV config on server
+                CloudSyncDiagnostics.Log("CloudSyncClient.Config", "Legacy WebDAV config endpoint returned not found");
                 return null;
             }
             
             await EnsureSuccessAsync(response, cancellationToken);
             
-            return await ReadAsync<WebDavConfigDto>(response, cancellationToken);
+            var dto = await ReadAsync<WebDavConfigDto>(response, cancellationToken);
+            CloudSyncDiagnostics.Log(
+                "CloudSyncClient.Config",
+                "Legacy WebDAV config fetched",
+                ("found", dto != null),
+                ("hasPassword", !string.IsNullOrWhiteSpace(dto?.Password)),
+                ("username", dto?.Username),
+                ("serverUrl", dto?.ServerUrl));
+            return dto;
         }
         catch (Exception ex)
         {
+            CloudSyncDiagnostics.Log("CloudSyncClient.Config", "Legacy WebDAV config fetch failed", ("error", ex.Message));
             System.Diagnostics.Debug.WriteLine($"Failed to fetch WebDAV config: {ex.Message}");
             return null;
         }

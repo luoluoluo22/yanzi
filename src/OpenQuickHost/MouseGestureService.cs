@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -68,11 +68,23 @@ public static class MouseGestureService
 
     public static bool IsRunning => _isRunning;
 
-    public static bool HasRightDragRegistrations =>
-        _registry.TryGetValue("right-drag", out var registry) && registry.Count > 0;
+    public static bool HasRightDragRegistrations
+    {
+        get
+        {
+            var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.Load().MouseGestureTriggerMode);
+            return string.Equals(activeTrigger, "right-drag", StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
-    public static bool HasMiddleDragRegistrations =>
-        _registry.TryGetValue("middle-drag", out var registry) && registry.Count > 0;
+    public static bool HasMiddleDragRegistrations
+    {
+        get
+        {
+            var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.Load().MouseGestureTriggerMode);
+            return string.Equals(activeTrigger, "middle-drag", StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
     /// <summary>
     /// 启动全局 hook。<paramref name="logger"/> 用于把 (level, message) 输出到调用方日志（一般是 HostAssets）。
@@ -109,6 +121,11 @@ public static class MouseGestureService
     public static void ReloadRegistrations(IEnumerable<RegisteredGesture> gestures)
     {
         _registry.Clear();
+        var activeRuntimeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.Load().MouseGestureTriggerMode);
+        if (!string.IsNullOrWhiteSpace(activeRuntimeTrigger))
+        {
+            _registry[NormalizeTrigger(activeRuntimeTrigger)] = new GestureTriggerRegistry();
+        }
         var count = 0;
         foreach (var g in gestures)
         {
@@ -176,6 +193,25 @@ public static class MouseGestureService
                 MinDistance: Math.Max(8, g.MinDistance ?? MinSegmentDistance),
                 Execute: onExecute));
         }
+        var appBindings = AppSettingsStore.Load().MouseGestureAppBindings;
+        foreach (var b in appBindings)
+        {
+            if (string.IsNullOrWhiteSpace(b.Sequence) || string.IsNullOrWhiteSpace(b.AppPath)) continue;
+            registrations.Add(new RegisteredGesture(
+                ExtensionId: "app:" + b.AppPath,
+                ExtensionName: string.IsNullOrWhiteSpace(b.AppName) ? System.IO.Path.GetFileNameWithoutExtension(b.AppPath) : b.AppName,
+                Trigger: runtimeTrigger,
+                Sequence: b.Sequence,
+                Sign: b.Sequence,
+                IconReference: b.AppPath,
+                ExtensionDirectoryPath: null,
+                DisplayGlyph: BuildFallbackGlyph(string.IsNullOrWhiteSpace(b.AppName) ? "App" : b.AppName),
+                Data: null,
+                Tolerance: null,
+                MinDistance: MinSegmentDistance,
+                Execute: onExecute));
+        }
+
         ReloadRegistrations(registrations);
         return registrations.Count;
     }

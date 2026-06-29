@@ -45,7 +45,10 @@ internal static class LauncherConfigObjectStore
             {
                 AiBaseUrl = snapshot.AiBaseUrl,
                 AiApiKey = snapshot.AiApiKey,
-                AiModel = snapshot.AiModel
+                AiModel = snapshot.AiModel,
+                AiSystemPrompt = snapshot.AiSystemPrompt,
+                AiServiceProviders = snapshot.AiServiceProviders,
+                ActiveServiceProviderId = snapshot.ActiveServiceProviderId
             }),
             Create("settings.hotkeys", updatedAt, sourceDeviceId, sourceDeviceName, new LauncherHotkeySettingsPayload
             {
@@ -274,6 +277,9 @@ internal static class LauncherConfigObjectStore
                     snapshot.AiBaseUrl = ai.AiBaseUrl;
                     snapshot.AiApiKey = ai.AiApiKey;
                     snapshot.AiModel = ai.AiModel;
+                    snapshot.AiSystemPrompt = ai.AiSystemPrompt;
+                    snapshot.AiServiceProviders = ai.AiServiceProviders ?? snapshot.AiServiceProviders;
+                    snapshot.ActiveServiceProviderId = ai.ActiveServiceProviderId ?? snapshot.ActiveServiceProviderId;
                     return true;
                 case "settings.hotkeys":
                     var hotkeys = envelope.Payload.Deserialize<LauncherHotkeySettingsPayload>(JsonOptions);
@@ -484,6 +490,9 @@ internal sealed class LauncherAiSettingsPayload
     public string? AiBaseUrl { get; set; }
     public string? AiApiKey { get; set; }
     public string? AiModel { get; set; }
+    public string? AiSystemPrompt { get; set; }
+    public List<AiServiceProviderSettings>? AiServiceProviders { get; set; }
+    public string? ActiveServiceProviderId { get; set; }
 }
 
 internal sealed class LauncherHotkeySettingsPayload

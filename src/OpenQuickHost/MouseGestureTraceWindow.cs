@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -45,7 +45,7 @@ internal sealed class MouseGestureTraceWindow : Window
         };
         Content = _canvas;
 
-        _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(520) };
+        _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
         _hideTimer.Tick += (_, _) =>
         {
             _hideTimer.Stop();
@@ -160,7 +160,7 @@ internal sealed class MouseGestureTraceWindow : Window
             }
         }
 
-        _hideTimer.Interval = TimeSpan.FromMilliseconds(matched ? 760 : 360);
+        _hideTimer.Interval = TimeSpan.FromMilliseconds(matched ? 200 : 90);
         _hideTimer.Stop();
         _hideTimer.Start();
     }

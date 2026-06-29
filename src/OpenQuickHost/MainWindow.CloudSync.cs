@@ -80,17 +80,33 @@ public partial class MainWindow
             return;
         }
 
+        var shouldShowSyncToast = false;
+        var deferHideSyncToastToPersonalSync = false;
         try
         {
+            CloudSyncDiagnostics.Log(
+                "MainWindow.CloudRefresh",
+                "Refresh cloud state started",
+                ("allowLoginPrompt", allowLoginPrompt),
+                ("authState", CloudSyncDiagnostics.DescribeAuthState(_cloudSyncClient)));
             SyncStatus = "正在读取账号状态和云端配置...";
             if (!await EnsureAuthenticatedAsync(allowPrompt: allowLoginPrompt))
             {
+                CloudSyncDiagnostics.Log("MainWindow.CloudRefresh", "Refresh cloud state aborted: authentication unavailable");
                 return;
+            }
+
+            shouldShowSyncToast = await HasAnyRemoteCloudDataAsync();
+            if (shouldShowSyncToast)
+            {
+                ShowSettingsCloudSyncProgressToast("正在同步云端配置与扩展...");
+                deferHideSyncToastToPersonalSync = PersonalSyncBackendFactory.IsConfigured(AppSettingsStore.Load());
             }
 
             var me = await _cloudSyncClient.GetMeAsync();
             var pulledConfig = await PullWebDavConfigFromCloudAsync();
             var pulledQuickPanelConfig = await PullQuickPanelConfigFromCloudAsync();
+            QueueBackgroundWebDavSyncAfterCloudRefresh("cloud-refresh");
             if (!IsStoreMode)
             {
                 _allCommands.RemoveAll(x => x.Source == CommandSource.Cloud);
@@ -111,9 +127,17 @@ public partial class MainWindow
                 ? "已同步账号状态，并更新了云端配置。"
                 : "已同步账号状态。";
             OnPropertyChanged(nameof(SyncSummaryText));
+            CloudSyncDiagnostics.Log(
+                "MainWindow.CloudRefresh",
+                "Refresh cloud state completed",
+                ("userId", me?.UserId),
+                ("username", me?.Username),
+                ("pulledPersonalSync", pulledConfig),
+                ("pulledQuickPanel", pulledQuickPanelConfig));
         }
         catch (Exception ex)
         {
+            CloudSyncDiagnostics.Log("MainWindow.CloudRefresh", "Refresh cloud state failed", ("error", ex.Message));
             if (!allowLoginPrompt && IsTransientNetworkException(ex))
             {
                 ScheduleSilentCloudReconnect("refresh-cloud-failed");
@@ -126,6 +150,13 @@ public partial class MainWindow
             }
 
             SyncStatus = $"云同步读取失败：{FormatExceptionMessage(ex)}";
+        }
+        finally
+        {
+            if (shouldShowSyncToast && !deferHideSyncToastToPersonalSync)
+            {
+                HideSettingsCloudSyncProgressToast();
+            }
         }
     }
 
@@ -543,17 +574,26 @@ public partial class MainWindow
             return false;
         }
 
+        CloudSyncDiagnostics.Log(
+            "MainWindow.Auth",
+            "Ensure authenticated started",
+            ("forcePrompt", forcePrompt),
+            ("allowPrompt", allowPrompt),
+            ("authState", CloudSyncDiagnostics.DescribeAuthState(_cloudSyncClient)));
+
         if (forcePrompt || !_cloudSyncClient.HasCredential)
         {
             if (!allowPrompt)
             {
                 SyncStatus = "未登录，已跳过云端账号同步。";
+                CloudSyncDiagnostics.Log("MainWindow.Auth", "Ensure authenticated skipped: prompt disabled and missing credential");
                 return false;
             }
 
             if (!ShowLoginDialog())
             {
                 SyncStatus = "未登录，云同步不可用。";
+                CloudSyncDiagnostics.Log("MainWindow.Auth", "Ensure authenticated cancelled in login dialog");
                 return false;
             }
         }
@@ -562,10 +602,12 @@ public partial class MainWindow
         {
             await _cloudSyncClient.EnsureAuthenticatedAsync();
             OnPropertyChanged(nameof(SyncSummaryText));
+            CloudSyncDiagnostics.Log("MainWindow.Auth", "Ensure authenticated completed", ("authState", CloudSyncDiagnostics.DescribeAuthState(_cloudSyncClient)));
             return true;
         }
         catch (Exception ex)
         {
+            CloudSyncDiagnostics.Log("MainWindow.Auth", "Ensure authenticated failed", ("allowPrompt", allowPrompt), ("error", ex.Message));
             if (!allowPrompt)
             {
                 SyncStatus = $"云端账号同步失败，已跳过登录弹窗：{FormatExceptionMessage(ex)}";
@@ -581,10 +623,12 @@ public partial class MainWindow
             {
                 await _cloudSyncClient.EnsureAuthenticatedAsync();
                 OnPropertyChanged(nameof(SyncSummaryText));
+                CloudSyncDiagnostics.Log("MainWindow.Auth", "Ensure authenticated recovered through login dialog", ("authState", CloudSyncDiagnostics.DescribeAuthState(_cloudSyncClient)));
                 return true;
             }
 
             SyncStatus = "未登录，云同步不可用。";
+            CloudSyncDiagnostics.Log("MainWindow.Auth", "Ensure authenticated failed: recovery dialog dismissed");
             return false;
         }
     }
@@ -602,16 +646,21 @@ public partial class MainWindow
             !message.Contains("凭据", StringComparison.OrdinalIgnoreCase) &&
             !message.Contains("token", StringComparison.OrdinalIgnoreCase))
         {
+            CloudSyncDiagnostics.Log("MainWindow.Auth", "Recover authentication skipped: non-auth error", ("error", ex.Message));
             return false;
         }
 
+        CloudSyncDiagnostics.Log("MainWindow.Auth", "Recover authentication started", ("error", ex.Message));
         _cloudSyncClient.ClearSessionOnly();
         if (await EnsureAuthenticatedAsync(allowPrompt: false))
         {
+            CloudSyncDiagnostics.Log("MainWindow.Auth", "Recover authentication succeeded silently");
             return true;
         }
 
-        return await EnsureAuthenticatedAsync(forcePrompt: true);
+        var recovered = await EnsureAuthenticatedAsync(forcePrompt: true);
+        CloudSyncDiagnostics.Log("MainWindow.Auth", "Recover authentication completed", ("recovered", recovered));
+        return recovered;
     }
 
     private bool ShowLoginDialog(string? errorMessage = null)
@@ -624,6 +673,7 @@ public partial class MainWindow
         _authPromptActive = true;
         try
         {
+            CloudSyncDiagnostics.Log("MainWindow.Auth", "Opening login dialog", ("errorMessage", errorMessage));
             var saved = SecureCredentialStore.Load();
             var dialog = new LoginWindow(saved?.LoginEmail);
             dialog.SendRegistrationCodeAsync = (email, username) => _cloudSyncClient.SendRegistrationCodeAsync(email, username);
@@ -666,6 +716,12 @@ public partial class MainWindow
             }
 
             var result = dialog.ShowDialog();
+            CloudSyncDiagnostics.Log(
+                "MainWindow.Auth",
+                "Login dialog closed",
+                ("dialogResult", result == true),
+                ("remember", dialog.RememberCredential),
+                ("loginEmail", dialog.LoginEmail));
             if (result != true)
             {
                 return false;
@@ -1941,6 +1997,19 @@ public partial class MainWindow
         _ = RunBackgroundWebDavSyncAsync(reason);
     }
 
+    private void QueueBackgroundWebDavSyncAfterCloudRefresh(string reason)
+    {
+        var settings = AppSettingsStore.Load();
+        if (!PersonalSyncBackendFactory.IsConfigured(settings))
+        {
+            HostAssets.AppendLog($"Personal sync background sync skipped after cloud refresh: provider not configured, reason={reason}");
+            return;
+        }
+
+        HostAssets.AppendLog($"Personal sync background sync requested after cloud refresh: reason={reason}, provider={settings.PersonalSync.Provider}");
+        QueueBackgroundWebDavSync(reason, forceImmediate: true);
+    }
+
     private static bool IsImmediateBackgroundSyncReason(string reason)
     {
         return reason.StartsWith("timer", StringComparison.OrdinalIgnoreCase) ||
@@ -1951,9 +2020,16 @@ public partial class MainWindow
     private async Task RunBackgroundWebDavSyncAsync(string reason)
     {
         _backgroundWebDavSyncRunning = true;
+        var showSyncToast = reason.Contains("cloud-refresh", StringComparison.OrdinalIgnoreCase) ||
+                            reason.Contains("settings-login", StringComparison.OrdinalIgnoreCase);
         try
         {
             var settings = AppSettingsStore.Load();
+            if (showSyncToast)
+            {
+                ShowSettingsCloudSyncProgressToast("正在同步个人扩展与本地配置...");
+            }
+
             HostAssets.AppendLog($"Personal sync background sync started: reason={reason}, provider={settings.PersonalSync.Provider}");
             var result = await Task.Run(async () =>
             {
@@ -1975,6 +2051,11 @@ public partial class MainWindow
         }
         finally
         {
+            if (showSyncToast)
+            {
+                HideSettingsCloudSyncProgressToast();
+            }
+
             _backgroundWebDavSyncRunning = false;
             if (_backgroundWebDavSyncRequested)
             {
@@ -1989,6 +2070,7 @@ public partial class MainWindow
         if (result.PulledCount > 0 || result.ConfigPulled)
         {
             ReloadLocalExtensionsFromWebDav();
+            NotifySettingsWindowExtensionsChanged();
         }
 
         SyncLocalExtensionsToCloud();
@@ -2073,6 +2155,7 @@ public partial class MainWindow
             return false;
         }
 
+        CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud pull started");
         var snapshot = await _cloudSyncClient.GetUserConfigAsync<CloudPersonalSyncConfigSnapshot>(CloudPersonalSyncConfigId);
         var legacySnapshot = await _cloudSyncClient.GetUserConfigAsync<CloudPersonalSyncConfigSnapshot>(CloudLegacyWebDavConfigId);
         HostAssets.AppendLog(
@@ -2084,6 +2167,7 @@ public partial class MainWindow
         if (snapshot == null)
         {
             HostAssets.AppendLog("Personal sync cloud pull: no user config found.");
+            CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud pull found no snapshot", ("shouldBootstrapPush", ShouldSyncLocalWebDavConfigToCloud()));
             if (ShouldSyncLocalWebDavConfigToCloud())
             {
                 await PushWebDavConfigToCloudAsync("cloud-refresh-bootstrap");
@@ -2134,6 +2218,7 @@ public partial class MainWindow
 
         HostAssets.AppendLog(
             $"Personal sync cloud pull: provider={incomingSettings.Provider}, enabled={incomingSettings.Enabled}, hasGitHubToken={!string.IsNullOrWhiteSpace(incomingSecrets.GitHubToken)}, hasGiteeToken={!string.IsNullOrWhiteSpace(incomingSecrets.GiteeToken)}, hasGitLabToken={!string.IsNullOrWhiteSpace(incomingSecrets.GitLabToken)}, hasGiteaToken={!string.IsNullOrWhiteSpace(incomingSecrets.GiteaToken)}, hasS3Secret={!string.IsNullOrWhiteSpace(incomingSecrets.S3SecretAccessKey)}, hasWebDavPassword={!string.IsNullOrWhiteSpace(incomingSecrets.WebDavPassword)}");
+        CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud pull snapshot loaded", ("summary", CloudSyncDiagnostics.DescribePersonalSync(incomingSettings, incomingSecrets)));
 
         if (!HasMeaningfulPersonalSyncConfig(incomingSettings, incomingSecrets) &&
             HasMeaningfulPersonalSyncConfig(localPersonalSync, localSecrets))
@@ -2150,6 +2235,7 @@ public partial class MainWindow
             localSettings.PersonalSyncAutoSyncDelaySeconds == incomingAutoSyncDelaySeconds)
         {
             HostAssets.AppendLog("Personal sync cloud pull: no local changes detected.");
+            CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud pull skipped: no local changes");
             return false;
         }
 
@@ -2157,8 +2243,44 @@ public partial class MainWindow
         SavePersonalSyncAutoSyncDelaySeconds(incomingAutoSyncDelaySeconds, queueCloudSync: false);
         HostAssets.AppendLog(
             $"Personal sync cloud pull applied: provider={incomingSettings.Provider}, enabled={incomingSettings.Enabled}, autoSyncDelaySeconds={incomingAutoSyncDelaySeconds}");
+        CloudSyncDiagnostics.Log(
+            "MainWindow.PersonalSync",
+            "Cloud pull applied",
+            ("summary", CloudSyncDiagnostics.DescribePersonalSync(incomingSettings, incomingSecrets)),
+            ("autoSyncDelaySeconds", incomingAutoSyncDelaySeconds));
         NotifySettingsWindowWebDavConfigChanged();
         return true;
+    }
+
+    private async Task<bool> HasAnyRemoteCloudDataAsync()
+    {
+        if (_cloudSyncClient == null)
+        {
+            return false;
+        }
+
+        var personalTask = _cloudSyncClient.GetUserConfigAsync<CloudPersonalSyncConfigSnapshot>(CloudPersonalSyncConfigId);
+        var legacyTask = _cloudSyncClient.GetUserConfigAsync<CloudPersonalSyncConfigSnapshot>(CloudLegacyWebDavConfigId);
+        var quickPanelTask = _cloudSyncClient.GetUserConfigAsync<CloudQuickPanelConfigSnapshot>(CloudQuickPanelConfigId);
+        var yanmTask = _cloudSyncClient.GetYanmStateAsync();
+
+        await Task.WhenAll(personalTask, legacyTask, quickPanelTask, yanmTask);
+        return personalTask.Result != null ||
+               legacyTask.Result != null ||
+               quickPanelTask.Result != null ||
+               yanmTask.Result?.Yanm != null;
+    }
+
+    private void ShowSettingsCloudSyncProgressToast(string message)
+    {
+        var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+        settingsWindow?.ShowCloudSyncProgressToast(message);
+    }
+
+    private void HideSettingsCloudSyncProgressToast()
+    {
+        var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+        settingsWindow?.HideCloudSyncProgressToast();
     }
 
     private static void MergeLegacyWebDavSnapshot(
@@ -2199,6 +2321,7 @@ public partial class MainWindow
             return;
         }
 
+        CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Queued cloud push", ("reason", reason));
         _ = PushWebDavConfigToCloudSafeAsync(reason);
     }
 
@@ -2280,6 +2403,7 @@ public partial class MainWindow
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || !ShouldSyncLocalWebDavConfigToCloud())
         {
             HostAssets.AppendLog($"Personal sync cloud push skipped: {reason}, hasClient={_cloudSyncClient != null}, hasCredential={_cloudSyncClient?.HasCredential == true}, shouldSync={ShouldSyncLocalWebDavConfigToCloud()}");
+            CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud push skipped", ("reason", reason), ("authState", CloudSyncDiagnostics.DescribeAuthState(_cloudSyncClient)));
             return;
         }
 
@@ -2345,6 +2469,12 @@ public partial class MainWindow
 
         HostAssets.AppendLog(
             $"Personal sync cloud push: reason={reason}, provider={sync.Provider}, enabled={sync.Enabled}, hasGitHubToken={!string.IsNullOrWhiteSpace(secrets.GitHubToken)}, hasGiteeToken={!string.IsNullOrWhiteSpace(secrets.GiteeToken)}, hasGitLabToken={!string.IsNullOrWhiteSpace(secrets.GitLabToken)}, hasGiteaToken={!string.IsNullOrWhiteSpace(secrets.GiteaToken)}, hasS3Secret={!string.IsNullOrWhiteSpace(secrets.S3SecretAccessKey)}, hasWebDavPassword={!string.IsNullOrWhiteSpace(secrets.WebDavPassword)}");
+        CloudSyncDiagnostics.Log(
+            "MainWindow.PersonalSync",
+            "Cloud push started",
+            ("reason", reason),
+            ("summary", CloudSyncDiagnostics.DescribePersonalSync(sync, secrets)),
+            ("autoSyncDelaySeconds", settings.PersonalSyncAutoSyncDelaySeconds));
         await _cloudSyncClient.UpsertUserConfigAsync(CloudPersonalSyncConfigId, new CloudPersonalSyncConfigSnapshot
         {
             Enabled = sync.Enabled,
@@ -2353,6 +2483,7 @@ public partial class MainWindow
             Secrets = secrets,
             AutoSyncDelaySeconds = settings.PersonalSyncAutoSyncDelaySeconds
         });
+        CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud push completed", ("reason", reason));
     }
 
     private async Task<bool> PullQuickPanelConfigFromCloudAsync()
@@ -2362,10 +2493,12 @@ public partial class MainWindow
             return false;
         }
 
+        CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull started");
         var snapshot = await _cloudSyncClient.GetUserConfigAsync<CloudQuickPanelConfigSnapshot>(CloudQuickPanelConfigId);
         if (snapshot == null)
         {
             HostAssets.AppendLog("Quick panel cloud pull: no user config found.");
+            CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull found no snapshot", ("shouldBootstrapPush", ShouldSyncLocalQuickPanelConfigToCloud()));
             if (ShouldSyncLocalQuickPanelConfigToCloud())
             {
                 await PushQuickPanelConfigToCloudAsync("cloud-refresh-bootstrap");
@@ -2421,6 +2554,7 @@ public partial class MainWindow
                 RefreshRuntimeAfterCloudLauncherPull(settings, snapshot);
                 HostAssets.AppendLog(
                     $"Quick panel cloud pull applied over fresh local config: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
+                CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull applied over fresh local config", ("remoteUpdatedAtUtc", snapshot.UpdatedAtUtc));
                 return true;
             }
 
@@ -2433,12 +2567,14 @@ public partial class MainWindow
                 OnPropertyChanged(nameof(AiChatModelDisplayText));
                 HostAssets.AppendLog(
                     $"Quick panel cloud pull: merged missing AI config from older cloud snapshot, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
+                CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull merged missing AI config", ("remoteUpdatedAtUtc", snapshot.UpdatedAtUtc));
                 await PushQuickPanelConfigToCloudAsync("cloud-refresh-local-newer-ai-merged");
                 return true;
             }
 
             HostAssets.AppendLog(
                 $"Quick panel cloud pull skipped: local config is newer, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
+            CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull skipped: local config newer", ("remoteUpdatedAtUtc", snapshot.UpdatedAtUtc));
             await PushQuickPanelConfigToCloudAsync("cloud-refresh-local-newer");
             return false;
         }
@@ -2453,6 +2589,7 @@ public partial class MainWindow
             }
 
             HostAssets.AppendLog("Quick panel cloud pull: no local changes detected.");
+            CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull skipped: no local changes");
             return false;
         }
 
@@ -2463,6 +2600,15 @@ public partial class MainWindow
         RefreshRuntimeAfterCloudLauncherPull(settings, snapshot);
         HostAssets.AppendLog(
             $"Quick panel cloud pull applied: globalGroups={settings.QuickPanelGlobalGroups.Count}, contextGroups={settings.QuickPanelContextGroups.Count}, globalFavs={settings.GlobalFavoriteExtensionIds.Count}, contextFavs={settings.ContextFavoriteExtensionIds.Count}, yanyu={settings.YanyuRules.Count}, radialPages={settings.RadialMenu?.Pages?.Count ?? 0}, aiConfig={HasAiConfigPayload(snapshot)}");
+        CloudSyncDiagnostics.Log(
+            "MainWindow.QuickPanel",
+            "Cloud pull applied",
+            ("globalGroups", settings.QuickPanelGlobalGroups.Count),
+            ("contextGroups", settings.QuickPanelContextGroups.Count),
+            ("globalFavs", settings.GlobalFavoriteExtensionIds.Count),
+            ("contextFavs", settings.ContextFavoriteExtensionIds.Count),
+            ("radialPages", settings.RadialMenu?.Pages?.Count ?? 0),
+            ("hasAiConfig", HasAiConfigPayload(snapshot)));
         if (shouldBackfillAiConfig)
         {
             await PushQuickPanelConfigToCloudAsync("cloud-pull-ai-backfill");
@@ -2550,6 +2696,9 @@ public partial class MainWindow
             settings.AiBaseUrl = incoming.AiBaseUrl;
             settings.AiApiKey = incoming.AiApiKey;
             settings.AiModel = incoming.AiModel;
+            settings.AiSystemPrompt = incoming.AiSystemPrompt;
+            settings.AiServiceProviders = incoming.AiServiceProviders;
+            settings.ActiveServiceProviderId = incoming.ActiveServiceProviderId;
         }
     }
 
@@ -2712,25 +2861,84 @@ public partial class MainWindow
     {
         return snapshot.AiBaseUrl != null ||
                snapshot.AiApiKey != null ||
-               snapshot.AiModel != null;
+               snapshot.AiModel != null ||
+               snapshot.AiSystemPrompt != null ||
+               snapshot.ActiveServiceProviderId != null ||
+               snapshot.AiServiceProviders.Count > 0;
     }
 
     private static bool HasAiSettings(AppSettings settings)
     {
         return !string.IsNullOrWhiteSpace(settings.AiBaseUrl) ||
                !string.IsNullOrWhiteSpace(settings.AiApiKey) ||
-               !string.IsNullOrWhiteSpace(settings.AiModel);
+               !string.IsNullOrWhiteSpace(settings.AiModel) ||
+               !string.IsNullOrWhiteSpace(settings.AiSystemPrompt) ||
+               !string.IsNullOrWhiteSpace(settings.ActiveServiceProviderId) ||
+               settings.AiServiceProviders.Count > 0;
     }
 
     private static bool IsLikelyFreshLocalLauncherConfig(AppSettings settings)
     {
-        return CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(
-            CloudQuickPanelConfigSnapshot.FromSettings(settings));
+        var snapshot = CloudQuickPanelConfigSnapshot.FromSettings(settings);
+        return CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(snapshot) ||
+               !HasNonAiUserContent(snapshot);
     }
 
     private static bool HasMeaningfulCloudLauncherConfig(CloudQuickPanelConfigSnapshot snapshot)
     {
         return CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(snapshot);
+    }
+
+    private static bool HasNonAiUserContent(CloudQuickPanelConfigSnapshot? snapshot)
+    {
+        if (snapshot == null)
+        {
+            return false;
+        }
+
+        return snapshot.QuickPanelSlots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
+               HasQuickPanelGroupsUserContent(snapshot.QuickPanelGlobalGroups) ||
+               HasQuickPanelGroupsUserContent(snapshot.QuickPanelContextGroups) ||
+               snapshot.GlobalFavoriteExtensionIds.Count > 0 ||
+               snapshot.ContextFavoriteExtensionIds.Count > 0 ||
+               snapshot.DisabledExtensionIds.Count > 0 ||
+               snapshot.PinnedSearchScopeCommandIds.Count > 0 ||
+               snapshot.WindowSnapAssistCustomLayouts.Count > 0 ||
+               HasWindowBindingsUserContent(snapshot.WindowBindings) ||
+               (snapshot.YanyuRules?.Count ?? 0) > 0 ||
+               HasRadialMenuUserContent(snapshot.RadialMenu) ||
+               HasYanmLayoutUserContent(snapshot.Yanm) ||
+               !string.Equals(snapshot.LauncherHotkey, "Alt+Space", StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(snapshot.QuickPanelTrigger, "MiddleButtonLongPress", StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(MouseGestureTriggerModes.Normalize(snapshot.MouseGestureTriggerMode), MouseGestureTriggerModes.RightDrag, StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(MouseTriggerModes.Normalize(snapshot.WindowSnapAssistMouseTriggerMode), MouseTriggerModes.None, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasQuickPanelGroupsUserContent(IEnumerable<QuickPanelGroupSettings> groups)
+    {
+        return groups.Any(static group =>
+            group.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
+            group.SlotItems.Any(static item => item != null));
+    }
+
+    private static bool HasWindowBindingsUserContent(WindowBindingSettings? settings)
+    {
+        return settings?.Rules?.Count > 0;
+    }
+
+    private static bool HasRadialMenuUserContent(RadialMenuSettings? settings)
+    {
+        return settings != null &&
+               (settings.Pages.Any(static page =>
+                    page.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
+                    page.ChildPageIds.Any(static childPageId => !string.IsNullOrWhiteSpace(childPageId))) ||
+                settings.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)));
+    }
+
+    private static bool HasYanmLayoutUserContent(YanmSettings? settings)
+    {
+        return settings?.ComponentState?.Count > 0 ||
+               settings?.HasInitializedDefaultComponents == false && settings?.Components?.Count > 0;
     }
 
     private static bool MergeMissingAiSettings(AppSettings target, AppSettings incoming, CloudQuickPanelConfigSnapshot snapshot)
@@ -2759,6 +2967,24 @@ public partial class MainWindow
             changed = true;
         }
 
+        if (target.AiServiceProviders.Count == 0 && incoming.AiServiceProviders.Count > 0)
+        {
+            target.AiServiceProviders = incoming.AiServiceProviders;
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(target.ActiveServiceProviderId) && !string.IsNullOrWhiteSpace(incoming.ActiveServiceProviderId))
+        {
+            target.ActiveServiceProviderId = incoming.ActiveServiceProviderId;
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(target.AiSystemPrompt) && !string.IsNullOrWhiteSpace(incoming.AiSystemPrompt))
+        {
+            target.AiSystemPrompt = incoming.AiSystemPrompt;
+            changed = true;
+        }
+
         return changed;
     }
 
@@ -2766,7 +2992,10 @@ public partial class MainWindow
     {
         return string.Equals(left.AiBaseUrl, right.AiBaseUrl, StringComparison.Ordinal) &&
                string.Equals(left.AiApiKey, right.AiApiKey, StringComparison.Ordinal) &&
-               string.Equals(left.AiModel, right.AiModel, StringComparison.Ordinal);
+               string.Equals(left.AiModel, right.AiModel, StringComparison.Ordinal) &&
+               string.Equals(left.AiSystemPrompt, right.AiSystemPrompt, StringComparison.Ordinal) &&
+               string.Equals(left.ActiveServiceProviderId, right.ActiveServiceProviderId, StringComparison.Ordinal) &&
+               AreJsonPayloadsEqual(left.AiServiceProviders, right.AiServiceProviders);
     }
 
     private static bool AreJsonPayloadsEqual<T>(T left, T right)
@@ -2884,6 +3113,7 @@ public partial class MainWindow
             HostAssets.AppendLog("PromptLoginFromSettingsAsync: authentication succeeded, pulling cloud configs.");
             await PullWebDavConfigFromCloudAsync();
             await PullQuickPanelConfigFromCloudAsync();
+            QueueBackgroundWebDavSyncAfterCloudRefresh("settings-login");
             NotifySettingsWindowWebDavConfigChanged();
             
             return true;
@@ -3057,6 +3287,12 @@ public partial class MainWindow
     {
         var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
         settingsWindow?.RefreshAiConfigFromExternal();
+    }
+
+    private void NotifySettingsWindowExtensionsChanged()
+    {
+        var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+        settingsWindow?.RefreshExtensionsFromExternal();
     }
 
     public async Task RefreshCloudFromSettingsAsync()
@@ -3346,6 +3582,7 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(secrets.GiteeToken))
         {
+            CloudSyncDiagnostics.Log("MainWindow.GiteeCommits", "Commit query skipped: token missing");
             return [];
         }
 
@@ -3355,6 +3592,7 @@ public partial class MainWindow
         var owner = sync.Gitee.Username?.Trim();
         if (string.IsNullOrWhiteSpace(owner))
         {
+            CloudSyncDiagnostics.Log("MainWindow.GiteeCommits", "Resolving owner from token", ("repo", sync.Gitee.Repo));
             using var userResponse = await httpClient.GetAsync($"https://gitee.com/api/v5/user?access_token={Uri.EscapeDataString(secrets.GiteeToken.Trim())}", cancellationToken);
             if (userResponse.IsSuccessStatusCode)
             {
@@ -3365,16 +3603,19 @@ public partial class MainWindow
 
         if (string.IsNullOrWhiteSpace(owner))
         {
+            CloudSyncDiagnostics.Log("MainWindow.GiteeCommits", "Owner resolution failed");
             throw new InvalidOperationException("Gitee Token 未返回账号名。");
         }
 
         var repo = string.IsNullOrWhiteSpace(sync.Gitee.Repo) ? "yanzi-sync" : sync.Gitee.Repo.Trim();
         var branch = string.IsNullOrWhiteSpace(sync.Gitee.Branch) ? "master" : sync.Gitee.Branch.Trim();
         var url = $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits?access_token={Uri.EscapeDataString(secrets.GiteeToken.Trim())}&sha={Uri.EscapeDataString(branch)}&per_page=12";
+        CloudSyncDiagnostics.Log("MainWindow.GiteeCommits", "Commit query started", ("owner", owner), ("repo", repo), ("branch", branch), ("pathPrefix", sync.Gitee.PathPrefix));
         
         using var response = await httpClient.GetAsync(url, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            CloudSyncDiagnostics.Log("MainWindow.GiteeCommits", "Commit query failed", ("owner", owner), ("repo", repo), ("branch", branch), ("statusCode", (int)response.StatusCode));
             throw new InvalidOperationException($"Gitee 提交记录读取失败：HTTP {(int)response.StatusCode}");
         }
 
@@ -3413,6 +3654,7 @@ public partial class MainWindow
                 htmlUrl));
         }
 
+        CloudSyncDiagnostics.Log("MainWindow.GiteeCommits", "Commit query completed", ("owner", owner), ("repo", repo), ("branch", branch), ("count", commits.Count));
         return commits;
     }
 
@@ -3649,6 +3891,11 @@ public partial class MainWindow
 
     public void SavePersonalSyncSettings(PersonalSyncSettings personalSync, PersonalSyncSecretBag secrets, bool queueCloudSync = true)
     {
+        CloudSyncDiagnostics.Log(
+            "MainWindow.PersonalSync",
+            "Saving personal sync settings",
+            ("queueCloudSync", queueCloudSync),
+            ("summary", CloudSyncDiagnostics.DescribePersonalSync(personalSync, secrets)));
         var settings = AppSettingsStore.Load();
         settings.PersonalSync = personalSync ?? new PersonalSyncSettings();
         settings.PersonalSync.Provider = PersonalSyncProviders.Normalize(settings.PersonalSync.Provider);
@@ -3693,6 +3940,12 @@ public partial class MainWindow
         {
             QueueCloudWebDavConfigSync("personal-sync-settings-saved");
         }
+
+        CloudSyncDiagnostics.Log(
+            "MainWindow.PersonalSync",
+            "Saved personal sync settings",
+            ("queueCloudSync", queueCloudSync),
+            ("providerConfigured", PersonalSyncBackendFactory.IsConfigured(settings)));
     }
 
     public void SavePersonalSyncAutoSyncDelaySeconds(int delaySeconds, bool queueCloudSync = true)
@@ -3715,6 +3968,11 @@ public partial class MainWindow
 
     public void NotifyQuickPanelSettingsChanged(string reason, bool refreshYanmOverlay = true)
     {
+        CloudSyncDiagnostics.Log(
+            "MainWindow.Settings",
+            "Quick panel settings changed",
+            ("reason", reason),
+            ("refreshYanmOverlay", refreshYanmOverlay));
         var settings = AppSettingsStore.Load();
         if (IsYanmSettingsChangeReason(reason))
         {
@@ -3781,7 +4039,7 @@ public partial class MainWindow
         {
             var root = await Task.Run(async () =>
             {
-                var service = new PersonalSyncService(AppSettingsStore.Load());
+                var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
                 await service.ProbeAsync();
                 return service.SyncRootDisplay;
             });
@@ -3799,7 +4057,7 @@ public partial class MainWindow
         {
             var result = await Task.Run(async () =>
             {
-                var service = new PersonalSyncService(AppSettingsStore.Load());
+                var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
                 return await service.SyncExtensionsAsync();
             });
             ApplyWebDavSyncResult(result);
@@ -3833,7 +4091,7 @@ public partial class MainWindow
     {
         try
         {
-            var service = new PersonalSyncService(AppSettingsStore.Load());
+            var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
             var result = await service.SyncYanmStateAsync();
             ApplyYanmStateSyncResult(result);
 

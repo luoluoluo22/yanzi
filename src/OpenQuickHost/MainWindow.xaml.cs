@@ -3217,6 +3217,15 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonPropertyName("aiModel")]
     public string? AiModel { get; set; }
 
+    [JsonPropertyName("aiSystemPrompt")]
+    public string? AiSystemPrompt { get; set; }
+
+    [JsonPropertyName("aiServiceProviders")]
+    public List<AiServiceProviderSettings> AiServiceProviders { get; set; } = [];
+
+    [JsonPropertyName("activeServiceProviderId")]
+    public string? ActiveServiceProviderId { get; set; }
+
     public static CloudQuickPanelConfigSnapshot FromSettings(AppSettings settings)
     {
         var snapshot = new CloudQuickPanelConfigSnapshot
@@ -3254,6 +3263,9 @@ public sealed class CloudQuickPanelConfigSnapshot
             AiBaseUrl = settings.AiBaseUrl,
             AiApiKey = settings.AiApiKey,
             AiModel = settings.AiModel,
+            AiSystemPrompt = settings.AiSystemPrompt,
+            AiServiceProviders = CloneByJson(settings.AiServiceProviders),
+            ActiveServiceProviderId = settings.ActiveServiceProviderId,
             UpdatedAtUtc = string.IsNullOrWhiteSpace(settings.LauncherConfigUpdatedAtUtc)
                 ? DateTime.UtcNow.ToString("O")
                 : settings.LauncherConfigUpdatedAtUtc
@@ -3298,6 +3310,9 @@ public sealed class CloudQuickPanelConfigSnapshot
             AiBaseUrl = AiBaseUrl ?? string.Empty,
             AiApiKey = AiApiKey ?? string.Empty,
             AiModel = AiModel ?? string.Empty,
+            AiSystemPrompt = string.IsNullOrWhiteSpace(AiSystemPrompt) ? AppSettingsStore.DefaultAiSystemPrompt : AiSystemPrompt,
+            AiServiceProviders = AiServiceProviders == null ? [] : CloneByJson(AiServiceProviders),
+            ActiveServiceProviderId = ActiveServiceProviderId ?? string.Empty,
             LauncherConfigUpdatedAtUtc = UpdatedAtUtc ?? string.Empty
         };
     }
@@ -3371,7 +3386,10 @@ public sealed class CloudQuickPanelConfigSnapshot
     {
         return !string.IsNullOrWhiteSpace(snapshot.AiBaseUrl) ||
                !string.IsNullOrWhiteSpace(snapshot.AiApiKey) ||
-               !string.IsNullOrWhiteSpace(snapshot.AiModel);
+               !string.IsNullOrWhiteSpace(snapshot.AiModel) ||
+               !string.IsNullOrWhiteSpace(snapshot.ActiveServiceProviderId) ||
+               (snapshot.AiServiceProviders?.Count ?? 0) > 0 ||
+               !string.IsNullOrWhiteSpace(snapshot.AiSystemPrompt);
     }
 
     private static List<QuickPanelGroupSettings> CloneGroups(IEnumerable<QuickPanelGroupSettings> groups)

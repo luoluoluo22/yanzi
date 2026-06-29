@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -1101,6 +1101,14 @@ public partial class MainWindow
         // 钩子线程上回调，UI 线程执行扩展
         Dispatcher.BeginInvoke(new Action(() =>
         {
+            if (gesture.ExtensionId != null && gesture.ExtensionId.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
+            {
+                var appPath = gesture.ExtensionId.Substring(4);
+                LaunchOrActivateApp(appPath, gesture.ExtensionName);
+                LastRunMessage = $"鼠标手势 {gesture.Sequence} 触发应用：{gesture.ExtensionName}";
+                return;
+            }
+
             var command = _allCommands.FirstOrDefault(c =>
                 string.Equals(c.ExtensionId, gesture.ExtensionId, StringComparison.OrdinalIgnoreCase));
             if (command == null)
@@ -1112,6 +1120,50 @@ public partial class MainWindow
             ExecuteCommandExternally(command, explicitInput: null, launchSource: "mouse-gesture");
             LastRunMessage = $"鼠标手势 {gesture.Sequence} 触发：{command.Title}";
         }));
+    }
+
+
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "IsIconic")]
+    private static extern bool AppIsIconic(IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "ShowWindow")]
+    private static extern bool AppShowWindow(IntPtr hWnd, int nCmdShow);
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetForegroundWindow")]
+    private static extern bool AppSetForegroundWindow(IntPtr hWnd);
+
+    private static void LaunchOrActivateApp(string appPath, string appName)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(appPath) || !System.IO.File.Exists(appPath))
+            {
+                return;
+            }
+
+            var fileName = System.IO.Path.GetFileNameWithoutExtension(appPath);
+            var processes = System.Diagnostics.Process.GetProcessesByName(fileName);
+            var runningProc = processes.FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
+            if (runningProc != null)
+            {
+                var hWnd = runningProc.MainWindowHandle;
+                if (AppIsIconic(hWnd))
+                {
+                    AppShowWindow(hWnd, 9);
+                }
+                AppSetForegroundWindow(hWnd);
+                return;
+            }
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = appPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to launch app gesture: {appPath}, err={ex.Message}");
+        }
     }
 
     private void PinAutoHideButton_Click(object sender, RoutedEventArgs e)
