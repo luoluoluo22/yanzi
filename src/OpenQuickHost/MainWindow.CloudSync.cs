@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.IO.Compression;
 using System.Collections.Specialized;
 using System.Diagnostics;
@@ -3217,6 +3217,11 @@ public partial class MainWindow
         var settings = AppSettingsStore.Load();
         var sync = settings.PersonalSync ?? new PersonalSyncSettings();
         var secrets = PersonalSyncSecretStore.Load();
+        return await GetPersonalSyncGitHubCommitsAsync(sync, secrets, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PersonalSyncGitCommitInfo>> GetPersonalSyncGitHubCommitsAsync(PersonalSyncSettings sync, PersonalSyncSecretBag secrets, CancellationToken cancellationToken = default)
+    {
         if (!string.Equals(sync.Provider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase) ||
             string.IsNullOrWhiteSpace(secrets.GitHubToken))
         {
@@ -3305,6 +3310,341 @@ public partial class MainWindow
 
         using var reader = new StringReader(value.Trim());
         return reader.ReadLine() ?? value.Trim();
+    }
+
+    public async Task<IReadOnlyList<PersonalSyncGitCommitInfo>> GetPersonalSyncCommitsAsync(CancellationToken cancellationToken = default)
+    {
+        var settings = AppSettingsStore.Load();
+        var sync = settings.PersonalSync ?? new PersonalSyncSettings();
+        var secrets = PersonalSyncSecretStore.Load();
+        return await GetPersonalSyncCommitsAsync(sync, secrets, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PersonalSyncGitCommitInfo>> GetPersonalSyncCommitsAsync(PersonalSyncSettings sync, PersonalSyncSecretBag secrets, CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(sync.Provider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetPersonalSyncGitHubCommitsAsync(sync, secrets, cancellationToken);
+        }
+        else if (string.Equals(sync.Provider, PersonalSyncProviders.Gitee, StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetPersonalSyncGiteeCommitsAsync(sync, secrets, cancellationToken);
+        }
+        else if (string.Equals(sync.Provider, PersonalSyncProviders.GitLab, StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetPersonalSyncGitLabCommitsAsync(sync, secrets, cancellationToken);
+        }
+        else if (string.Equals(sync.Provider, PersonalSyncProviders.Gitea, StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetPersonalSyncGiteaCommitsAsync(sync, secrets, cancellationToken);
+        }
+
+        return [];
+    }
+
+    private async Task<IReadOnlyList<PersonalSyncGitCommitInfo>> GetPersonalSyncGiteeCommitsAsync(PersonalSyncSettings sync, PersonalSyncSecretBag secrets, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(secrets.GiteeToken))
+        {
+            return [];
+        }
+
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yanzi", "0.1"));
+
+        var owner = sync.Gitee.Username?.Trim();
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            using var userResponse = await httpClient.GetAsync($"https://gitee.com/api/v5/user?access_token={Uri.EscapeDataString(secrets.GiteeToken.Trim())}", cancellationToken);
+            if (userResponse.IsSuccessStatusCode)
+            {
+                using var userDocument = JsonDocument.Parse(await userResponse.Content.ReadAsStringAsync(cancellationToken));
+                owner = userDocument.RootElement.TryGetProperty("login", out var loginElement) ? loginElement.GetString() : null;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            throw new InvalidOperationException("Gitee Token 未返回账号名。");
+        }
+
+        var repo = string.IsNullOrWhiteSpace(sync.Gitee.Repo) ? "yanzi-sync" : sync.Gitee.Repo.Trim();
+        var branch = string.IsNullOrWhiteSpace(sync.Gitee.Branch) ? "master" : sync.Gitee.Branch.Trim();
+        var url = $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits?access_token={Uri.EscapeDataString(secrets.GiteeToken.Trim())}&sha={Uri.EscapeDataString(branch)}&per_page=12";
+        
+        using var response = await httpClient.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Gitee 提交记录读取失败：HTTP {(int)response.StatusCode}");
+        }
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        var commits = new List<PersonalSyncGitCommitInfo>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            var sha = item.TryGetProperty("sha", out var shaElement) ? shaElement.GetString() ?? string.Empty : string.Empty;
+            var htmlUrl = item.TryGetProperty("html_url", out var htmlUrlElement) ? htmlUrlElement.GetString() ?? string.Empty : string.Empty;
+            var commit = item.TryGetProperty("commit", out var commitElement) ? commitElement : default;
+            var message = commit.ValueKind != JsonValueKind.Undefined && commit.TryGetProperty("message", out var messageElement)
+                ? messageElement.GetString() ?? string.Empty
+                : string.Empty;
+            var authorName = string.Empty;
+            var committedAtUtc = DateTimeOffset.MinValue;
+            if (commit.ValueKind != JsonValueKind.Undefined &&
+                commit.TryGetProperty("author", out var authorElement))
+            {
+                if (authorElement.TryGetProperty("name", out var nameElement))
+                {
+                    authorName = nameElement.GetString() ?? string.Empty;
+                }
+
+                if (authorElement.TryGetProperty("date", out var dateElement) &&
+                    DateTimeOffset.TryParse(dateElement.GetString(), out var parsedDate))
+                {
+                    committedAtUtc = parsedDate.ToUniversalTime();
+                }
+            }
+
+            commits.Add(new PersonalSyncGitCommitInfo(
+                sha,
+                FirstLine(message),
+                authorName,
+                committedAtUtc == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : committedAtUtc,
+                htmlUrl));
+        }
+
+        return commits;
+    }
+
+    private async Task<IReadOnlyList<PersonalSyncGitCommitInfo>> GetPersonalSyncGitLabCommitsAsync(PersonalSyncSettings sync, PersonalSyncSecretBag secrets, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(secrets.GitLabToken))
+        {
+            return [];
+        }
+
+        var baseUrl = (sync.GitLab.BaseUrl ?? string.Empty).Trim().TrimEnd('/');
+        if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            baseUrl = $"https://{baseUrl}";
+        }
+
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.Add("PRIVATE-TOKEN", secrets.GitLabToken.Trim());
+
+        var projectPath = string.IsNullOrWhiteSpace(sync.GitLab.ProjectPath) ? "yanzi-sync" : sync.GitLab.ProjectPath.Trim();
+        var branch = string.IsNullOrWhiteSpace(sync.GitLab.Branch) ? "main" : sync.GitLab.Branch.Trim();
+        var url = $"{baseUrl}/api/v4/projects/{Uri.EscapeDataString(projectPath)}/repository/commits?ref_name={Uri.EscapeDataString(branch)}&per_page=12";
+
+        using var response = await httpClient.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"GitLab 提交记录读取失败：HTTP {(int)response.StatusCode}");
+        }
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        var commits = new List<PersonalSyncGitCommitInfo>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            var sha = item.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
+            var htmlUrl = item.TryGetProperty("web_url", out var webUrlElement) ? webUrlElement.GetString() ?? string.Empty : string.Empty;
+            var message = item.TryGetProperty("message", out var messageElement) ? messageElement.GetString() ?? string.Empty : string.Empty;
+            var authorName = item.TryGetProperty("author_name", out var authorNameElement) ? authorNameElement.GetString() ?? string.Empty : string.Empty;
+            var committedAtUtc = DateTimeOffset.MinValue;
+
+            if (item.TryGetProperty("committed_date", out var dateElement) &&
+                DateTimeOffset.TryParse(dateElement.GetString(), out var parsedDate))
+            {
+                committedAtUtc = parsedDate.ToUniversalTime();
+            }
+
+            commits.Add(new PersonalSyncGitCommitInfo(
+                sha,
+                FirstLine(message),
+                authorName,
+                committedAtUtc == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : committedAtUtc,
+                htmlUrl));
+        }
+
+        return commits;
+    }
+
+    private async Task<IReadOnlyList<PersonalSyncGitCommitInfo>> GetPersonalSyncGiteaCommitsAsync(PersonalSyncSettings sync, PersonalSyncSecretBag secrets, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(secrets.GiteaToken))
+        {
+            return [];
+        }
+
+        var baseUrl = (sync.Gitea.BaseUrl ?? string.Empty).Trim().TrimEnd('/');
+        if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            baseUrl = $"https://{baseUrl}";
+        }
+
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", secrets.GiteaToken.Trim());
+
+        var owner = sync.Gitea.Username?.Trim();
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            using var userResponse = await httpClient.GetAsync($"{baseUrl}/api/v1/user", cancellationToken);
+            if (userResponse.IsSuccessStatusCode)
+            {
+                using var userDocument = JsonDocument.Parse(await userResponse.Content.ReadAsStringAsync(cancellationToken));
+                owner = userDocument.RootElement.TryGetProperty("login", out var loginElement) ? loginElement.GetString() : null;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            throw new InvalidOperationException("Gitea Token 未返回账号名。");
+        }
+
+        var repo = string.IsNullOrWhiteSpace(sync.Gitea.Repo) ? "yanzi-sync" : sync.Gitea.Repo.Trim();
+        var branch = string.IsNullOrWhiteSpace(sync.Gitea.Branch) ? "main" : sync.Gitea.Branch.Trim();
+        var url = $"{baseUrl}/api/v1/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits?sha={Uri.EscapeDataString(branch)}&limit=12";
+
+        using var response = await httpClient.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Gitea 提交记录读取失败：HTTP {(int)response.StatusCode}");
+        }
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        var commits = new List<PersonalSyncGitCommitInfo>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            var sha = item.TryGetProperty("sha", out var shaElement) ? shaElement.GetString() ?? string.Empty : string.Empty;
+            var htmlUrl = item.TryGetProperty("html_url", out var htmlUrlElement) ? htmlUrlElement.GetString() ?? string.Empty : string.Empty;
+            
+            var commit = item.TryGetProperty("commit", out var commitElement) ? commitElement : default;
+            var message = commit.ValueKind != JsonValueKind.Undefined && commit.TryGetProperty("message", out var messageElement)
+                ? messageElement.GetString() ?? string.Empty
+                : string.Empty;
+            var authorName = string.Empty;
+            var committedAtUtc = DateTimeOffset.MinValue;
+            if (commit.ValueKind != JsonValueKind.Undefined &&
+                commit.TryGetProperty("author", out var authorElement))
+            {
+                if (authorElement.TryGetProperty("name", out var nameElement))
+                {
+                    authorName = nameElement.GetString() ?? string.Empty;
+                }
+
+                if (authorElement.TryGetProperty("date", out var dateElement) &&
+                    DateTimeOffset.TryParse(dateElement.GetString(), out var parsedDate))
+                {
+                    committedAtUtc = parsedDate.ToUniversalTime();
+                }
+            }
+
+            commits.Add(new PersonalSyncGitCommitInfo(
+                sha,
+                FirstLine(message),
+                authorName,
+                committedAtUtc == DateTimeOffset.MinValue ? DateTimeOffset.UtcNow : committedAtUtc,
+                htmlUrl));
+        }
+
+        return commits;
+    }
+
+    public async Task<string> GetPersonalSyncRepositoryWebUrlAsync(PersonalSyncSettings sync, PersonalSyncSecretBag secrets, CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(sync.Provider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase))
+        {
+            var owner = sync.GitHub.Username?.Trim();
+            var repo = string.IsNullOrWhiteSpace(sync.GitHub.Repo) ? "yanzi-sync" : sync.GitHub.Repo.Trim();
+            if (string.IsNullOrWhiteSpace(owner) && !string.IsNullOrWhiteSpace(secrets.GitHubToken))
+            {
+                try
+                {
+                    using var httpClient = new HttpClient();
+                    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secrets.GitHubToken.Trim());
+                    httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+                    httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+                    httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yanzi", "0.1"));
+                    using var response = await httpClient.GetAsync("https://api.github.com/user", cancellationToken);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+                        owner = doc.RootElement.TryGetProperty("login", out var el) ? el.GetString() : null;
+                    }
+                }
+                catch {}
+            }
+            return string.IsNullOrWhiteSpace(owner) ? "https://github.com" : $"https://github.com/{owner}/{repo}";
+        }
+        else if (string.Equals(sync.Provider, PersonalSyncProviders.Gitee, StringComparison.OrdinalIgnoreCase))
+        {
+            var owner = sync.Gitee.Username?.Trim();
+            var repo = string.IsNullOrWhiteSpace(sync.Gitee.Repo) ? "yanzi-sync" : sync.Gitee.Repo.Trim();
+            if (string.IsNullOrWhiteSpace(owner) && !string.IsNullOrWhiteSpace(secrets.GiteeToken))
+            {
+                try
+                {
+                    using var httpClient = new HttpClient();
+                    httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yanzi", "0.1"));
+                    using var response = await httpClient.GetAsync($"https://gitee.com/api/v5/user?access_token={Uri.EscapeDataString(secrets.GiteeToken.Trim())}", cancellationToken);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+                        owner = doc.RootElement.TryGetProperty("login", out var el) ? el.GetString() : null;
+                    }
+                }
+                catch {}
+            }
+            return string.IsNullOrWhiteSpace(owner) ? "https://gitee.com" : $"https://gitee.com/{owner}/{repo}";
+        }
+        else if (string.Equals(sync.Provider, PersonalSyncProviders.GitLab, StringComparison.OrdinalIgnoreCase))
+        {
+            var baseUrl = (sync.GitLab.BaseUrl ?? string.Empty).Trim().TrimEnd('/');
+            if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                baseUrl = $"https://{baseUrl}";
+            }
+            return $"{baseUrl}/{sync.GitLab.ProjectPath.Trim().Trim('/')}";
+        }
+        else if (string.Equals(sync.Provider, PersonalSyncProviders.Gitea, StringComparison.OrdinalIgnoreCase))
+        {
+            var baseUrl = (sync.Gitea.BaseUrl ?? string.Empty).Trim().TrimEnd('/');
+            if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                baseUrl = $"https://{baseUrl}";
+            }
+            var owner = sync.Gitea.Username?.Trim();
+            var repo = string.IsNullOrWhiteSpace(sync.Gitea.Repo) ? "yanzi-sync" : sync.Gitea.Repo.Trim();
+            if (string.IsNullOrWhiteSpace(owner) && !string.IsNullOrWhiteSpace(secrets.GiteaToken))
+            {
+                try
+                {
+                    using var httpClient = new HttpClient();
+                    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("token", secrets.GiteaToken.Trim());
+                    using var response = await httpClient.GetAsync($"{baseUrl}/api/v1/user", cancellationToken);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+                        owner = doc.RootElement.TryGetProperty("login", out var el) ? el.GetString() : null;
+                    }
+                }
+                catch {}
+            }
+            return string.IsNullOrWhiteSpace(owner) ? baseUrl : $"{baseUrl}/{owner}/{repo}";
+        }
+        else if (string.Equals(sync.Provider, PersonalSyncProviders.WebDav, StringComparison.OrdinalIgnoreCase))
+        {
+            return sync.WebDav.Url ?? string.Empty;
+        }
+        else if (string.Equals(sync.Provider, PersonalSyncProviders.S3, StringComparison.OrdinalIgnoreCase))
+        {
+            return sync.S3.Endpoint ?? string.Empty;
+        }
+        return string.Empty;
     }
 
     public void SavePersonalSyncSettings(PersonalSyncSettings personalSync, PersonalSyncSecretBag secrets, bool queueCloudSync = true)

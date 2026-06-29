@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.SettingsWindow"
+﻿<Window x:Class="OpenQuickHost.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -1206,72 +1206,83 @@
                                 </Grid>
                             </Border>
 
-                            <!-- Git Commit History Card -->
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <Border Padding="20,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
-                                        <Grid>
-                                            <StackPanel>
-                                                <TextBlock Text="Git 提交记录" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                                <TextBlock Text="{Binding PersonalSyncCommitStatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
-                                            </StackPanel>
-                                            <Button Content="刷新提交"
-                                                    Style="{StaticResource SecondaryBtn}"
-                                                    Height="28"
-                                                    Padding="12,0"
-                                                    HorizontalAlignment="Right"
-                                                    Click="RefreshPersonalSyncCommitsButton_Click"/>
-                                        </Grid>
-                                    </Border>
-                                    <Border Padding="20,14">
-                                        <ItemsControl ItemsSource="{Binding PersonalSyncCommitItems}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,8">
-                                                        <Grid>
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="*"/>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                            </Grid.ColumnDefinitions>
-                                                            <StackPanel>
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <TextBlock Text="{Binding ShortSha}" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmall}" FontFamily="Consolas"/>
-                                                                    <Button Content="打开"
-                                                                            Tag="{Binding Url}"
-                                                                            Style="{StaticResource InlineLinkButtonStyle}"
-                                                                            Margin="8,-3,0,0"
-                                                                            Click="OpenPersonalSyncCommitButton_Click"/>
-                                                                </StackPanel>
-                                                                <TextBlock Text="{Binding Message}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                                                                <TextBlock Text="{Binding Author}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
-                                                            </StackPanel>
-                                                            <TextBlock Grid.Column="1" Text="{Binding LocalTimeLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="12,0,0,0"/>
-                                                        </Grid>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Sync Log Card -->
+                            <!-- Unified Sync Records Card (汇总同步记录) -->
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
                                 <StackPanel>
+                                    <!-- 卡片主标题 -->
                                     <Border Padding="20,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
                                         <Grid>
                                             <TextBlock Text="同步记录" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            <Button Content="刷新记录" 
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- 子板块 1：云端提交历史 (Git 提供商) -->
+                                    <StackPanel Visibility="{Binding IsGitSyncProvider, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Border Padding="20,12" Background="#05FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                            <Grid>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="云端提交历史 (Git)" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="{Binding PersonalSyncCommitStatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                    <Button Content="访问云端仓库"
+                                                            Style="{StaticResource InlineLinkButtonStyle}"
+                                                            Margin="0,0,12,0"
+                                                            Click="VisitPersonalSyncRepositoryButton_Click"/>
+                                                    <Button Content="刷新提交"
+                                                            Style="{StaticResource SecondaryBtn}"
+                                                            Height="26"
+                                                            Padding="10,0"
+                                                            Click="RefreshPersonalSyncCommitsButton_Click"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                        <Border Padding="20,14" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                            <ItemsControl ItemsSource="{Binding PersonalSyncCommitItems}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,8">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel>
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <TextBlock Text="{Binding ShortSha}" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmall}" FontFamily="Consolas"/>
+                                                                        <Button Content="打开"
+                                                                                Tag="{Binding Url}"
+                                                                                Style="{StaticResource InlineLinkButtonStyle}"
+                                                                                Margin="8,-3,0,0"
+                                                                                Click="OpenPersonalSyncCommitButton_Click"/>
+                                                                    </StackPanel>
+                                                                    <TextBlock Text="{Binding Message}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                                    <TextBlock Text="{Binding Author}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
+                                                                </StackPanel>
+                                                                <TextBlock Grid.Column="1" Text="{Binding LocalTimeLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="12,0,0,0"/>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- 子板块 2：本地同步运行日志 -->
+                                    <Border Padding="20,12" Background="#05FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                        <Grid>
+                                            <TextBlock Text="本地同步运行日志" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <Button Content="刷新日志" 
                                                     Style="{StaticResource SecondaryBtn}" 
-                                                    Height="28" 
-                                                    Padding="12,0" 
+                                                    Height="26" 
+                                                    Padding="10,0" 
                                                     HorizontalAlignment="Right"
                                                     Click="RefreshSyncLogButton_Click"/>
                                         </Grid>
                                     </Border>
-                                    <Border Padding="20,16">
+                                    <Border Padding="20,14">
                                         <TextBox Text="{Binding SyncActivityLogText, Mode=OneWay}"
-                                                 Height="160"
+                                                 Height="140"
                                                  IsReadOnly="True"
                                                  AcceptsReturn="True"
                                                  TextWrapping="Wrap"

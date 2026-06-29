@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
@@ -1508,8 +1508,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsSyncProviderGitLab));
             OnPropertyChanged(nameof(IsSyncProviderGitea));
             OnPropertyChanged(nameof(IsSyncProviderS3));
-            OnPropertyChanged(nameof(IsSyncProviderWebDav));
+            OnPropertyChanged(nameof(IsSyncProviderWebDav));
+            OnPropertyChanged(nameof(IsGitSyncProvider));
             RefreshWebDavSummary();
+
+            _ = RefreshPersonalSyncCommitsAsync();
         }
     }
 
@@ -1523,7 +1526,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public bool IsSyncProviderS3 => SelectedPersonalSyncProvider == PersonalSyncProviders.S3;
 
-    public bool IsSyncProviderWebDav => SelectedPersonalSyncProvider == PersonalSyncProviders.WebDav;
+    public bool IsSyncProviderWebDav => SelectedPersonalSyncProvider == PersonalSyncProviders.WebDav;
+    public bool IsGitSyncProvider => IsSyncProviderGitHub || IsSyncProviderGitee || IsSyncProviderGitLab || IsSyncProviderGitea;
 
     public bool ShowPersonalSyncAdvancedOptions
     {
@@ -4045,14 +4049,20 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private async Task RefreshPersonalSyncCommitsAsync(bool forceMessage = false)
     {
-        if (!string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase))
+        bool isGitProvider = 
+            string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.Gitee, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.GitLab, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.Gitea, StringComparison.OrdinalIgnoreCase);
+
+        if (!isGitProvider)
         {
             PersonalSyncCommitItems.Clear();
-            PersonalSyncCommitStatusText = "提交记录当前仅支持 GitHub 同步仓库。";
+            PersonalSyncCommitStatusText = "提交记录当前仅支持 Git 同步仓库 (GitHub/Gitee/GitLab/Gitea)。";
             if (LastSyncStatusTextBlock != null)
             {
                 LastSyncStatusTextBlock.Text = "上次同步: 成功";
-                LastSyncStatusTextBlock.ToolTip = "同步已成功完成 (WebDav/其他模式)";
+                LastSyncStatusTextBlock.ToolTip = "同步已成功完成 (WebDav/S3 等其他模式)";
             }
             return;
         }
@@ -4061,10 +4071,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             if (forceMessage)
             {
-                PersonalSyncCommitStatusText = "正在读取 GitHub 提交记录...";
+                PersonalSyncCommitStatusText = $"正在读取 {SelectedPersonalSyncProvider} 提交记录...";
             }
 
-            var commits = await _mainWindow.GetPersonalSyncGitHubCommitsAsync();
+            var commits = await _mainWindow.GetPersonalSyncCommitsAsync(_personalSyncSettings, _personalSyncSecrets);
             PersonalSyncCommitItems.Clear();
             foreach (var commit in commits)
             {
@@ -4078,7 +4088,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             PersonalSyncCommitStatusText = PersonalSyncCommitItems.Count == 0
                 ? "仓库暂无提交记录。"
-                : $"最近 {PersonalSyncCommitItems.Count} 条提交，可点击打开 GitHub 详情。";
+                : $"最近 {PersonalSyncCommitItems.Count} 条提交，可点击打开云端详情。";
 
             if (LastSyncStatusTextBlock != null)
             {
@@ -4122,40 +4132,39 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (IsSyncProviderWebDav && string.IsNullOrWhiteSpace(_personalSyncSecrets.WebDavPassword))
+        var savedCloudPassword = _mainWindow.CloudSyncClient?.GetSavedPassword();
+        if (string.IsNullOrWhiteSpace(savedCloudPassword))
         {
             System.Windows.MessageBox.Show(
                 this,
-                "当前 WebDAV 未设置密码，无法执行清空。",
+                "未检测到燕子云账号登录密码，请先登录您的当前账户。",
                 "清空云端失败",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             return;
         }
 
-        if (IsSyncProviderWebDav)
+        var currentAccountLabel = _mainWindow.CloudSyncClient?.CurrentUserLabel ?? "当前账户";
+        var passwordDialog = new WebDavCredentialWindow(currentAccountLabel, requireUsername: false)
         {
-            var passwordDialog = new WebDavCredentialWindow(WebDavUsername, requireUsername: false)
-            {
-                Owner = this,
-                Title = "验证密码 - 清空云端"
-            };
+            Owner = this,
+            Title = "验证当前账户密码 - 清空云端"
+        };
 
-            if (passwordDialog.ShowDialog() != true)
-            {
-                return;
-            }
+        if (passwordDialog.ShowDialog() != true)
+        {
+            return;
+        }
 
-            if (passwordDialog.Password != _personalSyncSecrets.WebDavPassword)
-            {
-                System.Windows.MessageBox.Show(
-                    this,
-                    "密码错误，无法执行清空操作。",
-                    "清空云端失败",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                return;
-            }
+        if (passwordDialog.Password != savedCloudPassword)
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                "当前账户登录密码验证失败，无法执行清空操作。",
+                "清空云端失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
         }
 
         try
@@ -7670,6 +7679,31 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             {
                 System.Windows.MessageBox.Show(this, $"无法打开提交链接: {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+    }
+
+    private async void VisitPersonalSyncRepositoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        // 弹出等待提示或者直接拉取，由于是通过 API 获取用户名拼 URL，我们传递 _personalSyncSettings 和 _personalSyncSecrets
+        var url = await _mainWindow.GetPersonalSyncRepositoryWebUrlAsync(_personalSyncSettings, _personalSyncSecrets);
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this, $"无法打开链接: {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        else
+        {
+            System.Windows.MessageBox.Show(this, "当前同步方式无法获取有效的云端链接。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 

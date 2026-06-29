@@ -34,6 +34,8 @@ public sealed class CloudSyncClient
 
     public bool HasCredential => !string.IsNullOrWhiteSpace(_credential?.LoginEmail) && !string.IsNullOrWhiteSpace(_credential?.Password);
 
+    public string? GetSavedPassword() => _credential?.Password;
+
     public void SetCredential(string email, string password, bool remember)
     {
         _credential = new SavedCredential

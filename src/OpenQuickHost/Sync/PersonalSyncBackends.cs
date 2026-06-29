@@ -684,6 +684,12 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
     {
         var owner = await ResolveOwnerAsync(cancellationToken);
         using var response = await _httpClient.GetAsync($"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}?access_token={Uri.EscapeDataString(_secrets.GiteeToken.Trim())}", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound && await CanCreateRepositoryForOwnerAsync(owner, cancellationToken))
+        {
+            await CreateRepositoryAsync(cancellationToken);
+            return;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
@@ -705,7 +711,13 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
 
-        var payload = await response.Content.ReadFromJsonAsync<GiteeContentPayload>(JsonOptions, cancellationToken);
+        var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(rawJson) || rawJson.Trim() == "[]")
+        {
+            return null;
+        }
+
+        var payload = JsonSerializer.Deserialize<GiteeContentPayload>(rawJson, JsonOptions);
         return DecodeBase64Content(payload?.Content);
     }
 
@@ -774,7 +786,13 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
 
-        var payload = await response.Content.ReadFromJsonAsync<GiteeContentPayload>(JsonOptions, cancellationToken);
+        var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(rawJson) || rawJson.Trim() == "[]")
+        {
+            return null;
+        }
+
+        var payload = JsonSerializer.Deserialize<GiteeContentPayload>(rawJson, JsonOptions);
         return payload?.Sha;
     }
 
@@ -817,6 +835,38 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         return _resolvedOwner;
     }
 
+    private async Task<bool> CanCreateRepositoryForOwnerAsync(string owner, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            return true;
+        }
+
+        var authenticatedLogin = await ResolveOwnerAsync(cancellationToken);
+        return string.Equals(owner, authenticatedLogin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task CreateRepositoryAsync(CancellationToken cancellationToken)
+    {
+        var repoName = _config.Repo.Trim();
+        using var response = await _httpClient.PostAsJsonAsync(
+            "https://gitee.com/api/v5/user/repos",
+            new GiteeCreateRepoPayload
+            {
+                AccessToken = _secrets.GiteeToken.Trim(),
+                Name = repoName,
+                Description = "This is a Yanzi personal sync repository.",
+                Private = true,
+                AutoInit = true
+            },
+            JsonOptions,
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
+        }
+    }
+
     private static string EncodePath(string path) => string.Join("/", path.Split('/').Select(Uri.EscapeDataString));
 }
 
@@ -838,6 +888,12 @@ internal sealed class GitLabPersonalSyncBackend : PersonalSyncBackendBase
     public override async Task ProbeAsync(CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync($"{ResolveApiBase()}/projects/{Uri.EscapeDataString(_config.ProjectPath.Trim())}", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound && await CanCreateProjectAsync(cancellationToken))
+        {
+            await CreateProjectAsync(cancellationToken);
+            return;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             throw await PersonalSyncFailure.CreateFailureAsync("GitLab", response, cancellationToken);
@@ -918,6 +974,69 @@ internal sealed class GitLabPersonalSyncBackend : PersonalSyncBackendBase
     private string BuildPath(string relativePath) => CombineWithPrefix(_config.PathPrefix, relativePath);
 
     private string ResolveBranch() => string.IsNullOrWhiteSpace(_config.Branch) ? "main" : _config.Branch.Trim();
+
+    private Task<bool> CanCreateProjectAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(true);
+    }
+
+    private async Task CreateProjectAsync(CancellationToken cancellationToken)
+    {
+        var projectPath = _config.ProjectPath.Trim();
+        string name = projectPath;
+        int? namespaceId = null;
+
+        if (projectPath.Contains('/'))
+        {
+            var parts = projectPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length > 1)
+            {
+                var namespaceName = string.Join("/", parts.Take(parts.Length - 1));
+                name = parts.Last();
+                namespaceId = await FindNamespaceIdAsync(namespaceName, cancellationToken);
+            }
+        }
+
+        using var response = await _httpClient.PostAsJsonAsync(
+            $"{ResolveApiBase()}/projects",
+            new GitLabCreateProjectPayload
+            {
+                Name = name,
+                Path = name,
+                Visibility = "private",
+                InitializeWithReadme = true,
+                NamespaceId = namespaceId
+            },
+            JsonOptions,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await PersonalSyncFailure.CreateFailureAsync("GitLab", response, cancellationToken);
+        }
+    }
+
+    private async Task<int?> FindNamespaceIdAsync(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _httpClient.GetAsync(
+                $"{ResolveApiBase()}/namespaces?search={Uri.EscapeDataString(path)}",
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var namespaces = await response.Content.ReadFromJsonAsync<List<GitLabNamespaceDto>>(JsonOptions, cancellationToken);
+            var matched = namespaces?.FirstOrDefault(n => string.Equals(n.Path, path, StringComparison.OrdinalIgnoreCase));
+            return matched?.Id;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
 
 internal sealed class GiteaPersonalSyncBackend : PersonalSyncBackendBase
@@ -940,6 +1059,12 @@ internal sealed class GiteaPersonalSyncBackend : PersonalSyncBackendBase
     {
         var owner = await ResolveOwnerAsync(cancellationToken);
         using var response = await _httpClient.GetAsync($"{ResolveApiBase()}/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo.Trim())}", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound && await CanCreateRepositoryForOwnerAsync(owner, cancellationToken))
+        {
+            await CreateRepositoryAsync(cancellationToken);
+            return;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             throw await PersonalSyncFailure.CreateFailureAsync("Gitea", response, cancellationToken);
@@ -1083,6 +1208,55 @@ internal sealed class GiteaPersonalSyncBackend : PersonalSyncBackendBase
 
         _resolvedOwner = owner;
         return _resolvedOwner;
+    }
+
+    private async Task<bool> CanCreateRepositoryForOwnerAsync(string owner, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            return true;
+        }
+
+        var authenticatedLogin = await ResolveAuthenticatedLoginAsync(cancellationToken);
+        return string.Equals(owner, authenticatedLogin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<string> ResolveAuthenticatedLoginAsync(CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync($"{ResolveApiBase()}/user", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await PersonalSyncFailure.CreateFailureAsync("Gitea", response, cancellationToken);
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<GitProviderViewerPayload>(JsonOptions, cancellationToken);
+        var login = payload?.Login?.Trim();
+        if (string.IsNullOrWhiteSpace(login))
+        {
+            throw new InvalidOperationException("Gitea Token 未返回可用账号名，无法创建同步仓库。");
+        }
+
+        return login;
+    }
+
+    private async Task CreateRepositoryAsync(CancellationToken cancellationToken)
+    {
+        var repoName = _config.Repo.Trim();
+        using var response = await _httpClient.PostAsJsonAsync(
+            $"{ResolveApiBase()}/user/repos",
+            new GiteaCreateRepoPayload
+            {
+                Name = repoName,
+                Description = "This is a Yanzi personal sync repository.",
+                Private = true,
+                AutoInit = true
+            },
+            JsonOptions,
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await PersonalSyncFailure.CreateFailureAsync("Gitea", response, cancellationToken);
+        }
     }
 
     private static string EncodePath(string path) => string.Join("/", path.Split('/').Select(Uri.EscapeDataString));
@@ -1310,8 +1484,7 @@ internal sealed class WebDavPersonalSyncBackend : PersonalSyncBackendBase
 
     private async Task EnsureParentCollectionsAsync(string relativePath, CancellationToken cancellationToken)
     {
-        var fullPath = BuildPath(relativePath);
-        var segments = fullPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (segments.Length <= 1)
         {
             return;
@@ -1526,6 +1699,66 @@ internal sealed class GiteeDeletePayload
     public string Sha { get; set; } = string.Empty;
 
     public string Branch { get; set; } = string.Empty;
+}
+
+internal sealed class GiteeCreateRepoPayload
+{
+    [JsonPropertyName("access_token")]
+    public string AccessToken { get; set; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("private")]
+    public bool Private { get; set; } = true;
+
+    [JsonPropertyName("auto_init")]
+    public bool AutoInit { get; set; } = true;
+}
+
+internal sealed class GiteaCreateRepoPayload
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("private")]
+    public bool Private { get; set; } = true;
+
+    [JsonPropertyName("auto_init")]
+    public bool AutoInit { get; set; } = true;
+}
+
+internal sealed class GitLabCreateProjectPayload
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
+
+    [JsonPropertyName("visibility")]
+    public string Visibility { get; set; } = "private";
+
+    [JsonPropertyName("initialize_with_readme")]
+    public bool InitializeWithReadme { get; set; } = true;
+
+    [JsonPropertyName("namespace_id")]
+    public int? NamespaceId { get; set; }
+}
+
+internal sealed class GitLabNamespaceDto
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
 }
 
 internal sealed class GitLabWritePayload
