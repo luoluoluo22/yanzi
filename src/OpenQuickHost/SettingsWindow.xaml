@@ -2989,11 +2989,10 @@
                                                                     <ContextMenu>
                                                                         <MenuItem Header="添加扩展/应用/系统项" Click="RadialSlotAddCommandMenuItem_Click"/>
                                                                         <MenuItem Header="设置模拟按键" Click="RadialSlotSetSimulatedKeyMenuItem_Click"/>
-                                                                        <MenuItem Header="删除扩展/应用/系统项" Click="RadialSlotClearCommandMenuItem_Click"/>
                                                                         <Separator/>
                                                                         <MenuItem Header="进入子环编辑" Click="RadialSlotEnterChildPageMenuItem_Click"/>
-                                                                         <MenuItem Header="添加子环" Click="RadialSlotAddChildPageMenuItem_Click"/>
-                                                                        <MenuItem Header="删除子环" Click="RadialSlotClearChildPageMenuItem_Click"/>
+                                                                        <MenuItem Header="添加子环" Click="RadialSlotAddChildPageMenuItem_Click"/>
+                                                                        <MenuItem Header="删除" Click="RadialSlotDeleteMenuItem_Click"/>
                                                                     </ContextMenu>
                                                                 </Border.ContextMenu>
                                                                 <Grid>

@@ -7261,6 +7261,90 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(RadialMenuSelectedSlotSummary));
     }
 
+    private static string FormatRadialTraceValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "(empty)" : value.Trim();
+    }
+
+    private static string GetRadialTraceListValue(IReadOnlyList<string?>? values, int index)
+    {
+        if (values == null || index < 0 || index >= values.Count)
+        {
+            return string.Empty;
+        }
+
+        return values[index] ?? string.Empty;
+    }
+
+    private static string FirstRadialTraceValue(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string DescribeRadialTraceSlot(RadialMenuSlotEditorItem? slot)
+    {
+        if (slot == null)
+        {
+            return "(slot missing)";
+        }
+
+        return $"index={slot.Index + 1}, ext={FormatRadialTraceValue(slot.ExtensionId)}, title={FormatRadialTraceValue(slot.DisplayTitle)}, child={FormatRadialTraceValue(slot.ChildPageId)}, childTitle={FormatRadialTraceValue(slot.ChildPageTitle)}";
+    }
+
+    private static string DescribeRadialTracePageSlot(RadialMenuPageSettings? page, int index)
+    {
+        if (page == null)
+        {
+            return "(page missing)";
+        }
+
+        return $"pageId={FormatRadialTraceValue(page.Id)}, pageName={FormatRadialTraceValue(page.Name)}, slot={index + 1}, ext={FormatRadialTraceValue(GetRadialTraceListValue(page.Slots, index))}, title={FormatRadialTraceValue(GetRadialTraceListValue(page.SlotTitles, index))}, child={FormatRadialTraceValue(GetRadialTraceListValue(page.ChildPageIds, index))}";
+    }
+
+    private static HashSet<string> CollectRadialChildPageTreeIds(RadialMenuSettings radial, string rootPageId)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(rootPageId) || radial.Pages == null)
+        {
+            return result;
+        }
+
+        var stack = new Stack<string>();
+        stack.Push(rootPageId.Trim());
+        while (stack.Count > 0)
+        {
+            var pageId = stack.Pop();
+            if (!result.Add(pageId))
+            {
+                continue;
+            }
+
+            var page = radial.Pages.FirstOrDefault(item => item.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
+            if (page?.ChildPageIds == null)
+            {
+                continue;
+            }
+
+            foreach (var childPageId in page.ChildPageIds)
+            {
+                if (!string.IsNullOrWhiteSpace(childPageId))
+                {
+                    stack.Push(childPageId.Trim());
+                }
+            }
+        }
+
+        return result;
+    }
+
     private RadialMenuSlotEditorItem? ResolveRadialSlotFromMenuSender(object sender)
     {
         DependencyObject? current = sender as DependencyObject;
@@ -7279,6 +7363,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return fallbackSlot;
         }
 
+        HostAssets.AppendLog($"Settings radial slot resolve fallback: sender={sender?.GetType().Name ?? "(null)"}, fallback={DescribeRadialTraceSlot(_selectedRadialMenuSlot)}.");
         return _selectedRadialMenuSlot;
     }
 
@@ -7653,15 +7738,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        SelectRadialMenuSlot(slot);
-        slot.ExtensionId = string.Empty;
-        slot.DisplayTitle = string.Empty;
-        slot.ExtensionTitle = ResolveRadialExtensionTitle(string.Empty);
-        UpdateRadialSlotPresentation(slot);
-        SaveQuickPanelTriggerSettings();
+        DeleteRadialSlotContent(slot);
     }
 
-        private void RadialSlotEnterChildPageMenuItem_Click(object sender, RoutedEventArgs e)
+    private void RadialSlotEnterChildPageMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var slot = ResolveRadialSlotFromMenuSender(sender);
         if (slot != null && slot.HasChildPageTitle && !string.IsNullOrWhiteSpace(slot.ChildPageId))
@@ -7834,35 +7914,155 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        DeleteRadialSlotContent(slot);
+    }
+
+    private void RadialSlotDeleteMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var slot = ResolveRadialSlotFromMenuSender(sender);
+        var comboPage = RadialMenuPageComboBox?.SelectedItem as RadialMenuPageEditorItem;
+        HostAssets.AppendLog($"Settings radial delete menu clicked: comboPage={FormatRadialTraceValue(comboPage?.Id)}, selectedPage={FormatRadialTraceValue(_settings.RadialMenu?.SelectedPageId)}, resolvedSlot={DescribeRadialTraceSlot(slot)}.");
+        if (slot == null)
+        {
+            return;
+        }
+
+        DeleteRadialSlotContent(slot);
+    }
+
+    private void DeleteRadialSlotContent(RadialMenuSlotEditorItem slot)
+    {
+        _settings.RadialMenu ??= new RadialMenuSettings();
+        _settings.RadialMenu.Pages ??= [];
+
+        var editorPageId = ResolveSelectedRadialMenuPageIdFromEditor();
+        var currentSlot = RadialMenuSlots.FirstOrDefault(item => item.Index == slot.Index) ?? slot;
+        var slotIndex = currentSlot.Index;
+        var currentPage = string.IsNullOrWhiteSpace(editorPageId)
+            ? null
+            : _settings.RadialMenu.Pages.FirstOrDefault(page =>
+                page.Id.Equals(editorPageId, StringComparison.OrdinalIgnoreCase));
+
+        HostAssets.AppendLog($"Settings radial delete requested: editorPage={FormatRadialTraceValue(editorPageId)}, settingsSelectedPage={FormatRadialTraceValue(_settings.RadialMenu.SelectedPageId)}, slotCount={RadialMenuSlots.Count}, pageCount={_settings.RadialMenu.Pages.Count}, sourceSlot={DescribeRadialTraceSlot(slot)}, currentSlot={DescribeRadialTraceSlot(currentSlot)}, pageSlotBefore={DescribeRadialTracePageSlot(currentPage, slotIndex)}.");
+
+        if (string.IsNullOrWhiteSpace(editorPageId))
+        {
+            HostAssets.AppendLog("Settings radial delete skipped: editor page id is empty.");
+            return;
+        }
+
+        if (slotIndex < 0 || slotIndex >= RadialMenuSettings.TotalSlotCount)
+        {
+            HostAssets.AppendLog($"Settings radial delete skipped: slot index out of range, slot={slotIndex}.");
+            return;
+        }
+
+        if (currentPage == null)
+        {
+            HostAssets.AppendLog($"Settings radial delete skipped: page not found, editorPage={editorPageId}.");
+            return;
+        }
+
+        _settings.RadialMenu.SelectedPageId = editorPageId;
+        currentPage.Slots ??= [];
+        currentPage.SlotTitles ??= [];
+        currentPage.ChildPageIds ??= [];
+        while (currentPage.Slots.Count < RadialMenuSettings.TotalSlotCount) currentPage.Slots.Add(null);
+        while (currentPage.SlotTitles.Count < RadialMenuSettings.TotalSlotCount) currentPage.SlotTitles.Add(null);
+        while (currentPage.ChildPageIds.Count < RadialMenuSettings.TotalSlotCount) currentPage.ChildPageIds.Add(null);
+
+        var pageExtensionId = GetRadialTraceListValue(currentPage.Slots, slotIndex);
+        var pageSlotTitle = GetRadialTraceListValue(currentPage.SlotTitles, slotIndex);
+        var pageChildPageId = GetRadialTraceListValue(currentPage.ChildPageIds, slotIndex);
+        var removedExtensionId = FirstRadialTraceValue(currentSlot.ExtensionId, pageExtensionId);
+        var removedChildPageId = FirstRadialTraceValue(currentSlot.ChildPageId, pageChildPageId);
+        var removedDisplayTitle = FirstRadialTraceValue(currentSlot.DisplayTitle, pageSlotTitle);
+        var hasCommand = !string.IsNullOrWhiteSpace(removedExtensionId) || !string.IsNullOrWhiteSpace(removedDisplayTitle);
+        var hasChildPage = !string.IsNullOrWhiteSpace(removedChildPageId);
+        if (!hasCommand && !hasChildPage)
+        {
+            HostAssets.AppendLog($"Settings radial delete skipped: slot is empty after checking editor and settings, pageSlot={DescribeRadialTracePageSlot(currentPage, slotIndex)}.");
+            return;
+        }
+
+        var message = hasChildPage
+            ? "确定要删除该槽位吗？\n这会同时删除当前槽位里的子环。"
+            : "确定要删除该槽位吗？";
         var result = System.Windows.MessageBox.Show(
-            $"确定要清空并删除该子环吗？\n删除后该子环配置将无法恢复。",
-            "确认清空子环",
+            message,
+            "确认删除",
             System.Windows.MessageBoxButton.YesNo,
             System.Windows.MessageBoxImage.Question);
 
         if (result != System.Windows.MessageBoxResult.Yes)
         {
+            HostAssets.AppendLog($"Settings radial delete cancelled: editorPage={editorPageId}, slot={slotIndex + 1}, child={FormatRadialTraceValue(removedChildPageId)}, ext={FormatRadialTraceValue(removedExtensionId)}.");
             return;
         }
 
-        SelectRadialMenuSlot(slot);
-        var removedId = slot.ChildPageId;
-        slot.ChildPageId = string.Empty;
-        slot.ChildPageTitle = ResolveRadialChildPageTitle(string.Empty);
-        if (!string.IsNullOrWhiteSpace(removedId) &&
-            _settings.RadialMenu?.Pages?.Count > 1)
+        var removedChildPageIds = hasChildPage
+            ? CollectRadialChildPageTreeIds(_settings.RadialMenu, removedChildPageId)
+            : [];
+        var pagesBefore = _settings.RadialMenu.Pages.Count;
+        HostAssets.AppendLog($"Settings radial delete applying: editorPage={editorPageId}, slot={slotIndex + 1}, ext={FormatRadialTraceValue(removedExtensionId)}, child={FormatRadialTraceValue(removedChildPageId)}, childTreeCount={removedChildPageIds.Count}, pageSlotBefore={DescribeRadialTracePageSlot(currentPage, slotIndex)}.");
+
+        SelectRadialMenuSlot(currentSlot);
+        var slotsToClear = RadialMenuSlots.Where(item => item.Index == slotIndex).ToList();
+        if (!slotsToClear.Any(item => ReferenceEquals(item, slot)))
         {
-            _settings.RadialMenu.Pages.RemoveAll(page => page.Id.Equals(removedId, StringComparison.OrdinalIgnoreCase));
+            slotsToClear.Add(slot);
+        }
+
+        foreach (var editorSlot in slotsToClear.Distinct())
+        {
+            editorSlot.ExtensionId = string.Empty;
+            editorSlot.DisplayTitle = string.Empty;
+            editorSlot.ChildPageId = string.Empty;
+            editorSlot.ChildPageTitle = string.Empty;
+            editorSlot.ExtensionTitle = string.Empty;
+            UpdateRadialSlotPresentation(editorSlot);
+        }
+
+        currentPage.Slots[slotIndex] = null;
+        currentPage.SlotTitles[slotIndex] = null;
+        currentPage.ChildPageIds[slotIndex] = null;
+
+        var removedPageCount = 0;
+        if (removedChildPageIds.Count > 0)
+        {
+            removedPageCount = _settings.RadialMenu.Pages.RemoveAll(page => removedChildPageIds.Contains(page.Id));
             foreach (var page in _settings.RadialMenu.Pages)
             {
-                page.ChildPageIds = (page.ChildPageIds ?? [])
-                    .Select(id => string.Equals(id, removedId, StringComparison.OrdinalIgnoreCase) ? null : id)
-                    .ToList();
+                if (page.ChildPageIds == null)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < page.ChildPageIds.Count; i++)
+                {
+                    if (!string.IsNullOrWhiteSpace(page.ChildPageIds[i]) && removedChildPageIds.Contains(page.ChildPageIds[i]!))
+                    {
+                        page.ChildPageIds[i] = null;
+                    }
+                }
             }
         }
 
-        SaveRadialMenuSlots();
+        _settings.RadialMenu.SelectedPageId = editorPageId;
         SaveQuickPanelTriggerSettings();
+        var savedSettings = AppSettingsStore.Load();
+        var savedRadial = savedSettings.RadialMenu ?? new RadialMenuSettings();
+        var savedPage = savedRadial.Pages.FirstOrDefault(page =>
+            page.Id.Equals(editorPageId, StringComparison.OrdinalIgnoreCase));
+        var savedChildPageId = GetRadialTraceListValue(savedPage?.ChildPageIds, slotIndex);
+        var deletedChildStillExists = removedChildPageIds.Count > 0 &&
+            savedRadial.Pages.Any(page => removedChildPageIds.Contains(page.Id));
+        HostAssets.AppendLog($"Settings radial delete saved: editorPage={editorPageId}, slot={slotIndex + 1}, pagesBefore={pagesBefore}, pagesAfter={savedRadial.Pages.Count}, removedPageCount={removedPageCount}, savedChild={FormatRadialTraceValue(savedChildPageId)}, deletedChildStillExists={deletedChildStillExists}, savedPageSlot={DescribeRadialTracePageSlot(savedPage, slotIndex)}.");
+        if (!string.IsNullOrWhiteSpace(savedChildPageId) || deletedChildStillExists)
+        {
+            HostAssets.AppendLog($"Settings radial delete failed verification: editorPage={editorPageId}, slot={slotIndex + 1}, expectedChildCleared={FormatRadialTraceValue(removedChildPageId)}, savedChild={FormatRadialTraceValue(savedChildPageId)}, deletedChildStillExists={deletedChildStillExists}.");
+        }
+
         RefreshRadialMenuSlots();
     }
 
