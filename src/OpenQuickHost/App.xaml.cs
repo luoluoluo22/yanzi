@@ -92,11 +92,33 @@ public partial class App : WpfApplication
 
                     // 停止所有关联的 Everything 进程，防止目录被占用无法删除
                     EverythingRuntimeService.KillAllYanziEverythingProcesses();
+
+                    // 清理软件的所有本地运行数据与用户配置目录 (%LOCALAPPDATA%\OpenQuickHost)
+                    try
+                    {
+                        var localAppData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData);
+                        var dataDir = System.IO.Path.Combine(localAppData, "OpenQuickHost");
+                        if (System.IO.Directory.Exists(dataDir))
+                        {
+                            // 启动独立分离的 cmd 进程，在 1 秒后强删数据目录（等待当前进程完全退出释放句柄锁）
+                            var cmdText = $"/c timeout /t 1 /nobreak >nul & rd /s /q \"{dataDir}\"";
+                            var psi = new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = "cmd.exe",
+                                Arguments = cmdText,
+                                CreateNoWindow = true,
+                                UseShellExecute = false
+                            };
+                            System.Diagnostics.Process.Start(psi);
+                        }
+                    }
+                    catch { /* ignore */ }
                 }
                 catch (System.Exception ex)
                 {
                     HostAssets.AppendLog($"Velopack BeforeUninstall Hook error: {ex.Message}");
                 }
+                System.Environment.Exit(0);
             })
             .WithBeforeUpdateFastCallback(v =>
             {
