@@ -1,4 +1,4 @@
-﻿<Window x:Class="OpenQuickHost.SettingsWindow"
+<Window x:Class="OpenQuickHost.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -2725,59 +2725,53 @@
                                     <TextBlock Text="游戏轮盘模式" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                     <TextBlock Text="{Binding RadialMenuSummary}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <Button Content="保存配置" Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Right" Click="SaveQuickPanelTrigger_Click"/>
+                                <Button Content="保存配置" Style="{StaticResource PrimaryBtn}" Height="32" Padding="16,0" HorizontalAlignment="Right" Click="SaveQuickPanelTrigger_Click"/>
                             </Grid>
                             <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12"/>
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15">
                                 <StackPanel>
-                                    <Grid>
-                                        <StackPanel>
-                                            <TextBlock Text="启用燕环" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
-                                            <TextBlock Text="鼠标触发统一在“鼠标触发”页分配；本页负责燕环本身的开关、键盘触发和轮盘内容。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                                <TextBlock Text="键盘触发" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                                <ComboBox ItemsSource="{Binding RadialActivationKeyOptions}"
-                                                          DisplayMemberPath="Label"
-                                                          SelectedValuePath="Value"
-                                                          SelectedValue="{Binding RadialActivationKey, Mode=TwoWay}"
-                                                          Width="150"
-                                                          Height="30"
-                                                          SelectionChanged="SaveQuickPanelTrigger_Click"/>
-                                            </StackPanel>
-                                            <StackPanel Margin="0,8,0,0"
-                                                        Visibility="{Binding RadialUsesCustomShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="自定义快捷键" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}"/>
-                                                    <Button Grid.Column="1"
-                                                            Content="录制快捷键"
-                                                            Style="{StaticResource SecondaryBtn}"
-                                                            Height="28"
-                                                            Padding="14,0"
-                                                            Click="EditRadialHotkeyButton_Click"/>
-                                                </Grid>
-                                                <TextBox Text="{Binding RadialCustomShortcut, Mode=TwoWay}"
-                                                         Margin="0,6,0,0"
-                                                         Height="34"
-                                                         IsReadOnly="True"
-                                                         Background="{DynamicResource BrushBG}"
-                                                         BorderThickness="0"
-                                                         Foreground="{DynamicResource BrushTextMain}"
-                                                         Padding="10,6"/>
-                                            </StackPanel>
-                                            <CheckBox Content="按住触发键呼出燕环，松开执行"
-                                                      Foreground="{DynamicResource BrushTextMain}"
-                                                      FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                      Margin="0,8,0,0"
-                                                      IsChecked="{Binding EnableRadialCapsLockHold, Mode=TwoWay}"
-                                                      Click="SaveQuickPanelTrigger_Click"/>
-                                        </StackPanel>
-                                        <CheckBox HorizontalAlignment="Right" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableRadialMenu, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
-                                    </Grid>
+                                    <TextBlock Text="启用燕环" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <TextBlock Text="键盘触发" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <ComboBox ItemsSource="{Binding RadialActivationKeyOptions}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedValuePath="Value"
+                                                  SelectedValue="{Binding RadialActivationKey, Mode=TwoWay}"
+                                                  Width="150"
+                                                  Height="30"
+                                                  SelectionChanged="SaveQuickPanelTrigger_Click"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,8,0,0"
+                                                Visibility="{Binding RadialUsesCustomShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="自定义快捷键" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}"/>
+                                            <Button Grid.Column="1"
+                                                    Content="录制快捷键"
+                                                    Style="{StaticResource SecondaryBtn}"
+                                                    Height="28"
+                                                    Padding="14,0"
+                                                    Click="EditRadialHotkeyButton_Click"/>
+                                        </Grid>
+                                        <TextBox Text="{Binding RadialCustomShortcut, Mode=TwoWay}"
+                                                 Margin="0,6,0,0"
+                                                 Height="34"
+                                                 IsReadOnly="True"
+                                                 Background="{DynamicResource BrushBG}"
+                                                 BorderThickness="0"
+                                                 Foreground="{DynamicResource BrushTextMain}"
+                                                 Padding="10,6"/>
+                                    </StackPanel>
+                                    <CheckBox Content="按住触发键呼出燕环，松开执行"
+                                              Foreground="{DynamicResource BrushTextMain}"
+                                              FontSize="{DynamicResource FontSizeSmallPlus}"
+                                              Margin="0,8,0,0"
+                                              IsChecked="{Binding EnableRadialCapsLockHold, Mode=TwoWay}"
+                                              Click="SaveQuickPanelTrigger_Click"/>
 
                                     <TextBlock Text="鼠标触发"
                                                Foreground="#FFB8B8B8"
@@ -2798,50 +2792,6 @@
                                                FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,6,0,0"
                                                TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
-
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15" Margin="0,18,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="进程白名单" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="留空表示所有程序都能触发燕环；填写后只对这些进程生效。支持 code、notepad.exe 和 * 通配。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                                    <Grid Margin="0,10,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Text="{Binding RadialWhitelistedProcessesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                 MinHeight="70"
-                                                 AcceptsReturn="True"
-                                                 TextWrapping="Wrap"
-                                                 VerticalScrollBarVisibility="Auto"/>
-                                        <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialWhitelistProcessButton_Click"/>
-                                            <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15" Margin="0,18,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="进程黑名单" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="当白名单为空时，这些进程会被排除。适合游戏、全屏软件或不希望触发燕环的窗口。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                                    <Grid Margin="0,10,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Text="{Binding RadialBlacklistedProcessesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                 MinHeight="70"
-                                                 AcceptsReturn="True"
-                                                 TextWrapping="Wrap"
-                                                 VerticalScrollBarVisibility="Auto"/>
-                                        <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialBlacklistProcessButton_Click"/>
-                                            <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
-                                        </StackPanel>
-                                    </Grid>
                                 </StackPanel>
                             </Border>
 
@@ -2886,8 +2836,8 @@
                                              </ComboBox>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                            <Button Content="新增页面" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,0,8,0" Click="AddRadialMenuPageButton_Click"/>
-                                            <Button Content="删除页面" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="DeleteRadialMenuPageButton_Click"/>
+                                            <Button Content="新增轮盘" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,0,8,0" Click="AddRadialMenuPageButton_Click"/>
+                                            <Button Content="删除轮盘" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="DeleteRadialMenuPageButton_Click"/>
                                         </StackPanel>
                                     </Grid>
 
@@ -3150,22 +3100,45 @@
                                                     <RowDefinition Height="*"/>
                                                 </Grid.RowDefinitions>
                                                 <StackPanel>
-                                                    <TextBlock Text="搜索添加到方向槽位" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                                    <TextBlock Text="{Binding RadialMenuSelectedSlotSummary}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,10" TextWrapping="Wrap"/>
-                                                    <TextBox x:Name="RadialMenuSearchBox"
-                                                             Text="{Binding RadialMenuSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                             Height="30"
-                                                             Margin="0,0,0,8"
-                                                             ToolTip="搜索扩展、应用、系统设置项。按 ↓ 选择，Enter 添加到当前槽位。"
-                                                             PreviewKeyDown="RadialMenuSearchBox_PreviewKeyDown"/>
+                                                    <TextBlock Text="添加到轮盘" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="拖拽到轮盘进行添加" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,10" TextWrapping="Wrap"/>
+                                                    <Grid Margin="0,0,0,8">
+                                                        <TextBox x:Name="RadialMenuSearchBox"
+                                                                 Text="{Binding RadialMenuSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                 Height="30"
+                                                                 Padding="10,4"
+                                                                 ToolTip="搜索扩展、应用、系统设置项。按 ↓ 选择，Enter 添加到当前槽位。"
+                                                                 PreviewKeyDown="RadialMenuSearchBox_PreviewKeyDown"/>
+                                                        <TextBlock Text="扩展、程序、系统设置..."
+                                                                   Foreground="{DynamicResource BrushTextSec}"
+                                                                   Opacity="0.5"
+                                                                   FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="10,0,0,0"
+                                                                   IsHitTestVisible="False">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Text, ElementName=RadialMenuSearchBox}" Value="">
+                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Grid>
                                                 </StackPanel>
-                                                <ScrollViewer Grid.Row="1" MaxHeight="310" VerticalScrollBarVisibility="Auto">
-                                                    <ListBox ItemsSource="{Binding FilteredRadialMenuCommandOptions}"
-                                                             Background="Transparent"
-                                                             BorderThickness="0"
-                                                             Foreground="{DynamicResource BrushTextMain}"
-                                                             PreviewKeyDown="RadialMenuCommandListBox_PreviewKeyDown"
-                                                             MouseDoubleClick="RadialMenuCommandListBox_MouseDoubleClick">
+                                                <ListBox Grid.Row="1"
+                                                         Height="310"
+                                                         ItemsSource="{Binding FilteredRadialMenuCommandOptions}"
+                                                         Background="Transparent"
+                                                         BorderThickness="0"
+                                                         Foreground="{DynamicResource BrushTextMain}"
+                                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                         PreviewMouseWheel="RadialMenuCommandListBox_PreviewMouseWheel"
+                                                         PreviewKeyDown="RadialMenuCommandListBox_PreviewKeyDown"
+                                                         MouseDoubleClick="RadialMenuCommandListBox_MouseDoubleClick">
                                                         <ListBox.ItemTemplate>
                                                             <DataTemplate>
                                                                 <Border Background="{DynamicResource BrushSecondaryBtnBG}"
@@ -3199,9 +3172,52 @@
                                                             </DataTemplate>
                                                         </ListBox.ItemTemplate>
                                                     </ListBox>
-                                                </ScrollViewer>
                                             </Grid>
                                         </Border>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15" Margin="0,18,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="进程白名单" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="留空表示所有程序都能触发燕环；填写后只对这些进程生效。支持 code、notepad.exe 和 * 通配。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Text="{Binding RadialWhitelistedProcessesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 MinHeight="70"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 VerticalScrollBarVisibility="Auto"/>
+                                        <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialWhitelistProcessButton_Click"/>
+                                            <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15" Margin="0,18,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="进程黑名单" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="当白名单为空时，这些进程会被排除。适合游戏、全屏软件或不希望触发燕环的窗口。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Text="{Binding RadialBlacklistedProcessesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 MinHeight="70"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 VerticalScrollBarVisibility="Auto"/>
+                                        <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                            <Button Content="定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialBlacklistProcessButton_Click"/>
+                                            <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
+                                        </StackPanel>
                                     </Grid>
                                 </StackPanel>
                             </Border>
