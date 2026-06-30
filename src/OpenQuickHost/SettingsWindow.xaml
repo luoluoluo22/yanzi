@@ -843,7 +843,7 @@
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,18,0,0">
                                 <StackPanel>
-                                    <Grid Margin="0,0,0,12">
+                                    <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
@@ -852,14 +852,55 @@
                                             <TextBlock Text="主程序快捷键" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
                                             <TextBlock Text="用于呼出或隐藏启动器。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
                                         </StackPanel>
-                                        <Border Grid.Column="1" Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="4" Padding="8,4" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding LauncherHotkey}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}"/>
+                                        <Border x:Name="LauncherHotkeyRecorderBorder"
+                                                Grid.Column="1"
+                                                Background="{DynamicResource BrushBG}"
+                                                BorderThickness="1"
+                                                Padding="8,0"
+                                                CornerRadius="4"
+                                                Width="140"
+                                                Height="28"
+                                                Focusable="True"
+                                                MouseDown="LauncherHotkeyRecorderBorder_MouseDown"
+                                                LostFocus="LauncherHotkeyRecorderBorder_LostFocus"
+                                                PreviewKeyDown="LauncherHotkeyRecorderBorder_PreviewKeyDown"
+                                                PreviewKeyUp="LauncherHotkeyRecorderBorder_PreviewKeyUp"
+                                                Cursor="Hand"
+                                                VerticalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}"/>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsFocused" Value="True">
+                                                            <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="LauncherHotkeyText"
+                                                           Text="{Binding LauncherHotkey, TargetNullValue='--'}"
+                                                           Foreground="{DynamicResource BrushTextMain}"
+                                                           FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                           VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1"
+                                                        Content="×"
+                                                        FontSize="14"
+                                                        Foreground="{DynamicResource BrushTextSec}"
+                                                        Background="Transparent"
+                                                        BorderThickness="0"
+                                                        VerticalAlignment="Center"
+                                                        Margin="4,0,0,0"
+                                                        Padding="0"
+                                                        Cursor="Hand"
+                                                        Click="ClearLauncherHotkey_Click"/>
+                                            </Grid>
                                         </Border>
                                     </Grid>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button Content="修改快捷键" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,0,8,0" Click="EditLauncherHotkeyButton_Click"/>
-                                        <Button Content="重置为 Alt+Space" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="ResetLauncherHotkeyButton_Click"/>
-                                    </StackPanel>
                                     <TextBlock Text="主程序快捷键修改后会立即重新注册。支持常规组合键，也支持录制 DoubleCtrl / DoubleAlt。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,12,0,0"/>
                                 </StackPanel>
                             </Border>
