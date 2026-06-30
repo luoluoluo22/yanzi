@@ -729,6 +729,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsYarnSelectSelected));
             OnPropertyChanged(nameof(IsYanmSelected));
             OnPropertyChanged(nameof(IsAboutSelected));
+            RefreshSelectedSectionHighlights();
             if (IsExtensionsSelected && !_hasLoadedExtensions)
             {
                 _ = RefreshExtensionsFromDiskAsync();

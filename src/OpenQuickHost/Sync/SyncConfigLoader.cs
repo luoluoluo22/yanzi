@@ -39,7 +39,7 @@ public static class SyncConfigLoader
 
         var example = new SyncOptions
         {
-            BaseUrl = "https://openquickhost-sync.a1137583371.workers.dev"
+            BaseUrl = SyncOptions.DefaultBaseUrl
         };
 
         var json = JsonSerializer.Serialize(example, JsonOptions);
