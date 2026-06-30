@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.IO.Compression;
 using System.Collections.Specialized;
 using System.Diagnostics;
@@ -4037,12 +4037,14 @@ public partial class MainWindow
     {
         try
         {
+            var settings = AppSettingsStore.Load();
             var root = await Task.Run(async () =>
             {
-                var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
+                var service = new PersonalSyncService(settings, requireEnabled: false);
                 await service.ProbeAsync();
                 return service.SyncRootDisplay;
             });
+            AppSettingsStore.Save(settings);
             return (true, $"个人同步连接正常：{root}");
         }
         catch (Exception ex)
@@ -4055,11 +4057,13 @@ public partial class MainWindow
     {
         try
         {
+            var settings = AppSettingsStore.Load();
             var result = await Task.Run(async () =>
             {
-                var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
+                var service = new PersonalSyncService(settings, requireEnabled: false);
                 return await service.SyncExtensionsAsync();
             });
+            AppSettingsStore.Save(settings);
             ApplyWebDavSyncResult(result);
             return (true, BuildPersonalSyncCompletedMessage(result));
         }

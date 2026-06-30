@@ -612,6 +612,10 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
         }
 
         _resolvedOwner = owner;
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            _config.Username = owner;
+        }
         return _resolvedOwner;
     }
 
@@ -865,6 +869,10 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         }
 
         _resolvedOwner = owner;
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            _config.Username = owner;
+        }
         CloudSyncDiagnostics.Log("GiteeBackend", "Owner resolved from token", ("owner", _resolvedOwner));
         return _resolvedOwner;
     }
@@ -1245,6 +1253,10 @@ internal sealed class GiteaPersonalSyncBackend : PersonalSyncBackendBase
         }
 
         _resolvedOwner = owner;
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            _config.Username = owner;
+        }
         return _resolvedOwner;
     }
 

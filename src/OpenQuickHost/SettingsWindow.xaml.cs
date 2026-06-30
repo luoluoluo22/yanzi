@@ -4265,6 +4265,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             await Dispatcher.Yield(DispatcherPriority.Background);
             var result = await _mainWindow.ProbeWebDavAsync();
+            LoadPersonalSyncStateFromSettings();
             WebDavStatusText = result.message;
             RefreshSyncActivityLog();
             if (!result.ok)
@@ -4287,6 +4288,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             await Dispatcher.Yield(DispatcherPriority.Background);
             var result = await _mainWindow.SyncWebDavNowAsync();
+            LoadPersonalSyncStateFromSettings();
             WebDavStatusText = result.message;
             await RefreshExtensionsFromDiskAsync();
             RefreshSyncActivityLog();
