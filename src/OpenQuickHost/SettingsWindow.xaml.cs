@@ -13,6 +13,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
@@ -27,6 +28,10 @@ namespace OpenQuickHost;
 public partial class SettingsWindow : Window, INotifyPropertyChanged
 {
     private const string RadialSimulatedKeyPrefix = "keysim::";
+    private const int WmKeyDown = 0x0100;
+    private const int WmKeyUp = 0x0101;
+    private const int WmSysKeyDown = 0x0104;
+    private const int WmSysKeyUp = 0x0105;
     private readonly MainWindow _mainWindow;
     private AppSettings _settings;
     private SettingsNavigationItem? _selectedNavigation;
@@ -72,6 +77,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<string, WpfComboBox> _mouseTriggerTargetCombos = new(StringComparer.Ordinal);
     private bool _isUpdatingMouseTriggerTargetCombos;
     private bool _showPersonalSyncAdvancedOptions;
+    private readonly List<SettingsSearchItem> _dynamicSettingsSearchItems = [];
+    private readonly Dictionary<TextBlock, string> _searchHighlightSnapshots = new();
+    private bool _isRecordingSnapAssistHotkey;
+    private bool _isRecordingLauncherHotkey;
+    private string? _lastLauncherDoubleTapCandidate;
+    private DateTime _lastLauncherDoubleTapAtUtc;
+    private HwndSource? _source;
     
     // 扩展名称缓存，避免重复读取文件
     private static readonly Dictionary<string, string> _extensionNameCache = new();
@@ -172,8 +184,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        _source = (HwndSource?)PresentationSource.FromVisual(this);
+        _source?.AddHook(SettingsWindowWndProc);
         HostAssets.AppendLog("SettingsWindow: OnSourceInitialized called. Updating DWM Theme.");
         App.UpdateWindowDwmTheme(this);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _source?.RemoveHook(SettingsWindowWndProc);
+        _source = null;
+        base.OnClosed(e);
     }
 
     public ObservableCollection<SettingsNavigationItem> NavigationItems { get; }
@@ -738,6 +759,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             {
                 ClearSelectedExtensionItem();
             }
+
+            Dispatcher.BeginInvoke(RefreshSelectedSectionHighlights, DispatcherPriority.Background);
         }
     }
 
@@ -974,13 +997,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public string WindowSnapAssistHotkey
     {
-        get => string.IsNullOrWhiteSpace(_settings.WindowSnapAssistHotkey) ? "未设置" : _settings.WindowSnapAssistHotkey;
+        get => string.IsNullOrWhiteSpace(_settings.WindowSnapAssistHotkey) ? "设置快捷键" : _settings.WindowSnapAssistHotkey;
         private set
         {
             _settings = _settings with { WindowSnapAssistHotkey = value };
-            OnPropertyChanged();
+            NotifySnapAssistHotkeyDisplayChanged();
         }
     }
+
+    public string SnapAssistRecorderText => _isRecordingSnapAssistHotkey ? "请按下快捷键" : WindowSnapAssistHotkey;
+
+    public System.Windows.Media.Brush SnapAssistRecorderForeground => _isRecordingSnapAssistHotkey
+        ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF7DD3FC"))
+        : string.IsNullOrWhiteSpace(_settings.WindowSnapAssistHotkey)
+            ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF9CA3AF"))
+            : (System.Windows.Media.Brush)FindResource("BrushTextMain");
 
     public string AccountTitle
     {
@@ -1066,8 +1097,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             _launcherHotkey = value;
             OnPropertyChanged();
+            NotifyLauncherHotkeyDisplayChanged();
         }
     }
+
+    public string LauncherRecorderText => _isRecordingLauncherHotkey ? "请按下快捷键" : GetLauncherHotkeyDisplayText();
+
+    public System.Windows.Media.Brush LauncherRecorderForeground => _isRecordingLauncherHotkey
+        ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF7DD3FC"))
+        : string.IsNullOrWhiteSpace(_launcherHotkey)
+            ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF9CA3AF"))
+            : (System.Windows.Media.Brush)FindResource("BrushTextMain");
 
     public string SyncStatusText
     {
@@ -1765,6 +1805,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (_highlightKeyword == value) return;
             _highlightKeyword = value;
             OnPropertyChanged(nameof(HighlightKeyword));
+            RefreshSelectedSectionHighlights();
         }
     }
 
@@ -2428,6 +2469,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         InitializeMouseTriggerTargetDropdowns();
         UpdateAllGestureCardColors();
         ScheduleExtensionCardWidthUpdate();
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            RebuildDynamicSettingsSearchItems();
+            RefreshSelectedSectionHighlights();
+        }), DispatcherPriority.Loaded);
     }
 
     private void SettingsWindow_Activated(object? sender, EventArgs e)
@@ -2782,20 +2828,27 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (sender is Border border)
         {
             border.Focus();
-            HotkeyText.Text = "请按下快捷键";
+            SetSnapAssistRecordingState(true);
             e.Handled = true;
         }
     }
 
     private void HotkeyRecorderBorder_LostFocus(object sender, RoutedEventArgs e)
     {
-        var binding = HotkeyText.GetBindingExpression(TextBlock.TextProperty);
-        binding?.UpdateTarget();
+        SetSnapAssistRecordingState(false);
     }
 
     private void HotkeyRecorderBorder_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+
+        if (key == System.Windows.Input.Key.Escape)
+        {
+            SetSnapAssistRecordingState(false);
+            System.Windows.Input.Keyboard.ClearFocus();
+            e.Handled = true;
+            return;
+        }
 
         if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
             key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
@@ -2823,9 +2876,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         if (_mainWindow.TryUpdateWindowSnapAssistHotkey(hotkey, out var message))
         {
-            OnPropertyChanged(nameof(WindowSnapAssistHotkey));
+            _settings = _mainWindow.GetCurrentAppSettings();
+            NotifySnapAssistHotkeyDisplayChanged();
         }
 
+        SetSnapAssistRecordingState(false);
         System.Windows.Input.Keyboard.ClearFocus();
         e.Handled = true;
     }
@@ -2834,9 +2889,132 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         if (_mainWindow.TryUpdateWindowSnapAssistHotkey(string.Empty, out var message))
         {
-            OnPropertyChanged(nameof(WindowSnapAssistHotkey));
+            _settings = _mainWindow.GetCurrentAppSettings();
+            NotifySnapAssistHotkeyDisplayChanged();
         }
+        SetSnapAssistRecordingState(false);
         e.Handled = true;
+    }
+
+    private void LauncherHotkeyRecorderBorder_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is Border border)
+        {
+            border.Focus();
+            SetLauncherRecordingState(true);
+            e.Handled = true;
+        }
+    }
+
+    private void LauncherHotkeyRecorderBorder_LostFocus(object sender, RoutedEventArgs e)
+    {
+        SetLauncherRecordingState(false);
+    }
+
+    private void LauncherHotkeyRecorderBorder_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+        e.Handled = HandleLauncherRecorderKeyDown(key, GetCurrentModifiers());
+    }
+
+    private void LauncherHotkeyRecorderBorder_PreviewKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+        e.Handled = HandleLauncherRecorderKeyUp(key);
+    }
+
+    private void ClearLauncherHotkey_Click(object sender, RoutedEventArgs e)
+    {
+        _lastLauncherDoubleTapCandidate = null;
+        _lastLauncherDoubleTapAtUtc = default;
+        if (_mainWindow.TryUpdateLauncherHotkey(string.Empty, out var message))
+        {
+            LauncherHotkey = _mainWindow.GetLauncherHotkey();
+            SyncStatusText = message;
+            RefreshSyncActivityLog();
+        }
+        else
+        {
+            System.Windows.MessageBox.Show(this, message, "快捷键设置失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        SetLauncherRecordingState(false);
+        e.Handled = true;
+    }
+
+    private void CommitLauncherHotkeyShortcut(string shortcut)
+    {
+        if (_mainWindow.TryUpdateLauncherHotkey(shortcut, out var message))
+        {
+            LauncherHotkey = _mainWindow.GetLauncherHotkey();
+            SyncStatusText = message;
+            RefreshSyncActivityLog();
+        }
+        else
+        {
+            System.Windows.MessageBox.Show(this, message, "快捷键设置失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        SetLauncherRecordingState(false);
+        System.Windows.Input.Keyboard.ClearFocus();
+    }
+
+    private bool HandleLauncherRecorderKeyDown(Key key, ModifierKeys modifiers)
+    {
+        if (key == System.Windows.Input.Key.Escape)
+        {
+            SetLauncherRecordingState(false);
+            System.Windows.Input.Keyboard.ClearFocus();
+            return true;
+        }
+
+        if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
+            key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
+            key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
+            key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
+        {
+            return true;
+        }
+
+        var shortcut = BuildStandardHotkeyString(key, modifiers);
+        if (string.IsNullOrWhiteSpace(shortcut))
+        {
+            return true;
+        }
+
+        _lastLauncherDoubleTapCandidate = null;
+        _lastLauncherDoubleTapAtUtc = default;
+        CommitLauncherHotkeyShortcut(shortcut);
+        return true;
+    }
+
+    private bool HandleLauncherRecorderKeyUp(Key key)
+    {
+        var candidateShortcut = key switch
+        {
+            System.Windows.Input.Key.LeftCtrl or System.Windows.Input.Key.RightCtrl => "DoubleCtrl",
+            System.Windows.Input.Key.LeftAlt or System.Windows.Input.Key.RightAlt => "DoubleAlt",
+            _ => null
+        };
+
+        if (candidateShortcut == null)
+        {
+            return false;
+        }
+
+        var now = DateTime.UtcNow;
+        if (string.Equals(_lastLauncherDoubleTapCandidate, candidateShortcut, StringComparison.Ordinal) &&
+            now - _lastLauncherDoubleTapAtUtc <= TimeSpan.FromMilliseconds(450))
+        {
+            _lastLauncherDoubleTapCandidate = null;
+            _lastLauncherDoubleTapAtUtc = default;
+            CommitLauncherHotkeyShortcut(candidateShortcut);
+            return true;
+        }
+
+        _lastLauncherDoubleTapCandidate = candidateShortcut;
+        _lastLauncherDoubleTapAtUtc = now;
+        return true;
     }
 
     private void SaveQuickPanelTrigger_Click(object sender, RoutedEventArgs e)
@@ -6323,26 +6501,120 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             {
                 SelectedNavigation = target;
             }
-            IsSearchPopupOpen = false;
-            listBox.SelectedIndex = -1;
+        }
+    }
+
+    private void SearchPopupListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (SearchPopupListBox.SelectedItem is SearchDisplayItem selectedItem)
+        {
+            ActivateSearchResult(selectedItem, clearSelection: true);
+            e.Handled = true;
         }
     }
 
     private void SearchPopupListBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == System.Windows.Input.Key.Enter)
+        if (e.Key == System.Windows.Input.Key.Back || e.Key == System.Windows.Input.Key.Delete)
+        {
+            ReturnFocusToSearchBoxForEditing(e.Key);
+            e.Handled = true;
+        }
+        else if (e.Key == System.Windows.Input.Key.Down)
+        {
+            if (SearchPopupListBox.Items.Count > 0)
+            {
+                var nextIndex = SearchPopupListBox.SelectedIndex < 0
+                    ? 0
+                    : Math.Min(SearchPopupListBox.SelectedIndex + 1, SearchPopupListBox.Items.Count - 1);
+                SearchPopupListBox.SelectedIndex = nextIndex;
+                SearchPopupListBox.ScrollIntoView(SearchPopupListBox.SelectedItem);
+            }
+
+            e.Handled = true;
+        }
+        else if (e.Key == System.Windows.Input.Key.Up)
+        {
+            if (SearchPopupListBox.Items.Count > 0)
+            {
+                var previousIndex = SearchPopupListBox.SelectedIndex < 0
+                    ? 0
+                    : Math.Max(SearchPopupListBox.SelectedIndex - 1, 0);
+                SearchPopupListBox.SelectedIndex = previousIndex;
+                SearchPopupListBox.ScrollIntoView(SearchPopupListBox.SelectedItem);
+            }
+
+            e.Handled = true;
+        }
+        else if (e.Key == System.Windows.Input.Key.Enter)
         {
             if (SearchPopupListBox.SelectedItem is SearchDisplayItem selectedItem)
             {
-                var target = NavigationItems.FirstOrDefault(t => t.Key == selectedItem.TabKey);
-                if (target != null)
-                {
-                    SelectedNavigation = target;
-                }
-                IsSearchPopupOpen = false;
-                e.Handled = true;
+                ActivateSearchResult(selectedItem, clearSelection: true);
             }
+
+            e.Handled = true;
         }
+        else if (e.Key == System.Windows.Input.Key.Escape)
+        {
+            IsSearchPopupOpen = false;
+            SettingsSearchBox.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void ReturnFocusToSearchBoxForEditing(System.Windows.Input.Key key)
+    {
+        SettingsSearchBox.Focus();
+        SettingsSearchBox.CaretIndex = SettingsSearchBox.Text?.Length ?? 0;
+
+        var text = SettingsSearchText ?? string.Empty;
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        if (key == System.Windows.Input.Key.Back)
+        {
+            SettingsSearchText = text[..^1];
+        }
+        else if (key == System.Windows.Input.Key.Delete)
+        {
+            SettingsSearchText = string.Empty;
+        }
+
+        SettingsSearchBox.CaretIndex = SettingsSearchText.Length;
+    }
+
+    private static string? BuildStandardHotkeyString(System.Windows.Input.Key key, ModifierKeys? activeModifiers = null)
+    {
+        if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
+            key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
+            key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
+            key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
+        {
+            return null;
+        }
+
+        var currentModifiers = activeModifiers ?? System.Windows.Input.Keyboard.Modifiers;
+        var modifiers = new List<string>();
+        if (currentModifiers.HasFlag(System.Windows.Input.ModifierKeys.Control)) modifiers.Add("Ctrl");
+        if (currentModifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift)) modifiers.Add("Shift");
+        if (currentModifiers.HasFlag(System.Windows.Input.ModifierKeys.Alt)) modifiers.Add("Alt");
+        if (currentModifiers.HasFlag(System.Windows.Input.ModifierKeys.Windows)) modifiers.Add("Win");
+
+        var keyStr = key.ToString();
+        if (key >= System.Windows.Input.Key.D0 && key <= System.Windows.Input.Key.D9)
+        {
+            keyStr = (key - System.Windows.Input.Key.D0).ToString();
+        }
+        else if (key >= System.Windows.Input.Key.NumPad0 && key <= System.Windows.Input.Key.NumPad9)
+        {
+            keyStr = "Num" + (key - System.Windows.Input.Key.NumPad0).ToString();
+        }
+
+        modifiers.Add(keyStr);
+        return string.Join("+", modifiers);
     }
 
     private void SettingsSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -6350,19 +6622,22 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (e.Key == System.Windows.Input.Key.Enter)
         {
             ApplySettingsSearch(SettingsSearchText);
-            System.Windows.Input.Keyboard.ClearFocus();
+            if (SearchPopupListBox.SelectedItem is SearchDisplayItem selectedItem)
+            {
+                ActivateSearchResult(selectedItem, clearSelection: true);
+            }
             e.Handled = true;
         }
         else if (e.Key == System.Windows.Input.Key.Down && IsSearchPopupOpen)
         {
             if (SearchPopupListBox.Items.Count > 0)
             {
+                var nextIndex = SearchPopupListBox.SelectedIndex < 0
+                    ? 0
+                    : Math.Min(SearchPopupListBox.SelectedIndex + 1, SearchPopupListBox.Items.Count - 1);
+                SearchPopupListBox.SelectedIndex = nextIndex;
+                SearchPopupListBox.ScrollIntoView(SearchPopupListBox.SelectedItem);
                 SearchPopupListBox.Focus();
-                var item = SearchPopupListBox.ItemContainerGenerator.ContainerFromIndex(0) as System.Windows.Controls.ListBoxItem;
-                if (item != null)
-                {
-                    item.Focus();
-                }
                 e.Handled = true;
             }
         }
@@ -6386,8 +6661,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             item.Key.Contains(query, StringComparison.OrdinalIgnoreCase)
         ).ToList();
 
+        var allDetailMatches = SettingsSearchData.AllSearchItems
+            .Concat(_dynamicSettingsSearchItems)
+            .GroupBy(item => $"{item.TabKey}\u001f{item.DisplayTitle}\u001f{item.MatchTerm}")
+            .Select(group => group.First());
+
         // 2. 匹配右侧具体设置正文
-        var detailMatches = SettingsSearchData.AllSearchItems.Where(item =>
+        var detailMatches = allDetailMatches.Where(item =>
             item.DisplayTitle.Contains(query, StringComparison.OrdinalIgnoreCase) ||
             item.MatchTerm.Contains(query, StringComparison.OrdinalIgnoreCase)
         ).ToList();
@@ -6432,7 +6712,321 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             {
                 SelectedNavigation = firstTab;
             }
+
+            SearchPopupListBox.SelectedIndex = 0;
         }
+    }
+
+    private void ActivateSearchResult(SearchDisplayItem selectedItem, bool clearSelection)
+    {
+        var target = NavigationItems.FirstOrDefault(t => t.Key == selectedItem.TabKey);
+        if (target != null)
+        {
+            SelectedNavigation = target;
+        }
+
+        IsSearchPopupOpen = false;
+        if (clearSelection)
+        {
+            SearchPopupListBox.SelectedIndex = -1;
+        }
+    }
+
+    private void SetSnapAssistRecordingState(bool isRecording)
+    {
+        if (_isRecordingSnapAssistHotkey == isRecording)
+        {
+            return;
+        }
+
+        _isRecordingSnapAssistHotkey = isRecording;
+        OnPropertyChanged(nameof(SnapAssistRecorderText));
+        OnPropertyChanged(nameof(SnapAssistRecorderForeground));
+    }
+
+    private void NotifySnapAssistHotkeyDisplayChanged()
+    {
+        OnPropertyChanged(nameof(WindowSnapAssistHotkey));
+        OnPropertyChanged(nameof(SnapAssistRecorderText));
+        OnPropertyChanged(nameof(SnapAssistRecorderForeground));
+    }
+
+    private void SetLauncherRecordingState(bool isRecording)
+    {
+        if (_isRecordingLauncherHotkey == isRecording)
+        {
+            return;
+        }
+
+        _isRecordingLauncherHotkey = isRecording;
+        if (!isRecording)
+        {
+            _lastLauncherDoubleTapCandidate = null;
+            _lastLauncherDoubleTapAtUtc = default;
+        }
+        OnPropertyChanged(nameof(LauncherRecorderText));
+        OnPropertyChanged(nameof(LauncherRecorderForeground));
+    }
+
+    private void NotifyLauncherHotkeyDisplayChanged()
+    {
+        OnPropertyChanged(nameof(LauncherHotkey));
+        OnPropertyChanged(nameof(LauncherRecorderText));
+        OnPropertyChanged(nameof(LauncherRecorderForeground));
+    }
+
+    private string GetLauncherHotkeyDisplayText() =>
+        string.IsNullOrWhiteSpace(_launcherHotkey) ? "设置快捷键" : FormatLauncherShortcutForDisplay(_launcherHotkey);
+
+    private static string FormatLauncherShortcutForDisplay(string shortcut) => shortcut switch
+    {
+        "DoubleCtrl" => "双击Ctrl",
+        "DoubleAlt" => "双击Alt",
+        _ => shortcut
+    };
+
+    private IntPtr SettingsWindowWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (!_isRecordingLauncherHotkey)
+        {
+            return IntPtr.Zero;
+        }
+
+        if (msg != WmKeyDown && msg != WmSysKeyDown && msg != WmKeyUp && msg != WmSysKeyUp)
+        {
+            return IntPtr.Zero;
+        }
+
+        var key = KeyInterop.KeyFromVirtualKey(wParam.ToInt32());
+        if (key == Key.None)
+        {
+            return IntPtr.Zero;
+        }
+
+        var modifiers = GetCurrentModifiers();
+        handled = msg is WmKeyDown or WmSysKeyDown
+            ? HandleLauncherRecorderKeyDown(key, modifiers)
+            : HandleLauncherRecorderKeyUp(key);
+        return IntPtr.Zero;
+    }
+
+    private static ModifierKeys GetCurrentModifiers()
+    {
+        var mods = ModifierKeys.None;
+        if ((GetKeyState(0x11) & 0x8000) != 0) mods |= ModifierKeys.Control;
+        if ((GetKeyState(0x12) & 0x8000) != 0) mods |= ModifierKeys.Alt;
+        if ((GetKeyState(0x10) & 0x8000) != 0) mods |= ModifierKeys.Shift;
+        if ((GetKeyState(0x5B) & 0x8000) != 0 || (GetKeyState(0x5C) & 0x8000) != 0) mods |= ModifierKeys.Windows;
+        return mods;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern short GetKeyState(int nVirtKey);
+
+    private void RebuildDynamicSettingsSearchItems()
+    {
+        _dynamicSettingsSearchItems.Clear();
+
+        foreach (var navigationItem in NavigationItems)
+        {
+            if (!TryGetSearchSectionRoot(navigationItem.Key, out var root) || root == null)
+            {
+                continue;
+            }
+
+            foreach (var text in CollectSearchableSectionTexts(root))
+            {
+                _dynamicSettingsSearchItems.Add(new SettingsSearchItem(
+                    navigationItem.Key,
+                    $"{navigationItem.Title} - {text}",
+                    $"{navigationItem.Title} {text} {navigationItem.Key}"));
+            }
+        }
+    }
+
+    private void RefreshSelectedSectionHighlights()
+    {
+        ClearSelectedSectionHighlights();
+
+        if (string.IsNullOrWhiteSpace(HighlightKeyword) ||
+            SelectedNavigation == null ||
+            !TryGetSearchSectionRoot(SelectedNavigation.Key, out var root) ||
+            root == null)
+        {
+            return;
+        }
+
+        foreach (var textBlock in EnumerateDescendantTextBlocks(root))
+        {
+            if (textBlock is HighlightedTextBlock)
+            {
+                continue;
+            }
+
+            if (BindingOperations.IsDataBound(textBlock, TextBlock.TextProperty))
+            {
+                continue;
+            }
+
+            var text = textBlock.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(text) || !text.Contains(HighlightKeyword, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            _searchHighlightSnapshots[textBlock] = textBlock.Text;
+            ApplyInlineHighlight(textBlock, text, HighlightKeyword);
+        }
+    }
+
+    private void ClearSelectedSectionHighlights()
+    {
+        foreach (var (textBlock, originalText) in _searchHighlightSnapshots.ToArray())
+        {
+            textBlock.Inlines.Clear();
+            textBlock.Text = originalText;
+        }
+
+        _searchHighlightSnapshots.Clear();
+    }
+
+    private static void ApplyInlineHighlight(TextBlock textBlock, string text, string keyword)
+    {
+        textBlock.Inlines.Clear();
+
+        var startIndex = 0;
+        while (startIndex < text.Length)
+        {
+            var matchIndex = text.IndexOf(keyword, startIndex, StringComparison.OrdinalIgnoreCase);
+            if (matchIndex < 0)
+            {
+                textBlock.Inlines.Add(new Run(text[startIndex..]) { Foreground = textBlock.Foreground });
+                break;
+            }
+
+            if (matchIndex > startIndex)
+            {
+                textBlock.Inlines.Add(new Run(text[startIndex..matchIndex]) { Foreground = textBlock.Foreground });
+            }
+
+            textBlock.Inlines.Add(new Run(text.Substring(matchIndex, keyword.Length))
+            {
+                Foreground = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF111827")),
+                Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#E6FDE047")),
+                FontWeight = FontWeights.SemiBold
+            });
+
+            startIndex = matchIndex + keyword.Length;
+        }
+    }
+
+    private bool TryGetSearchSectionRoot(string sectionKey, out FrameworkElement? root)
+    {
+        root = sectionKey switch
+        {
+            "general" => GeneralSectionRoot,
+            "ai" => AiSectionRoot,
+            "environment" => EnvironmentSectionRoot,
+            "sync" => SyncSectionRoot,
+            "extensions" => ExtensionsSectionRoot,
+            "quickpanel" => QuickPanelSectionRoot,
+            "mousegestures" => MouseGesturesSectionRoot,
+            "radial" => RadialSectionRoot,
+            "yarnselect" => YarnSelectSectionRoot,
+            "yanm" => YanmSectionRoot,
+            "about" => AboutSectionRoot,
+            _ => null
+        };
+
+        return root != null;
+    }
+
+    private static IEnumerable<string> CollectSearchableSectionTexts(DependencyObject root)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var textBlock in EnumerateDescendantTextBlocks(root))
+        {
+            var text = NormalizeSearchText(textBlock.Text);
+            if (text.Length >= 2 && seen.Add(text))
+            {
+                yield return text;
+            }
+        }
+
+        foreach (var dependencyObject in EnumerateDescendants(root))
+        {
+            if (dependencyObject is not FrameworkElement element)
+            {
+                continue;
+            }
+
+            foreach (var candidate in ExtractSearchableElementText(element))
+            {
+                if (candidate.Length >= 2 && seen.Add(candidate))
+                {
+                    yield return candidate;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<TextBlock> EnumerateDescendantTextBlocks(DependencyObject root) =>
+        EnumerateDescendants(root).OfType<TextBlock>();
+
+    private static IEnumerable<DependencyObject> EnumerateDescendants(DependencyObject root)
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is not DependencyObject dependencyObject)
+            {
+                continue;
+            }
+
+            yield return dependencyObject;
+
+            foreach (var descendant in EnumerateDescendants(dependencyObject))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
+    private static IEnumerable<string> ExtractSearchableElementText(FrameworkElement element)
+    {
+        if (element is System.Windows.Controls.Button button && button.Content is string buttonText)
+        {
+            var normalized = NormalizeSearchText(buttonText);
+            if (normalized.Length >= 2)
+            {
+                yield return normalized;
+            }
+        }
+
+        if (element.ToolTip is string tooltip)
+        {
+            var normalized = NormalizeSearchText(tooltip);
+            if (normalized.Length >= 2)
+            {
+                yield return normalized;
+            }
+        }
+    }
+
+    private static string NormalizeSearchText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var normalized = text.Trim();
+        if (normalized.StartsWith("http", StringComparison.OrdinalIgnoreCase) ||
+            normalized.StartsWith("tencent://", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        return normalized.Replace(Environment.NewLine, " ").Replace('\r', ' ').Replace('\n', ' ').Trim();
     }
 
     private static bool SettingsSearchMatches(string sectionKey, string query)
@@ -9184,6 +9778,13 @@ public class HighlightedTextBlock : TextBlock
             typeof(HighlightedTextBlock),
             new PropertyMetadata(System.Windows.Media.Brushes.DeepSkyBlue, OnHighlightPropertyChanged));
 
+    public static readonly DependencyProperty HighlightBackgroundBrushProperty =
+        DependencyProperty.Register(
+            nameof(HighlightBackgroundBrush),
+            typeof(System.Windows.Media.Brush),
+            typeof(HighlightedTextBlock),
+            new PropertyMetadata(System.Windows.Media.Brushes.Transparent, OnHighlightPropertyChanged));
+
     public string SourceText
     {
         get => (string)GetValue(SourceTextProperty);
@@ -9200,6 +9801,12 @@ public class HighlightedTextBlock : TextBlock
     {
         get => (System.Windows.Media.Brush)GetValue(HighlightBrushProperty);
         set => SetValue(HighlightBrushProperty, value);
+    }
+
+    public System.Windows.Media.Brush HighlightBackgroundBrush
+    {
+        get => (System.Windows.Media.Brush)GetValue(HighlightBackgroundBrushProperty);
+        set => SetValue(HighlightBackgroundBrushProperty, value);
     }
 
     private static void OnHighlightPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -9245,6 +9852,7 @@ public class HighlightedTextBlock : TextBlock
             Inlines.Add(new Run(text.Substring(matchIndex, keyword.Length))
             {
                 Foreground = HighlightBrush,
+                Background = HighlightBackgroundBrush,
                 FontWeight = FontWeights.SemiBold
             });
 

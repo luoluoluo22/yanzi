@@ -1720,6 +1720,12 @@ public partial class MainWindow
         UnregisterLauncherHotkey();
         var shortcut = AppSettingsStore.Load().LauncherHotkey;
         KeyboardDoubleTapService.ApplyConfiguredShortcut(shortcut);
+        if (string.IsNullOrWhiteSpace(shortcut))
+        {
+            HostAssets.AppendLog("Launcher hotkey cleared.");
+            return true;
+        }
+
         if (IsDoubleTapShortcut(shortcut))
         {
             HostAssets.AppendLog($"Launcher hotkey registered as double tap: {shortcut}");

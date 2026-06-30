@@ -733,7 +733,7 @@
                     <StackPanel Margin="30,10,30,30">
                         
                         <!-- General Settings View -->
-                        <StackPanel Visibility="{Binding IsGeneralSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel x:Name="GeneralSectionRoot" Visibility="{Binding IsGeneralSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
 
                             
                             <Grid Margin="0,5">
@@ -906,7 +906,7 @@
 
                         <!-- AI Settings Grid Moved -->
 
-                        <StackPanel Visibility="{Binding IsEnvironmentSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel x:Name="EnvironmentSectionRoot" Visibility="{Binding IsEnvironmentSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
 
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16">
@@ -968,7 +968,7 @@
                         </StackPanel>
 
                         <!-- Sync View -->
-                        <StackPanel Visibility="{Binding IsSyncSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel x:Name="SyncSectionRoot" Visibility="{Binding IsSyncSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <!-- Header with Status Badge -->
                             <Grid Margin="0,0,0,20">
                                 <StackPanel>
@@ -1037,10 +1037,13 @@
                                     </Grid.RowDefinitions>
                                     
                                     <!-- Header with Toggle -->
-                                    <Border Grid.Row="0" Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Padding="20,16">
+                                    <Border Grid.Row="0" Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Padding="20,14">
                                         <Grid>
-                                            <TextBlock Text="个人同步平台" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <StackPanel>
+                                                <TextBlock Text="个人同步平台" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold"/>
+                                                <TextBlock Text="当前同步扩展包、燕幕状态和主配置。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
                                                 <TextBlock Text="启用同步" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,12,0"/>
                                                 <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnablePersonalSync, Mode=TwoWay}" Click="SaveWebDavSettingsButton_Click" VerticalAlignment="Center"/>
                                             </StackPanel>
@@ -1051,7 +1054,7 @@
                                     <StackPanel Grid.Row="1" Margin="20,20,20,16">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="220"/>
+                                                <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="16"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
@@ -1064,35 +1067,7 @@
                                                           Style="{DynamicResource GlobalComboBoxStyle}"
                                                           Height="36"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2" VerticalAlignment="Bottom">
-                                                <TextBlock Text="按笔记项目的方式，个人同步现在支持 GitHub、Gitee、GitLab、Gitea、S3 和 WebDAV。当前同步扩展包、燕幕状态和主配置。"
-                                                           Foreground="{DynamicResource BrushTextSec}"
-                                                           FontSize="{DynamicResource FontSizeSmall}"
-                                                           TextWrapping="Wrap"/>
-                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                                    <Button Content="{Binding SelectedPersonalSyncProviderQuickLinkText}"
-                                                            Tag="{Binding SelectedPersonalSyncProviderQuickLinkUrl}"
-                                                            Style="{StaticResource InlineLinkButtonStyle}"
-                                                            HorizontalAlignment="Left"
-                                                            Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                            Click="OpenSyncProviderLinkButton_Click"/>
-                                                    <Button Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
-                                                            Style="{StaticResource SecondaryBtn}"
-                                                            Height="24"
-                                                            Padding="14,0"
-                                                            Margin="12,0,0,0"
-                                                            Click="TogglePersonalSyncAdvancedOptionsButton_Click"/>
-                                                </StackPanel>
-                                            </StackPanel>
-                                        </Grid>
-
-                                        <Grid Margin="0,14,0,0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="220"/>
-                                                <ColumnDefinition Width="16"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
+                                            <StackPanel Grid.Column="2">
                                                 <TextBlock Text="修改后自动同步" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
                                                 <ComboBox ItemsSource="{Binding PersonalSyncAutoSyncDelayOptions}"
                                                           SelectedValuePath="Value"
@@ -1113,7 +1088,20 @@
                                                     Visibility="{Binding IsSyncProviderGitHub, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <StackPanel>
                                                 <TextBlock Text="仓库名" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                <TextBox Text="{Binding GitHubSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="12"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0" Text="{Binding GitHubSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    <Button Grid.Column="2" 
+                                                            Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
+                                                            Style="{StaticResource SecondaryBtn}"
+                                                            Height="36"
+                                                            Padding="16,0"
+                                                            Click="TogglePersonalSyncAdvancedOptionsButton_Click"/>
+                                                </Grid>
                                             </StackPanel>
                                             <TextBlock Text="默认读取当前 GitHub Token 账号下的仓库；如果仓库在组织下，再打开高级配置填写组织名。"
                                                        Foreground="#FF6B7280"
@@ -1121,7 +1109,16 @@
                                                        Margin="0,8,0,0"
                                                        TextWrapping="Wrap"/>
                                             <StackPanel Margin="0,14,0,0">
-                                                <TextBlock Text="Token" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <Grid Margin="0,0,0,6">
+                                                    <TextBlock Text="Token" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" VerticalAlignment="Center"/>
+                                                    <Button Content="{Binding SelectedPersonalSyncProviderQuickLinkText}"
+                                                            Tag="{Binding SelectedPersonalSyncProviderQuickLinkUrl}"
+                                                            Style="{StaticResource InlineLinkButtonStyle}"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center"
+                                                            Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                            Click="OpenSyncProviderLinkButton_Click"/>
+                                                </Grid>
                                                 <PasswordBox x:Name="GitHubTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
                                             </StackPanel>
                                             <StackPanel Margin="0,14,0,0"
@@ -1152,10 +1149,32 @@
                                                     Visibility="{Binding IsSyncProviderGitee, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <StackPanel>
                                                 <TextBlock Text="仓库名" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                <TextBox Text="{Binding GiteeSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="12"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0" Text="{Binding GiteeSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    <Button Grid.Column="2" 
+                                                            Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
+                                                            Style="{StaticResource SecondaryBtn}"
+                                                            Height="36"
+                                                            Padding="16,0"
+                                                            Click="TogglePersonalSyncAdvancedOptionsButton_Click"/>
+                                                </Grid>
                                             </StackPanel>
                                             <StackPanel Margin="0,14,0,0">
-                                                <TextBlock Text="Token" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <Grid Margin="0,0,0,6">
+                                                    <TextBlock Text="Token" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" VerticalAlignment="Center"/>
+                                                    <Button Content="{Binding SelectedPersonalSyncProviderQuickLinkText}"
+                                                            Tag="{Binding SelectedPersonalSyncProviderQuickLinkUrl}"
+                                                            Style="{StaticResource InlineLinkButtonStyle}"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center"
+                                                            Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                            Click="OpenSyncProviderLinkButton_Click"/>
+                                                </Grid>
                                                 <PasswordBox x:Name="GiteeTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
                                             </StackPanel>
                                             <StackPanel Margin="0,14,0,0"
@@ -1186,10 +1205,32 @@
                                                     Visibility="{Binding IsSyncProviderGitLab, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <StackPanel>
                                                 <TextBlock Text="项目路径" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                <TextBox Text="{Binding GitLabSyncProjectPath, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="12"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0" Text="{Binding GitLabSyncProjectPath, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    <Button Grid.Column="2" 
+                                                            Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
+                                                            Style="{StaticResource SecondaryBtn}"
+                                                            Height="36"
+                                                            Padding="16,0"
+                                                            Click="TogglePersonalSyncAdvancedOptionsButton_Click"/>
+                                                </Grid>
                                             </StackPanel>
                                             <StackPanel Margin="0,14,0,0">
-                                                <TextBlock Text="Token" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <Grid Margin="0,0,0,6">
+                                                    <TextBlock Text="Token" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" VerticalAlignment="Center"/>
+                                                    <Button Content="{Binding SelectedPersonalSyncProviderQuickLinkText}"
+                                                            Tag="{Binding SelectedPersonalSyncProviderQuickLinkUrl}"
+                                                            Style="{StaticResource InlineLinkButtonStyle}"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center"
+                                                            Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                            Click="OpenSyncProviderLinkButton_Click"/>
+                                                </Grid>
                                                 <PasswordBox x:Name="GitLabTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
                                             </StackPanel>
                                             <StackPanel Margin="0,14,0,0"
@@ -1220,10 +1261,32 @@
                                                     Visibility="{Binding IsSyncProviderGitea, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <StackPanel>
                                                 <TextBlock Text="仓库名" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                <TextBox Text="{Binding GiteaSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="12"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0" Text="{Binding GiteaSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    <Button Grid.Column="2" 
+                                                            Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
+                                                            Style="{StaticResource SecondaryBtn}"
+                                                            Height="36"
+                                                            Padding="16,0"
+                                                            Click="TogglePersonalSyncAdvancedOptionsButton_Click"/>
+                                                </Grid>
                                             </StackPanel>
                                             <StackPanel Margin="0,14,0,0">
-                                                <TextBlock Text="Token" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                <Grid Margin="0,0,0,6">
+                                                    <TextBlock Text="Token" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" VerticalAlignment="Center"/>
+                                                    <Button Content="{Binding SelectedPersonalSyncProviderQuickLinkText}"
+                                                            Tag="{Binding SelectedPersonalSyncProviderQuickLinkUrl}"
+                                                            Style="{StaticResource InlineLinkButtonStyle}"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center"
+                                                            Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                            Click="OpenSyncProviderLinkButton_Click"/>
+                                                </Grid>
                                                 <PasswordBox x:Name="GiteaTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
                                             </StackPanel>
                                             <StackPanel Margin="0,14,0,0"
@@ -1545,7 +1608,7 @@
                         </StackPanel>
 
                         <!-- Yanm View -->
-                        <StackPanel Visibility="{Binding IsYanmSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel x:Name="YanmSectionRoot" Visibility="{Binding IsYanmSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
 
 
                             <Grid Margin="0,5">
@@ -1695,7 +1758,7 @@
                         </StackPanel>
 
                         <!-- About View -->
-                        <StackPanel Visibility="{Binding IsAboutSelected, Converter={StaticResource BooleanToVisibilityConverter}}" HorizontalAlignment="Stretch">
+                        <StackPanel x:Name="AboutSectionRoot" Visibility="{Binding IsAboutSelected, Converter={StaticResource BooleanToVisibilityConverter}}" HorizontalAlignment="Stretch">
                             <StackPanel Margin="0,40,0,40" HorizontalAlignment="Center">
                                 <Border Width="80" Height="80" CornerRadius="20" Background="Transparent" Margin="0,0,0,20">
                                     <Image x:Name="AboutLogoImage" Stretch="Uniform"/>
@@ -1916,7 +1979,7 @@
                         </StackPanel>
 
                         <!-- Mouse Panel View -->
-<StackPanel Visibility="{Binding IsQuickPanelSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+<StackPanel x:Name="QuickPanelSectionRoot" Visibility="{Binding IsQuickPanelSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
 
                             
                             <Grid Margin="0,5">
@@ -2532,7 +2595,7 @@
                         </StackPanel>
 
                         <!-- Mouse Gestures View -->
-                        <StackPanel Visibility="{Binding IsMouseGesturesSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel x:Name="MouseGesturesSectionRoot" Visibility="{Binding IsMouseGesturesSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
 
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,0,0,16">
@@ -2842,7 +2905,7 @@
                         </StackPanel>
 
                         <!-- Radial View -->
-                        <StackPanel Visibility="{Binding IsRadialSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel x:Name="RadialSectionRoot" Visibility="{Binding IsRadialSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
 
 
                             <Grid Margin="0,5">
@@ -3348,7 +3411,7 @@
                         </StackPanel>
 
                         <!-- Yarn Select View -->
-                        <StackPanel Visibility="{Binding IsYarnSelectSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel x:Name="YarnSelectSectionRoot" Visibility="{Binding IsYarnSelectSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
 
 
                             <Grid Margin="0,5">
@@ -3519,7 +3582,7 @@
                         </StackPanel>
 
                         <!-- Extensions View -->
-                        <Grid Visibility="{Binding IsExtensionsSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid x:Name="ExtensionsSectionRoot" Visibility="{Binding IsExtensionsSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="0" x:Name="ExtensionDetailColumn" />
@@ -4066,7 +4129,7 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <Grid Grid.Row="1"
+                <Grid x:Name="AiSectionRoot" Grid.Row="1"
                       Margin="30,10,30,30"
                       Visibility="{Binding IsAiSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <Grid.ColumnDefinitions>

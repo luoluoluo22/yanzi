@@ -4114,7 +4114,8 @@ public partial class MainWindow
     public bool TryUpdateLauncherHotkey(string shortcut, out string message)
     {
         message = string.Empty;
-        if (string.IsNullOrWhiteSpace(shortcut) || !TryParseHotkey(shortcut, out _, out _))
+        if (!string.IsNullOrWhiteSpace(shortcut) &&
+            (!TryParseHotkey(shortcut, out _, out _) && !IsDoubleTapShortcut(shortcut)))
         {
             message = "快捷键格式无效。示例：Alt+Space 或 DoubleCtrl";
             return false;
@@ -4134,9 +4135,18 @@ public partial class MainWindow
             return false;
         }
 
-        message = $"主程序快捷键已更新为 {settings.LauncherHotkey}";
+        message = string.IsNullOrWhiteSpace(settings.LauncherHotkey)
+            ? "已清除主程序快捷键。"
+            : $"主程序快捷键已更新为 {FormatLauncherHotkeyLabel(settings.LauncherHotkey)}";
         return true;
     }
+
+    private static string FormatLauncherHotkeyLabel(string shortcut) => shortcut switch
+    {
+        "DoubleCtrl" => "双击Ctrl",
+        "DoubleAlt" => "双击Alt",
+        _ => shortcut
+    };
 
     public string GetYanmHotkey()
     {
