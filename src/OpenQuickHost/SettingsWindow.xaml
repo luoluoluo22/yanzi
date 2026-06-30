@@ -1076,12 +1076,7 @@
                                                           Style="{DynamicResource GlobalComboBoxStyle}"
                                                           Height="36"/>
                                             </StackPanel>
-                                            <TextBlock Grid.Column="2"
-                                                       Text="扩展或配置发生变更后，等待这段时间再自动同步；手动“立即同步”不受影响。"
-                                                       Foreground="{DynamicResource BrushTextSec}"
-                                                       FontSize="{DynamicResource FontSizeSmall}"
-                                                       VerticalAlignment="Bottom"
-                                                       TextWrapping="Wrap"/>
+
                                         </Grid>
 
                                         <StackPanel Margin="0,16,0,0"
