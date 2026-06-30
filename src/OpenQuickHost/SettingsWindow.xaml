@@ -21,6 +21,7 @@
     
     
     <Window.Resources>
+        <local:KeywordMatchToBrushConverter x:Key="KeywordMatchToBrushConverter" />
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <local:BoolToColorConverter x:Key="BoolToColorConverter" />
         <local:ModelNameFirstCharConverter x:Key="ModelNameFirstCharConverter" />
@@ -437,7 +438,7 @@
             PreviewMouseLeftButtonDown="WindowFrame_PreviewMouseLeftButtonDown">
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260" />
+                <ColumnDefinition Width="220" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
@@ -507,6 +508,7 @@
 
                     <!-- Global Search Box -->
                     <Border Grid.Row="1"
+                            x:Name="GlobalSearchBoxBorder"
                             Margin="10,0,10,15" 
                             Background="{DynamicResource BrushBG}" 
                             CornerRadius="6" 
@@ -529,7 +531,73 @@
                                      Foreground="{DynamicResource BrushTextMain}" 
                                      CaretBrush="White"
                                      VerticalAlignment="Center"
-                                     FontSize="{DynamicResource FontSizeNormal}"/>
+                                     FontSize="{DynamicResource FontSizeNormal}"
+                                     PreviewKeyDown="SettingsSearchBox_PreviewKeyDown"/>
+                            <Popup x:Name="SettingsSearchPopup"
+                                   IsOpen="{Binding IsSearchPopupOpen}"
+                                   PlacementTarget="{Binding ElementName=GlobalSearchBoxBorder}"
+                                   Placement="Bottom"
+                                   AllowsTransparency="True"
+                                   StaysOpen="False"
+                                   PopupAnimation="Slide"
+                                   Width="{Binding ElementName=GlobalSearchBoxBorder, Path=ActualWidth}"
+                                   Margin="0,5,0,0">
+                                <Border Background="{DynamicResource BrushBG}"
+                                        BorderBrush="{DynamicResource BrushBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="4">
+                                    <ListBox x:Name="SearchPopupListBox" ItemsSource="{Binding MatchedSearchItems}"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                             SelectionChanged="SearchPopupListBox_SelectionChanged" PreviewKeyDown="SearchPopupListBox_PreviewKeyDown">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="Padding" Value="0" />
+                                                <Setter Property="Margin" Value="0" />
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="ListBoxItem">
+                                                            <Border x:Name="ItemBorder"
+                                                                    Background="Transparent"
+                                                                    CornerRadius="5"
+                                                                    Padding="8,0"
+                                                                    Height="32">
+                                                                <ContentPresenter VerticalAlignment="Center" />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsSelected" Value="True">
+                                                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Height="32">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Width="16" Height="16" Margin="4,0,8,0" VerticalAlignment="Center">
+                                                        <Path Data="{Binding IconGeometry}" Fill="{DynamicResource BrushAccent}" Stretch="Uniform"/>
+                                                    </Border>
+                                                    <TextBlock Grid.Column="1" Text="{Binding DisplayTitle}" Foreground="{DynamicResource BrushTextMain}" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeSmallPlus}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Border>
+                            </Popup>
                             <TextBlock Grid.Column="1" 
                                        Text="搜索设置项..." 
                                        Foreground="#FF555555" 
@@ -574,8 +642,8 @@
                                             Margin="4,0,0,0">
                                         <Path x:Name="IconPath"
                                               Data="{Binding IconGeometry}"
-                                              Fill="{Binding Accent}"
-                                              Opacity="0.8"
+                                              Fill="{DynamicResource BrushTextSec}"
+                                              Opacity="0.7"
                                               Stretch="Uniform" 
                                               HorizontalAlignment="Center"
                                               VerticalAlignment="Center" />
@@ -587,6 +655,15 @@
                                                Foreground="{DynamicResource BrushTextMain}"
                                                Margin="12,0,0,0" />
                                 </Grid>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                        <Setter TargetName="IconPath" Property="Fill" Value="{DynamicResource BrushAccent}" />
+                                        <Setter TargetName="IconPath" Property="Opacity" Value="1.0" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                        <Setter TargetName="IconPath" Property="Opacity" Value="0.9" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -697,24 +774,72 @@
                             </Grid>
                             <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12"/>
 
-                            <Grid Margin="0,5">
-                                <TextBlock Text="窗口快速排列（鼠标靠近窗口角落时显示布局轮盘）" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
-                                <CheckBox HorizontalAlignment="Right" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableWindowSnapAssist, Mode=TwoWay}" Click="SaveSettingsToggle_Click"/>
-                            </Grid>
-                            <Grid Margin="0,8,0,0" Visibility="{Binding EnableWindowSnapAssist, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="窗口排列快捷键" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                    <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="4" Padding="8,4" VerticalAlignment="Center" Margin="0,0,8,0">
-                                        <TextBlock Text="{Binding WindowSnapAssistHotkey, TargetNullValue='未设置'}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}"/>
-                                    </Border>
-                                    <Button Content="设置" Style="{StaticResource SecondaryBtn}" Height="26" Padding="14,0" Click="EditSnapAssistHotkeyButton_Click"/>
+                            <Border Padding="10,8" CornerRadius="6" Tag="窗口快速排列 窗口排列快捷键">
+                                <Border.Background>
+                                    <MultiBinding Converter="{StaticResource KeywordMatchToBrushConverter}">
+                                        <Binding Path="DataContext.HighlightKeyword" RelativeSource="{RelativeSource AncestorType=Window}"/>
+                                        <Binding Path="Tag" RelativeSource="{RelativeSource Self}"/>
+                                    </MultiBinding>
+                                </Border.Background>
+                                <StackPanel>
+                                    <Grid Margin="0,5">
+                                        <TextBlock Text="窗口快速排列（鼠标靠近窗口角落时显示布局轮盘）" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center"/>
+                                        <CheckBox HorizontalAlignment="Right" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableWindowSnapAssist, Mode=TwoWay}" Click="SaveSettingsToggle_Click"/>
+                                    </Grid>
+                                    <Grid Margin="0,8,0,0" Visibility="{Binding EnableWindowSnapAssist, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="窗口排列快捷键" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
+                                        <Border x:Name="HotkeyRecorderBorder" 
+                                                Grid.Column="1"
+                                                Background="{DynamicResource BrushBG}"
+                                                BorderThickness="1"
+                                                Padding="8,0"
+                                                CornerRadius="4"
+                                                Width="140"
+                                                Height="28"
+                                                Focusable="True"
+                                                MouseDown="HotkeyRecorderBorder_MouseDown"
+                                                PreviewKeyDown="HotkeyRecorderBorder_PreviewKeyDown"
+                                                LostFocus="HotkeyRecorderBorder_LostFocus"
+                                                Cursor="Hand">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}"/>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsFocused" Value="True">
+                                                            <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock x:Name="HotkeyText" 
+                                                           Text="{Binding WindowSnapAssistHotkey, TargetNullValue='--'}"
+                                                           Foreground="{DynamicResource BrushTextMain}"
+                                                           FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                           VerticalAlignment="Center"/>
+                                                <Button Grid.Column="1" 
+                                                        Content="×" 
+                                                        FontSize="14"
+                                                        Foreground="{DynamicResource BrushTextSec}"
+                                                        Background="Transparent"
+                                                        BorderThickness="0"
+                                                        Padding="0"
+                                                        VerticalAlignment="Center"
+                                                        Cursor="Hand"
+                                                        Click="ClearSnapAssistHotkey_Click"/>
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
                                 </StackPanel>
-                            </Grid>
-                            <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12"/>
+                            </Border>
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,18,0,0">
                                 <StackPanel>

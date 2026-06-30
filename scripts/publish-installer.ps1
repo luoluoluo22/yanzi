@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$Version = "0.1.0",
@@ -111,6 +111,14 @@ if (-not $SkipInstaller) {
         Write-Host "Successfully downloaded previous releases."
     } catch {
         Write-Warning "Could not download previous releases (this is normal for the very first release or offline builds): $_"
+    }
+
+    $cleanVer = $Version.TrimStart("vV")
+    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match [regex]::Escape($cleanVer) } | Remove-Item -Force -ErrorAction SilentlyContinue
+    $releasesFile = Join-Path $installerOutDir "RELEASES"
+    if (Test-Path $releasesFile) {
+        $lines = Get-Content $releasesFile | Where-Object { $_ -notmatch [regex]::Escape($cleanVer) }
+        Set-Content -Path $releasesFile -Value $lines
     }
 
     Write-Host "Building Velopack installer package..."

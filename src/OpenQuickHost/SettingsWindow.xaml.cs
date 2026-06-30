@@ -155,6 +155,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MouseGestureItems = new ObservableCollection<SettingsMouseGestureItem>();
         MouseGestureQuickBindItems = new ObservableCollection<MouseGestureQuickBindItem>();
         MouseGestureExtensionOptions = new ObservableCollection<MouseGestureExtensionOption>();
+        MatchedSearchItems = new ObservableCollection<SearchDisplayItem>();
         UpdateBackupStatusText();
         DataContext = this;
         // 延迟到Loaded事件中执行，避免构造函数卡顿
@@ -176,6 +177,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     }
 
     public ObservableCollection<SettingsNavigationItem> NavigationItems { get; }
+    public ObservableCollection<SearchDisplayItem> MatchedSearchItems { get; }
 
     public ObservableCollection<SettingsShortcutItem> ShortcutItems { get; }
 
@@ -1742,6 +1744,30 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private bool _isSearchPopupOpen;
+    public bool IsSearchPopupOpen
+    {
+        get => _isSearchPopupOpen;
+        set
+        {
+            if (_isSearchPopupOpen == value) return;
+            _isSearchPopupOpen = value;
+            OnPropertyChanged(nameof(IsSearchPopupOpen));
+        }
+    }
+
+    private string _highlightKeyword = string.Empty;
+    public string HighlightKeyword
+    {
+        get => _highlightKeyword;
+        set
+        {
+            if (_highlightKeyword == value) return;
+            _highlightKeyword = value;
+            OnPropertyChanged(nameof(HighlightKeyword));
+        }
+    }
+
     public string SettingsSearchText
     {
         get => _settingsSearchText;
@@ -2749,6 +2775,68 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             System.Windows.MessageBox.Show($"无法打开浏览器: {ex.Message}");
         }
+    }
+
+    private void HotkeyRecorderBorder_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is Border border)
+        {
+            border.Focus();
+            HotkeyText.Text = "请按下快捷键";
+            e.Handled = true;
+        }
+    }
+
+    private void HotkeyRecorderBorder_LostFocus(object sender, RoutedEventArgs e)
+    {
+        var binding = HotkeyText.GetBindingExpression(TextBlock.TextProperty);
+        binding?.UpdateTarget();
+    }
+
+    private void HotkeyRecorderBorder_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+
+        if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
+            key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
+            key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
+            key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var modifiers = new List<string>();
+        if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control)) modifiers.Add("Ctrl");
+        if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift)) modifiers.Add("Shift");
+        if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Alt)) modifiers.Add("Alt");
+        if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Windows)) modifiers.Add("Win");
+
+        string keyStr = key.ToString();
+        if (key >= System.Windows.Input.Key.D0 && key <= System.Windows.Input.Key.D9)
+            keyStr = (key - System.Windows.Input.Key.D0).ToString();
+        else if (key >= System.Windows.Input.Key.NumPad0 && key <= System.Windows.Input.Key.NumPad9)
+            keyStr = "Num" + (key - System.Windows.Input.Key.NumPad0).ToString();
+
+        modifiers.Add(keyStr);
+        string hotkey = string.Join("+", modifiers);
+
+        if (_mainWindow.TryUpdateWindowSnapAssistHotkey(hotkey, out var message))
+        {
+            OnPropertyChanged(nameof(WindowSnapAssistHotkey));
+        }
+
+        System.Windows.Input.Keyboard.ClearFocus();
+        e.Handled = true;
+    }
+
+    private void ClearSnapAssistHotkey_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mainWindow.TryUpdateWindowSnapAssistHotkey(string.Empty, out var message))
+        {
+            OnPropertyChanged(nameof(WindowSnapAssistHotkey));
+        }
+        e.Handled = true;
     }
 
     private void SaveQuickPanelTrigger_Click(object sender, RoutedEventArgs e)
@@ -6226,18 +6314,124 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void SearchPopupListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox listBox && listBox.SelectedItem is SearchDisplayItem selectedItem)
+        {
+            var target = NavigationItems.FirstOrDefault(t => t.Key == selectedItem.TabKey);
+            if (target != null)
+            {
+                SelectedNavigation = target;
+            }
+            IsSearchPopupOpen = false;
+            listBox.SelectedIndex = -1;
+        }
+    }
+
+    private void SearchPopupListBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            if (SearchPopupListBox.SelectedItem is SearchDisplayItem selectedItem)
+            {
+                var target = NavigationItems.FirstOrDefault(t => t.Key == selectedItem.TabKey);
+                if (target != null)
+                {
+                    SelectedNavigation = target;
+                }
+                IsSearchPopupOpen = false;
+                e.Handled = true;
+            }
+        }
+    }
+
+    private void SettingsSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            ApplySettingsSearch(SettingsSearchText);
+            System.Windows.Input.Keyboard.ClearFocus();
+            e.Handled = true;
+        }
+        else if (e.Key == System.Windows.Input.Key.Down && IsSearchPopupOpen)
+        {
+            if (SearchPopupListBox.Items.Count > 0)
+            {
+                SearchPopupListBox.Focus();
+                var item = SearchPopupListBox.ItemContainerGenerator.ContainerFromIndex(0) as System.Windows.Controls.ListBoxItem;
+                if (item != null)
+                {
+                    item.Focus();
+                }
+                e.Handled = true;
+            }
+        }
+    }
+
     private void ApplySettingsSearch(string query)
     {
         query = query.Trim();
+        HighlightKeyword = query;
+        MatchedSearchItems.Clear();
+
         if (string.IsNullOrWhiteSpace(query))
         {
+            IsSearchPopupOpen = false;
             return;
         }
 
-        var target = NavigationItems.FirstOrDefault(item => SettingsSearchMatches(item.Key, query));
-        if (target != null)
+        // 1. 匹配 Tab 标题
+        var tabMatches = NavigationItems.Where(item => 
+            item.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            item.Key.Contains(query, StringComparison.OrdinalIgnoreCase)
+        ).ToList();
+
+        // 2. 匹配右侧具体设置正文
+        var detailMatches = SettingsSearchData.AllSearchItems.Where(item =>
+            item.DisplayTitle.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            item.MatchTerm.Contains(query, StringComparison.OrdinalIgnoreCase)
+        ).ToList();
+
+        var searchDisplayItems = new List<SearchDisplayItem>();
+
+        // 优先把 Tab 级别的匹配加在前面
+        foreach (var tab in tabMatches)
         {
-            SelectedNavigation = target;
+            searchDisplayItems.Add(new SearchDisplayItem(
+                tab.Key,
+                tab.Title,
+                tab.IconGeometry
+            ));
+        }
+
+        // 再把具体的设置项正文匹配加在后面
+        foreach (var match in detailMatches)
+        {
+            var tabIcon = NavigationItems.FirstOrDefault(t => t.Key == match.TabKey)?.IconGeometry;
+            searchDisplayItems.Add(new SearchDisplayItem(
+                match.TabKey,
+                match.DisplayTitle,
+                tabIcon
+            ));
+        }
+
+        // 根据 DisplayTitle 去重，保留前 8 个
+        var uniqueItems = searchDisplayItems.GroupBy(x => x.DisplayTitle).Select(g => g.First()).Take(8).ToList();
+
+        foreach (var item in uniqueItems)
+        {
+            MatchedSearchItems.Add(item);
+        }
+
+        IsSearchPopupOpen = MatchedSearchItems.Count > 0;
+
+        if (MatchedSearchItems.Count > 0)
+        {
+            var firstTab = NavigationItems.FirstOrDefault(t => t.Key == MatchedSearchItems[0].TabKey);
+            if (firstTab != null)
+            {
+                SelectedNavigation = firstTab;
+            }
         }
     }
 
@@ -10171,5 +10365,88 @@ public class SettingsAiProviderVM : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+public sealed record SearchDisplayItem(string TabKey, string DisplayTitle, System.Windows.Media.Geometry? IconGeometry);
+public sealed record SettingsSearchItem(string TabKey, string DisplayTitle, string MatchTerm);
+
+public static class SettingsSearchData
+{
+    public static readonly List<SettingsSearchItem> AllSearchItems = new()
+    {
+        // 常规
+        new("general", "常规 - 主题模式", "主题模式 暗黑模式 深色模式 浅色模式 theme mode dark light"),
+        new("general", "常规 - 开机启动", "开机启动 随系统启动 自启动 startup launch"),
+        new("general", "常规 - 自动检测更新", "自动检测更新 自动下载更新 升级 update version upgrade"),
+        new("general", "常规 - 最小化到系统托盘", "最小化到系统托盘 关闭时最小化 托盘 任务栏 tray close"),
+        new("general", "常规 - 自动刷新云状态", "启动后自动刷新云状态 同步云状态 refresh cloud"),
+        new("general", "常规 - 窗口快速排列", "窗口快速排列 窗口分屏 布局轮盘 Snap layout"),
+        new("general", "常规 - 窗口排列快捷键", "窗口排列快捷键 快捷键 组合键 视窗快捷键 hotkey shortcut"),
+        
+        // 模型服务
+        new("ai", "模型服务 - API Key", "API Key 密钥 接口密钥 Token 密码 鉴权 apikey key secret"),
+        new("ai", "模型服务 - 自定义 Base URL", "Base URL 接口地址 代理地址 域名 接口链接 自定义服务 url"),
+        new("ai", "模型服务 - 模型名称", "模型名称 默认模型 模型切换 AI模型 Gemini Claude GPT model"),
+        new("ai", "模型服务 - 系统提示词", "系统提示词 System Prompt 预设 角色扮演 prompt system"),
+
+        // 环境变量
+        new("environment", "环境变量 - 添加/编辑环境变量", "环境变量 变量配置 Notion Key OpenAI Key 密钥 环境变量列表 env var key token"),
+
+        // 同步与备份
+        new("sync", "同步与备份 - WebDAV 同步", "WebDAV 同步 云同步 坚果云 同步服务器 账号 密码 备份 sync backup account password webdav"),
+        new("sync", "同步与备份 - 自动备份频率", "自动备份频率 备份频率 自动备份 备份时间 frequency"),
+        new("sync", "同步与备份 - 备份与恢复操作", "立即备份 立即恢复 上传备份 下载备份 同步数据 restore"),
+
+        // 扩展
+        new("extensions", "扩展 - 扩展管理", "扩展 插件 本地扩展 启用扩展 禁用扩展 编辑 搜索 打开目录 扩展根目录 extension plugin folder"),
+
+        // 回收站
+        new("recycle", "回收站 - 扩展回收站", "回收站 扩展回收站 恢复 彻底删除 已删除插件 recycle bin trash restore"),
+
+        // 快捷键
+        new("shortcuts", "快捷键 - 快捷键绑定", "快捷键绑定 热键 录制快捷键 全局快捷键 组合键 shortcut hotkey binding"),
+
+        // 鼠标触发
+        new("quickpanel", "鼠标触发 - 面板触发方式", "面板触发 鼠标触发 鼠标面板 快捷面板 右键 中键 X1键 X2键 长按 滚轮 trigger mouse right click"),
+
+        // 鼠标手势
+        new("mousegestures", "鼠标手势 - 手势绑定", "鼠标手势 手势绑定 绘制手势 轨迹 常用手势 gesture mouse draw"),
+
+        // 燕环
+        new("radial", "燕环 - 轮盘设置", "燕环 轮盘 游戏轮盘 Caps Lock 唤醒 槽位 子环 唤醒键 radial ring wheel"),
+
+        // 燕选
+        new("yarnselect", "燕选 - 选中操作", "燕选 选中操作 复制 剪切 粘贴 快捷操作 划词搜索 select copy paste selection"),
+
+        // 燕幕
+        new("yanm", "燕幕 - 仪表盘", "燕幕 仪表盘 WebView HTML 组件 全局信息层 Caps Lock 唤醒 双击 overlay webview html"),
+
+        // 关于
+        new("about", "关于 - 版本与协议", "关于 软件版本 官方网站 用户协议 开源许可 开源协议 about version update website")
+    };
+}
+
+public class KeywordMatchToBrushConverter : System.Windows.Data.IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        if (values.Length >= 2 && values[0] is string keyword && values[1] is string tag)
+        {
+            if (!string.IsNullOrWhiteSpace(keyword) && !string.IsNullOrWhiteSpace(tag))
+            {
+                if (tag.Contains(keyword, StringComparison.OrdinalIgnoreCase) || 
+                    keyword.Contains(tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#4DFFD600"));
+                }
+            }
+        }
+        return System.Windows.Media.Brushes.Transparent;
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
 }
 
