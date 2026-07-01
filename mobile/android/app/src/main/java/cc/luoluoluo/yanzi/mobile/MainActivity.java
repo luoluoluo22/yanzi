@@ -6233,7 +6233,7 @@ extends Activity {
             this.yanmSyncHandler.removeCallbacks(this.pendingYanmSync);
         }
         this.pendingYanmSync = () -> this.syncYanmStateToCloud(reason);
-        this.yanmSyncHandler.postDelayed(this.pendingYanmSync, 1000L);
+        this.yanmSyncHandler.postDelayed(this.pendingYanmSync, 3000L);
         this.setStatus("\u71d5\u5e55\u72b6\u6001\u5f85\u540c\u6b65\u5230\u4e91\u7aef\uff1a" + reason);
     }
 
@@ -6356,7 +6356,7 @@ extends Activity {
             this.yanmSyncHandler.removeCallbacks(this.pendingYanmComponentStateSync);
         }
         this.pendingYanmComponentStateSync = () -> this.syncYanmComponentStateToCloud(reason);
-        this.yanmSyncHandler.postDelayed(this.pendingYanmComponentStateSync, 1000L);
+        this.yanmSyncHandler.postDelayed(this.pendingYanmComponentStateSync, 3000L);
         this.setStatus("\u71d5\u5e55\u540e\u7aef\u6570\u636e\u5f85\u540c\u6b65\u5230\u4e91\u7aef\uff1a" + reason);
     }
 
