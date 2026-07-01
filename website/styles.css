@@ -3469,7 +3469,7 @@ article h3:hover .heading-anchor-link {
 
 .split-button-container:hover {
   transform: translateY(-2px);
-  box-shadow: 0 15px 30px -5px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(59, 130, 246, 0.25);
 }
 
 .split-button-container .button.primary {
@@ -3664,4 +3664,124 @@ article h3:hover .heading-anchor-link {
 .copy-modal-actions .button.primary:hover {
   background: #2563eb !important;
   box-shadow: 0 12px 20px rgba(59, 130, 246, 0.35) !important;
+}
+
+/* ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+ *  Sleek & Premium UI Layout Polish
+ * ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T */
+
+/* Typography & Titles */
+h1, h2 {
+  letter-spacing: -0.03em !important;
+  line-height: 1.15 !important;
+}
+
+.hero-text {
+  font-size: 1.2rem !important;
+  line-height: 1.75 !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  max-width: 48ch !important;
+}
+
+/* Nav links spacing */
+.site-header nav {
+  gap: 2.5rem !important;
+  align-items: center;
+}
+
+.site-header nav a {
+  font-size: 0.95rem !important;
+  letter-spacing: -0.01em;
+}
+
+/* Float Animation for Hero Mockup */
+@keyframes heroFloat {
+  0% { transform: translateY(0px) rotateY(-15deg) rotateX(5deg) scale(0.95); }
+  50% { transform: translateY(-8px) rotateY(-13deg) rotateX(4deg) scale(0.97); }
+  100% { transform: translateY(0px) rotateY(-15deg) rotateX(5deg) scale(0.95); }
+}
+
+.tilt-effect {
+  animation: heroFloat 6s ease-in-out infinite;
+}
+
+.mock-image-container:hover .tilt-effect {
+  animation: none !important;
+  transform: rotateY(0deg) rotateX(0deg) scale(1) !important;
+}
+
+/* Modern Mockup Shadow Glow */
+.app-screenshot {
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8), 0 0 50px rgba(59, 130, 246, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.mock-image-container:hover .app-screenshot {
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.9), 0 0 70px rgba(59, 130, 246, 0.25) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Glassmorphism Card Upgrades */
+.card {
+  background: rgba(20, 22, 28, 0.6) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.card:hover {
+  background: rgba(28, 30, 38, 0.85) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4), 0 0 30px rgba(59, 130, 246, 0.1) !important;
+  transform: translateY(-6px) !important;
+}
+
+.card-icon {
+  border-radius: 14px !important;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Interactive Demo V2 Cards Clean layout */
+.demo-v2-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.4) !important;
+  border-radius: 24px !important;
+  padding: 2rem !important;
+}
+
+/* Showcase Grid Polish */
+.showcase-grid .panel-mock {
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.showcase-grid .panel-mock:hover {
+  transform: translateY(-6px) !important;
+}
+
+/* Dropdown Menu Styles Refinement */
+.download-dropdown-menu {
+  background: rgba(20, 22, 28, 0.85) !important;
+  border: 1px solid rgba(59, 130, 246, 0.25) !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(59, 130, 246, 0.1) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-radius: 14px !important;
+  padding: 6px 0 !important;
+}
+
+.download-dropdown-menu a {
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  padding: 12px 20px !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.download-dropdown-menu a:hover {
+  background: rgba(59, 130, 246, 0.1) !important;
+  color: #3b82f6 !important;
 }
