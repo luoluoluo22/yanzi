@@ -3457,3 +3457,87 @@ article h3:hover .heading-anchor-link {
     padding: 1.5rem !important;
   }
 }
+/* Split button & Dropdown for downloads */
+.split-button-container {
+  display: inline-flex;
+  position: relative;
+  align-items: stretch;
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 20px -5px rgba(255, 255, 255, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--text);
+  color: var(--bg);
+}
+
+.split-button-container:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 30px -5px rgba(255, 255, 255, 0.3);
+}
+
+.split-button-container .button.primary {
+  box-shadow: none !important;
+  transform: none !important;
+  background: transparent !important;
+  color: var(--bg) !important;
+}
+
+.split-button-container .button.primary:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  padding-right: 16px;
+}
+
+.split-button-arrow {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 0 12px;
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: transparent;
+  color: var(--bg);
+}
+
+.split-button-arrow:hover, .split-button-arrow[aria-expanded="true"] {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+.download-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: none;
+  flex-direction: column;
+  min-width: 180px;
+  z-index: 100;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.download-dropdown-menu.show {
+  display: flex;
+}
+
+.download-dropdown-menu a {
+  padding: 14px 16px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  transition: background 0.2s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.download-dropdown-menu a:hover {
+  background: var(--panel-hover);
+}
