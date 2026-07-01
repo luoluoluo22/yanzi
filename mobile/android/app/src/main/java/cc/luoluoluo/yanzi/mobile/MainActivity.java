@@ -584,6 +584,8 @@ extends Activity {
         }
         if (this.prefs.getBoolean("auto_cloud_update", false)) {
             this.refreshYanm(true);
+            this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
+            this.autoCloudUpdateHandler.postDelayed(this.autoCloudUpdateRunnable, 1000L);
         }
         this.updateProfileHeader();
         this.loadChatHistory();
@@ -819,6 +821,7 @@ extends Activity {
 
     protected void onPause() {
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
+        this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
         this.stopWakeListening(false);
         this.destroySpeechRecognizer();
         if (this.connectionCheckHandler != null && this.connectionCheckRunnable != null) {
