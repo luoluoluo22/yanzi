@@ -341,6 +341,11 @@
     const SCALE_MODE_KEY = "yanzi.yanm.scaleMode";
     let currentSnapshot = null;
     let saveTimer = 0;
+    let isSaving = false;
+    let hasPendingChanges = false;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    let retryTimer = 0;
     let scaleMode = localStorage.getItem(SCALE_MODE_KEY) || "fit"; // "fit" or "actual"
 
     function getToken() {
@@ -597,8 +602,18 @@
 
     function queueSaveYanm() {
       clearTimeout(saveTimer);
+      clearTimeout(retryTimer);
       syncLabel.textContent = "状态已修改，准备写回燕子云端...";
-      saveTimer = setTimeout(saveYanm, 900);
+      saveTimer = setTimeout(triggerSave, 1500);
+    }
+
+    function triggerSave() {
+      if (isSaving) {
+        hasPendingChanges = true;
+        syncLabel.textContent = "检测到新修改，将在上一次写入完成后自动更新...";
+        return;
+      }
+      saveYanm();
     }
 
     async function saveYanm() {
@@ -606,6 +621,10 @@
         return;
       }
 
+      isSaving = true;
+      hasPendingChanges = false;
+      syncLabel.textContent = "正在写回燕子云端...";
+      
       const updatedAtUtc = new Date().toISOString();
       try {
         await api("/v1/me/yanm-state", {
@@ -617,8 +636,26 @@
         });
         currentSnapshot.updatedAtUtc = updatedAtUtc;
         syncLabel.textContent = `已写回燕子云端：${new Date(updatedAtUtc).toLocaleString()}`;
+        retryCount = 0;
+        isSaving = false;
+        
+        if (hasPendingChanges) {
+          triggerSave();
+        }
       } catch (error) {
-        syncLabel.textContent = error.message || "写回燕子云端失败";
+        isSaving = false;
+        console.error("Save yanm failed:", error);
+        
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          const delay = retryCount * 2000;
+          syncLabel.textContent = `写回失败 (${error.message || "未知错误"})，将在 ${delay / 1000} 秒后重试 (第 ${retryCount}/${MAX_RETRIES} 次)...`;
+          clearTimeout(retryTimer);
+          retryTimer = setTimeout(triggerSave, delay);
+        } else {
+          syncLabel.textContent = `写回燕子云端失败：${error.message || "网络错误"}。可以再次修改或手动刷新。`;
+          retryCount = 0;
+        }
       }
     }
 
