@@ -604,7 +604,7 @@
       clearTimeout(saveTimer);
       clearTimeout(retryTimer);
       syncLabel.textContent = "状态已修改，准备写回燕子云端...";
-      saveTimer = setTimeout(triggerSave, 1500);
+      saveTimer = setTimeout(triggerSave, 3000);
     }
 
     function triggerSave() {
