@@ -54,16 +54,17 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private RadialSlotPayload? _cutSlotPayload;
     private RadialMenuItemViewModel? _dragSourceItem;
     private int _lastRadiusPixels = 96;
+    private int _cachedDeadZonePixels = 26;
 
     public RadialMenuWindow(MainWindow mainWindow)
     {
         InitializeComponent();
         _mainWindow = mainWindow;
-        _selectionTimer = new DispatcherTimer
+        _selectionTimer = new DispatcherTimer(DispatcherPriority.Input)
         {
             Interval = TimeSpan.FromMilliseconds(16)
         };
-        _selectionTimer.Tick += (_, _) => UpdateSelectionFromCursor();
+        _selectionTimer.Tick += (_, _) => UpdateSelectionFromCursor(null);
         DataContext = this;
         PreviewKeyDown += (_, e) =>
         {
@@ -73,6 +74,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 Hide();
             }
         };
+        MouseMove += (_, e) => UpdateSelectionFromCursor(e.GetPosition(this));
         MouseWheel += RadialMenuWindow_MouseWheel;
         MouseLeftButtonDown += RadialMenuWindow_MouseLeftButtonDown;
         MouseRightButtonDown += RadialMenuWindow_MouseRightButtonDown;
@@ -468,6 +470,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
         _lastRadiusPixels = settings.RadiusPixels;
+        _cachedDeadZonePixels = settings.DeadZonePixels;
 
         // 获取鼠标所在位置的顶级窗口，而不是当前前台窗口（更符合直觉）
         _previousForegroundWindow = IntPtr.Zero;
@@ -749,7 +752,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        _selectionTimer.Stop();
+        if (!_isPinned)
+        {
+            _selectionTimer.Stop();
+        }
         HideIfAllowed();
     }
 
@@ -839,9 +845,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void UpdateSelectionFromCursor()
+    private void UpdateSelectionFromCursor(System.Windows.Point? preCalculatedPoint = null)
     {
-        var cursorPoint = GetCursorWindowPoint();
+        var cursorPoint = preCalculatedPoint ?? GetCursorWindowPoint();
         if (UpdateEditHoverState(cursorPoint))
         {
             IsPinHoverActive = false;
@@ -931,10 +937,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var center = GetMenuCenter();
         var dx = cursorPoint.X - center.X;
         var dy = cursorPoint.Y - center.Y;
-        var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
+        var deadZone = _cachedDeadZonePixels;
         UpdateEditModeState();
         var distance = Math.Sqrt(dx * dx + dy * dy);
-        if (distance < settings.DeadZonePixels)
+        if (distance < deadZone)
         {
             SetSelectedItem(null);
             ClearChildRing();
@@ -953,6 +959,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             ClearChildRing();
             ActiveTitle = _editModeLocked ? "点击中心 X 关闭" : "取消";
             Cursor = System.Windows.Input.Cursors.Arrow;
+            ClearAllItemsHoverState();
             return;
         }
 
@@ -1479,7 +1486,20 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         _dragSourceItem = item;
-        DragDrop.DoDragDrop((DependencyObject)sender, item, System.Windows.DragDropEffects.Move);
+        try
+        {
+            DragDrop.DoDragDrop((DependencyObject)sender, item, System.Windows.DragDropEffects.Move);
+        }
+        finally
+        {
+            item.IsHovered = false;
+            if (_dragSourceItem != null)
+            {
+                _dragSourceItem.IsHovered = false;
+                _dragSourceItem = null;
+            }
+            ClearAllItemsHoverState();
+        }
     }
 
     private void RadialSlot_DragOver(object sender, System.Windows.DragEventArgs e)
@@ -1511,6 +1531,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             return;
         }
+        
+        target.IsHovered = false;
 
         if (e.Data.GetData(typeof(RadialMenuItemViewModel)) is RadialMenuItemViewModel source)
         {
@@ -1528,7 +1550,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         e.Handled = true;
     }
 
-    private void RadialSlot_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    private void RadialSlot_DragEnter(object sender, System.Windows.DragEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: RadialMenuItemViewModel item })
         {
@@ -1536,11 +1558,31 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void RadialSlot_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    private void RadialSlot_DragLeave(object sender, System.Windows.DragEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: RadialMenuItemViewModel item })
         {
             item.IsHovered = false;
+        }
+    }
+
+    private void ClearAllItemsHoverState()
+    {
+        foreach (var item in Items)
+        {
+            if (item != null) item.IsHovered = false;
+        }
+        foreach (var item in OuterItems)
+        {
+            if (item != null) item.IsHovered = false;
+        }
+        foreach (var item in ChildItems)
+        {
+            if (item != null) item.IsHovered = false;
+        }
+        foreach (var item in GrandChildItems)
+        {
+            if (item != null) item.IsHovered = false;
         }
     }
 
@@ -2382,17 +2424,40 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return true;
     }
 
-    private bool IsPointInPinButton(System.Windows.Point point)
+    private Rect? _pinButtonRect;
+    private Rect? _editButtonRect;
+    private Rect? _addButtonRect;
+    private Rect? _deleteButtonRect;
+    private Rect? _searchButtonRect;
+    private Rect? _closeButtonRect;
+
+    private void InvalidateButtonRects()
     {
-        if (!PinButton.IsLoaded)
+        _pinButtonRect = null;
+        _editButtonRect = null;
+        _addButtonRect = null;
+        _deleteButtonRect = null;
+        _searchButtonRect = null;
+        _closeButtonRect = null;
+    }
+
+    private bool IsPointInButton(FrameworkElement? button, ref Rect? cachedRect, System.Windows.Point point)
+    {
+        if (button == null || !button.IsLoaded)
         {
             return false;
         }
 
-        var topLeft = PinButton.TranslatePoint(new System.Windows.Point(0, 0), this);
-        var bounds = new Rect(topLeft.X, topLeft.Y, PinButton.ActualWidth, PinButton.ActualHeight);
-        return bounds.Contains(point);
+        if (cachedRect == null)
+        {
+            var topLeft = button.TranslatePoint(new System.Windows.Point(0, 0), this);
+            cachedRect = new Rect(topLeft.X, topLeft.Y, button.ActualWidth, button.ActualHeight);
+        }
+
+        return cachedRect.Value.Contains(point);
     }
+
+    private bool IsPointInPinButton(System.Windows.Point point) => IsPointInButton(PinButton, ref _pinButtonRect, point);
 
     private bool UpdateEditHoverState(System.Windows.Point cursorPoint)
     {
@@ -2409,17 +2474,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return true;
     }
 
-    private bool IsPointInEditButton(System.Windows.Point point)
-    {
-        if (!EditButton.IsLoaded)
-        {
-            return false;
-        }
-
-        var topLeft = EditButton.TranslatePoint(new System.Windows.Point(0, 0), this);
-        var bounds = new Rect(topLeft.X, topLeft.Y, EditButton.ActualWidth, EditButton.ActualHeight);
-        return bounds.Contains(point);
-    }
+    private bool IsPointInEditButton(System.Windows.Point point) => IsPointInButton(EditButton, ref _editButtonRect, point);
 
     private bool UpdateAddHoverState(System.Windows.Point cursorPoint)
     {
@@ -2436,17 +2491,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return true;
     }
 
-    private bool IsPointInAddButton(System.Windows.Point point)
-    {
-        if (AddButton == null || !AddButton.IsLoaded)
-        {
-            return false;
-        }
-
-        var topLeft = AddButton.TranslatePoint(new System.Windows.Point(0, 0), this);
-        var bounds = new Rect(topLeft.X, topLeft.Y, AddButton.ActualWidth, AddButton.ActualHeight);
-        return bounds.Contains(point);
-    }
+    private bool IsPointInAddButton(System.Windows.Point point) => IsPointInButton(AddButton, ref _addButtonRect, point);
 
     private bool UpdateDeleteHoverState(System.Windows.Point cursorPoint)
     {
@@ -2463,17 +2508,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return true;
     }
 
-    private bool IsPointInDeleteButton(System.Windows.Point point)
-    {
-        if (DeleteButton == null || !DeleteButton.IsLoaded)
-        {
-            return false;
-        }
-
-        var topLeft = DeleteButton.TranslatePoint(new System.Windows.Point(0, 0), this);
-        var bounds = new Rect(topLeft.X, topLeft.Y, DeleteButton.ActualWidth, DeleteButton.ActualHeight);
-        return bounds.Contains(point);
-    }
+    private bool IsPointInDeleteButton(System.Windows.Point point) => IsPointInButton(DeleteButton, ref _deleteButtonRect, point);
 
     private bool UpdateSearchHoverState(System.Windows.Point cursorPoint)
     {
@@ -2490,17 +2525,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return true;
     }
 
-    private bool IsPointInSearchButton(System.Windows.Point point)
-    {
-        if (SearchButton == null || !SearchButton.IsLoaded)
-        {
-            return false;
-        }
-
-        var topLeft = SearchButton.TranslatePoint(new System.Windows.Point(0, 0), this);
-        var bounds = new Rect(topLeft.X, topLeft.Y, SearchButton.ActualWidth, SearchButton.ActualHeight);
-        return bounds.Contains(point);
-    }
+    private bool IsPointInSearchButton(System.Windows.Point point) => IsPointInButton(SearchButton, ref _searchButtonRect, point);
 
     private bool UpdateCloseHoverState(System.Windows.Point cursorPoint)
     {
@@ -2517,17 +2542,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return true;
     }
 
-    private bool IsPointInCloseButton(System.Windows.Point point)
-    {
-        if (CloseButton == null || !CloseButton.IsLoaded)
-        {
-            return false;
-        }
+    private bool IsPointInCloseButton(System.Windows.Point point) => IsPointInButton(CloseButton, ref _closeButtonRect, point);
 
-        var topLeft = CloseButton.TranslatePoint(new System.Windows.Point(0, 0), this);
-        var bounds = new Rect(topLeft.X, topLeft.Y, CloseButton.ActualWidth, CloseButton.ActualHeight);
-        return bounds.Contains(point);
-    }
 
     private bool IsRadialSlotBoundToCurrentApp(RadialEditTarget target)
     {
@@ -2843,11 +2859,11 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 
     public System.Windows.Media.Brush SectorBrush => IsEmpty
         ? GetThemeBrush("BrushRadialEmptySector", EmptySlotSectorBrush)
-        : IsHovered
+        : (IsHovered || IsSelected)
             ? GetThemeBrush("BrushRadialChildAccentSector", ChildPageAccentBrush)
-            : GetThemeBrush("BrushRadialFallbackSector", FilledSlotFallbackSectorBrush);
+            : GetThemeBrush("BrushRadialEmptySector", EmptySlotSectorBrush);
 
-    public double SectorOpacity => IsSelected ? 0.58 : IsHovered ? 0.44 : IsEmpty ? 0.0 : 0.32;
+    public double SectorOpacity => IsSelected ? 0.58 : IsHovered ? 0.44 : 0.0;
 
     public bool IsSectorVisible => SectorGeometry != null && (!IsEmpty || IsHovered || IsSelected);
 

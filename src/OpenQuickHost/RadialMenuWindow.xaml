@@ -431,8 +431,8 @@
                             MouseRightButtonDown="RadialSlot_MouseRightButtonDown"
                             DragOver="RadialSlot_DragOver"
                             Drop="RadialSlot_Drop"
-                            MouseEnter="RadialSlot_MouseEnter"
-                            MouseLeave="RadialSlot_MouseLeave"
+                            DragEnter="RadialSlot_DragEnter"
+                            DragLeave="RadialSlot_DragLeave"
                             Cursor="Hand"
                             RenderTransformOrigin="0.5,0.5">
                         <Border.RenderTransform>
@@ -520,8 +520,8 @@
                             MouseRightButtonDown="RadialSlot_MouseRightButtonDown"
                             DragOver="RadialSlot_DragOver"
                             Drop="RadialSlot_Drop"
-                            MouseEnter="RadialSlot_MouseEnter"
-                            MouseLeave="RadialSlot_MouseLeave"
+                            DragEnter="RadialSlot_DragEnter"
+                            DragLeave="RadialSlot_DragLeave"
                             Cursor="Hand"
                             RenderTransformOrigin="0.5,0.5">
                         <Border.RenderTransform>
@@ -676,8 +676,8 @@
                                 MouseRightButtonDown="RadialSlot_MouseRightButtonDown"
                                 DragOver="RadialSlot_DragOver"
                                 Drop="RadialSlot_Drop"
-                                MouseEnter="RadialSlot_MouseEnter"
-                                MouseLeave="RadialSlot_MouseLeave"
+                                DragEnter="RadialSlot_DragEnter"
+                                DragLeave="RadialSlot_DragLeave"
                                 Cursor="Hand"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
@@ -833,8 +833,8 @@
                                 MouseRightButtonDown="RadialSlot_MouseRightButtonDown"
                                 DragOver="RadialSlot_DragOver"
                                 Drop="RadialSlot_Drop"
-                                MouseEnter="RadialSlot_MouseEnter"
-                                MouseLeave="RadialSlot_MouseLeave"
+                                DragEnter="RadialSlot_DragEnter"
+                                DragLeave="RadialSlot_DragLeave"
                                 Cursor="Hand"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>

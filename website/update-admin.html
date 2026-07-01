@@ -148,6 +148,13 @@
 
           <div class="admin-grid" style="margin-top: 1.5rem;">
             <div class="admin-field">
+              <label for="release-channel">发布平台 / 渠道</label>
+              <select id="release-channel" class="admin-input">
+                <option value="stable">Windows 稳定版 (stable)</option>
+                <option value="android">Android 稳定版 (android)</option>
+              </select>
+            </div>
+            <div class="admin-field">
               <label for="release-version">版本号</label>
               <input id="release-version" class="admin-input" type="text" placeholder="例如 0.1.1">
             </div>
@@ -213,6 +220,7 @@
       const logoutButton = document.getElementById("logout-button");
       const refreshButton = document.getElementById("refresh-button");
       const saveButton = document.getElementById("save-button");
+      const releaseChannel = document.getElementById("release-channel");
 
       const fields = {
         version: document.getElementById("release-version"),
@@ -342,10 +350,11 @@
       }
 
       async function loadEditorData() {
-        setStatus(editorStatus, "正在加载当前版本信息...", false);
-        const data = await api("/v1/admin/app/update/latest");
+        const channel = releaseChannel ? releaseChannel.value : "stable";
+        setStatus(editorStatus, `正在加载渠道 ${channel} 的当前版本信息...`, false);
+        const data = await api("/v1/admin/app/update/latest?channel=" + channel);
         fillForm(data);
-        setStatus(editorStatus, `已加载版本 ${data.version}`, false);
+        setStatus(editorStatus, `已加载渠道 ${channel} 版本 ${data.version}`, false);
       }
 
       async function tryRestoreSession() {
@@ -427,9 +436,10 @@
       });
 
       saveButton.addEventListener("click", async function () {
+        const channel = releaseChannel ? releaseChannel.value : "stable";
         setBusy(saveButton, true, "保存中...");
         try {
-          const data = await api("/v1/admin/app/update/latest", {
+          const data = await api("/v1/admin/app/update/latest?channel=" + channel, {
             method: "PUT",
             headers: {
               "Content-Type": "application/json"
@@ -437,13 +447,17 @@
             body: JSON.stringify(collectPayload())
           });
           fillForm(data);
-          setStatus(editorStatus, `已保存版本 ${data.version}，官网和客户端接口会读取这条最新记录。`, false);
+          setStatus(editorStatus, `已保存渠道 ${channel} 版本 ${data.version}，官网和客户端接口会读取这条最新记录。`, false);
         } catch (error) {
           setStatus(editorStatus, error.message || "保存失败", true);
         } finally {
           setBusy(saveButton, false);
         }
       });
+
+      if (releaseChannel) {
+        releaseChannel.addEventListener("change", loadEditorData);
+      }
 
       tryRestoreSession();
     })();

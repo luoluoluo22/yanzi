@@ -1,5 +1,6 @@
-param(
+﻿param(
     [string]$Version = "0.1.0",
+    [string]$Platform = "windows", # windows 或 android
     [string]$Repo = "luoluoluo22/yanzi",
     [string]$Target = "main",
     [string]$InstallerPath = "",
@@ -10,18 +11,45 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$tag = if ($Version.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) { $Version } else { "v$Version" }
-$plainVersion = $tag.TrimStart("v")
+$plainVersion = if ($Version.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) { $Version.Substring(1) } else { $Version }
+
+$tag = if ($Platform -eq "android") { "android-v$plainVersion" } else { "v$plainVersion" }
 
 $installerOutDir = Join-Path $root ".artifacts\installer"
-if (!(Test-Path $installerOutDir)) {
-    throw "Installer directory not found: $installerOutDir. Run scripts\publish-installer.ps1 first."
-}
 
-$fileName = "Yanzi-win-Setup-$plainVersion.exe"
-$installerSetupPath = Join-Path $installerOutDir $fileName
-if (!(Test-Path -LiteralPath $installerSetupPath)) {
-    throw "$fileName not found under $installerOutDir. Run scripts\publish-installer.ps1 first."
+if ($Platform -eq "android") {
+    $fileName = "yanzi-mobile-$plainVersion.apk"
+    $installerSetupPath = if ($InstallerPath) { Resolve-Path $InstallerPath } else { Join-Path $installerOutDir $fileName }
+    if (!(Test-Path -LiteralPath $installerSetupPath)) {
+        # 后备方案：去 Gradle 默认输出目录寻找并复制过来
+        $gradleReleaseApk = Join-Path $root "mobile\android\app\build\outputs\apk\release\app-release.apk"
+        $mvpApk = Join-Path $root "mobile\android\app\build\manual-release\yanzi-mobile-release.apk"
+        $mvpDebugApk = Join-Path $root "mobile\android\app\build\manual-debug\yanzi-mobile-debug.apk"
+        
+        if (Test-Path $gradleReleaseApk) {
+            $installerSetupPath = $gradleReleaseApk
+        } elseif (Test-Path $mvpApk) {
+            $installerSetupPath = $mvpApk
+        } elseif (Test-Path $mvpDebugApk) {
+            $installerSetupPath = $mvpDebugApk
+        } else {
+            throw "Android APK not found. Build Android app first or pass -InstallerPath."
+        }
+    }
+
+    # 确保文件拷贝到了输出目录中且重命名为标准的包名
+    $targetApkPath = Join-Path $installerOutDir $fileName
+    if ((Resolve-Path $installerSetupPath) -ne (Resolve-Path $targetApkPath -ErrorAction SilentlyContinue)) {
+        if (!(Test-Path $installerOutDir)) { New-Item -ItemType Directory -Path $installerOutDir -Force | Out-Null }
+        Copy-Item -LiteralPath $installerSetupPath -Destination $targetApkPath -Force
+        $installerSetupPath = $targetApkPath
+    }
+} else {
+    $fileName = "Yanzi-win-Setup-$plainVersion.exe"
+    $installerSetupPath = if ($InstallerPath) { Resolve-Path $InstallerPath } else { Join-Path $installerOutDir $fileName }
+    if (!(Test-Path -LiteralPath $installerSetupPath)) {
+        throw "$fileName not found under $installerOutDir. Run scripts\publish-installer.ps1 first."
+    }
 }
 
 if (-not $KeepProxy) {
@@ -41,7 +69,22 @@ gh api user --jq .login | Out-Host
 $hash = (Get-FileHash -LiteralPath $installerSetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $notesPath = Join-Path ([IO.Path]::GetTempPath()) "yanzi-release-$plainVersion.md"
 
-$notesContent = @"
+$notesContent = if ($Platform -eq "android") {
+@"
+# 燕子 Yanzi for Android v$plainVersion 更新内容
+
+**✨ 移动端优化**
+- 手机端自动检查更新功能上线。
+- 优化了燕幕同步机制与运行日志显示。
+- 修复了已知的部分闪退问题。
+
+---
+安装包：$fileName
+
+SHA256: $hash
+"@
+} else {
+@"
 # 燕子 Yanzi v$plainVersion 更新内容
 
 **✨ 界面与交互优化**
@@ -57,6 +100,7 @@ $notesContent = @"
 
 SHA256: $hash
 "@
+}
 [System.IO.File]::WriteAllText($notesPath, $notesContent, [System.Text.Encoding]::UTF8)
 
 $releaseExists = $true
@@ -68,21 +112,27 @@ if ($LASTEXITCODE -ne 0) {
 }
 $ErrorActionPreference = $oldEAP
 
+$releaseTitle = if ($Platform -eq "android") { "Yanzi for Android $plainVersion" } else { "Yanzi $plainVersion" }
+
 if (-not $releaseExists) {
     gh release create $tag `
         --repo $Repo `
         --target $Target `
-        --title "Yanzi $plainVersion" `
+        --title $releaseTitle `
         --notes-file $notesPath `
         --draft | Out-Host
 } else {
     gh release edit $tag `
         --repo $Repo `
-        --title "Yanzi $plainVersion" `
+        --title $releaseTitle `
         --notes-file $notesPath | Out-Host
 }
 
-$filesToUpload = Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -or $_.Name -match "releases\.win\.json|RELEASES" }
+$filesToUpload = if ($Platform -eq "android") {
+    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -and $_.Name.EndsWith(".apk") }
+} else {
+    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -or $_.Name -match "releases\.win\.json|RELEASES" }
+}
 foreach ($file in $filesToUpload) {
     $maxRetries = 5
     $retryCount = 0

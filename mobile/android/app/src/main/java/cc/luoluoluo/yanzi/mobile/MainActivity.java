@@ -2525,7 +2525,15 @@ extends Activity {
         
         LinearLayout itemAccessibility = this.createListItem("\u65e0\u969c\u788d\u670d\u52a1", null, () -> this.openAccessibilitySettings());
         
-        LinearLayout group2 = this.createListGroup(itemWheel, itemAccessibility);
+        String currentVer = "0.2.10";
+        try {
+            currentVer = this.getPackageManager().getPackageInfo(this.getPackageName(), 0).versionName;
+        } catch (Exception ignored) {}
+        LinearLayout itemCheckUpdate = this.createListItem("\u68c0\u67e5\u66f4\u65b0", "v" + currentVer, () -> {
+            UpdateManager.checkUpdate(MainActivity.this, true);
+        });
+        
+        LinearLayout group2 = this.createListGroup(itemWheel, itemAccessibility, itemCheckUpdate);
         this.profileTabPage.addView((View)group2);
 
         LinearLayout runLogPanel = new LinearLayout((Context)this);
@@ -2616,6 +2624,9 @@ extends Activity {
             this.refreshExtensions(true);
             this.refreshYanm(true);
         }
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            UpdateManager.checkUpdate(MainActivity.this, false);
+        }, 2000L);
     }
 
     private LinearLayout createTabPage() {
