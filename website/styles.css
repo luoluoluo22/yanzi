@@ -3489,19 +3489,22 @@ article h3:hover .heading-anchor-link {
 }
 
 .split-button-arrow {
+  border: none !important;
+  border-left: 1px solid rgba(0, 0, 0, 0.1) !important;
   border-top-left-radius: 0 !important;
   border-bottom-left-radius: 0 !important;
   border-top-right-radius: var(--radius-md) !important;
   border-bottom-right-radius: var(--radius-md) !important;
-  padding: 0 12px;
-  border-left: 1px solid rgba(0, 0, 0, 0.1) !important;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+  padding: 0 14px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
   background: var(--text) !important;
   color: var(--bg) !important;
   margin-left: 0 !important;
+  height: 52px !important;
+  box-sizing: border-box !important;
 }
 
 .split-button-arrow:hover, .split-button-arrow[aria-expanded="true"] {
