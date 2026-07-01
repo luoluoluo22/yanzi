@@ -3462,11 +3462,9 @@ article h3:hover .heading-anchor-link {
   display: inline-flex;
   position: relative;
   align-items: stretch;
-  border-radius: var(--radius-md);
-  box-shadow: 0 10px 20px -5px rgba(255, 255, 255, 0.2);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  background: var(--text);
-  color: var(--bg);
+  box-shadow: 0 10px 20px -5px rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-md);
 }
 
 .split-button-container:hover {
@@ -3477,31 +3475,37 @@ article h3:hover .heading-anchor-link {
 .split-button-container .button.primary {
   box-shadow: none !important;
   transform: none !important;
-  background: transparent !important;
-  color: var(--bg) !important;
 }
 
 .split-button-container .button.primary:first-child {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-top-left-radius: var(--radius-md) !important;
+  border-bottom-left-radius: var(--radius-md) !important;
   padding-right: 16px;
+  background: var(--text) !important;
+  color: var(--bg) !important;
+  margin-right: 0 !important;
 }
 
 .split-button-arrow {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-top-right-radius: var(--radius-md) !important;
+  border-bottom-right-radius: var(--radius-md) !important;
   padding: 0 12px;
-  border-left: 1px solid rgba(0, 0, 0, 0.1);
+  border-left: 1px solid rgba(0, 0, 0, 0.1) !important;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  background: transparent;
-  color: var(--bg);
+  background: var(--text) !important;
+  color: var(--bg) !important;
+  margin-left: 0 !important;
 }
 
 .split-button-arrow:hover, .split-button-arrow[aria-expanded="true"] {
-  background: rgba(0, 0, 0, 0.05) !important;
+  background: rgba(255, 255, 255, 0.9) !important;
 }
 
 .download-dropdown-menu {
