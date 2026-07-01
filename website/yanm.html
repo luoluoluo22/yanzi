@@ -547,14 +547,14 @@
       }
 
       try {
-        const result = await dispatchInvoke(message.method, message.args || {});
+        const result = await dispatchInvoke(message.method, message.args || {}, message.componentId || "");
         event.source.postMessage({ type: "yanm.reply", id: message.id, ok: true, result }, "*");
       } catch (error) {
         event.source.postMessage({ type: "yanm.reply", id: message.id, ok: false, error: error.message || "调用失败" }, "*");
       }
     });
 
-    async function dispatchInvoke(method, args) {
+    async function dispatchInvoke(method, args, componentId) {
       if (!currentSnapshot) {
         throw new Error("燕幕数据未加载");
       }
@@ -574,7 +574,10 @@
           };
         case "state.get": {
           const key = String(args.key || "");
-          return { key, value: String(currentSnapshot.yanm.componentState[key] || "") };
+          const state = currentSnapshot.yanm.componentState || {};
+          const scopedKey = componentId ? `component:${componentId}:${key}` : "";
+          const value = (scopedKey && state[scopedKey] != null) ? state[scopedKey] : (state[key] != null ? state[key] : "");
+          return { key, value: String(value) };
         }
         case "state.set": {
           const key = String(args.key || "");
@@ -582,7 +585,8 @@
             throw new Error("state.set 缺少 key");
           }
           const value = String(args.value || "");
-          currentSnapshot.yanm.componentState[key] = value;
+          const scopedKey = componentId ? `component:${componentId}:${key}` : key;
+          currentSnapshot.yanm.componentState[scopedKey] = value;
           queueSaveYanm();
           return { key, value };
         }
