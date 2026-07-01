@@ -75,9 +75,11 @@
           客服要一键发话术？设计师要批量改文件名？剪辑师要快速打开项目文件夹？<br><br>
           告诉豆包、DeepSeek 或 ChatGPT 你想要什么，粘贴到燕子，工具立刻能用。不用编程，不用找插件，不用花钱。
         </p>
-        <div class="hero-actions">
+        <div class="hero-actions" style="flex-wrap: wrap; justify-content: center;">
           <a class="button primary js-update-download-link" href="https://wwbnh.lanzout.com/b0pnkaj6j"
-            data-default-label="免费下载（蓝奏云）">免费下载（蓝奏云）</a>
+            data-default-label="免费下载 (蓝奏云)">免费下载 (蓝奏云)</a>
+          <a class="button secondary js-github-mirror-link" href="#" target="_blank" title="国内推荐使用镜像加速">镜像下载 (极速)</a>
+          <a class="button secondary js-github-direct-link" href="https://github.com/luoluoluo22/yanzi/releases/latest" target="_blank">GitHub 下载</a>
           <a class="button secondary" href="https://github.com/luoluoluo22/yanzi">GitHub 源码</a>
         </div>
         <p class="download-password js-update-password-wrap">蓝奏云提取密码：<strong class="js-update-password">62yn</strong>
@@ -445,8 +447,12 @@
       <div class="download-panel">
         <strong id="download-title">燕子启动器 for Windows（完全免费）</strong>
         <span id="download-meta">一键安装，开箱即用 | Windows 10 / 11 </span>
-        <a class="button primary js-update-download-link" id="download-button"
-          href="https://wwbnh.lanzout.com/b0pnkaj6j" data-default-label="免费下载 YanziSetup-0.1.0.exe">免费下载</a>
+        <div style="display: flex; gap: 10px; margin: 15px 0; justify-content: center; flex-wrap: wrap;">
+          <a class="button primary js-update-download-link" id="download-button"
+            href="https://wwbnh.lanzout.com/b0pnkaj6j" data-default-label="免费下载 (蓝奏云)">免费下载 (蓝奏云)</a>
+          <a class="button secondary js-github-mirror-link" href="#" target="_blank" title="国内推荐使用镜像加速">镜像下载 (极速)</a>
+          <a class="button secondary js-github-direct-link" href="https://github.com/luoluoluo22/yanzi/releases/latest" target="_blank">GitHub 下载</a>
+        </div>
         <p class="download-password js-update-password-wrap">蓝奏云提取密码：<strong class="js-update-password">62yn</strong>
         </p>
         <a class="release-link" href="https://github.com/luoluoluo22/yanzi">查看 GitHub 源码 &amp; 更新记录（完全公开）</a>
@@ -484,11 +490,23 @@
           const label = link.dataset.defaultLabel || link.textContent || "立即下载";
           link.href = data.download_url;
           if (link.id === "download-button" && data.file_name) {
-            link.textContent = `免费下载 ${data.file_name}`;
+            link.textContent = `蓝奏云: ${data.file_name}`;
           } else {
             link.textContent = label;
           }
         });
+
+        if (data.version && data.file_name) {
+          const githubBaseUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${data.version}/${data.file_name}`;
+          const mirrorUrl = `https://mirror.ghproxy.com/${githubBaseUrl}`;
+          
+          document.querySelectorAll(".js-github-direct-link").forEach((link) => {
+            link.href = githubBaseUrl;
+          });
+          document.querySelectorAll(".js-github-mirror-link").forEach((link) => {
+            link.href = mirrorUrl;
+          });
+        }
 
         document.querySelectorAll(".js-update-password").forEach((node) => {
           node.textContent = data.download_code || "无";
