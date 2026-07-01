@@ -78,8 +78,8 @@
         <div class="hero-actions" style="flex-wrap: wrap; justify-content: center;">
           <a class="button primary js-update-download-link" href="https://wwbnh.lanzout.com/b0pnkaj6j"
             data-default-label="免费下载 (蓝奏云)">免费下载 (蓝奏云)</a>
-          <a class="button secondary js-github-mirror-link" href="#" target="_blank" title="国内推荐使用镜像加速">镜像下载 (极速)</a>
-          <a class="button secondary js-github-direct-link" href="https://github.com/luoluoluo22/yanzi/releases/latest" target="_blank">GitHub 下载</a>
+          <a class="button secondary js-github-mirror-link" href="https://mirror.ghproxy.com/https://github.com/luoluoluo22/yanzi/releases/download/v0.1.0/YanziSetup-0.1.0.exe" target="_blank" title="国内推荐使用镜像加速">镜像下载 (极速)</a>
+          <a class="button secondary js-github-direct-link" href="https://github.com/luoluoluo22/yanzi/releases/download/v0.1.0/YanziSetup-0.1.0.exe" target="_blank">GitHub 下载</a>
           <a class="button secondary" href="https://github.com/luoluoluo22/yanzi">GitHub 源码</a>
         </div>
         <p class="download-password js-update-password-wrap">蓝奏云提取密码：<strong class="js-update-password">62yn</strong>
@@ -450,8 +450,8 @@
         <div style="display: flex; gap: 10px; margin: 15px 0; justify-content: center; flex-wrap: wrap;">
           <a class="button primary js-update-download-link" id="download-button"
             href="https://wwbnh.lanzout.com/b0pnkaj6j" data-default-label="免费下载 (蓝奏云)">免费下载 (蓝奏云)</a>
-          <a class="button secondary js-github-mirror-link" href="#" target="_blank" title="国内推荐使用镜像加速">镜像下载 (极速)</a>
-          <a class="button secondary js-github-direct-link" href="https://github.com/luoluoluo22/yanzi/releases/latest" target="_blank">GitHub 下载</a>
+          <a class="button secondary js-github-mirror-link" href="https://mirror.ghproxy.com/https://github.com/luoluoluo22/yanzi/releases/download/v0.1.0/YanziSetup-0.1.0.exe" target="_blank" title="国内推荐使用镜像加速">镜像下载 (极速)</a>
+          <a class="button secondary js-github-direct-link" href="https://github.com/luoluoluo22/yanzi/releases/download/v0.1.0/YanziSetup-0.1.0.exe" target="_blank">GitHub 下载</a>
         </div>
         <p class="download-password js-update-password-wrap">蓝奏云提取密码：<strong class="js-update-password">62yn</strong>
         </p>
@@ -497,15 +497,17 @@
         });
 
         if (data.version && data.file_name) {
-          const githubBaseUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${data.version}/${data.file_name}`;
-          const mirrorUrl = `https://mirror.ghproxy.com/${githubBaseUrl}`;
-          
-          document.querySelectorAll(".js-github-direct-link").forEach((link) => {
-            link.href = githubBaseUrl;
-          });
-          document.querySelectorAll(".js-github-mirror-link").forEach((link) => {
-            link.href = mirrorUrl;
-          });
+          if (data.file_name.endsWith(".exe")) {
+            const githubBaseUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${data.version}/${data.file_name}`;
+            const mirrorUrl = `https://mirror.ghproxy.com/${githubBaseUrl}`;
+            
+            document.querySelectorAll(".js-github-direct-link").forEach((link) => {
+              link.href = githubBaseUrl;
+            });
+            document.querySelectorAll(".js-github-mirror-link").forEach((link) => {
+              link.href = mirrorUrl;
+            });
+          }
         }
 
         document.querySelectorAll(".js-update-password").forEach((node) => {
