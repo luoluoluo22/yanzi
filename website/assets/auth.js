@@ -306,8 +306,7 @@
       installDownloadClick(button, code);
     }
     if (password) {
-      password.classList.remove("js-update-password-wrap");
-      password.innerHTML = `蓝奏云提取码：<strong>${code}</strong>`;
+      password.remove();
     }
   }
 
