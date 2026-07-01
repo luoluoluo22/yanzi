@@ -2843,9 +2843,9 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 
     public System.Windows.Media.Brush SectorBrush => IsEmpty
         ? GetThemeBrush("BrushRadialEmptySector", EmptySlotSectorBrush)
-        : IsTransparentBrush(AccentBrush)
-            ? GetThemeBrush("BrushRadialFallbackSector", FilledSlotFallbackSectorBrush)
-            : AccentBrush;
+        : IsHovered
+            ? GetThemeBrush("BrushRadialChildAccentSector", ChildPageAccentBrush)
+            : GetThemeBrush("BrushRadialFallbackSector", FilledSlotFallbackSectorBrush);
 
     public double SectorOpacity => IsSelected ? 0.58 : IsHovered ? 0.44 : IsEmpty ? 0.0 : 0.32;
 
@@ -2874,6 +2874,7 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(ShouldShowEmptyPlaceholder));
             OnPropertyChanged(nameof(SectorOpacity));
             OnPropertyChanged(nameof(IsSectorVisible));
+            OnPropertyChanged(nameof(SectorBrush));
         }
     }
 
