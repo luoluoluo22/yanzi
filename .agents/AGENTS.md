@@ -25,6 +25,12 @@
 
 ## 3. Cloudflare 后端同步服务（Worker）部署与运维约束
 
+> [!CAUTION]
+> **禁止手动部署规约**
+> 1. 本项目已接入 GitHub -> Cloudflare Git 自动构建部署集成。
+> 2. **在任何时间、任何情况下，严禁在本地命令行中手动执行 `npx wrangler deploy` 等手动发布命令**。
+> 3. 所有关于代码和配置的发布，必须且唯一依赖将代码 `git push` 推送至 GitHub `main` 分支，交由云端 CI/CD 自动完成构建与部署，以维护线上版本与代码仓库的绝对一致性。
+
 > [!IMPORTANT]
 > **Durable Object 与 Migration 冲突防范**
 > 1. **现象**：部署时报错 `Durable Object namespace name '...' already in use. Please use a different name and try again. [code: 10065]`。
