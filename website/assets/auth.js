@@ -208,52 +208,58 @@
     document.head.appendChild(style);
   }
 
-  function showCopyToast(code) {
-    const id = "yanzi-copy-toast";
-    let toast = document.getElementById(id);
-    if (toast) toast.remove();
+  function showCopyModal(code, downloadUrl) {
+    const id = "yanzi-copy-modal";
+    let modal = document.getElementById(id);
+    if (modal) modal.remove();
     
-    toast = document.createElement("div");
-    toast.id = id;
-    toast.className = "copy-toast";
-    toast.innerHTML = `
-      <div class="copy-toast-content">
-        <div class="copy-toast-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+    modal = document.createElement("div");
+    modal.id = id;
+    modal.className = "copy-modal-overlay";
+    modal.innerHTML = `
+      <div class="copy-modal-card">
+        <div class="copy-modal-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
         </div>
-        <div class="copy-toast-text">
-          <strong>提取码 <span class="toast-code">${code}</span> 已复制</strong>
-          <span>打开蓝奏云直接粘贴即可使用</span>
+        <h3>提取码已复制</h3>
+        <p>蓝奏云提取码 <strong class="modal-code">${code}</strong> 已复制到剪贴板，打开网盘后直接粘贴即可。</p>
+        <div class="copy-modal-actions">
+          <button class="button secondary modal-cancel-btn">取消</button>
+          <a class="button primary modal-confirm-btn" href="${downloadUrl}" target="_blank" rel="noopener noreferrer">前往蓝奏云</a>
         </div>
       </div>
     `;
-    document.body.appendChild(toast);
+    document.body.appendChild(modal);
     
-    setTimeout(() => toast.classList.add("show"), 10);
+    document.body.style.overflow = "hidden";
     
-    setTimeout(() => {
-      toast.classList.remove("show");
-      setTimeout(() => { if (toast.parentNode) toast.remove(); }, 400);
-    }, 3000);
+    setTimeout(() => modal.classList.add("is-visible"), 10);
+    
+    const closeModal = () => {
+      modal.classList.remove("is-visible");
+      document.body.style.overflow = "";
+      setTimeout(() => { if (modal.parentNode) modal.remove(); }, 300);
+    };
+
+    modal.querySelector(".modal-cancel-btn").addEventListener("click", closeModal);
+    modal.querySelector(".modal-confirm-btn").addEventListener("click", closeModal);
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeModal();
+    });
   }
 
   function installDownloadClick(button, code) {
     if (!button || button.dataset.copyCodeBound === "1") return;
     button.dataset.copyCodeBound = "1";
-    button.target = "_blank";
-    button.rel = "noopener noreferrer";
+    button.removeAttribute("target");
+    button.removeAttribute("rel");
     button.addEventListener("click", async function(event) {
       event.preventDefault();
       const href = button.href;
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(code);
       } catch {}
-      showCopyToast(code);
-      if (href) {
-        setTimeout(() => {
-          window.open(href, "_blank", "noopener,noreferrer");
-        }, 100);
-      }
+      showCopyModal(code, href);
     });
   }
 
