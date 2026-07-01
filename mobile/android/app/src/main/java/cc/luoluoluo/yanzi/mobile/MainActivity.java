@@ -7958,6 +7958,12 @@ extends Activity {
         @JavascriptInterface
         public String getState(String key) {
             JSONObject state = MainActivity.this.currentYanmState == null ? new JSONObject() : MainActivity.this.currentYanmState;
+            if (this.componentId != null && !this.componentId.trim().isEmpty()) {
+                String scopedKey = "component:" + this.componentId.trim() + ":" + key;
+                if (state.has(scopedKey)) {
+                    return state.optString(scopedKey, "");
+                }
+            }
             return state.optString(key, "");
         }
 
@@ -7967,18 +7973,24 @@ extends Activity {
                 if (MainActivity.this.currentYanmState == null) {
                     MainActivity.this.currentYanmState = new JSONObject();
                 }
-                MainActivity.this.currentYanmState.put(key, (Object)value);
+                String actualKey = key;
+                if (this.componentId != null && !this.componentId.trim().isEmpty()) {
+                    actualKey = "component:" + this.componentId.trim() + ":" + key;
+                }
+                MainActivity.this.currentYanmState.put(actualKey, (Object)value);
                 if (MainActivity.this.currentYanmSnapshot == null) {
                     MainActivity.this.currentYanmSnapshot = new JSONObject();
                 }
                 MainActivity.this.currentYanmSnapshot.put("componentState", (Object)MainActivity.this.currentYanmState);
+                
+                final String finalKey = actualKey;
                 MainActivity.this.runOnUiThread(() -> {
                     MainActivity.this.prefs.edit().putString(CACHE_YANM, MainActivity.this.currentYanmSnapshot.toString()).apply();
                     MainActivity.this.updateAllAppWidgets();
                     YanmWidgetData.refreshComponentWidgets((Context)MainActivity.this);
-                    MainActivity.this.setStatus("\u71d5\u5e55\u72b6\u6001\u5df2\u5728\u624b\u673a\u7aef\u66f4\u65b0\uff1a" + this.componentTitle + " / " + key);
-                    MainActivity.this.scheduleYanmComponentStateCloudSync(key, value, this.componentTitle + " / " + key);
-                    MainActivity.this.scheduleYanmCloudSync(this.componentTitle + " / " + key);
+                    MainActivity.this.setStatus("\u71d5\u5e55\u72b6\u6001\u5df2\u5728\u624b\u673a\u7aef\u66f4\u65b0\uff1a" + this.componentTitle + " / " + finalKey);
+                    MainActivity.this.scheduleYanmComponentStateCloudSync(finalKey, value, this.componentTitle + " / " + finalKey);
+                    MainActivity.this.scheduleYanmCloudSync(this.componentTitle + " / " + finalKey);
                 });
             }
             catch (Exception exception) {
