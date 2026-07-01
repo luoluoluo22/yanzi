@@ -200,7 +200,7 @@
       #download.download-section-minimal .download-platform-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 18px; border: 1px solid rgba(255,255,255,0.12); background: rgba(59,130,246,0.12); box-shadow: 0 16px 36px rgba(59,130,246,0.18); }
       #download.download-section-minimal .download-platform-icon img { width: 36px; height: 36px; display: block; }
       #download.download-section-minimal .download-panel > strong { display: none !important; }
-      #download.download-section-minimal .button.primary { min-width: 190px; text-decoration: none !important; }
+      #download.download-section-minimal .button.primary:not(.split-button-arrow) { min-width: 190px; text-decoration: none !important; }
       #download.download-section-minimal .button.primary:hover, #download.download-section-minimal .button.primary:focus, #download.download-section-minimal .button.primary:visited { text-decoration: none !important; }
       #download.download-section-minimal .download-password { margin: 0; }
       @media (max-width: 760px) { #download.download-section-minimal .minimal-download-grid { grid-template-columns: 1fr; } }
