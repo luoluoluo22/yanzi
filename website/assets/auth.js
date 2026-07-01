@@ -208,6 +208,35 @@
     document.head.appendChild(style);
   }
 
+  function showCopyToast(code) {
+    const id = "yanzi-copy-toast";
+    let toast = document.getElementById(id);
+    if (toast) toast.remove();
+    
+    toast = document.createElement("div");
+    toast.id = id;
+    toast.className = "copy-toast";
+    toast.innerHTML = `
+      <div class="copy-toast-content">
+        <div class="copy-toast-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+        </div>
+        <div class="copy-toast-text">
+          <strong>提取码 <span class="toast-code">${code}</span> 已复制</strong>
+          <span>打开蓝奏云直接粘贴即可使用</span>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.classList.add("show"), 10);
+    
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => { if (toast.parentNode) toast.remove(); }, 400);
+    }, 3000);
+  }
+
   function installDownloadClick(button, code) {
     if (!button || button.dataset.copyCodeBound === "1") return;
     button.dataset.copyCodeBound = "1";
@@ -218,11 +247,13 @@
       const href = button.href;
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(code);
-        alert(`提取码 ${code} 已复制，打开蓝奏云后直接粘贴提取码即可。`);
-      } catch {
-        alert(`蓝奏云提取码：${code}。请复制后粘贴到蓝奏云。`);
+      } catch {}
+      showCopyToast(code);
+      if (href) {
+        setTimeout(() => {
+          window.open(href, "_blank", "noopener,noreferrer");
+        }, 100);
       }
-      if (href) window.open(href, "_blank", "noopener,noreferrer");
     });
   }
 

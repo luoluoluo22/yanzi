@@ -3548,3 +3548,76 @@ article h3:hover .heading-anchor-link {
 .download-dropdown-menu a:hover {
   background: var(--panel-hover);
 }
+
+/* Custom Copy Toast Notification */
+.copy-toast {
+  position: fixed;
+  top: 30px;
+  left: 50%;
+  transform: translate(-50%, -20px);
+  z-index: 11000;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 90%;
+}
+
+.copy-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.copy-toast-content {
+  background: rgba(20, 22, 28, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(59, 130, 246, 0.15);
+  border-radius: 16px;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.copy-toast-icon {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 10px rgba(59, 130, 246, 0.2);
+}
+
+.copy-toast-text {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.copy-toast-text strong {
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.copy-toast-text .toast-code {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  margin: 0 2px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.copy-toast-text span {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+}
