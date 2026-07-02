@@ -53,7 +53,7 @@
         </Style>
     </Window.Resources>
 
-    <Border Background="{DynamicResource BrushBackgroundMain}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.5" CornerRadius="16" SnapsToDevicePixels="True">
+    <Border Background="#FF16161B" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.5" CornerRadius="16" SnapsToDevicePixels="True">
         <Grid Margin="18">
             <Grid.RowDefinitions>
                 <!-- 顶部标题栏 -->
