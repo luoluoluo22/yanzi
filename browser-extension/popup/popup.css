@@ -48,21 +48,11 @@ body {
   padding-bottom: 14px;
 }
 
-.logo-circle {
+.app-logo-img {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, var(--primary-color), #3b82f6);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border-radius: 8px;
   box-shadow: 0 0 12px var(--primary-glow);
-}
-
-.logo-circle span {
-  font-weight: 600;
-  font-size: 1.15rem;
-  color: #ffffff;
 }
 
 .brand h1 {
