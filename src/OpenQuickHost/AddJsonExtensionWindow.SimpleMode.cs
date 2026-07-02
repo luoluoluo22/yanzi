@@ -75,8 +75,8 @@ public partial class AddJsonExtensionWindow
 
         ["paste-text"] = new TypeTemplate(
             IdPrefix: "paste-snippet",
-            Name: "粘贴致敬模板",
-            Description: "把一段固定文本粘贴到当前光标处。",
+            Name: "粘贴文本 ",
+            Description: "把一段文本粘贴到当前位置",
             Category: "脚本",
             Keywords: "粘贴, paste, 模板",
             Icon: "mdi:clipboard",
@@ -746,7 +746,7 @@ public partial class AddJsonExtensionWindow
                     _manualUiMode = null;
                     if (string.IsNullOrWhiteSpace(PasteTextSimpleBox.Text))
                     {
-                        PasteTextSimpleBox.Text = "你好，这里是粘贴模板内容。";
+                        PasteTextSimpleBox.Text = "燕子，没有你我怎么活啊！";
                     }
                     RebuildPasteScript();
                     break;
@@ -928,7 +928,7 @@ public partial class AddJsonExtensionWindow
             public static Task<string> RunAsync(YanziActionContext context)
             {
                 var payload = Encoding.UTF8.GetString(Convert.FromBase64String("{{b64}}"));
-                System.Windows.Forms.Clipboard.SetText(payload);
+                System.Windows.Forms.Clipboard.SetDataObject(payload, true, 10, 50);
                 Thread.Sleep(35);
                 SendCtrlV();
                 return Task.FromResult("已粘贴。");
@@ -1217,7 +1217,8 @@ public partial class AddJsonExtensionWindow
         if (string.IsNullOrWhiteSpace(script) ||
             !script.Contains("FromBase64String", StringComparison.OrdinalIgnoreCase) ||
             !(script.Contains("Set-Clipboard", StringComparison.OrdinalIgnoreCase) ||
-              script.Contains("Clipboard.SetText", StringComparison.OrdinalIgnoreCase)))
+              script.Contains("Clipboard.SetText", StringComparison.OrdinalIgnoreCase) ||
+              script.Contains("Clipboard.SetDataObject", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }

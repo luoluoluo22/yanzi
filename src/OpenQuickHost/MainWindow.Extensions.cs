@@ -1176,6 +1176,11 @@ public partial class MainWindow
 
     public void HideToTray()
     {
+        if (OwnedWindows.OfType<Window>().Any(static w => w.IsVisible))
+        {
+            return;
+        }
+
         if (IsRadialPickerMode)
         {
             IsRadialPickerMode = false;

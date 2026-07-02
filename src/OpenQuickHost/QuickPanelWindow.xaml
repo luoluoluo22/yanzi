@@ -636,32 +636,34 @@
                                                     </Grid>
                                                     <Border Background="#C0181818"
                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                    <Viewbox Width="20"
-                                                             Height="20"
-                                                             HorizontalAlignment="Center"
-                                                             VerticalAlignment="Center"
-                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry sync}"
-                                                              Fill="{DynamicResource BrushTextMain}"
-                                                              Stretch="Uniform"
-                                                              RenderTransformOrigin="0.5,0.5">
-                                                            <Path.RenderTransform>
-                                                                <RotateTransform Angle="0" />
-                                                            </Path.RenderTransform>
-                                                            <Path.Triggers>
-                                                                <EventTrigger RoutedEvent="Loaded">
-                                                                    <BeginStoryboard>
-                                                                        <Storyboard RepeatBehavior="Forever">
-                                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                             From="0"
-                                                                                             To="360"
-                                                                                             Duration="0:0:0.9" />
-                                                                        </Storyboard>
-                                                                    </BeginStoryboard>
-                                                                </EventTrigger>
-                                                            </Path.Triggers>
-                                                        </Path>
-                                                    </Viewbox>
+                                                    <Path Width="14"
+                                                          Height="14"
+                                                          Data="M12,2 A10,10 0 1,1 2,12"
+                                                          Stroke="{DynamicResource BrushTextMain}"
+                                                          StrokeThickness="2"
+                                                          StrokeStartLineCap="Round"
+                                                          StrokeEndLineCap="Round"
+                                                          Stretch="Uniform"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"
+                                                          RenderTransformOrigin="0.5,0.5"
+                                                          Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Path.RenderTransform>
+                                                            <RotateTransform Angle="0" />
+                                                        </Path.RenderTransform>
+                                                        <Path.Triggers>
+                                                            <EventTrigger RoutedEvent="Loaded">
+                                                                <BeginStoryboard>
+                                                                    <Storyboard RepeatBehavior="Forever">
+                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                         From="0"
+                                                                                         To="360"
+                                                                                         Duration="0:0:1.0" />
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </EventTrigger>
+                                                        </Path.Triggers>
+                                                    </Path>
                                                 </Grid>
                                             </Border>
                                             <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}" 
@@ -918,32 +920,34 @@
                                                     </Grid>
                                                     <Border Background="#C0181818"
                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                    <Viewbox Width="20"
-                                                             Height="20"
-                                                             HorizontalAlignment="Center"
-                                                             VerticalAlignment="Center"
-                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry sync}"
-                                                              Fill="{DynamicResource BrushTextMain}"
-                                                              Stretch="Uniform"
-                                                              RenderTransformOrigin="0.5,0.5">
-                                                            <Path.RenderTransform>
-                                                                <RotateTransform Angle="0" />
-                                                            </Path.RenderTransform>
-                                                            <Path.Triggers>
-                                                                <EventTrigger RoutedEvent="Loaded">
-                                                                    <BeginStoryboard>
-                                                                        <Storyboard RepeatBehavior="Forever">
-                                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                             From="0"
-                                                                                             To="360"
-                                                                                             Duration="0:0:0.9" />
-                                                                        </Storyboard>
-                                                                    </BeginStoryboard>
-                                                                </EventTrigger>
-                                                            </Path.Triggers>
-                                                        </Path>
-                                                    </Viewbox>
+                                                    <Path Width="14"
+                                                          Height="14"
+                                                          Data="M12,2 A10,10 0 1,1 2,12"
+                                                          Stroke="{DynamicResource BrushTextMain}"
+                                                          StrokeThickness="2"
+                                                          StrokeStartLineCap="Round"
+                                                          StrokeEndLineCap="Round"
+                                                          Stretch="Uniform"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"
+                                                          RenderTransformOrigin="0.5,0.5"
+                                                          Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Path.RenderTransform>
+                                                            <RotateTransform Angle="0" />
+                                                        </Path.RenderTransform>
+                                                        <Path.Triggers>
+                                                            <EventTrigger RoutedEvent="Loaded">
+                                                                <BeginStoryboard>
+                                                                    <Storyboard RepeatBehavior="Forever">
+                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                         From="0"
+                                                                                         To="360"
+                                                                                         Duration="0:0:1.0" />
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </EventTrigger>
+                                                        </Path.Triggers>
+                                                    </Path>
                                                 </Grid>
                                             </Border>
                                             <TextBlock Text="{Binding DisplayTitle, FallbackValue='推荐位'}"
@@ -1279,32 +1283,34 @@
                                                 </StackPanel>
                                                 <Border Background="#C0181818"
                                                         Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                <Viewbox Width="20"
-                                                         Height="20"
-                                                         HorizontalAlignment="Center"
-                                                         VerticalAlignment="Center"
-                                                         Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <Path Data="{local:IconGeometry sync}"
-                                                          Fill="{DynamicResource BrushTextMain}"
-                                                          Stretch="Uniform"
-                                                          RenderTransformOrigin="0.5,0.5">
-                                                        <Path.RenderTransform>
-                                                            <RotateTransform Angle="0" />
-                                                        </Path.RenderTransform>
-                                                        <Path.Triggers>
-                                                            <EventTrigger RoutedEvent="Loaded">
-                                                                <BeginStoryboard>
-                                                                    <Storyboard RepeatBehavior="Forever">
-                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                         From="0"
-                                                                                         To="360"
-                                                                                         Duration="0:0:0.9" />
-                                                                    </Storyboard>
-                                                                </BeginStoryboard>
-                                                            </EventTrigger>
-                                                        </Path.Triggers>
-                                                    </Path>
-                                                </Viewbox>
+                                                <Path Width="14"
+                                                      Height="14"
+                                                      Data="M12,2 A10,10 0 1,1 2,12"
+                                                      Stroke="{DynamicResource BrushTextMain}"
+                                                      StrokeThickness="2"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      Stretch="Uniform"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      RenderTransformOrigin="0.5,0.5"
+                                                      Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path.RenderTransform>
+                                                        <RotateTransform Angle="0" />
+                                                    </Path.RenderTransform>
+                                                    <Path.Triggers>
+                                                        <EventTrigger RoutedEvent="Loaded">
+                                                            <BeginStoryboard>
+                                                                <Storyboard RepeatBehavior="Forever">
+                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                     From="0"
+                                                                                     To="360"
+                                                                                     Duration="0:0:1.0" />
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </EventTrigger>
+                                                    </Path.Triggers>
+                                                </Path>
                                             </Grid>
                                         </Border>
                                         <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}"

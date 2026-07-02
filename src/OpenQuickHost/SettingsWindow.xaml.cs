@@ -4919,14 +4919,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var publishedMap = await _mainWindow.GetOwnedPublishedExtensionsForSettingsAsync();
-            HostAssets.AppendLog($"Settings extensions refresh cloud publish map count={publishedMap.Count}");
+            // 1. 首先加载并显示本地磁盘扩展，忽略网络以保障秒开体验
+            var publishedMap = new Dictionary<string, CloudExtensionRecord>(StringComparer.OrdinalIgnoreCase);
             var data = await Task.Run(() =>
             {
                 var backgroundStartedAt = Stopwatch.StartNew();
                 LocalExtensionCatalog.EnsureSampleExtension();
-                var entries = LocalExtensionCatalog.LoadEntries()
-                    .ToList();
+                var entries = LocalExtensionCatalog.LoadEntries().ToList();
                 var recycleBinItems = _mainWindow.GetRecycleBinEntriesForSettings()
                     .Select(item => new SettingsRecycleBinItem(
                         item.ItemId,
@@ -4967,17 +4966,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var uiApplyStartedAt = Stopwatch.StartNew();
             await Dispatcher.InvokeAsync(() =>
             {
-            _mainWindow.ReloadLocalExtensionsFromEntries(data.entries, "已刷新本地扩展。");
-            _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), publishedMap);
-            _cachedRecycleBinItems = data.recycleBinItems;
-            if (IsExtensionsSelected)
-            {
-                RefreshExtensionSummary();
-                RefreshRecycleBinSummary();
-                RefreshExtensionItems();
-            }
+                _mainWindow.ReloadLocalExtensionsFromEntries(data.entries, "已刷新本地扩展。");
+                _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), publishedMap);
+                _cachedRecycleBinItems = data.recycleBinItems;
+                if (IsExtensionsSelected)
+                {
+                    RefreshExtensionSummary();
+                    RefreshRecycleBinSummary();
+                    RefreshExtensionItems();
+                }
 
-            if (IsRecycleBinSelected)
+                if (IsRecycleBinSelected)
                 {
                     RefreshRecycleBinSummary();
                     RefreshRecycleBinItems();
@@ -4985,6 +4984,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }, DispatcherPriority.Background);
             HostAssets.AppendLog(
                 $"Settings extensions refresh UI applied: version={refreshVersion}, elapsedMs={uiApplyStartedAt.ElapsedMilliseconds}");
+
+            // 2. 本地数据刷新完毕后，后台默默向云端同步发布状态，随后平滑渲染
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var cloudMap = await _mainWindow.GetOwnedPublishedExtensionsForSettingsAsync();
+                    if (cloudMap != null && cloudMap.Count > 0)
+                    {
+                        if (refreshVersion != _extensionsRefreshVersion) return;
+                        
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (refreshVersion != _extensionsRefreshVersion) return;
+                            _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), cloudMap);
+                            if (IsExtensionsSelected)
+                            {
+                                RefreshExtensionItems();
+                            }
+                        }, DispatcherPriority.Background);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Settings extensions cloud status refresh failed: {ex.Message}");
+                }
+            });
         }
         catch (Exception ex)
         {

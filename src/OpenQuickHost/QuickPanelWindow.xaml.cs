@@ -1541,7 +1541,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             !string.Equals(command.EntryMode, "inline", StringComparison.OrdinalIgnoreCase) ||
             !script.Contains("FromBase64String", StringComparison.OrdinalIgnoreCase) ||
             !(script.Contains("Set-Clipboard", StringComparison.OrdinalIgnoreCase) ||
-              script.Contains("Clipboard.SetText", StringComparison.OrdinalIgnoreCase)))
+              script.Contains("Clipboard.SetText", StringComparison.OrdinalIgnoreCase) ||
+              script.Contains("Clipboard.SetDataObject", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
@@ -3207,7 +3208,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
 
         var targetContainer = GetSlotContainer(targetReference);
-        if (targetContainer == null || targetContainer[targetReference.Index] != null)
+        if (targetContainer == null)
         {
             return;
         }

@@ -913,7 +913,7 @@ public static class ScriptExtensionRunner
 
         var environmentSnapshot = CaptureRuntimeEnvironmentSnapshot();
         var originalDirectory = Directory.GetCurrentDirectory();
-        var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: false);
+        var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: true);
         try
         {
             ApplyRuntimeEnvironment(command, contextPath, stateUpdatePath, launchSource);
@@ -922,7 +922,24 @@ public static class ScriptExtensionRunner
                 Directory.SetCurrentDirectory(command.ExtensionDirectoryPath);
             }
 
-            var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
+            Assembly assembly;
+            var pdbPath = Path.ChangeExtension(assemblyPath, ".pdb");
+            if (File.Exists(pdbPath))
+            {
+                using (var fs = new FileStream(assemblyPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var pdbFs = new FileStream(pdbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    assembly = loadContext.LoadFromStream(fs, pdbFs);
+                }
+            }
+            else
+            {
+                using (var fs = new FileStream(assemblyPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    assembly = loadContext.LoadFromStream(fs);
+                }
+            }
+
             var runtimeContext = CreateInProcessRuntimeContext(assembly, context, stateUpdatePath);
             var runMethod = FindYanziActionRunMethod(assembly, runtimeContext.GetType());
             ready.TrySetResult(null);

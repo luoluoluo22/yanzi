@@ -2195,6 +2195,12 @@ public partial class MainWindow
 
     private async Task ExecuteScriptCommandAsync(CommandItem runnable, string? input, string launchSource)
     {
+        if (string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+        {
+            HideToTray();
+            await Task.Delay(100);
+        }
+
         var executionStopwatch = Stopwatch.StartNew();
         HostAssets.AppendLog(
             $"Main execute script start: id={runnable.ExtensionId}, title={runnable.Title}, launchSource={launchSource}, nativeWindow={runnable.UsesNativeWindowUi}, inputLength={(input ?? string.Empty).Length}");

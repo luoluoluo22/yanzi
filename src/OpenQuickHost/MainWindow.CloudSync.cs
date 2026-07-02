@@ -546,6 +546,7 @@ public partial class MainWindow
         {
             WebDavSyncService.MarkExtensionDeletedLocally(deletable.ExtensionId, deletable.DeclaredVersion);
             ExtensionRecycleBinService.MoveToRecycleBin(deletable.ExtensionId, deletable.ExtensionDirectoryPath);
+            RemoveExtensionFromQuickPanelSettings(deletable.ExtensionId);
             RemoveLocalExtensionCommand(deletable.ExtensionId);
             ApplyFilter(SearchBox.Text);
             SelectedCommand = FilteredCommands.FirstOrDefault();
