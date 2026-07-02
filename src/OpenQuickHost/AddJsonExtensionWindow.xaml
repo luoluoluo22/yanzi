@@ -1,4 +1,4 @@
-﻿<Window x:Class="OpenQuickHost.AddJsonExtensionWindow"
+<Window x:Class="OpenQuickHost.AddJsonExtensionWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:OpenQuickHost"
@@ -924,23 +924,17 @@
                                   Background="{DynamicResource BrushSecondaryBtnBG}"
                                   Margin="0,12,0,0" Padding="6" FontSize="12.5">
                             <StackPanel Margin="6,10,6,4">
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="14" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Visibility="Collapsed">
-                                        <TextBlock Text="扩展 ID（英文小写、短横线）" Style="{StaticResource FieldLabelStyle}" />
-                                        <TextBox x:Name="IdSimpleBox" Style="{StaticResource FormTextBoxStyle}"
-                                                 TextChanged="IdSimpleBox_TextChanged" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="版本号" Style="{StaticResource FieldLabelStyle}" />
-                                        <TextBox x:Name="VersionSimpleBox" Style="{StaticResource FormTextBoxStyle}"
-                                                 TextChanged="VersionSimpleBox_TextChanged" />
-                                    </StackPanel>
-                                </Grid>
+                                <!-- 隐藏的 ID 字段 -->
+                                <StackPanel Visibility="Collapsed">
+                                    <TextBlock Text="扩展 ID（英文小写、短横线）" Style="{StaticResource FieldLabelStyle}" />
+                                    <TextBox x:Name="IdSimpleBox" Style="{StaticResource FormTextBoxStyle}"
+                                             TextChanged="IdSimpleBox_TextChanged" />
+                                </StackPanel>
+                                <TextBlock Text="关键词（逗号分隔，启动器搜索时用到）"
+                                           Style="{StaticResource FieldLabelStyle}" />
+                                <TextBox x:Name="KeywordsSimpleBox" Style="{StaticResource FormTextBoxStyle}"
+                                         Margin="0,0,0,12"
+                                         TextChanged="KeywordsSimpleBox_TextChanged" />
                                 <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -948,21 +942,20 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
+                                        <TextBlock Text="版本号" Style="{StaticResource FieldLabelStyle}" />
+                                        <TextBox x:Name="VersionSimpleBox" Style="{StaticResource FormTextBoxStyle}"
+                                                 TextChanged="VersionSimpleBox_TextChanged" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
                                         <TextBlock Text="分类" Style="{StaticResource FieldLabelStyle}" />
                                         <TextBox x:Name="CategorySimpleBox" Style="{StaticResource FormTextBoxStyle}"
                                                  TextChanged="CategorySimpleBox_TextChanged" />
                                     </StackPanel>
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="权限（逗号分隔，如 clipboard, network）"
-                                                   Style="{StaticResource FieldLabelStyle}" />
-                                        <TextBox x:Name="PermissionsSimpleBox" Style="{StaticResource FormTextBoxStyle}"
-                                                 TextChanged="PermissionsSimpleBox_TextChanged" />
-                                    </StackPanel>
                                 </Grid>
-                                <TextBlock Text="关键词（逗号分隔，启动器搜索时用到）"
+                                <TextBlock Text="权限（逗号分隔，如 clipboard, network）"
                                            Style="{StaticResource FieldLabelStyle}" />
-                                <TextBox x:Name="KeywordsSimpleBox" Style="{StaticResource FormTextBoxStyle}"
-                                         TextChanged="KeywordsSimpleBox_TextChanged" />
+                                <TextBox x:Name="PermissionsSimpleBox" Style="{StaticResource FormTextBoxStyle}"
+                                         TextChanged="PermissionsSimpleBox_TextChanged" />
                             </StackPanel>
                         </Expander>
                     </StackPanel>
