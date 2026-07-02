@@ -1225,7 +1225,7 @@
                                 <TextBox x:Name="IconSimpleBox" Style="{StaticResource FormTextBoxStyle}" Margin="0"
                                          TextChanged="IconSimpleBox_TextChanged" />
                                 <Button Grid.Column="1" Content="色盘" Style="{DynamicResource GhostButtonStyle}"
-                                        Width="50" Height="30" Margin="8,0,0,0" ToolTip="选择图标前景色"
+                                        Height="30" Padding="12,0" Margin="8,0,0,0" ToolTip="选择图标前景色"
                                         Click="PickIconForegroundColorButton_Click" />
                             </Grid>
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
@@ -1259,7 +1259,7 @@
                                 <Button Tag="#FF6366F1" Width="26" Height="26" Background="#FF6366F1"
                                         BorderThickness="0" Margin="0,0,6,6" Click="AccentSwatch_Click" Cursor="Hand" />
                                 <Button Content="自定义" Style="{DynamicResource GhostButtonStyle}"
-                                        Width="50" Height="26" Margin="4,0,6,6" Click="PickAccentColorButton_Click" Cursor="Hand" />
+                                        Height="26" Padding="8,0" Margin="4,0,6,6" Click="PickAccentColorButton_Click" Cursor="Hand" />
                             </WrapPanel>
                             <Grid Margin="0,4,0,0">
                                 <Grid.ColumnDefinitions>
@@ -1275,7 +1275,7 @@
                                         Width="30" Height="30" Margin="8,0,0,0" CornerRadius="6"
                                         BorderBrush="#33FFFFFF" BorderThickness="1" Background="#FF3B82F6" />
                                 <Button Grid.Column="2" Content="取色" Style="{DynamicResource GhostButtonStyle}"
-                                        Width="50" Height="30" Margin="8,0,0,0" Click="PickAccentColorButton_Click" />
+                                        Height="30" Padding="12,0" Margin="8,0,0,0" Click="PickAccentColorButton_Click" />
                             </Grid>
 
                             <!-- 触发方式（参考设置 - 扩展页右侧设计） -->

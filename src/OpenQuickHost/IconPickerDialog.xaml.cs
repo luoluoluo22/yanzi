@@ -19,7 +19,7 @@ namespace OpenQuickHost
 
             // 获取全部内置图标
             _allIcons = ExtensionIconLibrary.GetAllMdiOptions().ToList();
-            IconsListBox.ItemsSource = _allIcons;
+            IconsListBox.ItemsSource = _allIcons.Take(100).ToList();
 
             // 预选当前已设定的图标
             if (!string.IsNullOrWhiteSpace(initialSelection))
@@ -55,7 +55,7 @@ namespace OpenQuickHost
             var query = (SearchBox.Text ?? string.Empty).Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(query))
             {
-                IconsListBox.ItemsSource = _allIcons;
+                IconsListBox.ItemsSource = _allIcons.Take(100).ToList();
                 return;
             }
 
@@ -63,7 +63,7 @@ namespace OpenQuickHost
             var filtered = _allIcons.Where(icon =>
                 icon.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 icon.Reference.Contains(query, StringComparison.OrdinalIgnoreCase)
-            ).ToList();
+            ).Take(200).ToList();
 
             IconsListBox.ItemsSource = filtered;
         }
