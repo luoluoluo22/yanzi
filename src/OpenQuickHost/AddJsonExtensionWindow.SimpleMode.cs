@@ -68,7 +68,7 @@ public partial class AddJsonExtensionWindow
             Description: "在百度上搜索关键字。",
             Category: "网页搜索",
             Keywords: "搜索, baidu, 百度",
-            Icon: "mdi:search",
+            Icon: "https://www.baidu.com/favicon.ico",
             AccentHex: "#FF6366F1",
             QueryTemplate: "https://www.baidu.com/s?wd={query}",
             QueryPrefixes: "b, baidu"),
@@ -896,7 +896,17 @@ public partial class AddJsonExtensionWindow
             {
                 var name = $"{label}搜索";
                 var desc = $"在{label}上搜索关键字。";
-                var icon = label.Equals("GitHub", StringComparison.OrdinalIgnoreCase) ? "mdi:github" : "mdi:search";
+                
+                var icon = "mdi:search";
+                try
+                {
+                    var uri = new Uri(preset);
+                    icon = uri.Host.Contains("bilibili") ? "https://www.bilibili.com/favicon.ico" : $"{uri.Scheme}://{uri.Host}/favicon.ico";
+                }
+                catch
+                {
+                    // Ignore
+                }
                 
                 NameSimpleBox.Text = name;
                 DescriptionSimpleBox.Text = desc;
