@@ -906,6 +906,40 @@ public partial class AddJsonExtensionWindow
                 _lastTemplateSnapshot["Description"] = desc;
                 _lastTemplateSnapshot["Icon"] = icon;
                 _lastTemplateSnapshot["QueryTemplate"] = preset;
+
+                var prefixes = string.Empty;
+                var lowerLabel = label.ToLowerInvariant();
+                if (lowerLabel.Contains("baidu") || lowerLabel.Contains("百度"))
+                {
+                    prefixes = "b, baidu";
+                }
+                else if (lowerLabel.Contains("google") || lowerLabel.Contains("谷歌"))
+                {
+                    prefixes = "g, google";
+                }
+                else if (lowerLabel.Contains("bing"))
+                {
+                    prefixes = "bi, bing";
+                }
+                else if (lowerLabel.Contains("github"))
+                {
+                    prefixes = "gh, github";
+                }
+                else if (lowerLabel.Contains("juejin") || lowerLabel.Contains("掘金"))
+                {
+                    prefixes = "j, juejin";
+                }
+                else if (lowerLabel.Contains("mdn"))
+                {
+                    prefixes = "mdn";
+                }
+                else
+                {
+                    prefixes = lowerLabel;
+                }
+
+                SearchPrefixesSimpleBox.Text = prefixes;
+                _lastTemplateSnapshot["QueryPrefixes"] = prefixes;
             }
         }
     }
