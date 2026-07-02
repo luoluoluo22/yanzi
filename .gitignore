@@ -41,3 +41,6 @@ publish/
 *.msi
 *Setup*.exe
 .DS_Store
+
+# Temporary release notes drafts
+RELEASE_NOTES.md

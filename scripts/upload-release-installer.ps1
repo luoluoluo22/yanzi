@@ -192,8 +192,19 @@ if (-not [string]::IsNullOrEmpty($token)) {
         $releaseObj = Invoke-RestMethod -Uri $tagUrl -Headers $headers -Method Get
         $releaseId = $releaseObj.id
         
-        # 准备中文说明
-        $chineseBody = if ($Platform -eq "android") {
+        # 优先读取根目录下的 RELEASE_NOTES.md 文件作为中文更新说明
+        $localNotesFile = Join-Path $root "RELEASE_NOTES.md"
+        $chineseBody = ""
+        if (Test-Path $localNotesFile) {
+            $rawNotes = (Get-Content $localNotesFile -Raw).Trim()
+            if (-not [string]::IsNullOrEmpty($rawNotes)) {
+                $chineseBody = $rawNotes
+                Write-Host "Loaded release notes from $localNotesFile"
+            }
+        }
+
+        if ([string]::IsNullOrEmpty($chineseBody)) {
+            $chineseBody = if ($Platform -eq "android") {
 @"
 # 燕子 Yanzi for Android v$plainVersion 更新内容
 
@@ -206,7 +217,7 @@ if (-not [string]::IsNullOrEmpty($token)) {
 安装包：$fileName
 SHA256: $hash
 "@
-        } else {
+            } else {
 @"
 # 燕子 Yanzi v$plainVersion 更新内容
 
@@ -219,6 +230,7 @@ SHA256: $hash
 一键安装包：$fileName
 SHA256: $hash
 "@
+            }
         }
 
         $payload = @{
