@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.IconPickerDialog"
+﻿<Window x:Class="OpenQuickHost.IconPickerDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -120,7 +120,7 @@
                      SelectionMode="Single" SelectionChanged="IconsListBox_SelectionChanged">
                 <ListBox.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal" IsItemsHost="True" />
+                        <UniformGrid Columns="6" IsItemsHost="True" />
                     </ItemsPanelTemplate>
                 </ListBox.ItemsPanel>
                 <ListBox.ItemContainerStyle>
@@ -129,6 +129,8 @@
                         <Setter Property="BorderThickness" Value="0" />
                         <Setter Property="Padding" Value="0" />
                         <Setter Property="Margin" Value="4" />
+                        <Setter Property="HorizontalAlignment" Value="Center" />
+                        <Setter Property="VerticalAlignment" Value="Center" />
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="ListBoxItem">

@@ -129,6 +129,7 @@ namespace OpenQuickHost
 
             _loadedCount = PageSize;
             IconsListBox.ItemsSource = _currentSource.Take(_loadedCount).ToList();
+            IconsListBox.SelectedIndex = -1;
         }
 
         private void IconsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -166,17 +167,89 @@ namespace OpenQuickHost
 
         private void SearchBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
+            var count = IconsListBox.Items.Count;
             if (e.Key == Key.Enter)
             {
-                if (IconsListBox.SelectedItem == null && IconsListBox.Items.Count > 0)
+                e.Handled = true;
+                if (IconsListBox.SelectedItem != null)
+                {
+                    ConfirmButton_Click(sender, e);
+                }
+                else if (count > 0)
                 {
                     IconsListBox.SelectedIndex = 0;
+                    var item = IconsListBox.SelectedItem;
+                    if (item != null) IconsListBox.ScrollIntoView(item);
                 }
-                ConfirmButton_Click(sender, e);
             }
             else if (e.Key == Key.Escape)
             {
+                e.Handled = true;
                 CancelButton_Click(sender, e);
+            }
+            else if (e.Key == Key.Down)
+            {
+                e.Handled = true;
+                if (count > 0)
+                {
+                    var nextIndex = IconsListBox.SelectedIndex == -1 ? 0 : IconsListBox.SelectedIndex + 6;
+                    if (nextIndex < count)
+                    {
+                        IconsListBox.SelectedIndex = nextIndex;
+                    }
+                    else
+                    {
+                        IconsListBox.SelectedIndex = count - 1;
+                    }
+                    var item = IconsListBox.SelectedItem;
+                    if (item != null) IconsListBox.ScrollIntoView(item);
+                }
+            }
+            else if (e.Key == Key.Up)
+            {
+                e.Handled = true;
+                if (count > 0)
+                {
+                    var prevIndex = IconsListBox.SelectedIndex == -1 ? 0 : IconsListBox.SelectedIndex - 6;
+                    if (prevIndex >= 0)
+                    {
+                        IconsListBox.SelectedIndex = prevIndex;
+                    }
+                    else
+                    {
+                        IconsListBox.SelectedIndex = 0;
+                    }
+                    var item = IconsListBox.SelectedItem;
+                    if (item != null) IconsListBox.ScrollIntoView(item);
+                }
+            }
+            else if (e.Key == Key.Right && IconsListBox.SelectedIndex != -1)
+            {
+                if (count > 0)
+                {
+                    var nextIndex = IconsListBox.SelectedIndex + 1;
+                    if (nextIndex < count)
+                    {
+                        e.Handled = true;
+                        IconsListBox.SelectedIndex = nextIndex;
+                        var item = IconsListBox.SelectedItem;
+                        if (item != null) IconsListBox.ScrollIntoView(item);
+                    }
+                }
+            }
+            else if (e.Key == Key.Left && IconsListBox.SelectedIndex != -1)
+            {
+                if (count > 0)
+                {
+                    var prevIndex = IconsListBox.SelectedIndex - 1;
+                    if (prevIndex >= 0)
+                    {
+                        e.Handled = true;
+                        IconsListBox.SelectedIndex = prevIndex;
+                        var item = IconsListBox.SelectedItem;
+                        if (item != null) IconsListBox.ScrollIntoView(item);
+                    }
+                }
             }
         }
     }
