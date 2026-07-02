@@ -18,8 +18,8 @@
     </Window.Resources>
 
     <Grid>
-        <Ellipse Width="392"
-                 Height="392"
+        <Ellipse Width="320"
+                 Height="320"
                  Fill="{DynamicResource BrushRadialOuterBG}"
                  Stroke="{DynamicResource BrushRadialBorder}"
                  StrokeThickness="1"
@@ -56,8 +56,8 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <Ellipse Width="244"
-                 Height="244"
+        <Ellipse Width="200"
+                 Height="200"
                  Fill="Transparent"
                  Stroke="{DynamicResource BrushRadialBorder}"
                  StrokeThickness="1"
@@ -82,8 +82,8 @@
         </ItemsControl>
 
         <!-- Ring line around inner circle - must be after the filled ellipse -->
-        <Ellipse Width="244"
-                 Height="244"
+        <Ellipse Width="200"
+                 Height="200"
                  Fill="Transparent"
                  Stroke="{DynamicResource BrushRadialBorderActive}"
                  StrokeThickness="1.5"
@@ -103,15 +103,15 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <Ellipse Width="58"
-                 Height="58"
+        <Ellipse Width="48"
+                 Height="48"
                  Stroke="{DynamicResource BrushRadialBorderActive}"
                  StrokeThickness="1"
                  Fill="{DynamicResource BrushRadialCenterBG}"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center" />
 
-        <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Width="52" Height="52">
+        <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Width="42" Height="42">
             <TextBlock Text="{Binding CenterPrimaryText}"
                        Foreground="{DynamicResource BrushRadialText}"
                        FontSize="11"
@@ -132,8 +132,8 @@
                 </TextBlock.Style>
             </TextBlock>
             <Image Source="{Binding CenterIcon}"
-                   Width="32"
-                   Height="32"
+                   Width="24"
+                   Height="24"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center">
                 <Image.Style>
@@ -158,7 +158,7 @@
                    TextAlignment="Center"
                    TextTrimming="CharacterEllipsis">
             <TextBlock.RenderTransform>
-                <TranslateTransform Y="220"/>
+                <TranslateTransform Y="176"/>
             </TextBlock.RenderTransform>
         </TextBlock>
 
@@ -166,7 +166,7 @@
                       HorizontalAlignment="Center"
                       VerticalAlignment="Center">
             <ItemsControl.RenderTransform>
-                <TranslateTransform Y="205"/>
+                <TranslateTransform Y="160"/>
             </ItemsControl.RenderTransform>
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -199,7 +199,7 @@
                    VerticalAlignment="Center"
                    TextAlignment="Center">
             <TextBlock.RenderTransform>
-                <TranslateTransform Y="238"/>
+                <TranslateTransform Y="192"/>
             </TextBlock.RenderTransform>
         </TextBlock>
 
@@ -215,7 +215,7 @@
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center">
             <Button.RenderTransform>
-                <TranslateTransform X="172" Y="-154" />
+                <TranslateTransform X="140" Y="-126" />
             </Button.RenderTransform>
             <Button.Style>
                 <Style TargetType="Button">
@@ -249,7 +249,7 @@
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center">
             <Button.RenderTransform>
-                <TranslateTransform X="214" Y="-154" />
+                <TranslateTransform X="178" Y="-126" />
             </Button.RenderTransform>
             <Button.Style>
                 <Style TargetType="Button">
@@ -283,7 +283,7 @@
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center">
             <Button.RenderTransform>
-                <TranslateTransform X="256" Y="-154" />
+                <TranslateTransform X="216" Y="-126" />
             </Button.RenderTransform>
             <Button.Style>
                 <Style TargetType="Button">
@@ -317,7 +317,7 @@
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center">
             <Button.RenderTransform>
-                <TranslateTransform X="298" Y="-154" />
+                <TranslateTransform X="254" Y="-126" />
             </Button.RenderTransform>
             <Button.Style>
                 <Style TargetType="Button">
@@ -351,7 +351,7 @@
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center">
             <Button.RenderTransform>
-                <TranslateTransform X="340" Y="-154" />
+                <TranslateTransform X="292" Y="-126" />
             </Button.RenderTransform>
             <Button.Style>
                 <Style TargetType="Button">
@@ -385,7 +385,7 @@
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center">
             <Button.RenderTransform>
-                <TranslateTransform X="382" Y="-154" />
+                <TranslateTransform X="330" Y="-126" />
             </Button.RenderTransform>
             <Button.Style>
                 <Style TargetType="Button">
@@ -421,8 +421,8 @@
             </ItemsControl.ItemContainerStyle>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Border Width="62"
-                            Height="50"
+                    <Border Width="50"
+                            Height="40"
                             Background="Transparent"
                             BorderThickness="0"
                             AllowDrop="True"
@@ -458,11 +458,11 @@
                                 </TextBlock>
                                 
                                 <!-- Show normal content for filled slots -->
-                                <Grid Width="23" Height="23" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <Border Width="23" Height="23" CornerRadius="6" Background="{Binding AccentBrush}">
+                                <Grid Width="18" Height="18" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Border Width="18" Height="18" CornerRadius="4" Background="{Binding AccentBrush}">
                                         <Grid ClipToBounds="True">
                                             <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Viewbox Width="11" Height="11" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                             </Viewbox>
                                             <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
@@ -483,8 +483,8 @@
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
-                                           FontSize="9"
-                                           Width="50"
+                                           FontSize="8"
+                                           Width="44"
                                            TextAlignment="Center"
                                            TextTrimming="CharacterEllipsis"
                                            Margin="0,4,0,0"
@@ -510,8 +510,8 @@
             </ItemsControl.ItemContainerStyle>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Border Width="76"
-                            Height="60"
+                    <Border Width="64"
+                            Height="50"
                             Background="Transparent"
                             BorderThickness="0"
                             AllowDrop="True"
@@ -547,17 +547,17 @@
                                 </TextBlock>
                                 
                                 <!-- Show normal content for filled slots -->
-                                <Grid Width="32"
-                                      Height="32"
+                                <Grid Width="26"
+                                      Height="26"
                                       HorizontalAlignment="Center"
                                       Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <Border Width="32" Height="32" CornerRadius="8" Background="{Binding AccentBrush}">
+                                    <Border Width="26" Height="26" CornerRadius="6" Background="{Binding AccentBrush}">
                                         <Grid ClipToBounds="True">
                                             <Image Source="{Binding IconSource}"
                                                    Stretch="UniformToFill"
                                                    Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <Viewbox Width="19"
-                                                     Height="19"
+                                            <Viewbox Width="15"
+                                                     Height="15"
                                                      Stretch="Uniform"
                                                      HorizontalAlignment="Center"
                                                      VerticalAlignment="Center"
@@ -589,7 +589,7 @@
                                 <TextBlock Text="{Binding Title}"
                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
                                            FontSize="{DynamicResource FontSizeTiny}"
-                                           Width="60"
+                                           Width="50"
                                            TextAlignment="Center"
                                            TextTrimming="CharacterEllipsis"
                                            Margin="0,4,0,0"
@@ -602,8 +602,8 @@
         </ItemsControl>
 
         <Canvas Visibility="{Binding HasChildRing, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Ellipse Width="240"
-                     Height="240"
+            <Ellipse Width="200"
+                     Height="200"
                      Canvas.Left="{Binding ChildRingEllipseX}"
                      Canvas.Top="{Binding ChildRingEllipseY}"
                      Fill="{DynamicResource BrushRadialInnerBG}"
@@ -637,8 +637,8 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <Ellipse Width="64"
-                     Height="64"
+            <Ellipse Width="52"
+                     Height="52"
                      Canvas.Left="{Binding ChildRingCenterEllipseX}"
                      Canvas.Top="{Binding ChildRingCenterEllipseY}"
                      Fill="{DynamicResource BrushRadialCenterBG}"
@@ -666,8 +666,8 @@
                 </ItemsControl.ItemContainerStyle>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="68"
-                                Height="54"
+                        <Border Width="56"
+                                Height="44"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 AllowDrop="True"
@@ -703,17 +703,17 @@
                                     </TextBlock>
                                     
                                     <!-- Show normal content for filled slots -->
-                                    <Grid Width="26"
-                                          Height="26"
+                                    <Grid Width="22"
+                                          Height="22"
                                           HorizontalAlignment="Center"
                                           Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Border Width="26" Height="26" CornerRadius="7" Background="{Binding AccentBrush}">
+                                        <Border Width="22" Height="22" CornerRadius="5" Background="{Binding AccentBrush}">
                                             <Grid ClipToBounds="True">
                                                 <Image Source="{Binding IconSource}"
                                                        Stretch="UniformToFill"
                                                        Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                <Viewbox Width="16"
-                                                         Height="16"
+                                                <Viewbox Width="13"
+                                                         Height="13"
                                                          Stretch="Uniform"
                                                          HorizontalAlignment="Center"
                                                          VerticalAlignment="Center"
@@ -730,22 +730,22 @@
                                             </Grid>
                                         </Border>
                                         <!-- Running indicator (Green Dot) -->
-                                        <Border Width="7"
-                                                Height="7"
-                                                CornerRadius="3.5"
+                                        <Border Width="6"
+                                                Height="6"
+                                                CornerRadius="3"
                                                 Background="#FF10B981"
                                                 BorderBrush="#CCFFFFFF"
                                                 BorderThickness="0.8"
                                                 HorizontalAlignment="Left"
                                                 VerticalAlignment="Bottom"
-                                                Margin="-1.8,0,0,-1.8"
+                                                Margin="-1.5,0,0,-1.5"
                                                 IsHitTestVisible="False"
                                                 Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
                                                FontSize="9"
-                                               Width="54"
+                                               Width="46"
                                                TextAlignment="Center"
                                                TextTrimming="CharacterEllipsis"
                                                Margin="0,4,0,0"
@@ -759,8 +759,8 @@
         </Canvas>
 
         <Canvas Visibility="{Binding HasGrandChildRing, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Ellipse Width="196"
-                     Height="196"
+            <Ellipse Width="160"
+                     Height="160"
                      Canvas.Left="{Binding GrandChildRingEllipseX}"
                      Canvas.Top="{Binding GrandChildRingEllipseY}"
                      Fill="{DynamicResource BrushRadialInnerBG}"
@@ -794,8 +794,8 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <Ellipse Width="54"
-                     Height="54"
+            <Ellipse Width="44"
+                     Height="44"
                      Canvas.Left="{Binding GrandChildRingCenterEllipseX}"
                      Canvas.Top="{Binding GrandChildRingCenterEllipseY}"
                      Fill="{DynamicResource BrushRadialCenterBG}"
@@ -823,8 +823,8 @@
                 </ItemsControl.ItemContainerStyle>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="62"
-                                Height="50"
+                        <Border Width="50"
+                                Height="40"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 AllowDrop="True"
@@ -860,11 +860,11 @@
                                     </TextBlock>
                                     
                                     <!-- Show normal content for filled slots -->
-                                    <Grid Width="23" Height="23" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Border Width="23" Height="23" CornerRadius="6" Background="{Binding AccentBrush}">
+                                    <Grid Width="18" Height="18" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Border Width="18" Height="18" CornerRadius="4" Background="{Binding AccentBrush}">
                                             <Grid ClipToBounds="True">
                                                 <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Viewbox Width="11" Height="11" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                                 </Viewbox>
                                                 <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
@@ -885,8 +885,8 @@
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
-                                               FontSize="9"
-                                               Width="50"
+                                               FontSize="8"
+                                               Width="44"
                                                TextAlignment="Center"
                                                TextTrimming="CharacterEllipsis"
                                                Margin="0,4,0,0"

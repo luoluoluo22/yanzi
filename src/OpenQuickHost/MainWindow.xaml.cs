@@ -31,6 +31,92 @@ namespace OpenQuickHost;
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     public bool HasBeenShown { get; set; } = false;
+
+    private TaskCompletionSource<RadialPickerResult?>? _radialPickerTcs;
+    private bool _isRadialPickerMode;
+    private bool _radialPickerAllowAddChild;
+
+    public bool IsRadialPickerMode
+    {
+        get => _isRadialPickerMode;
+        set
+        {
+            _isRadialPickerMode = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(RadialPickerBarVisibility));
+            OnPropertyChanged(nameof(RadialPickerAddChildVisibility));
+            OnPropertyChanged(nameof(NormalFooterMenuVisibility));
+            UpdateFooterMenuHint(false);
+        }
+    }
+
+    public bool RadialPickerAllowAddChild
+    {
+        get => _radialPickerAllowAddChild;
+        set
+        {
+            _radialPickerAllowAddChild = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(RadialPickerAddChildVisibility));
+        }
+    }
+
+    public Visibility RadialPickerBarVisibility => IsRadialPickerMode ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility RadialPickerAddChildVisibility => (IsRadialPickerMode && RadialPickerAllowAddChild) ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility NormalFooterMenuVisibility => IsRadialPickerMode ? Visibility.Collapsed : Visibility.Visible;
+
+    public Task<RadialPickerResult?> ShowForRadialPickerAsync(bool allowAddChildPage)
+    {
+        _radialPickerTcs?.TrySetResult(null);
+        _radialPickerTcs = new TaskCompletionSource<RadialPickerResult?>();
+        IsRadialPickerMode = true;
+        RadialPickerAllowAddChild = allowAddChildPage;
+
+        ShowPanel();
+
+        return _radialPickerTcs.Task;
+    }
+
+    private void RadialPickerConfirmButton_Click(object sender, RoutedEventArgs e)
+    {
+        ConfirmRadialPickerSelection();
+    }
+
+    private void RadialPickerAddChildButton_Click(object sender, RoutedEventArgs e)
+    {
+        AddChildPageRadialSelection();
+    }
+
+    private void ConfirmRadialPickerSelection()
+    {
+        if (SelectedCommand == null)
+            return;
+
+        var result = new RadialPickerResult(RadialSlotPickerWindow.PickerAction.AddCommand, SelectedCommand);
+        IsRadialPickerMode = false;
+        HideToTray();
+        _radialPickerTcs?.TrySetResult(result);
+    }
+
+    private void AddChildPageRadialSelection()
+    {
+        var result = new RadialPickerResult(RadialSlotPickerWindow.PickerAction.AddChildPage, null);
+        IsRadialPickerMode = false;
+        HideToTray();
+        _radialPickerTcs?.TrySetResult(result);
+    }
+
+    private void FooterMenuHint_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (IsRadialPickerMode)
+        {
+            ConfirmRadialPickerSelection();
+            e.Handled = true;
+        }
+    }
+
     private const int HotKeyId = 0x5301;
     private const int YanmHotKeyId = 0x5302;
     private const int RadialHotKeyId = 0x5303;
@@ -1638,8 +1724,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        FooterMenuHintText.Text = isMenuOpen ? "左箭头返回" : "右箭头菜单";
-        FooterMenuHintKeyText.Text = isMenuOpen ? "←" : "→";
+        if (IsRadialPickerMode)
+        {
+            FooterMenuHintText.Text = "确认添加";
+            FooterMenuHintKeyText.Text = "Enter";
+        }
+        else
+        {
+            FooterMenuHintText.Text = isMenuOpen ? "左箭头返回" : "右箭头菜单";
+            FooterMenuHintKeyText.Text = isMenuOpen ? "←" : "→";
+        }
     }
 
     private void FooterQuickMenuButton_Click(object sender, RoutedEventArgs e)
@@ -2231,6 +2325,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void RunSelectedCommand()
     {
+        if (IsRadialPickerMode)
+        {
+            ConfirmRadialPickerSelection();
+            return;
+        }
+
         if (SelectedCommand == null)
         {
             LastRunMessage = "没有可执行的命令。";
@@ -3895,5 +3995,26 @@ public sealed class AttachedFileItem : INotifyPropertyChanged
         _iconSource = iconSource;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IconSource)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIcon)));
+    }
+}
+
+public class RadialSlotPickerWindow
+{
+    public enum PickerAction
+    {
+        AddCommand,
+        AddChildPage
+    }
+}
+
+public class RadialPickerResult
+{
+    public RadialSlotPickerWindow.PickerAction Action { get; }
+    public CommandItem? Command { get; }
+
+    public RadialPickerResult(RadialSlotPickerWindow.PickerAction action, CommandItem? command)
+    {
+        Action = action;
+        Command = command;
     }
 }

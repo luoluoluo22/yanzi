@@ -419,19 +419,13 @@
                     MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="140" />
                     </Grid.ColumnDefinitions>
 
-                    <!-- 左：标题 -->
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock x:Name="HeaderTitleText" Text="新建扩展" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeLarge}" FontWeight="SemiBold" />
-                    </StackPanel>
-
-                    <!-- 中：模式切换 -->
-                    <Border Grid.Column="1" CornerRadius="9" Padding="3"
+                    <!-- 左：模式切换 -->
+                    <Border Grid.Column="0" CornerRadius="9" Padding="3"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Background="{DynamicResource BrushSecondaryBtnBG}"
                             BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
@@ -454,6 +448,9 @@
                             </RadioButton>
                         </StackPanel>
                     </Border>
+
+                    <!-- 原标题 TextBlock，隐藏以避免界面重复，但保留供cs后台动态赋值以防止异常 -->
+                    <TextBlock x:Name="HeaderTitleText" Grid.Column="1" Text="新建扩展" Visibility="Collapsed" />
                 </Grid>
             </Border>
 

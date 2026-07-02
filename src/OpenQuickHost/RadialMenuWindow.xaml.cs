@@ -164,25 +164,25 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public double ChildRingEllipseX => _childRingCenterX - 120;
+    public double ChildRingEllipseX => _childRingCenterX - 100;
 
-    public double ChildRingEllipseY => _childRingCenterY - 120;
+    public double ChildRingEllipseY => _childRingCenterY - 100;
 
-    public double ChildRingCenterEllipseX => _childRingCenterX - 32;
+    public double ChildRingCenterEllipseX => _childRingCenterX - 26;
 
-    public double ChildRingCenterEllipseY => _childRingCenterY - 32;
+    public double ChildRingCenterEllipseY => _childRingCenterY - 26;
 
     public double ChildRingTitleX => _childRingCenterX - 75;
 
     public double ChildRingTitleY => _childRingCenterY - 10;
 
-    public double GrandChildRingEllipseX => _grandChildRingCenterX - 98;
+    public double GrandChildRingEllipseX => _grandChildRingCenterX - 80;
 
-    public double GrandChildRingEllipseY => _grandChildRingCenterY - 98;
+    public double GrandChildRingEllipseY => _grandChildRingCenterY - 80;
 
-    public double GrandChildRingCenterEllipseX => _grandChildRingCenterX - 27;
+    public double GrandChildRingCenterEllipseX => _grandChildRingCenterX - 22;
 
-    public double GrandChildRingCenterEllipseY => _grandChildRingCenterY - 27;
+    public double GrandChildRingCenterEllipseY => _grandChildRingCenterY - 22;
 
     public double GrandChildRingTitleX => _grandChildRingCenterX - 64;
 
@@ -791,14 +791,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         UpdateCenterText();
         var center = GetMenuCenter();
-        BuildSeparators(MainSeparators, center.X, center.Y, 30, 122, RadialMenuSettings.InnerSlotCount);
-        BuildSeparators(OuterSeparators, center.X, center.Y, 122, 196, RadialMenuSettings.OuterSlotCount);
+        BuildSeparators(MainSeparators, center.X, center.Y, 24, 100, RadialMenuSettings.InnerSlotCount);
+        BuildSeparators(OuterSeparators, center.X, center.Y, 100, 160, RadialMenuSettings.OuterSlotCount);
         for (var index = 0; index < RadialMenuSettings.InnerSlotCount; index++)
         {
             var angleDegrees = -90 + index * 45.0;
             var angle = angleDegrees * Math.PI / 180.0;
-            var x = center.X + Math.Cos(angle) * Math.Clamp(effectiveRadius - 6, 74, 88) - 38;
-            var y = center.Y + Math.Sin(angle) * Math.Clamp(effectiveRadius - 6, 74, 88) - 30;
+            var x = center.X + Math.Cos(angle) * 72 - 32;
+            var y = center.Y + Math.Sin(angle) * 72 - 25;
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
@@ -812,7 +812,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 y,
                 angleDegrees,
                 RadialMenuRing.Inner,
-                CreateSectorGeometry(center.X, center.Y, 29, 122, angleDegrees - 22.5, angleDegrees + 22.5)));
+                CreateSectorGeometry(center.X, center.Y, 24, 100, angleDegrees - 22.5, angleDegrees + 22.5)));
         }
 
         for (var offset = 0; offset < RadialMenuSettings.OuterSlotCount; offset++)
@@ -820,8 +820,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var index = RadialMenuSettings.InnerSlotCount + offset;
             var angleDegrees = -90 + offset * 22.5;
             var angle = angleDegrees * Math.PI / 180.0;
-            var x = center.X + Math.Cos(angle) * 162 - 31;
-            var y = center.Y + Math.Sin(angle) * 162 - 25;
+            var x = center.X + Math.Cos(angle) * 130 - 25;
+            var y = center.Y + Math.Sin(angle) * 130 - 20;
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
@@ -835,7 +835,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 y,
                 angleDegrees,
                 RadialMenuRing.Outer,
-                CreateSectorGeometry(center.X, center.Y, 122, 196, angleDegrees - 11.25, angleDegrees + 11.25)));
+                CreateSectorGeometry(center.X, center.Y, 100, 160, angleDegrees - 11.25, angleDegrees + 11.25)));
         }
 
         var currentIndex = _topLevelPages.FindIndex(page => page.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
@@ -953,7 +953,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         IsCenterHovered = false;
 
         var angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
-        if (distance > 196)
+        if (distance > 160)
         {
             SetSelectedItem(null);
             ClearChildRing();
@@ -965,7 +965,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         Cursor = System.Windows.Input.Cursors.Hand;
 
-        if (distance > 135)
+        if (distance > 100)
         {
             var outerIndex = ((int)Math.Round((angle + 90) / 22.5) % RadialMenuSettings.OuterSlotCount + RadialMenuSettings.OuterSlotCount) % RadialMenuSettings.OuterSlotCount;
             var outerItem = OuterItems.ElementAtOrDefault(outerIndex);
@@ -1013,14 +1013,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var dx = cursorPoint.X - _childRingCenterX;
         var dy = cursorPoint.Y - _childRingCenterY;
         var distance = Math.Sqrt(dx * dx + dy * dy);
-        if (distance > 150)
+        if (distance > 125)
         {
             ClearChildSelection();
             ClearGrandChildRing();
             return false;
         }
 
-        if (distance < 26)
+        if (distance < 20)
         {
             ClearChildSelection();
             ActiveTitle = _editModeLocked ? "点击中心 X 关闭" : "返回上一级";
@@ -1049,13 +1049,13 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var dx = cursorPoint.X - _grandChildRingCenterX;
         var dy = cursorPoint.Y - _grandChildRingCenterY;
         var distance = Math.Sqrt(dx * dx + dy * dy);
-        if (distance > 138)
+        if (distance > 100)
         {
             ClearGrandChildSelection();
             return false;
         }
 
-        if (distance < 24)
+        if (distance < 18)
         {
             ClearGrandChildSelection();
             ActiveTitle = _editModeLocked ? "点击中心 X 关闭" : "返回上一级";
@@ -1171,9 +1171,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var items = _mainWindow.GetRadialMenuItems(parent.ChildPageId);
         var angle = parent.AngleDegrees * Math.PI / 180.0;
         var center = GetMenuCenter();
-        _childRingCenterX = center.X + Math.Cos(angle) * 250;
-        _childRingCenterY = center.Y + Math.Sin(angle) * 250;
-        ClampRingCenter(ref _childRingCenterX, ref _childRingCenterY, 134);
+        _childRingCenterX = center.X + Math.Cos(angle) * 210;
+        _childRingCenterY = center.Y + Math.Sin(angle) * 210;
+        ClampRingCenter(ref _childRingCenterX, ref _childRingCenterY, 112);
         ChildRingTitle = parent.ChildPageTitle;
         OnPropertyChanged(nameof(ChildRingEllipseX));
         OnPropertyChanged(nameof(ChildRingEllipseY));
@@ -1181,16 +1181,16 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(ChildRingCenterEllipseY));
         OnPropertyChanged(nameof(ChildRingTitleX));
         OnPropertyChanged(nameof(ChildRingTitleY));
-        BuildSeparators(ChildSeparators, _childRingCenterX, _childRingCenterY, 32, 120, RadialMenuSettings.InnerSlotCount);
+        BuildSeparators(ChildSeparators, _childRingCenterX, _childRingCenterY, 26, 100, RadialMenuSettings.InnerSlotCount);
 
         ChildItems.Clear();
-        const double radius = 78;
+        const double radius = 64;
         for (var index = 0; index < 8; index++)
         {
             var childAngleDegrees = -90 + index * 45.0;
             var childAngle = childAngleDegrees * Math.PI / 180.0;
-            var x = _childRingCenterX + Math.Cos(childAngle) * radius - 34;
-            var y = _childRingCenterY + Math.Sin(childAngle) * radius - 27;
+            var x = _childRingCenterX + Math.Cos(childAngle) * radius - 28;
+            var y = _childRingCenterY + Math.Sin(childAngle) * radius - 22;
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
@@ -1204,7 +1204,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 y,
                 childAngleDegrees,
                 RadialMenuRing.Child,
-                CreateSectorGeometry(_childRingCenterX, _childRingCenterY, 32, 120, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
+                CreateSectorGeometry(_childRingCenterX, _childRingCenterY, 26, 100, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
         }
 
         HasChildRing = true;
@@ -1220,9 +1220,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         var items = _mainWindow.GetRadialMenuItems(parent.ChildPageId);
         var angle = parent.AngleDegrees * Math.PI / 180.0;
-        _grandChildRingCenterX = _childRingCenterX + Math.Cos(angle) * 216;
-        _grandChildRingCenterY = _childRingCenterY + Math.Sin(angle) * 216;
-        ClampRingCenter(ref _grandChildRingCenterX, ref _grandChildRingCenterY, 112);
+        _grandChildRingCenterX = _childRingCenterX + Math.Cos(angle) * 180;
+        _grandChildRingCenterY = _childRingCenterY + Math.Sin(angle) * 180;
+        ClampRingCenter(ref _grandChildRingCenterX, ref _grandChildRingCenterY, 92);
         GrandChildRingTitle = parent.ChildPageTitle;
         OnPropertyChanged(nameof(GrandChildRingEllipseX));
         OnPropertyChanged(nameof(GrandChildRingEllipseY));
@@ -1230,16 +1230,16 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(GrandChildRingCenterEllipseY));
         OnPropertyChanged(nameof(GrandChildRingTitleX));
         OnPropertyChanged(nameof(GrandChildRingTitleY));
-        BuildSeparators(GrandChildSeparators, _grandChildRingCenterX, _grandChildRingCenterY, 27, 98, RadialMenuSettings.InnerSlotCount);
+        BuildSeparators(GrandChildSeparators, _grandChildRingCenterX, _grandChildRingCenterY, 22, 80, RadialMenuSettings.InnerSlotCount);
 
         GrandChildItems.Clear();
-        const double radius = 64;
+        const double radius = 52;
         for (var index = 0; index < 8; index++)
         {
             var childAngleDegrees = -90 + index * 45.0;
             var childAngle = childAngleDegrees * Math.PI / 180.0;
-            var x = _grandChildRingCenterX + Math.Cos(childAngle) * radius - 31;
-            var y = _grandChildRingCenterY + Math.Sin(childAngle) * radius - 25;
+            var x = _grandChildRingCenterX + Math.Cos(childAngle) * radius - 25;
+            var y = _grandChildRingCenterY + Math.Sin(childAngle) * radius - 20;
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
@@ -1253,7 +1253,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 y,
                 childAngleDegrees,
                 RadialMenuRing.GrandChild,
-                CreateSectorGeometry(_grandChildRingCenterX, _grandChildRingCenterY, 27, 98, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
+                CreateSectorGeometry(_grandChildRingCenterX, _grandChildRingCenterY, 22, 80, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
         }
 
         HasGrandChildRing = true;
@@ -1813,35 +1813,29 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return menu;
     }
 
-    private void AddCommandToTarget(RadialEditTarget target)
+    private async void AddCommandToTarget(RadialEditTarget target)
     {
-        var picker = new RadialSlotPickerWindow(
-            keyword => _mainWindow.GetRadialMenuCommandCandidates(keyword),
-            allowAddChildPage: !target.Item.HasChildPage,
-            createExtension: owner => _mainWindow.OpenAddExtensionForSlot(owner))
-        {
-            Owner = this
-        };
         try
         {
-            if (picker.ShowDialog() != true)
+            var result = await _mainWindow.ShowForRadialPickerAsync(!target.Item.HasChildPage);
+            if (result == null)
             {
                 return;
             }
 
-            if (picker.SelectedAction == RadialSlotPickerWindow.PickerAction.AddChildPage)
+            if (result.Action == RadialSlotPickerWindow.PickerAction.AddChildPage)
             {
                 AddChildPageToTarget(target);
                 return;
             }
 
-            if (picker.SelectedCommand == null)
+            if (result.Command == null)
             {
                 return;
             }
 
-            SaveRadialSlotCommand(target.PageId, target.Index, picker.SelectedCommand.ExtensionId, string.Empty);
-            HostAssets.AppendLog($"Radial edit assigned command: page={target.PageId}, index={target.Index + 1}, command={picker.SelectedCommand.Title}.");
+            SaveRadialSlotCommand(target.PageId, target.Index, result.Command.ExtensionId, string.Empty);
+            HostAssets.AppendLog($"Radial edit assigned command: page={target.PageId}, index={target.Index + 1}, command={result.Command.Title}.");
         }
         finally
         {

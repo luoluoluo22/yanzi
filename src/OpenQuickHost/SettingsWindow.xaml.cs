@@ -8600,36 +8600,30 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshRadialMenuSlots();
     }
 
-    private void OpenRadialSlotPicker(RadialMenuSlotEditorItem slot)
+    private async void OpenRadialSlotPicker(RadialMenuSlotEditorItem slot)
     {
-        var picker = new RadialSlotPickerWindow(
-            keyword => _mainWindow.GetRadialMenuCommandCandidates(keyword),
-            allowAddChildPage: !slot.HasChildPageTitle,
-            createExtension: owner => _mainWindow.OpenAddExtensionForSlot(owner))
-        {
-            Owner = this
-        };
         var parentPageId = SelectedRadialMenuPageId;
         _suspendActivationRefresh = true;
         try
         {
-            if (picker.ShowDialog() != true)
+            var result = await _mainWindow.ShowForRadialPickerAsync(!slot.HasChildPageTitle);
+            if (result == null)
             {
                 return;
             }
 
-            if (picker.SelectedAction == RadialSlotPickerWindow.PickerAction.AddChildPage)
+            if (result.Action == RadialSlotPickerWindow.PickerAction.AddChildPage)
             {
                 CreateRadialChildPageForSlot(slot, GetNextRadialChildPageName(), parentPageId);
                 return;
             }
 
-            if (picker.SelectedCommand == null)
+            if (result.Command == null)
             {
                 return;
             }
 
-            ApplyRadialMenuCommandToSlot(slot, new YarnSelectExtensionOption(picker.SelectedCommand));
+            ApplyRadialMenuCommandToSlot(slot, new YarnSelectExtensionOption(result.Command));
         }
         finally
         {

@@ -154,16 +154,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         private set => SetField(ref _overlayHeight, value);
     }
 
-    public double MainOuterEllipseX => _radialCenter.X - 215;
-    public double MainOuterEllipseY => _radialCenter.Y - 215;
-    public double MainInnerEllipseX => _radialCenter.X - 135;
-    public double MainInnerEllipseY => _radialCenter.Y - 135;
-    public double CenterCircleX => _radialCenter.X - 32;
-    public double CenterCircleY => _radialCenter.Y - 32;
+    public double MainOuterEllipseX => _radialCenter.X - 176;
+    public double MainOuterEllipseY => _radialCenter.Y - 176;
+    public double MainInnerEllipseX => _radialCenter.X - 110;
+    public double MainInnerEllipseY => _radialCenter.Y - 110;
+    public double CenterCircleX => _radialCenter.X - 26;
+    public double CenterCircleY => _radialCenter.Y - 26;
     public double CenterTextX => _radialCenter.X - 80;
-    public double CenterTextY => _radialCenter.Y - 14;
+    public double CenterTextY => _radialCenter.Y - 10;
     public double ActiveTitleX => _radialCenter.X - 110;
-    public double ActiveTitleY => _radialCenter.Y + 168;
+    public double ActiveTitleY => _radialCenter.Y + 138;
 
     public string ActiveTitle
     {
@@ -1185,19 +1185,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var dx = position.X - _radialMenuService.ChildRingCenterX;
         var dy = position.Y - _radialMenuService.ChildRingCenterY;
         var distance = Math.Sqrt(dx * dx + dy * dy);
-        if (distance > 150)
+        if (distance > 125)
         {
             return false;
         }
 
-        if (distance < 26)
+        if (distance < 20)
         {
             SetActiveItem(null);
             ActiveTitle = "返回上一级";
             return true;
         }
 
-        var item = FindRingItem(position, _radialMenuService.ChildRingCenterX, _radialMenuService.ChildRingCenterY, ChildItems, 8, 34, 128);
+        var item = FindRingItem(position, _radialMenuService.ChildRingCenterX, _radialMenuService.ChildRingCenterY, ChildItems, 8, 26, 100);
         SetActiveItem(item);
         if (item?.HasChildPage == true)
         {
@@ -1220,19 +1220,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var dx = position.X - _radialMenuService.GrandChildRingCenterX;
         var dy = position.Y - _radialMenuService.GrandChildRingCenterY;
         var distance = Math.Sqrt(dx * dx + dy * dy);
-        if (distance > 138)
+        if (distance > 100)
         {
             return false;
         }
 
-        if (distance < 24)
+        if (distance < 18)
         {
             SetActiveItem(null);
             ActiveTitle = "返回上一级";
             return true;
         }
 
-        var item = FindRingItem(position, _radialMenuService.GrandChildRingCenterX, _radialMenuService.GrandChildRingCenterY, GrandChildItems, 8, 27, 98);
+        var item = FindRingItem(position, _radialMenuService.GrandChildRingCenterX, _radialMenuService.GrandChildRingCenterY, GrandChildItems, 8, 22, 80);
         SetActiveItem(item);
         NotifyRadialBindings();
         return true;
@@ -1293,14 +1293,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (HasGrandChildRing)
         {
-            var grandChild = FindRingItem(position, _radialMenuService.GrandChildRingCenterX, _radialMenuService.GrandChildRingCenterY, GrandChildItems, 8, 27, 98);
+            var grandChild = FindRingItem(position, _radialMenuService.GrandChildRingCenterX, _radialMenuService.GrandChildRingCenterY, GrandChildItems, 8, 22, 80);
             if (grandChild != null)
                 return grandChild;
         }
 
         if (HasChildRing)
         {
-            var child = FindRingItem(position, _radialMenuService.ChildRingCenterX, _radialMenuService.ChildRingCenterY, ChildItems, 8, 34, 128);
+            var child = FindRingItem(position, _radialMenuService.ChildRingCenterX, _radialMenuService.ChildRingCenterY, ChildItems, 8, 26, 100);
             if (child != null)
                 return child;
         }
@@ -1316,12 +1316,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var dy = position.Y - centerY;
         var distance = Math.Sqrt(dx * dx + dy * dy);
 
-        if (distance is < 44 or > 225)
+        if (distance is < 30 or > 180)
             return null;
 
-        return distance < 136
-            ? FindRingItem(position, centerX, centerY, Items, 8, 44, 136)
-            : FindRingItem(position, centerX, centerY, OuterItems, 16, 136, 225);
+        return distance < 110
+            ? FindRingItem(position, centerX, centerY, Items, 8, 30, 110)
+            : FindRingItem(position, centerX, centerY, OuterItems, 16, 110, 180);
     }
 
     private static RadialMenuItemViewModel? FindRingItem(
@@ -1354,7 +1354,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var centerY = _radialCenter.Y;
         var dx = position.X - centerX;
         var dy = position.Y - centerY;
-        const double closeRadius = 230;
+        const double closeRadius = 190;
         return dx * dx + dy * dy > closeRadius * closeRadius;
     }
 
@@ -1367,7 +1367,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var grandChildDx = position.X - _radialMenuService.GrandChildRingCenterX;
             var grandChildDy = position.Y - _radialMenuService.GrandChildRingCenterY;
-            const double grandChildRadius = 110;
+            const double grandChildRadius = 90;
             if (grandChildDx * grandChildDx + grandChildDy * grandChildDy <= grandChildRadius * grandChildRadius)
                 return false;
         }
@@ -1377,7 +1377,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var childDx = position.X - _radialMenuService.ChildRingCenterX;
         var childDy = position.Y - _radialMenuService.ChildRingCenterY;
-        const double childRadius = 132;
+        const double childRadius = 110;
         return childDx * childDx + childDy * childDy > childRadius * childRadius;
     }
 
@@ -1387,7 +1387,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var centerY = _radialCenter.Y;
         var dx = position.X - centerX;
         var dy = position.Y - centerY;
-        const double cancelRadius = 44;
+        const double cancelRadius = 36;
         return dx * dx + dy * dy <= cancelRadius * cancelRadius;
     }
 
@@ -1397,7 +1397,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var centerY = _radialCenter.Y;
         var dx = position.X - centerX;
         var dy = position.Y - centerY;
-        const double armRadius = 72;
+        const double armRadius = 58;
         return dx * dx + dy * dy > armRadius * armRadius;
     }
 

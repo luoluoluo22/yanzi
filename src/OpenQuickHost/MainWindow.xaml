@@ -2212,12 +2212,27 @@ Visibility="{Binding AiChatVisibility}">
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Click="FooterQuickMenuButton_Click"
+                                Visibility="{Binding NormalFooterMenuVisibility}"
                                 Style="{DynamicResource GhostButtonStyle}">
                             <Path Data="{local:IconGeometry dots-horizontal}" Fill="{DynamicResource BrushTextMain}" Height="14" Width="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
+                        <Button x:Name="FooterAddChildPageButton"
+                                Height="28"
+                                Padding="12,0"
+                                Margin="0,0,12,0"
+                                Content="添加子环"
+                                FontSize="{DynamicResource FontSizeSmallPlus}"
+                                Click="RadialPickerAddChildButton_Click"
+                                Visibility="{Binding RadialPickerAddChildVisibility, FallbackValue=Collapsed}"
+                                Style="{StaticResource SecondaryBtn}">
+                        </Button>
                     </StackPanel>
                     
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <!-- 普通模式下的指示文本 -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Cursor="Hand"
+                                PreviewMouseLeftButtonDown="FooterMenuHint_Click"
+                                Visibility="{Binding NormalFooterMenuVisibility}">
                         <TextBlock x:Name="FooterMenuHintText"
                                    Text="右箭头菜单"
                                    Foreground="{DynamicResource BrushTextSec}"
@@ -2234,6 +2249,18 @@ Visibility="{Binding AiChatVisibility}">
                                        FontSize="{DynamicResource FontSizeTiny}"/>
                         </Border>
                     </StackPanel>
+
+                    <!-- 选择模式下的主要蓝色高亮按钮 -->
+                    <Button x:Name="FooterRadialPickerConfirmButton"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Content="确认添加"
+                            Style="{StaticResource PrimaryBtn}"
+                            Width="90"
+                            Height="28"
+                            FontSize="{DynamicResource FontSizeSmallPlus}"
+                            Click="RadialPickerConfirmButton_Click"
+                            Visibility="{Binding RadialPickerBarVisibility, FallbackValue=Collapsed}"/>
 
                     <Popup x:Name="FooterQuickMenuPopup"
                            Placement="Top"

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -1176,6 +1176,11 @@ public partial class MainWindow
 
     public void HideToTray()
     {
+        if (IsRadialPickerMode)
+        {
+            IsRadialPickerMode = false;
+            _radialPickerTcs?.TrySetResult(null);
+        }
         ShowInTaskbar = false;
         SetSearchScopePopupOpen(false);
         Hide();
