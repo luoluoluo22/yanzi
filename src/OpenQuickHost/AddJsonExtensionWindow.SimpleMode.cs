@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -875,11 +875,57 @@ public partial class AddJsonExtensionWindow
                 var name = $"打开{label}";
                 var desc = label == "记事本" ? "点击后启动 Windows 记事本。" : $"点击后打开{label}。";
                 
+                // 智能判定图标
+                var icon = "mdi:application"; // 默认图标
+                
+                var lowerPreset = preset.ToLowerInvariant();
+                if (lowerPreset.Contains("notepad.exe"))
+                {
+                    if (System.IO.File.Exists(@"C:\Windows\notepad.exe"))
+                    {
+                        icon = @"C:\Windows\notepad.exe";
+                    }
+                    else
+                    {
+                        icon = "mdi:file-document-edit-outline";
+                    }
+                }
+                else if (lowerPreset.Contains("desktop"))
+                {
+                    icon = "mdi:monitor";
+                }
+                else if (lowerPreset.Contains("download"))
+                {
+                    icon = "mdi:folder-download";
+                }
+                else if (lowerPreset.StartsWith("http://") || lowerPreset.StartsWith("https://"))
+                {
+                    try
+                    {
+                        var uri = new Uri(preset);
+                        icon = $"{uri.Scheme}://{uri.Host}/favicon.ico";
+                    }
+                    catch
+                    {
+                        icon = "mdi:earth";
+                    }
+                }
+                else if (lowerPreset.StartsWith("ms-settings"))
+                {
+                    icon = "mdi:cog";
+                }
+                else if (preset.Contains(@"\") || lowerPreset.Contains("c:") || lowerPreset.Contains("d:"))
+                {
+                    icon = "mdi:folder";
+                }
+
                 NameSimpleBox.Text = name;
                 DescriptionSimpleBox.Text = desc;
+                IconSimpleBox.Text = icon;
                 
                 _lastTemplateSnapshot["Name"] = name;
                 _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["Icon"] = icon;
                 _lastTemplateSnapshot["OpenTarget"] = preset;
             }
         }
