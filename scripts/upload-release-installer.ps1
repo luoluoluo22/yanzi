@@ -11,6 +11,14 @@
 $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
+if ([string]::IsNullOrEmpty($Version) -or $Version -eq "0.1.0") {
+    $projectPath = Join-Path $root "src\OpenQuickHost\OpenQuickHost.csproj"
+    if (Test-Path $projectPath) {
+        [xml]$xml = Get-Content $projectPath
+        $Version = $xml.Project.PropertyGroup.Version.Trim()
+        Write-Host "Auto-detected version from csproj: $Version"
+    }
+}
 $plainVersion = if ($Version.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) { $Version.Substring(1) } else { $Version }
 
 $tag = if ($Platform -eq "android") { "android-v$plainVersion" } else { "v$plainVersion" }
@@ -101,6 +109,7 @@ SHA256: $hash
 SHA256: $hash
 "@
 }
+$notesContent = "Yanzi Release v$plainVersion"
 [System.IO.File]::WriteAllText($notesPath, $notesContent, [System.Text.Encoding]::UTF8)
 
 $releaseExists = $true
@@ -164,6 +173,67 @@ foreach ($file in $filesToUpload) {
                 throw "Failed to upload $($file.Name) after $maxRetries attempts."
             }
         }
+    }
+}
+
+# 1. 尝试使用 GitHub API PATCH 更新中文的 Release Notes (防止 gh 命令行临时文件乱码)
+$token = $env:GITHUB_TOKEN
+if (-not [string]::IsNullOrEmpty($token)) {
+    try {
+        Write-Host "Updating release notes to Chinese via GitHub API to prevent encoding issues..."
+        $headers = @{
+            "Authorization" = "token $token"
+            "Accept"        = "application/vnd.github.v3+json"
+            "User-Agent"    = "PowerShell"
+        }
+        
+        # 抓取 Release 以便拿到 id
+        $tagUrl = "https://api.github.com/repos/$Repo/releases/tags/$tag"
+        $releaseObj = Invoke-RestMethod -Uri $tagUrl -Headers $headers -Method Get
+        $releaseId = $releaseObj.id
+        
+        # 准备中文说明
+        $chineseBody = if ($Platform -eq "android") {
+@"
+# 燕子 Yanzi for Android v$plainVersion 更新内容
+
+**✨ 移动端优化**
+- 手机端自动检查更新功能上线。
+- 优化了燕幕同步机制与运行日志显示。
+- 修复了已知的部分闪退问题。
+
+---
+安装包：$fileName
+SHA256: $hash
+"@
+        } else {
+@"
+# 燕子 Yanzi v$plainVersion 更新内容
+
+**✨ 新建扩展体验重构**
+- 【高清晰图标】记事本程序默认不再使用矢量图标替代，而是通过新增 Windows 原生的 `IShellItemImageFactory` COM 接口，直接从系统提取 256x256 分辨率的现代高清晰 Fluent 原生记事本图标（包括其他系统自带或第三方 EXE 程序的高清图标）。
+- 【输入高亮可见】修复了全选文本框内容时蓝色选中高亮几乎看不清的对比度问题，将文本选择笔刷升级为 100% 不透明的主题亮蓝色，确保在深色模式下文字极易阅读。
+- 【高级选项优化】重构了“更多高级选项”中的表单布局，将之前折叠在最底部的“关键词”输入框移至最上方全宽显示，使得分类、版本和关键词的填写更加直观和方便。
+
+---
+一键安装包：$fileName
+SHA256: $hash
+"@
+        }
+
+        $payload = @{
+            "name" = if ($Platform -eq "android") { "Yanzi for Android $plainVersion" } else { "燕子 Yanzi v$plainVersion" }
+            "body" = $chineseBody
+        } | ConvertTo-Json -Depth 10
+
+        # 转成 UTF-8 字节，100% 安全
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+        $patchUrl = "https://api.github.com/repos/$Repo/releases/$releaseId"
+        
+        $null = Invoke-RestMethod -Uri $patchUrl -Headers $headers -Method Patch -ContentType "application/json; charset=utf-8" -Body $bytes
+        Write-Host "Successfully patched release notes to Chinese."
+    } catch {
+        Write-Warning "Could not patch release notes to Chinese via API: $_"
     }
 }
 

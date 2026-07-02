@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$Version = "0.1.0",
@@ -10,6 +10,15 @@ $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $project = Join-Path $root "src\OpenQuickHost\OpenQuickHost.csproj"
+
+if ([string]::IsNullOrEmpty($Version) -or $Version -eq "0.1.0") {
+    if (Test-Path $project) {
+        [xml]$xml = Get-Content $project
+        $Version = $xml.Project.PropertyGroup.Version.Trim()
+        Write-Host "Auto-detected version from csproj: $Version"
+    }
+}
+
 $publishDir = Join-Path $root ".artifacts\publish\$Runtime"
 $installerOutDir = Join-Path $root ".artifacts\installer"
 $issPath = Join-Path $root "installer\yanzi.iss"

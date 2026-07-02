@@ -1,4 +1,4 @@
-# 燕子 (Yanzi) 效率启动器项目发布指南
+﻿# 燕子 (Yanzi) 效率启动器项目发布指南
 
 本指南旨在规范项目的发布流程，并说明如何规避 Windows 环境下的中文乱码问题。
 
@@ -27,34 +27,20 @@
 
 ---
 
-## 🚀 完整发布新版本步骤 (v0.2.12+)
+## 🚀 完整发布新版本步骤 (v0.2.15+)
 
-在当前仓库的根目录下执行以下三步即可发布客户端和更新说明：
+现在，发版已被完全自动化！您只需在当前仓库的根目录下执行一键发布指令：
 
-### 第一步：编译并打包 Windows 客户端
-在当前的 PowerShell 进程中指定新版本号并进行 Velopack 打包：
+### 唯一发布指令：
 ```powershell
-powershell -File .\scripts\publish-installer.ps1 -Version "0.2.12"
-```
-运行成功后，会在 `.artifacts\installer\` 目录下生成 `Yanzi-win-Setup-0.2.12.exe` 和 `Yanzi-win-Portable-0.2.12.zip`。
+# 1. 设置您的 Token 环境变量
+$env:GITHUB_TOKEN = "您的_GITHUB_TOKEN"
 
-### 第二步：配置代理并执行 GitHub Release 上传
-国内直连 GitHub API 易发生 EOF 网络阻断。为了解决 Go 语言在代理环境下的 HTTP/2 握手 EOF 问题，**必须禁用 HTTP/2 强制使用 HTTP/1.1**，并保留代理：
-```powershell
-# 1. 注入代理及禁用 HTTP/2 客户端的环境变量
-$env:HTTP_PROXY="http://127.0.0.1:7890"
-$env:HTTPS_PROXY="http://127.0.0.1:7890"
-$env:GODEBUG="http2client=0"
-
-# 2. 必须以同进程 (In-Process) 方式运行，并附带 -KeepProxy 开关以防止脚本内清空代理
-.\scripts\upload-release-installer.ps1 -Version "0.2.12" -KeepProxy
+# 2. 运行总控发布脚本，一键完成编译打包、文件上传、以及防乱码 API PATCH
+.\scripts\release.ps1
 ```
 
-### 第三步：发布文档网站
-由于已删除了 `publish-website.ps1`，现在只需直接将文档和代码推送到 GitHub 的 `main` 分支。
-```powershell
-git add .
-git commit -m "docs: release description and checks"
-git push origin main
-```
-Cloudflare Pages 将自动检测并拉取最新的 `website` 目录完成线上部署。
+### 自动化执行细节：
+- **版本号自动对齐**：脚本会自动读取 `src/OpenQuickHost/OpenQuickHost.csproj` 中的 `<Version>` 版本节点，无需再手工指定 `-Version`。
+- **免人工防乱码**：在资源上传结束后，脚本会自动调用 GitHub API 对创建的 Release 的 `name` 和 `body` 进行 UTF-8 编码的 Patch 覆写，确保线上中文 100% 正确展示。
+- **代理支持**：脚本默认开启了 `-KeepProxy` 并注入了 `$env:GODEBUG="http2client=0"`，在国内网络环境下也能稳定、闪电式上传。
