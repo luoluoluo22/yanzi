@@ -417,20 +417,21 @@ public partial class AddJsonExtensionWindow : Window
 
     private void PickIconForegroundColorButton_Click(object sender, RoutedEventArgs e)
     {
-        using var dialog = new System.Windows.Forms.ColorDialog();
+        MediaColor initColor = Colors.White;
         try
         {
             var currentIcon = IconSimpleBox.Text?.Trim() ?? string.Empty;
             if (currentIcon.LastIndexOf('#') is var hashIdx && hashIdx > 0)
             {
-                dialog.Color = System.Drawing.ColorTranslator.FromHtml(currentIcon[hashIdx..]);
+                initColor = (MediaColor)MediaColorConverter.ConvertFromString(currentIcon[hashIdx..])!;
             }
         }
         catch {}
 
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        var dialog = new ColorPickerDialog(this, initColor);
+        if (dialog.ShowDialog() == true)
         {
-            var color = dialog.Color;
+            var color = dialog.SelectedColor;
             var hex = $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
             
             var currentIcon = IconSimpleBox.Text?.Trim() ?? string.Empty;
@@ -452,20 +453,21 @@ public partial class AddJsonExtensionWindow : Window
 
     private void PickAccentColorButton_Click(object sender, RoutedEventArgs e)
     {
-        using var dialog = new System.Windows.Forms.ColorDialog();
+        MediaColor initColor = (MediaColor)MediaColorConverter.ConvertFromString("#FF3B82F6")!;
         try
         {
             var current = AccentHexSimpleBox.Text?.Trim();
             if (!string.IsNullOrEmpty(current))
             {
-                dialog.Color = System.Drawing.ColorTranslator.FromHtml(current);
+                initColor = (MediaColor)MediaColorConverter.ConvertFromString(current)!;
             }
         }
         catch {}
 
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        var dialog = new ColorPickerDialog(this, initColor);
+        if (dialog.ShowDialog() == true)
         {
-            var color = dialog.Color;
+            var color = dialog.SelectedColor;
             var hex = $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
             AccentHexSimpleBox.Text = hex;
         }
