@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -470,6 +470,14 @@ public partial class AddJsonExtensionWindow : Window
             var color = dialog.SelectedColor;
             var hex = $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
             AccentHexSimpleBox.Text = hex;
+        }
+    }
+
+    private void AccentColorLivePreview_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
+        {
+            PickAccentColorButton_Click(sender, e);
         }
     }
 
