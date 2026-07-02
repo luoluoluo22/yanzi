@@ -32,6 +32,7 @@
         <SolidColorBrush x:Key="AccentBrush" Color="#FF3B82F6" />
         <SolidColorBrush x:Key="AccentDeepBrush" Color="#FF2563EB" />
         <SolidColorBrush x:Key="AccentGlowBrush" Color="#223B82F6" />
+        <SolidColorBrush x:Key="TextSelectionBrush" Color="#663B82F6" />
         <SolidColorBrush x:Key="GreenBrush" Color="#FF34D399" />
         <SolidColorBrush x:Key="RedBrush" Color="#FFF87171" />
         <SolidColorBrush x:Key="TextBrush" Color="#FFF0F0F5" />
@@ -155,7 +156,7 @@
             <Setter Property="Height" Value="32" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="CaretBrush" Value="{DynamicResource BrushAccent}" />
-            <Setter Property="SelectionBrush" Value="{StaticResource AccentGlowBrush}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource TextSelectionBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
@@ -1055,7 +1056,7 @@
                                          Foreground="{DynamicResource BrushTextMain}"
                                          FontFamily="Consolas" FontSize="13.5"
                                          CaretBrush="{DynamicResource BrushAccent}"
-                                         SelectionBrush="{StaticResource AccentGlowBrush}"
+                                         SelectionBrush="{StaticResource TextSelectionBrush}"
                                          TextChanged="ManualJsonInputBox_TextChanged" />
 
                                 <!-- 双击跳转状态栏 -->
@@ -1122,7 +1123,7 @@
                                              Foreground="{DynamicResource BrushTextMain}"
                                              FontFamily="Consolas" FontSize="13.5"
                                              CaretBrush="{DynamicResource BrushAccent}"
-                                             SelectionBrush="{StaticResource AccentGlowBrush}"
+                                             SelectionBrush="{StaticResource TextSelectionBrush}"
                                              TextChanged="InlineScriptInputBox_TextChanged" />
                                 </Grid>
                             </Grid>
@@ -1179,7 +1180,7 @@
                                                          FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"
                                                          Background="Transparent" BorderThickness="0"
                                                          Padding="0" CaretBrush="{DynamicResource BrushAccent}"
-                                                         SelectionBrush="{StaticResource AccentGlowBrush}"
+                                                         SelectionBrush="{StaticResource TextSelectionBrush}"
                                                          ToolTip="点击直接修改名称"
                                                          TextChanged="PreviewNameText_TextChanged" />
                                                 <TextBox x:Name="PreviewDescText" Text="选择类型并填写信息以预览"
@@ -1187,7 +1188,7 @@
                                                          Background="Transparent" BorderThickness="0"
                                                          Padding="0" Margin="0,2,0,0"
                                                          CaretBrush="{DynamicResource BrushAccent}"
-                                                         SelectionBrush="{StaticResource AccentGlowBrush}"
+                                                         SelectionBrush="{StaticResource TextSelectionBrush}"
                                                          ToolTip="点击直接修改描述"
                                                          TextChanged="PreviewDescText_TextChanged" />
                                             </StackPanel>
