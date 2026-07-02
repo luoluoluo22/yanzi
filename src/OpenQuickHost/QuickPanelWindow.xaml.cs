@@ -2199,6 +2199,11 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (DateTime.UtcNow - _lastContextMenuClosedAt <= TimeSpan.FromMilliseconds(200))
+        {
+            return;
+        }
+
         if (OwnedWindows.OfType<Window>().Any(static window => window.IsVisible))
         {
             return;
