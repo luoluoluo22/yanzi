@@ -18,7 +18,7 @@ namespace OpenQuickHost
             Owner = owner;
 
             // 获取全部内置图标
-            _allIcons = ExtensionIconLibrary.GetBuiltInOptions().ToList();
+            _allIcons = ExtensionIconLibrary.GetAllMdiOptions().ToList();
             IconsListBox.ItemsSource = _allIcons;
 
             // 预选当前已设定的图标

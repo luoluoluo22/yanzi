@@ -3611,6 +3611,21 @@ public sealed class CommandItem : INotifyPropertyChanged
         IconReference = iconReference;
         _iconSource = iconSourceOverride ?? ExtensionIconLibrary.ResolveImageSource(iconReference, extensionDirectoryPath);
         VectorIcon = ExtensionIconLibrary.ResolveVectorIcon(iconReference);
+        
+        var vectorColorHex = "#FFFFFFFF";
+        if (iconReference != null && iconReference.LastIndexOf('#') is var hashIdx && hashIdx > 0)
+        {
+            vectorColorHex = iconReference[hashIdx..];
+        }
+        try
+        {
+            VectorIconBrush = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(vectorColorHex)!;
+        }
+        catch
+        {
+            VectorIconBrush = System.Windows.Media.Brushes.White;
+        }
+        
         Startup = startup;
         LaunchArguments = launchArguments;
         WorkingDirectory = workingDirectory;
@@ -3628,6 +3643,8 @@ public sealed class CommandItem : INotifyPropertyChanged
     public ImageSource? IconSource => _iconSource;
 
     public Geometry? VectorIcon { get; }
+
+    public System.Windows.Media.Brush VectorIconBrush { get; }
 
     public bool HasImageIcon => IconSource != null;
 

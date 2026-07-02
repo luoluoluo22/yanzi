@@ -886,7 +886,7 @@
                                                     <Path Width="24"
                                                           Height="24"
                                                           Data="{Binding VectorIcon}"
-                                                          Fill="White"
+                                                          Fill="{Binding VectorIconBrush, FallbackValue=White}"
                                                           Stretch="Uniform" />
                                                 </Viewbox>
                                                 <TextBlock Text="{Binding DisplayGlyph}"
@@ -1042,7 +1042,7 @@
                                                     <Path Width="24"
                                                           Height="24"
                                                           Data="{Binding VectorIcon}"
-                                                          Fill="White"
+                                                          Fill="{Binding VectorIconBrush, FallbackValue=White}"
                                                           Stretch="Uniform" />
                                                 </Viewbox>
                                                 <TextBlock Text="{Binding DisplayGlyph}"
@@ -1245,7 +1245,7 @@
                                     <Grid>
                                         <Image Source="{Binding IconSource}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                         <Viewbox Margin="9" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <Path Width="24" Height="24" Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform" />
+                                            <Path Width="24" Height="24" Data="{Binding VectorIcon}" Fill="{Binding VectorIconBrush, FallbackValue=White}" Stretch="Uniform" />
                                         </Viewbox>
                                         <TextBlock Text="{Binding DisplayGlyph}" FontSize="20" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     </Grid>

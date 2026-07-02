@@ -215,6 +215,51 @@ internal static class ExtensionIconLibrary
         ];
     }
 
+    private static IReadOnlyList<ExtensionIconOption>? _allMdiOptionsCache;
+
+    public static IReadOnlyList<ExtensionIconOption> GetAllMdiOptions()
+    {
+        if (_allMdiOptionsCache != null)
+        {
+            return _allMdiOptionsCache;
+        }
+
+        var list = new List<ExtensionIconOption>();
+        var addedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var opt in GetBuiltInOptions())
+        {
+            list.Add(opt);
+            addedKeys.Add(opt.Reference);
+        }
+
+        try
+        {
+            foreach (var kvp in FullMdiIcons.Value)
+            {
+                var reference = $"mdi:{kvp.Key}";
+                if (addedKeys.Contains(reference))
+                {
+                    continue;
+                }
+
+                var geometry = ResolveVectorIcon(reference);
+                if (geometry != null)
+                {
+                    list.Add(new ExtensionIconOption(reference, kvp.Key, geometry));
+                    addedKeys.Add(reference);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        _allMdiOptionsCache = list;
+        return list;
+    }
+
     public static Geometry? ResolveVectorIcon(string? iconReference)
     {
         if (!TryResolveVectorKey(iconReference, out var iconKey))
@@ -388,7 +433,18 @@ internal static class ExtensionIconLibrary
     private static bool TryResolveVectorKey(string? iconReference, out string iconKey)
     {
         iconKey = string.Empty;
-        if (!TryParseBuiltinReference(iconReference, out var library, out var name))
+        if (string.IsNullOrWhiteSpace(iconReference))
+        {
+            return false;
+        }
+
+        var trimmed = iconReference.Trim();
+        if (trimmed.LastIndexOf('#') is var hashIdx && hashIdx > 0)
+        {
+            trimmed = trimmed[..hashIdx].TrimEnd(':');
+        }
+
+        if (!TryParseBuiltinReference(trimmed, out var library, out var name))
         {
             return false;
         }

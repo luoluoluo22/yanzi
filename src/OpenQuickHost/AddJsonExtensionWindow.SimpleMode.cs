@@ -1676,8 +1676,25 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         AccentHexBox.Text = AccentHexSimpleBox.Text;
+        UpdateAccentColorLivePreview();
         UpdatePreview();
         TryRefreshJsonFromHiddenForm();
+    }
+
+    private void UpdateAccentColorLivePreview()
+    {
+        try
+        {
+            var hex = AccentHexSimpleBox.Text?.Trim();
+            if (!string.IsNullOrEmpty(hex))
+            {
+                AccentColorLivePreview.Background = CreateBrush(NormalizeAccentHexOrDefault(hex));
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
     }
 
     // ===================== 同步：隐藏数据 → 简单控件 =====================
@@ -1749,6 +1766,7 @@ public partial class AddJsonExtensionWindow
             }
 
             // 类型推断只在初始化时做，简单模式日常切换不再反推
+            UpdateAccentColorLivePreview();
         }
         finally
         {

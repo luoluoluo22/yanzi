@@ -415,6 +415,62 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
+    private void PickIconForegroundColorButton_Click(object sender, RoutedEventArgs e)
+    {
+        using var dialog = new System.Windows.Forms.ColorDialog();
+        try
+        {
+            var currentIcon = IconSimpleBox.Text?.Trim() ?? string.Empty;
+            if (currentIcon.LastIndexOf('#') is var hashIdx && hashIdx > 0)
+            {
+                dialog.Color = System.Drawing.ColorTranslator.FromHtml(currentIcon[hashIdx..]);
+            }
+        }
+        catch {}
+
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            var color = dialog.Color;
+            var hex = $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
+            
+            var currentIcon = IconSimpleBox.Text?.Trim() ?? string.Empty;
+            if (!string.IsNullOrEmpty(currentIcon))
+            {
+                var baseIcon = currentIcon;
+                if (currentIcon.LastIndexOf('#') is var hashIdx && hashIdx > 0)
+                {
+                    baseIcon = currentIcon[..hashIdx].TrimEnd(':');
+                }
+                IconSimpleBox.Text = $"{baseIcon}:{hex}";
+            }
+            else
+            {
+                IconSimpleBox.Text = $"mdi:search:{hex}";
+            }
+        }
+    }
+
+    private void PickAccentColorButton_Click(object sender, RoutedEventArgs e)
+    {
+        using var dialog = new System.Windows.Forms.ColorDialog();
+        try
+        {
+            var current = AccentHexSimpleBox.Text?.Trim();
+            if (!string.IsNullOrEmpty(current))
+            {
+                dialog.Color = System.Drawing.ColorTranslator.FromHtml(current);
+            }
+        }
+        catch {}
+
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            var color = dialog.Color;
+            var hex = $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
+            AccentHexSimpleBox.Text = hex;
+        }
+    }
+
     private void PickIconImageButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
@@ -1581,6 +1637,21 @@ public partial class AddJsonExtensionWindow : Window
         {
             IconPreviewVector.Data = vectorIcon;
             IconPreviewVectorHost.Visibility = Visibility.Visible;
+            
+            var vectorColorHex = "#FFFFFFFF";
+            if (iconReference != null && iconReference.LastIndexOf('#') is var hashIdx && hashIdx > 0)
+            {
+                vectorColorHex = iconReference[hashIdx..];
+            }
+            try
+            {
+                IconPreviewVector.Fill = CreateBrush(vectorColorHex);
+            }
+            catch
+            {
+                IconPreviewVector.ClearValue(System.Windows.Shapes.Shape.FillProperty);
+            }
+
             IconPreviewHostBackgroundToAccent();
             IconPreviewHintText.Text = $"当前使用内置图标：{iconReference}";
             HighlightSelectedBuiltInButton(iconReference);

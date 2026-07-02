@@ -1217,8 +1217,17 @@
                                      TextChanged="DescriptionSimpleBox_TextChanged" />
 
                             <TextBlock Text="图标（mdi:* 或图片路径）" Style="{StaticResource FieldLabelStyle}" />
-                            <TextBox x:Name="IconSimpleBox" Style="{StaticResource FormTextBoxStyle}"
-                                     TextChanged="IconSimpleBox_TextChanged" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="IconSimpleBox" Style="{StaticResource FormTextBoxStyle}" Margin="0"
+                                         TextChanged="IconSimpleBox_TextChanged" />
+                                <Button Grid.Column="1" Content="色盘" Style="{DynamicResource GhostButtonStyle}"
+                                        Width="50" Height="30" Margin="8,0,0,0" ToolTip="选择图标前景色"
+                                        Click="PickIconForegroundColorButton_Click" />
+                            </Grid>
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button Content="选图标" Style="{DynamicResource GhostButtonStyle}"
                                         Height="30" Padding="12,0"
@@ -1231,7 +1240,7 @@
                                         Click="ClearIconButton_Click" />
                             </StackPanel>
 
-                            <TextBlock Text="主题色" Style="{StaticResource FieldLabelStyle}" Margin="0,16,0,6" />
+                            <TextBlock Text="图标背景色" Style="{StaticResource FieldLabelStyle}" Margin="0,16,0,6" />
                             <WrapPanel x:Name="ColorSwatchPanel">
                                 <Button Tag="#FF3B82F6" Width="26" Height="26" Background="#FF3B82F6"
                                         BorderThickness="0" Margin="0,0,6,6" Click="AccentSwatch_Click" Cursor="Hand" />
@@ -1249,11 +1258,25 @@
                                         BorderThickness="0" Margin="0,0,6,6" Click="AccentSwatch_Click" Cursor="Hand" />
                                 <Button Tag="#FF6366F1" Width="26" Height="26" Background="#FF6366F1"
                                         BorderThickness="0" Margin="0,0,6,6" Click="AccentSwatch_Click" Cursor="Hand" />
+                                <Button Content="自定义" Style="{DynamicResource GhostButtonStyle}"
+                                        Width="50" Height="26" Margin="4,0,6,6" Click="PickAccentColorButton_Click" Cursor="Hand" />
                             </WrapPanel>
-                            <TextBox x:Name="AccentHexSimpleBox"
-                                     Style="{StaticResource FormTextBoxStyle}" Margin="0,4,0,0"
-                                     ToolTip="也可手动输入 #RRGGBB 或 #AARRGGBB"
-                                     TextChanged="AccentHexSimpleBox_TextChanged" />
+                            <Grid Margin="0,4,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="AccentHexSimpleBox"
+                                         Style="{StaticResource FormTextBoxStyle}" Margin="0"
+                                         ToolTip="也可手动输入 #RRGGBB 或 #AARRGGBB"
+                                         TextChanged="AccentHexSimpleBox_TextChanged" />
+                                <Border Grid.Column="1" x:Name="AccentColorLivePreview"
+                                        Width="30" Height="30" Margin="8,0,0,0" CornerRadius="6"
+                                        BorderBrush="#33FFFFFF" BorderThickness="1" Background="#FF3B82F6" />
+                                <Button Grid.Column="2" Content="取色" Style="{DynamicResource GhostButtonStyle}"
+                                        Width="50" Height="30" Margin="8,0,0,0" Click="PickAccentColorButton_Click" />
+                            </Grid>
 
                             <!-- 触发方式（参考设置 - 扩展页右侧设计） -->
                             <TextBlock Text="触发方式" Style="{StaticResource SectionTitleStyle}" Margin="0,22,0,10" />
