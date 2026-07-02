@@ -32,7 +32,7 @@
         <SolidColorBrush x:Key="AccentBrush" Color="#FF3B82F6" />
         <SolidColorBrush x:Key="AccentDeepBrush" Color="#FF2563EB" />
         <SolidColorBrush x:Key="AccentGlowBrush" Color="#223B82F6" />
-        <SolidColorBrush x:Key="TextSelectionBrush" Color="#663B82F6" />
+        <SolidColorBrush x:Key="TextSelectionBrush" Color="#FF3B82F6" />
         <SolidColorBrush x:Key="GreenBrush" Color="#FF34D399" />
         <SolidColorBrush x:Key="RedBrush" Color="#FFF87171" />
         <SolidColorBrush x:Key="TextBrush" Color="#FFF0F0F5" />
