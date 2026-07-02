@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -638,7 +638,16 @@ internal static class ExtensionIconLibrary
 
         try
         {
-            icon = System.Drawing.Icon.ExtractAssociatedIcon(localPath);
+            if (localPath.ToLowerInvariant().Contains("notepad.exe"))
+            {
+                icon = GetIconFromShellExtension(".txt");
+            }
+
+            if (icon == null)
+            {
+                icon = System.Drawing.Icon.ExtractAssociatedIcon(localPath);
+            }
+
             if (icon == null)
             {
                 return null;
@@ -769,6 +778,48 @@ internal static class ExtensionIconLibrary
                string.Equals(library, "app", StringComparison.OrdinalIgnoreCase);
     }
 
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private struct SHFILEINFO
+    {
+        public IntPtr hIcon;
+        public int iIcon;
+        public uint dwAttributes;
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szDisplayName;
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 80)]
+        public string szTypeName;
+    }
+
+    private const uint SHGFI_ICON = 0x000000100;
+    private const uint SHGFI_LARGEICON = 0x000000000;
+    private const uint SHGFI_USEFILEATTRIBUTES = 0x000000010;
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private static extern IntPtr SHGetFileInfo(string pszPath, uint dwFileAttributes, ref SHFILEINFO psfi, uint cbFileInfo, uint uFlags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
+
+    private static System.Drawing.Icon? GetIconFromShellExtension(string extension)
+    {
+        try
+        {
+            SHFILEINFO shinfo = new SHFILEINFO();
+            uint flags = SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES;
+            IntPtr hImg = SHGetFileInfo(extension, 0x80, ref shinfo, (uint)System.Runtime.InteropServices.Marshal.SizeOf(shinfo), flags);
+            if (shinfo.hIcon != IntPtr.Zero)
+            {
+                System.Drawing.Icon icon = (System.Drawing.Icon)System.Drawing.Icon.FromHandle(shinfo.hIcon).Clone();
+                DestroyIcon(shinfo.hIcon);
+                return icon;
+            }
+        }
+        catch
+        {
+        }
+        return null;
+    }
 }
 
 internal sealed record ExtensionIconOption(string Reference, string Label, Geometry? Geometry);
