@@ -646,7 +646,7 @@
                                     <Run Text="ms-settings:" Foreground="{DynamicResource BrushAccent}" />
                                     <Run Text="）。" />
                                 </TextBlock>
-                                <TextBlock Text="常用快捷选择" Style="{StaticResource FieldLabelStyle}" Margin="0,18,0,6" />
+                                <TextBlock Text="举个栗子" Style="{StaticResource FieldLabelStyle}" Margin="0,18,0,6" />
                                 <WrapPanel>
                                     <Button Content="桌面" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="shell:Desktop" Click="OpenTargetPreset_Click" />
@@ -656,8 +656,10 @@
                                             Padding="10,5" Tag="ms-settings:" Click="OpenTargetPreset_Click" />
                                     <Button Content="记事本" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="notepad.exe" Click="OpenTargetPreset_Click" />
-                                    <Button Content="计算器" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
-                                            Padding="10,5" Tag="calc.exe" Click="OpenTargetPreset_Click" />
+                                    <Button Content="燕子官网" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
+                                            Padding="10,5" Tag="https://yanzi.luoluoluo.cc.cd/" Click="OpenTargetPreset_Click" />
+                                    <Button Content="程序文件夹" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
+                                            Padding="10,5" Tag="C:\Program Files" Click="OpenTargetPreset_Click" />
                                 </WrapPanel>
                             </StackPanel>
 
