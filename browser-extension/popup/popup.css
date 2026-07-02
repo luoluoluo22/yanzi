@@ -1,0 +1,297 @@
+/* 全局重置与基础变量 */
+:root {
+  --bg-color: #0b0f19;
+  --panel-bg: linear-gradient(135deg, #111827, #030712);
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.05);
+  
+  --primary-color: #06b6d4; /* 极客青色 */
+  --primary-glow: rgba(6, 182, 212, 0.4);
+  --success-color: #10b981; /* 成功绿 */
+  --danger-color: #ef4444; /* 危险红 */
+  
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  --code-bg: rgba(6, 182, 212, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-color);
+  background-image: var(--panel-bg);
+  color: var(--text-main);
+  width: 360px;
+  height: 480px;
+  overflow: hidden;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 20px;
+  gap: 16px;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 14px;
+}
+
+.logo-circle {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, var(--primary-color), #3b82f6);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 12px var(--primary-glow);
+}
+
+.logo-circle span {
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: #ffffff;
+}
+
+.brand h1 {
+  font-size: 1.1rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.brand p {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Glassmorphism Cards */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+/* Status Card */
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.status-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.text-connected {
+  color: var(--success-color);
+}
+
+.text-disconnected {
+  color: var(--danger-color);
+}
+
+.server-info {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.code-highlight {
+  background: var(--code-bg);
+  color: var(--primary-color);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  border: 1px solid rgba(6, 182, 212, 0.15);
+}
+
+/* LED Indicator with Breath Animation */
+.led-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.led-dot.connected {
+  background-color: var(--success-color);
+  box-shadow: 0 0 10px var(--success-color);
+  animation: led-breath-success 2s infinite ease-in-out;
+}
+
+.led-dot.disconnected {
+  background-color: var(--danger-color);
+  box-shadow: 0 0 10px var(--danger-color);
+  animation: led-breath-danger 2s infinite ease-in-out;
+}
+
+@keyframes led-breath-success {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+    opacity: 0.8;
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(16, 185, 129, 1);
+    opacity: 1;
+  }
+}
+
+@keyframes led-breath-danger {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+    opacity: 0.8;
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(239, 68, 68, 1);
+    opacity: 1;
+  }
+}
+
+/* Logs Panel */
+.logs-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  height: 230px;
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.section-title-row h2 {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.log-count {
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 10px;
+  color: var(--text-muted);
+}
+
+.logs-container {
+  flex: 1;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+/* Custom Scrollbar */
+.logs-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.logs-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.logs-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
+
+.logs-container::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-glow);
+}
+
+.log-item {
+  color: #e5e7eb;
+  word-break: break-all;
+  border-left: 2px solid rgba(6, 182, 212, 0.3);
+  padding-left: 6px;
+}
+
+.log-placeholder {
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 60px;
+  font-size: 0.8rem;
+  font-style: italic;
+  font-family: inherit;
+}
+
+/* Footer & Buttons */
+.app-footer {
+  margin-top: auto;
+}
+
+.btn {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: inherit;
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, var(--primary-color), #2563eb);
+  color: #ffffff;
+}
+
+.btn-glow {
+  box-shadow: 0 4px 14px rgba(6, 182, 212, 0.2);
+}
+
+.btn-glow:hover {
+  box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-glow:active {
+  transform: translateY(0);
+}
+
+/* 重新连接中状态按钮样式 */
+.btn-connecting {
+  background: #374151 !important;
+  color: var(--text-muted) !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+}

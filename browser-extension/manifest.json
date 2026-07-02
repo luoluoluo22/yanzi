@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "燕子浏览器助手 (Yanzi Browser Helper)",
+  "version": "0.1.0",
+  "description": "打通浏览器登录态，配合燕子效率工具完成后台无感网页数据抓取与交互自动化。",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  }
+}
