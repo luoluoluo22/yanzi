@@ -1,15 +1,19 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace OpenQuickHost
 {
     public partial class IconPickerDialog : Window
     {
         private readonly List<ExtensionIconOption> _allIcons;
+        private List<ExtensionIconOption> _currentSource = new();
+        private int _loadedCount = 0;
+        private const int PageSize = 100;
         public string? SelectedIconReference { get; private set; }
 
         public IconPickerDialog(Window owner, string? initialSelection = null)
@@ -19,7 +23,9 @@ namespace OpenQuickHost
 
             // 获取全部内置图标
             _allIcons = ExtensionIconLibrary.GetAllMdiOptions().ToList();
-            IconsListBox.ItemsSource = _allIcons.Take(100).ToList();
+            _currentSource = _allIcons;
+            _loadedCount = PageSize;
+            IconsListBox.ItemsSource = _currentSource.Take(_loadedCount).ToList();
 
             // 预选当前已设定的图标
             if (!string.IsNullOrWhiteSpace(initialSelection))
@@ -27,6 +33,12 @@ namespace OpenQuickHost
                 var target = _allIcons.FirstOrDefault(icon => string.Equals(icon.Reference, initialSelection, StringComparison.OrdinalIgnoreCase));
                 if (target != null)
                 {
+                    var index = _allIcons.IndexOf(target);
+                    if (index >= _loadedCount)
+                    {
+                        _loadedCount = ((index / PageSize) + 1) * PageSize;
+                        IconsListBox.ItemsSource = _currentSource.Take(_loadedCount).ToList();
+                    }
                     IconsListBox.SelectedItem = target;
                     IconsListBox.ScrollIntoView(target);
                 }
@@ -35,6 +47,56 @@ namespace OpenQuickHost
             // 支持双击直接确认
             IconsListBox.MouseDoubleClick += IconsListBox_MouseDoubleClick;
             SearchBox.Focus();
+
+            this.Loaded += IconPickerDialog_Loaded;
+        }
+
+        private void IconPickerDialog_Loaded(object sender, RoutedEventArgs e)
+        {
+            var scrollViewer = FindScrollViewer(IconsListBox);
+            if (scrollViewer != null)
+            {
+                scrollViewer.ScrollChanged += ScrollViewer_ScrollChanged;
+            }
+        }
+
+        private ScrollViewer? FindScrollViewer(DependencyObject obj)
+        {
+            if (obj is ScrollViewer sv) return sv;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(obj); i++)
+            {
+                var child = VisualTreeHelper.GetChild(obj, i);
+                var result = FindScrollViewer(child);
+                if (result != null) return result;
+            }
+            return null;
+        }
+
+        private void ScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (sender is ScrollViewer scrollViewer)
+            {
+                // 快滚到底部时自动增量加载下一页，实现滚动懒加载
+                if (scrollViewer.ScrollableHeight > 0 && scrollViewer.VerticalOffset >= scrollViewer.ScrollableHeight - 50)
+                {
+                    LoadMoreIcons();
+                }
+            }
+        }
+
+        private void LoadMoreIcons()
+        {
+            if (_loadedCount >= _currentSource.Count) return;
+
+            _loadedCount += PageSize;
+            var selected = IconsListBox.SelectedItem;
+            
+            IconsListBox.ItemsSource = _currentSource.Take(_loadedCount).ToList();
+            
+            if (selected != null)
+            {
+                IconsListBox.SelectedItem = selected;
+            }
         }
 
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -55,17 +117,18 @@ namespace OpenQuickHost
             var query = (SearchBox.Text ?? string.Empty).Trim().ToLowerInvariant();
             if (string.IsNullOrEmpty(query))
             {
-                IconsListBox.ItemsSource = _allIcons.Take(100).ToList();
-                return;
+                _currentSource = _allIcons;
+            }
+            else
+            {
+                _currentSource = _allIcons.Where(icon =>
+                    icon.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    icon.Reference.Contains(query, StringComparison.OrdinalIgnoreCase)
+                ).ToList();
             }
 
-            // 根据标签文字或内部 Reference 过滤
-            var filtered = _allIcons.Where(icon =>
-                icon.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                icon.Reference.Contains(query, StringComparison.OrdinalIgnoreCase)
-            ).Take(200).ToList();
-
-            IconsListBox.ItemsSource = filtered;
+            _loadedCount = PageSize;
+            IconsListBox.ItemsSource = _currentSource.Take(_loadedCount).ToList();
         }
 
         private void IconsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -105,7 +168,6 @@ namespace OpenQuickHost
         {
             if (e.Key == Key.Enter)
             {
-                // 如果回车，直接选择过滤出来的第一个，或者当前选中的那个
                 if (IconsListBox.SelectedItem == null && IconsListBox.Items.Count > 0)
                 {
                     IconsListBox.SelectedIndex = 0;
