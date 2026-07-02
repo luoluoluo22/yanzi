@@ -933,6 +933,18 @@ public partial class AddJsonExtensionWindow
                 {
                     prefixes = "mdn";
                 }
+                else if (lowerLabel.Contains("bilibili") || lowerLabel.Contains("哔哩"))
+                {
+                    prefixes = "bili, bilibili";
+                }
+                else if (lowerLabel.Contains("zhihu") || lowerLabel.Contains("知乎"))
+                {
+                    prefixes = "zh, zhihu";
+                }
+                else if (lowerLabel.Contains("xiaohongshu") || lowerLabel.Contains("红书"))
+                {
+                    prefixes = "xhs, xiaohongshu";
+                }
                 else
                 {
                     prefixes = lowerLabel;

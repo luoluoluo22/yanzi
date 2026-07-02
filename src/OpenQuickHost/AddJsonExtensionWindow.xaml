@@ -686,6 +686,12 @@
                                             Padding="10,5" Tag="https://juejin.cn/search?query={query}" Click="SearchPreset_Click" />
                                     <Button Content="MDN" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
                                             Padding="10,5" Tag="https://developer.mozilla.org/zh-CN/search?q={query}" Click="SearchPreset_Click" />
+                                    <Button Content="哔哩哔哩" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
+                                            Padding="10,5" Tag="https://search.bilibili.com/all?keyword={query}" Click="SearchPreset_Click" />
+                                    <Button Content="知乎" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
+                                            Padding="10,5" Tag="https://www.zhihu.com/search?q={query}" Click="SearchPreset_Click" />
+                                    <Button Content="小红书" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"
+                                            Padding="10,5" Tag="https://www.xiaohongshu.com/search_result?keyword={query}" Click="SearchPreset_Click" />
                                 </WrapPanel>
                                 <TextBlock Text="搜索 URL 模板" Style="{StaticResource FieldLabelStyle}" />
                                 <TextBox x:Name="SearchTemplateSimpleBox"
