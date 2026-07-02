@@ -1144,12 +1144,13 @@
                         BorderThickness="1,0,0,0">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="22,24">
                         <StackPanel>
-                            <TextBlock Text="实时预览" Style="{StaticResource SectionTitleStyle}" />
+                            <TextBlock Text="在启动器中显示为" Style="{StaticResource SectionTitleStyle}" />
                             <Border Background="{DynamicResource BrushSecondaryBtnBG}"
                                     BorderBrush="{DynamicResource BrushBorder}"
                                     BorderThickness="1" CornerRadius="12" Padding="12">
                                 <StackPanel>
                                     <TextBlock Text="在启动器中显示为"
+                                               Visibility="Collapsed"
                                                Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="{DynamicResource FontSizeTiny}" Margin="2,0,0,8" />
                                     <Border Background="{DynamicResource BrushListViewItemMouseOver}" CornerRadius="9" Padding="10">
@@ -1200,12 +1201,12 @@
                                         </Grid>
                                     </Border>
                                     <TextBlock x:Name="IconPreviewHintText" Margin="2,8,0,0"
+                                               Visibility="Collapsed"
                                                Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="10.5" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>
 
-                            <TextBlock Text="基础信息" Style="{StaticResource SectionTitleStyle}" Margin="0,22,0,10" />
                             <TextBlock Text="名称" Style="{StaticResource FieldLabelStyle}" />
                             <TextBox x:Name="NameSimpleBox" Style="{StaticResource FormTextBoxStyle}"
                                      TextChanged="NameSimpleBox_TextChanged" />
@@ -1215,12 +1216,14 @@
                                      VerticalContentAlignment="Top"
                                      TextChanged="DescriptionSimpleBox_TextChanged" />
 
-                            <TextBlock Text="外观" Style="{StaticResource SectionTitleStyle}" Margin="0,22,0,10" />
                             <TextBlock Text="图标（mdi:* 或图片路径）" Style="{StaticResource FieldLabelStyle}" />
                             <TextBox x:Name="IconSimpleBox" Style="{StaticResource FormTextBoxStyle}"
                                      TextChanged="IconSimpleBox_TextChanged" />
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button Content="选图片" Style="{DynamicResource GhostButtonStyle}"
+                                <Button Content="选图标" Style="{DynamicResource GhostButtonStyle}"
+                                        Height="30" Padding="12,0"
+                                        Click="PickIconPresetButton_Click" />
+                                <Button Content="选图片" Style="{DynamicResource GhostButtonStyle}" Margin="8,0,0,0"
                                         Height="30" Padding="12,0"
                                         Click="PickIconImageButton_Click" />
                                 <Button Content="清空" Style="{DynamicResource GhostButtonStyle}"

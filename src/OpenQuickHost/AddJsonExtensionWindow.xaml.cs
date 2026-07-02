@@ -406,6 +406,15 @@ public partial class AddJsonExtensionWindow : Window
         SafeRefreshIconPreview();
     }
 
+    private void PickIconPresetButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new IconPickerDialog(this, IconSimpleBox.Text);
+        if (dialog.ShowDialog() == true && !string.IsNullOrEmpty(dialog.SelectedIconReference))
+        {
+            IconSimpleBox.Text = dialog.SelectedIconReference;
+        }
+    }
+
     private void PickIconImageButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
