@@ -44,6 +44,7 @@ public partial class App : WpfApplication
     private RunningExtensionsWindow? _runningExtensionsWindow;
     private InputStateWindow? _inputStateWindow;
     private LocalAgentApiServer? _agentApiServer;
+    public LocalAgentApiServer? AgentApiServer => _agentApiServer;
     private LanDiscoveryService? _lanDiscoveryService;
     private SingleInstanceService? _singleInstanceService;
     private bool _listenerServicesPaused;

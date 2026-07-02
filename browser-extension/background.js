@@ -30,7 +30,7 @@ function logEvent(message) {
 function connectWebSocket() {
   logEvent("尝试连接到燕子启动器本地服务...");
   
-  ws = new WebSocket("ws://127.0.0.1:18293");
+  ws = new WebSocket("ws://127.0.0.1:53919/v1/browser/ws");
   
   ws.onopen = () => {
     updateStatus("connected");

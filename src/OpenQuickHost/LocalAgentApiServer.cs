@@ -3,12 +3,21 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Concurrent;
+using System.Net.WebSockets;
+using System.Threading;
+using System.Threading.Tasks;
 using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
 public sealed class LocalAgentApiServer : IDisposable
 {
+    private WebSocket? _activeBrowserSocket;
+    public event Action<bool>? BrowserConnectionChanged;
+    public bool IsBrowserConnected => _activeBrowserSocket != null && _activeBrowserSocket.State == WebSocketState.Open;
+
+    private static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingBrowserTasks = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly string _prefix;
     private readonly string _token;
     private readonly Action<string?> _onMutated;
@@ -137,6 +146,132 @@ public sealed class LocalAgentApiServer : IDisposable
             {
                 response.StatusCode = 204;
                 response.Close();
+                return;
+            }
+
+            if (path == "/v1/browser/ws")
+            {
+                if (context.Request.IsWebSocketRequest)
+                {
+                    try
+                    {
+                        var wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
+                        var webSocket = wsContext.WebSocket;
+                        
+                        var oldSocket = Interlocked.Exchange(ref _activeBrowserSocket, webSocket);
+                        if (oldSocket != null)
+                        {
+                            try { await oldSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "New connection established", CancellationToken.None); } catch {}
+                            oldSocket.Dispose();
+                        }
+
+                        BrowserConnectionChanged?.Invoke(true);
+                        HostAssets.AppendLog("Local Agent API: Browser extension connected via WebSocket.");
+
+                        _ = Task.Run(() => HandleBrowserWebSocketLoopAsync(webSocket), _cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Local Agent API WebSocket accept error: {ex.Message}");
+                        response.StatusCode = 500;
+                        response.Close();
+                    }
+                }
+                else
+                {
+                    await WriteJsonAsync(response, 400, new { error = "websocket_required" });
+                }
+                return;
+            }
+
+            if (request.HttpMethod == "POST" && path == "/v1/browser/execute")
+            {
+                if (!IsAuthorized(request))
+                {
+                    await WriteJsonAsync(response, 401, new { error = "unauthorized" });
+                    return;
+                }
+
+                if (_activeBrowserSocket == null || _activeBrowserSocket.State != WebSocketState.Open)
+                {
+                    await WriteJsonAsync(response, 503, new { error = "browser_extension_not_connected" });
+                    return;
+                }
+
+                string body;
+                using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                {
+                    body = await reader.ReadToEndAsync();
+                }
+
+                var taskId = Guid.NewGuid().ToString("N");
+                var taskPayload = new Dictionary<string, object>();
+                try
+                {
+                    var jsonDoc = JsonDocument.Parse(body);
+                    foreach (var prop in jsonDoc.RootElement.EnumerateObject())
+                    {
+                        taskPayload[prop.Name] = prop.Value;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await WriteJsonAsync(response, 400, new { error = "invalid_json_body: " + ex.Message });
+                    return;
+                }
+
+                taskPayload["type"] = "task_request";
+                taskPayload["taskId"] = taskId;
+                if (!taskPayload.ContainsKey("action"))
+                {
+                    taskPayload["action"] = "workflow";
+                }
+
+                var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _pendingBrowserTasks[taskId] = tcs;
+
+                try
+                {
+                    var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
+                    await _activeBrowserSocket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, _cts.Token);
+                }
+                catch (Exception ex)
+                {
+                    _pendingBrowserTasks.TryRemove(taskId, out _);
+                    await WriteJsonAsync(response, 500, new { error = "failed_to_send_to_extension: " + ex.Message });
+                    return;
+                }
+
+                using (var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                {
+                    var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
+                    if (completedTask == tcs.Task)
+                    {
+                        var resultDoc = await tcs.Task;
+                        var responseData = new Dictionary<string, object?>();
+                        responseData["taskId"] = taskId;
+                        
+                        if (resultDoc.TryGetProperty("status", out var statusProp)) 
+                            responseData["status"] = statusProp.GetString();
+                        if (resultDoc.TryGetProperty("message", out var msgProp)) 
+                            responseData["message"] = msgProp.GetString();
+                        if (resultDoc.TryGetProperty("data", out var dataProp)) 
+                            responseData["data"] = dataProp;
+                        
+                        int httpStatus = 200;
+                        if (responseData.TryGetValue("status", out var st) && st?.ToString() == "error")
+                        {
+                            httpStatus = 500;
+                        }
+
+                        await WriteJsonAsync(response, httpStatus, responseData);
+                    }
+                    else
+                    {
+                        _pendingBrowserTasks.TryRemove(taskId, out _);
+                        await WriteJsonAsync(response, 504, new { error = "browser_execution_timeout" });
+                    }
+                }
                 return;
             }
 
@@ -2335,5 +2470,77 @@ public sealed class LocalAgentApiServer : IDisposable
 </html>
 """;
         return html.Replace("__YANZI_TOKEN__", _token ?? string.Empty);
+    }
+
+    private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket)
+    {
+        var buffer = new byte[1024 * 64];
+        try
+        {
+            while (webSocket.State == WebSocketState.Open && !_cts.IsCancellationRequested)
+            {
+                var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    break;
+                }
+
+                if (result.MessageType == WebSocketMessageType.Text)
+                {
+                    var rawJson = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    
+                    if (!result.EndOfMessage)
+                    {
+                        using var ms = new MemoryStream();
+                        await ms.WriteAsync(buffer, 0, result.Count);
+                        while (!result.EndOfMessage)
+                        {
+                            result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
+                            await ms.WriteAsync(buffer, 0, result.Count);
+                        }
+                        rawJson = Encoding.UTF8.GetString(ms.ToArray());
+                    }
+
+                    try
+                    {
+                        using var jsonDoc = JsonDocument.Parse(rawJson);
+                        var json = jsonDoc.RootElement;
+                        if (json.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "task_response")
+                        {
+                            if (json.TryGetProperty("taskId", out var taskIdProp))
+                            {
+                                var taskId = taskIdProp.GetString();
+                                if (!string.IsNullOrEmpty(taskId) && _pendingBrowserTasks.TryRemove(taskId, out var tcs))
+                                {
+                                    tcs.SetResult(json.Clone());
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Local Agent API error processing WS message: {ex.Message}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Local Agent API Browser WebSocket disconnected: {ex.Message}");
+        }
+        finally
+        {
+            if (Interlocked.CompareExchange(ref _activeBrowserSocket, null, webSocket) == webSocket)
+            {
+                BrowserConnectionChanged?.Invoke(false);
+            }
+            try
+            {
+                await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
+            }
+            catch { /* ignore */ }
+            webSocket.Dispose();
+            HostAssets.AppendLog("Local Agent API: Browser extension disconnected.");
+        }
     }
 }

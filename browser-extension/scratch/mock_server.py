@@ -95,8 +95,8 @@ async def handler(websocket):
 
 async def main():
     print("[Mock Server] 正在启动仿真本地 WebSocket 服务 (工作流测试版) ...")
-    print("服务地址: ws://127.0.0.1:18293")
-    async with websockets.serve(handler, "127.0.0.1", 18293):
+    print("服务地址: ws://127.0.0.1:53919/v1/browser/ws")
+    async with websockets.serve(handler, "127.0.0.1", 53919):
         await asyncio.Future()  # 持续运行
 
 if __name__ == "__main__":

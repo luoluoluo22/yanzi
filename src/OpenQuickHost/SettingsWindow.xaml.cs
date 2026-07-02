@@ -194,6 +194,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         _source?.RemoveHook(SettingsWindowWndProc);
         _source = null;
+        
+        var app = System.Windows.Application.Current as App;
+        if (app != null && app.AgentApiServer != null)
+        {
+            app.AgentApiServer.BrowserConnectionChanged -= AgentApiServer_BrowserConnectionChanged;
+        }
+
         base.OnClosed(e);
     }
 
@@ -2475,6 +2482,39 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             RebuildDynamicSettingsSearchItems();
             RefreshSelectedSectionHighlights();
         }), DispatcherPriority.Loaded);
+
+        var app = System.Windows.Application.Current as App;
+        if (app != null && app.AgentApiServer != null)
+        {
+            UpdateBrowserStatusUI(app.AgentApiServer.IsBrowserConnected);
+            app.AgentApiServer.BrowserConnectionChanged += AgentApiServer_BrowserConnectionChanged;
+        }
+    }
+
+    private void AgentApiServer_BrowserConnectionChanged(bool isConnected)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            UpdateBrowserStatusUI(isConnected);
+        });
+    }
+
+    private void UpdateBrowserStatusUI(bool isConnected)
+    {
+        if (BrowserStatusDot == null || BrowserStatusText == null) return;
+        
+        if (isConnected)
+        {
+            BrowserStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            BrowserStatusText.Text = "已连接";
+            BrowserStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+        }
+        else
+        {
+            BrowserStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            BrowserStatusText.Text = "未连接";
+            BrowserStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+        }
     }
 
     private void SettingsWindow_Activated(object? sender, EventArgs e)
