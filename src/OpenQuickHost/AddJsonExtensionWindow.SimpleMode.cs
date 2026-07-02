@@ -58,7 +58,7 @@ public partial class AddJsonExtensionWindow
             Description: "点击后启动 Windows 记事本。",
             Category: "扩展",
             Keywords: "记事本, notepad, 打开",
-            Icon: "mdi:file-document-edit-outline",
+            Icon: @"C:\Windows\System32\notepad.exe",
             AccentHex: "#FF3B82F6",
             OpenTarget: "notepad.exe"),
 
@@ -881,7 +881,7 @@ public partial class AddJsonExtensionWindow
                 var lowerPreset = preset.ToLowerInvariant();
                 if (lowerPreset.Contains("notepad.exe"))
                 {
-                    icon = "mdi:file-document-edit-outline";
+                    icon = @"C:\Windows\System32\notepad.exe";
                 }
                 else if (lowerPreset.Contains("desktop"))
                 {

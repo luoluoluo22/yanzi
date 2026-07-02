@@ -638,15 +638,7 @@ internal static class ExtensionIconLibrary
 
         try
         {
-            if (localPath.ToLowerInvariant().Contains("notepad.exe"))
-            {
-                icon = GetIconFromShellExtension(".txt");
-            }
-
-            if (icon == null)
-            {
-                icon = System.Drawing.Icon.ExtractAssociatedIcon(localPath);
-            }
+            icon = System.Drawing.Icon.ExtractAssociatedIcon(localPath);
 
             if (icon == null)
             {

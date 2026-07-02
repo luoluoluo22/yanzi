@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -42,7 +42,16 @@ public static class NativeFileIconService
         }
 
         var cacheKey = BuildCacheKey(path, isFolder);
-        return IconCache.GetOrAdd(cacheKey, _ => LoadSmallIcon(path, isFolder));
+        return IconCache.GetOrAdd(cacheKey, _ =>
+        {
+            // .exe 文件优先使用 IShellItemImageFactory 获取高品质图标 (256x256)
+            if (!isFolder && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+            {
+                var hq = LoadHighQualityIcon(path, 256);
+                if (hq != null) return hq;
+            }
+            return LoadSmallIcon(path, isFolder);
+        });
     }
 
     private static string BuildCacheKey(string path, bool isFolder)
@@ -362,6 +371,42 @@ public static class NativeFileIconService
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyIcon(IntPtr hIcon);
 
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int SHCreateItemFromParsingName(
+        string pszPath,
+        IntPtr pbc,
+        [MarshalAs(UnmanagedType.LPStruct)] Guid riid,
+        out IShellItemImageFactory ppv);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteObject(IntPtr hObject);
+
+    [ComImport]
+    [Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItemImageFactory
+    {
+        [PreserveSig]
+        int GetImage(
+            [In, MarshalAs(UnmanagedType.Struct)] NativeSize size,
+            [In] int flags,
+            out IntPtr phbm);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeSize
+    {
+        public int Width;
+        public int Height;
+
+        public NativeSize(int width, int height)
+        {
+            Width = width;
+            Height = height;
+        }
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct Shfileinfo
     {
@@ -374,6 +419,57 @@ public static class NativeFileIconService
 
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)]
         public string szTypeName;
+    }
+
+    /// <summary>
+    /// 使用 IShellItemImageFactory COM 接口获取高品质图标 (支持 256x256).
+    /// 此方法能正确获取 Windows 11 上 UWP 应用重定向 exe (如 notepad.exe) 的 Fluent 图标.
+    /// </summary>
+    private static ImageSource? LoadHighQualityIcon(string path, int size)
+    {
+        try
+        {
+            var iidImageFactory = new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b");
+            int hr = SHCreateItemFromParsingName(path, IntPtr.Zero, iidImageFactory, out var factory);
+            if (hr != 0 || factory == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                var nativeSize = new NativeSize(size, size);
+                // SIIGBF_ICONONLY = 0x04 (only icon, no thumbnail)
+                hr = factory.GetImage(nativeSize, 0x04, out var hBitmap);
+                if (hr != 0 || hBitmap == IntPtr.Zero)
+                {
+                    return null;
+                }
+
+                try
+                {
+                    var source = Imaging.CreateBitmapSourceFromHBitmap(
+                        hBitmap,
+                        IntPtr.Zero,
+                        System.Windows.Int32Rect.Empty,
+                        System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                    source.Freeze();
+                    return source;
+                }
+                finally
+                {
+                    DeleteObject(hBitmap);
+                }
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(factory);
+            }
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static ImageSource? LoadUwpIcon(string path)
