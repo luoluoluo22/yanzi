@@ -865,17 +865,48 @@ public partial class AddJsonExtensionWindow
 
     private void OpenTargetPreset_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string preset })
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string preset)
         {
             OpenTargetSimpleBox.Text = preset;
+            
+            var label = btn.Content?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var name = $"打开{label}";
+                var desc = label == "记事本" ? "点击后启动 Windows 记事本。" : $"点击后打开{label}。";
+                
+                NameSimpleBox.Text = name;
+                DescriptionSimpleBox.Text = desc;
+                
+                _lastTemplateSnapshot["Name"] = name;
+                _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["OpenTarget"] = preset;
+            }
         }
     }
 
     private void SearchPreset_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string preset })
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string preset)
         {
             SearchTemplateSimpleBox.Text = preset;
+            
+            var label = btn.Content?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var name = $"{label}搜索";
+                var desc = $"在{label}上搜索关键字。";
+                var icon = label.Equals("GitHub", StringComparison.OrdinalIgnoreCase) ? "mdi:github" : "mdi:search";
+                
+                NameSimpleBox.Text = name;
+                DescriptionSimpleBox.Text = desc;
+                IconSimpleBox.Text = icon;
+                
+                _lastTemplateSnapshot["Name"] = name;
+                _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["Icon"] = icon;
+                _lastTemplateSnapshot["QueryTemplate"] = preset;
+            }
         }
     }
 
@@ -1023,9 +1054,27 @@ public partial class AddJsonExtensionWindow
 
     private void HotkeyPreset_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string keys })
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string keys)
         {
             HotkeySequenceBox.Text = keys;
+            
+            var label = btn.Content?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var action = label.Split(' ')[0];
+                var name = $"发送{action}快捷键";
+                var desc = $"发送 {keys} 快捷键。";
+                var icon = "mdi:keyboard-outline";
+                
+                NameSimpleBox.Text = name;
+                DescriptionSimpleBox.Text = desc;
+                IconSimpleBox.Text = icon;
+                
+                _lastTemplateSnapshot["Name"] = name;
+                _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["Icon"] = icon;
+                _lastTemplateSnapshot["Runtime"] = "csharp";
+            }
         }
     }
 
