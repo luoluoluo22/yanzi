@@ -33,10 +33,6 @@
 
 ### 唯一发布指令：
 ```powershell
-# 1. 设置您的 Token 环境变量
-$env:GITHUB_TOKEN = "您的_GITHUB_TOKEN"
-
-# 2. 运行总控发布脚本，一键完成编译打包、文件上传、以及防乱码 API PATCH
 .\scripts\release.ps1
 ```
 

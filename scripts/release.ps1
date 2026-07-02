@@ -18,9 +18,15 @@ Write-Host "==============================================" -ForegroundColor Gre
 Write-Host "  🚀 Starting One-Click Release for Yanzi v$version" -ForegroundColor Green
 Write-Host "==============================================" -ForegroundColor Green
 
-# 2. 安全检查
+# 2. 智能提取 GITHUB_TOKEN
 if ([string]::IsNullOrEmpty($env:GITHUB_TOKEN)) {
-    throw "Environment variable GITHUB_TOKEN is not configured! Please set it before running this script."
+    $ghToken = gh auth token 2>$null
+    if (-not [string]::IsNullOrEmpty($ghToken)) {
+        $env:GITHUB_TOKEN = $ghToken.Trim()
+        Write-Host "Automatically retrieved GITHUB_TOKEN from gh CLI."
+    } else {
+        throw "Environment variable GITHUB_TOKEN is not configured! Please configure it or login to gh CLI before running this script."
+    }
 }
 
 # 3. 网络与代理兜底环境变量 (规避 Go http2 握手 EOF，完美复用本地代理)
