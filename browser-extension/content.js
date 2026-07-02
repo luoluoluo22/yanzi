@@ -13,6 +13,8 @@ function executeTask(task) {
       performScrape(task);
     } else if (task.action === "autofill") {
       performAutofill(task);
+    } else if (task.action === "workflow") {
+      performWorkflow(task);
     } else {
       sendResult(task.taskId, "error", null, task.closeOnComplete, `未知的任务动作: ${task.action}`);
     }
@@ -21,16 +23,130 @@ function executeTask(task) {
   }
 }
 
-// 1. 数据抓取逻辑
-function performScrape(task) {
+// ==========================================
+// 1. 声明式多步骤工作流引擎 (Workflow Engine)
+// ==========================================
+async function performWorkflow(task) {
+  const steps = task.steps || [];
+  const results = {};
+  
+  console.log(`[Workflow] 开始执行任务 [ID: ${task.taskId}]，共 ${steps.length} 个步骤`);
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    console.log(`[Workflow] 正在执行第 ${i + 1}/${steps.length} 步: ${step.type}`);
+    
+    try {
+      if (step.type === "wait") {
+        await handleWaitStep(step);
+      } else if (step.type === "fill") {
+        await handleFillStep(step);
+      } else if (step.type === "click") {
+        await handleClickStep(step);
+      } else if (step.type === "scroll") {
+        await handleScrollStep(step);
+      } else if (step.type === "scrape") {
+        const scrapeResult = await handleScrapeStep(step);
+        // 将抓取到的数据累加进结果集中
+        Object.assign(results, scrapeResult);
+      } else {
+        throw new Error(`不支持的步骤类型: ${step.type}`);
+      }
+    } catch (err) {
+      console.error(`[Workflow] 步骤 ${i + 1} (${step.type}) 失败: ${err.message}`);
+      sendResult(
+        task.taskId, 
+        "error", 
+        null, 
+        task.closeOnComplete, 
+        `步骤 ${i + 1} (${step.type}) 失败: ${err.message}`
+      );
+      return;
+    }
+  }
+
+  console.log(`[Workflow] 任务 [ID: ${task.taskId}] 执行成功，正在回传数据...`);
+  sendResult(task.taskId, "success", results, task.closeOnComplete);
+}
+
+// ------------------------------------------
+// 工作流步骤原子操作处理器
+// ------------------------------------------
+
+// 1.1 等待操作 (Wait)
+async function handleWaitStep(step) {
+  const timeout = step.timeout || 5000;
+  
+  if (step.selector) {
+    // 等待指定 DOM 元素加载出现
+    const selector = step.selector;
+    const startTime = Date.now();
+    while (true) {
+      if (document.querySelector(selector)) {
+        return; // 元素出现，返回成功
+      }
+      if (Date.now() - startTime > timeout) {
+        throw new Error(`等待元素超时: ${selector}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms 轮询一次
+    }
+  } else {
+    // 仅仅是静态延时等待
+    await new Promise(resolve => setTimeout(resolve, timeout));
+  }
+}
+
+// 1.2 高保真输入操作 (Fill)
+async function handleFillStep(step) {
+  const el = document.querySelector(step.selector);
+  if (!el) {
+    throw new Error(`未找到输入框元素: ${step.selector}`);
+  }
+
+  el.value = step.value;
+  
+  // 触发 SPA 双向绑定更新事件
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  
+  // React 专有状态追踪器触发
+  const tracker = el._valueTracker;
+  if (tracker) {
+    tracker.setValue(step.value);
+  }
+  
+  // 稍微等待 100ms 确保页面数据流渲染更新完成
+  await new Promise(resolve => setTimeout(resolve, 100));
+}
+
+// 1.3 模拟点击操作 (Click)
+async function handleClickStep(step) {
+  const el = document.querySelector(step.selector);
+  if (!el) {
+    throw new Error(`未找到点击目标元素: ${step.selector}`);
+  }
+  el.click();
+  // 等待 150ms 给浏览器事件留出缓冲时间
+  await new Promise(resolve => setTimeout(resolve, 150));
+}
+
+// 1.4 页面滚动操作 (Scroll)
+async function handleScrollStep(step) {
+  const distance = step.distance || 400;
+  window.scrollBy(0, distance);
+  // 等待 200ms 让滚动惯性与数据懒加载进行
+  await new Promise(resolve => setTimeout(resolve, 200));
+}
+
+// 1.5 页面数据抓取操作 (Scrape)
+async function handleScrapeStep(step) {
   const resultData = {};
-  const selectors = task.selectors || {};
+  const selectors = step.selectors || {};
 
   for (const [key, selectorConfig] of Object.entries(selectors)) {
     let selectorStr = "";
-    let attributeToExtract = "innerText"; // 默认读取 innerText
+    let attributeToExtract = "innerText";
 
-    // 支持简洁的字符串格式: "a.postTitle|href"
     if (typeof selectorConfig === "string") {
       if (selectorConfig.includes("|")) {
         const parts = selectorConfig.split("|");
@@ -40,7 +156,6 @@ function performScrape(task) {
         selectorStr = selectorConfig.trim();
       }
     } else {
-      // 支持结构化的对象格式: { "selector": "...", "attr": "..." }
       selectorStr = selectorConfig.selector;
       attributeToExtract = selectorConfig.attr || "innerText";
     }
@@ -65,37 +180,37 @@ function performScrape(task) {
     resultData[key] = extractedValues;
   }
 
-  sendResult(task.taskId, "success", resultData, task.closeOnComplete);
+  return resultData;
 }
 
-// 2. 表单高保真自动填充逻辑
+// ==========================================
+// 2. 原单步处理接口 (保持向后兼容)
+// ==========================================
+
+function performScrape(task) {
+  const selectors = task.selectors || {};
+  // 构造单步 scrape 为一个 workflow 步骤并执行
+  handleScrapeStep({ selectors: selectors }).then(data => {
+    sendResult(task.taskId, "success", data, task.closeOnComplete);
+  }).catch(err => {
+    sendResult(task.taskId, "error", null, task.closeOnComplete, err.message);
+  });
+}
+
 function performAutofill(task) {
   const fields = task.fields || [];
-
-  fields.forEach((field) => {
+  fields.forEach(field => {
     const el = document.querySelector(field.selector);
-    if (!el) {
-      console.warn(`未找到表单元素: ${field.selector}`);
-      return;
-    }
-
-    // 设置输入框值
-    el.value = field.value;
-
-    // 高保真 SPA 框架适配 (React/Vue/Angular 事件分发)
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-
-    // 针对 React 15/16+ 专有的 value tracker 触发机制，确保输入框状态能被 React 正确捕获
-    const tracker = el._valueTracker;
-    if (tracker) {
-      tracker.setValue(field.value);
+    if (el) {
+      el.value = field.value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      const tracker = el._valueTracker;
+      if (tracker) tracker.setValue(field.value);
     }
   });
 
-  // 如果定义了点击触发器 (例如“发布”按钮)
   if (task.clickSelector) {
-    // 稍微延迟 300ms 确保表单渲染/事件绑定处理完毕
     setTimeout(() => {
       const btn = document.querySelector(task.clickSelector);
       if (btn) {
@@ -110,7 +225,7 @@ function performAutofill(task) {
   }
 }
 
-// 辅助函数：将结果发回 background.js
+// 辅助向 background 发送结果
 function sendResult(taskId, status, data, closeOnComplete, errorMessage = "") {
   chrome.runtime.sendMessage({
     type: "task_result",
