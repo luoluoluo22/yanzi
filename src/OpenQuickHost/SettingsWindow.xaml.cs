@@ -126,6 +126,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             new SettingsNavigationItem("radial", "mdi:circle-outline", "燕环", "#FF3B82F6"),
             new SettingsNavigationItem("yarnselect", "mdi:shortcut", "燕选", "#FF14B8A6"),
             new SettingsNavigationItem("yanm", "mdi:monitor-dashboard", "燕幕", "#FF60A5FA"),
+            new SettingsNavigationItem("yanwo", "mdi:home-group", "燕窝", "#FFA855F7"),
             new SettingsNavigationItem("about", "mdi:about", "关于", "#FF3B82F6")
         ];
         _selectedNavigation = NavigationItems.First();
@@ -735,6 +736,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsRadialSelected));
             OnPropertyChanged(nameof(IsYarnSelectSelected));
             OnPropertyChanged(nameof(IsYanmSelected));
+            OnPropertyChanged(nameof(IsYanwoSelected));
             OnPropertyChanged(nameof(IsAboutSelected));
             RefreshSelectedSectionHighlights();
             if (IsExtensionsSelected && !_hasLoadedExtensions)
@@ -2434,6 +2436,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool IsYarnSelectSelected => SelectedNavigation?.Key == "yarnselect";
 
     public bool IsYanmSelected => SelectedNavigation?.Key == "yanm";
+
+    public bool IsYanwoSelected => SelectedNavigation?.Key == "yanwo";
 
     public bool IsAboutSelected => SelectedNavigation?.Key == "about";
 

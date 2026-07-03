@@ -936,56 +936,6 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,18,0,0">
-                                <StackPanel>
-                                    <Grid Margin="0,0,0,12">
-                                        <StackPanel>
-                                            <TextBlock Text="燕窝 (Yan Nest) 设备与多端桥接" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="管理已连入本地的浏览器扩展、手机 App 等外部执行终端。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                    </Grid>
-                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
-                                    
-                                    <!-- 浏览器助手设备栏 -->
-                                    <Grid Margin="0,4,0,8">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="🌐" FontSize="16" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="浏览器助手" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="配合外部 Agent 完成无感网页数据抓取与填单操作。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,2,0,0"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Ellipse x:Name="BrowserStatusDot" Width="8" Height="8" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
-                                            <TextBlock x:Name="BrowserStatusText" Text="未连接" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Grid>
-
-                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
-
-                                    <!-- 手机端联动设备栏 -->
-                                    <Grid Margin="0,4,0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="📱" FontSize="16" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="手机端移动助手" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="跨端复制、剪贴板同步及手机短信验证码局域网自动转发。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,2,0,0"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Ellipse x:Name="MobileStatusDot" Width="8" Height="8" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
-                                            <TextBlock x:Name="MobileStatusText" Text="未连接" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,18,0,0">
                                 <StackPanel>
                                     <TextBlock Text="说明" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
@@ -1839,6 +1789,241 @@
                                 <StackPanel>
                                     <TextBlock Text="说明" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
                                     <TextBlock Text="燕幕组件库和布局会随配置同步。第一次启用后，按住触发键即可查看默认组件；双击触发键可进入固定编辑状态。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Yanwo View -->
+                        <StackPanel x:Name="YanwoSectionRoot" Visibility="{Binding IsYanwoSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <!-- 头部说明 -->
+                            <Grid Margin="0,5">
+                                <StackPanel>
+                                    <TextBlock Text="燕窝 (Yan Nest) 万物互联" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Bold"/>
+                                    <TextBlock Text="汇聚并调度局域网手机、浏览器扩展、本地 API 接口和云同步平台。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 星网发散拓扑图 -->
+                            <Border Background="#FF0F172A" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,12,0,0" Height="280" ClipToBounds="True">
+                                <Canvas Width="600" Height="280" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    
+                                    <!-- 连线定义 (连往各个子节点) -->
+                                    <!-- 1. 连往浏览器扩展 -->
+                                    <Line X1="300" Y1="140" X2="300" Y2="50">
+                                        <Line.Style>
+                                            <Style TargetType="Line">
+                                                <Setter Property="Stroke" Value="#FF334155"/>
+                                                <Setter Property="StrokeDashArray" Value="3,3"/>
+                                                <Setter Property="StrokeThickness" Value="1.5"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ElementName=BrowserStatusText, Path=Text}" Value="已连接">
+                                                        <Setter Property="Stroke" Value="#FF22C55E"/>
+                                                        <Setter Property="StrokeDashArray" Value="{x:Null}"/>
+                                                        <Setter Property="StrokeThickness" Value="2"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Line.Style>
+                                    </Line>
+                                    
+                                    <!-- 2. 连往手机助手 -->
+                                    <Line X1="300" Y1="140" X2="130" Y2="90">
+                                        <Line.Style>
+                                            <Style TargetType="Line">
+                                                <Setter Property="Stroke" Value="#FF334155"/>
+                                                <Setter Property="StrokeDashArray" Value="3,3"/>
+                                                <Setter Property="StrokeThickness" Value="1.5"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ElementName=MobileStatusText, Path=Text}" Value="已连接">
+                                                        <Setter Property="Stroke" Value="#FF22C55E"/>
+                                                        <Setter Property="StrokeDashArray" Value="{x:Null}"/>
+                                                        <Setter Property="StrokeThickness" Value="2"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Line.Style>
+                                    </Line>
+                                    
+                                    <!-- 3. 连往 Agent API (常亮) -->
+                                    <Line X1="300" Y1="140" X2="470" Y2="90" Stroke="#FF22C55E" StrokeThickness="2"/>
+                                    
+                                    <!-- 4. 连往同步平台 (常亮) -->
+                                    <Line X1="300" Y1="140" X2="190" Y2="220" Stroke="#FF22C55E" StrokeThickness="2"/>
+                                    
+                                    <!-- 5. 连往云端服务 (常亮) -->
+                                    <Line X1="300" Y1="140" X2="410" Y2="220" Stroke="#FF22C55E" StrokeThickness="2"/>
+
+                                    <!-- 中心控制节点：本地 PC 中枢 -->
+                                    <Border Canvas.Left="250" Canvas.Top="90" Width="100" Height="100" CornerRadius="50" BorderThickness="2" BorderBrush="#FFA855F7" Background="#FF1E1B4B">
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#FFA855F7" BlurRadius="15" ShadowDepth="0" Opacity="0.6"/>
+                                        </Border.Effect>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="💻" FontSize="20" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="PC 本地" Foreground="White" FontSize="11" FontWeight="Bold" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="中枢" Foreground="#FFA855F7" FontSize="9" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    
+                                    <!-- 围绕节点 1：浏览器助手 -->
+                                    <Border Canvas.Left="273" Canvas.Top="23" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" Background="#FF1E293B">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="#FF475569"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ElementName=BrowserStatusText, Path=Text}" Value="已连接">
+                                                        <Setter Property="BorderBrush" Value="#FF22C55E"/>
+                                                        <Setter Property="Background" Value="#FF064E3B"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#FF22C55E" BlurRadius="8" ShadowDepth="0" Opacity="0.4"/>
+                                        </Border.Effect>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="🌐" FontSize="14" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="浏览器" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 围绕节点 2：手机助手 -->
+                                    <Border Canvas.Left="103" Canvas.Top="63" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" Background="#FF1E293B">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="#FF475569"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ElementName=MobileStatusText, Path=Text}" Value="已连接">
+                                                        <Setter Property="BorderBrush" Value="#FF22C55E"/>
+                                                        <Setter Property="Background" Value="#FF064E3B"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#FF22C55E" BlurRadius="8" ShadowDepth="0" Opacity="0.4"/>
+                                        </Border.Effect>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="📱" FontSize="14" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="手机助手" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 围绕节点 3：Agent API -->
+                                    <Border Canvas.Left="443" Canvas.Top="63" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" BorderBrush="#FF22C55E" Background="#FF064E3B">
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#FF22C55E" BlurRadius="8" ShadowDepth="0" Opacity="0.4"/>
+                                        </Border.Effect>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="⚙️" FontSize="14" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="API接口" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 围绕节点 4：同步与备份 -->
+                                    <Border Canvas.Left="163" Canvas.Top="193" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" BorderBrush="#FF22C55E" Background="#FF1E293B">
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="☁️" FontSize="14" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="同步备份" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 围绕节点 5：云端服务 -->
+                                    <Border Canvas.Left="383" Canvas.Top="193" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" BorderBrush="#FF22C55E" Background="#FF1E293B">
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="🌩️" FontSize="14" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="云服务" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Canvas>
+                            </Border>
+
+                            <!-- 设备详情与具体控制卡片面板 -->
+                            
+                            <!-- 卡片一：浏览器助手 -->
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,14,0,0">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <StackPanel>
+                                            <TextBlock Text="浏览器助手" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="配合本地 AI 智能体 (Agent) 进行静默网页数据提取、高保真自动填表工作流。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Ellipse x:Name="BrowserStatusDot" Width="8" Height="8" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="BrowserStatusText" Text="未连接" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text=" (WS端口: 53919)" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 卡片二：手机端助手 -->
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,14,0,0">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <StackPanel>
+                                            <TextBlock Text="手机端移动助手" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="局域网下实现手机与 PC 间的剪贴板同步、双向文字互传、以及短信验证码自动拷贝转发。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Ellipse x:Name="MobileStatusDot" Width="8" Height="8" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="MobileStatusText" Text="未连接" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 卡片三：本地 Agent API 端口 -->
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,14,0,0">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="本地 Agent API" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="为本地 AI 智能体 (Agent) 暴露执行命令行、读写文件系统、查询扩展状态的 HTTP REST API 端口。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableAgentApi, Mode=TwoWay}" Click="SaveSettingsToggle_Click" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <StackPanel Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Ellipse Width="8" Height="8" Fill="#FF22C55E" VerticalAlignment="Center"/>
+                                                <TextBlock Text="服务正常运行中，端口: " Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Medium" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding AgentApiPort}" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="打开 API 控制台" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="OpenApiDocsUrlButton_Click"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 说明 -->
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,14,0,20">
+                                <StackPanel>
+                                    <TextBlock Text="说明" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="外部终端可通过扫描客户端局域网配对二维码或使用已分配的 API Token 连入。各终端之间的交互动作完全在本地加密处理，以确保数据安全性。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
