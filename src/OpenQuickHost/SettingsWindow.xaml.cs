@@ -200,6 +200,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (app != null && app.AgentApiServer != null)
         {
             app.AgentApiServer.BrowserConnectionChanged -= AgentApiServer_BrowserConnectionChanged;
+            LocalAgentApiServer.MobileDeviceConnected -= LocalAgentApiServer_MobileDeviceConnected;
         }
 
         base.OnClosed(e);
@@ -1164,14 +1165,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (isEnabled)
         {
             MobileStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
-            MobileStatusText.Text = "直连监听中";
+            if (!string.IsNullOrEmpty(LocalAgentApiServer.LastKnownMobileDeviceModel))
+            {
+                MobileStatusText.Text = $"已连接: {LocalAgentApiServer.LastKnownMobileDeviceModel}";
+            }
+            else
+            {
+                MobileStatusText.Text = "直连监听中";
+            }
             MobileStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            MobileStatusText.Tag = "Connected";
         }
         else
         {
             MobileStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
             MobileStatusText.Text = "已禁用";
             MobileStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            MobileStatusText.Tag = "Disconnected";
         }
     }
 
@@ -2537,7 +2547,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             UpdateBrowserStatusUI(app.AgentApiServer.IsBrowserConnected);
             app.AgentApiServer.BrowserConnectionChanged += AgentApiServer_BrowserConnectionChanged;
+            LocalAgentApiServer.MobileDeviceConnected += LocalAgentApiServer_MobileDeviceConnected;
         }
+    }
+
+    private void LocalAgentApiServer_MobileDeviceConnected(string deviceName)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            UpdateMobileStatusUI(_settings.EnableLanSync);
+        });
     }
 
     private void AgentApiServer_BrowserConnectionChanged(bool isConnected)
@@ -2554,15 +2573,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         
         if (isConnected)
         {
+            var app = System.Windows.Application.Current as App;
+            var browserName = (app?.AgentApiServer != null) ? app.AgentApiServer.ConnectedBrowserName : "浏览器";
+            if (string.IsNullOrEmpty(browserName)) browserName = "浏览器";
+
             BrowserStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
-            BrowserStatusText.Text = "已连接";
+            BrowserStatusText.Text = $"已连接: {browserName}";
             BrowserStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            BrowserStatusText.Tag = "Connected";
         }
         else
         {
             BrowserStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
             BrowserStatusText.Text = "未连接";
             BrowserStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            BrowserStatusText.Tag = "Disconnected";
         }
     }
 

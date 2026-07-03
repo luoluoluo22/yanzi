@@ -15,6 +15,10 @@ public sealed class LocalAgentApiServer : IDisposable
     private WebSocket? _activeBrowserSocket;
     public event Action<bool>? BrowserConnectionChanged;
     public bool IsBrowserConnected => _activeBrowserSocket != null && _activeBrowserSocket.State == WebSocketState.Open;
+    public string ConnectedBrowserName { get; private set; } = "";
+
+    public static string LastKnownMobileDeviceModel { get; set; } = "";
+    public static event Action<string>? MobileDeviceConnected;
 
     private static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingBrowserTasks = new(StringComparer.OrdinalIgnoreCase);
 
@@ -164,6 +168,26 @@ public sealed class LocalAgentApiServer : IDisposable
                     {
                         var wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
                         var webSocket = wsContext.WebSocket;
+
+                        var userAgent = context.Request.Headers["User-Agent"] ?? "";
+                        var browserName = "浏览器";
+                        if (userAgent.Contains("Edg/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            browserName = "Edge";
+                        }
+                        else if (userAgent.Contains("Chrome/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            browserName = "Chrome";
+                        }
+                        else if (userAgent.Contains("Firefox/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            browserName = "Firefox";
+                        }
+                        else if (userAgent.Contains("Safari/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            browserName = "Safari";
+                        }
+                        ConnectedBrowserName = browserName;
                         
                         var oldSocket = Interlocked.Exchange(ref _activeBrowserSocket, webSocket);
                         if (oldSocket != null)
@@ -689,6 +713,10 @@ public sealed class LocalAgentApiServer : IDisposable
             {
                 var payload = await ReadJsonBodyAsync(request);
                 var deviceId = GetString(payload, "deviceId") ?? "android-lan";
+                
+                LastKnownMobileDeviceModel = MobileDeviceNameNormalizer.Normalize(deviceId);
+                MobileDeviceConnected?.Invoke(LastKnownMobileDeviceModel);
+
                 await WriteJsonAsync(response, 200, new
                 {
                     ok = true,
@@ -873,11 +901,19 @@ public sealed class LocalAgentApiServer : IDisposable
                     return;
                 }
                 var payload = await ReadJsonBodyAsync(request);
+
+                var sourceDeviceId = GetString(payload, "sourceDeviceId");
+                if (!string.IsNullOrEmpty(sourceDeviceId))
+                {
+                    LastKnownMobileDeviceModel = MobileDeviceNameNormalizer.Normalize(sourceDeviceId);
+                    MobileDeviceConnected?.Invoke(LastKnownMobileDeviceModel);
+                }
+
                 var messageId = Guid.NewGuid().ToString("N");
                 var message = new DeviceMessageRecord
                 {
                     MessageId = messageId,
-                    SourceDeviceId = GetString(payload, "sourceDeviceId") ?? "lan",
+                    SourceDeviceId = sourceDeviceId ?? "lan",
                     TargetPlatform = GetString(payload, "targetPlatform") ?? "desktop",
                     Kind = GetString(payload, "kind") ?? "text",
                     Title = GetString(payload, "title") ?? "局域网消息",
@@ -2539,6 +2575,7 @@ public sealed class LocalAgentApiServer : IDisposable
         {
             if (Interlocked.CompareExchange(ref _activeBrowserSocket, null, webSocket) == webSocket)
             {
+                ConnectedBrowserName = "";
                 BrowserConnectionChanged?.Invoke(false);
             }
             try
