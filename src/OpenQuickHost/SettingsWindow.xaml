@@ -25,6 +25,7 @@
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <local:BoolToColorConverter x:Key="BoolToColorConverter" />
         <local:ModelNameFirstCharConverter x:Key="ModelNameFirstCharConverter" />
+        <local:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
 
         <!-- Colors -->
         <Color x:Key="SidebarBG">#FF1E1E1E</Color>

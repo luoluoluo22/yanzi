@@ -10983,6 +10983,23 @@ public class ModelNameFirstCharConverter : IValueConverter
     }
 }
 
+public class InverseBooleanToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        if (value is bool b)
+        {
+            return b ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+        }
+        return System.Windows.Visibility.Visible;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
 public class SettingsAiProviderVM : INotifyPropertyChanged
 {
     private readonly AiServiceProviderSettings _settings;
