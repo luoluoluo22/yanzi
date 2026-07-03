@@ -1029,44 +1029,6 @@
                                 </Border>
                             </Grid>
 
-                            <!-- LAN Sync Configuration Card -->
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16">
-                                <StackPanel Margin="20">
-                                    <Grid>
-                                        <TextBlock Text="局域网直连通信" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <TextBlock Text="启用直连" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                                            <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableLanSync, Mode=TwoWay}" Click="EnableLanSync_Click" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Grid>
-                                    <TextBlock Text="允许手机在同一 Wi-Fi 下直接与电脑通信，大幅降低延迟。首次开启时需要管理员权限配置 Windows 防火墙。" 
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Visibility="{Binding EnableLanSync, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Ellipse Width="8" Height="8" Fill="#FF22C55E" VerticalAlignment="Center"/>
-                                        <TextBlock Text="直连服务运行中，正在监听局域网连接" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-
-                            <!-- WAN Push Configuration Card -->
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16">
-                                <StackPanel Margin="20">
-                                    <Grid>
-                                        <TextBlock Text="广域网跨网络推送" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    </Grid>
-                                    <TextBlock Text="当手机和电脑不在同一局域网时，使用 MQTT 协议通过公网进行推送。请确保两端配置相同的值。" 
-                                               Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,12"/>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" Style="{DynamicResource GlobalTextBoxStyle}" Text="{Binding WanPushUuid, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="36" Padding="12,0" Background="{DynamicResource BrushInputBG}" Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}"/>
-                                        <Button Grid.Column="1" Content="保存并应用" Style="{StaticResource SecondaryBtn}" Height="36" Margin="10,0,0,0" Padding="16,0" Click="SaveWanPushUuidButton_Click"/>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-
                             <!-- Personal Sync Configuration Card -->
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16">
                                 <!-- Card Header -->
@@ -1793,7 +1755,6 @@
                             </Border>
                         </StackPanel>
 
-                        <!-- Yanwo View -->
                         <StackPanel x:Name="YanwoSectionRoot" Visibility="{Binding IsYanwoSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <!-- 头部说明 -->
                             <Grid Margin="0,5">
@@ -1803,11 +1764,11 @@
                                 </StackPanel>
                             </Grid>
 
-                            <!-- 星网发散拓扑图 -->
+                            <!-- 星网发散拓扑图 (支持悬浮 ToolTip) -->
                             <Border Background="#FF0F172A" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,12,0,0" Height="280" ClipToBounds="True">
                                 <Canvas Width="600" Height="280" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     
-                                    <!-- 连线定义 (连往各个子节点) -->
+                                    <!-- 连线定义 -->
                                     <!-- 1. 连往浏览器扩展 -->
                                     <Line X1="300" Y1="140" X2="300" Y2="50">
                                         <Line.Style>
@@ -1834,7 +1795,7 @@
                                                 <Setter Property="StrokeDashArray" Value="3,3"/>
                                                 <Setter Property="StrokeThickness" Value="1.5"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ElementName=MobileStatusText, Path=Text}" Value="已连接">
+                                                    <DataTrigger Binding="{Binding ElementName=MobileStatusText, Path=Text}" Value="直连监听中">
                                                         <Setter Property="Stroke" Value="#FF22C55E"/>
                                                         <Setter Property="StrokeDashArray" Value="{x:Null}"/>
                                                         <Setter Property="StrokeThickness" Value="2"/>
@@ -1844,17 +1805,70 @@
                                         </Line.Style>
                                     </Line>
                                     
-                                    <!-- 3. 连往 Agent API (常亮) -->
-                                    <Line X1="300" Y1="140" X2="470" Y2="90" Stroke="#FF22C55E" StrokeThickness="2"/>
+                                    <!-- 3. 连往 Agent API (当 EnableAgentApi 为 True 时常亮) -->
+                                    <Line X1="300" Y1="140" X2="470" Y2="90">
+                                        <Line.Style>
+                                            <Style TargetType="Line">
+                                                <Setter Property="Stroke" Value="#FF334155"/>
+                                                <Setter Property="StrokeDashArray" Value="3,3"/>
+                                                <Setter Property="StrokeThickness" Value="1.5"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding EnableAgentApi}" Value="True">
+                                                        <Setter Property="Stroke" Value="#FF22C55E"/>
+                                                        <Setter Property="StrokeDashArray" Value="{x:Null}"/>
+                                                        <Setter Property="StrokeThickness" Value="2"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Line.Style>
+                                    </Line>
                                     
-                                    <!-- 4. 连往同步平台 (常亮) -->
-                                    <Line X1="300" Y1="140" X2="190" Y2="220" Stroke="#FF22C55E" StrokeThickness="2"/>
+                                    <!-- 4. 连往同步平台 -->
+                                    <Line X1="300" Y1="140" X2="190" Y2="220">
+                                        <Line.Style>
+                                            <Style TargetType="Line">
+                                                <Setter Property="Stroke" Value="#FF334155"/>
+                                                <Setter Property="StrokeDashArray" Value="3,3"/>
+                                                <Setter Property="StrokeThickness" Value="1.5"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding EnablePersonalSync}" Value="True">
+                                                        <Setter Property="Stroke" Value="#FF22C55E"/>
+                                                        <Setter Property="StrokeDashArray" Value="{x:Null}"/>
+                                                        <Setter Property="StrokeThickness" Value="2"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Line.Style>
+                                    </Line>
                                     
-                                    <!-- 5. 连往云端服务 (常亮) -->
-                                    <Line X1="300" Y1="140" X2="410" Y2="220" Stroke="#FF22C55E" StrokeThickness="2"/>
+                                    <!-- 5. 连往云端服务 -->
+                                    <Line X1="300" Y1="140" X2="410" Y2="220">
+                                        <Line.Style>
+                                            <Style TargetType="Line">
+                                                <Setter Property="Stroke" Value="#FF334155"/>
+                                                <Setter Property="StrokeDashArray" Value="3,3"/>
+                                                <Setter Property="StrokeThickness" Value="1.5"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding EnableWanPush}" Value="True">
+                                                        <Setter Property="Stroke" Value="#FF22C55E"/>
+                                                        <Setter Property="StrokeDashArray" Value="{x:Null}"/>
+                                                        <Setter Property="StrokeThickness" Value="2"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Line.Style>
+                                    </Line>
 
                                     <!-- 中心控制节点：本地 PC 中枢 -->
-                                    <Border Canvas.Left="250" Canvas.Top="90" Width="100" Height="100" CornerRadius="50" BorderThickness="2" BorderBrush="#FFA855F7" Background="#FF1E1B4B">
+                                    <Border Canvas.Left="250" Canvas.Top="90" Width="100" Height="100" CornerRadius="50" BorderThickness="2" BorderBrush="#FFA855F7" Background="#FF1E1B4B" Cursor="Help">
+                                        <Border.ToolTip>
+                                            <ToolTip Background="#FF0F172A" BorderBrush="#FF475569" BorderThickness="1" Padding="10">
+                                                <StackPanel Width="220">
+                                                    <TextBlock Text="💻 燕子 PC 本地中枢" Foreground="White" FontWeight="Bold" FontSize="12"/>
+                                                    <TextBlock Text="系统核心调度网关。负责运行本地基础逻辑服务，并通过 WebSocket 与局域网广播连接管理外部各终端，实现数据归巢与统一安全分发。" Foreground="#FF94A3B8" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Border.ToolTip>
                                         <Border.Effect>
                                             <DropShadowEffect Color="#FFA855F7" BlurRadius="15" ShadowDepth="0" Opacity="0.6"/>
                                         </Border.Effect>
@@ -1866,7 +1880,28 @@
                                     </Border>
                                     
                                     <!-- 围绕节点 1：浏览器助手 -->
-                                    <Border Canvas.Left="273" Canvas.Top="23" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" Background="#FF1E293B">
+                                    <Border Canvas.Left="273" Canvas.Top="23" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" Background="#FF1E293B" Cursor="Help">
+                                        <Border.ToolTip>
+                                            <ToolTip Background="#FF0F172A" BorderBrush="#FF475569" BorderThickness="1" Padding="10">
+                                                <StackPanel Width="220">
+                                                    <TextBlock Text="🌐 浏览器助手" Foreground="White" FontWeight="Bold" FontSize="12"/>
+                                                    <TextBlock Text="当前状态：" Foreground="#FF94A3B8" FontSize="11" Margin="0,6,0,0"/>
+                                                    <TextBlock Text="{Binding ElementName=BrowserStatusText, Path=Text}" FontSize="11" FontWeight="Bold" Margin="0,2,0,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="#FF9CA3AF"/>
+                                                                <Style.Triggers>
+                                                                    <Trigger Property="Text" Value="已连接">
+                                                                        <Setter Property="Foreground" Value="#FF22C55E"/>
+                                                                    </Trigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Text="说明：提供声明式工作流自动化，支持免 API 进行高保真表单填充与静默网页数据提取。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Border.ToolTip>
                                         <Border.Style>
                                             <Style TargetType="Border">
                                                 <Setter Property="BorderBrush" Value="#FF475569"/>
@@ -1888,12 +1923,33 @@
                                     </Border>
 
                                     <!-- 围绕节点 2：手机助手 -->
-                                    <Border Canvas.Left="103" Canvas.Top="63" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" Background="#FF1E293B">
+                                    <Border Canvas.Left="103" Canvas.Top="63" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" Background="#FF1E293B" Cursor="Help">
+                                        <Border.ToolTip>
+                                            <ToolTip Background="#FF0F172A" BorderBrush="#FF475569" BorderThickness="1" Padding="10">
+                                                <StackPanel Width="220">
+                                                    <TextBlock Text="📱 移动手机助手" Foreground="White" FontWeight="Bold" FontSize="12"/>
+                                                    <TextBlock Text="当前状态：" Foreground="#FF94A3B8" FontSize="11" Margin="0,6,0,0"/>
+                                                    <TextBlock Text="{Binding ElementName=MobileStatusText, Path=Text}" FontSize="11" FontWeight="Bold" Margin="0,2,0,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="#FF9CA3AF"/>
+                                                                <Style.Triggers>
+                                                                    <Trigger Property="Text" Value="直连监听中">
+                                                                        <Setter Property="Foreground" Value="#FF22C55E"/>
+                                                                    </Trigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Text="说明：通过局域网直连或广域网云端推送，打通跨端超级剪贴板、验证码自动提取与短信通知同步。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Border.ToolTip>
                                         <Border.Style>
                                             <Style TargetType="Border">
                                                 <Setter Property="BorderBrush" Value="#FF475569"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ElementName=MobileStatusText, Path=Text}" Value="已连接">
+                                                    <DataTrigger Binding="{Binding ElementName=MobileStatusText, Path=Text}" Value="直连监听中">
                                                         <Setter Property="BorderBrush" Value="#FF22C55E"/>
                                                         <Setter Property="Background" Value="#FF064E3B"/>
                                                     </DataTrigger>
@@ -1910,7 +1966,29 @@
                                     </Border>
 
                                     <!-- 围绕节点 3：Agent API -->
-                                    <Border Canvas.Left="443" Canvas.Top="63" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" BorderBrush="#FF22C55E" Background="#FF064E3B">
+                                    <Border Canvas.Left="443" Canvas.Top="63" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" Background="#FF1E293B" Cursor="Help">
+                                        <Border.ToolTip>
+                                            <ToolTip Background="#FF0F172A" BorderBrush="#FF475569" BorderThickness="1" Padding="10">
+                                                <StackPanel Width="220">
+                                                    <TextBlock Text="⚙️ 本地 Agent API" Foreground="White" FontWeight="Bold" FontSize="12"/>
+                                                    <TextBlock Text="当前状态：" Foreground="#FF94A3B8" FontSize="11" Margin="0,6,0,0"/>
+                                                    <TextBlock Text="服务正常运行中" Foreground="#FF22C55E" FontSize="11" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    <TextBlock Text="已禁用" Foreground="#FF9CA3AF" FontSize="11" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnableAgentApi, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                                    <TextBlock Text="说明：在 53919 端口暴露标准 HTTP 接口，供外部智能体（Agent）调用本地指令、操作文件及获取配置。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="#FF475569"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding EnableAgentApi}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#FF22C55E"/>
+                                                        <Setter Property="Background" Value="#FF064E3B"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
                                         <Border.Effect>
                                             <DropShadowEffect Color="#FF22C55E" BlurRadius="8" ShadowDepth="0" Opacity="0.4"/>
                                         </Border.Effect>
@@ -1921,15 +1999,59 @@
                                     </Border>
 
                                     <!-- 围绕节点 4：同步与备份 -->
-                                    <Border Canvas.Left="163" Canvas.Top="193" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" BorderBrush="#FF22C55E" Background="#FF1E293B">
+                                    <Border Canvas.Left="163" Canvas.Top="193" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" Background="#FF1E293B" Cursor="Help">
+                                        <Border.ToolTip>
+                                            <ToolTip Background="#FF0F172A" BorderBrush="#FF475569" BorderThickness="1" Padding="10">
+                                                <StackPanel Width="220">
+                                                    <TextBlock Text="☁️ 云端同步与备份" Foreground="White" FontWeight="Bold" FontSize="12"/>
+                                                    <TextBlock Text="当前状态：" Foreground="#FF94A3B8" FontSize="11" Margin="0,6,0,0"/>
+                                                    <TextBlock Text="同步已启用" Foreground="#FF22C55E" FontSize="11" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnablePersonalSync, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    <TextBlock Text="未启用" Foreground="#FF9CA3AF" FontSize="11" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnablePersonalSync, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                                    <TextBlock Text="说明：支持基于 WebDav 协议将鼠标扩展、系统偏好设置和燕幕组件同步至云端备份中。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="#FF475569"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding EnablePersonalSync}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#FF22C55E"/>
+                                                        <Setter Property="Background" Value="#FF064E3B"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <TextBlock Text="☁️" FontSize="14" HorizontalAlignment="Center"/>
                                             <TextBlock Text="同步备份" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- 围绕节点 5：云端服务 -->
-                                    <Border Canvas.Left="383" Canvas.Top="193" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" BorderBrush="#FF22C55E" Background="#FF1E293B">
+                                    <!-- 围绕节点 5：云服务 -->
+                                    <Border Canvas.Left="383" Canvas.Top="193" Width="54" Height="54" CornerRadius="27" BorderThickness="1.5" Background="#FF1E293B" Cursor="Help">
+                                        <Border.ToolTip>
+                                            <ToolTip Background="#FF0F172A" BorderBrush="#FF475569" BorderThickness="1" Padding="10">
+                                                <StackPanel Width="220">
+                                                    <TextBlock Text="🌩️ 燕子云端代理" Foreground="White" FontWeight="Bold" FontSize="12"/>
+                                                    <TextBlock Text="当前状态：" Foreground="#FF94A3B8" FontSize="11" Margin="0,6,0,0"/>
+                                                    <TextBlock Text="公网推送就绪" Foreground="#FF22C55E" FontSize="11" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnableWanPush, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    <TextBlock Text="未启用" Foreground="#FF9CA3AF" FontSize="11" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnableWanPush, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                                    <TextBlock Text="说明：当设备与电脑处于不同局域网时，使用公网 MQTT 推送服务保障多端互通的实时交互性。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="#FF475569"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding EnableWanPush}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#FF22C55E"/>
+                                                        <Setter Property="Background" Value="#FF064E3B"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <TextBlock Text="🌩️" FontSize="14" HorizontalAlignment="Center"/>
                                             <TextBlock Text="云服务" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
@@ -1938,92 +2060,119 @@
                                 </Canvas>
                             </Border>
 
-                            <!-- 设备详情与具体控制卡片面板 -->
-                            
-                            <!-- 卡片一：浏览器助手 -->
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,14,0,0">
-                                <StackPanel>
-                                    <Grid Margin="0,0,0,12">
-                                        <StackPanel>
-                                            <TextBlock Text="浏览器助手" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="配合本地 AI 智能体 (Agent) 进行静默网页数据提取、高保真自动填表工作流。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                    </Grid>
-                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
+                            <!-- 设备控制卡片UniformGrid矩阵 (3列排列，每个卡片带开关) -->
+                            <UniformGrid Columns="3" Margin="0,14,0,0">
+                                
+                                <!-- 卡片 1：浏览器助手 -->
+                                <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,0,8,12" Height="170">
+                                    <StackPanel>
+                                        <Grid>
+                                            <StackPanel Width="120" HorizontalAlignment="Left">
+                                                <TextBlock Text="🌐 浏览器助手" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableBrowserHelper, Mode=TwoWay}" Click="SaveSettingsToggle_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <TextBlock Text="静默 DOM 提取与 Vue/React 网页填表自动化中转。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
+                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Ellipse x:Name="BrowserStatusDot" Width="8" Height="8" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
-                                            <TextBlock x:Name="BrowserStatusText" Text="未连接" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                            <TextBlock Text=" (WS端口: 53919)" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                            <Ellipse x:Name="BrowserStatusDot" Width="6" Height="6" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="BrowserStatusText" Text="未连接" Foreground="#FF9CA3AF" FontSize="11" FontWeight="Bold" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text=" (53919)" Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="4,0,0,0" VerticalAlignment="Center"/>
                                         </StackPanel>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
+                                    </StackPanel>
+                                </Border>
 
-                            <!-- 卡片二：手机端助手 -->
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,14,0,0">
-                                <StackPanel>
-                                    <Grid Margin="0,0,0,12">
-                                        <StackPanel>
-                                            <TextBlock Text="手机端移动助手" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="局域网下实现手机与 PC 间的剪贴板同步、双向文字互传、以及短信验证码自动拷贝转发。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                    </Grid>
-                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
+                                <!-- 卡片 2：手机直连通信 -->
+                                <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,0,8,12" Height="170">
+                                    <StackPanel>
+                                        <Grid>
+                                            <StackPanel Width="120" HorizontalAlignment="Left">
+                                                <TextBlock Text="📱 局域网直连" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableLanSync, Mode=TwoWay}" Click="EnableLanSync_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <TextBlock Text="同一 Wi-Fi 下直接与电脑低延迟通信。首次开启需管理员防火墙配网。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
+                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Ellipse x:Name="MobileStatusDot" Width="8" Height="8" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
-                                            <TextBlock x:Name="MobileStatusText" Text="未连接" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                            <Ellipse x:Name="MobileStatusDot" Width="6" Height="6" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="MobileStatusText" Text="已禁用" Foreground="#FF9CA3AF" FontSize="11" FontWeight="Bold" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                         </StackPanel>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
+                                    </StackPanel>
+                                </Border>
 
-                            <!-- 卡片三：本地 Agent API 端口 -->
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,14,0,0">
-                                <StackPanel>
-                                    <Grid Margin="0,0,0,12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="本地 Agent API" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="为本地 AI 智能体 (Agent) 暴露执行命令行、读写文件系统、查询扩展状态的 HTTP REST API 端口。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <CheckBox Grid.Column="1" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableAgentApi, Mode=TwoWay}" Click="SaveSettingsToggle_Click" VerticalAlignment="Center"/>
-                                    </Grid>
-                                    <StackPanel Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
+                                <!-- 卡片 3：本地 Agent API -->
+                                <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,0,0,12" Height="170">
+                                    <StackPanel>
+                                        <Grid>
+                                            <StackPanel Width="120" HorizontalAlignment="Left">
+                                                <TextBlock Text="⚙️ Agent API" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableAgentApi, Mode=TwoWay}" Click="SaveSettingsToggle_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <TextBlock Text="对外开放 HTTP 接口，以运行外部 AI 对文件的读写与控制。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
+                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Ellipse Width="8" Height="8" Fill="#FF22C55E" VerticalAlignment="Center"/>
-                                                <TextBlock Text="服务正常运行中，端口: " Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Medium" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                                <TextBlock Text="{Binding AgentApiPort}" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                                <Ellipse Width="6" Height="6" Fill="#FF22C55E" VerticalAlignment="Center" Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                <TextBlock Text="端口: 53919" Foreground="{DynamicResource BrushTextMain}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                <Ellipse Width="6" Height="6" Fill="#FF9CA3AF" VerticalAlignment="Center" Visibility="{Binding EnableAgentApi, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                                <TextBlock Text="已禁用" Foreground="#FF9CA3AF" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="{Binding EnableAgentApi, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                                             </StackPanel>
-                                            <Button Grid.Column="1" Content="打开 API 控制台" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="OpenApiDocsUrlButton_Click"/>
+                                            <Button Grid.Column="1" Content="控制台" Style="{StaticResource SecondaryBtn}" Height="22" Padding="8,0" FontSize="10" Click="OpenApiDocsUrlButton_Click" Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}" VerticalAlignment="Center"/>
                                         </Grid>
                                     </StackPanel>
-                                </StackPanel>
-                            </Border>
+                                </Border>
+
+                                <!-- 卡片 4：广域网跨网推送 -->
+                                <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,0,8,12" Height="170">
+                                    <StackPanel>
+                                        <Grid>
+                                            <StackPanel Width="120" HorizontalAlignment="Left">
+                                                <TextBlock Text="🌩️ 广域网推送" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableWanPush, Mode=TwoWay}" Click="SaveSettingsToggle_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <StackPanel Visibility="{Binding EnableWanPush, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <TextBox Style="{DynamicResource GlobalTextBoxStyle}" Text="{Binding WanPushUuid, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="28" Padding="6,0" FontSize="10" Background="{DynamicResource BrushInputBG}" Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}" Margin="0,6,0,0"/>
+                                            <Button Content="保存应用" Style="{StaticResource SecondaryBtn}" Height="22" Padding="10,0" FontSize="10" Margin="0,6,0,0" Click="SaveWanPushUuidButton_Click" HorizontalAlignment="Right"/>
+                                        </StackPanel>
+                                        <TextBlock Text="公网下的跨网络即时推送。两端需配置相同的 UUID 通道。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46" Visibility="{Binding EnableWanPush, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 卡片 5：个人同步平台 -->
+                                <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,0,8,12" Height="170">
+                                    <StackPanel>
+                                        <Grid>
+                                            <StackPanel Width="120" HorizontalAlignment="Left">
+                                                <TextBlock Text="☁️ 云同步备份" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnablePersonalSync, Mode=TwoWay}" Click="SaveWebDavSettingsButton_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <TextBlock Text="使用云盘备份同步设置、鼠标触控及燕幕状态。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
+                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="上次: 刚刚" Foreground="{DynamicResource BrushTextSec}" FontSize="11" VerticalAlignment="Center" Visibility="{Binding EnablePersonalSync, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Button Grid.Column="1" Content="立即同步" Style="{StaticResource SecondaryBtn}" Height="22" Padding="8,0" FontSize="10" Click="SaveWebDavSettingsButton_Click" Visibility="{Binding EnablePersonalSync, Converter={StaticResource BooleanToVisibilityConverter}}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="未启用" Foreground="#FF9CA3AF" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" Visibility="{Binding EnablePersonalSync, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
 
                             <!-- 说明 -->
-                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,14,0,20">
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,2,0,20">
                                 <StackPanel>
                                     <TextBlock Text="说明" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="外部终端可通过扫描客户端局域网配对二维码或使用已分配的 API Token 连入。各终端之间的交互动作完全在本地加密处理，以确保数据安全性。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <TextBlock Text="手机端（局域网直连及广域网推送）与浏览器扩展均通过 PC 主程序 53919 统一消息中转，交互动作完全在本地加密处理，保证安全。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>

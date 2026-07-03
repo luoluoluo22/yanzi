@@ -1153,6 +1153,49 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             _settings = _settings with { EnableLanSync = value };
             OnPropertyChanged();
             AppSettingsStore.Save(_settings);
+            UpdateMobileStatusUI(value);
+        }
+    }
+
+    private void UpdateMobileStatusUI(bool isEnabled)
+    {
+        if (MobileStatusDot == null || MobileStatusText == null) return;
+        
+        if (isEnabled)
+        {
+            MobileStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            MobileStatusText.Text = "直连监听中";
+            MobileStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+        }
+        else
+        {
+            MobileStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            MobileStatusText.Text = "已禁用";
+            MobileStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+        }
+    }
+
+    public bool EnableBrowserHelper
+    {
+        get => _settings.EnableBrowserHelper;
+        set
+        {
+            if (value == _settings.EnableBrowserHelper) return;
+            _settings = _settings with { EnableBrowserHelper = value };
+            OnPropertyChanged();
+            AppSettingsStore.Save(_settings);
+        }
+    }
+
+    public bool EnableWanPush
+    {
+        get => _settings.EnableWanPush;
+        set
+        {
+            if (value == _settings.EnableWanPush) return;
+            _settings = _settings with { EnableWanPush = value };
+            OnPropertyChanged();
+            AppSettingsStore.Save(_settings);
         }
     }
 
@@ -2486,6 +2529,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             RebuildDynamicSettingsSearchItems();
             RefreshSelectedSectionHighlights();
         }), DispatcherPriority.Loaded);
+
+        UpdateMobileStatusUI(_settings.EnableLanSync);
 
         var app = System.Windows.Application.Current as App;
         if (app != null && app.AgentApiServer != null)

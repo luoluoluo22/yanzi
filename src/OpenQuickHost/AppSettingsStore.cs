@@ -836,6 +836,10 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
 
     public bool EnableLanSync { get; set; } = false;
 
+    public bool EnableBrowserHelper { get; set; } = true;
+
+    public bool EnableWanPush { get; set; } = false;
+
     public PersonalSyncSettings PersonalSync { get; set; } = new();
 
     public bool EnableWebDavSync { get; set; } = false;

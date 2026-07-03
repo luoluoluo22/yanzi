@@ -151,6 +151,13 @@ public sealed class LocalAgentApiServer : IDisposable
 
             if (path == "/v1/browser/ws")
             {
+                var settings = AppSettingsStore.Load();
+                if (!settings.EnableBrowserHelper)
+                {
+                    await WriteJsonAsync(response, 403, new { error = "browser_helper_disabled_by_settings" });
+                    return;
+                }
+
                 if (context.Request.IsWebSocketRequest)
                 {
                     try
