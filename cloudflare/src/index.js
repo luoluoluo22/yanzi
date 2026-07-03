@@ -1,5 +1,5 @@
 const mobilePollRateLimitMap = new Map();
-const TOKEN_TTL_SECONDS = 60 * 60 * 12;
+const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const PASSWORD_ITERATIONS = 100000;
 const VERIFICATION_CODE_TTL_MINUTES = 10;
 const PUBLIC_SITE_ORIGIN = "https://yanzi.luoluoluo.cc.cd";

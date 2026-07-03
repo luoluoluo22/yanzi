@@ -77,7 +77,11 @@
     if (token) headers.set("authorization", `Bearer ${token}`);
     const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.message || `请求失败：${response.status}`);
+    if (!response.ok) {
+      const err = new Error(payload.message || `请求失败：${response.status}`);
+      err.status = response.status;
+      throw err;
+    }
     return payload;
   }
 
@@ -120,10 +124,12 @@
           setUser(user, isRemembered);
           notifyStateChanged();
         })
-        .catch(() => {
-          setToken("");
-          setUser(null);
-          notifyStateChanged();
+        .catch(err => {
+          if (err && err.status === 401) {
+            setToken("");
+            setUser(null);
+            notifyStateChanged();
+          }
         });
     }
   }
@@ -365,7 +371,7 @@
     const wrapper = document.createElement("div");
     wrapper.id = "global-auth-modals";
     wrapper.innerHTML = `
-      <div id="global-login-modal" class="auth-modal-overlay"><div class="auth-modal-card"><button class="auth-modal-close" id="login-close-btn">&times;</button><h2 style="margin-top:0;margin-bottom:1.5rem;font-size:1.4rem;font-weight:600;text-align:left;">登录燕子账号</h2><div class="auth-modal-field"><label for="modal-email">电子邮箱</label><input id="modal-email" class="auth-modal-input" type="email" autocomplete="username" placeholder="name@example.com"></div><div class="auth-modal-field"><label for="modal-password">密码</label><input id="modal-password" class="auth-modal-input" type="password" autocomplete="current-password" placeholder="请输入密码"></div><label class="auth-modal-remember"><input type="checkbox" id="modal-remember" checked>记住登录状态</label><div id="login-status-msg" class="auth-modal-status"></div><button id="modal-login-action-btn" class="auth-modal-btn" type="button">安全登录</button></div></div>
+      <div id="global-login-modal" class="auth-modal-overlay"><div class="auth-modal-card"><button class="auth-modal-close" id="login-close-btn">&times;</button><h2 style="margin-top:0;margin-bottom:1.5rem;font-size:1.4rem;font-weight:600;text-align:left;">登录燕子账号</h2><div class="auth-modal-field"><label for="modal-email">电子邮箱</label><input id="modal-email" class="auth-modal-input" type="email" autocomplete="username" placeholder="name@example.com"></div><div class="auth-modal-field"><label for="modal-password">密码</label><input id="modal-password" class="auth-modal-input" type="password" autocomplete="current-password" placeholder="请输入密码"></div><label class="auth-modal-remember"><input type="checkbox" id="modal-remember" checked>记住登录状态</label><div id="login-status-msg" class="auth-modal-status"></div><button id="modal-login-action-btn" class="auth-modal-btn" type="button">登录</button></div></div>
       <div id="global-profile-modal" class="auth-modal-overlay"><div class="auth-modal-card"><button class="auth-modal-close" id="profile-close-btn">&times;</button><h2 style="margin-top:0;margin-bottom:.5rem;font-size:1.4rem;font-weight:600;text-align:left;">个人中心</h2><p style="color:#9ca3af;font-size:.85rem;margin-top:0;margin-bottom:1.5rem;text-align:left;">您的燕子账号基本信息</p><div class="profile-modal-info"><div class="profile-info-row"><span>用户名</span><span id="profile-username">-</span></div><div class="profile-info-row"><span>电子邮箱</span><span id="profile-email">-</span></div><div class="profile-info-row"><span>账号角色</span><span id="profile-role">-</span></div></div><button id="modal-logout-action-btn" class="auth-modal-btn logout" type="button">退出登录</button></div></div>`;
     document.body.appendChild(wrapper);
     document.getElementById("login-close-btn").addEventListener("click", hideLoginModal);
@@ -396,7 +402,7 @@
     const statusMsg = document.getElementById("login-status-msg");
     if (!email || !password) { statusMsg.className = "auth-modal-status error"; statusMsg.textContent = "请输入邮箱和密码"; return; }
     loginBtn.disabled = true;
-    loginBtn.textContent = "正在安全登录...";
+    loginBtn.textContent = "正在登录...";
     statusMsg.className = "auth-modal-status";
     statusMsg.textContent = "";
     try {
@@ -412,7 +418,7 @@
       statusMsg.textContent = error.message || "登录失败，请检查邮箱和密码";
     } finally {
       loginBtn.disabled = false;
-      loginBtn.textContent = "安全登录";
+      loginBtn.textContent = "登录";
     }
   }
 
