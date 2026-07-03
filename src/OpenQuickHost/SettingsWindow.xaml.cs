@@ -1165,16 +1165,20 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (isEnabled)
         {
             MobileStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            string mobileText = "直连监听中";
             if (!string.IsNullOrEmpty(LocalAgentApiServer.LastKnownMobileDeviceModel))
             {
-                MobileStatusText.Text = $"已连接: {LocalAgentApiServer.LastKnownMobileDeviceModel}";
+                mobileText = $"已连接: {LocalAgentApiServer.LastKnownMobileDeviceModel}";
             }
-            else
-            {
-                MobileStatusText.Text = "直连监听中";
-            }
+            MobileStatusText.Text = mobileText;
             MobileStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
             MobileStatusText.Tag = "Connected";
+
+            if (MobileToolTipStatusText != null)
+            {
+                MobileToolTipStatusText.Text = mobileText;
+                MobileToolTipStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            }
         }
         else
         {
@@ -1182,6 +1186,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             MobileStatusText.Text = "已禁用";
             MobileStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
             MobileStatusText.Tag = "Disconnected";
+
+            if (MobileToolTipStatusText != null)
+            {
+                MobileToolTipStatusText.Text = "已禁用";
+                MobileToolTipStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            }
         }
     }
 
@@ -2581,6 +2591,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             BrowserStatusText.Text = $"已连接: {browserName}";
             BrowserStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
             BrowserStatusText.Tag = "Connected";
+
+            if (BrowserToolTipStatusText != null)
+            {
+                BrowserToolTipStatusText.Text = $"已连接: {browserName}";
+                BrowserToolTipStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            }
         }
         else
         {
@@ -2588,6 +2604,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             BrowserStatusText.Text = "未连接";
             BrowserStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
             BrowserStatusText.Tag = "Disconnected";
+
+            if (BrowserToolTipStatusText != null)
+            {
+                BrowserToolTipStatusText.Text = "未连接";
+                BrowserToolTipStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            }
         }
     }
 
