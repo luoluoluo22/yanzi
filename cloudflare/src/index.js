@@ -45,121 +45,6 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
   .map((item) => `'${item.extension_id.replace(/'/g, "''")}'`)
   .join(", ");
 
-export class DeviceRelayRoom {
-  constructor(state, env) {
-    this.state = state;
-    this.env = env;
-  }
-
-  async fetch(request) {
-    const url = new URL(request.url);
-
-    if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {
-      if (request.headers.get("Upgrade") !== "websocket") {
-        return json({ error: "upgrade_required", message: "WebSocket upgrade required" }, 426);
-      }
-
-      const auth = await requireAuth(request, this.env);
-      const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-      await ensureUser(this.env, auth.userId);
-      const device = await ensureOwnedDevice(this.env, auth.userId, deviceId);
-      await touchDevice(this.env, auth.userId, deviceId);
-
-      const pair = new WebSocketPair();
-      const [client, server] = Object.values(pair);
-      server.serializeAttachment({
-        userId: auth.userId,
-        deviceId,
-        platform: device.platform,
-        connectedAt: isoNow()
-      });
-      this.state.acceptWebSocket(server);
-
-      server.send(JSON.stringify({
-        type: "connected",
-        deviceId,
-        serverTime: isoNow()
-      }));
-      await this.pushPendingToSocket(server);
-
-      return new Response(null, {
-        status: 101,
-        webSocket: client
-      });
-    }
-
-    if (url.pathname === "/internal/device-relay/notify" && request.method === "POST") {
-      await this.broadcastPending();
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    return new Response("Not found", { status: 404 });
-  }
-
-  async webSocketMessage(ws, message) {
-    if (typeof message !== "string") {
-      return;
-    }
-
-    let payload;
-    try {
-      payload = JSON.parse(message);
-    } catch {
-      return;
-    }
-
-    if (payload.type === "ping") {
-      ws.send(JSON.stringify({ type: "pong", serverTime: isoNow() }));
-      return;
-    }
-
-    if (payload.type === "pull") {
-      await this.pushPendingToSocket(ws);
-    }
-  }
-
-  async webSocketClose(ws, code, reason) {
-    ws.close(code, reason);
-  }
-
-  async webSocketError(ws) {
-    ws.close(1011, "websocket error");
-  }
-
-  async broadcastPending() {
-    const sockets = this.state.getWebSockets();
-    for (const ws of sockets) {
-      await this.pushPendingToSocket(ws);
-    }
-  }
-
-  async pushPendingToSocket(ws) {
-    const attachment = ws.deserializeAttachment();
-    if (!attachment?.userId || !attachment?.deviceId || !attachment?.platform) {
-      return;
-    }
-
-    const items = await getPendingDeviceMessageItems(
-      this.env,
-      attachment.userId,
-      attachment.deviceId,
-      attachment.platform,
-      20
-    );
-    if (items.length === 0) {
-      return;
-    }
-
-    ws.send(JSON.stringify({
-      type: "messages",
-      items,
-      serverTime: isoNow()
-    }));
-    await markDeviceMessagesDelivered(this.env, attachment.userId, items);
-  }
-}
 
 export default {
   async fetch(request, env) {
@@ -606,7 +491,8 @@ async function handleRequest(request, env) {
       ok: true,
       userId: auth.userId,
       source: result.source,
-      updatedAtUtc,
+      updatedAtUtc: result.updatedAtUtc || updatedAtUtc,
+      changed: result.changed !== false,
       bytes: result.bytes,
       viewUrl: viewUrl || null
     });
@@ -624,8 +510,9 @@ async function handleRequest(request, env) {
       ok: true,
       userId: auth.userId,
       source: result.source,
-      updatedAtUtc,
-      changedKeys: Object.keys(componentStatePatch),
+      updatedAtUtc: result.updatedAtUtc || updatedAtUtc,
+      changedKeys: result.changedKeys || Object.keys(componentStatePatch),
+      changed: result.changed !== false,
       bytes: result.bytes,
       viewUrl: viewUrl || null
     });
@@ -3706,6 +3593,26 @@ async function writeYanmStateToS3(syncConfig, snapshot) {
 }
 
 async function writeYanmStateForUser(env, userId, snapshot) {
+  let currentSnapshot = null;
+  try {
+    currentSnapshot = await readYanmStateForUser(env, userId);
+    if (currentSnapshot?.yanm && areJsonValuesEquivalent(currentSnapshot.yanm, snapshot.yanm)) {
+      return {
+        source: currentSnapshot.source || "cloud-config",
+        updatedAtUtc: currentSnapshot.updatedAtUtc || null,
+        changed: false,
+        bytes: currentSnapshot.bytes || textEncoder.encode(JSON.stringify(currentSnapshot.yanm)).length
+      };
+    }
+  } catch (error) {
+    if (!(error instanceof HttpError) || (error.status !== 404 && error.status !== 409)) {
+      console.warn("Yanm sync unchanged check failed", {
+        userId,
+        error: error?.message || String(error)
+      });
+    }
+  }
+
   let isSyncWritten = false;
   let syncProvider = "cloud-config";
   let syncError = null;
@@ -3751,8 +3658,27 @@ async function writeYanmStateForUser(env, userId, snapshot) {
 
   return {
     source: isSyncWritten ? syncProvider : "cloud-config",
+    updatedAtUtc: snapshot.updatedAtUtc,
+    changed: true,
     bytes: dbResult.bytes
   };
+}
+
+function areJsonValuesEquivalent(left, right) {
+  return stableJsonStringify(left) === stableJsonStringify(right);
+}
+
+function stableJsonStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJsonStringify).join(",")}]`;
+  }
+
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableJsonStringify(value[key])}`).join(",")}}`;
 }
 
 function normalizeYanmComponentStatePatch(payload) {
@@ -3796,16 +3722,40 @@ async function patchYanmComponentStateForUser(env, userId, componentStatePatch, 
     ...(yanm[stateKey] && typeof yanm[stateKey] === "object" && !Array.isArray(yanm[stateKey]) ? yanm[stateKey] : {})
   };
 
+  const changedKeys = [];
   for (const [key, value] of Object.entries(componentStatePatch)) {
+    const hasExisting = Object.prototype.hasOwnProperty.call(state, key);
+    const existingValue = hasExisting ? String(state[key] ?? "") : null;
+    if (!hasExisting || existingValue !== value) {
+      changedKeys.push(key);
+    }
+
     state[key] = value;
+  }
+
+  if (changedKeys.length === 0) {
+    return {
+      source: current.source || "cloud-config",
+      updatedAtUtc: current.updatedAtUtc || null,
+      changed: false,
+      changedKeys: [],
+      bytes: current.bytes || textEncoder.encode(JSON.stringify(current.yanm)).length
+    };
   }
 
   yanm[stateKey] = state;
 
-  return writeYanmStateForUser(env, userId, {
-    updatedAtUtc: updatedAtUtc || isoNow(),
+  const effectiveUpdatedAtUtc = updatedAtUtc || isoNow();
+  const result = await writeYanmStateForUser(env, userId, {
+    updatedAtUtc: effectiveUpdatedAtUtc,
     yanm
   });
+  return {
+    ...result,
+    updatedAtUtc: effectiveUpdatedAtUtc,
+    changed: true,
+    changedKeys
+  };
 }
 
 async function ensureSystemConfigExtension(env, extensionId, metadata) {
