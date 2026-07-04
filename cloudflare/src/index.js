@@ -519,144 +519,51 @@ async function handleRequest(request, env) {
   }
 
   if (url.pathname === "/v1/app/update/latest" && request.method === "GET") {
-    const channel = normalizeReleaseChannel(url.searchParams.get("channel"));
-    const row = await env.DB.prepare(
-      `select
-        channel,
-        version,
-        title,
-        notes,
-        download_url,
-        file_name,
-        download_code,
-        provider,
-        sha256,
-        published_at,
-        updated_at,
-        updated_by_user_id,
-        updated_by_username
-      from app_release_channels
-      where channel = ?`
-    )
-      .bind(channel)
-      .first();
+    try {
+      const ghResponse = await fetch("https://api.github.com/repos/luoluoluo22/yanzi/releases/latest", {
+        headers: {
+          "User-Agent": "Yanzi-Updater-Worker"
+        }
+      });
+      if (!ghResponse.ok) {
+        throw new Error(`GitHub API returned status ${ghResponse.status}`);
+      }
+      const data = await ghResponse.json();
 
-    return json(serializeAppRelease(row, channel));
-  }
+      // 寻找 .exe 结尾的 asset 作为 Windows 的安装包
+      const winAsset = (data.assets || []).find(asset => asset.name.endsWith(".exe"));
+      const version = data.tag_name ? data.tag_name.replace(/^v/, "") : "";
 
-  if (url.pathname === "/v1/admin/app/update/latest") {
-    const auth = await requireAdmin(request, env);
-    const channel = normalizeReleaseChannel(url.searchParams.get("channel"));
+      const payload = {
+        channel: "stable",
+        version: version,
+        title: data.name || `燕子启动器 v${version}`,
+        notes: data.body || "",
+        download_url: winAsset ? winAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/${data.tag_name}/Yanzi-win-Setup-${version}.exe`,
+        file_name: winAsset ? winAsset.name : `Yanzi-win-Setup-${version}.exe`,
+        download_code: "",
+        provider: "github",
+        sha256: "",
+        published_at: data.published_at || new Date().toISOString()
+      };
 
-    if (request.method === "GET") {
-      const row = await env.DB.prepare(
-        `select
-          channel,
-          version,
-          title,
-          notes,
-          download_url,
-          file_name,
-          download_code,
-          provider,
-          sha256,
-          published_at,
-          updated_at,
-          updated_by_user_id,
-          updated_by_username
-        from app_release_channels
-        where channel = ?`
-      )
-        .bind(channel)
-        .first();
-
+      return json(payload);
+    } catch (err) {
+      console.error("Fetch GitHub releases failed:", err);
+      // 容错：如果 GitHub 接口报错，返回一个兜底的 0.2.15 配置
       return json({
-        ...serializeAppRelease(row, channel),
-        is_admin: true
+        channel: "stable",
+        version: "0.2.15",
+        title: "燕子启动器 v0.2.15",
+        notes: "从 GitHub 抓取最新版失败，已启用本地缓存兜底",
+        download_url: "https://github.com/luoluoluo22/yanzi/releases/download/v0.2.15/Yanzi-win-Setup-0.2.15.exe",
+        file_name: "Yanzi-win-Setup-0.2.15.exe",
+        download_code: "",
+        provider: "github",
+        sha256: "",
+        published_at: "2026-07-04T02:00:00Z"
       });
     }
-
-    if (request.method !== "PUT") {
-      return json({ error: "method_not_allowed", message: "Method not allowed" }, 405);
-    }
-
-    const payload = await readJson(request);
-    const release = normalizeAppReleasePayload(payload, channel);
-    const now = isoNow();
-
-    await env.DB.prepare(
-      `insert into app_release_channels (
-        channel,
-        version,
-        title,
-        notes,
-        download_url,
-        file_name,
-        download_code,
-        provider,
-        sha256,
-        published_at,
-        updated_at,
-        updated_by_user_id,
-        updated_by_username
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      on conflict(channel) do update set
-        version = excluded.version,
-        title = excluded.title,
-        notes = excluded.notes,
-        download_url = excluded.download_url,
-        file_name = excluded.file_name,
-        download_code = excluded.download_code,
-        provider = excluded.provider,
-        sha256 = excluded.sha256,
-        published_at = excluded.published_at,
-        updated_at = excluded.updated_at,
-        updated_by_user_id = excluded.updated_by_user_id,
-        updated_by_username = excluded.updated_by_username`
-    )
-      .bind(
-        channel,
-        release.version,
-        release.title,
-        release.notes,
-        release.download_url,
-        release.file_name,
-        release.download_code,
-        release.provider,
-        release.sha256,
-        release.published_at,
-        now,
-        auth.userId,
-        auth.username
-      )
-      .run();
-
-    const saved = await env.DB.prepare(
-      `select
-        channel,
-        version,
-        title,
-        notes,
-        download_url,
-        file_name,
-        download_code,
-        provider,
-        sha256,
-        published_at,
-        updated_at,
-        updated_by_user_id,
-        updated_by_username
-      from app_release_channels
-      where channel = ?`
-    )
-      .bind(channel)
-      .first();
-
-    return json({
-      ok: true,
-      ...serializeAppRelease(saved, channel),
-      is_admin: true
-    });
   }
 
   if (url.pathname === "/v1/extensions" && request.method === "GET") {
