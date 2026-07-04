@@ -547,11 +547,11 @@ async function handleRequest(request, env) {
         published_at: data.published_at || new Date().toISOString()
       };
 
-      return json(payload);
+      return withCors(json(payload));
     } catch (err) {
       console.error("Fetch GitHub releases failed:", err);
       // 容错：如果 GitHub 接口报错，返回一个兜底的 0.2.15 配置
-      return json({
+      return withCors(json({
         channel: "stable",
         version: "0.2.15",
         title: "燕子启动器 v0.2.15",
@@ -562,7 +562,7 @@ async function handleRequest(request, env) {
         provider: "github",
         sha256: "",
         published_at: "2026-07-04T02:00:00Z"
-      });
+      }));
     }
   }
 
