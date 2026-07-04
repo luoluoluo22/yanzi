@@ -1,4 +1,4 @@
-name = "yanzi-sync"
+name = "openquickhost-sync"
 main = "src/index.js"
 compatibility_date = "2026-04-23"
 [[d1_databases]]
