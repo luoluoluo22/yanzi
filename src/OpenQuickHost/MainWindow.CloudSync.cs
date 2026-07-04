@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.NetworkInformation;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Media.Imaging;
@@ -2343,6 +2345,7 @@ public partial class MainWindow
             return;
         }
 
+        HostAssets.AppendLog($"Cloud Yanm state sync queued: reason={reason}, caller={GetSyncCallerHint()}");
         _ = PushYanmStateToCloudSafeAsync(reason);
     }
 
@@ -2743,7 +2746,48 @@ public partial class MainWindow
         var settings = AppSettingsStore.Load();
         settings.Yanm ??= new YanmSettings();
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        await _cloudSyncClient.UpsertYanmStateAsync(settings.Yanm, GetYanmStateUpdatedAtUtc(settings));
+        var localUpdatedAtUtc = GetYanmStateUpdatedAtUtc(settings);
+        var localSummary = DescribeYanmForSync(settings.Yanm);
+        var remote = await _cloudSyncClient.GetYanmStateAsync();
+        if (remote?.Yanm != null)
+        {
+            var equivalent = AreJsonPayloadsEqual(settings.Yanm, remote.Yanm);
+            HostAssets.AppendLog(
+                $"Yanm cloud push preflight: reason={reason}, equivalent={equivalent}, localUpdated={localUpdatedAtUtc}, remoteUpdated={remote.UpdatedAtUtc}, local={localSummary}, remote={DescribeYanmForSync(remote.Yanm)}");
+            if (equivalent)
+            {
+                HostAssets.AppendLog($"Yanm cloud push skipped: unchanged content, reason={reason}");
+                return;
+            }
+
+            if (!HasYanmComponentState(settings.Yanm) && HasYanmComponentState(remote.Yanm))
+            {
+                settings.Yanm = remote.Yanm;
+                settings.YanmStateUpdatedAtUtc = TryParseCloudTimestamp(remote.UpdatedAtUtc)?.ToString("O") ?? DateTime.UtcNow.ToString("O");
+                AppSettingsStore.Save(settings);
+                _appSettings = AppSettingsStore.Load();
+                _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
+                if (!_listenerServicesPaused)
+                {
+                    InputHookService.ReloadSettings();
+                    KeyboardDoubleTapService.ApplyYanmSettings(_appSettings.Yanm);
+                    RefreshYanmHotkeyRegistration();
+                    RefreshRadialHotkeyRegistration();
+                }
+
+                HostAssets.AppendLog(
+                    $"Yanm cloud push converted to pull to protect remote component data: reason={reason}, local={localSummary}, remote={DescribeYanmForSync(remote.Yanm)}");
+                return;
+            }
+        }
+        else
+        {
+            HostAssets.AppendLog($"Yanm cloud push preflight: reason={reason}, remote=missing, localUpdated={localUpdatedAtUtc}, local={localSummary}");
+        }
+
+        var result = await _cloudSyncClient.UpsertYanmStateAsync(settings.Yanm, localUpdatedAtUtc);
+        HostAssets.AppendLog(
+            $"Yanm cloud push completed: reason={reason}, changed={result?.Changed?.ToString() ?? "unknown"}, resultUpdated={result?.UpdatedAtUtc}, resultBytes={result?.Bytes ?? 0}, local={localSummary}");
     }
 
     public async Task<(bool ok, string message, bool pulled, int payloadBytes)> PullYanmStateFromCloudNowAsync()
@@ -2911,7 +2955,7 @@ public partial class MainWindow
                HasYanmLayoutUserContent(snapshot.Yanm) ||
                !string.Equals(snapshot.LauncherHotkey, "Alt+Space", StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(snapshot.QuickPanelTrigger, "MiddleButtonLongPress", StringComparison.OrdinalIgnoreCase) ||
-               !string.Equals(MouseGestureTriggerModes.Normalize(snapshot.MouseGestureTriggerMode), MouseGestureTriggerModes.RightDrag, StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(MouseGestureTriggerModes.Normalize(snapshot.MouseGestureTriggerMode), MouseGestureTriggerModes.None, StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(MouseTriggerModes.Normalize(snapshot.WindowSnapAssistMouseTriggerMode), MouseTriggerModes.None, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -2940,6 +2984,11 @@ public partial class MainWindow
     {
         return settings?.ComponentState?.Count > 0 ||
                settings?.HasInitializedDefaultComponents == false && settings?.Components?.Count > 0;
+    }
+
+    private static bool HasYanmComponentState(YanmSettings? settings)
+    {
+        return settings?.ComponentState?.Count > 0;
     }
 
     private static bool MergeMissingAiSettings(AppSettings target, AppSettings incoming, CloudQuickPanelConfigSnapshot snapshot)
@@ -3001,8 +3050,137 @@ public partial class MainWindow
 
     private static bool AreJsonPayloadsEqual<T>(T left, T right)
     {
+        if (ReferenceEquals(left, right)) return true;
+        if (left == null || right == null) return false;
+
+        if (left is YanmSettings leftYanm && right is YanmSettings rightYanm)
+        {
+            return AreYanmSettingsEqual(leftYanm, rightYanm);
+        }
+
         return string.Equals(JsonSerializer.Serialize(left), JsonSerializer.Serialize(right), StringComparison.Ordinal);
     }
+
+    private static bool AreYanmSettingsEqual(YanmSettings left, YanmSettings right)
+    {
+        if (left.Enabled != right.Enabled) return false;
+        if (left.ActivationKey != right.ActivationKey) return false;
+        if (left.CustomShortcut != right.CustomShortcut) return false;
+        if (left.TriggerWinHold != right.TriggerWinHold) return false;
+        if (left.TriggerWinDoubleTap != right.TriggerWinDoubleTap) return false;
+        if (left.TriggerRightButtonDrag != right.TriggerRightButtonDrag) return false;
+        if (left.TriggerMiddleButtonDrag != right.TriggerMiddleButtonDrag) return false;
+        if (left.TriggerRightButtonLongPress != right.TriggerRightButtonLongPress) return false;
+        if (left.TriggerMiddleButtonLongPress != right.TriggerMiddleButtonLongPress) return false;
+        if (left.TriggerMiddleButtonDown != right.TriggerMiddleButtonDown) return false;
+        if (left.TriggerX1ButtonDown != right.TriggerX1ButtonDown) return false;
+        if (left.TriggerX2ButtonDown != right.TriggerX2ButtonDown) return false;
+        if (left.TriggerHorizontalWheel != right.TriggerHorizontalWheel) return false;
+        if (left.TriggerCtrlLeftClick != right.TriggerCtrlLeftClick) return false;
+        if (left.TriggerCtrlRightClick != right.TriggerCtrlRightClick) return false;
+        if (left.TriggerCtrlMiddleClick != right.TriggerCtrlMiddleClick) return false;
+        if (left.MouseTriggerMode != right.MouseTriggerMode) return false;
+        if (left.DragThresholdPixels != right.DragThresholdPixels) return false;
+        if (left.HoldDelayMilliseconds != right.HoldDelayMilliseconds) return false;
+        if (left.GridSizePixels != right.GridSizePixels) return false;
+        if (Math.Abs(left.OverlayOpacity - right.OverlayOpacity) > 0.001) return false;
+        if (left.HasInitializedDefaultComponents != right.HasInitializedDefaultComponents) return false;
+        if (left.DefaultComponentVersion != right.DefaultComponentVersion) return false;
+
+        // Lists
+        if (!AreYanmListsEqual(left.WhitelistedProcesses, right.WhitelistedProcesses)) return false;
+        if (!AreYanmListsEqual(left.BlacklistedProcesses, right.BlacklistedProcesses)) return false;
+
+        // Components
+        if (!AreYanmComponentsListsEqual(left.Components, right.Components)) return false;
+
+        // ComponentState dictionary
+        if (!AreYanmDictionariesEqual(left.ComponentState, right.ComponentState)) return false;
+
+        return true;
+    }
+
+    private static bool AreYanmListsEqual(List<string>? left, List<string>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        for (int i = 0; i < left.Count; i++)
+        {
+            if (left[i] != right[i]) return false;
+        }
+        return true;
+    }
+
+    private static bool AreYanmComponentsListsEqual(List<YanmComponentSettings>? left, List<YanmComponentSettings>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        for (int i = 0; i < left.Count; i++)
+        {
+            var leftJson = JsonSerializer.Serialize(left[i]);
+            var rightJson = JsonSerializer.Serialize(right[i]);
+            if (leftJson != rightJson) return false;
+        }
+        return true;
+    }
+
+    private static bool AreYanmDictionariesEqual(Dictionary<string, string>? left, Dictionary<string, string>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        foreach (var kvp in left)
+        {
+            if (!right.TryGetValue(kvp.Key, out var val) || val != kvp.Value)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static string DescribeYanmForSync(YanmSettings? yanm)
+    {
+        if (yanm == null)
+        {
+            return "null";
+        }
+
+        var json = JsonSerializer.Serialize(yanm);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).Substring(0, 12).ToLowerInvariant();
+        return $"hash={hash}, enabled={yanm.Enabled}, activation={yanm.ActivationKey}, components={yanm.Components?.Count ?? 0}, stateKeys={yanm.ComponentState?.Count ?? 0}, defaultVersion={yanm.DefaultComponentVersion}";
+    }
+
+    private static string GetSyncCallerHint()
+    {
+        try
+        {
+            var frames = new StackTrace(skipFrames: 2, fNeedFileInfo: false).GetFrames();
+            if (frames == null)
+            {
+                return "unknown";
+            }
+
+            return string.Join(" <- ", frames
+                .Take(5)
+                .Select(static frame =>
+                {
+                    var method = frame.GetMethod();
+                    var typeName = method?.DeclaringType?.Name ?? "?";
+                    return $"{typeName}.{method?.Name ?? "?"}";
+                }));
+        }
+        catch
+        {
+            return "unknown";
+        }
+    }
+
 
     private static bool AreStringListsEqual(IReadOnlyList<string> left, IReadOnlyList<string> right)
     {
@@ -3547,6 +3725,126 @@ public partial class MainWindow
 
         using var reader = new StringReader(value.Trim());
         return reader.ReadLine() ?? value.Trim();
+    }
+
+    public async Task<string> GetPersonalSyncCommitDiffAsync(string sha, CancellationToken cancellationToken = default)
+    {
+        var settings = AppSettingsStore.Load();
+        var sync = settings.PersonalSync ?? new PersonalSyncSettings();
+        var secrets = PersonalSyncSecretStore.Load();
+
+        if (string.Equals(sync.Provider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetGitHubCommitDiffAsync(sync, secrets, sha, cancellationToken);
+        }
+        else if (string.Equals(sync.Provider, PersonalSyncProviders.Gitee, StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetGiteeCommitDiffAsync(sync, secrets, sha, cancellationToken);
+        }
+
+        return "当前平台不支持查看具体差异。";
+    }
+
+    private async Task<string> GetGiteeCommitDiffAsync(PersonalSyncSettings sync, PersonalSyncSecretBag secrets, string sha, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(secrets.GiteeToken)) return "Token 缺失。";
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yanzi", "0.1"));
+
+        var owner = sync.Gitee.Username?.Trim();
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            using var userResponse = await httpClient.GetAsync($"https://gitee.com/api/v5/user?access_token={Uri.EscapeDataString(secrets.GiteeToken.Trim())}", cancellationToken);
+            if (userResponse.IsSuccessStatusCode)
+            {
+                using var userDocument = JsonDocument.Parse(await userResponse.Content.ReadAsStringAsync(cancellationToken));
+                owner = userDocument.RootElement.TryGetProperty("login", out var loginElement) ? loginElement.GetString() : null;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(owner)) return "无法获取账号名。";
+        var repo = string.IsNullOrWhiteSpace(sync.Gitee.Repo) ? "yanzi-sync" : sync.Gitee.Repo.Trim();
+        
+        var url = $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits/{Uri.EscapeDataString(sha)}?access_token={Uri.EscapeDataString(secrets.GiteeToken.Trim())}";
+        
+        using var response = await httpClient.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return $"获取提交详情失败：HTTP {(int)response.StatusCode}";
+        }
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return FormatGitCommitDiff(document);
+    }
+
+    private async Task<string> GetGitHubCommitDiffAsync(PersonalSyncSettings sync, PersonalSyncSecretBag secrets, string sha, CancellationToken cancellationToken)
+    {
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yanzi", "0.1"));
+        if (!string.IsNullOrWhiteSpace(secrets.GitHubToken))
+        {
+            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secrets.GitHubToken.Trim());
+        }
+
+        var owner = sync.GitHub.Username?.Trim();
+        if (string.IsNullOrWhiteSpace(owner) && !string.IsNullOrWhiteSpace(secrets.GitHubToken))
+        {
+            using var userResponse = await httpClient.GetAsync("https://api.github.com/user", cancellationToken);
+            if (userResponse.IsSuccessStatusCode)
+            {
+                using var userDocument = JsonDocument.Parse(await userResponse.Content.ReadAsStringAsync(cancellationToken));
+                owner = userDocument.RootElement.TryGetProperty("login", out var loginElement) ? loginElement.GetString() : null;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(owner)) return "无法获取账号名。";
+        var repo = string.IsNullOrWhiteSpace(sync.GitHub.Repo) ? "yanzi-sync" : sync.GitHub.Repo.Trim();
+        
+        var url = $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits/{Uri.EscapeDataString(sha)}";
+        
+        using var response = await httpClient.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return $"获取提交详情失败：HTTP {(int)response.StatusCode}";
+        }
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return FormatGitCommitDiff(document);
+    }
+
+    private static string FormatGitCommitDiff(JsonDocument document)
+    {
+        var sb = new System.Text.StringBuilder();
+        if (document.RootElement.TryGetProperty("files", out var filesElement) && filesElement.ValueKind == JsonValueKind.Array)
+        {
+            var count = 0;
+            foreach (var file in filesElement.EnumerateArray())
+            {
+                var filename = file.TryGetProperty("filename", out var fName) ? fName.GetString() : "unknown";
+                var status = file.TryGetProperty("status", out var fStatus) ? fStatus.GetString() : "modified";
+                
+                sb.AppendLine($"--- {filename} ({status}) ---");
+                if (file.TryGetProperty("patch", out var patchElement) && patchElement.ValueKind == JsonValueKind.String)
+                {
+                    sb.AppendLine(patchElement.GetString());
+                }
+                else
+                {
+                    sb.AppendLine("[二进制文件或没有具体的差异文本]");
+                }
+                sb.AppendLine();
+                count++;
+            }
+            if (count == 0)
+            {
+                sb.AppendLine("未检测到文件变动。");
+            }
+        }
+        else
+        {
+            sb.AppendLine("提交中无文件修改记录。");
+        }
+        return sb.ToString();
     }
 
     public async Task<IReadOnlyList<PersonalSyncGitCommitInfo>> GetPersonalSyncCommitsAsync(CancellationToken cancellationToken = default)

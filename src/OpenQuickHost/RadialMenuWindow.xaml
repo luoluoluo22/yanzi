@@ -651,7 +651,22 @@
                        TextAlignment="Center"
                        Foreground="{DynamicResource BrushRadialText}"
                        FontSize="{DynamicResource FontSizeLarge}"
-                       FontWeight="SemiBold"/>
+                       FontWeight="SemiBold"
+                       Visibility="{Binding ChildCenterContentVisibility}"/>
+            <ContentControl Canvas.Left="{Binding ChildRingCenterEllipseX}"
+                             Canvas.Top="{Binding ChildRingCenterEllipseY}"
+                             Width="52"
+                             Height="52"
+                             Cursor="Hand"
+                             Visibility="{Binding ChildCenterPinVisibility}">
+                <Path Data="{local:IconGeometry pin}"
+                       Fill="{Binding ChildPinBrush}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Width="18"
+                       Height="18"
+                       Stretch="Uniform"/>
+            </ContentControl>
             <ItemsControl ItemsSource="{Binding ChildItems}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -808,7 +823,22 @@
                        TextAlignment="Center"
                        Foreground="{DynamicResource BrushRadialText}"
                        FontSize="{DynamicResource FontSizeNormalPlus}"
-                       FontWeight="SemiBold"/>
+                       FontWeight="SemiBold"
+                       Visibility="{Binding GrandChildCenterContentVisibility}"/>
+            <ContentControl Canvas.Left="{Binding GrandChildRingCenterEllipseX}"
+                             Canvas.Top="{Binding GrandChildRingCenterEllipseY}"
+                             Width="44"
+                             Height="44"
+                             Cursor="Hand"
+                             Visibility="{Binding GrandChildCenterPinVisibility}">
+                <Path Data="{local:IconGeometry pin}"
+                       Fill="{Binding GrandChildPinBrush}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Width="16"
+                       Height="16"
+                       Stretch="Uniform"/>
+            </ContentControl>
             <ItemsControl ItemsSource="{Binding GrandChildItems}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>

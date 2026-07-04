@@ -102,17 +102,36 @@ internal static class LauncherConfigObjectStore
     public static IReadOnlyList<LauncherConfigObjectWrite> PrepareWrites(CloudQuickPanelConfigSnapshot snapshot, DateTime updatedAtUtc)
     {
         return Split(snapshot, updatedAtUtc)
-            .Select(envelope =>
-            {
-                var bytes = Serialize(envelope);
-                return new LauncherConfigObjectWrite(
-                    envelope.ObjectId,
-                    GetPath(envelope.ObjectId),
-                    envelope,
-                    bytes,
-                    ComputeSha256(bytes));
-            })
+            .Select(CreateWrite)
             .ToList();
+    }
+
+    public static LauncherConfigObjectWrite CreateWrite(LauncherConfigObjectEnvelope envelope)
+    {
+        var bytes = Serialize(envelope);
+        return new LauncherConfigObjectWrite(
+            envelope.ObjectId,
+            GetPath(envelope.ObjectId),
+            envelope,
+            bytes,
+            ComputeSha256(bytes));
+    }
+
+    public static bool HasEquivalentPayload(LauncherConfigObjectEnvelope? left, LauncherConfigObjectEnvelope? right)
+    {
+        if (left == null || right == null)
+        {
+            return false;
+        }
+
+        if (!left.ObjectId.Equals(right.ObjectId, StringComparison.OrdinalIgnoreCase) ||
+            left.Deleted != right.Deleted)
+        {
+            return false;
+        }
+
+        return JsonSerializer.Serialize(left.Payload, JsonOptions)
+            .Equals(JsonSerializer.Serialize(right.Payload, JsonOptions), StringComparison.Ordinal);
     }
 
     public static LauncherConfigManifest CreateManifest(IEnumerable<LauncherConfigObjectWrite> writes, DateTime updatedAtUtc)

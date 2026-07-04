@@ -161,6 +161,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int _nextExtensionHotkeyId = 0x5400;
     private QuickPanelWindow? _quickPanel;
     private RadialMenuWindow? _radialMenu;
+    public RadialMenuWindow? RadialMenuInstance => _radialMenu;
     private YanmOverlayWindow? _yanmOverlay;
     private MobileMessageToastWindow? _mobileMessageToastWindow;
     private readonly WindowBoundExtensionsService _windowBoundExtensionsService;
@@ -1249,7 +1250,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         WindowBindingDropOverlayWindow? bindingOverlay = null;
         if (runnable.Source is CommandSource.LocalExtension or CommandSource.Cloud)
         {
-            bindingOverlay = new WindowBindingDropOverlayWindow(runnable, _appSettings.WindowBindings?.MarginPixels ?? 14);
+            bindingOverlay = new WindowBindingDropOverlayWindow(runnable, this, _appSettings.WindowBindings?.MarginPixels ?? 14);
             bindingOverlay.BindingDropped += (hwnd, corner, offsetX, offsetY) =>
             {
                 _ = BindExtensionToWindowHandleAsync(runnable, hwnd, corner, restorePanel: false, offsetX, offsetY);
@@ -3267,7 +3268,7 @@ public sealed class CloudQuickPanelConfigSnapshot
     public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
 
     [JsonPropertyName("mouseGestureTriggerMode")]
-    public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.RightDrag;
+    public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.None;
 
     [JsonPropertyName("windowSnapAssistMouseTriggerMode")]
     public string WindowSnapAssistMouseTriggerMode { get; set; } = MouseTriggerModes.None;
@@ -3446,7 +3447,7 @@ public sealed class CloudQuickPanelConfigSnapshot
                HasAiConfig(snapshot) ||
                !string.Equals(snapshot.LauncherHotkey, "Alt+Space", StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(snapshot.QuickPanelTrigger, "MiddleButtonLongPress", StringComparison.OrdinalIgnoreCase) ||
-               !string.Equals(MouseGestureTriggerModes.Normalize(snapshot.MouseGestureTriggerMode), MouseGestureTriggerModes.RightDrag, StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(MouseGestureTriggerModes.Normalize(snapshot.MouseGestureTriggerMode), MouseGestureTriggerModes.None, StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(MouseTriggerModes.Normalize(snapshot.WindowSnapAssistMouseTriggerMode), MouseTriggerModes.None, StringComparison.OrdinalIgnoreCase);
     }
 

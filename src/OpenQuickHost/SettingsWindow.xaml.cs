@@ -9429,6 +9429,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void TogglePersonalSyncCommitDiff_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is PersonalSyncCommitItem item)
+        {
+            if (item.IsExpanded)
+            {
+                item.IsExpanded = false;
+                return;
+            }
+
+            item.IsExpanded = true;
+            if (string.IsNullOrWhiteSpace(item.DiffText))
+            {
+                item.DiffText = "正在从云端拉取具体变更差异 (Diff)...";
+                try
+                {
+                    var diff = await _mainWindow.GetPersonalSyncCommitDiffAsync(item.Sha);
+                    item.DiffText = string.IsNullOrWhiteSpace(diff) ? "未检测到文件变动或无法读取具体变更差异。" : diff;
+                }
+                catch (Exception ex)
+                {
+                    item.DiffText = $"拉取差异失败：{ex.Message}";
+                }
+            }
+        }
+    }
+
     private async void VisitPersonalSyncRepositoryButton_Click(object sender, RoutedEventArgs e)
     {
         // 弹出等待提示或者直接拉取，由于是通过 API 获取用户名拼 URL，我们传递 _personalSyncSettings 和 _personalSyncSecrets
@@ -10921,30 +10948,138 @@ public sealed class SettingsRecycleBinItem : INotifyPropertyChanged
     }
 }
 
-public sealed class PersonalSyncCommitItem
+public sealed class PersonalSyncCommitItem : INotifyPropertyChanged
 {
+    private bool _isExpanded;
+    private string? _diffText;
+
     public PersonalSyncCommitItem(string sha, string message, string author, DateTimeOffset committedAtUtc, string url)
     {
         Sha = sha;
         Message = string.IsNullOrWhiteSpace(message) ? "(无提交说明)" : message;
+        FriendlyMessage = GetFriendlyCommitMessage(Message);
         Author = string.IsNullOrWhiteSpace(author) ? "未知作者" : author;
         CommittedAtUtc = committedAtUtc;
         Url = url;
     }
 
     public string Sha { get; }
-
     public string ShortSha => Sha.Length <= 8 ? Sha : Sha[..8];
-
     public string Message { get; }
-
+    public string FriendlyMessage { get; }
     public string Author { get; }
-
     public DateTimeOffset CommittedAtUtc { get; }
-
     public string LocalTimeLabel => CommittedAtUtc.ToLocalTime().ToString("yyyy/M/d HH:mm", CultureInfo.CurrentCulture);
-
     public string Url { get; }
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (value != _isExpanded)
+            {
+                _isExpanded = value;
+                OnPropertyChanged(nameof(IsExpanded));
+                OnPropertyChanged(nameof(DiffVisibility));
+                OnPropertyChanged(nameof(DiffBtnText));
+            }
+        }
+    }
+
+    public string DiffBtnText => IsExpanded ? "收起差异" : "查看差异";
+
+    public Visibility DiffVisibility => IsExpanded ? Visibility.Visible : Visibility.Collapsed;
+
+    public string? DiffText
+    {
+        get => _diffText;
+        set
+        {
+            if (value != _diffText)
+            {
+                _diffText = value;
+                OnPropertyChanged(nameof(DiffText));
+            }
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged(string propertyName)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    private static string GetFriendlyCommitMessage(string rawMessage)
+    {
+        if (string.IsNullOrWhiteSpace(rawMessage))
+        {
+            return "(无提交说明)";
+        }
+
+        var msg = rawMessage.Trim();
+
+        if (msg.Equals("Update yanm-state.json from Web", StringComparison.OrdinalIgnoreCase))
+        {
+            return "同步状态：更新燕幕组件状态 (云漫游)";
+        }
+
+        if (msg.StartsWith("上传数据：更新 ", StringComparison.OrdinalIgnoreCase))
+        {
+            var path = msg.Substring("上传数据：更新 ".Length).Trim();
+            var detail = GetPathFriendlyName(path);
+            return $"上传数据：更新 {detail}";
+        }
+        
+        if (msg.StartsWith("上传数据：删除 ", StringComparison.OrdinalIgnoreCase))
+        {
+            var path = msg.Substring("上传数据：删除 ".Length).Trim();
+            var detail = GetPathFriendlyName(path);
+            return $"上传数据：删除 {detail}";
+        }
+
+        return msg;
+    }
+
+    private static string GetPathFriendlyName(string path)
+    {
+        var normalized = path.Replace('\\', '/').Trim('/');
+        if (normalized.EndsWith("state/launcher-config.json", StringComparison.OrdinalIgnoreCase))
+            return "系统主设置与快捷菜单";
+        if (normalized.EndsWith("state/yanm-state.json", StringComparison.OrdinalIgnoreCase))
+            return "燕幕组件状态";
+        if (normalized.EndsWith("state/config-manifest.json", StringComparison.OrdinalIgnoreCase))
+            return "配置清单 (config-manifest.json)";
+        if (normalized.Contains("state/config-changes/", StringComparison.OrdinalIgnoreCase))
+            return "配置历史变更记录 (config-changes)";
+        if (normalized.EndsWith("settings-general.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】通用系统设置";
+        if (normalized.EndsWith("settings-ai.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】AI 助手模型与密钥设置";
+        if (normalized.EndsWith("settings-hotkeys.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】系统主快捷键";
+        if (normalized.EndsWith("settings-mouse-triggers.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】鼠标动作与手势触发规则";
+        if (normalized.EndsWith("quick-panel-groups.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】快捷面板菜单分组";
+        if (normalized.EndsWith("quick-panel-favorites.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】常用扩展收藏与禁用项";
+        if (normalized.EndsWith("radial-menu-pages.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】轮盘菜单页面布局";
+        if (normalized.EndsWith("yanm-layout.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】燕幕布局与样式";
+        if (normalized.EndsWith("yanyu-rules.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】窗口别名 (燕语) 规则";
+        if (normalized.EndsWith("window-controls.json", StringComparison.OrdinalIgnoreCase))
+            return "【设置】窗口绑定、吸附与切换配置";
+        if (normalized.Contains("packages/") && normalized.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            return "个人备份扩展包";
+        if (normalized.Contains("appdata/"))
+            return "扩展专属应用数据备份";
+            
+        return path;
+    }
 }
 
 public sealed class EnvironmentVariableEditorItem : INotifyPropertyChanged

@@ -291,6 +291,9 @@ public sealed class YanmStateResponse
     [JsonPropertyName("yanm")]
     public YanmSettings? Yanm { get; init; }
 
+    [JsonPropertyName("changed")]
+    public bool? Changed { get; init; }
+
     [JsonPropertyName("bytes")]
     public int Bytes { get; init; }
 }

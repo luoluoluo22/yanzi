@@ -175,6 +175,7 @@ public static class AppSettingsStore
 
     public static void Save(AppSettings settings)
     {
+        settings = Normalize(settings);
         var json = JsonSerializer.Serialize(settings, JsonOptions);
         File.WriteAllText(SettingsPath, json);
     }
@@ -535,6 +536,8 @@ public static class AppSettingsStore
             settings.Yanm.DefaultComponentVersion = YanmSettings.CurrentDefaultComponentVersion;
         }
 
+        NormalizeDefaultYanmComponentIds(settings.Yanm);
+
         var yanmComponentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var component in settings.Yanm.Components)
         {
@@ -600,6 +603,54 @@ public static class AppSettingsStore
         settings.SearchScopeConfigs.RemoveAll(c => c.IsPinned && !settings.PinnedSearchScopeCommandIds.Contains(c.Key.Replace("pinned_", ""), StringComparer.OrdinalIgnoreCase));
 
         return settings;
+    }
+
+    private static void NormalizeDefaultYanmComponentIds(YanmSettings yanm)
+    {
+        if (yanm.Components.Count == 0)
+        {
+            return;
+        }
+
+        var usedIds = yanm.Components
+            .Where(static component => !string.IsNullOrWhiteSpace(component.Id))
+            .Select(static component => component.Id.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var component in yanm.Components)
+        {
+            if (!YanmComponentSettings.TryGetDefaultComponentId(component.Title, out var stableId))
+            {
+                continue;
+            }
+
+            var currentId = component.Id?.Trim() ?? string.Empty;
+            if (string.Equals(currentId, stableId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (usedIds.Contains(stableId))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(currentId) &&
+                yanm.ComponentState.TryGetValue(currentId, out var state) &&
+                !yanm.ComponentState.ContainsKey(stableId))
+            {
+                yanm.ComponentState[stableId] = state;
+                yanm.ComponentState.Remove(currentId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(currentId))
+            {
+                usedIds.Remove(currentId);
+            }
+
+            component.Id = stableId;
+            usedIds.Add(stableId);
+        }
     }
 
     private static string NormalizeYanmComponentId(string? id, HashSet<string> usedIds)
@@ -1334,6 +1385,33 @@ public static class MouseGestureTriggerModes
 
 public sealed class YanmComponentSettings
 {
+    public const string ProductivityOverviewId = "cmp_default_productivity_overview";
+    public const string ProductivityTodoId = "cmp_default_productivity_todo";
+    public const string ProductivityBookmarksId = "cmp_default_productivity_bookmarks";
+    public const string ProductivityFocusId = "cmp_default_productivity_focus";
+    public const string ProductivityCalendarId = "cmp_default_productivity_calendar";
+    public const string ProductivityAppLauncherId = "cmp_default_productivity_app_launcher";
+    public const string ProductivityHabitsId = "cmp_default_productivity_habits";
+    public const string ProductivityDesktopId = "cmp_default_productivity_desktop";
+    public const string ProductivityMoodWaterId = "cmp_default_productivity_mood_water";
+    public const string ProductivityNoteId = "cmp_default_productivity_note";
+    public const string ProductivitySystemId = "cmp_default_productivity_system";
+
+    private static readonly Dictionary<string, string> DefaultComponentIdsByTitle = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["效率概览"] = ProductivityOverviewId,
+        ["待办事项"] = ProductivityTodoId,
+        ["快速书签"] = ProductivityBookmarksId,
+        ["番茄专注"] = ProductivityFocusId,
+        ["日历"] = ProductivityCalendarId,
+        ["应用启动台"] = ProductivityAppLauncherId,
+        ["习惯打卡"] = ProductivityHabitsId,
+        ["桌面文件"] = ProductivityDesktopId,
+        ["心情喝水"] = ProductivityMoodWaterId,
+        ["便签"] = ProductivityNoteId,
+        ["系统状态"] = ProductivitySystemId
+    };
+
     public string Id { get; set; } = CreateSystemComponentId();
 
     public string Title { get; set; } = "燕幕组件";
@@ -1356,12 +1434,25 @@ public sealed class YanmComponentSettings
 
     public static string CreateSystemComponentId() => $"cmp_{Guid.NewGuid():N}";
 
+    public static bool TryGetDefaultComponentId(string? title, out string id)
+    {
+        if (DefaultComponentIdsByTitle.TryGetValue((title ?? string.Empty).Trim(), out var value))
+        {
+            id = value;
+            return true;
+        }
+
+        id = string.Empty;
+        return false;
+    }
+
     public static List<YanmComponentSettings> CreateDefaultComponents()
     {
         return
         [
             new YanmComponentSettings
             {
+                Id = ProductivityOverviewId,
                 Title = "效率概览",
                 X = 70,
                 Y = 90,
@@ -1371,6 +1462,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityTodoId,
                 Title = "待办事项",
                 X = 450,
                 Y = 90,
@@ -1380,6 +1472,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityBookmarksId,
                 Title = "快速书签",
                 X = 950,
                 Y = 90,
@@ -1389,6 +1482,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityFocusId,
                 Title = "番茄专注",
                 X = 70,
                 Y = 320,
@@ -1398,6 +1492,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityCalendarId,
                 Title = "日历",
                 X = 450,
                 Y = 360,
@@ -1407,6 +1502,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityAppLauncherId,
                 Title = "应用启动台",
                 X = 695,
                 Y = 360,
@@ -1416,6 +1512,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityHabitsId,
                 Title = "习惯打卡",
                 X = 450,
                 Y = 640,
@@ -1425,6 +1522,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityDesktopId,
                 Title = "桌面文件",
                 X = 950,
                 Y = 360,
@@ -1434,6 +1532,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityMoodWaterId,
                 Title = "心情喝水",
                 X = 70,
                 Y = 530,
@@ -1443,6 +1542,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityNoteId,
                 Title = "便签",
                 X = 70,
                 Y = 710,
@@ -1452,6 +1552,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivitySystemId,
                 Title = "系统状态",
                 X = 950,
                 Y = 690,

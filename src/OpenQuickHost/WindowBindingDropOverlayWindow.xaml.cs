@@ -15,6 +15,7 @@ namespace OpenQuickHost;
 public partial class WindowBindingDropOverlayWindow : Window
 {
     private readonly CommandItem _command;
+    private readonly MainWindow? _mainWindow;
     private readonly int _marginPixels;
     private IntPtr _targetWindow;
     private string _targetCorner = WindowBindingCorners.TopLeft;
@@ -23,10 +24,11 @@ public partial class WindowBindingDropOverlayWindow : Window
     private bool _hasDropTarget;
     private bool _dropCommitted;
 
-    public WindowBindingDropOverlayWindow(CommandItem command, int marginPixels = 14)
+    public WindowBindingDropOverlayWindow(CommandItem command, MainWindow? mainWindow, int marginPixels = 14)
     {
         InitializeComponent();
         _command = command;
+        _mainWindow = mainWindow;
         _marginPixels = Math.Max(0, marginPixels);
         Loaded += (_, _) => EnsureToolWindowStyle();
     }
@@ -65,6 +67,24 @@ public partial class WindowBindingDropOverlayWindow : Window
 
         UpdateDragLabel(cursorPos);
 
+        if (_mainWindow?.RadialMenuInstance != null && _mainWindow.RadialMenuInstance.IsVisible)
+        {
+            var screenPoint = new System.Windows.Point(cursorPos.X, cursorPos.Y);
+            var radialSlot = _mainWindow.RadialMenuInstance.FindSlotAtScreenPoint(screenPoint);
+            if (radialSlot != null)
+            {
+                e.Effects = System.Windows.DragDropEffects.Copy;
+                HideMarker();
+                _mainWindow.RadialMenuInstance.SetDragHoverItem(radialSlot);
+                e.Handled = true;
+                return;
+            }
+            else
+            {
+                _mainWindow.RadialMenuInstance.SetDragHoverItem(null);
+            }
+        }
+
         if (!TryGetCursorTarget(cursorPos, out var hwnd, out var rect, out var corner))
         {
             e.Effects = System.Windows.DragDropEffects.None;
@@ -85,6 +105,23 @@ public partial class WindowBindingDropOverlayWindow : Window
 
     private void Window_Drop(object sender, System.Windows.DragEventArgs e)
     {
+        if (_mainWindow?.RadialMenuInstance != null && _mainWindow.RadialMenuInstance.IsVisible)
+        {
+            if (GetCursorPos(out var cursorPos))
+            {
+                var screenPoint = new System.Windows.Point(cursorPos.X, cursorPos.Y);
+                var radialSlot = _mainWindow.RadialMenuInstance.FindSlotAtScreenPoint(screenPoint);
+                if (radialSlot != null)
+                {
+                    _mainWindow.RadialMenuInstance.SetDragHoverItem(null);
+                    _mainWindow.RadialMenuInstance.SaveRadialSlotCommand(radialSlot.OwnerPageId, radialSlot.Index, _command.ExtensionId, string.Empty);
+                    Close();
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
         if (!_dropCommitted && _hasDropTarget && _targetWindow != IntPtr.Zero && e.Data.GetDataPresent(typeof(CommandItem)))
         {
             _dropCommitted = true;
@@ -97,6 +134,10 @@ public partial class WindowBindingDropOverlayWindow : Window
 
     private void Window_DragLeave(object sender, System.Windows.DragEventArgs e)
     {
+        if (_mainWindow?.RadialMenuInstance != null && _mainWindow.RadialMenuInstance.IsVisible)
+        {
+            _mainWindow.RadialMenuInstance.SetDragHoverItem(null);
+        }
         e.Handled = true;
     }
 

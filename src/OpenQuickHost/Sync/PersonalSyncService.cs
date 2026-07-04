@@ -255,6 +255,8 @@ public sealed class PersonalSyncService
         var remoteUpdatedAtUtc = TryParseUtc(remote.UpdatedAtUtc) ?? DateTime.MinValue;
         var equivalent = AreJsonPayloadsEqual(localYanm, remote.Yanm);
         var payloadBytes = remoteBytes?.Length ?? Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(remote, JsonOptions));
+        HostAssets.AppendLog(
+            $"Personal sync Yanm state compare: equivalent={equivalent}, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc:O}, local={DescribeYanmForSync(localYanm)}, remote={DescribeYanmForSync(remote.Yanm)}");
         if (equivalent)
         {
             if (localUpdatedAtUtc == DateTime.MinValue && remoteUpdatedAtUtc > DateTime.MinValue)
@@ -271,7 +273,17 @@ public sealed class PersonalSyncService
             return new WebDavYanmStateSyncResult(false, true, SyncRootDisplay, remoteUpdatedAtUtc, payloadBytes);
         }
 
+        if (!HasYanmComponentState(localYanm) && HasYanmComponentState(remote.Yanm))
+        {
+            HostAssets.AppendLog(
+                $"Personal sync Yanm state pulled to protect remote component data: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc:O}, local={DescribeYanmForSync(localYanm)}, remote={DescribeYanmForSync(remote.Yanm)}");
+            ApplyYanmStateSnapshot(remote.Yanm, remoteUpdatedAtUtc);
+            return new WebDavYanmStateSyncResult(false, true, SyncRootDisplay, remoteUpdatedAtUtc, payloadBytes);
+        }
+
         var updatedAtUtc = DateTime.UtcNow;
+        HostAssets.AppendLog(
+            $"Personal sync Yanm state upload selected: local wins, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc:O}, local={DescribeYanmForSync(localYanm)}, remote={DescribeYanmForSync(remote.Yanm)}");
         await UploadYanmStateAsync(localYanm, updatedAtUtc, cancellationToken);
         SaveYanmStateUpdatedAtUtc(updatedAtUtc);
         var uploadBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(new WebDavYanmStateSnapshot { UpdatedAtUtc = updatedAtUtc.ToString("O"), Yanm = localYanm }, JsonOptions));
@@ -349,7 +361,11 @@ public sealed class PersonalSyncService
             }
 
             var uploadedAtUtc = DateTime.UtcNow;
-            await UploadLauncherConfigAsync(localConfig, uploadedAtUtc, cancellationToken);
+            if (!await UploadLauncherConfigAsync(localConfig, uploadedAtUtc, cancellationToken))
+            {
+                return (false, false);
+            }
+
             SaveLauncherConfigUpdatedAtUtc(uploadedAtUtc);
             return (true, false);
         }
@@ -379,7 +395,11 @@ public sealed class PersonalSyncService
             if (!hasRemoteObjects && remote?.Config != null)
             {
                 var backfillUpdatedAtUtc = remoteUpdatedAtUtc == DateTime.MinValue ? DateTime.UtcNow : remoteUpdatedAtUtc;
-                await UploadLauncherConfigAsync(localConfig, backfillUpdatedAtUtc, cancellationToken);
+                if (!await UploadLauncherConfigAsync(localConfig, backfillUpdatedAtUtc, cancellationToken))
+                {
+                    return (false, false);
+                }
+
                 SaveLauncherConfigUpdatedAtUtc(backfillUpdatedAtUtc);
                 HostAssets.AppendLog("Personal sync launcher config objects backfilled from legacy snapshot.");
                 return (true, false);
@@ -421,7 +441,11 @@ public sealed class PersonalSyncService
         }
 
         var updatedAtUtc = DateTime.UtcNow;
-        await UploadLauncherConfigAsync(localConfig, updatedAtUtc, cancellationToken);
+        if (!await UploadLauncherConfigAsync(localConfig, updatedAtUtc, cancellationToken))
+        {
+            return (false, false);
+        }
+
         SaveLauncherConfigUpdatedAtUtc(updatedAtUtc);
         return (true, false);
     }
@@ -442,7 +466,7 @@ public sealed class PersonalSyncService
             };
     }
 
-    private async Task UploadLauncherConfigAsync(CloudQuickPanelConfigSnapshot config, DateTime updatedAtUtc, CancellationToken cancellationToken)
+    private async Task<bool> UploadLauncherConfigAsync(CloudQuickPanelConfigSnapshot config, DateTime updatedAtUtc, CancellationToken cancellationToken)
     {
         config.UpdatedAtUtc = updatedAtUtc.ToString("O");
         config.SourceDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
@@ -455,26 +479,50 @@ public sealed class PersonalSyncService
             Config = config
         };
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(snapshot, JsonOptions));
-        HostAssets.AppendLog($"Personal sync write started: path=state/launcher-config.json, bytes={bytes.Length}, contentType=application/json");
         var writes = LauncherConfigObjectStore.PrepareWrites(config, updatedAtUtc);
+        var changedWrites = new List<LauncherConfigObjectWrite>();
+        var effectiveWrites = new List<LauncherConfigObjectWrite>();
         foreach (var write in writes)
+        {
+            var remoteBytes = await _backend.TryReadBytesAsync(write.Path, cancellationToken);
+            var remoteEnvelope = LauncherConfigObjectStore.Deserialize(remoteBytes);
+            if (LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, remoteEnvelope))
+            {
+                effectiveWrites.Add(LauncherConfigObjectStore.CreateWrite(remoteEnvelope!));
+                continue;
+            }
+
+            changedWrites.Add(write);
+            effectiveWrites.Add(write);
+        }
+
+        if (changedWrites.Count == 0)
+        {
+            HostAssets.AppendLog("Personal sync launcher config upload skipped: all object payloads are unchanged.");
+            return false;
+        }
+
+        foreach (var write in changedWrites)
         {
             HostAssets.AppendLog($"Personal sync write started: path={write.Path}, bytes={write.Bytes.Length}, contentType=application/json");
             await _backend.WriteBytesAsync(write.Path, write.Bytes, "application/json", cancellationToken);
         }
 
         var manifestBytes = LauncherConfigObjectStore.SerializeManifest(
-            LauncherConfigObjectStore.CreateManifest(writes, updatedAtUtc));
+            LauncherConfigObjectStore.CreateManifest(effectiveWrites, updatedAtUtc));
         HostAssets.AppendLog($"Personal sync write started: path={LauncherConfigObjectStore.ManifestPath}, bytes={manifestBytes.Length}, contentType=application/json");
         await _backend.WriteBytesAsync(LauncherConfigObjectStore.ManifestPath, manifestBytes, "application/json", cancellationToken);
 
         var changeBytes = LauncherConfigObjectStore.SerializeChangeSet(
-            LauncherConfigObjectStore.CreateChangeSet(writes, updatedAtUtc, "launcher-config-sync"));
+            LauncherConfigObjectStore.CreateChangeSet(changedWrites, updatedAtUtc, "launcher-config-sync"));
         var changePath = LauncherConfigObjectStore.GetChangePath(updatedAtUtc);
         HostAssets.AppendLog($"Personal sync write started: path={changePath}, bytes={changeBytes.Length}, contentType=application/json");
         await _backend.WriteBytesAsync(changePath, changeBytes, "application/json", cancellationToken);
 
+        HostAssets.AppendLog($"Personal sync write started: path=state/launcher-config.json, bytes={bytes.Length}, contentType=application/json");
         await _backend.WriteBytesAsync("state/launcher-config.json", bytes, "application/json", cancellationToken);
+        HostAssets.AppendLog($"Personal sync launcher config uploaded: changedObjects={changedWrites.Count}, totalObjects={effectiveWrites.Count}");
+        return true;
     }
 
     private async Task<WebDavLauncherConfigSnapshot?> TryLoadLauncherConfigObjectsAsync(
@@ -519,16 +567,34 @@ public sealed class PersonalSyncService
         return false;
     }
 
-    private Task UploadYanmStateAsync(YanmSettings yanm, DateTime updatedAtUtc, CancellationToken cancellationToken)
+    private async Task UploadYanmStateAsync(YanmSettings yanm, DateTime updatedAtUtc, CancellationToken cancellationToken)
     {
+        var remoteBytes = await _backend.TryReadBytesAsync("state/yanm-state.json", cancellationToken);
+        if (remoteBytes is { Length: > 0 })
+        {
+            try
+            {
+                var remote = JsonSerializer.Deserialize<WebDavYanmStateSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions);
+                if (remote?.Yanm != null && AreJsonPayloadsEqual(yanm, remote.Yanm))
+                {
+                    HostAssets.AppendLog($"Personal sync Yanm state upload skipped: remote content is unchanged except metadata, local={DescribeYanmForSync(yanm)}, remoteUpdated={remote.UpdatedAtUtc}");
+                    return;
+                }
+            }
+            catch (JsonException ex)
+            {
+                HostAssets.AppendLog($"Personal sync Yanm state unchanged check skipped: remote JSON parse failed: {ex.Message}");
+            }
+        }
+
         var snapshot = new WebDavYanmStateSnapshot
         {
             UpdatedAtUtc = updatedAtUtc.ToString("O"),
             Yanm = CloneByJson(yanm)
         };
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(snapshot, JsonOptions));
-        HostAssets.AppendLog($"Personal sync write started: path=state/yanm-state.json, bytes={bytes.Length}, contentType=application/json");
-        return _backend.WriteBytesAsync("state/yanm-state.json", bytes, "application/json", cancellationToken);
+        HostAssets.AppendLog($"Personal sync write started: path=state/yanm-state.json, bytes={bytes.Length}, contentType=application/json, yanm={DescribeYanmForSync(yanm)}");
+        await _backend.WriteBytesAsync("state/yanm-state.json", bytes, "application/json", cancellationToken);
     }
 
     private static void ApplyLauncherConfigSnapshot(CloudQuickPanelConfigSnapshot snapshot, DateTime updatedAtUtc)
@@ -638,8 +704,112 @@ public sealed class PersonalSyncService
 
     private static bool AreJsonPayloadsEqual<T>(T left, T right)
     {
+        if (ReferenceEquals(left, right)) return true;
+        if (left == null || right == null) return false;
+
+        if (left is YanmSettings leftYanm && right is YanmSettings rightYanm)
+        {
+            return AreYanmSettingsEqual(leftYanm, rightYanm);
+        }
+
         return string.Equals(JsonSerializer.Serialize(left, JsonOptions), JsonSerializer.Serialize(right, JsonOptions), StringComparison.Ordinal);
     }
+
+    private static bool AreYanmSettingsEqual(YanmSettings left, YanmSettings right)
+    {
+        if (left.Enabled != right.Enabled) return false;
+        if (left.ActivationKey != right.ActivationKey) return false;
+        if (left.CustomShortcut != right.CustomShortcut) return false;
+        if (left.TriggerWinHold != right.TriggerWinHold) return false;
+        if (left.TriggerWinDoubleTap != right.TriggerWinDoubleTap) return false;
+        if (left.TriggerRightButtonDrag != right.TriggerRightButtonDrag) return false;
+        if (left.TriggerMiddleButtonDrag != right.TriggerMiddleButtonDrag) return false;
+        if (left.TriggerRightButtonLongPress != right.TriggerRightButtonLongPress) return false;
+        if (left.TriggerMiddleButtonLongPress != right.TriggerMiddleButtonLongPress) return false;
+        if (left.TriggerMiddleButtonDown != right.TriggerMiddleButtonDown) return false;
+        if (left.TriggerX1ButtonDown != right.TriggerX1ButtonDown) return false;
+        if (left.TriggerX2ButtonDown != right.TriggerX2ButtonDown) return false;
+        if (left.TriggerHorizontalWheel != right.TriggerHorizontalWheel) return false;
+        if (left.TriggerCtrlLeftClick != right.TriggerCtrlLeftClick) return false;
+        if (left.TriggerCtrlRightClick != right.TriggerCtrlRightClick) return false;
+        if (left.TriggerCtrlMiddleClick != right.TriggerCtrlMiddleClick) return false;
+        if (left.MouseTriggerMode != right.MouseTriggerMode) return false;
+        if (left.DragThresholdPixels != right.DragThresholdPixels) return false;
+        if (left.HoldDelayMilliseconds != right.HoldDelayMilliseconds) return false;
+        if (left.GridSizePixels != right.GridSizePixels) return false;
+        if (Math.Abs(left.OverlayOpacity - right.OverlayOpacity) > 0.001) return false;
+        if (left.HasInitializedDefaultComponents != right.HasInitializedDefaultComponents) return false;
+        if (left.DefaultComponentVersion != right.DefaultComponentVersion) return false;
+
+        // Lists
+        if (!AreListsEqual(left.WhitelistedProcesses, right.WhitelistedProcesses)) return false;
+        if (!AreListsEqual(left.BlacklistedProcesses, right.BlacklistedProcesses)) return false;
+
+        // Components
+        if (!AreComponentsListsEqual(left.Components, right.Components)) return false;
+
+        // ComponentState dictionary
+        if (!AreDictionariesEqual(left.ComponentState, right.ComponentState)) return false;
+
+        return true;
+    }
+
+    private static bool AreListsEqual(List<string>? left, List<string>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        for (int i = 0; i < left.Count; i++)
+        {
+            if (left[i] != right[i]) return false;
+        }
+        return true;
+    }
+
+    private static bool AreComponentsListsEqual(List<YanmComponentSettings>? left, List<YanmComponentSettings>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        for (int i = 0; i < left.Count; i++)
+        {
+            var leftJson = JsonSerializer.Serialize(left[i], JsonOptions);
+            var rightJson = JsonSerializer.Serialize(right[i], JsonOptions);
+            if (leftJson != rightJson) return false;
+        }
+        return true;
+    }
+
+    private static bool AreDictionariesEqual(Dictionary<string, string>? left, Dictionary<string, string>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        foreach (var kvp in left)
+        {
+            if (!right.TryGetValue(kvp.Key, out var val) || val != kvp.Value)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static string DescribeYanmForSync(YanmSettings? yanm)
+    {
+        if (yanm == null)
+        {
+            return "null";
+        }
+
+        var json = JsonSerializer.Serialize(yanm, JsonOptions);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).Substring(0, 12).ToLowerInvariant();
+        return $"hash={hash}, enabled={yanm.Enabled}, activation={yanm.ActivationKey}, components={yanm.Components?.Count ?? 0}, stateKeys={yanm.ComponentState?.Count ?? 0}, defaultVersion={yanm.DefaultComponentVersion}";
+    }
+
 
     private static bool HasMeaningfulLauncherConfig(CloudQuickPanelConfigSnapshot config)
     {
@@ -1086,6 +1256,7 @@ public sealed class PersonalSyncService
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
         WriteIndented = true
     };
 }

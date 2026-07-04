@@ -289,7 +289,8 @@ public sealed class WebDavSyncService
                 return new WebDavYanmStateSyncResult(false, false, SyncRootDisplay, remoteInfo.LastModifiedUtc, (int)Math.Min(remoteInfo.ContentLength, int.MaxValue));
             }
 
-            if (localUpdatedAtUtc > remoteInfo.LastModifiedUtc.AddSeconds(1))
+            if (localUpdatedAtUtc > remoteInfo.LastModifiedUtc.AddSeconds(1) &&
+                HasYanmComponentState(localYanm))
             {
                 var uploadedAtUtc = DateTime.UtcNow;
                 await UploadYanmStateAsync(localYanm, uploadedAtUtc, cancellationToken);
@@ -352,6 +353,14 @@ public sealed class WebDavSyncService
             ApplyYanmStateSnapshot(remote.Yanm, remoteUpdatedAtUtc);
             HostAssets.AppendLog(
                 $"WebDAV Yanm state pulled: remoteUpdated={remoteUpdatedAtUtc:O}, localUpdated={localUpdatedAtUtc:O}, bytes={payloadBytes}.");
+            return new WebDavYanmStateSyncResult(false, true, SyncRootDisplay, remoteUpdatedAtUtc, payloadBytes);
+        }
+
+        if (!HasYanmComponentState(localYanm) && HasYanmComponentState(remote.Yanm))
+        {
+            ApplyYanmStateSnapshot(remote.Yanm, remoteUpdatedAtUtc);
+            HostAssets.AppendLog(
+                $"WebDAV Yanm state pulled to protect remote component data: remoteUpdated={remoteUpdatedAtUtc:O}, localUpdated={localUpdatedAtUtc:O}, bytes={payloadBytes}.");
             return new WebDavYanmStateSyncResult(false, true, SyncRootDisplay, remoteUpdatedAtUtc, payloadBytes);
         }
 
@@ -518,7 +527,11 @@ public sealed class WebDavSyncService
             }
 
             var uploadedAtUtc = DateTime.UtcNow;
-            await UploadLauncherConfigAsync(localConfig, uploadedAtUtc, cancellationToken);
+            if (!await UploadLauncherConfigAsync(localConfig, uploadedAtUtc, cancellationToken))
+            {
+                return (false, false);
+            }
+
             SaveLauncherConfigUpdatedAtUtc(uploadedAtUtc);
             HostAssets.AppendLog("WebDAV launcher config uploaded: remote missing.");
             return (true, false);
@@ -543,7 +556,11 @@ public sealed class WebDavSyncService
             if (!hasRemoteObjects && remote?.Config != null)
             {
                 var backfillUpdatedAtUtc = remoteUpdatedAtUtc == DateTime.MinValue ? DateTime.UtcNow : remoteUpdatedAtUtc;
-                await UploadLauncherConfigAsync(localConfig, backfillUpdatedAtUtc, cancellationToken);
+                if (!await UploadLauncherConfigAsync(localConfig, backfillUpdatedAtUtc, cancellationToken))
+                {
+                    return (false, false);
+                }
+
                 SaveLauncherConfigUpdatedAtUtc(backfillUpdatedAtUtc);
                 HostAssets.AppendLog("WebDAV launcher config objects backfilled from legacy snapshot.");
                 return (true, false);
@@ -583,14 +600,18 @@ public sealed class WebDavSyncService
         }
 
         var updatedAtUtc = DateTime.UtcNow;
-        await UploadLauncherConfigAsync(localConfig, updatedAtUtc, cancellationToken);
+        if (!await UploadLauncherConfigAsync(localConfig, updatedAtUtc, cancellationToken))
+        {
+            return (false, false);
+        }
+
         SaveLauncherConfigUpdatedAtUtc(updatedAtUtc);
         HostAssets.AppendLog(
             $"WebDAV launcher config uploaded: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc:O}.");
         return (true, false);
     }
 
-    private async Task UploadLauncherConfigAsync(
+    private async Task<bool> UploadLauncherConfigAsync(
         CloudQuickPanelConfigSnapshot config,
         DateTime updatedAtUtc,
         CancellationToken cancellationToken)
@@ -606,7 +627,29 @@ public sealed class WebDavSyncService
             Config = config
         };
         var writes = LauncherConfigObjectStore.PrepareWrites(config, updatedAtUtc);
+        var changedWrites = new List<LauncherConfigObjectWrite>();
+        var effectiveWrites = new List<LauncherConfigObjectWrite>();
         foreach (var write in writes)
+        {
+            var remoteBytes = await TryGetBytesAsync(write.Path, cancellationToken);
+            var remoteEnvelope = LauncherConfigObjectStore.Deserialize(remoteBytes);
+            if (LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, remoteEnvelope))
+            {
+                effectiveWrites.Add(LauncherConfigObjectStore.CreateWrite(remoteEnvelope!));
+                continue;
+            }
+
+            changedWrites.Add(write);
+            effectiveWrites.Add(write);
+        }
+
+        if (changedWrites.Count == 0)
+        {
+            HostAssets.AppendLog("WebDAV launcher config upload skipped: all object payloads are unchanged.");
+            return false;
+        }
+
+        foreach (var write in changedWrites)
         {
             using var objectRequest = CreateRequest(HttpMethod.Put, write.Path);
             objectRequest.Content = new ByteArrayContent(write.Bytes);
@@ -619,7 +662,7 @@ public sealed class WebDavSyncService
         }
 
         var manifestBytes = LauncherConfigObjectStore.SerializeManifest(
-            LauncherConfigObjectStore.CreateManifest(writes, updatedAtUtc));
+            LauncherConfigObjectStore.CreateManifest(effectiveWrites, updatedAtUtc));
         using (var manifestRequest = CreateRequest(HttpMethod.Put, LauncherConfigObjectStore.ManifestPath))
         {
             manifestRequest.Content = new ByteArrayContent(manifestBytes);
@@ -632,7 +675,7 @@ public sealed class WebDavSyncService
         }
 
         var changeBytes = LauncherConfigObjectStore.SerializeChangeSet(
-            LauncherConfigObjectStore.CreateChangeSet(writes, updatedAtUtc, "launcher-config-sync"));
+            LauncherConfigObjectStore.CreateChangeSet(changedWrites, updatedAtUtc, "launcher-config-sync"));
         using (var changeRequest = CreateRequest(HttpMethod.Put, LauncherConfigObjectStore.GetChangePath(updatedAtUtc)))
         {
             changeRequest.Content = new ByteArrayContent(changeBytes);
@@ -652,6 +695,9 @@ public sealed class WebDavSyncService
         {
             await ThrowWebDavFailureAsync(request, response, cancellationToken);
         }
+
+        HostAssets.AppendLog($"WebDAV launcher config uploaded: changedObjects={changedWrites.Count}, totalObjects={effectiveWrites.Count}");
+        return true;
     }
 
     private async Task<WebDavYanmStateSnapshot?> TryLoadLegacyRemoteYanmStateAsync(CancellationToken cancellationToken)
@@ -717,6 +763,24 @@ public sealed class WebDavSyncService
         DateTime updatedAtUtc,
         CancellationToken cancellationToken)
     {
+        var remoteBytes = await TryGetBytesAsync("state/yanm-state.json", cancellationToken);
+        if (remoteBytes is { Length: > 0 })
+        {
+            try
+            {
+                var remote = JsonSerializer.Deserialize<WebDavYanmStateSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions);
+                if (remote?.Yanm != null && AreJsonPayloadsEqual(yanm, remote.Yanm))
+                {
+                    HostAssets.AppendLog("WebDAV Yanm state upload skipped: remote content is unchanged except metadata.");
+                    return;
+                }
+            }
+            catch (JsonException ex)
+            {
+                HostAssets.AppendLog($"WebDAV Yanm state unchanged check skipped: remote JSON parse failed: {ex.Message}");
+            }
+        }
+
         var snapshot = new WebDavYanmStateSnapshot
         {
             UpdatedAtUtc = updatedAtUtc.ToString("O"),
@@ -831,7 +895,89 @@ public sealed class WebDavSyncService
 
     private static bool AreJsonPayloadsEqual<T>(T left, T right)
     {
+        if (ReferenceEquals(left, right)) return true;
+        if (left == null || right == null) return false;
+
+        if (left is YanmSettings leftYanm && right is YanmSettings rightYanm)
+        {
+            return AreYanmSettingsEqual(leftYanm, rightYanm);
+        }
+
         return string.Equals(JsonSerializer.Serialize(left, JsonOptions), JsonSerializer.Serialize(right, JsonOptions), StringComparison.Ordinal);
+    }
+
+    private static bool AreYanmSettingsEqual(YanmSettings left, YanmSettings right)
+    {
+        if (left.Enabled != right.Enabled) return false;
+        if (left.ActivationKey != right.ActivationKey) return false;
+        if (left.CustomShortcut != right.CustomShortcut) return false;
+        if (left.TriggerWinHold != right.TriggerWinHold) return false;
+        if (left.TriggerWinDoubleTap != right.TriggerWinDoubleTap) return false;
+        if (left.TriggerRightButtonDrag != right.TriggerRightButtonDrag) return false;
+        if (left.TriggerMiddleButtonDrag != right.TriggerMiddleButtonDrag) return false;
+        if (left.TriggerRightButtonLongPress != right.TriggerRightButtonLongPress) return false;
+        if (left.TriggerMiddleButtonLongPress != right.TriggerMiddleButtonLongPress) return false;
+        if (left.TriggerMiddleButtonDown != right.TriggerMiddleButtonDown) return false;
+        if (left.TriggerX1ButtonDown != right.TriggerX1ButtonDown) return false;
+        if (left.TriggerX2ButtonDown != right.TriggerX2ButtonDown) return false;
+        if (left.TriggerHorizontalWheel != right.TriggerHorizontalWheel) return false;
+        if (left.TriggerCtrlLeftClick != right.TriggerCtrlLeftClick) return false;
+        if (left.TriggerCtrlRightClick != right.TriggerCtrlRightClick) return false;
+        if (left.TriggerCtrlMiddleClick != right.TriggerCtrlMiddleClick) return false;
+        if (left.MouseTriggerMode != right.MouseTriggerMode) return false;
+        if (left.DragThresholdPixels != right.DragThresholdPixels) return false;
+        if (left.HoldDelayMilliseconds != right.HoldDelayMilliseconds) return false;
+        if (left.GridSizePixels != right.GridSizePixels) return false;
+        if (Math.Abs(left.OverlayOpacity - right.OverlayOpacity) > 0.001) return false;
+        if (left.HasInitializedDefaultComponents != right.HasInitializedDefaultComponents) return false;
+        if (left.DefaultComponentVersion != right.DefaultComponentVersion) return false;
+        if (!AreListsEqual(left.WhitelistedProcesses, right.WhitelistedProcesses)) return false;
+        if (!AreListsEqual(left.BlacklistedProcesses, right.BlacklistedProcesses)) return false;
+        if (!AreComponentsListsEqual(left.Components, right.Components)) return false;
+        if (!AreDictionariesEqual(left.ComponentState, right.ComponentState)) return false;
+        return true;
+    }
+
+    private static bool AreListsEqual(List<string>? left, List<string>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (left[i] != right[i]) return false;
+        }
+        return true;
+    }
+
+    private static bool AreComponentsListsEqual(List<YanmComponentSettings>? left, List<YanmComponentSettings>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (JsonSerializer.Serialize(left[i], JsonOptions) != JsonSerializer.Serialize(right[i], JsonOptions)) return false;
+        }
+        return true;
+    }
+
+    private static bool AreDictionariesEqual(Dictionary<string, string>? left, Dictionary<string, string>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        foreach (var kvp in left)
+        {
+            if (!right.TryGetValue(kvp.Key, out var val) || val != kvp.Value)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static T CloneByJson<T>(T value)

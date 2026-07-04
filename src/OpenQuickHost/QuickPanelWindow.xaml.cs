@@ -955,7 +955,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (!_dragSourceSlot.IsFolder && draggedCommand != null)
         {
             payload.SetData(typeof(CommandItem), draggedCommand);
-            bindingOverlay = new WindowBindingDropOverlayWindow(draggedCommand, _mainWindow.GetWindowBindingMarginPixels());
+            bindingOverlay = new WindowBindingDropOverlayWindow(draggedCommand, _mainWindow, _mainWindow.GetWindowBindingMarginPixels());
             bindingOverlay.BindingDropped += (hwnd, corner, offsetX, offsetY) =>
             {
                 _ = _mainWindow.BindExtensionToWindowFromDropAsync(draggedCommand, hwnd, corner, offsetX, offsetY);
