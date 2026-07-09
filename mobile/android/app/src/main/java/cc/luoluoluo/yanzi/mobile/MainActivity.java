@@ -1643,6 +1643,7 @@ extends Activity {
         this.swipeRefresh.setColorSchemeColors(new int[]{Color.rgb((int)59, (int)130, (int)246)});
         this.swipeRefresh.setProgressBackgroundColorSchemeColor(Color.rgb((int)30, (int)30, (int)30));
         this.swipeRefresh.setOnRefreshListener(() -> {
+            YanziApiClient.sLanFailedThisSession = false;
             this.refreshSettings();
             if (this.yanmTabPage != null && this.yanmTabPage.getVisibility() == 0) {
                 this.refreshYanm();
@@ -8024,6 +8025,8 @@ extends Activity {
     }
 
     public static final class YanziApiClient {
+        public static boolean sLanFailedThisSession = false;
+
         static String login(String baseUrl, String email, String password) throws Exception {
             return loginResponse(baseUrl, email, password).getString("accessToken");
         }
@@ -8074,6 +8077,7 @@ extends Activity {
             YanziApiClient.putWebDavBytes(config, fileName, bytes, "image/jpeg");
             return fileName;
         }
+
 
         private static void putWebDavBytes(WebDavConfig config, String relativePath, byte[] bytes, String contentType) throws Exception {
             HttpURLConnection connection = YanziApiClient.openWebDav(config, relativePath);
@@ -8130,30 +8134,48 @@ extends Activity {
         }
 
         static List<RemoteExtension> fetchRunnableExtensions(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/extensions", token, "\u8bfb\u53d6\u6269\u5c55\u5217\u8868");
+            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/extensions", token, "读取扩展列表");
             JSONArray items = payload.optJSONArray("items");
             ArrayList<RemoteExtension> result = new ArrayList<RemoteExtension>();
             if (items == null) {
                 return result;
             }
+
+            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+            List<java.util.concurrent.Future<RemoteExtension>> futures = new ArrayList<java.util.concurrent.Future<RemoteExtension>>();
+
             for (int i = 0; i < items.length(); ++i) {
-                String extensionId;
                 JSONObject item = items.optJSONObject(i);
-                if (item == null || item.optInt("enabled", 1) == 0 || (extensionId = MainActivity.firstNonEmpty(new String[]{item.optString("extension_id"), item.optString("extensionId"), item.optString("ExtensionId"), item.optString("Extension_id")})).isEmpty() || "yanzi-webdav-settings".equals(extensionId) || "yanzi-webdav-setting".equals(extensionId) || "yanzi-quickpanel-settings".equals(extensionId) || "yanzi-quickpanel-setting".equals(extensionId) || "yanzi-personal-sync-settings".equals(extensionId) || "yanzi-personal-sync-setting".equals(extensionId) || "yanzi-ai-settings".equals(extensionId) || "yanzi-ai-setting".equals(extensionId) || "yanzi-general-settings".equals(extensionId) || "yanzi-general-setting".equals(extensionId)) continue;
-                try {
-                    JSONObject detail = YanziApiClient.getJson(baseUrl, "/v1/extensions/" + YanziApiClient.encodePath(extensionId), token, "\u8bfb\u53d6\u6269\u5c55\u8be6\u60c5");
-                    JSONObject manifest = detail.optJSONObject("manifest");
-                    String name = MainActivity.firstNonEmpty(new String[]{detail.optString("display_name"), detail.optString("displayName"), detail.optString("DisplayName"), detail.optString("name"), detail.optString("Name"), manifest == null ? "" : manifest.optString("name"), manifest == null ? "" : manifest.optString("Name"), manifest == null ? "" : manifest.optString("display_name"), manifest == null ? "" : manifest.optString("displayName"), manifest == null ? "" : manifest.optString("DisplayName"), extensionId});
-                    String description = MainActivity.firstNonEmpty(new String[]{detail.optString("description"), detail.optString("Description"), manifest == null ? "" : manifest.optString("description"), manifest == null ? "" : manifest.optString("Description")});
-                    String icon = MainActivity.firstNonEmpty(new String[]{detail.optString("icon"), detail.optString("Icon"), manifest == null ? "" : manifest.optString("icon"), manifest == null ? "" : manifest.optString("Icon")});
-                    String accentHex = MainActivity.firstNonEmpty(new String[]{detail.optString("accent_hex"), detail.optString("accentHex"), detail.optString("AccentHex"), manifest == null ? "" : manifest.optString("accent_hex"), manifest == null ? "" : manifest.optString("accentHex"), manifest == null ? "" : manifest.optString("AccentHex")});
-                    result.add(new RemoteExtension(extensionId, name, description, icon, accentHex));
-                    continue;
-                }
-                catch (Exception ignored) {
-                    result.add(new RemoteExtension(extensionId, extensionId, "\u6269\u5c55\u8be6\u60c5\u6682\u4e0d\u53ef\u7528\uff0c\u4ecd\u53ef\u5c1d\u8bd5\u8fdc\u7a0b\u6267\u884c\u3002", "", ""));
-                }
+                if (item == null || item.optInt("enabled", 1) == 0) continue;
+                final String extensionId = MainActivity.firstNonEmpty(new String[]{item.optString("extension_id"), item.optString("extensionId"), item.optString("ExtensionId"), item.optString("Extension_id")});
+                if (extensionId.isEmpty() || "yanzi-webdav-settings".equals(extensionId) || "yanzi-webdav-setting".equals(extensionId) || "yanzi-quickpanel-settings".equals(extensionId) || "yanzi-quickpanel-setting".equals(extensionId) || "yanzi-personal-sync-settings".equals(extensionId) || "yanzi-personal-sync-setting".equals(extensionId) || "yanzi-ai-settings".equals(extensionId) || "yanzi-ai-setting".equals(extensionId) || "yanzi-general-settings".equals(extensionId) || "yanzi-general-setting".equals(extensionId)) continue;
+                
+                futures.add(pool.submit(new java.util.concurrent.Callable<RemoteExtension>() {
+                    @Override
+                    public RemoteExtension call() {
+                        try {
+                            JSONObject detail = YanziApiClient.getJson(baseUrl, "/v1/extensions/" + YanziApiClient.encodePath(extensionId), token, "读取扩展详情");
+                            JSONObject manifest = detail.optJSONObject("manifest");
+                            String name = MainActivity.firstNonEmpty(new String[]{detail.optString("display_name"), detail.optString("displayName"), detail.optString("DisplayName"), detail.optString("name"), detail.optString("Name"), manifest == null ? "" : manifest.optString("name"), manifest == null ? "" : manifest.optString("Name"), manifest == null ? "" : manifest.optString("display_name"), manifest == null ? "" : manifest.optString("displayName"), manifest == null ? "" : manifest.optString("DisplayName"), extensionId});
+                            String description = MainActivity.firstNonEmpty(new String[]{detail.optString("description"), detail.optString("Description"), manifest == null ? "" : manifest.optString("description"), manifest == null ? "" : manifest.optString("Description")});
+                            String icon = MainActivity.firstNonEmpty(new String[]{detail.optString("icon"), detail.optString("Icon"), manifest == null ? "" : manifest.optString("icon"), manifest == null ? "" : manifest.optString("Icon")});
+                            String accentHex = MainActivity.firstNonEmpty(new String[]{detail.optString("accent_hex"), detail.optString("accentHex"), detail.optString("AccentHex"), manifest == null ? "" : manifest.optString("accent_hex"), manifest == null ? "" : manifest.optString("accentHex"), manifest == null ? "" : manifest.optString("AccentHex")});
+                            return new RemoteExtension(extensionId, name, description, icon, accentHex);
+                        }
+                        catch (Exception ignored) {
+                            return new RemoteExtension(extensionId, extensionId, "扩展详情暂不可用，仍可尝试远程执行。", "", "");
+                        }
+                    }
+                }));
             }
+
+            for (java.util.concurrent.Future<RemoteExtension> future : futures) {
+                try {
+                    result.add(future.get());
+                }
+                catch (Exception ignored) {}
+            }
+            pool.shutdown();
             return result;
         }
 
@@ -8396,7 +8418,7 @@ extends Activity {
         }
 
         private static JSONObject putJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
-            if (YanziApiClient.shouldUseLan(path)) {
+            if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
                 String lanBaseUrl;
                 String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
                 if (lanBaseUrl != null) {
@@ -8419,7 +8441,7 @@ extends Activity {
         }
 
         private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
-            if (YanziApiClient.shouldUseLan(path)) {
+            if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
                 String lanBaseUrl;
                 String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
                 if (lanBaseUrl != null) {
@@ -8442,7 +8464,7 @@ extends Activity {
         }
 
         private static JSONObject getJson(String baseUrl, String path, String token, String action) throws Exception {
-            if (YanziApiClient.shouldUseLan(path)) {
+            if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
                 String lanBaseUrl;
                 String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
                 if (lanBaseUrl != null) {
@@ -8475,6 +8497,7 @@ extends Activity {
         }
 
         private static void handleLanFailure(String action, Exception e) {
+            sLanFailedThisSession = true;
             String message = e.getMessage() == null ? e.toString() : e.getMessage();
             Log.w((String)"ApiClient", (String)("LAN fallback failed: " + message));
             if (sContext != null) {

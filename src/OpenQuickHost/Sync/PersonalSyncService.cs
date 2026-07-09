@@ -320,17 +320,32 @@ public sealed class PersonalSyncService
 
     private async Task<T> RunExclusiveAsync<T>(string operation, Func<Task<T>> action, CancellationToken cancellationToken)
     {
-        CloudSyncDiagnostics.Log("PersonalSyncService", "Operation waiting", ("operation", operation), ("root", SyncRootDisplay));
-        await OperationLock.WaitAsync(cancellationToken);
-        CloudSyncDiagnostics.Log("PersonalSyncService", "Operation acquired", ("operation", operation), ("root", SyncRootDisplay));
         try
         {
+            CloudSyncDiagnostics.Log("PersonalSyncService", "Operation waiting", ("operation", operation), ("root", SyncRootDisplay));
+        }
+        catch { }
+
+        await OperationLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            try
+            {
+                CloudSyncDiagnostics.Log("PersonalSyncService", "Operation acquired", ("operation", operation), ("root", SyncRootDisplay));
+            }
+            catch { }
+
             return await action();
         }
         finally
         {
             OperationLock.Release();
-            CloudSyncDiagnostics.Log("PersonalSyncService", "Operation released", ("operation", operation), ("root", SyncRootDisplay));
+            try
+            {
+                CloudSyncDiagnostics.Log("PersonalSyncService", "Operation released", ("operation", operation), ("root", SyncRootDisplay));
+            }
+            catch { }
         }
     }
 

@@ -549,6 +549,19 @@ public static class YanyuTriggerService
                 return string.Empty;
             }
 
+            var className = new System.Text.StringBuilder(256);
+            if (NativeMethods.GetClassName(handle, className, className.Capacity) > 0)
+            {
+                var classStr = className.ToString();
+                if (string.Equals(classStr, "Progman", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "WorkerW", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_SecondaryTrayWnd", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "desktop";
+                }
+            }
+
             _ = NativeMethods.GetWindowThreadProcessId(handle, out var processId);
             using var process = Process.GetProcessById((int)processId);
             return process.ProcessName;

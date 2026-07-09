@@ -7529,17 +7529,28 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private async Task PickProcessAndAddAsync(string targetName, Action<string> addProcess)
     {
-        SyncStatusText = $"{targetName}：设置窗口将隐藏，请在 2.5 秒内切到目标窗口。";
+        SyncStatusText = $"{targetName}：请将鼠标移动到目标窗口并点击选择。";
         HostAssets.AppendLog($"Settings: process picker started for {targetName}.");
         Hide();
-        await Task.Delay(2500);
-        var processName = GetForegroundProcessName();
+        
+        string processName;
+        try
+        {
+            var picker = new WindowPickerOverlay();
+            processName = await picker.ShowPickerAsync();
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Settings: process picker overlay failed: {ex.Message}");
+            processName = string.Empty;
+        }
+
         Show();
         Activate();
 
         if (string.IsNullOrWhiteSpace(processName))
         {
-            SyncStatusText = $"{targetName}：没有获取到目标进程。";
+            SyncStatusText = $"{targetName}：已取消或没有获取到目标进程。";
             return;
         }
 
@@ -7564,6 +7575,19 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (hwnd == IntPtr.Zero)
             {
                 return string.Empty;
+            }
+
+            var className = new System.Text.StringBuilder(256);
+            if (GetClassName(hwnd, className, className.Capacity) > 0)
+            {
+                var classStr = className.ToString();
+                if (string.Equals(classStr, "Progman", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "WorkerW", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_SecondaryTrayWnd", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "desktop";
+                }
             }
 
             _ = GetWindowThreadProcessId(hwnd, out var processId);
@@ -9371,6 +9395,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
     private void ExternalLink_Click(object sender, MouseButtonEventArgs e)
     {

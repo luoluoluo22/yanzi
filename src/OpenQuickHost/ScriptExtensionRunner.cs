@@ -473,7 +473,7 @@ public static class ScriptExtensionRunner
         }
 
         var finalReferences = references
-            .GroupBy(static reference => reference.Display, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(static reference => string.IsNullOrWhiteSpace(reference.Display) ? Guid.NewGuid().ToString() : reference.Display, StringComparer.OrdinalIgnoreCase)
             .Select(static group => group.First())
             .ToList();
 

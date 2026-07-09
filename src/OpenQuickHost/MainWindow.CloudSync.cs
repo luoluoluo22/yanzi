@@ -809,7 +809,7 @@ public partial class MainWindow
             }
 
             HostAssets.AppendLog("Network address changed, scheduling silent cloud reconnect.");
-            ScheduleSilentCloudReconnect("network-address-changed", immediate: true);
+            // ScheduleSilentCloudReconnect("network-address-changed", immediate: true);
         });
     }
 
@@ -2121,7 +2121,9 @@ public partial class MainWindow
         {
             try
             {
-                var commands = LocalExtensionCatalog.LoadCommands();
+                var commands = System.Windows.Application.Current.Dispatcher.CheckAccess()
+                    ? LocalExtensionCatalog.LoadCommands()
+                    : System.Windows.Application.Current.Dispatcher.Invoke(LocalExtensionCatalog.LoadCommands);
                 int successCount = 0;
                 foreach (var cmd in commands)
                 {
