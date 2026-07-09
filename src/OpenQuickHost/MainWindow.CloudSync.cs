@@ -2646,6 +2646,7 @@ public partial class MainWindow
         NotifySettingsWindowAiConfigChanged();
         NotifySettingsWindowWebDavConfigChanged();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
+        App.Current?.ReloadSettingsWindowIfOpen();
     }
 
     private static void ApplyCloudLauncherSettings(AppSettings settings, AppSettings incoming, CloudQuickPanelConfigSnapshot snapshot)

@@ -3518,7 +3518,8 @@ public sealed class CloudQuickPanelConfigSnapshot
                 ExtensionId = item.ExtensionId,
                 FolderName = item.FolderName,
                 FolderExtensionIds = item.FolderExtensionIds.ToList(),
-                FolderSlotItems = item.FolderSlotItems.Select(CloneQuickPanelSlotItem).ToList()
+                FolderSlotItems = item.FolderSlotItems.Select(CloneQuickPanelSlotItem).ToList(),
+                IsShortcut = item.IsShortcut
             };
     }
 

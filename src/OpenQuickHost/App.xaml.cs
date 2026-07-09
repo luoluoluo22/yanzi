@@ -1042,6 +1042,25 @@ public partial class App : WpfApplication
         }
     }
 
+    public void ReloadSettingsWindowIfOpen()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                if (_settingsWindow != null && _settingsWindow.IsLoaded)
+                {
+                    _settingsWindow.ReloadSettingsFromDisk();
+                    HostAssets.AppendLog("Settings window settings reloaded from disk due to external sync.");
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Error reloading settings window: {ex.Message}");
+            }
+        });
+    }
+
     public void OpenRunningExtensionsWindow()
     {
         if (_runningExtensionsWindow == null || !_runningExtensionsWindow.IsLoaded)

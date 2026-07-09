@@ -2613,20 +2613,20 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void SettingsWindow_Activated(object? sender, EventArgs e)
+    public void ReloadSettingsFromDisk()
     {
-        if (_isRenamingRadialMenuPage)
+        if (Dispatcher.CheckAccess())
         {
-            HostAssets.AppendLog("Settings activated skipped during radial page rename.");
-            return;
+            DoReloadSettingsFromDisk();
         }
-
-        if (_suspendActivationRefresh)
+        else
         {
-            HostAssets.AppendLog("Settings activated skipped during modal slot edit.");
-            return;
+            Dispatcher.BeginInvoke(new Action(DoReloadSettingsFromDisk));
         }
+    }
 
+    private void DoReloadSettingsFromDisk()
+    {
         _settings = AppSettingsStore.Load();
         _settings.YarnSelect ??= new YarnSelectSettings();
         _settings.Yanm ??= new YanmSettings();
@@ -2676,6 +2676,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         // Refresh gesture card colors after settings reload
         InitializeMouseTriggerTargetDropdowns();
         UpdateAllGestureCardColors();
+    }
+
+    private void SettingsWindow_Activated(object? sender, EventArgs e)
+    {
+        if (_isRenamingRadialMenuPage)
+        {
+            HostAssets.AppendLog("Settings activated skipped during radial page rename.");
+            return;
+        }
+
+        if (_suspendActivationRefresh)
+        {
+            HostAssets.AppendLog("Settings activated skipped during modal slot edit.");
+            return;
+        }
+
+        DoReloadSettingsFromDisk();
     }
 
     private void EnsureRadialEditorLoaded(bool forceRefresh = false)

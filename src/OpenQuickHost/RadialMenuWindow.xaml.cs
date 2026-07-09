@@ -2402,11 +2402,51 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         var contextMenu = new ContextMenu();
 
-        foreach (var page in _pages)
+        var allPages = _pages;
+        var pageMap = allPages.ToDictionary(p => p.Id, StringComparer.OrdinalIgnoreCase);
+
+        // 查找所有子环页面ID集合
+        var childIdsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var page in allPages)
         {
+            if (page.ChildPageIds == null) continue;
+            foreach (var childId in page.ChildPageIds)
+            {
+                if (!string.IsNullOrWhiteSpace(childId) && !string.Equals(childId, page.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    childIdsSet.Add(childId);
+                }
+            }
+        }
+
+        // 确定根页面
+        var rootPages = allPages.Where(p => !childIdsSet.Contains(p.Id)).ToList();
+        if (rootPages.Count == 0 && allPages.Count > 0)
+        {
+            rootPages = [allPages[0]];
+        }
+
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddPageHierarchyToMenu(RadialMenuPageSettings page, int level)
+        {
+            if (visited.Contains(page.Id)) return;
+            visited.Add(page.Id);
+
             var isApp = !string.IsNullOrEmpty(page.ContextProcessName);
-            var header = isApp ? $"[专属] {page.Name}" : $"[全局] {page.Name}";
-            
+            var categoryTag = isApp ? "[专属]" : "[全局]";
+
+            // 根据 level 计算缩进
+            string indent = level switch
+            {
+                0 => "",
+                1 => "   └─ ",
+                2 => "      └─ ",
+                3 => "         └─ ",
+                _ => new string(' ', level * 3) + "└─ "
+            };
+
+            var header = $"{categoryTag} {indent}{page.Name}";
             var item = new MenuItem { Header = header };
             var pageId = page.Id;
             item.Click += (s, e) =>
@@ -2415,6 +2455,41 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 BuildItems(_lastRadiusPixels);
             };
             contextMenu.Items.Add(item);
+
+            if (page.ChildPageIds != null)
+            {
+                foreach (var childId in page.ChildPageIds)
+                {
+                    if (!string.IsNullOrWhiteSpace(childId) && pageMap.TryGetValue(childId, out var childPage))
+                    {
+                        AddPageHierarchyToMenu(childPage, level + 1);
+                    }
+                }
+            }
+        }
+
+        foreach (var root in rootPages)
+        {
+            AddPageHierarchyToMenu(root, 0);
+        }
+
+        // 兜底防漏：如果有页面因为异常引用的情况没被加入 visited 列表，直接平铺加在最后
+        foreach (var page in allPages)
+        {
+            if (!visited.Contains(page.Id))
+            {
+                var isApp = !string.IsNullOrEmpty(page.ContextProcessName);
+                var categoryTag = isApp ? "[专属]" : "[全局]";
+                var header = $"{categoryTag} {page.Name}";
+                var item = new MenuItem { Header = header };
+                var pageId = page.Id;
+                item.Click += (s, e) =>
+                {
+                    _currentPageId = pageId;
+                    BuildItems(_lastRadiusPixels);
+                };
+                contextMenu.Items.Add(item);
+            }
         }
 
         if (contextMenu.Items.Count == 0)
