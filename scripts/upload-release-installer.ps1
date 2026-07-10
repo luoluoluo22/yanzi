@@ -52,6 +52,19 @@ if ($Platform -eq "android") {
         Copy-Item -LiteralPath $installerSetupPath -Destination $targetApkPath -Force
         $installerSetupPath = $targetApkPath
     }
+
+    $sdkPath = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } elseif ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { "F:\SDK" }
+    $apkSigner = Get-ChildItem -Path (Join-Path $sdkPath "build-tools") -Recurse -Filter "apksigner.bat" -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+    if (-not $apkSigner) {
+        throw "Android apksigner not found under $sdkPath\build-tools; cannot verify APK before upload."
+    }
+
+    & $apkSigner verify --verbose $installerSetupPath | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Android APK signature verification failed: $installerSetupPath. Build a signed APK before upload."
+    }
 } else {
     $fileName = "Yanzi-win-Setup-$plainVersion.exe"
     $installerSetupPath = if ($InstallerPath) { Resolve-Path $InstallerPath } else { Join-Path $installerOutDir $fileName }

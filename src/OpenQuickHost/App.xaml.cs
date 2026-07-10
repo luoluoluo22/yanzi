@@ -840,7 +840,7 @@ public partial class App : WpfApplication
         if (MainWindow is MainWindow mw)
         {
             mw.AllowClose = true;
-            Current.Shutdown();
+            Shutdown();
         }
     }
 
@@ -1103,7 +1103,11 @@ public partial class App : WpfApplication
             ? "/Themes/LightTheme.xaml"
             : "/Themes/DarkTheme.xaml";
 
-        var mergedDicts = Current.Resources.MergedDictionaries;
+        var mergedDicts = Current?.Resources?.MergedDictionaries;
+        if (mergedDicts == null)
+        {
+            return;
+        }
         
         var existingThemeDict = mergedDicts.FirstOrDefault(static d => 
             d.Source != null && d.Source.OriginalString.Contains("Theme.xaml"));

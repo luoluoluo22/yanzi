@@ -181,7 +181,16 @@ public final class UpdateManager {
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, 0);
         String downloadedVer = prefs.getString(KEY_DOWNLOADED_VERSION, "");
-        return downloadedVer.equals(latestVersion);
+        if (!downloadedVer.equals(latestVersion)) return false;
+
+        PackageInfo info = getArchivePackageInfo(context, apkFile);
+        if (info == null || !latestVersion.equals(info.versionName)) {
+            log(context, "已缓存更新包无法解析或版本不匹配，删除缓存后重新下载。");
+            cleanCacheApk(context);
+            return false;
+        }
+
+        return true;
     }
 
     private static void showInstallReadyDialog(final Activity activity, final String latestVersion) {
@@ -400,7 +409,15 @@ public final class UpdateManager {
                                 return;
                             }
                             if (finalSuccess) {
-                                log(activity, "更新包下载成功，正在拉起系统安装器。");
+                                if (!isInstallableApk(activity, apkFile)) {
+                                    log(activity, "更新包下载完成但无法解析，已删除坏包。");
+                                    cleanCacheApk(activity);
+                                    Toast.makeText(activity, "更新包校验失败，已为您跳转浏览器下载", Toast.LENGTH_LONG).show();
+                                    openInBrowser(activity, originalDownloadUrl);
+                                    return;
+                                }
+
+                                log(activity, "更新包下载成功并通过解析校验，正在拉起系统安装器。");
                                 activity.getSharedPreferences(PREFS_NAME, 0).edit()
                                         .putString(KEY_DOWNLOADED_VERSION, getDownloadedVersionFromApk(activity, apkFile))
                                         .apply();
@@ -450,8 +467,8 @@ public final class UpdateManager {
                     success = performDownload(activity, downloadUrl, apkFile, null);
                 }
 
-                if (success) {
-                    log(activity, "静默更新包下载成功。");
+                if (success && isInstallableApk(activity, apkFile)) {
+                    log(activity, "静默更新包下载成功并通过解析校验。");
                     prefs.edit()
                             .putString(KEY_DOWNLOADED_VERSION, latestVersion)
                             .putBoolean(KEY_IS_DOWNLOADING, false)
@@ -466,7 +483,12 @@ public final class UpdateManager {
                         }
                     });
                 } else {
-                    log(activity, "静默更新包下载失败。");
+                    if (success) {
+                        log(activity, "静默更新包下载完成但无法解析，已删除坏包。");
+                        cleanCacheApk(activity);
+                    } else {
+                        log(activity, "静默更新包下载失败。");
+                    }
                     prefs.edit().putBoolean(KEY_IS_DOWNLOADING, false).apply();
                 }
             }
@@ -551,6 +573,11 @@ public final class UpdateManager {
 
     private static void installApk(Activity activity, File apkFile) {
         if (apkFile == null || !apkFile.exists()) return;
+        if (!isInstallableApk(activity, apkFile)) {
+            cleanCacheApk(activity);
+            Toast.makeText(activity, "安装包解析失败，请重新下载最新版", Toast.LENGTH_LONG).show();
+            return;
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!activity.getPackageManager().canRequestPackageInstalls()) {
@@ -605,13 +632,31 @@ public final class UpdateManager {
     }
 
     private static String getDownloadedVersionFromApk(Activity activity, File apkFile) {
-        try {
-            PackageInfo info = activity.getPackageManager().getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
-            if (info != null) {
-                return info.versionName;
-            }
-        } catch (Exception ignored) {}
+        PackageInfo info = getArchivePackageInfo(activity, apkFile);
+        if (info != null && info.versionName != null) {
+            return info.versionName;
+        }
+
         return getLocalVersionName(activity);
+    }
+
+    private static boolean isInstallableApk(Context context, File apkFile) {
+        PackageInfo info = getArchivePackageInfo(context, apkFile);
+        if (info == null) return false;
+        return context.getPackageName().equals(info.packageName);
+    }
+
+    private static PackageInfo getArchivePackageInfo(Context context, File apkFile) {
+        if (context == null || apkFile == null || !apkFile.exists() || apkFile.length() <= 0) {
+            return null;
+        }
+
+        try {
+            return context.getPackageManager().getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
+        } catch (Exception e) {
+            log(context, "安装包解析校验异常: " + e.getMessage());
+            return null;
+        }
     }
 
     private static void cleanCacheApk(Context context) {

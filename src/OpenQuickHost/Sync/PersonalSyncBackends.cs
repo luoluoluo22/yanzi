@@ -225,7 +225,7 @@ internal abstract class PersonalSyncBackendBase : IPersonalSyncBackend
                 var extensionId = parts[0];
                 var fileName = parts[^1];
                 var extName = GetExtensionTitle(extensionId);
-                var webUrl = GenerateWebUrl(path);
+                var webUrl = GenerateWebUrl(normalized);
                 var linkText = string.IsNullOrWhiteSpace(webUrl) ? fileName : $"{webUrl}";
                 return $"上传数据：备份 【{extName}】 的 {linkText}";
             }
@@ -263,7 +263,7 @@ internal abstract class PersonalSyncBackendBase : IPersonalSyncBackend
                 var extensionId = parts[0];
                 var fileName = parts[^1];
                 var extName = GetExtensionTitle(extensionId);
-                var webUrl = GenerateWebUrl(path);
+                var webUrl = GenerateWebUrl(normalized);
                 var linkText = string.IsNullOrWhiteSpace(webUrl) ? fileName : $"{webUrl}";
                 return $"上传数据：清除 【{extName}】 的 {linkText}";
             }

@@ -2434,7 +2434,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (runnable.ExtensionDirectoryPath != null && runnable.ExtensionDirectoryPath.Contains("_temp_run_"))
             {
-                Task.Run(async () =>
+                _ = Task.Run(async () =>
                 {
                     await Task.Delay(2000); // 延时以释放文件进程锁
                     try
@@ -2444,7 +2444,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                             Directory.Delete(runnable.ExtensionDirectoryPath, recursive: true);
                         }
                     }
-                    catch {}
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Failed to delete temporary extension directory: {ex.Message}");
+                    }
                 });
             }
             return;

@@ -38,16 +38,29 @@ public sealed class CloudSyncClient
 
     public void SetCredential(string email, string password, bool remember)
     {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new InvalidOperationException("邮箱不能为空。");
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("密码不能为空。");
+        }
+
+        var normalizedEmail = email.Trim();
+        var normalizedPassword = password.Trim();
+
         CloudSyncDiagnostics.Log(
             "CloudSyncClient.Auth",
             "Credential updated",
-            ("email", email),
+            ("email", normalizedEmail),
             ("remember", remember),
-            ("passwordLength", password?.Length ?? 0));
+            ("passwordLength", normalizedPassword.Length));
         _credential = new SavedCredential
         {
-            Email = email.Trim(),
-            Password = password
+            Email = normalizedEmail,
+            Password = normalizedPassword
         };
 
         if (remember)
@@ -112,13 +125,26 @@ public sealed class CloudSyncClient
 
     public async Task<SyncSession> RegisterAsync(string email, string username, string password, string code, CancellationToken cancellationToken = default)
     {
-        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register requested", ("email", email), ("username", username), ("passwordLength", password?.Length ?? 0), ("codeLength", code?.Length ?? 0));
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("密码不能为空。");
+        }
+
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw new InvalidOperationException("验证码不能为空。");
+        }
+
+        var normalizedPassword = password.Trim();
+        var normalizedCode = code.Trim();
+
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register requested", ("email", email), ("username", username), ("passwordLength", normalizedPassword.Length), ("codeLength", normalizedCode.Length));
         var payload = new
         {
             email = email.Trim(),
             username = username.Trim(),
-            password,
-            code = code.Trim()
+            password = normalizedPassword,
+            code = normalizedCode
         };
 
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/register", payload, includeAuth: false, cancellationToken);
@@ -170,12 +196,25 @@ public sealed class CloudSyncClient
 
     public async Task<SyncSession> ResetPasswordAsync(string email, string password, string code, CancellationToken cancellationToken = default)
     {
-        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password requested", ("email", email), ("passwordLength", password?.Length ?? 0), ("codeLength", code?.Length ?? 0));
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("密码不能为空。");
+        }
+
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw new InvalidOperationException("验证码不能为空。");
+        }
+
+        var normalizedPassword = password.Trim();
+        var normalizedCode = code.Trim();
+
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password requested", ("email", email), ("passwordLength", normalizedPassword.Length), ("codeLength", normalizedCode.Length));
         var payload = new
         {
             email = email.Trim(),
-            password,
-            code = code.Trim()
+            password = normalizedPassword,
+            code = normalizedCode
         };
 
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/reset-password", payload, includeAuth: false, cancellationToken);

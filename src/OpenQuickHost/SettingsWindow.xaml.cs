@@ -6765,7 +6765,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             SettingsSearchText = string.Empty;
         }
 
-        SettingsSearchBox.CaretIndex = SettingsSearchText.Length;
+        SettingsSearchBox.CaretIndex = SettingsSearchText?.Length ?? 0;
     }
 
     private static string? BuildStandardHotkeyString(System.Windows.Input.Key key, ModifierKeys? activeModifiers = null)
@@ -7056,7 +7056,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 continue;
             }
 
-            _searchHighlightSnapshots[textBlock] = textBlock.Text;
+            _searchHighlightSnapshots[textBlock] = textBlock.Text ?? string.Empty;
             ApplyInlineHighlight(textBlock, text, HighlightKeyword);
         }
     }

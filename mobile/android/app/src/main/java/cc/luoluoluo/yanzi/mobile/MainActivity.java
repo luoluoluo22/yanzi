@@ -2526,7 +2526,7 @@ extends Activity {
         
         LinearLayout itemAccessibility = this.createListItem("\u65e0\u969c\u788d\u670d\u52a1", null, () -> this.openAccessibilitySettings());
         
-        String currentVer = "0.2.10";
+        String currentVer = "0.2.17";
         try {
             currentVer = this.getPackageManager().getPackageInfo(this.getPackageName(), 0).versionName;
         } catch (Exception ignored) {}

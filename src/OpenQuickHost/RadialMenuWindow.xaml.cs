@@ -2433,9 +2433,6 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             if (visited.Contains(page.Id)) return;
             visited.Add(page.Id);
 
-            var isApp = !string.IsNullOrEmpty(page.ContextProcessName);
-            var categoryTag = isApp ? "[专属]" : "[全局]";
-
             // 根据 level 计算缩进
             string indent = level switch
             {
@@ -2446,7 +2443,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 _ => new string(' ', level * 3) + "└─ "
             };
 
-            var header = $"{categoryTag} {indent}{page.Name}";
+            var header = $"{indent}{page.Name}";
             var item = new MenuItem { Header = header };
             var pageId = page.Id;
             item.Click += (s, e) =>
@@ -2478,9 +2475,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             if (!visited.Contains(page.Id))
             {
-                var isApp = !string.IsNullOrEmpty(page.ContextProcessName);
-                var categoryTag = isApp ? "[专属]" : "[全局]";
-                var header = $"{categoryTag} {page.Name}";
+                var header = page.Name;
                 var item = new MenuItem { Header = header };
                 var pageId = page.Id;
                 item.Click += (s, e) =>

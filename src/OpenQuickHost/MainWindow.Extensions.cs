@@ -324,7 +324,7 @@ public partial class MainWindow
                     {
                         _ = dispatcher.InvokeAsync(async () =>
                         {
-                            var mainWin = System.Windows.Application.Current.MainWindow as MainWindow;
+                            var mainWin = System.Windows.Application.Current?.MainWindow as MainWindow;
                             if (mainWin != null)
                             {
                                 try

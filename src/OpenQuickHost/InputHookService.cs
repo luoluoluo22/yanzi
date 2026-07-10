@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -73,6 +74,10 @@ public class InputHookService
     private static long _lastMouseTriggerReleaseTick;
     private static long _capsLockDownTick;
     private static bool _capsLockUsed;
+    private static IntPtr _cachedForegroundWindow;
+    private static string _cachedForegroundProcessName = string.Empty;
+    private static long _cachedForegroundProcessTick;
+    private static int _windowSnapMoveQueued;
 
     public static bool IsRunning => _isEnabled;
 
@@ -515,7 +520,7 @@ public class InputHookService
                 _capsRadialActive = false;
                 _releaseShouldExecute = false;
                 HostAssets.AppendLog($"Input hook: {RadialActivationKeys.Normalize(_radialSettings.ActivationKey)} hold radial released.");
-                System.Windows.Application.Current.Dispatcher.Invoke(() => _onRadialRelease?.Invoke());
+                DispatchToUi(() => _onRadialRelease?.Invoke());
                 _activeTriggerTarget = ActiveTriggerTarget.None;
 
                 if (keyboard.vkCode == VK_CAPITAL && !_capsLockUsed && (Environment.TickCount64 - _capsLockDownTick < 350))
@@ -595,6 +600,40 @@ public class InputHookService
         if (MouseGestureService.HasRightDragRegistrations)
         {
             return false;
+        }
+
+        var processName = GetForegroundProcessName();
+
+        // 1. 如果当前处于已知的远程控制软件，直接放行，不延迟右键
+        if (!string.IsNullOrWhiteSpace(processName))
+        {
+            if (processName.Contains("todesk", StringComparison.OrdinalIgnoreCase) ||
+                processName.Contains("teamviewer", StringComparison.OrdinalIgnoreCase) ||
+                processName.Contains("anydesk", StringComparison.OrdinalIgnoreCase) ||
+                processName.Contains("mstsc", StringComparison.OrdinalIgnoreCase) ||
+                processName.Contains("sunlogin", StringComparison.OrdinalIgnoreCase)) // 向日葵
+            {
+                return false;
+            }
+        }
+
+        // 2. 如果当前进程在黑名单中，我们不需要拦截它的右键去判断手势，因为即便触发也会被拦截
+        if (_radialSettings != null)
+        {
+            var radialBlacklist = _radialSettings.BlacklistedProcesses ?? [];
+            if (radialBlacklist.Any(p => ProcessNameMatches(processName, p)))
+            {
+                return false;
+            }
+        }
+
+        if (_yanmSettings != null)
+        {
+            var yanmBlacklist = _yanmSettings.BlacklistedProcesses ?? [];
+            if (yanmBlacklist.Any(p => ProcessNameMatches(processName, p)))
+            {
+                return false;
+            }
         }
 
         return _settings.RightButtonLongPress ||
@@ -759,26 +798,9 @@ public class InputHookService
         if (_releaseShouldExecute && _settings.ExecuteOnButtonRelease)
         {
             _lastMouseTriggerReleaseTick = Environment.TickCount64;
+            var releaseTarget = _activeTriggerTarget;
             HostAssets.AppendLog($"Input hook: {button} released after trigger.");
-            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-            {
-                if (_activeTriggerTarget == ActiveTriggerTarget.Radial)
-                {
-                    _onRadialRelease?.Invoke();
-                }
-                else if (_activeTriggerTarget == ActiveTriggerTarget.Yanm)
-                {
-                    _onYanmRelease?.Invoke();
-                }
-                else if (_activeTriggerTarget == ActiveTriggerTarget.WindowSnap)
-                {
-                    _onWindowSnapRelease?.Invoke();
-                }
-                else
-                {
-                    _onLongPressRelease?.Invoke();
-                }
-            });
+            InvokeReleaseForTarget(releaseTarget);
         }
 
         if (shouldReplaySwallowedRelease)
@@ -883,32 +905,122 @@ public class InputHookService
 
     private static void InvokeShowPanel()
     {
-        System.Windows.Application.Current.Dispatcher.Invoke(() => _onShowPanel?.Invoke());
+        DispatchToUi(() => _onShowPanel?.Invoke());
     }
 
     private static void InvokeShowRadial()
     {
-        System.Windows.Application.Current.Dispatcher.Invoke(() => _onShowRadial?.Invoke());
+        DispatchToUi(() => _onShowRadial?.Invoke());
     }
 
     private static void InvokeShowYanm()
     {
-        System.Windows.Application.Current.Dispatcher.Invoke(() => _onShowYanm?.Invoke());
+        DispatchToUi(() => _onShowYanm?.Invoke());
     }
 
     private static bool InvokeShowWindowSnap()
     {
-        return System.Windows.Application.Current.Dispatcher.Invoke(() => _onShowWindowSnap?.Invoke() == true);
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            return false;
+        }
+
+        return dispatcher.CheckAccess()
+            ? _onShowWindowSnap?.Invoke() == true
+            : dispatcher.Invoke(() => _onShowWindowSnap?.Invoke() == true);
     }
 
     private static void InvokeWindowSnapMove()
     {
-        System.Windows.Application.Current.Dispatcher.Invoke(() => _onWindowSnapMove?.Invoke());
+        if (Interlocked.Exchange(ref _windowSnapMoveQueued, 1) == 1)
+        {
+            return;
+        }
+
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            Volatile.Write(ref _windowSnapMoveQueued, 0);
+            return;
+        }
+
+        void RunMove()
+        {
+            try
+            {
+                InvokeSafely(() => _onWindowSnapMove?.Invoke());
+            }
+            finally
+            {
+                Volatile.Write(ref _windowSnapMoveQueued, 0);
+            }
+        }
+
+        if (dispatcher.CheckAccess())
+        {
+            RunMove();
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(new Action(RunMove));
     }
 
     private static void InvokeWindowSnapRelease()
     {
-        System.Windows.Application.Current.Dispatcher.Invoke(() => _onWindowSnapRelease?.Invoke());
+        DispatchToUi(() => _onWindowSnapRelease?.Invoke());
+    }
+
+    private static void InvokeReleaseForTarget(ActiveTriggerTarget target)
+    {
+        DispatchToUi(() =>
+        {
+            if (target == ActiveTriggerTarget.Radial)
+            {
+                _onRadialRelease?.Invoke();
+            }
+            else if (target == ActiveTriggerTarget.Yanm)
+            {
+                _onYanmRelease?.Invoke();
+            }
+            else if (target == ActiveTriggerTarget.WindowSnap)
+            {
+                _onWindowSnapRelease?.Invoke();
+            }
+            else
+            {
+                _onLongPressRelease?.Invoke();
+            }
+        });
+    }
+
+    private static void DispatchToUi(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            return;
+        }
+
+        if (dispatcher.CheckAccess())
+        {
+            InvokeSafely(action);
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(new Action(() => InvokeSafely(action)));
+    }
+
+    private static void InvokeSafely(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Input hook: dispatched action failed: {ex.Message}");
+        }
     }
 
     private static bool IsMouseTriggerModeActive(string mode, string selectedMode, bool enabled)
@@ -1005,6 +1117,12 @@ public class InputHookService
                 return string.Empty;
             }
 
+            var now = Environment.TickCount64;
+            if (hwnd == _cachedForegroundWindow && now - _cachedForegroundProcessTick <= 150)
+            {
+                return _cachedForegroundProcessName;
+            }
+
             var className = new System.Text.StringBuilder(256);
             if (GetClassName(hwnd, className, className.Capacity) > 0)
             {
@@ -1014,17 +1132,27 @@ public class InputHookService
                     string.Equals(classStr, "Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(classStr, "Shell_SecondaryTrayWnd", StringComparison.OrdinalIgnoreCase))
                 {
+                    CacheForegroundProcessName(hwnd, "desktop", now);
                     return "desktop";
                 }
             }
 
             _ = GetWindowThreadProcessId(hwnd, out var processId);
-            return processId == 0 ? string.Empty : Process.GetProcessById((int)processId).ProcessName;
+            var processName = processId == 0 ? string.Empty : Process.GetProcessById((int)processId).ProcessName;
+            CacheForegroundProcessName(hwnd, processName, now);
+            return processName;
         }
         catch
         {
             return string.Empty;
         }
+    }
+
+    private static void CacheForegroundProcessName(IntPtr hwnd, string processName, long tick)
+    {
+        _cachedForegroundWindow = hwnd;
+        _cachedForegroundProcessName = processName;
+        _cachedForegroundProcessTick = tick;
     }
 
     private static bool IsRadialRightDragEnabled() =>
