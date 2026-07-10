@@ -316,7 +316,34 @@ public sealed class CloudSyncClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task UpsertPrivateExtensionAsync(CommandItem command, string? iconOverride = null, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new
+        {
+            manifest = BuildManifestPayload(command, iconOverride)
+        });
+
+        using var request = CreateJsonRequest(
+            HttpMethod.Put,
+            $"/v1/me/extensions/{Uri.EscapeDataString(command.ExtensionId)}/private",
+            body,
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     public async Task<string?> PublishIconAsync(CommandItem command, string version, CancellationToken cancellationToken = default)
+    {
+        return await UploadIconAsync(command, version, privateLibrary: false, cancellationToken);
+    }
+
+    public async Task<string?> PublishPrivateIconAsync(CommandItem command, string version, CancellationToken cancellationToken = default)
+    {
+        return await UploadIconAsync(command, version, privateLibrary: true, cancellationToken);
+    }
+
+    private async Task<string?> UploadIconAsync(CommandItem command, string version, bool privateLibrary, CancellationToken cancellationToken)
     {
         var iconReference = command.IconReference?.Trim();
         if (string.IsNullOrWhiteSpace(iconReference) || ExtensionIconLibrary.IsBuiltInReference(iconReference))
@@ -338,9 +365,12 @@ public sealed class CloudSyncClient
         }
 
         await EnsureAuthenticatedAsync(cancellationToken);
+        var path = privateLibrary
+            ? $"/v1/me/extensions/{Uri.EscapeDataString(command.ExtensionId)}/icon"
+            : $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}/icon";
         using var request = CreateRequest(
             HttpMethod.Put,
-            $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}/icon?version={Uri.EscapeDataString(version)}&filename={Uri.EscapeDataString(Path.GetFileName(localPath))}",
+            $"{path}?version={Uri.EscapeDataString(version)}&filename={Uri.EscapeDataString(Path.GetFileName(localPath))}",
             includeAuth: true);
         request.Content = new ByteArrayContent(await File.ReadAllBytesAsync(localPath, cancellationToken));
         request.Content.Headers.ContentType = new MediaTypeHeaderValue(GetMimeType(localPath));
@@ -351,9 +381,10 @@ public sealed class CloudSyncClient
         return string.IsNullOrWhiteSpace(payload.IconUrl) ? iconReference : payload.IconUrl;
     }
 
-    public async Task UpsertUserExtensionAsync(CommandItem command, CancellationToken cancellationToken = default)
+    public async Task UpsertUserExtensionAsync(CommandItem command, string? iconOverride = null, bool hasArchive = false, CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
+        var icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride;
         var body = JsonSerializer.Serialize(new
         {
             installedVersion = command.DeclaredVersion,
@@ -365,8 +396,10 @@ public sealed class CloudSyncClient
                 name = command.Title,
                 displayName = command.Title,
                 description = command.Subtitle,
-                icon = command.IconReference,
+                icon,
                 accentHex = command.AccentBrush?.ToString(),
+                hasArchive,
+                packageScope = hasArchive ? "private-account" : "",
                 manifest = new
                 {
                     id = command.ExtensionId,
@@ -375,7 +408,7 @@ public sealed class CloudSyncClient
                     version = command.DeclaredVersion,
                     category = command.Category,
                     description = command.Subtitle,
-                    icon = command.IconReference,
+                    icon,
                     accentHex = command.AccentBrush?.ToString(),
                     runtime = command.Runtime,
                     entryMode = command.EntryMode
@@ -650,15 +683,28 @@ public sealed class CloudSyncClient
 
     public async Task UploadExtensionArchiveAsync(CommandItem command, byte[] packageBytes, string version, CancellationToken cancellationToken = default)
     {
+        await UploadArchiveAsync(command, packageBytes, version, privateLibrary: false, cancellationToken);
+    }
+
+    public async Task UploadPrivateExtensionArchiveAsync(CommandItem command, byte[] packageBytes, string version, CancellationToken cancellationToken = default)
+    {
+        await UploadArchiveAsync(command, packageBytes, version, privateLibrary: true, cancellationToken);
+    }
+
+    private async Task UploadArchiveAsync(CommandItem command, byte[] packageBytes, string version, bool privateLibrary, CancellationToken cancellationToken)
+    {
         await EnsureAuthenticatedAsync(cancellationToken);
+        var path = privateLibrary
+            ? $"/v1/me/extensions/{Uri.EscapeDataString(command.ExtensionId)}/archive"
+            : $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}/archive";
         using var request = CreateRequest(
             HttpMethod.Put,
-            $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}/archive?version={Uri.EscapeDataString(version)}",
+            $"{path}?version={Uri.EscapeDataString(version)}",
             includeAuth: true);
         request.Content = new ByteArrayContent(packageBytes);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         using var response = await SendAsyncWithFallback(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessAsync(response, cancellationToken);
     }
 
     public async Task<byte[]> DownloadExtensionArchiveAsync(string extensionId, CancellationToken cancellationToken = default)
@@ -669,6 +715,18 @@ public sealed class CloudSyncClient
             includeAuth: false,
             cancellationToken: cancellationToken);
         response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    public async Task<byte[]> DownloadMyExtensionArchiveAsync(string extensionId, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"/v1/me/extensions/{Uri.EscapeDataString(extensionId)}/archive",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
     }
 
@@ -808,6 +866,50 @@ public sealed class CloudSyncClient
             ("uri", request.RequestUri?.ToString()),
             ("error", lastError?.Message));
         throw lastError ?? new HttpRequestException("Cloud request failed before receiving a response.");
+    }
+
+    private static object BuildManifestPayload(CommandItem command, string? iconOverride = null)
+    {
+        return new
+        {
+            name = command.ExtensionId,
+            displayName = command.Title,
+            version = command.DeclaredVersion,
+            category = command.Category,
+            description = command.Subtitle,
+            accentHex = command.AccentBrush?.ToString(),
+            keywords = command.Keywords,
+            icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride,
+            queryPrefixes = command.QueryPrefixes,
+            queryTargetTemplate = command.QueryTargetTemplate,
+            globalShortcut = command.GlobalShortcut,
+            hotkeyBehavior = command.HotkeyBehavior,
+            runtime = command.Runtime,
+            entryMode = command.EntryMode,
+            entry = command.EntryPoint,
+            permissions = command.Permissions,
+            script = string.IsNullOrWhiteSpace(command.InlineScriptSource)
+                ? null
+                : new
+                {
+                    source = command.InlineScriptSource
+                },
+            hostedView = command.HostedView == null
+                ? null
+                : new
+                {
+                    type = command.HostedView.Type,
+                    title = command.HostedView.Title,
+                    description = command.HostedView.Description,
+                    inputLabel = command.HostedView.InputLabel,
+                    inputPlaceholder = command.HostedView.InputPlaceholder,
+                    outputLabel = command.HostedView.OutputLabel,
+                    actionButtonText = command.HostedView.ActionButtonText,
+                    actionType = command.HostedView.ActionType,
+                    outputTemplate = command.HostedView.OutputTemplate,
+                    emptyState = command.HostedView.EmptyState
+                }
+        };
     }
 
     private static HttpClient CreateHttpClient(string baseUrl, bool useProxy)

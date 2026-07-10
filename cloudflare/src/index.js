@@ -936,12 +936,16 @@ async function handleRequest(request, env) {
   if (iconDownloadMatch && request.method === "GET") {
     const extensionId = decodeURIComponent(iconDownloadMatch[1]);
     const row = await env.DB.prepare(
-      `select icon_key
+      `select extension_id, manifest_json, icon_key, is_published
        from extensions
        where extension_id = ?`
     )
       .bind(extensionId)
       .first();
+
+    if (row && !isStoreVisibleExtension(row)) {
+      return json({ error: "not_found", message: "Icon not found" }, 404);
+    }
 
     if (!row?.icon_key) {
       return json({ error: "not_found", message: "Icon not found" }, 404);
@@ -1030,7 +1034,7 @@ async function handleRequest(request, env) {
   if (archiveDownloadMatch && request.method === "GET") {
     const extensionId = decodeURIComponent(archiveDownloadMatch[1]);
     const row = await env.DB.prepare(
-      `select archive_key, latest_version, archive_sha256
+      `select extension_id, manifest_json, archive_key, latest_version, archive_sha256, is_published
        from extensions
        where extension_id = ?`
     )
@@ -1041,7 +1045,7 @@ async function handleRequest(request, env) {
     let latestVersion = "latest";
     let sha256 = "";
 
-    if (row?.archive_key) {
+    if (row?.archive_key && isStoreVisibleExtension(row)) {
       archiveKey = row.archive_key;
       latestVersion = row.latest_version || "latest";
       sha256 = row.archive_sha256 || "";
@@ -1080,23 +1084,213 @@ async function handleRequest(request, env) {
 
     const rows = await env.DB.prepare(
       `select
-        user_id,
-        extension_id,
-        installed_version,
-        enabled,
-        settings_json,
-        updated_at
-      from user_extensions
-      where user_id = ?
-      order by updated_at desc`
+        ue.user_id,
+        ue.extension_id,
+        ue.installed_version,
+        ue.enabled,
+        ue.settings_json,
+        ue.updated_at,
+        e.display_name,
+        e.latest_version,
+        e.manifest_json,
+        e.icon_key,
+        e.archive_key,
+        e.archive_sha256,
+        e.publisher_user_id,
+        e.publisher_username,
+        e.published_at,
+        e.is_published,
+        e.updated_at as extension_updated_at
+      from user_extensions ue
+      left join extensions e on e.extension_id = ue.extension_id
+      where ue.user_id = ?
+      order by ue.updated_at desc`
     )
       .bind(auth.userId)
       .all();
 
     return json({
       userId: auth.userId,
-      items: rows.results ?? []
+      items: (rows.results ?? []).map((row) => serializeUserExtensionRecord(url, row, auth.userId))
     });
+  }
+
+  const myPrivateExtensionMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/private$/);
+  if (myPrivateExtensionMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myPrivateExtensionMatch[1]);
+    const payload = await readJson(request);
+    const manifest = payload.manifest ?? payload;
+    await ensureUser(env, auth.userId);
+    await upsertPrivateExtensionMetadata(env, auth, extensionId, manifest);
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      extensionId,
+      latestVersion: String(manifest.version ?? "0.0.0").slice(0, 50)
+    });
+  }
+
+  const myIconMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/icon$/);
+  if (myIconMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myIconMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensurePrivateExtensionWritable(env, auth, extensionId);
+
+    const version = (url.searchParams.get("version") || "0.0.0").slice(0, 50);
+    const filename = String(url.searchParams.get("filename") || "icon.png").slice(0, 200);
+    const bytes = await request.arrayBuffer();
+    if (!bytes || bytes.byteLength === 0) {
+      throw new HttpError(400, "invalid_icon", "Icon payload is empty");
+    }
+
+    const contentType = request.headers.get("content-type") || "application/octet-stream";
+    const extension = resolveIconExtension(filename, contentType);
+    const iconKey = `users/${auth.userId}/extensions/${extensionId}/${version}/icon${extension}`;
+    const now = isoNow();
+
+    await env.PACKAGES.put(iconKey, bytes, {
+      httpMetadata: { contentType },
+      customMetadata: {
+        userId: auth.userId,
+        extensionId,
+        version,
+        private: "true"
+      }
+    });
+
+    await env.DB.prepare(
+      `update extensions
+       set icon_key = ?,
+           latest_version = coalesce(nullif(?, ''), latest_version),
+           updated_at = ?
+       where extension_id = ?`
+    )
+      .bind(iconKey, version, now, extensionId)
+      .run();
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      extensionId,
+      icon_url: buildMyExtensionIconUrl(url, extensionId, Date.now())
+    });
+  }
+
+  if (myIconMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myIconMatch[1]);
+    await ensureUserCanReadExtension(env, auth.userId, extensionId);
+
+    const row = await env.DB.prepare(
+      `select icon_key
+       from extensions
+       where extension_id = ?`
+    )
+      .bind(extensionId)
+      .first();
+
+    if (!row?.icon_key) {
+      return json({ error: "not_found", message: "Icon not found" }, 404);
+    }
+
+    const object = await env.PACKAGES.get(row.icon_key);
+    if (!object) {
+      return json({ error: "not_found", message: "Stored icon is missing" }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("cache-control", "private, max-age=300");
+    return withCors(new Response(object.body, { headers }));
+  }
+
+  const myArchiveMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive$/);
+  if (myArchiveMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensurePrivateExtensionWritable(env, auth, extensionId);
+
+    const version = (url.searchParams.get("version") || "0.0.0").slice(0, 50);
+    const bytes = await request.arrayBuffer();
+    if (!bytes || bytes.byteLength === 0) {
+      throw new HttpError(400, "invalid_archive", "Archive payload is empty");
+    }
+
+    const sha256 = await digestHex(bytes);
+    const archiveKey = `users/${auth.userId}/extensions/${extensionId}/${version}.zip`;
+    const now = isoNow();
+
+    await env.PACKAGES.put(archiveKey, bytes, {
+      httpMetadata: {
+        contentType: request.headers.get("content-type") || "application/zip"
+      },
+      customMetadata: {
+        userId: auth.userId,
+        extensionId,
+        version,
+        sha256,
+        private: "true"
+      }
+    });
+
+    await env.DB.prepare(
+      `update extensions
+       set latest_version = ?,
+           archive_key = ?,
+           archive_sha256 = ?,
+           updated_at = ?
+       where extension_id = ?`
+    )
+      .bind(version, archiveKey, sha256, now, extensionId)
+      .run();
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      extensionId,
+      version,
+      archiveKey,
+      sha256,
+      archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
+    });
+  }
+
+  if (myArchiveMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensureUserCanReadExtension(env, auth.userId, extensionId);
+
+    const row = await env.DB.prepare(
+      `select archive_key, latest_version, archive_sha256
+       from extensions
+       where extension_id = ?`
+    )
+      .bind(extensionId)
+      .first();
+
+    if (!row?.archive_key) {
+      return json({ error: "not_found", message: "Archive not found" }, 404);
+    }
+
+    const object = await env.PACKAGES.get(row.archive_key);
+    if (!object) {
+      return json({ error: "not_found", message: `Stored package is missing: ${row.archive_key}` }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", row.archive_sha256 || object.httpEtag || "");
+    headers.set("cache-control", "private, max-age=60");
+    headers.set(
+      "content-disposition",
+      `attachment; filename="${extensionId}-${row.latest_version || "latest"}.zip"`
+    );
+    return withCors(new Response(object.body, { headers }));
   }
 
   if (url.pathname === "/v1/me/devices" && request.method === "GET") {
@@ -2264,6 +2458,44 @@ function serializeStoreExtensionRecord(url, row, definition) {
   };
 }
 
+function serializeUserExtensionRecord(url, row, userId) {
+  const manifest = parseManifestJson(row.manifest_json);
+  const settings = parseManifestJson(row.settings_json);
+  const extensionId = row.extension_id;
+  const displayName = row.display_name || settings.displayName || settings.title || manifest.displayName || manifest.name || extensionId;
+  const icon = row.icon_key
+    ? buildMyExtensionIconUrl(url, extensionId, row.extension_updated_at || row.updated_at || "")
+    : (manifest.icon || settings.icon || settings.manifest?.icon || "");
+  return {
+    user_id: row.user_id,
+    extension_id: extensionId,
+    installed_version: row.installed_version,
+    enabled: Number(row.enabled ?? 1),
+    settings_json: row.settings_json || "{}",
+    settings,
+    updated_at: row.updated_at,
+    display_name: displayName,
+    latest_version: row.latest_version || row.installed_version,
+    manifest_json: row.manifest_json || "",
+    manifest,
+    icon_key: row.icon_key || "",
+    icon,
+    archive_key: row.archive_key || "",
+    archive_sha256: row.archive_sha256 || "",
+    has_archive: Boolean(row.archive_key),
+    archive_download_url: row.archive_key ? buildMyExtensionArchiveUrl(url, extensionId) : null,
+    publisher_user_id: row.publisher_user_id || "",
+    publisher_username: row.publisher_username || "",
+    published_at: row.published_at || "",
+    is_published: Number(row.is_published ?? 0),
+    is_private: String(row.publisher_user_id || "") === String(userId) && Number(row.is_published ?? 0) === 0,
+    description: manifest.description || settings.description || settings.manifest?.description || "",
+    category: manifest.category || settings.manifest?.category || "扩展",
+    accent_hex: manifest.accentHex || manifest.accent_hex || settings.accentHex || settings.accent_hex || settings.manifest?.accentHex || "",
+    keywords: Array.isArray(manifest.keywords) ? manifest.keywords : []
+  };
+}
+
 function resolveStoreIcon(url, row, manifestIcon, extensionId) {
   if (row?.icon_key) {
     return buildExtensionIconUrl(url, extensionId, row.updated_at || row.published_at || "");
@@ -2316,6 +2548,19 @@ function buildExtensionIconUrl(url, extensionId, cacheBust = "") {
   }
 
   return iconUrl.toString();
+}
+
+function buildMyExtensionIconUrl(url, extensionId, cacheBust = "") {
+  const iconUrl = new URL(`/v1/me/extensions/${encodeURIComponent(extensionId)}/icon`, url.origin);
+  if (cacheBust) {
+    iconUrl.searchParams.set("v", String(cacheBust));
+  }
+
+  return iconUrl.toString();
+}
+
+function buildMyExtensionArchiveUrl(url, extensionId) {
+  return `${url.origin}/v1/me/extensions/${encodeURIComponent(extensionId)}/archive`;
 }
 
 function resolveIconExtension(filename, contentType) {
@@ -2480,6 +2725,112 @@ async function ensureUser(env, userId) {
   )
     .bind(userId, isoNow(), isoNow())
     .run();
+}
+
+async function upsertPrivateExtensionMetadata(env, auth, extensionId, manifest) {
+  const existing = await env.DB.prepare(
+    `select publisher_user_id
+     from extensions
+     where extension_id = ?`
+  )
+    .bind(extensionId)
+    .first();
+
+  if (existing?.publisher_user_id &&
+      String(existing.publisher_user_id) !== auth.userId) {
+    throw new HttpError(403, "forbidden", "Only the owner can update this private extension");
+  }
+
+  const now = isoNow();
+  const displayName = String(manifest.displayName ?? manifest.name ?? extensionId).slice(0, 200);
+  const latestVersion = String(manifest.version ?? "0.0.0").slice(0, 50);
+
+  await env.DB.prepare(
+    `insert into extensions (
+      extension_id,
+      display_name,
+      latest_version,
+      manifest_json,
+      publisher_user_id,
+      publisher_username,
+      published_at,
+      is_published,
+      updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, 0, ?)
+    on conflict(extension_id) do update set
+      display_name = excluded.display_name,
+      latest_version = excluded.latest_version,
+      manifest_json = excluded.manifest_json,
+      publisher_user_id = coalesce(extensions.publisher_user_id, excluded.publisher_user_id),
+      publisher_username = excluded.publisher_username,
+      is_published = extensions.is_published,
+      updated_at = excluded.updated_at`
+  )
+    .bind(
+      extensionId,
+      displayName,
+      latestVersion,
+      JSON.stringify(manifest),
+      auth.userId,
+      auth.username,
+      now,
+      now
+    )
+    .run();
+}
+
+async function ensurePrivateExtensionWritable(env, auth, extensionId) {
+  let row = await env.DB.prepare(
+    `select publisher_user_id, display_name, latest_version
+     from extensions
+     where extension_id = ?`
+  )
+    .bind(extensionId)
+    .first();
+
+  if (!row) {
+    await upsertPrivateExtensionMetadata(env, auth, extensionId, {
+      name: extensionId,
+      displayName: extensionId,
+      version: "0.0.0"
+    });
+    row = await env.DB.prepare(
+      `select publisher_user_id
+       from extensions
+       where extension_id = ?`
+    )
+      .bind(extensionId)
+      .first();
+  }
+
+  if (row?.publisher_user_id && String(row.publisher_user_id) !== auth.userId) {
+    throw new HttpError(403, "forbidden", "Only the owner can update this extension");
+  }
+}
+
+async function ensureUserCanReadExtension(env, userId, extensionId) {
+  const row = await env.DB.prepare(
+    `select e.publisher_user_id, e.is_published, ue.user_id
+     from extensions e
+     left join user_extensions ue
+       on ue.extension_id = e.extension_id
+      and ue.user_id = ?
+     where e.extension_id = ?`
+  )
+    .bind(userId, extensionId)
+    .first();
+
+  if (!row) {
+    throw new HttpError(404, "extension_not_found", "Extension not found");
+  }
+
+  if (Number(row.is_published ?? 0) === 1 ||
+      String(row.publisher_user_id || "") === String(userId) ||
+      String(row.user_id || "") === String(userId)) {
+    return;
+  }
+
+  throw new HttpError(403, "forbidden", "You do not have access to this extension");
 }
 
 async function touchUser(env, userId) {

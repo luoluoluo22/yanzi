@@ -78,6 +78,7 @@ public sealed class AppUpdateInfoResponse
 
     [JsonPropertyName("updated_at")]
     public string UpdatedAt { get; init; } = string.Empty;
+
 }
 
 public sealed class ExtensionListResponse
@@ -192,6 +193,33 @@ public sealed class UserExtensionRecord
 
     [JsonPropertyName("updated_at")]
     public string UpdatedAt { get; init; } = string.Empty;
+
+    [JsonPropertyName("display_name")]
+    public string? DisplayName { get; init; }
+
+    [JsonPropertyName("latest_version")]
+    public string? LatestVersion { get; init; }
+
+    [JsonPropertyName("manifest_json")]
+    public string? ManifestJson { get; init; }
+
+    [JsonPropertyName("icon")]
+    public string? Icon { get; init; }
+
+    [JsonPropertyName("archive_sha256")]
+    public string? ArchiveSha256 { get; init; }
+
+    [JsonPropertyName("has_archive")]
+    public bool HasArchive { get; init; }
+
+    [JsonPropertyName("archive_download_url")]
+    public string? ArchiveDownloadUrl { get; init; }
+
+    [JsonPropertyName("is_private")]
+    public bool IsPrivate { get; init; }
+
+    [JsonPropertyName("is_published")]
+    public int IsPublished { get; init; }
 }
 
 public sealed class WebDavConfigDto

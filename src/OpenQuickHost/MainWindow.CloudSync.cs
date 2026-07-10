@@ -125,6 +125,7 @@ public partial class MainWindow
             ResetSilentCloudReconnect();
             StartMobileMessageBridge("cloud-refresh");
             SyncLocalExtensionsToCloud();
+            _ = PullMissingPrivateExtensionsFromCloudAsync();
             LastRunMessage = pulledConfig || pulledQuickPanelConfig
                 ? "已同步账号状态，并更新了云端配置。"
                 : "已同步账号状态。";
@@ -253,7 +254,7 @@ public partial class MainWindow
             var packageBytes = ExtensionPackageService.BuildPackage(command, version, publishedIcon);
             await _cloudSyncClient.UpsertExtensionAsync(command, publishedIcon);
             await _cloudSyncClient.UploadExtensionArchiveAsync(command, packageBytes, version);
-            await _cloudSyncClient.UpsertUserExtensionAsync(command);
+            await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon, hasArchive: true);
             command.MarkAsSynced(version);
             var storeUrl = BuildExtensionStoreUrl(command.ExtensionId);
             LastRunMessage = $"已发布到扩展商店：{command.Title} (v{version})";
@@ -2132,25 +2133,91 @@ public partial class MainWindow
                         string? publishedIcon = null;
                         try
                         {
-                            publishedIcon = await _cloudSyncClient.PublishIconAsync(cmd, cmd.DeclaredVersion);
+                            publishedIcon = await _cloudSyncClient.PublishPrivateIconAsync(cmd, cmd.DeclaredVersion);
                         }
                         catch (Exception iconEx)
                         {
-                            HostAssets.AppendLog($"Failed to publish icon for {cmd.ExtensionId}: {iconEx.Message}");
+                            HostAssets.AppendLog($"Failed to upload private icon for {cmd.ExtensionId}: {iconEx.Message}");
                         }
 
-                        await _cloudSyncClient.UpsertExtensionAsync(cmd, publishedIcon);
-                        await _cloudSyncClient.UpsertUserExtensionAsync(cmd);
+                        await _cloudSyncClient.UpsertPrivateExtensionAsync(cmd, publishedIcon);
+                        var version = string.IsNullOrWhiteSpace(cmd.DeclaredVersion) ? "0.1.0" : cmd.DeclaredVersion;
+                        var packageBytes = ExtensionPackageService.BuildPackage(cmd, version, publishedIcon);
+                        await _cloudSyncClient.UploadPrivateExtensionArchiveAsync(cmd, packageBytes, version);
+                        await _cloudSyncClient.UpsertUserExtensionAsync(cmd, publishedIcon, hasArchive: true);
                         successCount++;
                     }
                 }
-                HostAssets.AppendLog($"Auto synchronized {successCount} local extensions metadata to cloud db successfully.");
+                HostAssets.AppendLog($"Auto synchronized {successCount} local extensions to private cloud library successfully.");
             }
             catch (Exception ex)
             {
-                HostAssets.AppendLog($"Failed to auto register local extensions to cloud db: {ex.Message}");
+                HostAssets.AppendLog($"Failed to auto sync local extensions to private cloud library: {ex.Message}");
             }
         });
+    }
+
+    private async Task PullMissingPrivateExtensionsFromCloudAsync()
+    {
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+        {
+            return;
+        }
+
+        try
+        {
+            var items = await _cloudSyncClient.GetUserExtensionsAsync();
+            var localIds = LocalExtensionCatalog.LoadCommands()
+                .Where(command => command.Source == CommandSource.LocalExtension)
+                .Select(command => command.ExtensionId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var pulledCount = 0;
+            foreach (var item in items)
+            {
+                if (!item.IsPrivate ||
+                    item.Enabled == 0 ||
+                    !item.HasArchive ||
+                    string.IsNullOrWhiteSpace(item.ExtensionId) ||
+                    localIds.Contains(item.ExtensionId) ||
+                    IsConfigExtensionId(item.ExtensionId))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var packageBytes = await _cloudSyncClient.DownloadMyExtensionArchiveAsync(item.ExtensionId);
+                    var result = await ExtensionInstallService.InstallPackageAsync(packageBytes, item.ExtensionId);
+                    localIds.Add(result.ExtensionId);
+                    pulledCount++;
+                    HostAssets.AppendLog($"Pulled private extension from cloud library: {result.ExtensionId} v{result.Version}");
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Failed to pull private extension {item.ExtensionId}: {ex.Message}");
+                }
+            }
+
+            if (pulledCount > 0)
+            {
+                await Dispatcher.InvokeAsync(ReloadLocalExtensionsFromExternal);
+                LastRunMessage = $"已从账号私有库拉取 {pulledCount} 个扩展。";
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to pull missing private extensions: {ex.Message}");
+        }
+    }
+
+    private static bool IsConfigExtensionId(string extensionId)
+    {
+        return extensionId.Equals("yanzi-webdav-settings", StringComparison.OrdinalIgnoreCase) ||
+               extensionId.Equals("yanzi-quickpanel-settings", StringComparison.OrdinalIgnoreCase) ||
+               extensionId.Equals("yanzi-personal-sync-settings", StringComparison.OrdinalIgnoreCase) ||
+               extensionId.Equals("yanzi-ai-settings", StringComparison.OrdinalIgnoreCase) ||
+               extensionId.Equals("yanzi-general-settings", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<bool> PullWebDavConfigFromCloudAsync()
