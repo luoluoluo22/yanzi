@@ -181,11 +181,23 @@ public final class MobileIconLibrary {
             return "";
         }
         String value = reference.trim();
+        if (value.isEmpty()) {
+            return "";
+        }
         if (EMOJI_MAP.containsKey(value)) {
             value = EMOJI_MAP.get(value);
         }
-        if (value.startsWith("mdi:") || value.startsWith("app:")) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("mdi:")) {
             value = value.substring(4);
+            int colonIndex = value.indexOf(':');
+            if (colonIndex > 0) {
+                value = value.substring(0, colonIndex);
+            }
+        } else if (lower.startsWith("app:")) {
+            value = inferFromReference(value.substring(4));
+        } else {
+            value = inferFromReference(value);
         }
         value = value.toLowerCase(Locale.ROOT);
         // 去除 MDI 中空心图标常用的后缀 -outline 以最大化复用已有图标路径
@@ -193,5 +205,133 @@ public final class MobileIconLibrary {
             value = value.substring(0, value.length() - 8);
         }
         return ALIASES.containsKey(value) ? ALIASES.get(value) : value;
+    }
+
+    private static String inferFromReference(String reference) {
+        String value = reference == null ? "" : reference.trim();
+        if (value.isEmpty()) {
+            return "";
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("http://") || lower.startsWith("https://")) {
+            return inferFromText(lower, "globe");
+        }
+        if (lower.startsWith("data:image/")) {
+            return "image";
+        }
+        if (lower.startsWith("shell:")) {
+            return "folder";
+        }
+        if (lower.startsWith("ms-") || lower.startsWith("mailto:")) {
+            return inferFromText(lower, "shortcut");
+        }
+        if (looksLikeLocalPath(lower)) {
+            String name = lastPathSegment(lower);
+            String inferred = inferFromText(name, "");
+            if (!inferred.isEmpty()) {
+                return inferred;
+            }
+            if (name.endsWith(".exe") || name.endsWith(".lnk") || name.endsWith(".appref-ms")) {
+                return "shortcut";
+            }
+            if (name.endsWith(".ps1") || name.endsWith(".bat") || name.endsWith(".cmd") || name.endsWith(".sh")) {
+                return "terminal";
+            }
+            if (name.endsWith(".json") || name.endsWith(".js") || name.endsWith(".ts") || name.endsWith(".cs") || name.endsWith(".py") || name.endsWith(".html") || name.endsWith(".css")) {
+                return "code";
+            }
+            if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".ico")) {
+                return "image";
+            }
+            if (name.endsWith(".zip") || name.endsWith(".7z") || name.endsWith(".rar")) {
+                return "archive";
+            }
+            if (name.contains(".")) {
+                return "file";
+            }
+            return "folder";
+        }
+        return inferFromText(lower, lower);
+    }
+
+    private static boolean looksLikeLocalPath(String value) {
+        return value.contains("\\")
+                || value.startsWith("/")
+                || value.matches("^[a-z]:.*")
+                || value.startsWith(".\\")
+                || value.startsWith("../")
+                || value.startsWith("~/");
+    }
+
+    private static String lastPathSegment(String value) {
+        int queryIndex = value.indexOf('?');
+        if (queryIndex >= 0) {
+            value = value.substring(0, queryIndex);
+        }
+        int fragmentIndex = value.indexOf('#');
+        if (fragmentIndex >= 0) {
+            value = value.substring(0, fragmentIndex);
+        }
+        value = value.replace('\\', '/');
+        while (value.endsWith("/") && value.length() > 1) {
+            value = value.substring(0, value.length() - 1);
+        }
+        int slashIndex = value.lastIndexOf('/');
+        return slashIndex >= 0 ? value.substring(slashIndex + 1) : value;
+    }
+
+    private static String inferFromText(String value, String fallback) {
+        if (value.contains("clipboard") || value.contains("copy") || value.contains("paste")) {
+            return "clipboard";
+        }
+        if (value.contains("chrome") || value.contains("edge") || value.contains("firefox") || value.contains("browser") || value.contains("http") || value.contains("www.")) {
+            return "globe";
+        }
+        if (value.contains("github") || value.contains("gitlab") || value.contains("gitee")) {
+            return "code";
+        }
+        if (value.contains("wechat") || value.contains("weixin") || value.contains("qq") || value.contains("chat") || value.contains("message")) {
+            return "chat";
+        }
+        if (value.contains("explorer") || value.contains("folder") || value.contains("directory")) {
+            return "folder";
+        }
+        if (value.contains("powershell") || value.contains("pwsh") || value.contains("terminal") || value.contains("cmd") || value.contains("console")) {
+            return "terminal";
+        }
+        if (value.contains("notepad") || value.contains("note") || value.contains("memo") || value.contains("text")) {
+            return "file";
+        }
+        if (value.contains("keyboard") || value.contains("keymap") || value.contains("hotkey")) {
+            return "keyboard";
+        }
+        if (value.contains("camera") || value.contains("photo") || value.contains("screenshot")) {
+            return "camera";
+        }
+        if (value.contains("image") || value.contains("picture")) {
+            return "image";
+        }
+        if (value.contains("search") || value.contains("find")) {
+            return "search";
+        }
+        if (value.contains("refresh") || value.contains("sync")) {
+            return "refresh";
+        }
+        if (value.contains("setting") || value.contains("config") || value.contains("option")) {
+            return "settings";
+        }
+        if (value.contains("network") || value.contains("wifi") || value.contains("status")) {
+            return "dashboard";
+        }
+        if (value.contains("calc")) {
+            return "counter";
+        }
+        if (value.contains("zip") || value.contains("bandizip") || value.contains("archive")) {
+            return "archive";
+        }
+        if (value.contains("window") || value.contains("desktop") || value.contains("monitor")) {
+            return "dashboard";
+        }
+        return fallback;
     }
 }
