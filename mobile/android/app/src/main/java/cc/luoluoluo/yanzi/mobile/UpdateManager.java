@@ -47,6 +47,8 @@ public final class UpdateManager {
     private static final String PREFS_NAME = "yanzi_update_prefs";
     private static final String KEY_DOWNLOADED_VERSION = "downloaded_version";
     private static final String KEY_IS_DOWNLOADING = "is_downloading";
+    private static final String KEY_DOWNLOAD_STARTED_AT = "download_started_at";
+    private static final long STALE_DOWNLOAD_TIMEOUT_MS = 30L * 60L * 1000L;
 
     private static volatile boolean isDownloadCanceled = false;
 
@@ -439,9 +441,26 @@ public final class UpdateManager {
      */
     private static void startSilentDownload(final Activity activity, final String latestVersion, final String downloadUrl) {
         final SharedPreferences prefs = activity.getSharedPreferences(PREFS_NAME, 0);
-        if (prefs.getBoolean(KEY_IS_DOWNLOADING, false)) return;
+        if (prefs.getBoolean(KEY_IS_DOWNLOADING, false)) {
+            long startedAt = prefs.getLong(KEY_DOWNLOAD_STARTED_AT, 0L);
+            long elapsed = startedAt <= 0L ? Long.MAX_VALUE : System.currentTimeMillis() - startedAt;
+            if (elapsed < STALE_DOWNLOAD_TIMEOUT_MS) {
+                log(activity, "已有静默更新下载任务正在进行，跳过重复启动。elapsedMs=" + elapsed);
+                return;
+            }
 
-        prefs.edit().putBoolean(KEY_IS_DOWNLOADING, true).apply();
+            log(activity, "检测到过期的静默下载标记，重置后重新下载。elapsedMs=" + elapsed);
+            prefs.edit()
+                    .putBoolean(KEY_IS_DOWNLOADING, false)
+                    .remove(KEY_DOWNLOAD_STARTED_AT)
+                    .apply();
+            cleanCacheApk(activity);
+        }
+
+        prefs.edit()
+                .putBoolean(KEY_IS_DOWNLOADING, true)
+                .putLong(KEY_DOWNLOAD_STARTED_AT, System.currentTimeMillis())
+                .apply();
         log(activity, "后台静默更新下载启动。");
 
         AsyncTask.THREAD_POOL_EXECUTOR.execute(new Runnable() {
@@ -472,6 +491,7 @@ public final class UpdateManager {
                     prefs.edit()
                             .putString(KEY_DOWNLOADED_VERSION, latestVersion)
                             .putBoolean(KEY_IS_DOWNLOADING, false)
+                            .remove(KEY_DOWNLOAD_STARTED_AT)
                             .apply();
 
                     new Handler(Looper.getMainLooper()).post(new Runnable() {
@@ -489,7 +509,10 @@ public final class UpdateManager {
                     } else {
                         log(activity, "静默更新包下载失败。");
                     }
-                    prefs.edit().putBoolean(KEY_IS_DOWNLOADING, false).apply();
+                    prefs.edit()
+                            .putBoolean(KEY_IS_DOWNLOADING, false)
+                            .remove(KEY_DOWNLOAD_STARTED_AT)
+                            .apply();
                 }
             }
         });
@@ -502,6 +525,7 @@ public final class UpdateManager {
         HttpURLConnection conn = null;
         FileOutputStream out = null;
         InputStream in = null;
+        File tempFile = new File(targetFile.getAbsolutePath() + ".part");
         try {
             log(context, "建立下载连接: " + downloadUrl);
             URL url = new URL(downloadUrl);
@@ -519,13 +543,22 @@ public final class UpdateManager {
             }
 
             final int fileLength = conn.getContentLength();
+            String contentType = conn.getContentType();
             log(context, "更新文件大小: " + fileLength + " 字节");
+            log(context, "更新文件类型: " + contentType);
+            if (fileLength > 0 && fileLength < 1024 * 1024) {
+                log(context, "下载内容过小，疑似错误页，连接终止");
+                return false;
+            }
             
             in = conn.getInputStream();
             if (targetFile.exists()) {
                 targetFile.delete();
             }
-            out = new FileOutputStream(targetFile);
+            if (tempFile.exists()) {
+                tempFile.delete();
+            }
+            out = new FileOutputStream(tempFile);
 
             byte[] data = new byte[4096];
             long total = 0;
@@ -548,6 +581,24 @@ public final class UpdateManager {
                 out.write(data, 0, count);
             }
             log(context, "数据文件读取完毕，共写入 " + total + " 字节。");
+            try {
+                out.flush();
+                out.close();
+                out = null;
+            } catch (Exception ignored) {}
+
+            if (fileLength > 0 && total != fileLength) {
+                log(context, "下载文件长度不匹配，expected=" + fileLength + ", actual=" + total);
+                tempFile.delete();
+                return false;
+            }
+
+            if (!tempFile.renameTo(targetFile)) {
+                log(context, "临时更新包重命名失败。");
+                tempFile.delete();
+                return false;
+            }
+
             return true;
         } catch (Exception e) {
             log(context, "数据下载流异常: " + e.getMessage());
@@ -557,6 +608,9 @@ public final class UpdateManager {
                 if (in != null) in.close();
                 if (out != null) out.close();
             } catch (Exception ignored) {}
+            if (!targetFile.exists() && tempFile.exists()) {
+                tempFile.delete();
+            }
             if (conn != null) conn.disconnect();
         }
     }
@@ -666,6 +720,10 @@ public final class UpdateManager {
                 apkFile.delete();
             }
             context.getSharedPreferences(PREFS_NAME, 0).edit().clear().apply();
+            File partFile = new File(context.getCacheDir(), "yanzi_update.apk.part");
+            if (partFile.exists()) {
+                partFile.delete();
+            }
         } catch (Exception ignored) {}
     }
 
