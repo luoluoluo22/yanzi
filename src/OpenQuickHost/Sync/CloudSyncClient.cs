@@ -361,7 +361,25 @@ public sealed class CloudSyncClient
             settings = new
             {
                 source = "openquickhost-desktop",
-                title = command.Title
+                title = command.Title,
+                name = command.Title,
+                displayName = command.Title,
+                description = command.Subtitle,
+                icon = command.IconReference,
+                accentHex = command.AccentBrush?.ToString(),
+                manifest = new
+                {
+                    id = command.ExtensionId,
+                    name = command.Title,
+                    displayName = command.Title,
+                    version = command.DeclaredVersion,
+                    category = command.Category,
+                    description = command.Subtitle,
+                    icon = command.IconReference,
+                    accentHex = command.AccentBrush?.ToString(),
+                    runtime = command.Runtime,
+                    entryMode = command.EntryMode
+                }
             }
         });
 

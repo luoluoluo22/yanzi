@@ -382,6 +382,7 @@ extends Activity {
     private android.widget.Button btnShowChat;
     private LinearLayout chatContainerLayout;
     private LinearLayout chatMessageListLayout;
+    private ScrollView chatMessageScrollView;
     private EditText chatInputEditText;
     private Button chatSendButton;
     private Button chatPhotoButton;
@@ -808,10 +809,11 @@ extends Activity {
                     this.adjustViewPagerHeight();
                 });
             } catch (Exception e) {
+                final String message = YanziApiClient.toUserMessage(e);
                 this.runOnUiThread(() -> {
                     if (this.fileListLayout != null) {
                         this.fileListLayout.removeAllViews();
-                        this.fileListLayout.addView((View)this.textView("\u52a0\u8f6d\u5931\u8d25: " + e.getMessage(), 14, Color.RED, false));
+                        this.fileListLayout.addView((View)this.textView("加载失败: " + message, 14, Color.RED, false));
                     }
                     this.adjustViewPagerHeight();
                 });
@@ -1625,10 +1627,14 @@ extends Activity {
                             return false;
                         }
                         
-                        // 3. 终端内部滑动：如果是终端页面，且终端 ScrollView 还可以向下滚动，则禁止下拉刷新拦截
+                        // 3. 聊天页下拉应滚动消息，不触发全局刷新。
                         if (MainActivity.this.desktopExtensionTabPage != null && 
                             MainActivity.this.desktopExtensionTabPage.getVisibility() == android.view.View.VISIBLE) {
-                            if (MainActivity.this.currentSubTabIndex == 2 && MainActivity.this.shellScrollView != null) {
+                            if (MainActivity.this.currentSubTabIndex == 0) {
+                                return false;
+                            }
+                            // 4. 终端内部滑动：如果是终端页面，且终端 ScrollView 还可以向下滚动，则禁止下拉刷新拦截
+                            if (MainActivity.this.currentSubTabIndex == 3 && MainActivity.this.shellScrollView != null) {
                                 if (MainActivity.this.shellScrollView.canScrollVertically(-1)) {
                                     return false;
                                 }
@@ -1648,6 +1654,10 @@ extends Activity {
             if (this.yanmTabPage != null && this.yanmTabPage.getVisibility() == 0) {
                 this.refreshYanm();
             } else if (this.desktopExtensionTabPage != null && this.desktopExtensionTabPage.getVisibility() == 0) {
+                if (this.currentSubTabIndex == 0) {
+                    this.swipeRefresh.setRefreshing(false);
+                    return;
+                }
                 this.refreshExtensions();
             } else if (this.mobileExtensionTabPage != null && this.mobileExtensionTabPage.getVisibility() == 0) {
                 this.syncMobileExtensionsFromCloud();
@@ -2725,6 +2735,20 @@ extends Activity {
         }
         if (this.mainScrollView != null) {
             this.mainScrollView.post(() -> this.mainScrollView.smoothScrollTo(0, 0));
+        }
+        this.updateSwipeRefreshEnabledForCurrentView();
+    }
+
+    private void updateSwipeRefreshEnabledForCurrentView() {
+        if (this.swipeRefresh == null) {
+            return;
+        }
+        boolean isDesktopChat = this.desktopExtensionTabPage != null
+            && this.desktopExtensionTabPage.getVisibility() == View.VISIBLE
+            && this.currentSubTabIndex == 0;
+        this.swipeRefresh.setEnabled(!isDesktopChat);
+        if (isDesktopChat) {
+            this.swipeRefresh.setRefreshing(false);
         }
     }
 
@@ -3964,6 +3988,7 @@ extends Activity {
                 }
             }
             this.adjustViewPagerHeight();
+            this.updateSwipeRefreshEnabledForCurrentView();
         });
     }
 
@@ -8149,6 +8174,7 @@ extends Activity {
                 if (item == null || item.optInt("enabled", 1) == 0) continue;
                 final String extensionId = MainActivity.firstNonEmpty(new String[]{item.optString("extension_id"), item.optString("extensionId"), item.optString("ExtensionId"), item.optString("Extension_id")});
                 if (extensionId.isEmpty() || "yanzi-webdav-settings".equals(extensionId) || "yanzi-webdav-setting".equals(extensionId) || "yanzi-quickpanel-settings".equals(extensionId) || "yanzi-quickpanel-setting".equals(extensionId) || "yanzi-personal-sync-settings".equals(extensionId) || "yanzi-personal-sync-setting".equals(extensionId) || "yanzi-ai-settings".equals(extensionId) || "yanzi-ai-setting".equals(extensionId) || "yanzi-general-settings".equals(extensionId) || "yanzi-general-setting".equals(extensionId)) continue;
+                final RemoteExtension installedSummary = YanziApiClient.remoteExtensionFromInstalledItem(item, extensionId);
                 
                 futures.add(pool.submit(new java.util.concurrent.Callable<RemoteExtension>() {
                     @Override
@@ -8156,14 +8182,14 @@ extends Activity {
                         try {
                             JSONObject detail = YanziApiClient.getJson(baseUrl, "/v1/extensions/" + YanziApiClient.encodePath(extensionId), token, "读取扩展详情");
                             JSONObject manifest = detail.optJSONObject("manifest");
-                            String name = MainActivity.firstNonEmpty(new String[]{detail.optString("display_name"), detail.optString("displayName"), detail.optString("DisplayName"), detail.optString("name"), detail.optString("Name"), manifest == null ? "" : manifest.optString("name"), manifest == null ? "" : manifest.optString("Name"), manifest == null ? "" : manifest.optString("display_name"), manifest == null ? "" : manifest.optString("displayName"), manifest == null ? "" : manifest.optString("DisplayName"), extensionId});
-                            String description = MainActivity.firstNonEmpty(new String[]{detail.optString("description"), detail.optString("Description"), manifest == null ? "" : manifest.optString("description"), manifest == null ? "" : manifest.optString("Description")});
-                            String icon = MainActivity.firstNonEmpty(new String[]{detail.optString("icon"), detail.optString("Icon"), manifest == null ? "" : manifest.optString("icon"), manifest == null ? "" : manifest.optString("Icon")});
-                            String accentHex = MainActivity.firstNonEmpty(new String[]{detail.optString("accent_hex"), detail.optString("accentHex"), detail.optString("AccentHex"), manifest == null ? "" : manifest.optString("accent_hex"), manifest == null ? "" : manifest.optString("accentHex"), manifest == null ? "" : manifest.optString("AccentHex")});
+                            String name = MainActivity.firstNonEmpty(new String[]{detail.optString("display_name"), detail.optString("displayName"), detail.optString("DisplayName"), detail.optString("name"), detail.optString("Name"), manifest == null ? "" : manifest.optString("name"), manifest == null ? "" : manifest.optString("Name"), manifest == null ? "" : manifest.optString("display_name"), manifest == null ? "" : manifest.optString("displayName"), manifest == null ? "" : manifest.optString("DisplayName"), installedSummary.name, extensionId});
+                            String description = MainActivity.firstNonEmpty(new String[]{detail.optString("description"), detail.optString("Description"), manifest == null ? "" : manifest.optString("description"), manifest == null ? "" : manifest.optString("Description"), installedSummary.description});
+                            String icon = MainActivity.firstNonEmpty(new String[]{detail.optString("icon"), detail.optString("Icon"), manifest == null ? "" : manifest.optString("icon"), manifest == null ? "" : manifest.optString("Icon"), installedSummary.icon});
+                            String accentHex = MainActivity.firstNonEmpty(new String[]{detail.optString("accent_hex"), detail.optString("accentHex"), detail.optString("AccentHex"), manifest == null ? "" : manifest.optString("accent_hex"), manifest == null ? "" : manifest.optString("accentHex"), manifest == null ? "" : manifest.optString("AccentHex"), installedSummary.accentHex});
                             return new RemoteExtension(extensionId, name, description, icon, accentHex);
                         }
                         catch (Exception ignored) {
-                            return new RemoteExtension(extensionId, extensionId, "扩展详情暂不可用，仍可尝试远程执行。", "", "");
+                            return installedSummary;
                         }
                     }
                 }));
@@ -8177,6 +8203,49 @@ extends Activity {
             }
             pool.shutdown();
             return result;
+        }
+
+        private static RemoteExtension remoteExtensionFromInstalledItem(JSONObject item, String extensionId) {
+            JSONObject settings = null;
+            try {
+                String settingsJson = item.optString("settings_json", "");
+                if (!settingsJson.trim().isEmpty()) {
+                    settings = new JSONObject(settingsJson);
+                } else {
+                    settings = item.optJSONObject("settings");
+                }
+            }
+            catch (Exception ignored) {}
+            JSONObject manifest = settings == null ? null : settings.optJSONObject("manifest");
+            String name = MainActivity.firstNonEmpty(new String[]{
+                item.optString("display_name"), item.optString("displayName"), item.optString("name"),
+                settings == null ? "" : settings.optString("display_name"),
+                settings == null ? "" : settings.optString("displayName"),
+                settings == null ? "" : settings.optString("name"),
+                settings == null ? "" : settings.optString("title"),
+                manifest == null ? "" : manifest.optString("displayName"),
+                manifest == null ? "" : manifest.optString("name"),
+                extensionId
+            });
+            String description = MainActivity.firstNonEmpty(new String[]{
+                item.optString("description"),
+                settings == null ? "" : settings.optString("description"),
+                manifest == null ? "" : manifest.optString("description"),
+                "扩展详情暂不可用，仍可尝试远程执行。"
+            });
+            String icon = MainActivity.firstNonEmpty(new String[]{
+                item.optString("icon"),
+                settings == null ? "" : settings.optString("icon"),
+                manifest == null ? "" : manifest.optString("icon")
+            });
+            String accentHex = MainActivity.firstNonEmpty(new String[]{
+                item.optString("accent_hex"), item.optString("accentHex"),
+                settings == null ? "" : settings.optString("accent_hex"),
+                settings == null ? "" : settings.optString("accentHex"),
+                manifest == null ? "" : manifest.optString("accent_hex"),
+                manifest == null ? "" : manifest.optString("accentHex")
+            });
+            return new RemoteExtension(extensionId, name, description, icon, accentHex);
         }
 
         static JSONObject fetchYanmState(String baseUrl, String token) throws Exception {
@@ -8418,6 +8487,9 @@ extends Activity {
         }
 
         private static JSONObject putJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
+            if (YanziApiClient.isDesktopLocalApi(path)) {
+                return YanziApiClient.requestDesktopLocalApi(path, token, action, "PUT", payload);
+            }
             if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
                 String lanBaseUrl;
                 String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
@@ -8441,6 +8513,9 @@ extends Activity {
         }
 
         private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
+            if (YanziApiClient.isDesktopLocalApi(path)) {
+                return YanziApiClient.requestDesktopLocalApi(path, token, action, "POST", payload);
+            }
             if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
                 String lanBaseUrl;
                 String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
@@ -8464,6 +8539,9 @@ extends Activity {
         }
 
         private static JSONObject getJson(String baseUrl, String path, String token, String action) throws Exception {
+            if (YanziApiClient.isDesktopLocalApi(path)) {
+                return YanziApiClient.requestDesktopLocalApi(path, token, action, "GET", null);
+            }
             if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
                 String lanBaseUrl;
                 String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
@@ -8488,6 +8566,61 @@ extends Activity {
 
         private static boolean shouldUseLan(String path) {
             return !path.startsWith("/v1/auth/login");
+        }
+
+        private static boolean isDesktopLocalApi(String path) {
+            return path.startsWith("/v1/fs/") || path.equals("/v1/shell/run");
+        }
+
+        private static JSONObject requestDesktopLocalApi(String path, String token, String action, String method, JSONObject payload) throws Exception {
+            String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
+            if (lanBaseUrl == null && sContext != null) {
+                lanBaseUrl = LanDiscoveryManager.discoverNow(sContext);
+            }
+            String[] candidates = lanBaseUrl == null
+                ? new String[]{"http://127.0.0.1:53919"}
+                : new String[]{lanBaseUrl, "http://127.0.0.1:53919"};
+            Exception lastError = null;
+            for (String candidateBaseUrl : candidates) {
+                if (candidateBaseUrl == null || candidateBaseUrl.trim().isEmpty()) {
+                    continue;
+                }
+                try {
+                    String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
+                    if ((lanToken == null || lanToken.trim().isEmpty()) && candidateBaseUrl.contains("127.0.0.1")) {
+                        lanToken = "yanzi-local-dev-token";
+                    }
+                    int timeoutMs = path.contains("/fs/list") ? 8000 : 15000;
+                    JSONObject result = YanziApiClient.doRequest(candidateBaseUrl, path, lanToken != null ? lanToken : token, action, method, payload, timeoutMs);
+                    YanziApiClient.handleLanSuccess(action, path);
+                    return result;
+                }
+                catch (Exception e) {
+                    lastError = e;
+                    if (sContext != null && !candidateBaseUrl.contains("127.0.0.1")) {
+                        LanDiscoveryManager.clearLanBaseUrl(sContext);
+                    }
+                }
+            }
+            String message = lastError == null || lastError.getMessage() == null ? "未发现电脑端本地服务" : lastError.getMessage();
+            if (sContext != null) {
+                MobileDiagnostics.append(sContext, "电脑本地接口不可用(" + action + "): " + message);
+            } else {
+                LanDiscoveryManager.cachedLanBaseUrl = null;
+                LanDiscoveryManager.cachedLanApiToken = null;
+            }
+            throw new IllegalStateException("电脑本地接口不可用：" + message + "。请确认电脑端燕子正在运行，已开启 Agent API；同一局域网使用“局域网同步”，数据线调试请先执行 adb reverse tcp:53919 tcp:53919。", lastError);
+        }
+
+        private static String toUserMessage(Exception ex) {
+            if (ex == null) {
+                return "未知错误";
+            }
+            String message = ex.getMessage();
+            if (message == null || message.trim().isEmpty()) {
+                message = ex.toString();
+            }
+            return message;
         }
 
         private static void handleLanSuccess(String action, String path) {
@@ -10792,6 +10925,24 @@ extends Activity {
         this.chatContainerLayout.setOrientation(LinearLayout.VERTICAL);
         
         ScrollView scroll = new ScrollView((Context)this);
+        this.chatMessageScrollView = scroll;
+        scroll.setNestedScrollingEnabled(true);
+        scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        scroll.setOnTouchListener((v, event) -> {
+            if (this.swipeRefresh != null && this.currentSubTabIndex == 0) {
+                switch (event.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        this.swipeRefresh.requestDisallowInterceptTouchEvent(true);
+                        break;
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        this.swipeRefresh.requestDisallowInterceptTouchEvent(false);
+                        break;
+                }
+            }
+            return false;
+        });
         this.chatMessageListLayout = new LinearLayout((Context)this);
         this.chatMessageListLayout.setOrientation(LinearLayout.VERTICAL);
         this.chatMessageListLayout.setPadding(0, this.dp(8), 0, this.dp(8));
