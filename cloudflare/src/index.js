@@ -269,6 +269,8 @@ async function handleRequest(request, env) {
     const payload = await readJson(request);
     const email = normalizeEmail(payload.email || payload.username);
     const password = validatePassword(payload.password);
+    const authVersion = payload.authVersion || "";
+    const legacyPassword = payload.legacyPassword ? validatePassword(payload.legacyPassword) : null;
 
     const user = await env.DB.prepare(
       `select
@@ -288,14 +290,50 @@ async function handleRequest(request, env) {
       throw new HttpError(404, "user_not_found", "User does not exist");
     }
 
-    const passwordHash = await hashPassword(
-      password,
-      user.password_salt,
-      Number(user.password_iterations || PASSWORD_ITERATIONS)
-    );
+    const salt = user.password_salt;
+    const iterations = Number(user.password_iterations || PASSWORD_ITERATIONS);
+    let authenticated = false;
+    let silentUpgradeRequired = false;
+    let finalLoginHash = "";
 
-    if (passwordHash !== user.password_hash) {
+    const isLoginHash = typeof password === "string" && /^[0-9a-f]{64}$/i.test(password);
+
+    if (isLoginHash) {
+      const hashAsUpgraded = await hashPassword(password, salt, iterations);
+      if (hashAsUpgraded === user.password_hash) {
+        authenticated = true;
+      } else if (legacyPassword) {
+        const hashAsLegacy = await hashPassword(legacyPassword, salt, iterations);
+        if (hashAsLegacy === user.password_hash) {
+          authenticated = true;
+          silentUpgradeRequired = true;
+          finalLoginHash = password;
+        }
+      }
+    } else {
+      const hashAsLegacy = await hashPassword(password, salt, iterations);
+      if (hashAsLegacy === user.password_hash) {
+        authenticated = true;
+      } else {
+        const serverDerivedLoginHash = await deriveLoginHashInServer(password, email);
+        const hashAsUpgraded = await hashPassword(serverDerivedLoginHash, salt, iterations);
+        if (hashAsUpgraded === user.password_hash) {
+          authenticated = true;
+        }
+      }
+    }
+
+    if (!authenticated) {
       throw new HttpError(401, "invalid_credentials", "Invalid email or password");
+    }
+
+    if (silentUpgradeRequired && finalLoginHash) {
+      const newHash = await hashPassword(finalLoginHash, salt, iterations);
+      await env.DB.prepare(
+        `update auth_users set password_hash = ? where user_id = ?`
+      )
+        .bind(newHash, user.user_id)
+        .run();
     }
 
     await touchUser(env, user.user_id);
@@ -2277,6 +2315,51 @@ async function verifyToken(env, token) {
   }
 
   return payload;
+}
+
+async function deriveLoginHashInServer(password, email) {
+  const enc = new TextEncoder();
+  const passwordBytes = enc.encode(password);
+  const saltBytes = enc.encode(email.trim().toLowerCase());
+
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    passwordBytes,
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+
+  const masterKeyBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: saltBytes,
+      iterations: 50000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    256
+  );
+
+  const hmacKey = await crypto.subtle.importKey(
+    "raw",
+    masterKeyBits,
+    {
+      name: "HMAC",
+      hash: "SHA-256"
+    },
+    false,
+    ["sign"]
+  );
+
+  const messageBytes = enc.encode("login-verification");
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    hmacKey,
+    messageBytes
+  );
+
+  return bytesToHex(new Uint8Array(signature));
 }
 
 async function hashPassword(password, salt, iterations) {

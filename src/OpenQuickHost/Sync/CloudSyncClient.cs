@@ -192,7 +192,9 @@ public sealed class CloudSyncClient
         var payload = new
         {
             email = email.Trim(),
-            password = keys.LoginHash
+            password = keys.LoginHash,
+            authVersion = "e2ee-v1",
+            legacyPassword = normalizedPassword
         };
 
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/login", payload, includeAuth: false, cancellationToken);
