@@ -3231,6 +3231,22 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonPropertyName("themeMode")]
     public string ThemeMode { get; set; } = "Dark";
 
+    [JsonPropertyName("autoCloseToastEnabled")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AutoCloseToastEnabled { get; set; }
+
+    [JsonPropertyName("enableAutoUpdate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? EnableAutoUpdate { get; set; }
+
+    [JsonPropertyName("enableBrowserHelper")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? EnableBrowserHelper { get; set; }
+
+    [JsonPropertyName("preferManualExtensionEditor")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PreferManualExtensionEditor { get; set; }
+
     [JsonPropertyName("launcherHotkey")]
     public string LauncherHotkey { get; set; } = "Alt+Space";
 
@@ -3270,6 +3286,10 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonPropertyName("quickPanelMouseTriggers")]
     public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
 
+    [JsonPropertyName("mouseGestureAppBindings")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<MouseGestureAppBinding>? MouseGestureAppBindings { get; set; }
+
     [JsonPropertyName("mouseGestureTriggerMode")]
     public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.None;
 
@@ -3294,6 +3314,10 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonPropertyName("pinnedSearchScopeCommandIds")]
     public List<string> PinnedSearchScopeCommandIds { get; set; } = [];
 
+    [JsonPropertyName("searchScopeConfigs")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<SearchScopeConfigItem>? SearchScopeConfigs { get; set; }
+
     [JsonPropertyName("enableAgentApi")]
     public bool EnableAgentApi { get; set; } = true;
 
@@ -3310,7 +3334,12 @@ public sealed class CloudQuickPanelConfigSnapshot
     public List<YanyuRuleSettings>? YanyuRules { get; set; }
 
     [JsonPropertyName("yanm")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public YanmSettings? Yanm { get; set; }
+
+    [JsonPropertyName("environmentVariables")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AppEnvironmentVariableSettings>? EnvironmentVariables { get; set; }
 
     [JsonPropertyName("aiBaseUrl")]
     public string? AiBaseUrl { get; set; }
@@ -3337,6 +3366,10 @@ public sealed class CloudQuickPanelConfigSnapshot
             SourceDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
             SourceDeviceName = DeviceIdentityStore.GetDesktopDisplayName(),
             ThemeMode = settings.ThemeMode,
+            AutoCloseToastEnabled = settings.AutoCloseToastEnabled,
+            EnableAutoUpdate = settings.EnableAutoUpdate,
+            EnableBrowserHelper = settings.EnableBrowserHelper,
+            PreferManualExtensionEditor = settings.PreferManualExtensionEditor,
             LauncherHotkey = settings.LauncherHotkey,
             LaunchAtStartup = settings.LaunchAtStartup,
             RefreshCloudOnStartup = settings.RefreshCloudOnStartup,
@@ -3350,6 +3383,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             GlobalFavoriteExtensionIds = settings.GlobalFavoriteExtensionIds.ToList(),
             ContextFavoriteExtensionIds = settings.ContextFavoriteExtensionIds.ToList(),
             QuickPanelMouseTriggers = CloneTriggers(settings.QuickPanelMouseTriggers),
+            MouseGestureAppBindings = CloneByJson(settings.MouseGestureAppBindings),
             MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode),
             WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(settings.WindowSnapAssistMouseTriggerMode),
             EnableWindowSnapAssist = settings.EnableWindowSnapAssist,
@@ -3358,17 +3392,23 @@ public sealed class CloudQuickPanelConfigSnapshot
             WindowBindings = CloneByJson(settings.WindowBindings),
             DisabledExtensionIds = settings.DisabledExtensionIds.ToList(),
             PinnedSearchScopeCommandIds = settings.PinnedSearchScopeCommandIds.ToList(),
+            SearchScopeConfigs = CloneByJson(settings.SearchScopeConfigs),
             EnableAgentApi = settings.EnableAgentApi,
             AgentApiPort = settings.AgentApiPort,
             YarnSelect = CloneByJson(settings.YarnSelect),
             RadialMenu = CloneByJson(settings.RadialMenu),
             YanyuRules = CloneByJson(settings.YanyuRules),
-            Yanm = CloneByJson(settings.Yanm),
+            // 燕幕使用独立 yanm-state 及独立时间戳同步。继续读取旧快照中的
+            // Yanm 仅用于迁移，但新主配置不再写入，避免两条同步链互相回滚。
+            Yanm = null,
+            // 仅同步名称和说明；值继续由本机 DPAPI 保护，不写入普通云端 JSON。
+            EnvironmentVariables = CloneByJson(settings.EnvironmentVariables),
             AiBaseUrl = settings.AiBaseUrl,
-            AiApiKey = settings.AiApiKey,
+            // AI 密钥只保存在本机 DPAPI；云端和个人仓库仅同步服务商元数据。
+            AiApiKey = null,
             AiModel = settings.AiModel,
             AiSystemPrompt = settings.AiSystemPrompt,
-            AiServiceProviders = CloneByJson(settings.AiServiceProviders),
+            AiServiceProviders = AiCredentialStore.PrepareSyncedProviderMetadata(settings.AiServiceProviders),
             ActiveServiceProviderId = settings.ActiveServiceProviderId,
             UpdatedAtUtc = string.IsNullOrWhiteSpace(settings.LauncherConfigUpdatedAtUtc)
                 ? DateTime.UtcNow.ToString("O")
@@ -3384,6 +3424,10 @@ public sealed class CloudQuickPanelConfigSnapshot
         return new AppSettings
         {
             ThemeMode = ThemeMode,
+            AutoCloseToastEnabled = AutoCloseToastEnabled ?? false,
+            EnableAutoUpdate = EnableAutoUpdate ?? true,
+            EnableBrowserHelper = EnableBrowserHelper ?? true,
+            PreferManualExtensionEditor = PreferManualExtensionEditor ?? false,
             LauncherHotkey = LauncherHotkey,
             LaunchAtStartup = LaunchAtStartup,
             RefreshCloudOnStartup = RefreshCloudOnStartup,
@@ -3397,6 +3441,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             GlobalFavoriteExtensionIds = GlobalFavoriteExtensionIds.ToList(),
             ContextFavoriteExtensionIds = ContextFavoriteExtensionIds.ToList(),
             QuickPanelMouseTriggers = CloneTriggers(QuickPanelMouseTriggers),
+            MouseGestureAppBindings = MouseGestureAppBindings == null ? [] : CloneByJson(MouseGestureAppBindings),
             MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(MouseGestureTriggerMode),
             WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(WindowSnapAssistMouseTriggerMode),
             EnableWindowSnapAssist = EnableWindowSnapAssist,
@@ -3405,12 +3450,14 @@ public sealed class CloudQuickPanelConfigSnapshot
             WindowBindings = WindowBindings == null ? new WindowBindingSettings() : CloneByJson(WindowBindings),
             DisabledExtensionIds = DisabledExtensionIds.ToList(),
             PinnedSearchScopeCommandIds = PinnedSearchScopeCommandIds.ToList(),
+            SearchScopeConfigs = SearchScopeConfigs == null ? [] : CloneByJson(SearchScopeConfigs),
             EnableAgentApi = EnableAgentApi,
             AgentApiPort = AgentApiPort,
             YarnSelect = YarnSelect == null ? new YarnSelectSettings() : CloneByJson(YarnSelect),
             RadialMenu = RadialMenu == null ? new RadialMenuSettings() : CloneByJson(RadialMenu),
             YanyuRules = YanyuRules == null ? [] : CloneByJson(YanyuRules),
             Yanm = Yanm == null ? new YanmSettings() : CloneByJson(Yanm),
+            EnvironmentVariables = EnvironmentVariables == null ? [] : CloneByJson(EnvironmentVariables),
             AiBaseUrl = AiBaseUrl ?? string.Empty,
             AiApiKey = AiApiKey ?? string.Empty,
             AiModel = AiModel ?? string.Empty,
@@ -3427,6 +3474,7 @@ public sealed class CloudQuickPanelConfigSnapshot
         return JsonSerializer.Deserialize<T>(json) ?? value;
     }
 
+
     public static bool HasMeaningfulUserContent(CloudQuickPanelConfigSnapshot? snapshot)
     {
         if (snapshot == null)
@@ -3442,12 +3490,31 @@ public sealed class CloudQuickPanelConfigSnapshot
                snapshot.ContextFavoriteExtensionIds.Count > 0 ||
                snapshot.DisabledExtensionIds.Count > 0 ||
                snapshot.PinnedSearchScopeCommandIds.Count > 0 ||
+               (snapshot.SearchScopeConfigs?.Any(static item => !item.IsVisible || item.IsPinned) ?? false) ||
+               (snapshot.MouseGestureAppBindings?.Count ?? 0) > 0 ||
+               (snapshot.EnvironmentVariables?.Count ?? 0) > 0 ||
                snapshot.WindowSnapAssistCustomLayouts.Count > 0 ||
                HasWindowBindingContent(snapshot.WindowBindings) ||
                (snapshot.YanyuRules?.Count ?? 0) > 0 ||
                HasRadialContent(snapshot.RadialMenu) ||
                HasYanmUserContent(snapshot.Yanm) ||
                HasAiConfig(snapshot) ||
+               snapshot.AutoCloseToastEnabled == true ||
+               snapshot.EnableAutoUpdate == false ||
+               snapshot.EnableBrowserHelper == false ||
+               snapshot.PreferManualExtensionEditor == true ||
+               !string.Equals(snapshot.ThemeMode, "Dark", StringComparison.OrdinalIgnoreCase) ||
+               snapshot.LaunchAtStartup == false ||
+               snapshot.RefreshCloudOnStartup == false ||
+               snapshot.CloseToTray == false ||
+               snapshot.EnableAgentApi == false ||
+               snapshot.AgentApiPort != 53919 ||
+               snapshot.EnableWindowSnapAssist == false ||
+               !string.IsNullOrWhiteSpace(snapshot.WindowSnapAssistHotkey) ||
+               snapshot.WindowBindings is { Enabled: false } ||
+               snapshot.WindowBindings is { MarginPixels: not 14 } ||
+               snapshot.YarnSelect is { Enabled: false } ||
+               (snapshot.YarnSelect?.Rules?.Count ?? 0) > 0 ||
                !string.Equals(snapshot.LauncherHotkey, "Alt+Space", StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(snapshot.QuickPanelTrigger, "MiddleButtonLongPress", StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(MouseGestureTriggerModes.Normalize(snapshot.MouseGestureTriggerMode), MouseGestureTriggerModes.None, StringComparison.OrdinalIgnoreCase) ||
@@ -3474,7 +3541,21 @@ public sealed class CloudQuickPanelConfigSnapshot
     private static bool HasRadialContent(RadialMenuSettings? settings)
     {
         return settings != null &&
-               (settings.Pages.Any(static page =>
+               (!settings.Enabled ||
+                !settings.TriggerRightButtonDrag ||
+                settings.TriggerMiddleButtonDrag ||
+                settings.TriggerRightButtonLongPress ||
+                settings.TriggerMiddleButtonLongPress ||
+                settings.TriggerMiddleButtonDown ||
+                settings.TriggerX1ButtonDown ||
+                settings.TriggerX2ButtonDown ||
+                settings.TriggerHorizontalWheel ||
+                settings.TriggerCtrlLeftClick ||
+                settings.TriggerCtrlRightClick ||
+                settings.TriggerCtrlMiddleClick ||
+                !string.Equals(settings.ActivationKey, RadialActivationKeys.CapsLock, StringComparison.OrdinalIgnoreCase) ||
+                !string.IsNullOrWhiteSpace(settings.CustomShortcut) ||
+                settings.Pages.Any(static page =>
                     page.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
                     page.ChildPageIds.Any(static childPageId => !string.IsNullOrWhiteSpace(childPageId))) ||
                 settings.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)));
@@ -3493,7 +3574,8 @@ public sealed class CloudQuickPanelConfigSnapshot
                !string.IsNullOrWhiteSpace(snapshot.AiModel) ||
                !string.IsNullOrWhiteSpace(snapshot.ActiveServiceProviderId) ||
                (snapshot.AiServiceProviders?.Count ?? 0) > 0 ||
-               !string.IsNullOrWhiteSpace(snapshot.AiSystemPrompt);
+               (!string.IsNullOrWhiteSpace(snapshot.AiSystemPrompt) &&
+                !string.Equals(snapshot.AiSystemPrompt, AppSettingsStore.DefaultAiSystemPrompt, StringComparison.Ordinal));
     }
 
     private static List<QuickPanelGroupSettings> CloneGroups(IEnumerable<QuickPanelGroupSettings> groups)

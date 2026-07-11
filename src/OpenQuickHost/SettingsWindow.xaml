@@ -1030,6 +1030,116 @@
                                 </Border>
                             </Grid>
 
+                            <!-- Account object sync status -->
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16" Padding="18">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="账号配置同步" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold"/>
+                                                <Border Background="#1A3B82F6" BorderBrush="#553B82F6" BorderThickness="1" CornerRadius="10" Padding="8,3" Margin="10,0,0,0">
+                                                    <TextBlock Text="{Binding AccountSyncStatus.ModeText}" Foreground="#FF60A5FA" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding AccountSyncStatus.ExplanationText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="刷新并同步" Style="{StaticResource SecondaryBtn}" Height="30" Padding="12,0" Click="RefreshAccountObjectSyncButton_Click"/>
+                                    </Grid>
+
+                                    <UniformGrid Columns="4" Margin="0,16,0,0">
+                                        <Border Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="7" Padding="10" Margin="0,0,6,0">
+                                            <StackPanel>
+                                                <TextBlock Text="同步健康" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"/>
+                                                <TextBlock Text="{Binding AccountSyncStatus.HealthText}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,5,0,0" TextWrapping="Wrap">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="#FF22C55E"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding AccountSyncStatus.HasPending}" Value="True">
+                                                                    <Setter Property="Foreground" Value="#FFF59E0B"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding AccountSyncStatus.HasErrors}" Value="True">
+                                                                    <Setter Property="Foreground" Value="#FFEF4444"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="7" Padding="10" Margin="2,0,4,0">
+                                            <StackPanel>
+                                                <TextBlock Text="远端版本" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"/>
+                                                <TextBlock Text="{Binding AccountSyncStatus.RevisionText}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,5,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="7" Padding="10" Margin="4,0,2,0">
+                                            <StackPanel>
+                                                <TextBlock Text="同步队列" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"/>
+                                                <TextBlock Text="{Binding AccountSyncStatus.ObjectCountText}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="7" Padding="10" Margin="6,0,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="最后同步" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"/>
+                                                <TextBlock Text="{Binding AccountSyncStatus.LastCheckedText}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,5,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </UniformGrid>
+
+                                    <ItemsControl ItemsSource="{Binding AccountSyncStatus.Objects}" Margin="0,14,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0" Padding="4,9">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="1.4*"/>
+                                                            <ColumnDefinition Width="0.8*"/>
+                                                            <ColumnDefinition Width="0.6*"/>
+                                                            <ColumnDefinition Width="1.2*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Medium"/>
+                                                            <TextBlock Text="{Binding ObjectId}" Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,2,0,0"/>
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="1" Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="#FF22C55E"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsPending}" Value="True"><Setter Property="Foreground" Value="#FFF59E0B"/></DataTrigger>
+                                                                        <DataTrigger Binding="{Binding HasError}" Value="True"><Setter Property="Foreground" Value="#FFEF4444"/></DataTrigger>
+                                                                        <DataTrigger Binding="{Binding HasConflict}" Value="True"><Setter Property="Foreground" Value="#FFEF4444"/></DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <TextBlock Grid.Column="2" Text="{Binding Revision, StringFormat=rev {0}}" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeSmall}"/>
+                                                        <StackPanel Grid.Column="3" HorizontalAlignment="Right">
+                                                            <TextBlock Text="{Binding UpdatedAtText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" HorizontalAlignment="Right"/>
+                                                            <TextBlock Text="{Binding DetailText}" Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,2,0,0" MaxWidth="260" TextTrimming="CharacterEllipsis" ToolTip="{Binding DetailText}" HorizontalAlignment="Right"/>
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                            <Button Content="历史" Style="{StaticResource SecondaryBtn}" Height="26" Padding="8,0" Margin="0,0,6,0"
+                                                                    IsEnabled="{Binding HistoryAvailable}" Click="ShowAccountSyncHistoryButton_Click"/>
+                                                            <StackPanel Orientation="Horizontal" Visibility="{Binding HasConflict, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Button Content="采用本地" Style="{StaticResource SecondaryBtn}" Height="26" Padding="8,0" Margin="0,0,6,0" Click="UseLocalAccountSyncConflictButton_Click"/>
+                                                                <Button Content="接受远端" Style="{StaticResource SecondaryBtn}" Height="26" Padding="8,0" Click="AcceptRemoteAccountSyncConflictButton_Click"/>
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Personal Sync Configuration Card -->
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16">
                                 <!-- Card Header -->
@@ -1045,7 +1155,7 @@
                                         <Grid>
                                             <StackPanel>
                                                 <TextBlock Text="个人同步平台" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold"/>
-                                                <TextBlock Text="当前同步扩展包、燕幕状态和主配置。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
+                                                <TextBlock Text="用于同步扩展程序、数据及桌面小组件；如果已登录燕子账号，此配置仅作安全备份，不会覆盖您的云端配置。密钥与密码仅保存在本台电脑，云端服务器不会获取您的网盘凭证。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
                                                 <TextBlock Text="启用同步" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,12,0"/>
@@ -1436,7 +1546,139 @@
                                         </Grid>
                                     </Border>
 
-                                    <!-- 子板块 1：云端提交历史 (Git 提供商) -->
+                                    <Border Padding="20,12" Background="#0A3B82F6" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                        <StackPanel>
+                                            <TextBlock Text="扩展同步与删除状态" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding PersonalExtensionSyncStatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                            <TextBlock Text="如需重新安装已在设备间同步删除的扩展，请先从扩展回收站进行恢复。" Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Padding="20,12" Background="#0A8B5CF6" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                        <StackPanel>
+                                            <TextBlock Text="扩展数据同步状态" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding ExtensionDataSyncStatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                            <TextBlock Text="每项扩展数据独立跟踪；如遇并发或冲突，本地配置会以冲突副本安全留存，不会被后台静默覆写。" Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Padding="20,14" Background="#12EF4444" BorderBrush="#55EF4444" BorderThickness="0,0,0,1"
+                                            Visibility="{Binding HasExtensionSyncConflicts, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <StackPanel>
+                                            <TextBlock Text="扩展并发冲突需要选择" Foreground="#FFF87171" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="远端版本已安全应用，本地包或删除意图已保存为冲突副本；选择前不会再次自动覆盖。" Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,4,0,8" TextWrapping="Wrap"/>
+                                            <ItemsControl ItemsSource="{Binding ExtensionSyncConflictItems}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border BorderBrush="#44EF4444" BorderThickness="1" CornerRadius="7" Padding="10" Margin="0,0,0,7">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel>
+                                                                    <TextBlock Text="{Binding ExtensionId}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                                    <TextBlock Text="{Binding LocalText}" Foreground="#FFF59E0B" FontSize="10" Margin="0,4,0,0"/>
+                                                                    <TextBlock Text="{Binding RemoteText}" Foreground="#FF60A5FA" FontSize="10" Margin="0,2,0,0"/>
+                                                                    <TextBlock Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,2,0,0">
+                                                                        <Run Text="远端来源："/><Run Text="{Binding RemoteDeviceText}"/><Run Text=" · "/><Run Text="{Binding DetectedAtText}"/>
+                                                                    </TextBlock>
+                                                                </StackPanel>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                                                    <Button Content="采用本地" Style="{StaticResource SecondaryBtn}" Height="27" Padding="9,0" Margin="0,0,6,0" Click="UseLocalExtensionSyncConflictButton_Click"/>
+                                                                    <Button Content="接受远端" Style="{StaticResource SecondaryBtn}" Height="27" Padding="9,0" Click="AcceptRemoteExtensionSyncConflictButton_Click"/>
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Padding="20,14" Background="#128B5CF6" BorderBrush="#668B5CF6" BorderThickness="0,0,0,1"
+                                            Visibility="{Binding HasExtensionDataConflicts, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <StackPanel>
+                                            <TextBlock Text="扩展数据同步冲突处理" Foreground="#FFC4B5FD" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="检测到本地与云端数据存在冲突。您可以选择“采用本地”保留当前数据并同步，或选择“接受远端”覆写为云端数据。" Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,4,0,8" TextWrapping="Wrap"/>
+                                            <ItemsControl ItemsSource="{Binding ExtensionDataConflictItems}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border BorderBrush="#558B5CF6" BorderThickness="1" CornerRadius="7" Padding="10" Margin="0,0,0,7">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel>
+                                                                    <TextBlock Text="{Binding DisplayId}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                                    <TextBlock Text="{Binding LocalText}" Foreground="#FFF59E0B" FontSize="10" Margin="0,4,0,0"/>
+                                                                    <TextBlock Text="{Binding RemoteText}" Foreground="#FF60A5FA" FontSize="10" Margin="0,2,0,0"/>
+                                                                    <TextBlock Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,2,0,0">
+                                                                        <Run Text="远端来源："/><Run Text="{Binding RemoteDeviceText}"/><Run Text=" · "/><Run Text="{Binding DetectedAtText}"/>
+                                                                    </TextBlock>
+                                                                </StackPanel>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                                                    <Button Content="采用本地" Style="{StaticResource SecondaryBtn}" Height="27" Padding="9,0" Margin="0,0,6,0" Click="UseLocalExtensionDataConflictButton_Click"/>
+                                                                    <Button Content="接受远端" Style="{StaticResource SecondaryBtn}" Height="27" Padding="9,0" Click="AcceptRemoteExtensionDataConflictButton_Click"/>
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 子板块 1：跨后端不可变配置恢复点 -->
+                                    <StackPanel>
+                                        <Border Padding="20,12" Background="#05FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                            <Grid>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="历史备份与恢复" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="{Binding PersonalConfigRestoreStatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <Button Content="刷新恢复点" Style="{StaticResource SecondaryBtn}" Height="26" Padding="10,0"
+                                                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                        Click="RefreshPersonalConfigRestorePointsButton_Click"/>
+                                            </Grid>
+                                        </Border>
+                                        <Border Padding="20,14" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                            <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto">
+                                                <ItemsControl ItemsSource="{Binding PersonalConfigRestorePoints}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,8">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <StackPanel>
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <TextBlock Text="{Binding CreatedAtText}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                                            <TextBlock Text="{Binding RevisionText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="10,1,0,0"/>
+                                                                        </StackPanel>
+                                                                        <TextBlock Text="{Binding SummaryText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,5,0,0"/>
+                                                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                                            <TextBlock Text="来源：" Foreground="{DynamicResource BrushTextSec}" FontSize="10"/>
+                                                                            <TextBlock Text="{Binding DeviceText}" Foreground="{DynamicResource BrushTextSec}" FontSize="10"/>
+                                                                            <TextBlock Text=" · " Foreground="{DynamicResource BrushTextSec}" FontSize="10"/>
+                                                                            <TextBlock Text="{Binding SizeText}" Foreground="{DynamicResource BrushTextSec}" FontSize="10"/>
+                                                                        </StackPanel>
+                                                                    </StackPanel>
+                                                                    <Button Grid.Column="1" Content="恢复此点" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0" Margin="14,0,0,0"
+                                                                            VerticalAlignment="Center" Click="RestorePersonalConfigPointButton_Click"/>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- 子板块 2：云端提交历史 (Git 提供商) -->
                                     <StackPanel Visibility="{Binding IsGitSyncProvider, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <Border Padding="20,12" Background="#05FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
                                             <Grid>
@@ -1510,7 +1752,7 @@
                                         </Border>
                                     </StackPanel>
 
-                                    <!-- 子板块 2：本地同步运行日志 -->
+                                    <!-- 子板块 3：本地同步运行日志 -->
                                     <Border Padding="20,12" Background="#05FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
                                         <Grid>
                                             <TextBlock Text="本地同步运行日志" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -4663,7 +4905,7 @@
                                         <TextBox Text="{Binding ApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,0" Height="36" VerticalContentAlignment="Center" Padding="10,0" TextChanged="AiSettings_TextChanged"/>
                                         <Button Grid.Column="1" Content="检测" Height="36" Margin="8,0,0,0" Style="{StaticResource SecondaryBtn}" Padding="16,0" Click="CheckApiKeyButton_Click"/>
                                     </Grid>
-                                    <TextBlock Text="多个密钥使用逗号分隔" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0"/>
+                                    <TextBlock Text="多个密钥使用逗号分隔 · 仅保存在本机 Windows 加密存储，不上传云端或个人仓库" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0" TextWrapping="Wrap"/>
 
                                     <TextBlock Text="API 地址" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,14,0,0" />
                                     <TextBox Text="{Binding BaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" TextChanged="AiSettings_TextChanged"/>

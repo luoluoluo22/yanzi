@@ -1143,6 +1143,28 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "DELETE" && path.StartsWith("/v1/storage/", StringComparison.Ordinal))
+            {
+                var extensionId = Uri.UnescapeDataString(path["/v1/storage/".Length..]);
+                var key = GetQueryString(request, "key");
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    await WriteJsonAsync(response, 400, new { error = "key_required" });
+                    return;
+                }
+                var scope = GetQueryString(request, "scope");
+                var result = await ExtensionStorageService.DeleteTextAsync(extensionId, key, scope);
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    localPath = result.LocalPath,
+                    cloudSaved = result.CloudSaved,
+                    result.Scope,
+                    cloudMessage = result.CloudMessage
+                });
+                return;
+            }
+
             if (request.HttpMethod == "GET" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && !path.StartsWith("/v1/extensions/recycle-bin", StringComparison.Ordinal))
             {
                 var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..]);

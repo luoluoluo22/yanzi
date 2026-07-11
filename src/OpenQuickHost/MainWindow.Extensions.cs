@@ -2397,6 +2397,7 @@ public partial class MainWindow
 
             LastRunMessage = $"已将扩展移入回收站：{deletable.Title}";
             SyncStatus = $"已将扩展移入回收站：{deletable.Title}";
+            QueuePrivateExtensionRemovalFromAccount(deletable.ExtensionId);
             QueueBackgroundWebDavSync("extension-delete-settings");
             return Task.FromResult((true, $"已将扩展移入回收站：{deletable.Title}"));
         }
@@ -2531,6 +2532,7 @@ public partial class MainWindow
             CommandList.SelectedItem = SelectedCommand;
             LastRunMessage = $"已从回收站恢复扩展：{command.Title}";
             SyncStatus = $"已恢复扩展：{command.Title}";
+            QueuePrivateExtensionUpsertToAccount(command.ExtensionId);
             QueueBackgroundWebDavSync("extension-restore-settings");
             return Task.FromResult((true, $"已恢复扩展：{command.Title}"));
         }
@@ -2552,6 +2554,7 @@ public partial class MainWindow
             CommandList.SelectedItem = SelectedCommand;
             LastRunMessage = $"已彻底删除扩展：{deleted.Title}";
             SyncStatus = $"已彻底删除扩展：{deleted.Title}";
+            QueuePrivateExtensionRemovalFromAccount(deleted.ExtensionId);
             QueueBackgroundWebDavSync("extension-purge-settings");
             return Task.FromResult((true, $"已彻底删除扩展：{deleted.Title}，会同步到其他设备。"));
         }

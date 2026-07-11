@@ -765,7 +765,8 @@ public partial class MainWindow
             IsPinned = true
         });
         AppSettingsStore.Save(settings);
-        _appSettings = settings;
+        NotifyQuickPanelSettingsChanged("search-scope-pinned", refreshYanmOverlay: false);
+        _appSettings = AppSettingsStore.Load();
         _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
         ReloadSearchScopes();
         SelectedSearchScope = SearchScopes.FirstOrDefault(scope => scope.Key.Equals(SearchScopeTab.CreatePinnedCommandKey(command.ExtensionId), StringComparison.OrdinalIgnoreCase))
@@ -794,7 +795,8 @@ public partial class MainWindow
         }
 
         AppSettingsStore.Save(settings);
-        _appSettings = settings;
+        NotifyQuickPanelSettingsChanged("search-scope-unpinned", refreshYanmOverlay: false);
+        _appSettings = AppSettingsStore.Load();
         _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
         ReloadSearchScopes();
         SelectedSearchScope = SearchScopes.FirstOrDefault(item => item.Key.Equals(scope.Key, StringComparison.OrdinalIgnoreCase)) == null

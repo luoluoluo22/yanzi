@@ -2218,10 +2218,11 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- permissions：权限数组，例如 [\"clipboard\", \"network\"]");
         builder.AppendLine("- 宿主 API 边界：context 不是万能能力对象，只能使用本文明确列出的成员；其它能力请在 script.source 中直接使用 C# 原生库、WPF、P/Invoke、Process、File、HttpClient 等实现");
         builder.AppendLine("- 命名边界：产品名和应用名是 Yanzi；不要在 C# 脚本里写旧产品名相关命名空间、程序集引用、pack URI、资源路径或品牌文案。hostedViewXaml 的 oqh:HostedViewBridge 命名空间使用模板给出的 Yanzi 命名空间");
-        builder.AppendLine("- 扩展脚本现在支持 context.Storage 本地/云端存储 helper：ReadTextAsync、WriteTextAsync、ReadJsonAsync<T>、WriteJsonAsync<T>");
+        builder.AppendLine("- 扩展脚本现在支持 context.Storage 本地/云端存储 helper：ReadTextAsync、WriteTextAsync、DeleteTextAsync、ReadJsonAsync<T>、WriteJsonAsync<T>");
         builder.AppendLine("- context.Storage 默认支持 scope = local、cloud、both；local 写入本地扩展数据目录，cloud / both 会通过宿主 API 写入坚果云 / WebDAV");
         builder.AppendLine("- context.Storage.ReadTextAsync 的可用写法是：await context.Storage.ReadTextAsync(\"note.txt\", scope: \"both\")；不要传 defaultValue 参数");
         builder.AppendLine("- context.Storage.WriteTextAsync 的可用写法是：await context.Storage.WriteTextAsync(\"note.txt\", content, scope: \"both\")");
+        builder.AppendLine("- context.Storage.DeleteTextAsync 的可用写法是：await context.Storage.DeleteTextAsync(\"note.txt\", scope: \"both\")；cloud / both 会同步 tombstone");
         builder.AppendLine("- 如果需要默认值，请自己写：var text = await context.Storage.ReadTextAsync(\"note.txt\", scope: \"both\") ?? string.Empty; 或用 try/catch，不要发明 defaultValue 参数");
         builder.AppendLine("- script.source：内联脚本源码");
         builder.AppendLine("- hostedViewXaml：如果要让宿主直接加载自定义 XAML 界面，请输出 hostedViewXaml");

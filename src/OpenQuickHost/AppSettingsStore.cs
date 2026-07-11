@@ -159,24 +159,43 @@ public static class AppSettingsStore
     {
         if (!File.Exists(SettingsPath))
         {
-            return Normalize(new AppSettings());
+            var defaults = Normalize(new AppSettings());
+            AiCredentialStore.ImportPlaintextAndHydrate(defaults);
+            return defaults;
         }
 
         try
         {
             var json = File.ReadAllText(SettingsPath);
-            return Normalize(JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings());
+            var settings = Normalize(JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings());
+            var migrated = AiCredentialStore.ImportPlaintextAndHydrate(settings);
+            if (migrated)
+            {
+                WriteSanitizedSettings(settings);
+            }
+            return settings;
         }
         catch
         {
-            return Normalize(new AppSettings());
+            var defaults = Normalize(new AppSettings());
+            AiCredentialStore.ImportPlaintextAndHydrate(defaults);
+            return defaults;
         }
     }
 
     public static void Save(AppSettings settings)
     {
         settings = Normalize(settings);
-        var json = JsonSerializer.Serialize(settings, JsonOptions);
+        AiCredentialStore.Capture(settings);
+        WriteSanitizedSettings(settings);
+    }
+
+    private static void WriteSanitizedSettings(AppSettings settings)
+    {
+        var persisted = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings, JsonOptions), JsonOptions)
+                        ?? new AppSettings();
+        AiCredentialStore.RemovePlaintext(persisted);
+        var json = JsonSerializer.Serialize(persisted, JsonOptions);
         File.WriteAllText(SettingsPath, json);
     }
 

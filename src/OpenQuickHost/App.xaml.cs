@@ -52,6 +52,20 @@ public partial class App : WpfApplication
 
     protected override void OnStartup(WpfStartupEventArgs e)
     {
+        // 运行端到端加密 E2EE 模块启动自检
+        try
+        {
+            Sync.SyncCryptoService.SelfTest();
+            HostAssets.AppendLog("E2EE SyncCryptoService self-test passed successfully.");
+        }
+        catch (System.Exception ex)
+        {
+            HostAssets.AppendLog($"CRITICAL: E2EE SyncCryptoService self-test failed! {ex.Message}");
+            System.Windows.MessageBox.Show($"加密服务启动自检失败：{ex.Message}\n请检查系统加密组件是否完整。", "安全自检失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
+
         // 0. 将工作目录切换到临时目录，防止进程被强杀后工作目录句柄锁住安装目录
         //    导致 Velopack 覆盖安装时 "Failed to remove existing application directory" 错误
         try { System.IO.Directory.SetCurrentDirectory(System.IO.Path.GetTempPath()); } catch { /* ignore */ }

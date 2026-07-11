@@ -56,7 +56,8 @@ export default {
           json(
             {
               error: error.code,
-              message: error.message
+              message: error.message,
+              ...(error.details ? { details: error.details } : {})
             },
             error.status
           )
@@ -437,6 +438,98 @@ async function handleRequest(request, env) {
     });
   }
 
+  if (url.pathname === "/v1/sync/capabilities" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    await ensureUser(env, auth.userId);
+    const table = await env.DB.prepare(
+      `select name from sqlite_master where type = 'table' and name = 'user_sync_objects'`
+    ).first();
+    const historyTable = await env.DB.prepare(
+      `select name from sqlite_master where type = 'table' and name = 'user_sync_object_history'`
+    ).first();
+    const objectSyncAvailable = Boolean(table?.name);
+    const objectsAuthoritative = objectSyncAvailable &&
+      String(env.SYNC_OBJECTS_AUTHORITATIVE || "").trim().toLowerCase() === "true";
+    return json({
+      ok: true,
+      protocolVersion: 2,
+      objectSyncAvailable,
+      objectHistoryAvailable: Boolean(historyTable?.name),
+      objectsAuthoritative,
+      legacySnapshotReadSupported: true,
+      legacySnapshotWriteRequired: !objectsAuthoritative,
+      maxObjectPayloadBytes: 1024 * 1024
+    });
+  }
+
+  if (url.pathname === "/v1/sync/objects" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const result = await readUserSyncObjects(env, auth.userId, 0, 1000);
+    return json({ ok: true, userId: auth.userId, ...result });
+  }
+
+  if (url.pathname === "/v1/sync/changes" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const sinceRevision = normalizeSyncRevision(url.searchParams.get("since"), "since");
+    const requestedLimit = Number(url.searchParams.get("limit") || 200);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 200;
+    const result = await readUserSyncObjects(env, auth.userId, sinceRevision, limit);
+    return json({ ok: true, userId: auth.userId, sinceRevision, ...result });
+  }
+
+  if (url.pathname === "/v1/sync/history" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const objectId = normalizeSyncObjectId(url.searchParams.get("objectId"));
+    const beforeRevision = normalizeSyncRevision(url.searchParams.get("before"), "before");
+    const requestedLimit = Number(url.searchParams.get("limit") || 50);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 200) : 50;
+    const result = await readUserSyncObjectHistory(env, auth.userId, objectId, beforeRevision, limit);
+    return json({ ok: true, userId: auth.userId, objectId, ...result });
+  }
+
+  const syncObjectRestoreMatch = url.pathname.match(/^\/v1\/sync\/objects\/([^/]+)\/restore$/);
+  if (syncObjectRestoreMatch && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectRestoreMatch[1]));
+    const payload = await readJson(request);
+    const restoreRevision = normalizeSyncRevision(payload.restoreRevision, "restoreRevision");
+    if (restoreRevision <= 0) {
+      throw new HttpError(400, "invalid_restore_revision", "restoreRevision must be a positive revision");
+    }
+    const historical = await env.DB.prepare(
+      `select schema_version, deleted, payload_json
+       from user_sync_object_history
+       where user_id = ? and object_id = ? and revision = ?`
+    ).bind(auth.userId, objectId, restoreRevision).first();
+    if (!historical) {
+      throw new HttpError(404, "sync_history_not_found", "requested sync object version was not found");
+    }
+    let historicalPayload = {};
+    try {
+      historicalPayload = JSON.parse(String(historical.payload_json || "{}"));
+    } catch {
+      historicalPayload = {};
+    }
+    const result = await writeUserSyncObject(env, auth.userId, objectId, {
+      schemaVersion: Number(historical.schema_version || 1),
+      expectedRevision: payload.expectedRevision,
+      deleted: Boolean(historical.deleted),
+      payload: historicalPayload,
+      updatedByDeviceId: payload.updatedByDeviceId,
+      updatedByDeviceName: payload.updatedByDeviceName
+    }, { operation: "restore", restoredFromRevision: restoreRevision });
+    return json({ ok: true, userId: auth.userId, object: result, restoredFromRevision: restoreRevision });
+  }
+
+  const syncObjectMatch = url.pathname.match(/^\/v1\/sync\/objects\/([^/]+)$/);
+  if (syncObjectMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectMatch[1]));
+    const payload = await readJson(request);
+    const result = await writeUserSyncObject(env, auth.userId, objectId, payload);
+    return json({ ok: true, userId: auth.userId, object: result });
+  }
+
   if ((url.pathname === "/v1/me/yanm-state" || url.pathname === "/v1/me/yanm-webdav-state") && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const snapshot = await readYanmStateForUser(env, auth.userId);
@@ -502,7 +595,9 @@ async function handleRequest(request, env) {
     const auth = await requireAuth(request, env);
     const payload = await readJson(request);
     const componentStatePatch = normalizeYanmComponentStatePatch(payload);
-    const updatedAtUtc = normalizeOptionalIsoDate(payload.updatedAtUtc) || isoNow();
+    // 组件状态是服务端按 key 合并的显式变更，使用服务端时间避免设备时钟漂移
+    // 把一个刚写入的补丁伪装成旧状态。
+    const updatedAtUtc = isoNow();
     const result = await patchYanmComponentStateForUser(env, auth.userId, componentStatePatch, updatedAtUtc);
     const viewUrl = await getYanmStateViewUrl(env, auth.userId);
 
@@ -1091,11 +1186,15 @@ async function handleRequest(request, env) {
         ue.settings_json,
         ue.updated_at,
         e.display_name,
-        e.latest_version,
+        coalesce(archive_head.version, e.latest_version) as latest_version,
         e.manifest_json,
         e.icon_key,
-        e.archive_key,
-        e.archive_sha256,
+        coalesce(archive_head.archive_key, e.archive_key) as archive_key,
+        coalesce(archive_head.archive_sha256, e.archive_sha256) as archive_sha256,
+        coalesce(archive_head.revision, 0) as archive_revision,
+        coalesce(archive_head.updated_at, '') as archive_updated_at,
+        coalesce(archive_head.updated_by_device_id, '') as archive_updated_by_device_id,
+        coalesce(archive_head.updated_by_device_name, '') as archive_updated_by_device_name,
         e.publisher_user_id,
         e.publisher_username,
         e.published_at,
@@ -1103,6 +1202,8 @@ async function handleRequest(request, env) {
         e.updated_at as extension_updated_at
       from user_extensions ue
       left join extensions e on e.extension_id = ue.extension_id
+      left join user_extension_archive_heads archive_head
+        on archive_head.user_id = ue.user_id and archive_head.extension_id = ue.extension_id
       where ue.user_id = ?
       order by ue.updated_at desc`
     )
@@ -1207,6 +1308,115 @@ async function handleRequest(request, env) {
     return withCors(new Response(object.body, { headers }));
   }
 
+  const myArchiveHistoryMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive\/history$/);
+  if (myArchiveHistoryMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveHistoryMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensureUserCanReadExtension(env, auth.userId, extensionId);
+    const rows = await env.DB.prepare(
+      `select revision, version, archive_sha256, updated_at,
+              updated_by_device_id, updated_by_device_name,
+              operation, restored_from_revision
+       from user_extension_archive_history
+       where user_id = ? and extension_id = ?
+       order by revision desc limit 100`
+    ).bind(auth.userId, extensionId).all();
+    return json({
+      extensionId,
+      items: rows.results ?? []
+    });
+  }
+
+  const myArchiveRestoreMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive\/restore$/);
+  if (myArchiveRestoreMatch && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveRestoreMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensurePrivateExtensionWritable(env, auth, extensionId);
+    const payload = await readJson(request);
+    const sourceRevision = Number(payload.revision);
+    const expectedRevision = Number(payload.expectedRevision);
+    if (!Number.isInteger(sourceRevision) || sourceRevision <= 0 ||
+        !Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      throw new HttpError(400, "invalid_revision", "revision must be positive and expectedRevision must be non-negative");
+    }
+
+    const current = await env.DB.prepare(
+      `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
+    ).bind(auth.userId, extensionId).first();
+    const currentRevision = Number(current?.revision || 0);
+    if (currentRevision !== expectedRevision) {
+      const error = new HttpError(409, "archive_revision_conflict", "private archive revision does not match expectedRevision");
+      error.details = { extensionId, expectedRevision, currentRevision };
+      throw error;
+    }
+    const source = await env.DB.prepare(
+      `select version, archive_key, archive_sha256
+       from user_extension_archive_history
+       where user_id = ? and extension_id = ? and revision = ?`
+    ).bind(auth.userId, extensionId, sourceRevision).first();
+    if (!source?.archive_key) {
+      throw new HttpError(404, "not_found", "archive history revision not found");
+    }
+
+    const revision = currentRevision + 1;
+    const now = isoNow();
+    const deviceId = String(payload.updatedByDeviceId || request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
+    const deviceName = String(payload.updatedByDeviceName || request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        `update user_extension_archive_heads
+         set revision = ?, version = ?, archive_key = ?, archive_sha256 = ?,
+             updated_at = ?, updated_by_device_id = ?, updated_by_device_name = ?
+         where user_id = ? and extension_id = ? and revision = ?`
+      ).bind(
+        revision, source.version, source.archive_key, source.archive_sha256,
+        now, deviceId, deviceName, auth.userId, extensionId, expectedRevision
+      ),
+      env.DB.prepare(
+        `insert into user_extension_archive_history (
+           user_id, extension_id, revision, version, archive_key, archive_sha256,
+           updated_at, updated_by_device_id, updated_by_device_name,
+           operation, restored_from_revision
+         )
+         select user_id, extension_id, revision, version, archive_key, archive_sha256,
+                updated_at, updated_by_device_id, updated_by_device_name, 'restore', ?
+         from user_extension_archive_heads
+         where user_id = ? and extension_id = ? and revision = ?`
+      ).bind(sourceRevision, auth.userId, extensionId, revision),
+      env.DB.prepare(
+        `update extensions
+         set latest_version = ?, archive_key = ?, archive_sha256 = ?, updated_at = ?
+         where extension_id = ? and exists (
+           select 1 from user_extension_archive_heads head
+           where head.user_id = ? and head.extension_id = ? and head.revision = ?
+         )`
+      ).bind(source.version, source.archive_key, source.archive_sha256, now,
+             extensionId, auth.userId, extensionId, revision)
+    ]);
+    if (Number(results?.[0]?.meta?.changes || 0) === 0) {
+      const latest = await env.DB.prepare(
+        `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
+      ).bind(auth.userId, extensionId).first();
+      const error = new HttpError(409, "archive_revision_conflict", "private archive changed during restore");
+      error.details = { extensionId, expectedRevision, currentRevision: Number(latest?.revision || 0) };
+      throw error;
+    }
+    return json({
+      ok: true,
+      extensionId,
+      revision,
+      restoredFromRevision: sourceRevision,
+      version: source.version,
+      sha256: source.archive_sha256,
+      updatedAtUtc: now,
+      updatedByDeviceId: deviceId,
+      updatedByDeviceName: deviceName,
+      archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
+    });
+  }
+
   const myArchiveMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive$/);
   if (myArchiveMatch && request.method === "PUT") {
     const auth = await requireAuth(request, env);
@@ -1221,8 +1431,49 @@ async function handleRequest(request, env) {
     }
 
     const sha256 = await digestHex(bytes);
-    const archiveKey = `users/${auth.userId}/extensions/${extensionId}/${version}.zip`;
+    const current = await env.DB.prepare(
+      `select revision, version, archive_key, archive_sha256, updated_at,
+              updated_by_device_id, updated_by_device_name
+       from user_extension_archive_heads
+       where user_id = ? and extension_id = ?`
+    ).bind(auth.userId, extensionId).first();
+    const currentRevision = Number(current?.revision || 0);
+    if (current?.archive_sha256 && String(current.archive_sha256) === sha256) {
+      return json({
+        ok: true,
+        unchanged: true,
+        userId: auth.userId,
+        extensionId,
+        version: current.version || version,
+        archiveKey: current.archive_key,
+        sha256,
+        revision: currentRevision,
+        updatedAtUtc: current.updated_at || "",
+        archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
+      });
+    }
+
+    const expectedRaw = url.searchParams.get("expectedRevision");
+    if (expectedRaw == null && currentRevision > 0) {
+      const error = new HttpError(428, "archive_revision_required", "expectedRevision is required for an existing private archive");
+      error.details = { extensionId, currentRevision };
+      throw error;
+    }
+    const expectedRevision = expectedRaw == null ? 0 : Number(expectedRaw);
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      throw new HttpError(400, "invalid_expected_revision", "expectedRevision must be a non-negative integer");
+    }
+    if (expectedRevision !== currentRevision) {
+      const error = new HttpError(409, "archive_revision_conflict", "private archive revision does not match expectedRevision");
+      error.details = { extensionId, expectedRevision, currentRevision };
+      throw error;
+    }
+
+    const revision = currentRevision + 1;
+    const archiveKey = `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
     const now = isoNow();
+    const deviceId = String(request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
+    const deviceName = String(request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
 
     await env.PACKAGES.put(archiveKey, bytes, {
       httpMetadata: {
@@ -1237,16 +1488,57 @@ async function handleRequest(request, env) {
       }
     });
 
-    await env.DB.prepare(
-      `update extensions
-       set latest_version = ?,
-           archive_key = ?,
-           archive_sha256 = ?,
-           updated_at = ?
-       where extension_id = ?`
-    )
-      .bind(version, archiveKey, sha256, now, extensionId)
-      .run();
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        `insert into user_extension_archive_heads (
+           user_id, extension_id, revision, version, archive_key, archive_sha256,
+           updated_at, updated_by_device_id, updated_by_device_name
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         on conflict(user_id, extension_id) do update set
+           revision = excluded.revision,
+           version = excluded.version,
+           archive_key = excluded.archive_key,
+           archive_sha256 = excluded.archive_sha256,
+           updated_at = excluded.updated_at,
+           updated_by_device_id = excluded.updated_by_device_id,
+           updated_by_device_name = excluded.updated_by_device_name
+         where user_extension_archive_heads.revision = ?`
+      ).bind(
+        auth.userId, extensionId, revision, version, archiveKey, sha256,
+        now, deviceId, deviceName, expectedRevision
+      ),
+      env.DB.prepare(
+        `insert into user_extension_archive_history (
+           user_id, extension_id, revision, version, archive_key, archive_sha256,
+           updated_at, updated_by_device_id, updated_by_device_name, operation
+         )
+         select user_id, extension_id, revision, version, archive_key, archive_sha256,
+                updated_at, updated_by_device_id, updated_by_device_name, 'put'
+         from user_extension_archive_heads
+         where user_id = ? and extension_id = ? and revision = ? and archive_key = ?
+         on conflict(user_id, extension_id, revision) do nothing`
+      ).bind(auth.userId, extensionId, revision, archiveKey),
+      env.DB.prepare(
+        `update extensions
+         set latest_version = ?, archive_key = ?, archive_sha256 = ?, updated_at = ?
+         where extension_id = ?
+           and exists (
+             select 1 from user_extension_archive_heads head
+             where head.user_id = ? and head.extension_id = ?
+               and head.revision = ? and head.archive_key = ?
+           )`
+      ).bind(version, archiveKey, sha256, now, extensionId, auth.userId, extensionId, revision, archiveKey)
+    ]);
+
+    if (Number(results?.[0]?.meta?.changes || 0) === 0) {
+      await env.PACKAGES.delete(archiveKey);
+      const latest = await env.DB.prepare(
+        `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
+      ).bind(auth.userId, extensionId).first();
+      const error = new HttpError(409, "archive_revision_conflict", "private archive changed during upload");
+      error.details = { extensionId, expectedRevision, currentRevision: Number(latest?.revision || 0) };
+      throw error;
+    }
 
     return json({
       ok: true,
@@ -1255,6 +1547,10 @@ async function handleRequest(request, env) {
       version,
       archiveKey,
       sha256,
+      revision,
+      updatedAtUtc: now,
+      updatedByDeviceId: deviceId,
+      updatedByDeviceName: deviceName,
       archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
     });
   }
@@ -1265,13 +1561,27 @@ async function handleRequest(request, env) {
     await ensureUser(env, auth.userId);
     await ensureUserCanReadExtension(env, auth.userId, extensionId);
 
-    const row = await env.DB.prepare(
-      `select archive_key, latest_version, archive_sha256
-       from extensions
-       where extension_id = ?`
-    )
-      .bind(extensionId)
-      .first();
+    const requestedRevision = Number(url.searchParams.get("revision") || 0);
+    if (!Number.isInteger(requestedRevision) || requestedRevision < 0) {
+      throw new HttpError(400, "invalid_revision", "revision must be a non-negative integer");
+    }
+    let row = requestedRevision > 0
+      ? await env.DB.prepare(
+          `select archive_key, version as latest_version, archive_sha256, revision
+           from user_extension_archive_history
+           where user_id = ? and extension_id = ? and revision = ?`
+        ).bind(auth.userId, extensionId, requestedRevision).first()
+      : await env.DB.prepare(
+          `select archive_key, version as latest_version, archive_sha256, revision
+           from user_extension_archive_heads
+           where user_id = ? and extension_id = ?`
+        ).bind(auth.userId, extensionId).first();
+    if (!row && requestedRevision === 0) {
+      row = await env.DB.prepare(
+        `select archive_key, latest_version, archive_sha256, 0 as revision
+         from extensions where extension_id = ?`
+      ).bind(extensionId).first();
+    }
 
     if (!row?.archive_key) {
       return json({ error: "not_found", message: "Archive not found" }, 404);
@@ -1285,6 +1595,7 @@ async function handleRequest(request, env) {
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set("etag", row.archive_sha256 || object.httpEtag || "");
+    headers.set("x-yanzi-archive-revision", String(row.revision || 0));
     headers.set("cache-control", "private, max-age=60");
     headers.set(
       "content-disposition",
@@ -1745,6 +2056,38 @@ async function handleRequest(request, env) {
     const payload = await readJson(request);
     await ensureUser(env, auth.userId);
 
+    let settings = payload.settings ?? {};
+    if (extensionId === "yanzi-quickpanel-settings") {
+      const existing = await env.DB.prepare(
+        `select settings_json from user_extensions where user_id = ? and extension_id = ?`
+      )
+        .bind(auth.userId, extensionId)
+        .first();
+      let existingSettings = {};
+      if (existing?.settings_json) {
+        try {
+          existingSettings = JSON.parse(String(existing.settings_json));
+        } catch {
+          existingSettings = {};
+        }
+      }
+
+      const incomingUpdatedAt = Date.parse(String(settings.updatedAtUtc || ""));
+      const existingUpdatedAt = Date.parse(String(existingSettings.updatedAtUtc || ""));
+      const incomingIsStale = Number.isFinite(existingUpdatedAt) &&
+        (!Number.isFinite(incomingUpdatedAt) || incomingUpdatedAt + 1000 < existingUpdatedAt);
+
+      // 主配置和燕幕状态共用兼容存储行。按字段合并可避免任一写入
+      // 把另一条同步链维护的字段整包擦除；过期客户端提交则不覆盖新快照。
+      settings = incomingIsStale ? existingSettings : { ...existingSettings, ...settings };
+    }
+    if (extensionId === "yanzi-quickpanel-settings" || extensionId === "yanzi-ai-settings") {
+      settings = scrubAiSecretsFromValue(settings);
+    }
+    if (extensionId === "yanzi-personal-sync-settings" || extensionId === "yanzi-webdav-settings") {
+      settings = scrubPersonalSyncSecretsFromValue(settings);
+    }
+
     await env.DB.prepare(
       `insert into user_extensions (
         user_id,
@@ -1765,7 +2108,7 @@ async function handleRequest(request, env) {
         extensionId,
         String(payload.installedVersion ?? payload.version ?? "0.0.0").slice(0, 50),
         payload.enabled === false ? 0 : 1,
-        JSON.stringify(payload.settings ?? {}),
+        JSON.stringify(settings),
         isoNow()
       )
       .run();
@@ -1924,7 +2267,7 @@ async function verifyToken(env, token) {
   const [encodedHeader, encodedPayload, signature] = parts;
   const expected = await hmacSha256(env.AUTH_TOKEN_SECRET, `${encodedHeader}.${encodedPayload}`);
   if (signature !== expected) {
-    console.warn("Token signature verification failed, bypassing for convenience.");
+    throw new HttpError(401, "invalid_token_signature", "Token signature verification failed");
   }
 
   const payload = JSON.parse(base64UrlDecode(encodedPayload));
@@ -2482,6 +2825,10 @@ function serializeUserExtensionRecord(url, row, userId) {
     icon,
     archive_key: row.archive_key || "",
     archive_sha256: row.archive_sha256 || "",
+    archive_revision: Number(row.archive_revision || 0),
+    archive_updated_at: row.archive_updated_at || "",
+    archive_updated_by_device_id: row.archive_updated_by_device_id || "",
+    archive_updated_by_device_name: row.archive_updated_by_device_name || "",
     has_archive: Boolean(row.archive_key),
     archive_download_url: row.archive_key ? buildMyExtensionArchiveUrl(url, extensionId) : null,
     publisher_user_id: row.publisher_user_id || "",
@@ -2727,6 +3074,217 @@ async function ensureUser(env, userId) {
     .run();
 }
 
+function normalizeSyncObjectId(value) {
+  const objectId = String(value || "").trim();
+  if (!/^[A-Za-z0-9._:-]{1,120}$/.test(objectId)) {
+    throw new HttpError(400, "invalid_sync_object_id", "objectId contains unsupported characters or is too long");
+  }
+  return objectId;
+}
+
+function normalizeSyncRevision(value, fieldName = "revision") {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+  const revision = Number(value);
+  if (!Number.isSafeInteger(revision) || revision < 0) {
+    throw new HttpError(400, "invalid_sync_revision", `${fieldName} must be a non-negative safe integer`);
+  }
+  return revision;
+}
+
+function serializeUserSyncObject(row) {
+  let payload = {};
+  try {
+    payload = JSON.parse(String(row.payload_json || "{}"));
+  } catch {
+    payload = {};
+  }
+  return {
+    objectId: String(row.object_id || ""),
+    schemaVersion: Number(row.schema_version || 1),
+    revision: Number(row.object_revision || 0),
+    updatedAtUtc: String(row.updated_at || ""),
+    updatedByDeviceId: row.updated_by_device_id ? String(row.updated_by_device_id) : null,
+    updatedByDeviceName: row.updated_by_device_name ? String(row.updated_by_device_name) : null,
+    deleted: Boolean(row.deleted),
+    payload
+  };
+}
+
+function serializeUserSyncObjectHistory(row) {
+  return {
+    ...serializeUserSyncObject({ ...row, object_revision: row.revision }),
+    operation: String(row.operation || "update"),
+    restoredFromRevision: row.restored_from_revision == null
+      ? null
+      : Number(row.restored_from_revision)
+  };
+}
+
+async function getUserSyncRevision(env, userId) {
+  const row = await env.DB.prepare(
+    `select revision from user_sync_revisions where user_id = ?`
+  ).bind(userId).first();
+  return Number(row?.revision || 0);
+}
+
+async function readUserSyncObjects(env, userId, sinceRevision, limit) {
+  await ensureUser(env, userId);
+  const rows = await env.DB.prepare(
+    `select object_id, schema_version, object_revision, updated_at,
+            updated_by_device_id, updated_by_device_name, deleted, payload_json
+     from user_sync_objects
+     where user_id = ? and object_revision > ?
+     order by object_revision asc
+     limit ?`
+  ).bind(userId, sinceRevision, limit + 1).all();
+  const allRows = rows.results || [];
+  const hasMore = allRows.length > limit;
+  const selectedRows = hasMore ? allRows.slice(0, limit) : allRows;
+  const objects = selectedRows.map(serializeUserSyncObject);
+  const currentRevision = await getUserSyncRevision(env, userId);
+  const cursorRevision = objects.length > 0
+    ? objects[objects.length - 1].revision
+    : currentRevision;
+  return { currentRevision, cursorRevision, hasMore, objects };
+}
+
+async function readUserSyncObjectHistory(env, userId, objectId, beforeRevision, limit) {
+  await ensureUser(env, userId);
+  const rows = await env.DB.prepare(
+    `select object_id, revision, schema_version, updated_at,
+            updated_by_device_id, updated_by_device_name, deleted, payload_json,
+            operation, restored_from_revision
+     from user_sync_object_history
+     where user_id = ? and object_id = ? and (? = 0 or revision < ?)
+     order by revision desc
+     limit ?`
+  ).bind(userId, objectId, beforeRevision, beforeRevision, limit + 1).all();
+  const allRows = rows.results || [];
+  const hasMore = allRows.length > limit;
+  const selectedRows = hasMore ? allRows.slice(0, limit) : allRows;
+  const versions = selectedRows.map(serializeUserSyncObjectHistory);
+  const currentRevision = await getUserSyncRevision(env, userId);
+  const nextBeforeRevision = versions.length > 0
+    ? versions[versions.length - 1].revision
+    : beforeRevision;
+  return { currentRevision, nextBeforeRevision, hasMore, versions };
+}
+
+async function writeUserSyncObject(env, userId, objectId, input, writeMetadata = {}) {
+  const expectedRevision = normalizeSyncRevision(input.expectedRevision, "expectedRevision");
+  const schemaVersion = Number(input.schemaVersion ?? 1);
+  if (!Number.isInteger(schemaVersion) || schemaVersion < 1 || schemaVersion > 1000) {
+    throw new HttpError(400, "invalid_sync_schema_version", "schemaVersion must be an integer between 1 and 1000");
+  }
+  if (!Object.prototype.hasOwnProperty.call(input, "payload")) {
+    throw new HttpError(400, "sync_payload_required", "payload is required");
+  }
+
+  const deleted = input.deleted === true;
+  const updatedByDeviceId = String(input.updatedByDeviceId || "").trim().slice(0, 200) || null;
+  const updatedByDeviceName = String(input.updatedByDeviceName || "").trim().slice(0, 200) || null;
+  const safePayload = objectId === "settings.ai"
+    ? scrubAiSecretsFromValue(input.payload ?? {})
+    : input.payload ?? {};
+  const payloadJson = JSON.stringify(safePayload);
+  if (textEncoder.encode(payloadJson).length > 1024 * 1024) {
+    throw new HttpError(413, "sync_payload_too_large", "sync object payload exceeds 1 MiB");
+  }
+
+  await ensureUser(env, userId);
+  const now = isoNow();
+  const operation = writeMetadata.operation === "restore"
+    ? "restore"
+    : deleted ? "delete" : expectedRevision === 0 ? "create" : "update";
+  const restoredFromRevision = operation === "restore"
+    ? normalizeSyncRevision(writeMetadata.restoredFromRevision, "restoredFromRevision")
+    : null;
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `insert into user_sync_revisions (user_id, revision, updated_at)
+       values (?, 0, ?)
+       on conflict(user_id) do nothing`
+    ).bind(userId, now),
+    env.DB.prepare(
+      `insert into user_sync_objects (
+         user_id, object_id, schema_version, object_revision, updated_at,
+         updated_by_device_id, updated_by_device_name, deleted, payload_json
+       )
+       select ?, ?, ?, revisions.revision + 1, ?, ?, ?, ?, ?
+       from user_sync_revisions revisions
+       where revisions.user_id = ?
+         and (
+           (? = 0 and not exists (
+             select 1 from user_sync_objects existing
+             where existing.user_id = ? and existing.object_id = ?
+           ))
+           or
+           (? > 0 and exists (
+             select 1 from user_sync_objects existing
+             where existing.user_id = ? and existing.object_id = ? and existing.object_revision = ?
+           ))
+         )
+       on conflict(user_id, object_id) do update set
+         schema_version = excluded.schema_version,
+         object_revision = excluded.object_revision,
+         updated_at = excluded.updated_at,
+         updated_by_device_id = excluded.updated_by_device_id,
+         updated_by_device_name = excluded.updated_by_device_name,
+         deleted = excluded.deleted,
+         payload_json = excluded.payload_json`
+    ).bind(
+      userId, objectId, schemaVersion, now,
+      updatedByDeviceId, updatedByDeviceName, deleted ? 1 : 0, payloadJson,
+      userId,
+      expectedRevision, userId, objectId,
+      expectedRevision, userId, objectId, expectedRevision
+    ),
+    env.DB.prepare(
+      `insert into user_sync_object_history (
+         user_id, object_id, revision, schema_version, updated_at,
+         updated_by_device_id, updated_by_device_name, deleted, payload_json,
+         operation, restored_from_revision
+       )
+       select objects.user_id, objects.object_id, objects.object_revision,
+              objects.schema_version, objects.updated_at, objects.updated_by_device_id,
+              objects.updated_by_device_name, objects.deleted, objects.payload_json, ?, ?
+       from user_sync_objects objects
+       join user_sync_revisions revisions on revisions.user_id = objects.user_id
+       where objects.user_id = ? and objects.object_id = ?
+         and objects.object_revision = revisions.revision + 1`
+    ).bind(operation, restoredFromRevision, userId, objectId),
+    env.DB.prepare(
+      `update user_sync_revisions
+       set revision = revision + 1, updated_at = ?
+       where user_id = ?
+         and exists (
+           select 1 from user_sync_objects objects
+           where objects.user_id = user_sync_revisions.user_id
+             and objects.object_id = ?
+             and objects.object_revision = user_sync_revisions.revision + 1
+         )`
+    ).bind(now, userId, objectId)
+  ]);
+
+  if (Number(results?.[1]?.meta?.changes || 0) === 0) {
+    const current = await env.DB.prepare(
+      `select object_revision from user_sync_objects where user_id = ? and object_id = ?`
+    ).bind(userId, objectId).first();
+    const error = new HttpError(409, "sync_revision_conflict", "sync object revision does not match expectedRevision");
+    error.details = { objectId, expectedRevision, currentRevision: Number(current?.object_revision || 0) };
+    throw error;
+  }
+
+  const row = await env.DB.prepare(
+    `select object_id, schema_version, object_revision, updated_at,
+            updated_by_device_id, updated_by_device_name, deleted, payload_json
+     from user_sync_objects where user_id = ? and object_id = ?`
+  ).bind(userId, objectId).first();
+  return serializeUserSyncObject(row);
+}
+
 async function upsertPrivateExtensionMetadata(env, auth, extensionId, manifest) {
   const existing = await env.DB.prepare(
     `select publisher_user_id
@@ -2883,6 +3441,9 @@ async function getUserWebDavConfig(env, userId) {
 async function readYanmStateForUser(env, userId) {
   try {
     const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    if (!hasPersonalSyncCredential(syncConfig)) {
+      throw new HttpError(409, "sync_credentials_device_local", "Personal sync credentials are stored on the desktop device");
+    }
     let result;
     const provider = syncConfig.provider;
     if (provider === "github") {
@@ -2922,6 +3483,10 @@ async function readYanmStateForUser(env, userId) {
       };
     }
 
+    if (error instanceof HttpError && error.code === "sync_credentials_device_local") {
+      return null;
+    }
+
     throw error;
   }
 }
@@ -2953,7 +3518,7 @@ async function readYanmStateFromCloudConfig(env, userId) {
 
   const text = JSON.stringify(yanm);
   return {
-    updatedAtUtc: String(row.updated_at || ""),
+    updatedAtUtc: String(settings.yanmUpdatedAtUtc || row.updated_at || ""),
     yanm,
     bytes: textEncoder.encode(text).length
   };
@@ -2980,6 +3545,7 @@ async function writeYanmStateToCloudConfig(env, userId, snapshot) {
   }
 
   settings.yanm = snapshot.yanm;
+  settings.yanmUpdatedAtUtc = snapshot.updatedAtUtc || isoNow();
 
   await ensureSystemConfigExtension(env, "yanzi-quickpanel-settings", {
     displayName: "Yanzi Quick Panel Settings",
@@ -3103,6 +3669,17 @@ function buildLegacyWebDavConfig(syncConfig) {
     username: String(webDav.username || webDav.Username || "").trim(),
     password: String(syncConfig.secrets.WebDavPassword || syncConfig.secrets.webDavPassword || "").trim()
   };
+}
+
+function hasPersonalSyncCredential(syncConfig) {
+  const secrets = syncConfig?.secrets || {};
+  if (syncConfig?.provider === "github") return Boolean(String(secrets.githubToken || secrets.GitHubToken || "").trim());
+  if (syncConfig?.provider === "gitee") return Boolean(String(secrets.giteeToken || secrets.GiteeToken || "").trim());
+  if (syncConfig?.provider === "gitlab") return Boolean(String(secrets.gitLabToken || secrets.gitlabToken || secrets.GitLabToken || "").trim());
+  if (syncConfig?.provider === "gitea") return Boolean(String(secrets.giteaToken || secrets.GiteaToken || "").trim());
+  if (syncConfig?.provider === "s3") return Boolean(String(secrets.s3SecretAccessKey || secrets.S3SecretAccessKey || "").trim());
+  if (syncConfig?.provider === "webdav") return Boolean(String(secrets.webDavPassword || secrets.WebDavPassword || "").trim());
+  return false;
 }
 
 function base64ToUtf8(str) {
@@ -3877,6 +4454,9 @@ async function writeYanmStateForUser(env, userId, snapshot) {
 
   try {
     const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    if (!hasPersonalSyncCredential(syncConfig)) {
+      throw new HttpError(409, "sync_credentials_device_local", "Personal sync credentials are stored on the desktop device");
+    }
     syncProvider = syncConfig.provider;
     if (syncConfig.provider === "github") {
       await writeYanmStateToGitHub(syncConfig, snapshot);
@@ -3937,6 +4517,46 @@ function stableJsonStringify(value) {
 
   const keys = Object.keys(value).sort();
   return `{${keys.map((key) => `${JSON.stringify(key)}:${stableJsonStringify(value[key])}`).join(",")}}`;
+}
+
+function scrubAiSecretsFromValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(scrubAiSecretsFromValue);
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  const sanitized = {};
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+    sanitized[key] = normalizedKey === "apikey" || normalizedKey === "aiapikey"
+      ? ""
+      : scrubAiSecretsFromValue(child);
+  }
+  return sanitized;
+}
+
+function scrubPersonalSyncSecretsFromValue(value) {
+  const sanitized = value && typeof value === "object" && !Array.isArray(value)
+    ? JSON.parse(JSON.stringify(value))
+    : {};
+  sanitized.secrets = {};
+  for (const key of [
+    "webDavPassword",
+    "password",
+    "token",
+    "githubToken",
+    "giteeToken",
+    "gitLabToken",
+    "giteaToken",
+    "s3SecretAccessKey"
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(sanitized, key)) {
+      sanitized[key] = "";
+    }
+  }
+  return sanitized;
 }
 
 function normalizeYanmComponentStatePatch(payload) {

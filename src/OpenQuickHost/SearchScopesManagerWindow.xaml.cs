@@ -106,6 +106,7 @@ namespace OpenQuickHost
             }
 
             AppSettingsStore.Save(_settings);
+            _mainWindow.NotifyQuickPanelSettingsChanged("search-scopes-saved", refreshYanmOverlay: false);
             DialogResult = true;
             Close();
         }

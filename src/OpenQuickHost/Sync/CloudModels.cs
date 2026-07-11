@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace OpenQuickHost.Sync;
 
@@ -324,4 +325,110 @@ public sealed class YanmStateResponse
 
     [JsonPropertyName("bytes")]
     public int Bytes { get; init; }
+}
+
+public sealed class CloudSyncObjectListResponse
+{
+    public bool Ok { get; init; }
+
+    public string UserId { get; init; } = string.Empty;
+
+    public long SinceRevision { get; init; }
+
+    public long CurrentRevision { get; init; }
+
+    public long CursorRevision { get; init; }
+
+    public bool HasMore { get; init; }
+
+    public IReadOnlyList<CloudSyncObjectRecord> Objects { get; init; } = [];
+}
+
+public sealed class CloudSyncCapabilitiesResponse
+{
+    public bool Ok { get; init; }
+
+    public int ProtocolVersion { get; init; }
+
+    public bool ObjectSyncAvailable { get; init; }
+
+    public bool ObjectHistoryAvailable { get; init; }
+
+    public bool ObjectsAuthoritative { get; init; }
+
+    public bool LegacySnapshotReadSupported { get; init; }
+
+    public bool LegacySnapshotWriteRequired { get; init; } = true;
+
+    public int MaxObjectPayloadBytes { get; init; }
+}
+
+public sealed class CloudSyncObjectHistoryResponse
+{
+    public bool Ok { get; init; }
+
+    public string UserId { get; init; } = string.Empty;
+
+    public string ObjectId { get; init; } = string.Empty;
+
+    public long CurrentRevision { get; init; }
+
+    public long NextBeforeRevision { get; init; }
+
+    public bool HasMore { get; init; }
+
+    public IReadOnlyList<CloudSyncObjectHistoryRecord> Versions { get; init; } = [];
+}
+
+public sealed class CloudSyncObjectHistoryRecord
+{
+    public string ObjectId { get; init; } = string.Empty;
+
+    public int SchemaVersion { get; init; } = 1;
+
+    public long Revision { get; init; }
+
+    public string UpdatedAtUtc { get; init; } = string.Empty;
+
+    public string? UpdatedByDeviceId { get; init; }
+
+    public string? UpdatedByDeviceName { get; init; }
+
+    public bool Deleted { get; init; }
+
+    public JsonElement Payload { get; init; }
+
+    public string Operation { get; init; } = "update";
+
+    public long? RestoredFromRevision { get; init; }
+}
+
+public sealed class CloudSyncObjectWriteResponse
+{
+    public bool Ok { get; init; }
+
+    public string UserId { get; init; } = string.Empty;
+
+    public CloudSyncObjectRecord? Object { get; init; }
+
+    public long? RestoredFromRevision { get; init; }
+}
+
+public sealed class CloudSyncObjectRecord
+{
+    public string ObjectId { get; init; } = string.Empty;
+
+    public int SchemaVersion { get; init; } = 1;
+
+    public long Revision { get; init; }
+
+    public string UpdatedAtUtc { get; init; } = string.Empty;
+
+    public string? UpdatedByDeviceId { get; init; }
+
+    public string? UpdatedByDeviceName { get; init; }
+
+    public bool Deleted { get; init; }
+
+    public JsonElement Payload { get; init; }
 }

@@ -257,13 +257,15 @@
 
 当前客户端支持两类同步：
 
-- Cloudflare 账号同步：用于账号、分享扩展、坚果云配置等账户级信息。
-- 坚果云 / WebDAV 个人扩展同步：用于低频同步个人扩展包，适合多设备恢复和备份。
+- Cloudflare 账号同步：用于账号、分享扩展、账号级设置和个人同步配置。
+- 个人同步仓库：支持 WebDAV、GitHub、Gitee、GitLab、Gitea 和 S3 兼容存储，用于同步个人扩展包、扩展数据、配置备份和燕幕状态。
+
+登录账号时，账号私有库是扩展包权威，个人同步仓库中的扩展包只做上传备份；未登录时个人仓库保持双向扩展包同步。扩展私有数据按 key 保存 revision、不可变历史、pending 和冲突副本，设置页可以看清来源并逐项选择本地或远端版本。
 
 推荐流程：
 
 1. 在设置窗口登录燕子云账号。
-2. 在“同步”设置里配置坚果云 / WebDAV。
+2. 在“同步”设置里选择并配置个人同步后端。
 3. 点击“立即同步”完成首轮上传或拉取。
 4. 后续新建、修改、删除扩展后，客户端会按低频策略进行后台同步。
 
@@ -308,7 +310,7 @@ dotnet publish .\src\OpenQuickHost\OpenQuickHost.csproj -c Release -r win-x64 --
 
 ### 配置云同步后端（Cloudflare Worker）
 
-云同步基于 Cloudflare Worker + KV 存储，**你需要部署自己的 Worker 实例**。
+账号云同步基于 Cloudflare Worker + D1 + R2，**自建后端时需要在自己的 Cloudflare 账户中创建并绑定 D1 数据库和 R2 存储桶**。
 
 ```powershell
 # 进入 Worker 目录
@@ -317,9 +319,14 @@ cd cloudflare
 # 安装依赖
 npm install
 
+# 首次部署和升级时先应用 D1 迁移（包括对象 revision 与不可变历史）
+npx wrangler d1 migrations apply openquickhost-sync-db --remote --config wrangler.toml
+
 # 部署到你的 Cloudflare 账户
 npx wrangler deploy
 ```
+
+升级期间先不要设置 `SYNC_OBJECTS_AUTHORITATIVE`，新客户端会安全双写对象协议和旧快照。完成真实账号多设备验证后，再将它设为 `true` 切换为对象权威模式。设置页可以直接查看每个对象的 revision、来源设备、冲突和历史恢复记录。
 
 部署完成后，将 Worker 的 URL 填入项目根目录的 `syncsettings.json`：
 

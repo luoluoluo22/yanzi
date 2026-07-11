@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -12,6 +12,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yanzi.Platform.Mac", "src\Yanzi.Platform.Mac\Yanzi.Platform.Mac.csproj", "{A373F1D8-9963-4617-AD09-8734C35F1BF4}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yanzi.Avalonia", "src\Yanzi.Avalonia\Yanzi.Avalonia.csproj", "{B0F0C0F2-DB34-4E72-88DE-5A8E12219CFB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yanzi.SyncVerification", "src\Yanzi.SyncVerification\Yanzi.SyncVerification.csproj", "{068E7D53-94FB-44B9-9B3B-DA1F82731D98}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -71,6 +73,18 @@ Global
 		{B0F0C0F2-DB34-4E72-88DE-5A8E12219CFB}.Release|x64.Build.0 = Release|Any CPU
 		{B0F0C0F2-DB34-4E72-88DE-5A8E12219CFB}.Release|x86.ActiveCfg = Release|Any CPU
 		{B0F0C0F2-DB34-4E72-88DE-5A8E12219CFB}.Release|x86.Build.0 = Release|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Debug|x64.Build.0 = Debug|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Debug|x86.Build.0 = Debug|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Release|Any CPU.Build.0 = Release|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Release|x64.ActiveCfg = Release|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Release|x64.Build.0 = Release|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Release|x86.ActiveCfg = Release|Any CPU
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -80,5 +94,6 @@ Global
 		{5AAAA054-C295-4FD4-A9C5-305570DD75C9} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{A373F1D8-9963-4617-AD09-8734C35F1BF4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{B0F0C0F2-DB34-4E72-88DE-5A8E12219CFB} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{068E7D53-94FB-44B9-9B3B-DA1F82731D98} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

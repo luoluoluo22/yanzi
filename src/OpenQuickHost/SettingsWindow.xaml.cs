@@ -48,6 +48,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _webDavStatusText = "未启用个人扩展同步。";
     private string _syncActivityLogText = "暂无同步记录。";
     private string _personalSyncCommitStatusText = "GitHub 同步启用后可查看最近提交。";
+    private string _personalConfigRestoreStatusText = "完成一次个人仓库配置备份后会生成恢复点。";
+    private string _personalExtensionSyncStatusText = "尚未生成扩展同步索引。";
+    private string _extensionDataSyncStatusText = "尚无扩展私有数据同步记录。";
+    private AccountSyncStatusView _accountSyncStatus = AccountSyncStatusView.Empty;
     private string _aiBaseUrl = string.Empty;
     private string _aiApiKey = string.Empty;
     private string _aiModel = string.Empty;
@@ -157,6 +161,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ExtensionItems = new ObservableCollection<SettingsExtensionItem>();
         RecycleBinItems = new ObservableCollection<SettingsRecycleBinItem>();
         PersonalSyncCommitItems = new ObservableCollection<PersonalSyncCommitItem>();
+        PersonalConfigRestorePoints = new ObservableCollection<PersonalConfigRestorePointItem>();
+        ExtensionSyncConflictItems = new ObservableCollection<ExtensionSyncConflictItem>();
+        ExtensionDataConflictItems = new ObservableCollection<ExtensionDataConflictItem>();
         YarnSelectRules = new ObservableCollection<YarnSelectRuleItem>();
         YarnSelectExtensionOptions = new ObservableCollection<YarnSelectExtensionOption>();
         RadialMenuExtensionOptions = new ObservableCollection<YarnSelectExtensionOption>();
@@ -171,6 +178,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MatchedSearchItems = new ObservableCollection<SearchDisplayItem>();
         UpdateBackupStatusText();
         DataContext = this;
+        RefreshAccountObjectSyncStatus();
         // 延迟到Loaded事件中执行，避免构造函数卡顿
         // RefreshRadialMenuSlots();
         ApplySavedWindowBounds();
@@ -216,6 +224,26 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public ObservableCollection<SettingsRecycleBinItem> RecycleBinItems { get; }
 
     public ObservableCollection<PersonalSyncCommitItem> PersonalSyncCommitItems { get; }
+
+    public ObservableCollection<PersonalConfigRestorePointItem> PersonalConfigRestorePoints { get; }
+
+    public ObservableCollection<ExtensionSyncConflictItem> ExtensionSyncConflictItems { get; }
+
+    public bool HasExtensionSyncConflicts => ExtensionSyncConflictItems.Count > 0;
+
+    public ObservableCollection<ExtensionDataConflictItem> ExtensionDataConflictItems { get; }
+
+    public bool HasExtensionDataConflicts => ExtensionDataConflictItems.Count > 0;
+
+    public AccountSyncStatusView AccountSyncStatus
+    {
+        get => _accountSyncStatus;
+        private set
+        {
+            _accountSyncStatus = value;
+            OnPropertyChanged();
+        }
+    }
 
     public ObservableCollection<YarnSelectRuleItem> YarnSelectRules { get; }
 
@@ -751,7 +779,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             else if (IsSyncSelected)
             {
                 RefreshSyncActivityLog();
+                RefreshAccountObjectSyncStatus();
+                RefreshPersonalExtensionSyncStatus();
                 _ = RefreshPersonalSyncCommitsAsync();
+                _ = RefreshPersonalConfigRestorePointsAsync();
             }
             else if (IsRadialSelected)
             {
@@ -1379,6 +1410,39 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
 
             _personalSyncCommitStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string PersonalConfigRestoreStatusText
+    {
+        get => _personalConfigRestoreStatusText;
+        private set
+        {
+            if (value == _personalConfigRestoreStatusText) return;
+            _personalConfigRestoreStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string PersonalExtensionSyncStatusText
+    {
+        get => _personalExtensionSyncStatusText;
+        private set
+        {
+            if (value == _personalExtensionSyncStatusText) return;
+            _personalExtensionSyncStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string ExtensionDataSyncStatusText
+    {
+        get => _extensionDataSyncStatusText;
+        private set
+        {
+            if (value == _extensionDataSyncStatusText) return;
+            _extensionDataSyncStatusText = value;
             OnPropertyChanged();
         }
     }
@@ -2714,6 +2778,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (IsSyncSelected)
         {
             RefreshSyncActivityLog();
+            RefreshAccountObjectSyncStatus();
         }
     }
 
@@ -2951,6 +3016,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
+        if (IsLoaded)
+        {
+            _mainWindow.NotifyQuickPanelSettingsChanged("theme-mode-changed", refreshYanmOverlay: false);
+        }
     }
 
     private void SaveSettingsToggle_Click(object sender, RoutedEventArgs e)
@@ -2958,6 +3027,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
         StartupRegistrationService.Apply(_settings.LaunchAtStartup);
+        if (sender is FrameworkElement { DataContext: SettingsWindow })
+        {
+            _mainWindow.NotifyQuickPanelSettingsChanged("general-setting-changed", refreshYanmOverlay: false);
+        }
     }
 
     private void OpenApiDocsUrlButton_Click(object sender, RoutedEventArgs e)
@@ -4313,6 +4386,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             .ToArray();
 
         AppEnvironmentVariableStore.Save(variables);
+        _mainWindow.NotifyQuickPanelSettingsChanged("environment-variables-saved", refreshYanmOverlay: false);
         EnvironmentVariables.Clear();
         foreach (var variable in AppEnvironmentVariableStore.Load())
         {
@@ -4446,7 +4520,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             WebDavStatusText = result.message;
             await RefreshExtensionsFromDiskAsync();
             RefreshSyncActivityLog();
+            RefreshPersonalExtensionSyncStatus();
             await RefreshPersonalSyncCommitsAsync();
+            await RefreshPersonalConfigRestorePointsAsync();
             if (!result.ok)
             {
                 System.Windows.MessageBox.Show(this, result.message, $"{SelectedPersonalSyncProviderDisplayName} 同步失败", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -4464,6 +4540,190 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (TestPersonalSyncButton != null) TestPersonalSyncButton.IsEnabled = enabled;
         if (ClearPersonalSyncButton != null) ClearPersonalSyncButton.IsEnabled = enabled;
         if (SyncPersonalSyncButton != null) SyncPersonalSyncButton.IsEnabled = enabled;
+    }
+
+    private void RefreshPersonalExtensionSyncStatus()
+    {
+        try
+        {
+            ExtensionSyncConflictItems.Clear();
+            foreach (var conflict in _mainWindow.GetExtensionSyncConflicts())
+            {
+                ExtensionSyncConflictItems.Add(new ExtensionSyncConflictItem(conflict));
+            }
+            OnPropertyChanged(nameof(HasExtensionSyncConflicts));
+            ExtensionDataConflictItems.Clear();
+            var dataStates = _mainWindow.GetExtensionDataSyncStates();
+            foreach (var state in dataStates.Where(static item => item.Conflict != null))
+            {
+                ExtensionDataConflictItems.Add(new ExtensionDataConflictItem(state));
+            }
+            OnPropertyChanged(nameof(HasExtensionDataConflicts));
+            var dataPending = dataStates.Count(static item => item.Pending);
+            var dataErrors = dataStates.Count(static item => !string.IsNullOrWhiteSpace(item.LastError));
+            var dataTracked = dataStates.Count;
+            var latestDataRevision = dataStates.Count == 0 ? 0 : dataStates.Max(static item => item.LastRemoteRevision);
+            ExtensionDataSyncStatusText =
+                $"数据项统计 · 已跟踪 {dataTracked} 项 · 待同步 {dataPending} · 冲突 {ExtensionDataConflictItems.Count} · 错误 {dataErrors} · 最高版本 {latestDataRevision}";
+            var session = SyncSessionStore.Load();
+            var accountMode = session != null && session.ExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var authority = accountMode
+                ? "云端私有库为主配置 · 个人仓库用作备份"
+                : "个人仓库双向同步模式";
+            if (!File.Exists(HostAssets.WebDavSyncStatePath))
+            {
+                PersonalExtensionSyncStatusText = $"{authority} · 尚未生成本地扩展索引";
+                return;
+            }
+
+            var index = JsonSerializer.Deserialize<WebDavSyncIndex>(
+                File.ReadAllText(HostAssets.WebDavSyncStatePath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new WebDavSyncIndex();
+            var active = index.Items.Count(static item => !item.Deleted && !item.Purged);
+            var deleted = index.Items.Count(static item => item.Deleted && !item.Purged);
+            var purged = index.Items.Count(static item => item.Purged);
+            var pending = index.Items.Count(static item => item.LocalDeletionPending);
+            var source = !string.IsNullOrWhiteSpace(index.UpdatedByDeviceName)
+                ? index.UpdatedByDeviceName
+                : !string.IsNullOrWhiteSpace(index.UpdatedByDeviceId) ? index.UpdatedByDeviceId : "未知设备";
+            var updated = DateTimeOffset.TryParse(index.UpdatedAtUtc, out var updatedAt)
+                ? updatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
+                : "尚未同步";
+            PersonalExtensionSyncStatusText =
+                $"{authority} · 云端版本 {index.Revision} · 有效扩展 {active} 个 · 已删除 {deleted} 个 · 已彻底删除 {purged} 个 · 待同步 {pending} 个 · 来源设备: {source} · 更新时间: {updated}";
+        }
+        catch (Exception ex)
+        {
+            PersonalExtensionSyncStatusText = $"扩展同步索引无法读取：{ex.Message}";
+        }
+    }
+
+    private async void UseLocalExtensionSyncConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveExtensionSyncConflictFromButtonAsync(sender, useLocalVersion: true);
+    }
+
+    private async void AcceptRemoteExtensionSyncConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveExtensionSyncConflictFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private async Task ResolveExtensionSyncConflictFromButtonAsync(object sender, bool useLocalVersion)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: ExtensionSyncConflictItem item } button)
+        {
+            return;
+        }
+        button.IsEnabled = false;
+        try
+        {
+            var result = await _mainWindow.ResolveExtensionSyncConflictAsync(item.ExtensionId, useLocalVersion);
+            SyncStatusText = result.message;
+            RefreshPersonalExtensionSyncStatus();
+            RefreshSyncActivityLog();
+            if (result.ok)
+            {
+                await RefreshExtensionsFromDiskAsync();
+            }
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
+    private async void UseLocalExtensionDataConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveExtensionDataConflictFromButtonAsync(sender, useLocalVersion: true);
+    }
+
+    private async void AcceptRemoteExtensionDataConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveExtensionDataConflictFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private async Task ResolveExtensionDataConflictFromButtonAsync(object sender, bool useLocalVersion)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: ExtensionDataConflictItem item } button)
+        {
+            return;
+        }
+        button.IsEnabled = false;
+        try
+        {
+            var result = await _mainWindow.ResolveExtensionDataSyncConflictAsync(
+                item.ExtensionId,
+                item.Key,
+                useLocalVersion);
+            SyncStatusText = result.message;
+            RefreshPersonalExtensionSyncStatus();
+            RefreshSyncActivityLog();
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
+    private async void RefreshPersonalConfigRestorePointsButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshPersonalConfigRestorePointsAsync();
+    }
+
+    private async Task RefreshPersonalConfigRestorePointsAsync()
+    {
+        try
+        {
+            PersonalConfigRestoreStatusText = "正在读取跨后端配置恢复点...";
+            var points = await _mainWindow.GetPersonalConfigRestorePointsAsync();
+            PersonalConfigRestorePoints.Clear();
+            foreach (var point in points)
+            {
+                PersonalConfigRestorePoints.Add(new PersonalConfigRestorePointItem(point));
+            }
+            PersonalConfigRestoreStatusText = points.Count == 0
+                ? "尚无历史备份；完成一次有配置变化的个人同步后会自动创建。"
+                : $"共发现 {points.Count} 个历史备份，可用于恢复当前配置。";
+        }
+        catch (Exception ex)
+        {
+            PersonalConfigRestorePoints.Clear();
+            PersonalConfigRestoreStatusText = $"读取恢复点失败：{ex.Message}";
+        }
+    }
+
+    private async void RestorePersonalConfigPointButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: PersonalConfigRestorePointItem item } button)
+        {
+            return;
+        }
+
+        var confirmation = System.Windows.MessageBox.Show(
+            this,
+            $"将主配置恢复到 {item.CreatedAtText} 的状态？\n\n这会恢复设置、快捷面板、燕环和规则，但不会替换本机密钥、扩展包或燕幕。恢复结果会作为一个新版本继续同步，原恢复点不会删除。",
+            "确认恢复个人仓库配置",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirmation != MessageBoxResult.Yes) return;
+
+        button.IsEnabled = false;
+        try
+        {
+            PersonalConfigRestoreStatusText = $"正在校验并恢复 {item.CreatedAtText} 的配置...";
+            var restoreResult = await _mainWindow.RestorePersonalConfigRestorePointAsync(item.RestorePointId);
+            SyncStatusText = restoreResult.message;
+            PersonalConfigRestoreStatusText = restoreResult.message;
+            if (restoreResult.ok)
+            {
+                RefreshAccountObjectSyncStatus();
+                RefreshSyncActivityLog();
+            }
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
     }
 
     private async void RefreshPersonalSyncCommitsButton_Click(object sender, RoutedEventArgs e)
@@ -5903,6 +6163,255 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshAccountSummary();
         RefreshWebDavConfigFromExternal();
         SyncStatusText = _mainWindow.SyncStatus;
+        RefreshAccountObjectSyncStatus();
+    }
+
+    private async void RefreshAccountObjectSyncButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button button)
+        {
+            button.IsEnabled = false;
+        }
+
+        try
+        {
+            SyncStatusText = "正在刷新账号配置同步状态...";
+            await RefreshCloudAsync();
+            RefreshSyncActivityLog();
+        }
+        catch (Exception ex)
+        {
+            SyncStatusText = $"账号配置同步刷新失败：{ex.Message}";
+            RefreshAccountObjectSyncStatus();
+        }
+        finally
+        {
+            if (sender is System.Windows.Controls.Button completedButton)
+            {
+                completedButton.IsEnabled = true;
+            }
+        }
+    }
+
+    private async void UseLocalAccountSyncConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncConflictFromButtonAsync(sender, useLocalVersion: true);
+    }
+
+    private async void AcceptRemoteAccountSyncConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncConflictFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private void ShowAccountSyncHistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: AccountSyncObjectStatusItem item } ||
+            _mainWindow.CloudSyncClient is not { } client)
+        {
+            return;
+        }
+
+        var historyWindow = new CloudSyncHistoryWindow(
+            _mainWindow,
+            client,
+            item.ObjectId,
+            item.DisplayName,
+            item.Revision)
+        {
+            Owner = this
+        };
+        historyWindow.ShowDialog();
+        if (historyWindow.Restored)
+        {
+            SyncStatusText = "已恢复账号同步历史版本，本机配置已按云端新版本刷新。";
+            RefreshAccountObjectSyncStatus();
+            RefreshSyncActivityLog();
+        }
+    }
+
+    private async Task ResolveAccountSyncConflictFromButtonAsync(object sender, bool useLocalVersion)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: AccountSyncObjectStatusItem item } button)
+        {
+            return;
+        }
+
+        button.IsEnabled = false;
+        try
+        {
+            var result = await _mainWindow.ResolveCloudObjectConflictAsync(item.ObjectId, useLocalVersion);
+            SyncStatusText = result.message;
+            if (result.ok)
+            {
+                await RefreshCloudAsync();
+            }
+            RefreshAccountObjectSyncStatus();
+            RefreshSyncActivityLog();
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
+    private void RefreshAccountObjectSyncStatus()
+    {
+        var userId = _mainWindow.CloudSyncClient?.CurrentUserId ?? SyncSessionStore.Load()?.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            AccountSyncStatus = AccountSyncStatusView.Empty;
+            return;
+        }
+
+        var state = CloudObjectSyncStateStore.Load(userId);
+        var pendingIds = state.PendingObjectIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var objectIds = state.Objects.Keys
+            .Union(pendingIds, StringComparer.OrdinalIgnoreCase)
+            .Union(state.Conflicts.Keys, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(GetAccountSyncObjectOrder)
+            .ThenBy(static id => id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var objectItems = objectIds.Select(objectId =>
+        {
+            state.Objects.TryGetValue(objectId, out var cached);
+            state.PendingOperations.TryGetValue(objectId, out var pending);
+            state.Conflicts.TryGetValue(objectId, out var conflict);
+            var hasError = !string.IsNullOrWhiteSpace(pending?.LastError);
+            var status = conflict != null
+                ? "需要处理冲突"
+                : pending != null
+                ? hasError ? "等待重试" : "待上传"
+                : cached?.Deleted == true ? "已删除" : "已同步";
+            var source = string.IsNullOrWhiteSpace(cached?.UpdatedByDeviceName)
+                ? cached?.UpdatedByDeviceId
+                : cached.UpdatedByDeviceName;
+            var detail = conflict != null
+                ? $"云端版本 {conflict.RemoteRevision} · 本地副本已保留"
+                : hasError
+                ? pending!.LastError
+                : pending != null
+                    ? $"已尝试 {pending.AttemptCount} 次"
+                    : string.IsNullOrWhiteSpace(source)
+                        ? "来源设备未知"
+                        : $"来源设备：{source}";
+            return new AccountSyncObjectStatusItem(
+                objectId,
+                GetAccountSyncObjectDisplayName(objectId, cached),
+                status,
+                cached?.Revision ?? pending?.LastObservedRemoteRevision ?? 0,
+                FormatAccountSyncTime(cached?.UpdatedAtUtc),
+                detail,
+                pending != null,
+                hasError,
+                conflict != null,
+                state.ObjectHistoryAvailable);
+        }).ToArray();
+
+        var pendingCount = state.PendingOperations.Count;
+        var errorCount = state.PendingOperations.Values.Count(static item => !string.IsNullOrWhiteSpace(item.LastError));
+        var conflictCount = state.Conflicts.Count;
+        var modeText = !state.ObjectSyncAvailable
+            ? state.ServerProtocolVersion == 0 ? "正在建立连接" : "兼容备份模式"
+            : state.ObjectsAuthoritative ? "增量同步模式" : "兼容迁移模式";
+        var healthText = conflictCount > 0
+            ? $"{conflictCount} 个跨设备冲突需要选择版本"
+            : errorCount > 0
+            ? $"{errorCount} 项数据同步失败，等待重试"
+            : pendingCount > 0
+                ? $"{pendingCount} 项数据等待同步"
+                : state.Objects.Count > 0 ? "所有账号配置均已同步" : "等待首次同步";
+        var explanation = state.ObjectsAuthoritative
+            ? "云端数据为权威配置；旧版本客户端数据将自动读取兼容。"
+            : state.ObjectSyncAvailable
+                ? "正在安全迁移：同时写入增量数据 and 整包备份，可安全回退。"
+                : "当前正在使用整包配置同步；暂不支持增量同步。";
+
+        AccountSyncStatus = new AccountSyncStatusView(
+            modeText,
+            healthText,
+            $"云端版本 {state.LastSyncedRevision}",
+            $"已同步 {state.Objects.Count} 项数据 · 等待中 {pendingCount}",
+            FormatAccountSyncTime(state.CapabilitiesCheckedAtUtc, "未建立连接"),
+            explanation,
+            errorCount > 0 || conflictCount > 0,
+            pendingCount > 0,
+            objectItems);
+    }
+
+    private static int GetAccountSyncObjectOrder(string objectId)
+    {
+        for (var index = 0; index < LauncherConfigObjectStore.Definitions.Length; index++)
+        {
+            if (LauncherConfigObjectStore.Definitions[index].ObjectId.Equals(objectId, StringComparison.OrdinalIgnoreCase))
+            {
+                return index;
+            }
+        }
+        if (objectId.Equals(YanmObjectStore.LayoutObjectId, StringComparison.OrdinalIgnoreCase)) return 100;
+        if (objectId.Equals(YanmObjectStore.ComponentStateIndexObjectId, StringComparison.OrdinalIgnoreCase)) return 101;
+        if (YanmObjectStore.IsDynamicObjectId(objectId)) return 102;
+        return int.MaxValue;
+    }
+
+    private static string GetAccountSyncObjectDisplayName(string objectId, CloudObjectSyncCacheEntry? cached)
+    {
+        var fixedName = objectId switch
+        {
+            "settings.general" => "通用设置",
+            "settings.runtime" => "运行与扩展环境",
+            "settings.ai" => "AI 服务设置",
+            "settings.hotkeys" => "全局快捷键",
+            "settings.mouseTriggers" => "鼠标与手势触发",
+            "quickPanel.groups" => "快捷面板分组（旧版）",
+            "quickPanel.groupIndex" => "快捷面板分组索引",
+            "quickPanel.favorites" => "收藏、禁用与搜索范围",
+            "radialMenu.pages" => "燕环页面（旧版）",
+            "radialMenu.pageIndex" => "燕环页面索引",
+            "yanyu.rules" => "燕语规则",
+            "window.controls" => "窗口控制与燕选",
+            "yanm.layout" => "燕幕布局与组件定义",
+            "yanm.componentStateIndex" => "燕幕组件状态索引",
+            _ => string.Empty
+        };
+        if (!string.IsNullOrWhiteSpace(fixedName)) return fixedName;
+
+        if (cached != null && TryReadNestedPayloadName(cached.Payload, "group", out var groupName))
+        {
+            return objectId.StartsWith(AccountConfigObjectStore.QuickPanelContextPrefix, StringComparison.OrdinalIgnoreCase)
+                ? $"上下文面板 · {groupName}"
+                : $"全局面板 · {groupName}";
+        }
+        if (cached != null && TryReadNestedPayloadName(cached.Payload, "page", out var pageName))
+        {
+            return $"燕环页面 · {pageName}";
+        }
+        if (cached != null &&
+            cached.Payload.ValueKind == JsonValueKind.Object &&
+            cached.Payload.TryGetProperty("stateKey", out var stateKey) &&
+            stateKey.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(stateKey.GetString()))
+        {
+            return $"燕幕状态 · {stateKey.GetString()}";
+        }
+        return objectId;
+    }
+
+    private static bool TryReadNestedPayloadName(JsonElement payload, string propertyName, out string name)
+    {
+        name = string.Empty;
+        return payload.ValueKind == JsonValueKind.Object &&
+               payload.TryGetProperty(propertyName, out var item) &&
+               item.ValueKind == JsonValueKind.Object &&
+               item.TryGetProperty("name", out var nameProperty) &&
+               nameProperty.ValueKind == JsonValueKind.String &&
+               !string.IsNullOrWhiteSpace(name = nameProperty.GetString() ?? string.Empty);
+    }
+
+    private static string FormatAccountSyncTime(string? value, string fallback = "尚未同步")
+    {
+        return DateTimeOffset.TryParse(value, out var timestamp)
+            ? timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
+            : fallback;
     }
 
     private void RefreshAccountSummary()
@@ -6128,6 +6637,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var appPath = item.ExtensionId.Substring(4);
             _settings.MouseGestureAppBindings.RemoveAll(x => string.Equals(x.AppPath, appPath, StringComparison.OrdinalIgnoreCase) || string.Equals(x.Sequence, item.Sequence, StringComparison.OrdinalIgnoreCase));
             AppSettingsStore.Save(_settings);
+            _mainWindow.NotifyQuickPanelSettingsChanged("mouse-gesture-app-unbound", refreshYanmOverlay: false);
             _mainWindow.ReloadMouseGestureRegistrations();
             RefreshMouseGestureManagement();
             SyncStatusText = $"已解绑应用手势 [{item.Title}]。";
@@ -6235,6 +6745,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         });
 
         AppSettingsStore.Save(_settings);
+        _mainWindow.NotifyQuickPanelSettingsChanged("mouse-gesture-app-bound", refreshYanmOverlay: false);
         _mainWindow.ReloadMouseGestureRegistrations();
         RefreshMouseGestureManagement();
         SyncStatusText = $"已将手势 [{item.DisplayName}] 成功绑定到应用 [{item.SelectedApp.AppName}]！";
@@ -10990,6 +11501,132 @@ public sealed class SettingsRecycleBinItem : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+}
+
+public sealed record AccountSyncStatusView(
+    string ModeText,
+    string HealthText,
+    string RevisionText,
+    string ObjectCountText,
+    string LastCheckedText,
+    string ExplanationText,
+    bool HasErrors,
+    bool HasPending,
+    IReadOnlyList<AccountSyncObjectStatusItem> Objects)
+{
+    public static AccountSyncStatusView Empty { get; } = new(
+        "未登录账号",
+        "登录燕子云后可查看账号配置同步状态",
+        "云端版本 0",
+        "待同步项目 0 个 · 等待中 0",
+        "未连接",
+        "账号配置同步与个人仓库备份相互独立。",
+        false,
+        false,
+        []);
+}
+
+public sealed record AccountSyncObjectStatusItem(
+    string ObjectId,
+    string DisplayName,
+    string StatusText,
+    long Revision,
+    string UpdatedAtText,
+    string DetailText,
+    bool IsPending,
+    bool HasError,
+    bool HasConflict,
+    bool HistoryAvailable);
+
+public sealed class PersonalConfigRestorePointItem
+{
+    public PersonalConfigRestorePointItem(LauncherConfigRestorePointInfo info)
+    {
+        RestorePointId = info.RestorePointId;
+        CreatedAtText = DateTimeOffset.TryParse(info.CreatedAtUtc, out var createdAt)
+            ? createdAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
+            : info.CreatedAtUtc;
+        DeviceText = !string.IsNullOrWhiteSpace(info.SourceDeviceName)
+            ? info.SourceDeviceName!
+            : !string.IsNullOrWhiteSpace(info.SourceDeviceId) ? info.SourceDeviceId! : "未知设备";
+        SummaryText = $"包含项目 {info.ObjectCount} 个 · 本次变更 {info.ChangedObjectIds.Count} 个";
+        SizeText = info.SizeBytes < 1024
+            ? $"{info.SizeBytes} B"
+            : $"{info.SizeBytes / 1024.0:0.#} KB";
+        RevisionText = $"备份版本 {info.Revision}";
+    }
+
+    public string RestorePointId { get; }
+    public string CreatedAtText { get; }
+    public string DeviceText { get; }
+    public string SummaryText { get; }
+    public string SizeText { get; }
+    public string RevisionText { get; }
+}
+
+public sealed class ExtensionSyncConflictItem
+{
+    public ExtensionSyncConflictItem(ExtensionSyncConflictRecord record)
+    {
+        ExtensionId = record.ExtensionId;
+        LocalText = record.LocalPurged
+            ? $"本地：彻底删除 · rev {record.LocalRevision}"
+            : record.LocalDeleted
+                ? $"本地：删除 · rev {record.LocalRevision}"
+                : $"本地：v{record.LocalVersion} · rev {record.LocalRevision}";
+        RemoteText = record.RemotePurged
+            ? $"远端：彻底删除 · rev {record.RemoteRevision}"
+            : record.RemoteDeleted
+                ? $"远端：删除 · rev {record.RemoteRevision}"
+                : $"远端：v{record.RemoteVersion} · rev {record.RemoteRevision}";
+        RemoteDeviceText = !string.IsNullOrWhiteSpace(record.RemoteDeviceName)
+            ? record.RemoteDeviceName!
+            : !string.IsNullOrWhiteSpace(record.RemoteDeviceId) ? record.RemoteDeviceId! : "未知设备";
+        DetectedAtText = DateTimeOffset.TryParse(record.DetectedAtUtc, out var detectedAt)
+            ? detectedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
+            : record.DetectedAtUtc;
+    }
+
+    public string ExtensionId { get; }
+    public string LocalText { get; }
+    public string RemoteText { get; }
+    public string RemoteDeviceText { get; }
+    public string DetectedAtText { get; }
+}
+
+public sealed class ExtensionDataConflictItem
+{
+    public ExtensionDataConflictItem(ExtensionDataSyncState state)
+    {
+        ExtensionId = state.ExtensionId;
+        Key = state.Key;
+        var conflict = state.Conflict ?? new ExtensionDataConflict();
+        LocalText = conflict.LocalDeleted
+            ? $"本地：删除 · base rev {conflict.LocalBaseRevision}"
+            : $"本地：base rev {conflict.LocalBaseRevision} · {ShortHash(conflict.LocalContentHash)}";
+        RemoteText = conflict.Remote.Deleted
+            ? $"远端：删除 · rev {conflict.Remote.Revision}"
+            : $"远端：rev {conflict.Remote.Revision} · {ShortHash(conflict.Remote.ContentHash)}";
+        RemoteDeviceText = !string.IsNullOrWhiteSpace(conflict.Remote.UpdatedByDeviceName)
+            ? conflict.Remote.UpdatedByDeviceName
+            : !string.IsNullOrWhiteSpace(conflict.Remote.UpdatedByDeviceId)
+                ? conflict.Remote.UpdatedByDeviceId
+                : "未知设备";
+        DetectedAtText = DateTimeOffset.TryParse(conflict.DetectedAtUtc, out var detectedAt)
+            ? detectedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
+            : conflict.DetectedAtUtc;
+    }
+
+    public string ExtensionId { get; }
+    public string Key { get; }
+    public string DisplayId => $"{ExtensionId} / {Key}";
+    public string LocalText { get; }
+    public string RemoteText { get; }
+    public string RemoteDeviceText { get; }
+    public string DetectedAtText { get; }
+
+    private static string ShortHash(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "无 hash" : value.Length <= 10 ? value : value[..10];
 }
 
 public sealed class PersonalSyncCommitItem : INotifyPropertyChanged
