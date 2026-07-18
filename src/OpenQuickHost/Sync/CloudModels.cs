@@ -213,6 +213,9 @@ public sealed class UserExtensionRecord
     [JsonPropertyName("has_archive")]
     public bool HasArchive { get; init; }
 
+    [JsonPropertyName("archive_revision")]
+    public int ArchiveRevision { get; init; }
+
     [JsonPropertyName("archive_download_url")]
     public string? ArchiveDownloadUrl { get; init; }
 

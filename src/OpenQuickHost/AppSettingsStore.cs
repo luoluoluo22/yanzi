@@ -467,9 +467,7 @@ public static class AppSettingsStore
 
         var shouldAdoptLegacyWebDavConfig =
             hasLegacyWebDavConfig &&
-            (settings.PersonalSync.Provider == PersonalSyncProviders.None ||
-             (settings.PersonalSync.Provider == PersonalSyncProviders.WebDav &&
-              string.IsNullOrWhiteSpace(settings.PersonalSync.WebDav.Username)));
+            settings.PersonalSync.Provider == PersonalSyncProviders.None;
         if (shouldAdoptLegacyWebDavConfig)
         {
             CloudSyncDiagnostics.Log(

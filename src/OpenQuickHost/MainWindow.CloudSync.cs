@@ -17,6 +17,8 @@ namespace OpenQuickHost;
 
 public partial class MainWindow
 {
+    private static readonly SemaphoreSlim _extensionSyncLock = new(1, 1);
+    private static readonly SemaphoreSlim _extensionUploadLock = new(1, 1);
     private DateTimeOffset _lastNetworkAddressChangedHandledAt = DateTimeOffset.MinValue;
     private static readonly object MobileMessageBridgeLock = new();
     private readonly SemaphoreSlim _quickPanelCloudPushLock = new(1, 1);
@@ -2132,25 +2134,64 @@ public partial class MainWindow
 
         _ = Task.Run(async () =>
         {
+            if (!await _extensionSyncLock.WaitAsync(0))
+            {
+                return;
+            }
             try
             {
                 var commands = System.Windows.Application.Current.Dispatcher.CheckAccess()
                     ? LocalExtensionCatalog.LoadCommands()
                     : System.Windows.Application.Current.Dispatcher.Invoke(LocalExtensionCatalog.LoadCommands);
+
+                var cloudExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
+                var cloudRevisionMap = cloudExtensions.ToDictionary(
+                    item => item.ExtensionId,
+                    item => item.ArchiveRevision,
+                    StringComparer.OrdinalIgnoreCase);
+
                 int successCount = 0;
+                int skipCount = 0;
+                int failCount = 0;
+                var failedDetails = new List<string>();
+
                 foreach (var cmd in commands)
                 {
                     if (cmd.Source == CommandSource.LocalExtension && !IsInternalCommand(cmd))
                     {
-                        await SyncPrivateExtensionToAccountAsync(cmd);
-                        successCount++;
+                        try
+                        {
+                            cloudRevisionMap.TryGetValue(cmd.ExtensionId, out var expectedRevision);
+                            await SyncPrivateExtensionToAccountAsync(cmd, expectedRevision);
+                            successCount++;
+                        }
+                        catch (Exception ex) when (ex.Message.Contains("Only the owner", StringComparison.OrdinalIgnoreCase) ||
+                                                    ex.Message.Contains("403", StringComparison.OrdinalIgnoreCase))
+                        {
+                            skipCount++;
+                             HostAssets.AppendLog($"Skipped syncing extension '{cmd.Title}' (Not owned by current account): {ex.Message}");
+                        }
+                        catch (Exception ex)
+                        {
+                            failCount++;
+                            failedDetails.Add($"'{cmd.Title}': {ex.Message}");
+                            HostAssets.AppendLog($"Failed to sync extension '{cmd.Title}': {ex.Message}");
+                        }
                     }
                 }
-                HostAssets.AppendLog($"Auto synchronized {successCount} local extensions to private cloud library successfully.");
+                HostAssets.AppendLog($"Auto sync local extensions completed: {successCount} synced, {skipCount} skipped (not owned), {failCount} failed.");
+                if (failCount > 0)
+                {
+                    HostAssets.AppendLog($"Failed sync details: {string.Join("; ", failedDetails)}");
+                }
             }
             catch (Exception ex)
             {
-                HostAssets.AppendLog($"Failed to auto sync local extensions to private cloud library: {ex.Message}");
+                HostAssets.AppendLog($"Failed to auto sync local extensions: {ex.Message}");
+            }
+            finally
+            {
+                _extensionSyncLock.Release();
             }
         });
     }
@@ -2189,7 +2230,10 @@ public partial class MainWindow
                     item.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
                 if (command != null)
                 {
-                    await SyncPrivateExtensionToAccountAsync(command);
+                    var cloudExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
+                    var record = cloudExtensions.FirstOrDefault(item => item.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+                    var expectedRevision = record?.ArchiveRevision ?? 0;
+                    await SyncPrivateExtensionToAccountAsync(command, expectedRevision);
                 }
             }
             catch (Exception ex)
@@ -2199,24 +2243,32 @@ public partial class MainWindow
         });
     }
 
-    private async Task SyncPrivateExtensionToAccountAsync(CommandItem command)
+    private async Task SyncPrivateExtensionToAccountAsync(CommandItem command, int expectedRevision = 0)
     {
         if (_cloudSyncClient == null) return;
-        string? publishedIcon = null;
+        await _extensionUploadLock.WaitAsync();
         try
         {
-            publishedIcon = await _cloudSyncClient.PublishPrivateIconAsync(command, command.DeclaredVersion);
-        }
-        catch (Exception iconEx)
-        {
-            HostAssets.AppendLog($"Failed to upload private icon for {command.ExtensionId}: {iconEx.Message}");
-        }
+            string? publishedIcon = null;
+            try
+            {
+                publishedIcon = await _cloudSyncClient.PublishPrivateIconAsync(command, command.DeclaredVersion);
+            }
+            catch (Exception iconEx)
+            {
+                HostAssets.AppendLog($"Failed to upload private icon for {command.ExtensionId}: {iconEx.Message}");
+            }
 
-        await _cloudSyncClient.UpsertPrivateExtensionAsync(command, publishedIcon);
-        var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
-        var packageBytes = ExtensionPackageService.BuildPackage(command, version, publishedIcon);
-        await _cloudSyncClient.UploadPrivateExtensionArchiveAsync(command, packageBytes, version);
-        await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon, hasArchive: true);
+            await _cloudSyncClient.UpsertPrivateExtensionAsync(command, publishedIcon);
+            var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
+            var packageBytes = ExtensionPackageService.BuildPackage(command, version, publishedIcon);
+            await _cloudSyncClient.UploadPrivateExtensionArchiveAsync(command, packageBytes, version, expectedRevision);
+            await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon, hasArchive: true);
+        }
+        finally
+        {
+            _extensionUploadLock.Release();
+        }
     }
 
     private async Task PullMissingPrivateExtensionsFromCloudAsync()
@@ -2361,6 +2413,7 @@ public partial class MainWindow
                 if (decryptedSecrets != null)
                 {
                     incomingSecrets = decryptedSecrets;
+                    snapshot.Secrets = decryptedSecrets; // 关联原始云端凭据
                     HostAssets.AppendLog("Personal sync cloud pull: decrypted secrets package successfully using MasterKey.");
                 }
             }
@@ -2415,28 +2468,47 @@ public partial class MainWindow
             return false;
         }
 
+        // 备份合并前云端拉取配置的副本，用于后面对比，避免共享同一个对象引用导致对比失效
+        var originalCloudSettings = ClonePersonalSyncSettings(snapshot.Settings ?? new PersonalSyncSettings());
+        var originalCloudSecrets = ClonePersonalSyncSecretBag(snapshot.Secrets ?? new PersonalSyncSecretBag());
+
         PreserveMissingPersonalSyncValues(localPersonalSync, incomingSettings, localSecrets, incomingSecrets);
 
-        if (ArePersonalSyncSettingsEqual(localPersonalSync, incomingSettings) &&
-            ArePersonalSyncSecretsEqual(localSecrets, incomingSecrets) &&
-            localSettings.PersonalSyncAutoSyncDelaySeconds == incomingAutoSyncDelaySeconds)
-        {
-            HostAssets.AppendLog("Personal sync cloud pull: no local changes detected.");
-            CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud pull skipped: no local changes");
-            return false;
-        }
+        // 检测是否有本地凭据/配置合并到了云端配置中
+        var hasMergedLocalChanges = !ArePersonalSyncSettingsEqual(originalCloudSettings, incomingSettings) ||
+                                    !ArePersonalSyncSecretsEqual(originalCloudSecrets, incomingSecrets);
 
-        SavePersonalSyncSettings(incomingSettings, incomingSecrets, queueCloudSync: false);
-        SavePersonalSyncAutoSyncDelaySeconds(incomingAutoSyncDelaySeconds, queueCloudSync: false);
-        HostAssets.AppendLog(
-            $"Personal sync cloud pull applied: provider={incomingSettings.Provider}, enabled={incomingSettings.Enabled}, autoSyncDelaySeconds={incomingAutoSyncDelaySeconds}");
-        CloudSyncDiagnostics.Log(
-            "MainWindow.PersonalSync",
-            "Cloud pull applied",
-            ("summary", CloudSyncDiagnostics.DescribePersonalSync(incomingSettings, incomingSecrets)),
-            ("autoSyncDelaySeconds", incomingAutoSyncDelaySeconds));
-        NotifySettingsWindowWebDavConfigChanged();
-        return true;
+        if (hasMergedLocalChanges)
+        {
+            SavePersonalSyncSettings(incomingSettings, incomingSecrets, queueCloudSync: false);
+            SavePersonalSyncAutoSyncDelaySeconds(incomingAutoSyncDelaySeconds, queueCloudSync: false);
+            HostAssets.AppendLog("Personal sync cloud pull: merged local credentials, saving and pushing back to cloud.");
+            await PushWebDavConfigToCloudAsync("cloud-refresh-merged-local");
+            return true;
+        }
+        else
+        {
+            if (ArePersonalSyncSettingsEqual(localPersonalSync, incomingSettings) &&
+                ArePersonalSyncSecretsEqual(localSecrets, incomingSecrets) &&
+                localSettings.PersonalSyncAutoSyncDelaySeconds == incomingAutoSyncDelaySeconds)
+            {
+                HostAssets.AppendLog("Personal sync cloud pull: no local changes detected.");
+                CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud pull skipped: no local changes");
+                return false;
+            }
+
+            SavePersonalSyncSettings(incomingSettings, incomingSecrets, queueCloudSync: false);
+            SavePersonalSyncAutoSyncDelaySeconds(incomingAutoSyncDelaySeconds, queueCloudSync: false);
+            HostAssets.AppendLog(
+                $"Personal sync cloud pull applied: provider={incomingSettings.Provider}, enabled={incomingSettings.Enabled}, autoSyncDelaySeconds={incomingAutoSyncDelaySeconds}");
+            CloudSyncDiagnostics.Log(
+                "MainWindow.PersonalSync",
+                "Cloud pull applied",
+                ("summary", CloudSyncDiagnostics.DescribePersonalSync(incomingSettings, incomingSecrets)),
+                ("autoSyncDelaySeconds", incomingAutoSyncDelaySeconds));
+            NotifySettingsWindowWebDavConfigChanged();
+            return true;
+        }
     }
 
     private async Task<bool> HasAnyRemoteCloudDataAsync()
@@ -4608,6 +4680,32 @@ public partial class MainWindow
         string.IsNullOrWhiteSpace(incoming) && !string.IsNullOrWhiteSpace(local)
             ? local.Trim()
             : incoming?.Trim() ?? string.Empty;
+
+    private static PersonalSyncSettings ClonePersonalSyncSettings(PersonalSyncSettings source)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(source);
+            return JsonSerializer.Deserialize<PersonalSyncSettings>(json) ?? new PersonalSyncSettings();
+        }
+        catch
+        {
+            return new PersonalSyncSettings();
+        }
+    }
+
+    private static PersonalSyncSecretBag ClonePersonalSyncSecretBag(PersonalSyncSecretBag source)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(source);
+            return JsonSerializer.Deserialize<PersonalSyncSecretBag>(json) ?? new PersonalSyncSecretBag();
+        }
+        catch
+        {
+            return new PersonalSyncSecretBag();
+        }
+    }
 
     private static int NormalizePersonalSyncAutoSyncDelay(int value)
     {

@@ -889,17 +889,15 @@ public partial class App : WpfApplication
 
     private void UpdateTrayMenuState(System.Windows.Controls.ContextMenu menu)
     {
-        bool hasShown = false;
-        if (MainWindow is MainWindow mw)
-        {
-            hasShown = mw.HasBeenShown;
-        }
-
         foreach (var item in menu.Items.OfType<System.Windows.Controls.MenuItem>())
         {
-            if (Equals(item.Tag, "show-searchbox") || Equals(item.Tag, "mobile-chat"))
+            if (Equals(item.Tag, "show-searchbox"))
             {
-                item.Visibility = hasShown ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                item.Visibility = MainWindow != null && MainWindow.IsVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+            }
+            else if (Equals(item.Tag, "mobile-chat"))
+            {
+                item.Visibility = System.Windows.Visibility.Visible;
             }
             else if (Equals(item.Tag, "service-toggle"))
             {

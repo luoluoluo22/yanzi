@@ -86,9 +86,49 @@
                                FontSize="{DynamicResource FontSizeSmallPlus}"
                                Margin="2,0,0,6"
                                FontWeight="SemiBold" />
-                    <PasswordBox x:Name="PasswordBox"
+                    <Grid>
+                        <PasswordBox x:Name="PasswordBox"
+                                     Height="40"
+                                     Padding="12,10,36,10"
+                                     PasswordChanged="PasswordBox_PasswordChanged"/>
+                        <TextBox x:Name="PasswordTextBox"
                                  Height="40"
-                                 Padding="12,10" />
+                                 Padding="12,10,36,10"
+                                 Visibility="Collapsed"
+                                 TextChanged="PasswordTextBox_TextChanged"/>
+                        <ToggleButton x:Name="ShowPasswordToggle"
+                                      Width="30"
+                                      Height="30"
+                                      Margin="0,0,5,0"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      Background="Transparent"
+                                      BorderThickness="0"
+                                      Cursor="Hand"
+                                      Focusable="False"
+                                      Checked="ShowPasswordToggle_Checked"
+                                      Unchecked="ShowPasswordToggle_Unchecked">
+                            <ToggleButton.Style>
+                                <Style TargetType="ToggleButton">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ToggleButton">
+                                                <Border Background="Transparent">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ToggleButton.Style>
+                            <Path x:Name="EyeIconPath"
+                                  Width="16"
+                                  Height="16"
+                                  Stretch="Uniform"
+                                  Fill="{DynamicResource BrushTextSec}"
+                                  Data="M12 6c3.79 0 7.17 2.13 8.82 5.5-.59 1.22-1.42 2.27-2.41 3.12l1.41 1.41c1.39-1.23 2.49-2.77 3.18-4.53C21.27 6.61 17 3.5 12 3.5c-1.25 0-2.45.2-3.57.57L9.9 5.54c.68-.35 1.42-.54 2.1-.54zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-3.11l1.9 1.9c.35.46.59 1 .69 1.59l-2.59-2.59c.59-.1 1.13-.34 1.59-.69z"/>
+                        </ToggleButton>
+                    </Grid>
                 </StackPanel>
 
                 <Grid x:Name="CodePanel" Grid.Row="5" Margin="0,14,0,0">

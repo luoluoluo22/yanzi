@@ -109,6 +109,12 @@ public sealed class CloudSyncClient
         if (HasValidSession())
         {
             CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Using existing session", ("user", CurrentUserLabel));
+            if (E2eeMasterKey == null && HasCredential)
+            {
+                var restoredKeys = DeriveSyncKeys(_credential!.LoginEmail, _credential.Password);
+                E2eeMasterKey = restoredKeys.MasterKey;
+                CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "E2eeMasterKey restored from saved credential for existing session");
+            }
             return;
         }
 
@@ -305,6 +311,10 @@ public sealed class CloudSyncClient
     public async Task UpsertExtensionAsync(CommandItem command, string? iconOverride = null, CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
+        var accentHex = System.Windows.Application.Current.Dispatcher.CheckAccess()
+            ? command.AccentBrush?.ToString()
+            : System.Windows.Application.Current.Dispatcher.Invoke(() => command.AccentBrush?.ToString());
+
         var body = JsonSerializer.Serialize(new
         {
             manifest = new
@@ -314,7 +324,7 @@ public sealed class CloudSyncClient
                 version = command.DeclaredVersion,
                 category = command.Category,
                 description = command.Subtitle,
-                accentHex = command.AccentBrush?.ToString(),
+                accentHex = accentHex,
                 keywords = command.Keywords,
                 icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride,
                 queryPrefixes = command.QueryPrefixes,
@@ -423,6 +433,10 @@ public sealed class CloudSyncClient
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         var icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride;
+        var accentHex = System.Windows.Application.Current.Dispatcher.CheckAccess()
+            ? command.AccentBrush?.ToString()
+            : System.Windows.Application.Current.Dispatcher.Invoke(() => command.AccentBrush?.ToString());
+
         var body = JsonSerializer.Serialize(new
         {
             installedVersion = command.DeclaredVersion,
@@ -435,7 +449,7 @@ public sealed class CloudSyncClient
                 displayName = command.Title,
                 description = command.Subtitle,
                 icon,
-                accentHex = command.AccentBrush?.ToString(),
+                accentHex = accentHex,
                 hasArchive,
                 packageScope = hasArchive ? "private-account" : "",
                 manifest = new
@@ -447,7 +461,7 @@ public sealed class CloudSyncClient
                     category = command.Category,
                     description = command.Subtitle,
                     icon,
-                    accentHex = command.AccentBrush?.ToString(),
+                    accentHex = accentHex,
                     runtime = command.Runtime,
                     entryMode = command.EntryMode
                 }
@@ -893,23 +907,30 @@ public sealed class CloudSyncClient
 
     public async Task UploadExtensionArchiveAsync(CommandItem command, byte[] packageBytes, string version, CancellationToken cancellationToken = default)
     {
-        await UploadArchiveAsync(command, packageBytes, version, privateLibrary: false, cancellationToken);
+        await UploadArchiveAsync(command, packageBytes, version, privateLibrary: false, expectedRevision: 0, cancellationToken);
     }
 
-    public async Task UploadPrivateExtensionArchiveAsync(CommandItem command, byte[] packageBytes, string version, CancellationToken cancellationToken = default)
+    public async Task UploadPrivateExtensionArchiveAsync(CommandItem command, byte[] packageBytes, string version, int expectedRevision = 0, CancellationToken cancellationToken = default)
     {
-        await UploadArchiveAsync(command, packageBytes, version, privateLibrary: true, cancellationToken);
+        await UploadArchiveAsync(command, packageBytes, version, privateLibrary: true, expectedRevision, cancellationToken);
     }
 
-    private async Task UploadArchiveAsync(CommandItem command, byte[] packageBytes, string version, bool privateLibrary, CancellationToken cancellationToken)
+    private async Task UploadArchiveAsync(CommandItem command, byte[] packageBytes, string version, bool privateLibrary, int expectedRevision, CancellationToken cancellationToken)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         var path = privateLibrary
             ? $"/v1/me/extensions/{Uri.EscapeDataString(command.ExtensionId)}/archive"
             : $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}/archive";
+
+        var url = $"{path}?version={Uri.EscapeDataString(version)}";
+        if (privateLibrary)
+        {
+            url += $"&expectedRevision={expectedRevision}";
+        }
+
         using var request = CreateRequest(
             HttpMethod.Put,
-            $"{path}?version={Uri.EscapeDataString(version)}",
+            url,
             includeAuth: true);
         request.Content = new ByteArrayContent(packageBytes);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
@@ -1087,7 +1108,9 @@ public sealed class CloudSyncClient
             version = command.DeclaredVersion,
             category = command.Category,
             description = command.Subtitle,
-            accentHex = command.AccentBrush?.ToString(),
+            accentHex = System.Windows.Application.Current.Dispatcher.CheckAccess()
+                ? command.AccentBrush?.ToString()
+                : System.Windows.Application.Current.Dispatcher.Invoke(() => command.AccentBrush?.ToString()),
             keywords = command.Keywords,
             icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride,
             queryPrefixes = command.QueryPrefixes,
@@ -1132,7 +1155,7 @@ public sealed class CloudSyncClient
         var client = new HttpClient(handler)
         {
             BaseAddress = new Uri(baseUrl, UriKind.Absolute),
-            Timeout = TimeSpan.FromSeconds(15),
+            Timeout = TimeSpan.FromSeconds(30),
             DefaultRequestVersion = HttpVersion.Version11,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
         };
