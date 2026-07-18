@@ -3897,6 +3897,26 @@ public partial class MainWindow
             AppSettingsStore.Save(settings);
             ApplyYanmObjectSettingsToRuntime(settings);
         }
+        else if (effectiveMap.Count > 0 && !HasYanmLayoutUserContent(settings.Yanm))
+        {
+            // 安全防御盾牌：如果云端有燕幕数据，但本地是空白状态，说明是新设备或重装冷启动
+            // 此时必须强制采用云端反向拉回本地，绝不容许后续同步将空白覆盖上云！
+            var remoteEffective = YanmObjectStore.Apply(
+                new YanmSettings(),
+                effectiveMap.Values,
+                out var remoteApplied,
+                out var remoteUpdatedAtUtc);
+            if (remoteApplied)
+            {
+                settings.Yanm = remoteEffective;
+                if (remoteUpdatedAtUtc.HasValue)
+                {
+                    settings.YanmStateUpdatedAtUtc = remoteUpdatedAtUtc.Value.ToString("O");
+                }
+                AppSettingsStore.Save(settings);
+                ApplyYanmObjectSettingsToRuntime(settings);
+            }
+        }
         await Task.CompletedTask;
     }
 
