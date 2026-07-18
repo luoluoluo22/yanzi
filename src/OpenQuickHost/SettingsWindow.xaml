@@ -2733,19 +2733,19 @@
                                                     <!-- 与「长按右键」同一鼠标本体 -->
                                                     <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z"
                                                           Fill="{DynamicResource BrushTextMain}" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <!-- 左右键分割线（不填充左右键，避开中键滚轮 6-18 区域） -->
-                                                    <Line X1="24" Y1="2" X2="24" Y2="6" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Line X1="24" Y1="18" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <!-- 中键=滚轮底色轮廓 -->
-                                                    <Rectangle Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
-                                                               RadiusX="3" RadiusY="3"
+                                                    <!-- 左右键分割线（与长按右键完全一致，避开滚轮 8-16 区域） -->
+                                                    <Line X1="24" Y1="2" X2="24" Y2="8" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                    <Line X1="24" Y1="16" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                    <!-- 中键=滚轮底色轮廓（与长按右键完全一致，略加灰色边框） -->
+                                                    <Rectangle Canvas.Left="20" Canvas.Top="8" Width="8" Height="8"
+                                                               RadiusX="2" RadiusY="2"
                                                                Fill="{DynamicResource BrushSecondaryBtnBG}"
                                                                Stroke="{DynamicResource BrushTextSec}"
-                                                               StrokeThickness="1.5"/>
+                                                               StrokeThickness="1"/>
                                                     <!-- 中键=滚轮高亮覆盖层 -->
                                                     <Rectangle x:Name="MiddleButtonLongPressHighlight"
-                                                               Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
-                                                               RadiusX="3" RadiusY="3"
+                                                               Canvas.Left="20" Canvas.Top="8" Width="8" Height="8"
+                                                               RadiusX="2" RadiusY="2"
                                                                Fill="{DynamicResource BrushTextSec}"/>
                                                 </Canvas>
                                             </Viewbox>
@@ -2843,19 +2843,19 @@
                                                 <Canvas Width="48" Height="60">
                                                     <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z"
                                                           Fill="{DynamicResource BrushTextMain}" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <!-- 左右键分割线（不填充左右键，避开中键滚轮 6-18 区域） -->
-                                                    <Line X1="24" Y1="2" X2="24" Y2="6" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Line X1="24" Y1="18" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <!-- 中键=滚轮底色轮廓 -->
-                                                    <Rectangle Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
-                                                               RadiusX="3" RadiusY="3"
+                                                    <!-- 左右键分割线（与长按右键完全一致，避开滚轮 8-16 区域） -->
+                                                    <Line X1="24" Y1="2" X2="24" Y2="8" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                    <Line X1="24" Y1="16" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                    <!-- 中键=滚轮底色轮廓（与长按右键完全一致，略加灰色边框） -->
+                                                    <Rectangle Canvas.Left="20" Canvas.Top="8" Width="8" Height="8"
+                                                               RadiusX="2" RadiusY="2"
                                                                Fill="{DynamicResource BrushSecondaryBtnBG}"
                                                                Stroke="{DynamicResource BrushTextSec}"
-                                                               StrokeThickness="1.5"/>
+                                                               StrokeThickness="1"/>
                                                     <!-- 中键=滚轮高亮覆盖层 -->
                                                     <Rectangle x:Name="MiddleButtonDragHighlight"
-                                                               Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
-                                                               RadiusX="3" RadiusY="3"
+                                                               Canvas.Left="20" Canvas.Top="8" Width="8" Height="8"
+                                                               RadiusX="2" RadiusY="2"
                                                                Fill="{DynamicResource BrushTextSec}"/>
                                                     <!-- 四向移动箭头 -->
                                                     <Path Data="M24,28 L20.5,33 L27.5,33 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
