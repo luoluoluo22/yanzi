@@ -2730,12 +2730,23 @@
                                         <StackPanel Grid.Row="0" HorizontalAlignment="Center">
                                             <Viewbox Width="48" Height="60" Margin="0,0,0,12">
                                                 <Canvas Width="48" Height="60">
-                                                    <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z" 
+                                                    <!-- 与「长按右键」同一鼠标本体 -->
+                                                    <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z"
                                                           Fill="{DynamicResource BrushTextMain}" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Path Data="M10,2 C10,8 10,20 10,20 L24,20 L24,2 C17,2 10,7 10,2 Z" Fill="#FF333333"/>
-                                                    <Path Data="M24,2 L24,20 L38,20 C38,20 38,8 38,2 C32,2 24,2 24,2 Z" Fill="#FF333333"/>
-                                                    <Line X1="24" Y1="2" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Rectangle x:Name="MiddleButtonLongPressHighlight" Canvas.Left="20" Canvas.Top="8" Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{DynamicResource BrushTextSec}"/>
+                                                    <!-- 左右键分割线（不填充左右键，避开中键滚轮 6-18 区域） -->
+                                                    <Line X1="24" Y1="2" X2="24" Y2="6" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                    <Line X1="24" Y1="18" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                    <!-- 中键=滚轮底色轮廓 -->
+                                                    <Rectangle Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
+                                                               RadiusX="3" RadiusY="3"
+                                                               Fill="{DynamicResource BrushSecondaryBtnBG}"
+                                                               Stroke="{DynamicResource BrushTextSec}"
+                                                               StrokeThickness="1.5"/>
+                                                    <!-- 中键=滚轮高亮覆盖层 -->
+                                                    <Rectangle x:Name="MiddleButtonLongPressHighlight"
+                                                               Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
+                                                               RadiusX="3" RadiusY="3"
+                                                               Fill="{DynamicResource BrushTextSec}"/>
                                                 </Canvas>
                                             </Viewbox>
                                             <TextBlock Text="长按中键" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
@@ -2777,14 +2788,18 @@
                                         <StackPanel Grid.Row="0" HorizontalAlignment="Center">
                                             <Viewbox Width="48" Height="60" Margin="0,0,0,12">
                                                 <Canvas Width="48" Height="60">
-                                                    <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z" 
+                                                    <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z"
                                                           Fill="{DynamicResource BrushTextMain}" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Path x:Name="RightButtonDragHighlight" Data="M24,2 L24,20 L38,20 L38,16 C38,8 32,2 24,2 Z" 
+                                                    <Path x:Name="RightButtonDragHighlight" Data="M24,2 L24,20 L38,20 L38,16 C38,8 32,2 24,2 Z"
                                                           Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
                                                     <Line X1="24" Y1="2" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                    <!-- 滚轮标识（与长按右键一致） -->
                                                     <Rectangle Canvas.Left="20" Canvas.Top="8" Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{DynamicResource BrushTextSec}"/>
-                                                    <Path Data="M30,35 L35,30 L33,28 L30,31 L30,28 L28,28 L28,31 L25,28 L23,30 L28,35 L28,38 L25,38 L25,40 L28,40 L23,45 L25,47 L30,42 L30,45 L32,45 L32,42 L37,47 L39,45 L34,40 L37,40 L37,38 L34,38 L34,35 Z" 
-                                                          Fill="{DynamicResource BrushTextSec}" Opacity="0.8"/>
+                                                    <!-- 四向移动箭头（与按住中键移动一致） -->
+                                                    <Path Data="M24,28 L20.5,33 L27.5,33 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                    <Path Data="M24,52 L20.5,47 L27.5,47 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                    <Path Data="M12,40 L17,36.5 L17,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                    <Path Data="M36,40 L31,36.5 L31,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
                                                 </Canvas>
                                             </Viewbox>
                                             <TextBlock Text="按右键移动" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
@@ -2828,12 +2843,25 @@
                                                 <Canvas Width="48" Height="60">
                                                     <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z"
                                                           Fill="{DynamicResource BrushTextMain}" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Path Data="M10,2 C10,8 10,20 10,20 L24,20 L24,2 C17,2 10,7 10,2 Z" Fill="#FF333333"/>
-                                                    <Path Data="M24,2 L24,20 L38,20 C38,20 38,8 38,2 C32,2 24,2 24,2 Z" Fill="#FF333333"/>
-                                                    <Line X1="24" Y1="2" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Rectangle x:Name="MiddleButtonDragHighlight" Canvas.Left="20" Canvas.Top="8" Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{DynamicResource BrushTextSec}"/>
-                                                    <Path Data="M30,35 L35,30 L33,28 L30,31 L30,28 L28,28 L28,31 L25,28 L23,30 L28,35 L28,38 L25,38 L25,40 L28,40 L23,45 L25,47 L30,42 L30,45 L32,45 L32,42 L37,47 L39,45 L34,40 L37,40 L37,38 L34,38 L34,35 Z"
-                                                          Fill="{DynamicResource BrushTextSec}" Opacity="0.8"/>
+                                                    <!-- 左右键分割线（不填充左右键，避开中键滚轮 6-18 区域） -->
+                                                    <Line X1="24" Y1="2" X2="24" Y2="6" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                    <Line X1="24" Y1="18" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                    <!-- 中键=滚轮底色轮廓 -->
+                                                    <Rectangle Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
+                                                               RadiusX="3" RadiusY="3"
+                                                               Fill="{DynamicResource BrushSecondaryBtnBG}"
+                                                               Stroke="{DynamicResource BrushTextSec}"
+                                                               StrokeThickness="1.5"/>
+                                                    <!-- 中键=滚轮高亮覆盖层 -->
+                                                    <Rectangle x:Name="MiddleButtonDragHighlight"
+                                                               Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
+                                                               RadiusX="3" RadiusY="3"
+                                                               Fill="{DynamicResource BrushTextSec}"/>
+                                                    <!-- 四向移动箭头 -->
+                                                    <Path Data="M24,28 L20.5,33 L27.5,33 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                    <Path Data="M24,52 L20.5,47 L27.5,47 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                    <Path Data="M12,40 L17,36.5 L17,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                    <Path Data="M36,40 L31,36.5 L31,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
                                                 </Canvas>
                                             </Viewbox>
                                             <TextBlock Text="按住中键移动" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
@@ -2873,12 +2901,13 @@
                                         <StackPanel Grid.Row="0" HorizontalAlignment="Center">
                                             <Viewbox Width="32" Height="40" Margin="0,0,0,8">
                                                 <Canvas Width="48" Height="60">
-                                                    <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z" 
+                                                    <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z"
                                                           Fill="{DynamicResource BrushTextMain}" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Path Data="M10,2 C10,8 10,20 10,20 L24,20 L24,2 C17,2 10,7 10,2 Z" Fill="#FF333333"/>
-                                                    <Path Data="M24,2 L24,20 L38,20 C38,20 38,8 38,2 C32,2 24,2 24,2 Z" Fill="#FF333333"/>
                                                     <Line X1="24" Y1="2" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Rectangle x:Name="MiddleButtonDownHighlight" Canvas.Left="20" Canvas.Top="8" Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{DynamicResource BrushTextSec}"/>
+                                                    <Rectangle x:Name="MiddleButtonDownHighlight"
+                                                               Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
+                                                               RadiusX="3" RadiusY="3"
+                                                               Fill="{DynamicResource BrushTextSec}"/>
                                                 </Canvas>
                                             </Viewbox>
                                             <TextBlock Text="按下中键" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
@@ -3011,12 +3040,16 @@
                                         <StackPanel Grid.Row="0" HorizontalAlignment="Center">
                                             <Viewbox Width="32" Height="40" Margin="0,0,0,8">
                                                 <Canvas Width="48" Height="60">
-                                                    <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z" 
+                                                    <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z"
                                                           Fill="{DynamicResource BrushTextMain}" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
                                                     <Line X1="24" Y1="2" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                    <Rectangle x:Name="HorizontalWheelHighlight" Canvas.Left="20" Canvas.Top="8" Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{DynamicResource BrushTextSec}"/>
-                                                    <Path Data="M16,12 L18,10 L18,14 Z" Fill="#FFFFFFFF"/>
-                                                    <Path Data="M32,12 L30,10 L30,14 Z" Fill="#FFFFFFFF"/>
+                                                    <Rectangle x:Name="HorizontalWheelHighlight"
+                                                               Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
+                                                               RadiusX="3" RadiusY="3"
+                                                               Fill="{DynamicResource BrushTextSec}"/>
+                                                    <!-- 左右偏移箭头 -->
+                                                    <Path Data="M10,12 L15,9 L15,15 Z" Fill="{DynamicResource BrushTextSec}"/>
+                                                    <Path Data="M38,12 L33,9 L33,15 Z" Fill="{DynamicResource BrushTextSec}"/>
                                                 </Canvas>
                                             </Viewbox>
                                             <TextBlock Text="滚轮左右偏移" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
@@ -3176,11 +3209,13 @@
                                                 <TextBlock Text="+" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                                 <Viewbox Width="24" Height="30">
                                                     <Canvas Width="48" Height="60">
-                                                        <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z" 
+                                                        <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z"
                                                               Fill="{DynamicResource BrushTextMain}" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                        <Path Data="M4 14 L20 14" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
                                                         <Line X1="24" Y1="2" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
-                                                        <Rectangle x:Name="CtrlMiddleClickHighlight" Canvas.Left="20" Canvas.Top="8" Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{DynamicResource BrushTextSec}"/>
+                                                        <Rectangle x:Name="CtrlMiddleClickHighlight"
+                                                                   Canvas.Left="18" Canvas.Top="6" Width="12" Height="12"
+                                                                   RadiusX="3" RadiusY="3"
+                                                                   Fill="{DynamicResource BrushTextSec}"/>
                                                     </Canvas>
                                                 </Viewbox>
                                             </StackPanel>
