@@ -3832,9 +3832,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         // Find the card and highlight elements
         var cardName = $"{gestureName}Card";
         var highlightName = $"{gestureName}Highlight";
+        var arrowsName = $"{gestureName}Arrows";
 
         var card = FindName(cardName) as System.Windows.Controls.Border;
         var highlight = FindName(highlightName) as System.Windows.Shapes.Shape;
+        var arrows = FindName(arrowsName) as System.Windows.Shapes.Shape;
 
         if (card == null)
         {
@@ -3843,23 +3845,26 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         // Update card border and background based on target
+        // For highlight and arrows, we use consistent Blue color to denote "Active area" if not None
+        var blueHighlight = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x3B, 0x82, 0xF6));
+
         var (borderBrush, background, highlightFill) = target switch
         {
             "Panel" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x80, 0x3B, 0x82, 0xF6)), // Blue border
                         new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x0D, 0x3B, 0x82, 0xF6)), // Blue background
-                        new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x3B, 0x82, 0xF6))), // Blue highlight
+                        blueHighlight),
             "Radial" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x80, 0xA8, 0x55, 0xF7)), // Purple border
                          new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x0D, 0xA8, 0x55, 0xF7)), // Purple background
-                         new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0xA8, 0x55, 0xF7))), // Purple highlight
+                         blueHighlight), // Unified to Blue
             "Yanm" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x80, 0x10, 0xB9, 0x81)), // Green border
                        new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x0D, 0x10, 0xB9, 0x81)), // Green background
-                       new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x10, 0xB9, 0x81))), // Green highlight
+                       blueHighlight), // Unified to Blue
             "Gesture" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xA0, 0xFB, 0x92, 0x3C)),
                           new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x14, 0xFB, 0x92, 0x3C)),
-                          new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0xFB, 0x92, 0x3C))),
+                          blueHighlight), // Unified to Blue
             "WindowSnap" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xA0, 0x38, 0xBD, 0xF8)),
                              new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x14, 0x38, 0xBD, 0xF8)),
-                             new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x38, 0xBD, 0xF8))),
+                             blueHighlight), // Unified to Blue
             _ => (null, null, null)
         };
 
@@ -3869,6 +3874,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (highlight != null)
         {
             highlight.Fill = highlightFill;
+        }
+
+        if (arrows != null)
+        {
+            // If active, arrows are blue; if None, fallback to system text secondary brush (gray)
+            arrows.Fill = highlightFill ?? (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("BrushTextSec");
         }
 
         // Update button styles - find all 4 buttons for this gesture

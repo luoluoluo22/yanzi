@@ -2796,10 +2796,7 @@
                                                     <!-- 滚轮标识（与长按右键一致） -->
                                                     <Rectangle Canvas.Left="20" Canvas.Top="8" Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{DynamicResource BrushTextSec}"/>
                                                     <!-- 四向移动箭头（与按住中键移动一致） -->
-                                                    <Path Data="M24,28 L20.5,33 L27.5,33 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
-                                                    <Path Data="M24,52 L20.5,47 L27.5,47 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
-                                                    <Path Data="M12,40 L17,36.5 L17,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
-                                                    <Path Data="M36,40 L31,36.5 L31,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                    <Path x:Name="RightButtonDragArrows" Data="M24,28 L20.5,33 L27.5,33 Z M24,52 L20.5,47 L27.5,47 Z M12,40 L17,36.5 L17,43.5 Z M36,40 L31,36.5 L31,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
                                                 </Canvas>
                                             </Viewbox>
                                             <TextBlock Text="按右键移动" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
@@ -2858,10 +2855,7 @@
                                                                RadiusX="2" RadiusY="2"
                                                                Fill="{DynamicResource BrushTextSec}"/>
                                                     <!-- 四向移动箭头 -->
-                                                    <Path Data="M24,28 L20.5,33 L27.5,33 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
-                                                    <Path Data="M24,52 L20.5,47 L27.5,47 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
-                                                    <Path Data="M12,40 L17,36.5 L17,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
-                                                    <Path Data="M36,40 L31,36.5 L31,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                    <Path x:Name="MiddleButtonDragArrows" Data="M24,28 L20.5,33 L27.5,33 Z M24,52 L20.5,47 L27.5,47 Z M12,40 L17,36.5 L17,43.5 Z M36,40 L31,36.5 L31,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
                                                 </Canvas>
                                             </Viewbox>
                                             <TextBlock Text="按住中键移动" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
