@@ -22,7 +22,7 @@ public partial class YanyuEditorWindow : Window
     {
         public bool HasImageIcon => IconSource != null;
 
-        public bool HasVectorIcon => VectorIcon != null;
+        public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
 
         public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon;
 

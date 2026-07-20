@@ -1363,7 +1363,8 @@ public partial class MainWindow
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(command.OpenTarget))
+            if (string.IsNullOrWhiteSpace(command.OpenTarget) || 
+                command.OpenTarget.StartsWith("ms-settings:", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

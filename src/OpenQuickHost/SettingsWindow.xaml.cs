@@ -10167,7 +10167,7 @@ public sealed class SettingsMouseGestureItem
 
     public bool HasImageIcon => IconSource != null;
 
-    public bool HasVectorIcon => VectorIcon != null;
+    public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
 
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
 }
@@ -10420,7 +10420,7 @@ public sealed class MouseGestureExtensionOption
 
     public bool HasImageIcon => IconSource != null;
 
-    public bool HasVectorIcon => VectorIcon != null;
+    public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
 
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
 
@@ -10664,7 +10664,7 @@ public sealed record YarnSelectExtensionOption(
 
     public bool HasImageIcon => IconSource != null;
 
-    public bool HasVectorIcon => VectorIcon != null;
+    public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
 
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
 
@@ -10803,7 +10803,7 @@ public sealed class RadialMenuSlotEditorItem : INotifyPropertyChanged
 
     public bool HasImageIcon => IconSource != null;
 
-    public bool HasVectorIcon => VectorIcon != null;
+    public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
 
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
 
@@ -11151,7 +11151,7 @@ public sealed class SettingsExtensionItem : INotifyPropertyChanged
 
     public bool HasImageIcon => IconSource != null;
 
-    public bool HasVectorIcon => VectorIcon != null;
+    public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
 
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
 

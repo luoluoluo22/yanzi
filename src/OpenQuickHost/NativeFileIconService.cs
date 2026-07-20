@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -29,6 +29,49 @@ public static class NativeFileIconService
         return GetIcon(resolvedPath, isFolder: false);
     }
 
+    private static string ExtractCleanPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        var clean = path.Trim();
+
+        if (clean.StartsWith("\"") && clean.Length > 2)
+        {
+            var endQuote = clean.IndexOf('"', 1);
+            if (endQuote > 0)
+            {
+                return clean[1..endQuote];
+            }
+        }
+
+        if (File.Exists(clean) || Directory.Exists(clean))
+        {
+            return clean;
+        }
+
+        var exeIndex = clean.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        if (exeIndex > 0)
+        {
+            var candidate = clean[..(exeIndex + 4)].Trim('"');
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        var firstSpace = clean.IndexOf(' ');
+        if (firstSpace > 0)
+        {
+            var candidate = clean[..firstSpace].Trim('"');
+            return candidate;
+        }
+
+        return clean.Trim('"');
+    }
+
     public static ImageSource? GetIcon(string path, bool isFolder)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -41,16 +84,24 @@ public static class NativeFileIconService
             return IconCache.GetOrAdd(path, _ => LoadUwpIcon(path));
         }
 
-        var cacheKey = BuildCacheKey(path, isFolder);
+        var cleanPath = ExtractCleanPath(path);
+
+        // 如果是快捷方式，我们需要获取它指向的实际 EXE 文件路径
+        if (!isFolder && IsShortcutPath(cleanPath) && TryResolveShortcutIconTarget(cleanPath, out var resolvedTarget))
+        {
+            cleanPath = ExtractCleanPath(resolvedTarget);
+        }
+
+        var cacheKey = BuildCacheKey(cleanPath, isFolder);
         return IconCache.GetOrAdd(cacheKey, _ =>
         {
             // .exe 文件优先使用 IShellItemImageFactory 获取高品质图标 (256x256)
-            if (!isFolder && path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+            if (!isFolder && cleanPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(cleanPath))
             {
-                var hq = LoadHighQualityIcon(path, 256);
+                var hq = LoadHighQualityIcon(cleanPath, 256);
                 if (hq != null) return hq;
             }
-            return LoadSmallIcon(path, isFolder);
+            return LoadSmallIcon(cleanPath, isFolder);
         });
     }
 
@@ -111,7 +162,7 @@ public static class NativeFileIconService
             var image = Imaging.CreateBitmapSourceFromHIcon(
                 shinfo.hIcon,
                 System.Windows.Int32Rect.Empty,
-                System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                System.Windows.Media.Imaging.BitmapSizeOptions.FromWidthAndHeight(32, 32));
             image.Freeze();
             return image;
         }
@@ -230,10 +281,8 @@ public static class NativeFileIconService
             return mappedPath;
         }
 
-        if (openTarget.StartsWith("ms-settings:", StringComparison.OrdinalIgnoreCase))
-        {
-            return ResolveSettingsAppPath(extensionId);
-        }
+        // Removed generic fallback to SystemSettings.exe for ms-settings: 
+        // to preserve the curated VectorIcon and AccentBrush for each setting.
 
         if (TryResolveExecutablePath(openTarget, out var executablePath))
         {
@@ -269,12 +318,7 @@ public static class NativeFileIconService
                 Path.Combine(systemDirectory, "mmc.exe")),
             "system-registry-editor" => ResolveExistingPath(
                 Path.Combine(systemDirectory, "regedit.exe")),
-            "system-settings-sound" or "system-settings-apps-volume" or "system-settings-microphone-privacy" or
-            "system-settings-webcam-privacy" or "system-settings-printers" or "system-settings-default-apps" or
-            "system-settings-power" or "system-settings-storage" or "system-settings-personalization" or
-            "system-settings-windows-update" or "system-settings-default-output" or
-            "system-settings-default-input" or "system-settings-sound-devices" or
-            "system-settings-accessibility-audio" => ResolveExistingPath(immersiveControlPanelPath),
+            // Mappings for ms-settings are removed to preserve curated VectorIcons
             _ => null
         };
     }
@@ -439,8 +483,8 @@ public static class NativeFileIconService
             try
             {
                 var nativeSize = new NativeSize(size, size);
-                // SIIGBF_ICONONLY = 0x04 (only icon, no thumbnail)
-                hr = factory.GetImage(nativeSize, 0x04, out var hBitmap);
+                // SIIGBF_ICONONLY = 0x04 (only icon, no thumbnail), SIIGBF_BIGGERSIZEOK = 0x01
+                hr = factory.GetImage(nativeSize, 0x04 | 0x01, out var hBitmap);
                 if (hr != 0 || hBitmap == IntPtr.Zero)
                 {
                     return null;
@@ -453,8 +497,10 @@ public static class NativeFileIconService
                         IntPtr.Zero,
                         System.Windows.Int32Rect.Empty,
                         System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
-                    source.Freeze();
-                    return source;
+                        
+                    var cropped = CropTransparentBorders(source);
+                    cropped.Freeze();
+                    return cropped;
                 }
                 finally
                 {
@@ -469,6 +515,98 @@ public static class NativeFileIconService
         catch
         {
             return null;
+        }
+    }
+
+    private static System.Windows.Media.Imaging.BitmapSource CropTransparentBorders(System.Windows.Media.Imaging.BitmapSource source)
+    {
+        if (source == null) return null!;
+        
+        System.Windows.Media.Imaging.BitmapSource checkSource = source;
+        if (source.Format != System.Windows.Media.PixelFormats.Bgra32 && 
+            source.Format != System.Windows.Media.PixelFormats.Pbgra32)
+        {
+            try
+            {
+                checkSource = new System.Windows.Media.Imaging.FormatConvertedBitmap(source, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+            }
+            catch
+            {
+                return source;
+            }
+        }
+
+        int width = checkSource.PixelWidth;
+        int height = checkSource.PixelHeight;
+        if (width <= 48 || height <= 48) return source;
+
+        int stride = (width * checkSource.Format.BitsPerPixel + 7) / 8;
+        byte[] pixels = new byte[height * stride];
+        checkSource.CopyPixels(pixels, stride, 0);
+
+        int minX = Math.Max(0, width / 2 - 8);
+        int maxX = Math.Min(width - 1, width / 2 + 8);
+        int minY = Math.Max(0, height / 2 - 8);
+        int maxY = Math.Min(height - 1, height / 2 + 8);
+
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            if (minX > 0)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    if (pixels[y * stride + (minX - 1) * 4 + 3] > 10)
+                    {
+                        minX--; changed = true; break;
+                    }
+                }
+            }
+            if (maxX < width - 1)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    if (pixels[y * stride + (maxX + 1) * 4 + 3] > 10)
+                    {
+                        maxX++; changed = true; break;
+                    }
+                }
+            }
+            if (minY > 0)
+            {
+                for (int x = minX; x <= maxX; x++)
+                {
+                    if (pixels[(minY - 1) * stride + x * 4 + 3] > 10)
+                    {
+                        minY--; changed = true; break;
+                    }
+                }
+            }
+            if (maxY < height - 1)
+            {
+                for (int x = minX; x <= maxX; x++)
+                {
+                    if (pixels[(maxY + 1) * stride + x * 4 + 3] > 10)
+                    {
+                        maxY++; changed = true; break;
+                    }
+                }
+            }
+        }
+
+        int cropWidth = maxX - minX + 1;
+        int cropHeight = maxY - minY + 1;
+
+        if (cropWidth == width && cropHeight == height) return source;
+
+        try
+        {
+            return new System.Windows.Media.Imaging.CroppedBitmap(source, new System.Windows.Int32Rect(minX, minY, cropWidth, cropHeight));
+        }
+        catch
+        {
+            return source;
         }
     }
 

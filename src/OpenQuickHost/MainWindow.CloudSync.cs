@@ -88,6 +88,7 @@ public partial class MainWindow
 
         var shouldShowSyncToast = false;
         var deferHideSyncToastToPersonalSync = false;
+        var launchedPersonalSync = false;
         try
         {
             CloudSyncDiagnostics.Log(
@@ -114,6 +115,7 @@ public partial class MainWindow
             var pulledQuickPanelConfig = await PullQuickPanelConfigFromCloudAsync();
             var yanmCloudResult = await PullYanmStateFromCloudNowAsync();
             QueueBackgroundWebDavSyncAfterCloudRefresh("cloud-refresh");
+            launchedPersonalSync = true;
             if (!IsStoreMode)
             {
                 _allCommands.RemoveAll(x => x.Source == CommandSource.Cloud);
@@ -163,7 +165,7 @@ public partial class MainWindow
         }
         finally
         {
-            if (shouldShowSyncToast && !deferHideSyncToastToPersonalSync)
+            if (shouldShowSyncToast && (!deferHideSyncToastToPersonalSync || !launchedPersonalSync))
             {
                 HideSettingsCloudSyncProgressToast();
             }
@@ -2003,6 +2005,11 @@ public partial class MainWindow
         if (_backgroundWebDavSyncRunning)
         {
             _backgroundWebDavSyncRequested = true;
+            if (reason.Contains("cloud-refresh", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("settings-login", StringComparison.OrdinalIgnoreCase))
+            {
+                _backgroundWebDavSyncRequestedReason = reason;
+            }
             HostAssets.AppendLog($"Personal sync background sync queued while running: {reason}");
             return;
         }
@@ -2078,7 +2085,9 @@ public partial class MainWindow
             if (_backgroundWebDavSyncRequested)
             {
                 _backgroundWebDavSyncRequested = false;
-                QueueBackgroundWebDavSync("queued");
+                var nextReason = string.IsNullOrEmpty(_backgroundWebDavSyncRequestedReason) ? "queued" : _backgroundWebDavSyncRequestedReason;
+                _backgroundWebDavSyncRequestedReason = null;
+                QueueBackgroundWebDavSync(nextReason);
             }
         }
     }

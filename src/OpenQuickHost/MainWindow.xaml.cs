@@ -177,6 +177,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private DateTimeOffset _lastFileSearchManualInitPromptAt = DateTimeOffset.MinValue;
     private bool _backgroundWebDavSyncRunning;
     private bool _backgroundWebDavSyncRequested;
+    private string? _backgroundWebDavSyncRequestedReason;
     private bool _isReplacingLocalExtensions;
     private string? _pendingBackgroundWebDavSyncReason;
     private bool _cloudReconnectInProgress;
@@ -3735,7 +3736,7 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public bool HasImageIcon => IconSource != null;
 
-    public bool HasVectorIcon => VectorIcon != null;
+    public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
 
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon;
 

@@ -8,6 +8,7 @@ internal static class InstalledApplicationCatalog
     {
         var results = new List<InstalledApplicationEntry>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var totalScannedFiles = 0;
         var totalSkippedDirectories = 0;
 
@@ -34,7 +35,8 @@ internal static class InstalledApplicationCatalog
                 {
                     continue;
                 }
-
+                
+                seenTitles.Add(entry.NormalizedTitle);
                 results.Add(entry);
             }
 
@@ -44,7 +46,7 @@ internal static class InstalledApplicationCatalog
                 $"InstalledApplicationCatalog root scanned: path={root}, recurse={scanRoot.Recurse}, files={scanResult.ScannedFiles}, skippedDirectories={scanResult.SkippedDirectories}, acceptedSoFar={results.Count}.");
         }
 
-        ScanAppsFolder(results, seen);
+        ScanAppsFolder(results, seen, seenTitles);
 
         HostAssets.AppendLog(
             $"InstalledApplicationCatalog load summary: roots={GetScanRoots().Count()}, scannedFiles={totalScannedFiles}, skippedDirectories={totalSkippedDirectories}, accepted={results.Count}.");
@@ -54,7 +56,7 @@ internal static class InstalledApplicationCatalog
             .ToList();
     }
 
-    private static void ScanAppsFolder(List<InstalledApplicationEntry> results, HashSet<string> seen)
+    private static void ScanAppsFolder(List<InstalledApplicationEntry> results, HashSet<string> seen, HashSet<string> seenTitles)
     {
         try
         {
@@ -101,7 +103,10 @@ internal static class InstalledApplicationCatalog
                     var dedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedLaunchTarget}";
                     if (seen.Add(dedupeKey))
                     {
-                        results.Add(entry);
+                        if (seenTitles.Add(entry.NormalizedTitle))
+                        {
+                            results.Add(entry);
+                        }
                     }
                 }
                 catch
@@ -281,6 +286,22 @@ internal static class InstalledApplicationCatalog
 
 
             var normalizedTargetPath = targetPath?.Trim();
+            
+            if (!string.IsNullOrWhiteSpace(normalizedTargetPath))
+            {
+                if (Directory.Exists(normalizedTargetPath))
+                {
+                    return null;
+                }
+
+                var targetExt = Path.GetExtension(normalizedTargetPath).ToLowerInvariant();
+                if (targetExt != ".exe" && targetExt != ".bat" && targetExt != ".cmd" && 
+                    targetExt != ".msc" && targetExt != ".cpl" && targetExt != ".appref-ms")
+                {
+                    return null;
+                }
+            }
+
             var launchTarget = !string.IsNullOrWhiteSpace(normalizedTargetPath) && File.Exists(normalizedTargetPath)
                 ? normalizedTargetPath
                 : shortcutPath;
