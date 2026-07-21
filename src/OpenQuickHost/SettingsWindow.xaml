@@ -1983,7 +1983,7 @@
                                                  TextWrapping="Wrap"
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="🎯 定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickYanmWhitelistProcessButton_Click"/>
+                                            <Button Content="管理白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickYanmWhitelistProcessButton_Click"/>
                                             <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveYanmSettings_Click"/>
                                         </StackPanel>
                                     </Grid>
@@ -2005,7 +2005,7 @@
                                                  TextWrapping="Wrap"
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="🎯 定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickYanmBlacklistProcessButton_Click"/>
+                                            <Button Content="管理黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickYanmBlacklistProcessButton_Click"/>
                                             <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveYanmSettings_Click"/>
                                         </StackPanel>
                                     </Grid>
@@ -4072,7 +4072,7 @@
                                                  TextWrapping="Wrap"
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="🎯 定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialWhitelistProcessButton_Click"/>
+                                            <Button Content="管理白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialWhitelistProcessButton_Click"/>
                                             <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
                                         </StackPanel>
                                     </Grid>
@@ -4094,7 +4094,7 @@
                                                  TextWrapping="Wrap"
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <Button Content="🎯 定位窗口添加" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialBlacklistProcessButton_Click"/>
+                                            <Button Content="管理黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialBlacklistProcessButton_Click"/>
                                             <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
                                         </StackPanel>
                                     </Grid>
@@ -4247,7 +4247,7 @@
                                              TextWrapping="Wrap"
                                              VerticalScrollBarVisibility="Auto"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                        <Button Content="🎯 定位窗口添加" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="PickYarnSelectWhitelistProcessButton_Click"/>
+                                        <Button Content="管理白名单" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="PickYarnSelectWhitelistProcessButton_Click"/>
                                         <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Click="SaveYarnSelectSettings_Click"/>
                                     </StackPanel>
                                 </StackPanel>
@@ -4264,7 +4264,7 @@
                                              TextWrapping="Wrap"
                                              VerticalScrollBarVisibility="Auto"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                        <Button Content="🎯 定位窗口添加" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="PickYarnSelectBlacklistProcessButton_Click"/>
+                                        <Button Content="管理黑名单" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="PickYarnSelectBlacklistProcessButton_Click"/>
                                         <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Click="SaveYarnSelectSettings_Click"/>
                                     </StackPanel>
                                 </StackPanel>

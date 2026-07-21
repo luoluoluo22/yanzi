@@ -450,7 +450,7 @@ public static class YarnSelectService
         return !blockedByBlacklist;
     }
 
-    private static string GetForegroundProcessName()
+    public static string GetForegroundProcessName()
     {
         try
         {

@@ -48,7 +48,10 @@ public partial class App : WpfApplication
     private LanDiscoveryService? _lanDiscoveryService;
     private SingleInstanceService? _singleInstanceService;
     private bool _listenerServicesPaused;
+    private bool _isAutoPausedByBlacklist;
+    private System.Windows.Threading.DispatcherTimer? _foregroundMonitorTimer;
     private bool _isAppFullyInitialized;
+    private string _lastTrayForegroundProcess = string.Empty;
 
     protected override void OnStartup(WpfStartupEventArgs e)
     {
@@ -254,6 +257,8 @@ public partial class App : WpfApplication
                     }
                 }
             }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+            StartForegroundMonitorTimer();
 
             // 启动 5 秒后在后台静默发起更新流程
             _ = Task.Delay(5000).ContinueWith(async _ =>
@@ -757,6 +762,7 @@ public partial class App : WpfApplication
         {
             if (e.Button == Forms.MouseButtons.Right)
             {
+                _lastTrayForegroundProcess = YarnSelectService.GetForegroundProcessName();
                 if (WpfApplication.Current.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu menu)
                 {
                     UpdateTrayMenuState(menu);
@@ -796,6 +802,34 @@ public partial class App : WpfApplication
     private void TrayShow_Click(object sender, RoutedEventArgs e)
     {
         (MainWindow as MainWindow)?.ShowPanel();
+    }
+
+    private void TrayAddGlobalBlacklist_Click(object sender, RoutedEventArgs e)
+    {
+        var settings = AppSettingsStore.Load();
+        var initialList = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
+        
+        var defaultProcess = _lastTrayForegroundProcess;
+        var inputWindow = new ProcessPickerWindow("全局黑名单", "请选择要加入全局服务黑名单的进程：", defaultProcess, initialList);
+        if (inputWindow.ShowDialog() == true)
+        {
+            settings.GlobalServiceBlacklistedProcesses = inputWindow.Blacklist.Select(b => b.ProcessName).ToList();
+            foreach (var b in inputWindow.Blacklist)
+            {
+                if (!string.IsNullOrWhiteSpace(b.ExecutablePath))
+                {
+                    settings.ProcessExecutablePaths[b.ProcessName] = b.ExecutablePath;
+                }
+            }
+            AppSettingsStore.Save(settings);
+
+            if (MainWindow is MainWindow mainWindow)
+            {
+                mainWindow.RefreshAppSettings();
+            }
+
+            ShowDesktopNotification("全局黑名单", $"全局服务黑名单已更新。");
+        }
     }
 
     private void TrayMousePanel_Click(object sender, RoutedEventArgs e)
@@ -871,12 +905,31 @@ public partial class App : WpfApplication
         }
 
         _listenerServicesPaused = !_listenerServicesPaused;
-        if (_listenerServicesPaused)
+        ApplyServicePauseState();
+    }
+
+    private void ApplyServicePauseState()
+    {
+        if (MainWindow is not MainWindow mainWindow || _notifyIcon == null)
+            return;
+
+        var shouldPause = _listenerServicesPaused || _isAutoPausedByBlacklist;
+
+        if (shouldPause)
         {
             mainWindow.PauseListenerServices();
-            _notifyIcon.Icon = TryCreateDisabledNotifyIcon() ?? SystemIcons.Application;
-            _notifyIcon.Text = "燕子 - 服务已暂停";
-            HostAssets.AppendLog("Tray: listener services paused.");
+            
+            if (_listenerServicesPaused)
+            {
+                _notifyIcon.Icon = TryCreateDisabledNotifyIcon() ?? SystemIcons.Application;
+                _notifyIcon.Text = "燕子 - 服务已暂停";
+            }
+            else
+            {
+                _notifyIcon.Icon = TryCreateDisabledNotifyIcon() ?? SystemIcons.Application;
+                _notifyIcon.Text = "燕子 - 自动暂停 (黑名单)";
+            }
+            HostAssets.AppendLog($"Tray: listener services paused (Manual: {_listenerServicesPaused}, Auto: {_isAutoPausedByBlacklist}).");
         }
         else
         {
@@ -885,6 +938,47 @@ public partial class App : WpfApplication
             _notifyIcon.Text = "燕子";
             HostAssets.AppendLog("Tray: listener services resumed.");
         }
+    }
+
+    private void StartForegroundMonitorTimer()
+    {
+        _foregroundMonitorTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(500)
+        };
+        _foregroundMonitorTimer.Tick += (s, e) =>
+        {
+            if (_listenerServicesPaused)
+                return; // User manually paused, no need to auto-pause/resume logic
+
+            try
+            {
+                var currentProcess = YarnSelectService.GetForegroundProcessName();
+                if (string.IsNullOrWhiteSpace(currentProcess))
+                    return;
+
+                var settings = AppSettingsStore.Load();
+                var blacklist = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
+
+                bool isInBlacklist = blacklist.Contains(currentProcess, StringComparer.OrdinalIgnoreCase);
+
+                if (isInBlacklist && !_isAutoPausedByBlacklist)
+                {
+                    _isAutoPausedByBlacklist = true;
+                    ApplyServicePauseState();
+                }
+                else if (!isInBlacklist && _isAutoPausedByBlacklist)
+                {
+                    _isAutoPausedByBlacklist = false;
+                    ApplyServicePauseState();
+                }
+            }
+            catch
+            {
+                // Ignore errors
+            }
+        };
+        _foregroundMonitorTimer.Start();
     }
 
     private void UpdateTrayMenuState(System.Windows.Controls.ContextMenu menu)

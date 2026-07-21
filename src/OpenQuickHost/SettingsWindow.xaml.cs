@@ -8006,105 +8006,81 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         SaveYarnSelectSettings();
     }
 
-    private async void PickYanmWhitelistProcessButton_Click(object sender, RoutedEventArgs e)
+    private void PickYanmWhitelistProcessButton_Click(object sender, RoutedEventArgs e)
     {
-        await PickProcessAndAddAsync("燕幕白名单", process =>
+        OpenProcessPickerForList("燕幕白名单", _settings.Yanm.WhitelistedProcesses ?? new(), list =>
         {
-            _settings.Yanm.WhitelistedProcesses = AddProcessToList(_settings.Yanm.WhitelistedProcesses, process);
+            _settings.Yanm.WhitelistedProcesses = list;
             OnPropertyChanged(nameof(YanmWhitelistedProcessesText));
             SaveYanmSettings(requireCustomShortcut: false);
         });
     }
 
-    private async void PickYanmBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
+    private void PickYanmBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
     {
-        await PickProcessAndAddAsync("燕幕黑名单", process =>
+        OpenProcessPickerForList("燕幕黑名单", _settings.Yanm.BlacklistedProcesses ?? new(), list =>
         {
-            _settings.Yanm.BlacklistedProcesses = AddProcessToList(_settings.Yanm.BlacklistedProcesses, process);
+            _settings.Yanm.BlacklistedProcesses = list;
             OnPropertyChanged(nameof(YanmBlacklistedProcessesText));
             SaveYanmSettings(requireCustomShortcut: false);
         });
     }
 
-    private async void PickRadialWhitelistProcessButton_Click(object sender, RoutedEventArgs e)
+    private void PickRadialWhitelistProcessButton_Click(object sender, RoutedEventArgs e)
     {
-        await PickProcessAndAddAsync("燕环白名单", process =>
+        OpenProcessPickerForList("燕环白名单", _settings.RadialMenu.WhitelistedProcesses ?? new(), list =>
         {
-            _settings.RadialMenu.WhitelistedProcesses = AddProcessToList(_settings.RadialMenu.WhitelistedProcesses, process);
+            _settings.RadialMenu.WhitelistedProcesses = list;
             OnPropertyChanged(nameof(RadialWhitelistedProcessesText));
             SaveQuickPanelTriggerSettings();
         });
     }
 
-    private async void PickRadialBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
+    private void PickRadialBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
     {
-        await PickProcessAndAddAsync("燕环黑名单", process =>
+        OpenProcessPickerForList("燕环黑名单", _settings.RadialMenu.BlacklistedProcesses ?? new(), list =>
         {
-            _settings.RadialMenu.BlacklistedProcesses = AddProcessToList(_settings.RadialMenu.BlacklistedProcesses, process);
+            _settings.RadialMenu.BlacklistedProcesses = list;
             OnPropertyChanged(nameof(RadialBlacklistedProcessesText));
             SaveQuickPanelTriggerSettings();
         });
     }
 
-    private async void PickYarnSelectWhitelistProcessButton_Click(object sender, RoutedEventArgs e)
+    private void PickYarnSelectWhitelistProcessButton_Click(object sender, RoutedEventArgs e)
     {
-        await PickProcessAndAddAsync("燕选白名单", process =>
+        OpenProcessPickerForList("燕选白名单", _settings.YarnSelect.WhitelistedProcesses ?? new(), list =>
         {
-            _settings.YarnSelect.WhitelistedProcesses = AddProcessToList(_settings.YarnSelect.WhitelistedProcesses, process);
+            _settings.YarnSelect.WhitelistedProcesses = list;
             OnPropertyChanged(nameof(YarnSelectWhitelistedProcessesText));
             SaveYarnSelectSettings();
         });
     }
 
-    private async void PickYarnSelectBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
+    private void PickYarnSelectBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
     {
-        await PickProcessAndAddAsync("燕选黑名单", process =>
+        OpenProcessPickerForList("燕选黑名单", _settings.YarnSelect.BlacklistedProcesses ?? new(), list =>
         {
-            _settings.YarnSelect.BlacklistedProcesses = AddProcessToList(_settings.YarnSelect.BlacklistedProcesses, process);
+            _settings.YarnSelect.BlacklistedProcesses = list;
             OnPropertyChanged(nameof(YarnSelectBlacklistedProcessesText));
             SaveYarnSelectSettings();
         });
     }
 
-    private async Task PickProcessAndAddAsync(string targetName, Action<string> addProcess)
+    private void OpenProcessPickerForList(string targetName, List<string> currentList, Action<List<string>> updateAction)
     {
-        SyncStatusText = $"{targetName}：请将鼠标移动到目标窗口并点击选择。";
-        HostAssets.AppendLog($"Settings: process picker started for {targetName}.");
-        Hide();
-        
-        string processName;
-        try
+        var picker = new ProcessPickerWindow(targetName, $"请选择要加入 {targetName} 的进程：", string.Empty, currentList);
+        if (picker.ShowDialog() == true)
         {
-            var picker = new WindowPickerOverlay();
-            processName = await picker.ShowPickerAsync();
+            foreach (var b in picker.Blacklist)
+            {
+                if (!string.IsNullOrWhiteSpace(b.ExecutablePath))
+                {
+                    _settings.ProcessExecutablePaths[b.ProcessName] = b.ExecutablePath;
+                }
+            }
+            updateAction(picker.Blacklist.Select(b => b.ProcessName).ToList());
         }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Settings: process picker overlay failed: {ex.Message}");
-            processName = string.Empty;
-        }
-
-        Show();
-        Activate();
-
-        if (string.IsNullOrWhiteSpace(processName))
-        {
-            SyncStatusText = $"{targetName}：已取消或没有获取到目标进程。";
-            return;
-        }
-
-        addProcess(processName);
-        SyncStatusText = $"{targetName} 已添加进程：{processName}";
-        HostAssets.AppendLog($"Settings: process picker added process={processName}, target={targetName}.");
     }
-
-    private static List<string> AddProcessToList(IEnumerable<string>? source, string processName) =>
-        (source ?? [])
-        .Append(processName)
-        .Where(static item => !string.IsNullOrWhiteSpace(item))
-        .Select(static item => item.Trim())
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToList();
 
     private static string GetForegroundProcessName()
     {

@@ -183,9 +183,6 @@
                                                 <MenuItem Header="删除分组" Click="DeleteGlobalGroup_Click" CommandParameter="{Binding}" />
                                             </ContextMenu>
                                         </Button.ContextMenu>
-                                        <Button.Background>
-                                            <Binding Path="IsSelected" Converter="{StaticResource BooleanToColorConverter}" ConverterParameter="Transparent|#1A3B82F6"/>
-                                        </Button.Background>
                                         <TextBlock Text="{Binding ShortName}"
                                                    FontSize="{DynamicResource FontSizeSmall}"
                                                    FontWeight="SemiBold">
@@ -209,7 +206,7 @@
                                 <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
                                     <Path.Style>
                                         <Style TargetType="Path">
-                                            <Setter Property="Opacity" Value="0"/>
+                                            <Setter Property="Opacity" Value="0.3"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
                                                     <Setter Property="Opacity" Value="1"/>
@@ -250,9 +247,6 @@
                                                 <MenuItem Header="删除分组" Click="DeleteContextGroup_Click" CommandParameter="{Binding}" />
                                             </ContextMenu>
                                         </Button.ContextMenu>
-                                        <Button.Background>
-                                            <Binding Path="IsSelected" Converter="{StaticResource BooleanToColorConverter}" ConverterParameter="Transparent|#1A22C55E"/>
-                                        </Button.Background>
                                         <TextBlock Text="{Binding ShortName}"
                                                    FontSize="{DynamicResource FontSizeSmall}"
                                                    FontWeight="SemiBold">
@@ -261,7 +255,7 @@
                                                     <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                            <Setter Property="Foreground" Value="#FF4ADE80"/>
+                                                            <Setter Property="Foreground" Value="#FF6EA8FF"/>
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
@@ -276,7 +270,7 @@
                                 <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
                                     <Path.Style>
                                         <Style TargetType="Path">
-                                            <Setter Property="Opacity" Value="0"/>
+                                            <Setter Property="Opacity" Value="0.3"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
                                                     <Setter Property="Opacity" Value="1"/>
@@ -549,9 +543,10 @@
                                                     <Viewbox Width="18" Height="18"
                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
                                                              Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform">
+                                                        <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
                                                             <Path.Style>
                                                                 <Style TargetType="Path">
+                                                                    <Setter Property="Fill" Value="{DynamicResource BrushTextSec}"/>
                                                                     <Setter Property="Opacity" Value="0"/>
                                                                     <Style.Triggers>
                                                                         <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
@@ -841,9 +836,10 @@
                                                     <Viewbox Width="18" Height="18"
                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
                                                              Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform">
+                                                        <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
                                                             <Path.Style>
                                                                 <Style TargetType="Path">
+                                                                    <Setter Property="Fill" Value="{DynamicResource BrushTextSec}"/>
                                                                     <Setter Property="Opacity" Value="0"/>
                                                                     <Style.Triggers>
                                                                         <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
@@ -1214,9 +1210,10 @@
                                                 <Viewbox Width="18" Height="18"
                                                          HorizontalAlignment="Center" VerticalAlignment="Center"
                                                          Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform">
+                                                    <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
                                                         <Path.Style>
                                                             <Style TargetType="Path">
+                                                                <Setter Property="Fill" Value="{DynamicResource BrushTextSec}"/>
                                                                 <Setter Property="Opacity" Value="0"/>
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">

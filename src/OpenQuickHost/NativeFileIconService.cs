@@ -499,6 +499,7 @@ public static class NativeFileIconService
                         System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
                         
                     var cropped = CropTransparentBorders(source);
+                    if (cropped == null) return null;
                     cropped.Freeze();
                     return cropped;
                 }
@@ -518,9 +519,9 @@ public static class NativeFileIconService
         }
     }
 
-    private static System.Windows.Media.Imaging.BitmapSource CropTransparentBorders(System.Windows.Media.Imaging.BitmapSource source)
+    private static System.Windows.Media.Imaging.BitmapSource? CropTransparentBorders(System.Windows.Media.Imaging.BitmapSource source)
     {
-        if (source == null) return null!;
+        if (source == null) return null;
         
         System.Windows.Media.Imaging.BitmapSource checkSource = source;
         if (source.Format != System.Windows.Media.PixelFormats.Bgra32 && 
@@ -544,65 +545,81 @@ public static class NativeFileIconService
         byte[] pixels = new byte[height * stride];
         checkSource.CopyPixels(pixels, stride, 0);
 
-        int minX = Math.Max(0, width / 2 - 8);
-        int maxX = Math.Min(width - 1, width / 2 + 8);
-        int minY = Math.Max(0, height / 2 - 8);
-        int maxY = Math.Min(height - 1, height / 2 + 8);
-
-        bool changed = true;
-        while (changed)
+        // Helper function to find bounding box for a given alpha threshold
+        (int minX, int maxX, int minY, int maxY, bool found) GetBoundingBox(int alphaThreshold)
         {
-            changed = false;
-            if (minX > 0)
+            int minX = 0, maxX = width - 1, minY = 0, maxY = height - 1;
+            bool foundAny = false;
+            for (int y = 0; y < height && !foundAny; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (pixels[y * stride + x * 4 + 3] > alphaThreshold) { minY = y; foundAny = true; break; }
+                }
+            }
+            if (!foundAny) return (0, width - 1, 0, height - 1, false);
+
+            foundAny = false;
+            for (int y = height - 1; y >= minY && !foundAny; y--)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (pixels[y * stride + x * 4 + 3] > alphaThreshold) { maxY = y; foundAny = true; break; }
+                }
+            }
+
+            foundAny = false;
+            for (int x = 0; x < width && !foundAny; x++)
             {
                 for (int y = minY; y <= maxY; y++)
                 {
-                    if (pixels[y * stride + (minX - 1) * 4 + 3] > 10)
-                    {
-                        minX--; changed = true; break;
-                    }
+                    if (pixels[y * stride + x * 4 + 3] > alphaThreshold) { minX = x; foundAny = true; break; }
                 }
             }
-            if (maxX < width - 1)
+
+            foundAny = false;
+            for (int x = width - 1; x >= minX && !foundAny; x--)
             {
                 for (int y = minY; y <= maxY; y++)
                 {
-                    if (pixels[y * stride + (maxX + 1) * 4 + 3] > 10)
-                    {
-                        maxX++; changed = true; break;
-                    }
+                    if (pixels[y * stride + x * 4 + 3] > alphaThreshold) { maxX = x; foundAny = true; break; }
                 }
             }
-            if (minY > 0)
-            {
-                for (int x = minX; x <= maxX; x++)
-                {
-                    if (pixels[(minY - 1) * stride + x * 4 + 3] > 10)
-                    {
-                        minY--; changed = true; break;
-                    }
-                }
-            }
-            if (maxY < height - 1)
-            {
-                for (int x = minX; x <= maxX; x++)
-                {
-                    if (pixels[(maxY + 1) * stride + x * 4 + 3] > 10)
-                    {
-                        maxY++; changed = true; break;
-                    }
-                }
-            }
+            return (minX, maxX, minY, maxY, true);
         }
 
-        int cropWidth = maxX - minX + 1;
-        int cropHeight = maxY - minY + 1;
+        var bounds10 = GetBoundingBox(10);
+        if (!bounds10.found) return source;
 
-        if (cropWidth == width && cropHeight == height) return source;
+        var bounds128 = GetBoundingBox(128);
+
+        int cropWidth10 = bounds10.maxX - bounds10.minX + 1;
+        int cropHeight10 = bounds10.maxY - bounds10.minY + 1;
+        
+        int cropWidth128 = bounds128.found ? (bounds128.maxX - bounds128.minX + 1) : 0;
+        int cropHeight128 = bounds128.found ? (bounds128.maxY - bounds128.minY + 1) : 0;
+
+        // If the core opaque part of the icon is very small (< 64x64), but the noisy part is very large,
+        // it means we extracted a small icon padded with noisy transparency to 256x256.
+        // Return null to fall back to LoadSmallIcon which natively retrieves the 32x32 clean icon.
+        if (cropWidth128 < 64 && cropHeight128 < 64 && (cropWidth10 > 100 || cropHeight10 > 100))
+        {
+            return null; // Force fallback
+        }
+        
+        // Also if the 10-alpha bounding box itself is very small, we can also fallback or return the cropped.
+        // But if it's very small, the cropped bitmap will be small and look good when scaled up.
+        // Actually, if it's very small, falling back to 32x32 native icon is often better quality.
+        if (cropWidth10 < 48 && cropHeight10 < 48)
+        {
+            return null; // Force fallback
+        }
+
+        if (cropWidth10 == width && cropHeight10 == height) return source;
 
         try
         {
-            return new System.Windows.Media.Imaging.CroppedBitmap(source, new System.Windows.Int32Rect(minX, minY, cropWidth, cropHeight));
+            return new System.Windows.Media.Imaging.CroppedBitmap(source, new System.Windows.Int32Rect(bounds10.minX, bounds10.minY, cropWidth10, cropHeight10));
         }
         catch
         {

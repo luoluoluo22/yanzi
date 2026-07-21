@@ -969,6 +969,10 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
     public string LastTestArgument { get; set; } = "示例参数";
 
     public string MobileExtensionsJson { get; set; } = "[]";
+
+    public List<string> GlobalServiceBlacklistedProcesses { get; set; } = [];
+
+    public System.Collections.Generic.Dictionary<string, string> ProcessExecutablePaths { get; set; } = new();
 }
 
 public sealed class WindowSnapAssistCustomLayoutSettings

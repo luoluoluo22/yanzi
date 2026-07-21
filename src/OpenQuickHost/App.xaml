@@ -308,6 +308,12 @@
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator />
+                <MenuItem Header="添加到全局黑名单" Click="TrayAddGlobalBlacklist_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry block-helper}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator />
                 <MenuItem Header="查看输入状态" Click="TrayInputState_Click">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry mouse-panel}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />

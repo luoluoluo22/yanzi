@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>鼠标面板 · 旧复刻稿</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <p style="position:fixed;top:12px;right:16px;z-index:99;margin:0;">
+    <a href="concepts.html" style="color:#9ec1ff;font:13px sans-serif;">← 回到方案建议</a>
+  </p>
+  <div class="desktop" id="desktop">
+    <header class="page-chrome">
+      <div>
+        <p class="eyebrow">Legacy mock</p>
+        <h1>旧版复刻（对照用）</h1>
+        <p class="lede">这是接近现有 WPF 面板的复刻，不是建议方案。请看 <a href="concepts.html" style="color:#9ec1ff">concepts.html</a>。</p>
+      </div>
+      <div class="chrome-actions">
+        <button type="button" class="ghost-btn" id="btnShow">唤出面板</button>
+        <button type="button" class="ghost-btn" id="btnReset">重置数据</button>
+      </div>
+    </header>
+    <div class="desktop-hint" id="desktopHint">点击此处唤出鼠标面板</div>
+    <aside class="panel" id="panel" role="dialog" aria-label="鼠标面板" hidden>
+      <div class="panel-shell">
+        <nav class="sidebar" aria-label="分组">
+          <div class="side-section">
+            <button class="side-btn star" data-action="global-fav" title="通用收藏" aria-label="通用收藏">
+              <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            </button>
+            <div class="group-list" id="globalGroups"></div>
+            <button class="side-btn add" data-action="add-global" title="新建通用分组" aria-label="新建通用分组">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            </button>
+          </div>
+          <div class="side-divider"></div>
+          <div class="side-section grow">
+            <button class="side-btn star" data-action="context-fav" title="专属收藏" aria-label="专属收藏">
+              <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"/></svg>
+            </button>
+            <div class="group-list" id="contextGroups"></div>
+            <button class="side-btn add" data-action="add-context" title="新建专属分组" aria-label="新建专属分组">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            </button>
+          </div>
+          <div class="side-footer">
+            <button class="side-btn" data-action="mobile" title="手机消息" aria-label="手机消息">
+              <span class="badge-dot green" id="mobileBadge"></span>
+              <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>
+            </button>
+            <button class="side-btn muted" data-action="settings" title="设置" aria-label="设置">
+              <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M19.14 12.94c.04-.31.06-.94.06-.94s-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+            </button>
+          </div>
+        </nav>
+        <div class="main">
+          <header class="topbar">
+            <button class="icon-btn" id="btnEdit" title="编辑面板" aria-label="编辑面板" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.41l-2.34-2.34a1.003 1.003 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+            </button>
+            <div class="title-wrap">
+              <h2 id="panelTitle">通用工具</h2>
+              <p class="edit-hint" id="editHint" hidden>拖动可移动 · Ctrl 拖放成组</p>
+            </div>
+            <button class="icon-btn" id="btnPin" title="常驻面板" aria-label="常驻面板" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+            </button>
+            <label class="search" aria-label="搜索">
+              <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+              <input id="searchBox" type="search" placeholder="搜索…" autocomplete="off" />
+            </label>
+          </header>
+          <section class="slot-section global" aria-label="通用工具">
+            <div class="slot-grid" id="globalSlots"></div>
+          </section>
+          <div class="section-rule"></div>
+          <section class="slot-section context" aria-label="应用专属">
+            <div class="section-label"><span id="contextLabel">应用专属 · Cursor</span></div>
+            <div class="slot-grid" id="contextSlots"></div>
+          </section>
+          <div class="drag-hint" id="dragHint" hidden>
+            <strong>拖放：放入 / 交换</strong>
+            <span>Ctrl：成组 / 加入分组</span>
+          </div>
+          <div class="folder-overlay" id="folderOverlay" hidden>
+            <div class="folder-head">
+              <button type="button" class="back-btn" id="folderBack">← 返回</button>
+              <h3 id="folderTitle">文件夹</h3>
+            </div>
+            <div class="slot-grid" id="folderSlots"></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="ctx-menu" id="ctxMenu" hidden role="menu"></div>
+    <div class="toast" id="toast" hidden></div>
+  </div>
+  <aside class="notes">
+    <h3>对照说明</h3>
+    <ul>
+      <li>本页仅复刻现有结构，方便和新方案对比。</li>
+      <li>建议方案见 <a href="concepts.html" style="color:#9ec1ff">concepts.html</a>。</li>
+    </ul>
+  </aside>
+  <script src="app.js"></script>
+</body>
+</html>

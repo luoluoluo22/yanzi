@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>鼠标面板 · 方案建议</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="concepts.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="brief">
+      <p class="eyebrow">Design proposals</p>
+      <h1>别再复刻旧面板</h1>
+      <p class="lede">当前鼠标面板的核心问题不是「不够好看」，而是<strong>唤出后认知成本过高</strong>：侧栏单字分组、上下两套格子、编辑/收藏/文件夹模式叠在一起。下面三个方向各自解决一类问题。</p>
+
+      <nav class="concept-nav" id="conceptNav">
+        <button type="button" class="concept-card active" data-concept="peek">
+          <span class="num">A</span>
+          <div>
+            <strong>先轻后重 · Peek</strong>
+            <small>光标旁先出一排高频工具，停住再展开全面板</small>
+          </div>
+        </button>
+        <button type="button" class="concept-card" data-concept="radial">
+          <span class="num">B</span>
+          <div>
+            <strong>扇形手势 · Radial</strong>
+            <small>围着鼠标成环，方向滑入即执行，适合「按住不放」触发</small>
+          </div>
+        </button>
+        <button type="button" class="concept-card" data-concept="hub">
+          <span class="num">C</span>
+          <div>
+            <strong>搜索优先 · Hub</strong>
+            <small>去掉侧栏单字，改成 Tab + 搜索；应用专属自动置顶</small>
+          </div>
+        </button>
+      </nav>
+
+      <section class="why">
+        <h2>为什么要换交互</h2>
+        <ul>
+          <li><b>唤出≠编辑</b>：90% 场景是「立刻点一个工具」，却要扫完整块 560px 高面板。</li>
+          <li><b>侧栏单字难辨</b>：「开 / 写 / 默」需要悬停才懂，分组发现成本高。</li>
+          <li><b>通用+专属同时铺开</b>：两套 12 格抢注意力；应让「当前应用」优先。</li>
+          <li><b>光标压住图标</b>：面板中心对准鼠标时，顶行常被手挡住。</li>
+        </ul>
+      </section>
+
+      <section class="reco" id="reco">
+        <h2>建议落地顺序</h2>
+        <ol>
+          <li>先做 <b>A Peek</b>：改动最小、兼容现有格子模型，立刻降低误触与扫视时间。</li>
+          <li>触发为「长按中键」时再加 <b>B Radial</b> 作为可选皮肤。</li>
+          <li>工具超过 ~20 个后再引入 <b>C Hub</b> 的搜索优先信息架构。</li>
+        </ol>
+      </section>
+    </aside>
+
+    <main class="stage-wrap">
+      <header class="stage-bar">
+        <div>
+          <h2 id="stageTitle">A · 先轻后重 Peek</h2>
+          <p id="stageHint">在右侧空白处点击：先出现快捷条，悬停 0.45s 或点 ▾ 展开完整面板。</p>
+        </div>
+        <div class="stage-actions">
+          <button type="button" class="ghost" id="btnDemo">演示唤出</button>
+          <button type="button" class="ghost" id="btnClear">收起</button>
+        </div>
+      </header>
+
+      <div class="stage" id="stage" aria-label="交互演示区"></div>
+
+      <footer class="stage-foot" id="stageFoot">
+        <div class="pill">交互要点</div>
+        <p id="stagePoints">快捷条最多 6 个：最近使用 3 + 当前应用 3。展开后才出现分组与空位。Esc 收起。</p>
+      </footer>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="concepts.js"></script>
+</body>
+</html>
