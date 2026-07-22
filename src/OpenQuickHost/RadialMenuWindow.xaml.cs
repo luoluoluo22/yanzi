@@ -49,7 +49,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private RadialSlotPayload? _cutSlotPayload;
     private RadialMenuItemViewModel? _dragSourceItem;
     private int _lastRadiusPixels = 96;
-    private int _cachedDeadZonePixels = 26;
+    private int _cachedDeadZonePixels = 36;
 
     public RadialMenuWindow(MainWindow mainWindow)
     {
@@ -530,7 +530,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
         _lastRadiusPixels = settings.RadiusPixels;
-        _cachedDeadZonePixels = settings.DeadZonePixels;
+        _cachedDeadZonePixels = Math.Max(36, settings.DeadZonePixels);
 
         // 获取鼠标所在位置的顶级窗口，而不是当前前台窗口（更符合直觉）
         _previousForegroundWindow = IntPtr.Zero;
@@ -847,8 +847,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         UpdateCenterText();
         var center = GetMenuCenter();
-        BuildSeparators(MainSeparators, center.X, center.Y, 24, 100, RadialMenuSettings.InnerSlotCount);
-        BuildSeparators(OuterSeparators, center.X, center.Y, 100, 160, RadialMenuSettings.OuterSlotCount);
+        BuildSeparators(MainSeparators, center.X, center.Y, 36, 100, RadialMenuSettings.InnerSlotCount);
+        BuildSeparators(OuterSeparators, center.X, center.Y, 100, 165, RadialMenuSettings.OuterSlotCount);
         for (var index = 0; index < RadialMenuSettings.InnerSlotCount; index++)
         {
             var angleDegrees = -90 + index * 45.0;
@@ -868,7 +868,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 y,
                 angleDegrees,
                 RadialMenuRing.Inner,
-                CreateSectorGeometry(center.X, center.Y, 24, 100, angleDegrees - 22.5, angleDegrees + 22.5)));
+                CreateSectorGeometry(center.X, center.Y, 36, 100, angleDegrees - 22.5, angleDegrees + 22.5)));
         }
 
         for (var offset = 0; offset < RadialMenuSettings.OuterSlotCount; offset++)
@@ -876,8 +876,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var index = RadialMenuSettings.InnerSlotCount + offset;
             var angleDegrees = -90 + offset * 22.5;
             var angle = angleDegrees * Math.PI / 180.0;
-            var x = center.X + Math.Cos(angle) * 130 - 25;
-            var y = center.Y + Math.Sin(angle) * 130 - 20;
+            var x = center.X + Math.Cos(angle) * 125 - 25;
+            var y = center.Y + Math.Sin(angle) * 125 - 20;
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
@@ -891,7 +891,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 y,
                 angleDegrees,
                 RadialMenuRing.Outer,
-                CreateSectorGeometry(center.X, center.Y, 100, 160, angleDegrees - 11.25, angleDegrees + 11.25)));
+                CreateSectorGeometry(center.X, center.Y, 100, 165, angleDegrees - 11.25, angleDegrees + 11.25)));
         }
 
         var currentIndex = _topLevelPages.FindIndex(page => page.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
@@ -1024,7 +1024,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         IsCenterHovered = false;
 
         var angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
-        if (distance > 160)
+        if (distance > 165)
         {
             SetSelectedItem(null);
             ClearSubRingsAboveLevel(1);
@@ -1206,7 +1206,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             CenterY = cY
         };
 
-        BuildSeparators(ring.Separators, cX, cY, 24, 100, RadialMenuSettings.InnerSlotCount);
+        BuildSeparators(ring.Separators, cX, cY, 36, 100, RadialMenuSettings.InnerSlotCount);
 
         const double radius = 72;
         for (var index = 0; index < 8; index++)
@@ -1228,7 +1228,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 y,
                 childAngleDegrees,
                 RadialMenuRing.Child,
-                CreateSectorGeometry(cX, cY, 24, 100, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
+                CreateSectorGeometry(cX, cY, 36, 100, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
         }
 
         SubRings.Add(ring);
@@ -1259,7 +1259,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         if (_editModeLocked)
         {
-            ring.IsCenterHovered = (distance <= 24);
+            ring.IsCenterHovered = (distance <= 36);
         }
         else
         {
@@ -1393,7 +1393,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 var dx = clickPoint.X - ring.CenterX;
                 var dy = clickPoint.Y - ring.CenterY;
                 var dist = Math.Sqrt(dx * dx + dy * dy);
-                if (dist <= 24)
+                if (dist <= 36)
                 {
                     ring.IsLocked = !ring.IsLocked;
                     e.Handled = true;
@@ -2888,7 +2888,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var dx = localPoint.X - ring.CenterX;
             var dy = localPoint.Y - ring.CenterY;
             var distance = Math.Sqrt(dx * dx + dy * dy);
-            if (distance <= 100 && distance > 24)
+            if (distance <= 100 && distance > 36)
             {
                 var angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
                 var index = ((int)Math.Round((angle + 90) / 45.0) % 8 + 8) % 8;
@@ -2903,7 +2903,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var distanceMain = Math.Sqrt(dxMain * dxMain + dyMain * dyMain);
         var deadZone = _cachedDeadZonePixels;
 
-        if (distanceMain <= 160 && distanceMain > deadZone)
+        if (distanceMain <= 165 && distanceMain > deadZone)
         {
             var angle = Math.Atan2(dyMain, dxMain) * 180.0 / Math.PI;
             if (distanceMain > 100)

@@ -6815,7 +6815,28 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         if (sender is FrameworkElement { DataContext: MouseGestureQuickBindItem item })
         {
+            if (sender is System.Windows.Controls.TextBox textBox)
+            {
+                textBox.SelectAll();
+            }
+
             RefreshMouseGestureExtensionCandidates(item, item.ExtensionSearchText);
+            item.IsExtensionPopupOpen = true;
+        }
+    }
+
+    private void MouseGestureExtensionDropdownToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is MouseGestureQuickBindItem item)
+        {
+            e.Handled = true;
+            RefreshMouseGestureExtensionCandidates(item, string.Empty);
+            item.IsExtensionPopupOpen = true;
+            if (fe.Parent is Grid grid && grid.Children.OfType<System.Windows.Controls.TextBox>().FirstOrDefault() is { } textBox)
+            {
+                textBox.Focus();
+                textBox.SelectAll();
+            }
         }
     }
 
@@ -6834,20 +6855,25 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         RefreshMouseGestureExtensionCandidates(item, item.ExtensionSearchText);
+        item.IsExtensionPopupOpen = true;
     }
 
     private void MouseGestureExtensionSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
+        if (sender is not DependencyObject source ||
+            source is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
             e.Key != Key.Down ||
             item.FilteredExtensionOptions.Count == 0)
         {
             return;
         }
 
-        if (FindDescendantListBox(this, item.FilteredExtensionOptions) is { } listBox)
+        var listBox = FindYarnSelectExtensionListBox(source);
+        if (listBox != null)
         {
             listBox.SelectedIndex = 0;
+            var itemContainer = listBox.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
+            itemContainer?.Focus();
             listBox.Focus();
             e.Handled = true;
         }
@@ -6907,7 +6933,28 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         if (sender is FrameworkElement { DataContext: MouseGestureQuickBindItem item })
         {
+            if (sender is System.Windows.Controls.TextBox textBox)
+            {
+                textBox.SelectAll();
+            }
+
             RefreshMouseGestureAppCandidates(item, item.AppSearchText);
+            item.IsAppPopupOpen = true;
+        }
+    }
+
+    private void MouseGestureAppDropdownToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is MouseGestureQuickBindItem item)
+        {
+            e.Handled = true;
+            RefreshMouseGestureAppCandidates(item, string.Empty);
+            item.IsAppPopupOpen = true;
+            if (fe.Parent is Grid grid && grid.Children.OfType<System.Windows.Controls.TextBox>().FirstOrDefault() is { } textBox)
+            {
+                textBox.Focus();
+                textBox.SelectAll();
+            }
         }
     }
 
@@ -6926,20 +6973,25 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         RefreshMouseGestureAppCandidates(item, item.AppSearchText);
+        item.IsAppPopupOpen = true;
     }
 
     private void MouseGestureAppSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
+        if (sender is not DependencyObject source ||
+            source is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
             e.Key != Key.Down ||
             item.FilteredAppOptions.Count == 0)
         {
             return;
         }
 
-        if (FindDescendantListBox(this, item.FilteredAppOptions) is { } listBox)
+        var listBox = FindYarnSelectExtensionListBox(source);
+        if (listBox != null)
         {
             listBox.SelectedIndex = 0;
+            var itemContainer = listBox.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
+            itemContainer?.Focus();
             listBox.Focus();
             e.Handled = true;
         }
@@ -8241,9 +8293,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         foreach (var rule in _settings.YarnSelect.Rules.Select(YarnSelectSettings.NormalizeRule))
         {
             var item = new YarnSelectRuleItem(rule);
+            item.OnChangedAction = RefreshYarnSelectPreviewMap;
             ApplyYarnSelectExtensionSelection(item);
             YarnSelectRules.Add(item);
         }
+        RefreshYarnSelectPreviewMap();
 
         OnPropertyChanged(nameof(EnableYarnSelect));
         OnPropertyChanged(nameof(YarnSelectCopy));
@@ -9674,6 +9728,96 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                ?? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF3B82F6")!;
     }
 
+    public Dictionary<string, YarnSelectPreviewKeyItem> YarnSelectPreviewKeyMap { get; } = InitYarnSelectPreviewKeyMap();
+
+    private static Dictionary<string, YarnSelectPreviewKeyItem> InitYarnSelectPreviewKeyMap()
+    {
+        var keys = new (string key, string name)[]
+        {
+            ("Right", "右键"), ("X1", "侧键1"), ("X2", "侧键2"),
+            ("1", "1"), ("2", "2"), ("3", "3"), ("4", "4"), ("5", "5"),
+            ("6", "6"), ("7", "7"), ("8", "8"), ("9", "9"), ("0", "0"),
+            ("Q", "Q"), ("W", "W"), ("E", "E"), ("R", "R"), ("T", "T"),
+            ("Y", "Y"), ("U", "U"), ("I", "I"), ("O", "O"), ("P", "P"),
+            ("A", "A"), ("S", "S"), ("D", "D"), ("F", "F"), ("G", "G"),
+            ("H", "H"), ("J", "J"), ("K", "K"), ("L", "L"),
+            ("Z", "Z"), ("X", "X"), ("C", "C"), ("V", "V"), ("B", "B"),
+            ("N", "N"), ("M", "M")
+        };
+
+        var dict = new Dictionary<string, YarnSelectPreviewKeyItem>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, name) in keys)
+        {
+            dict[key] = new YarnSelectPreviewKeyItem
+            {
+                KeyCode = key,
+                DisplayName = name,
+                RuleSummary = $"【触发键: {name}】\n状态: 未配置\n💡 点击可在右侧/下方快速创建以此键触发的新规则"
+            };
+        }
+
+        return dict;
+    }
+
+    public void RefreshYarnSelectPreviewMap()
+    {
+        var ruleDict = YarnSelectRules.ToDictionary(
+            rule => YarnSelectSettings.NormalizeTriggerKey(rule.TriggerKey),
+            rule => rule,
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (key, previewItem) in YarnSelectPreviewKeyMap)
+        {
+            if (ruleDict.TryGetValue(key, out var rule))
+            {
+                previewItem.IsConfigured = true;
+                previewItem.RuleEnabled = rule.Enabled;
+                var actionLabel = GetYarnSelectActionLabel(rule.ActionType);
+                var descStr = string.IsNullOrWhiteSpace(rule.Description) ? "" : $" ({rule.Description})";
+                previewItem.RuleSummary = $"【触发键: {previewItem.DisplayName}】\n状态: {(rule.Enabled ? "🟢 已启用" : "⚪ 已禁用")}\n动作: {actionLabel}{descStr}\n💡 点击可自动高亮定位此规则";
+            }
+            else
+            {
+                previewItem.IsConfigured = false;
+                previewItem.RuleEnabled = false;
+                previewItem.RuleSummary = $"【触发键: {previewItem.DisplayName}】\n状态: 未配置\n💡 点击可在右侧/下方快速创建以此键触发的新规则";
+            }
+        }
+    }
+
+    private void YarnSelectPreviewKey_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string rawKey })
+        {
+            var normalized = YarnSelectSettings.NormalizeTriggerKey(rawKey);
+            var existing = YarnSelectRules.FirstOrDefault(rule =>
+                YarnSelectSettings.NormalizeTriggerKey(rule.TriggerKey).Equals(normalized, StringComparison.OrdinalIgnoreCase));
+
+            if (existing == null)
+            {
+                var newRule = new YarnSelectRuleItem(new YarnSelectRuleSettings
+                {
+                    Enabled = true,
+                    TriggerKey = normalized,
+                    ActionType = YarnSelectActionTypes.Copy,
+                    Description = $"{normalized} 触发动作"
+                });
+                newRule.OnChangedAction = RefreshYarnSelectPreviewMap;
+                ApplyYarnSelectExtensionSelection(newRule);
+                YarnSelectRules.Add(newRule);
+                SaveYarnSelectSettings();
+                existing = newRule;
+            }
+
+            foreach (var rule in YarnSelectRules)
+            {
+                rule.IsHighlighted = (rule == existing);
+            }
+
+            RefreshYarnSelectPreviewMap();
+        }
+    }
+
     private void AddYarnSelectRuleButton_Click(object sender, RoutedEventArgs e)
     {
         var item = new YarnSelectRuleItem(new YarnSelectRuleSettings
@@ -9682,9 +9826,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             ActionType = YarnSelectActionTypes.RunExtension,
             Description = "新燕选规则"
         });
+        item.OnChangedAction = RefreshYarnSelectPreviewMap;
         ApplyYarnSelectExtensionSelection(item);
         YarnSelectRules.Add(item);
         OnPropertyChanged(nameof(YarnSelectSummary));
+        RefreshYarnSelectPreviewMap();
     }
 
     private void DeleteYarnSelectRuleButton_Click(object sender, RoutedEventArgs e)
@@ -9696,6 +9842,80 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         YarnSelectRules.Remove(item);
         SaveYarnSelectSettings();
+        RefreshYarnSelectPreviewMap();
+    }
+
+    private void YarnSelectKeyPickerButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: YarnSelectRuleItem item })
+        {
+            foreach (var rule in YarnSelectRules)
+            {
+                if (rule != item)
+                {
+                    rule.IsKeyPickerOpen = false;
+                }
+            }
+
+            item.IsKeyPickerOpen = !item.IsKeyPickerOpen;
+        }
+    }
+
+    private void YarnSelectKeyOptionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: YarnSelectRuleItem item, Tag: string key })
+        {
+            item.SelectTriggerKey(key);
+            SaveYarnSelectSettings();
+        }
+    }
+
+    private void CloseYarnSelectKeyPicker_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: YarnSelectRuleItem item })
+        {
+            item.IsKeyPickerOpen = false;
+        }
+    }
+
+    private void KeyPickerPopup_Opened(object sender, EventArgs e)
+    {
+        if (sender is Popup { Child: FrameworkElement element })
+        {
+            element.Focus();
+        }
+    }
+
+    private void YarnSelectKeyPickerPopup_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: YarnSelectRuleItem item })
+        {
+            string? key = null;
+            if (e.Key >= System.Windows.Input.Key.A && e.Key <= System.Windows.Input.Key.Z)
+            {
+                key = e.Key.ToString();
+            }
+            else if (e.Key >= System.Windows.Input.Key.D0 && e.Key <= System.Windows.Input.Key.D9)
+            {
+                key = ((char)('0' + (e.Key - System.Windows.Input.Key.D0))).ToString();
+            }
+            else if (e.Key >= System.Windows.Input.Key.NumPad0 && e.Key <= System.Windows.Input.Key.NumPad9)
+            {
+                key = ((char)('0' + (e.Key - System.Windows.Input.Key.NumPad0))).ToString();
+            }
+
+            if (!string.IsNullOrEmpty(key))
+            {
+                item.SelectTriggerKey(key);
+                SaveYarnSelectSettings();
+                e.Handled = true;
+            }
+            else if (e.Key == System.Windows.Input.Key.Escape)
+            {
+                item.IsKeyPickerOpen = false;
+                e.Handled = true;
+            }
+        }
     }
 
     private void ResetYarnSelectRulesButton_Click(object sender, RoutedEventArgs e)
@@ -9736,26 +9956,45 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void RefreshYarnSelectExtensionCandidates(YarnSelectRuleItem item, string keyword)
     {
         keyword = (keyword ?? string.Empty).Trim();
-        if (keyword.Length == 0)
-        {
-            item.FilteredExtensionOptions = [];
-            return;
-        }
-
-        item.FilteredExtensionOptions = new ObservableCollection<YarnSelectExtensionOption>(
-            YarnSelectExtensionOptions
+        var candidates = string.IsNullOrEmpty(keyword)
+            ? YarnSelectExtensionOptions.Take(12)
+            : YarnSelectExtensionOptions
                 .Where(option =>
                     option.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
                     option.ExtensionId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
                     option.Detail.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-                .Take(8));
+                .Take(12);
+
+        item.FilteredExtensionOptions = new ObservableCollection<YarnSelectExtensionOption>(candidates);
+    }
+
+    private void YarnSelectExtensionDropdownToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is YarnSelectRuleItem item)
+        {
+            e.Handled = true;
+            RefreshYarnSelectExtensionCandidates(item, string.Empty);
+            item.IsExtensionPickerOpen = true;
+
+            if (fe.Parent is Grid grid && grid.Children.OfType<System.Windows.Controls.TextBox>().FirstOrDefault() is { } textBox)
+            {
+                textBox.Focus();
+                textBox.SelectAll();
+            }
+        }
     }
 
     private void YarnSelectExtensionSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: YarnSelectRuleItem item })
         {
+            if (sender is System.Windows.Controls.TextBox textBox)
+            {
+                textBox.SelectAll();
+            }
+
             RefreshYarnSelectExtensionCandidates(item, item.ExtensionSearchText ?? string.Empty);
+            item.IsExtensionPickerOpen = true;
         }
     }
 
@@ -9772,24 +10011,47 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
 
             RefreshYarnSelectExtensionCandidates(item, item.ExtensionSearchText ?? string.Empty);
+            item.IsExtensionPickerOpen = true;
         }
     }
 
     private void YarnSelectExtensionSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: YarnSelectRuleItem item } ||
+        if (sender is not DependencyObject source ||
+            source is not FrameworkElement { DataContext: YarnSelectRuleItem item } ||
             e.Key != Key.Down ||
             item.FilteredExtensionOptions.Count == 0)
         {
             return;
         }
 
-        if (FindDescendantListBox(this, FilteredRadialMenuCommandOptions) is { } listBox)
+        var listBox = FindYarnSelectExtensionListBox(source);
+        if (listBox != null)
         {
             listBox.SelectedIndex = 0;
+            var itemContainer = listBox.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
+            itemContainer?.Focus();
             listBox.Focus();
             e.Handled = true;
         }
+    }
+
+    private static System.Windows.Controls.ListBox? FindYarnSelectExtensionListBox(DependencyObject source)
+    {
+        var parent = VisualTreeHelper.GetParent(source);
+        while (parent != null)
+        {
+            if (parent is Grid grid)
+            {
+                var popup = grid.Children.OfType<System.Windows.Controls.Primitives.Popup>().FirstOrDefault();
+                if (popup?.Child is Border border && border.Child is System.Windows.Controls.ListBox listBox)
+                {
+                    return listBox;
+                }
+            }
+            parent = VisualTreeHelper.GetParent(parent);
+        }
+        return null;
     }
 
     private void YarnSelectExtensionListBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -9806,7 +10068,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
         else if (e.Key == Key.Escape && listBox.DataContext is YarnSelectRuleItem item)
         {
-            item.FilteredExtensionOptions = [];
+            item.IsExtensionPickerOpen = false;
             e.Handled = true;
         }
     }
@@ -9829,7 +10091,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         item.ExtensionId = option.ExtensionId;
         item.ExtensionSearchText = option.Title;
-        item.FilteredExtensionOptions = [];
+        item.IsExtensionPickerOpen = false;
     }
 
     private static System.Windows.Controls.ListBox? FindSiblingListBox(DependencyObject? source)
@@ -10905,6 +11167,104 @@ public sealed record RadialMenuPageEditorItem(string Id, string Name, ImageSourc
     public System.Windows.Thickness IndentMargin => new(Level * 14, 0, 0, 0);
 }
 
+public sealed class YarnSelectPreviewKeyItem : INotifyPropertyChanged
+{
+    private bool _isConfigured;
+    private bool _ruleEnabled;
+    private string _ruleSummary = string.Empty;
+
+    public string KeyCode { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+
+    public bool IsConfigured
+    {
+        get => _isConfigured;
+        set
+        {
+            if (_isConfigured == value) return;
+            _isConfigured = value;
+            NotifyStyleProperties();
+        }
+    }
+
+    public bool RuleEnabled
+    {
+        get => _ruleEnabled;
+        set
+        {
+            if (_ruleEnabled == value) return;
+            _ruleEnabled = value;
+            NotifyStyleProperties();
+        }
+    }
+
+    public string RuleSummary
+    {
+        get => _ruleSummary;
+        set
+        {
+            if (_ruleSummary == value) return;
+            _ruleSummary = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public System.Windows.Media.Brush BackgroundBrush
+    {
+        get
+        {
+            if (!IsConfigured)
+            {
+                return (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["BrushSecondaryBtnBG"];
+            }
+            return RuleEnabled
+                ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#15803D"))
+                : new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#374151"));
+        }
+    }
+
+    public System.Windows.Media.Brush BorderBrush
+    {
+        get
+        {
+            if (!IsConfigured)
+            {
+                return (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["BrushBorder"];
+            }
+            return RuleEnabled
+                ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#22C55E"))
+                : new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#6B7280"));
+        }
+    }
+
+    public System.Windows.Media.Brush TextBrush
+    {
+        get
+        {
+            if (IsConfigured)
+            {
+                return System.Windows.Media.Brushes.White;
+            }
+            return (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["BrushTextMain"];
+        }
+    }
+
+    public bool HasGreenDot => IsConfigured && RuleEnabled;
+
+    private void NotifyStyleProperties()
+    {
+        OnPropertyChanged(nameof(IsConfigured));
+        OnPropertyChanged(nameof(RuleEnabled));
+        OnPropertyChanged(nameof(BackgroundBrush));
+        OnPropertyChanged(nameof(BorderBrush));
+        OnPropertyChanged(nameof(TextBrush));
+        OnPropertyChanged(nameof(HasGreenDot));
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
 public sealed class YarnSelectRuleItem : INotifyPropertyChanged
 {
     private bool _enabled;
@@ -10913,7 +11273,11 @@ public sealed class YarnSelectRuleItem : INotifyPropertyChanged
     private string _extensionId;
     private string _extensionSearchText;
     private string _description;
+    private bool _isKeyPickerOpen;
+    private bool _isHighlighted;
     private ObservableCollection<YarnSelectExtensionOption> _filteredExtensionOptions = [];
+
+    public Action? OnChangedAction { get; set; }
 
     public YarnSelectRuleItem(YarnSelectRuleSettings rule)
     {
@@ -10923,6 +11287,52 @@ public sealed class YarnSelectRuleItem : INotifyPropertyChanged
         _extensionId = rule.ExtensionId;
         _extensionSearchText = string.Empty;
         _description = rule.Description;
+    }
+
+    public bool IsHighlighted
+    {
+        get => _isHighlighted;
+        set
+        {
+            if (value == _isHighlighted)
+            {
+                return;
+            }
+
+            _isHighlighted = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ItemBorderBrush));
+            OnPropertyChanged(nameof(ItemBackgroundBrush));
+        }
+    }
+
+    public System.Windows.Media.Brush ItemBorderBrush => IsHighlighted
+        ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#22C55E"))
+        : (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["BrushBorder"];
+
+    public System.Windows.Media.Brush ItemBackgroundBrush => IsHighlighted
+        ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#1E293B"))
+        : System.Windows.Media.Brushes.Transparent;
+
+    public bool IsKeyPickerOpen
+    {
+        get => _isKeyPickerOpen;
+        set
+        {
+            if (value == _isKeyPickerOpen)
+            {
+                return;
+            }
+
+            _isKeyPickerOpen = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public void SelectTriggerKey(string key)
+    {
+        TriggerKey = key;
+        IsKeyPickerOpen = false;
     }
 
     public bool Enabled
@@ -10937,6 +11347,7 @@ public sealed class YarnSelectRuleItem : INotifyPropertyChanged
 
             _enabled = value;
             OnPropertyChanged();
+            OnChangedAction?.Invoke();
         }
     }
 
@@ -10953,8 +11364,11 @@ public sealed class YarnSelectRuleItem : INotifyPropertyChanged
 
             _triggerKey = value;
             OnPropertyChanged();
+            OnChangedAction?.Invoke();
         }
     }
+
+    public bool IsRunExtension => YarnSelectActionTypes.Normalize(ActionType) == YarnSelectActionTypes.RunExtension;
 
     public string ActionType
     {
@@ -10969,6 +11383,8 @@ public sealed class YarnSelectRuleItem : INotifyPropertyChanged
 
             _actionType = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsRunExtension));
+            OnChangedAction?.Invoke();
         }
     }
 
@@ -11004,6 +11420,23 @@ public sealed class YarnSelectRuleItem : INotifyPropertyChanged
         }
     }
 
+    private bool _isExtensionPickerOpen;
+
+    public bool IsExtensionPickerOpen
+    {
+        get => _isExtensionPickerOpen;
+        set
+        {
+            if (value == _isExtensionPickerOpen)
+            {
+                return;
+            }
+
+            _isExtensionPickerOpen = value;
+            OnPropertyChanged();
+        }
+    }
+
     public ObservableCollection<YarnSelectExtensionOption> FilteredExtensionOptions
     {
         get => _filteredExtensionOptions;
@@ -11017,6 +11450,7 @@ public sealed class YarnSelectRuleItem : INotifyPropertyChanged
             _filteredExtensionOptions = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(FilteredExtensionListVisibility));
+            IsExtensionPickerOpen = value.Count > 0;
         }
     }
 

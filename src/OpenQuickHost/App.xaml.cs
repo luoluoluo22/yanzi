@@ -49,7 +49,8 @@ public partial class App : WpfApplication
     private SingleInstanceService? _singleInstanceService;
     private bool _listenerServicesPaused;
     private bool _isAutoPausedByBlacklist;
-    private System.Windows.Threading.DispatcherTimer? _foregroundMonitorTimer;
+    private IntPtr _foregroundHook = IntPtr.Zero;
+    private WinEventDelegate? _winEventDelegate;
     private bool _isAppFullyInitialized;
     private string _lastTrayForegroundProcess = string.Empty;
 
@@ -464,6 +465,12 @@ public partial class App : WpfApplication
         AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
         TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
         SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
+
+        if (_foregroundHook != IntPtr.Zero)
+        {
+            UnhookWinEvent(_foregroundHook);
+            _foregroundHook = IntPtr.Zero;
+        }
 
         try
         {
@@ -940,45 +947,73 @@ public partial class App : WpfApplication
         }
     }
 
+    private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+
+    private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+    private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+    public void CheckForegroundBlacklist()
+    {
+        if (_listenerServicesPaused)
+            return; // User manually paused, no need to auto-pause/resume logic
+
+        try
+        {
+            var currentProcess = YarnSelectService.GetForegroundProcessName();
+            if (string.IsNullOrWhiteSpace(currentProcess))
+                return;
+
+            var settings = AppSettingsStore.Load();
+            var blacklist = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
+
+            bool isInBlacklist = blacklist.Contains(currentProcess, StringComparer.OrdinalIgnoreCase);
+
+            if (isInBlacklist && !_isAutoPausedByBlacklist)
+            {
+                _isAutoPausedByBlacklist = true;
+                ApplyServicePauseState();
+            }
+            else if (!isInBlacklist && _isAutoPausedByBlacklist)
+            {
+                _isAutoPausedByBlacklist = false;
+                ApplyServicePauseState();
+            }
+        }
+        catch
+        {
+            // Ignore errors
+        }
+    }
+
     private void StartForegroundMonitorTimer()
     {
-        _foregroundMonitorTimer = new System.Windows.Threading.DispatcherTimer
+        // 1. 启动时立即检测一次当前前台进程
+        CheckForegroundBlacklist();
+
+        // 2. 注册 Windows 系统级 EVENT_SYSTEM_FOREGROUND 事件钩子（实现真正的事件驱动，0ms 延迟，0 CPU 轮询损耗）
+        _winEventDelegate = (hHook, eventType, hwnd, idObject, idChild, dwThread, dwTime) =>
         {
-            Interval = TimeSpan.FromMilliseconds(500)
-        };
-        _foregroundMonitorTimer.Tick += (s, e) =>
-        {
-            if (_listenerServicesPaused)
-                return; // User manually paused, no need to auto-pause/resume logic
-
-            try
+            if (eventType == EVENT_SYSTEM_FOREGROUND)
             {
-                var currentProcess = YarnSelectService.GetForegroundProcessName();
-                if (string.IsNullOrWhiteSpace(currentProcess))
-                    return;
-
-                var settings = AppSettingsStore.Load();
-                var blacklist = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
-
-                bool isInBlacklist = blacklist.Contains(currentProcess, StringComparer.OrdinalIgnoreCase);
-
-                if (isInBlacklist && !_isAutoPausedByBlacklist)
-                {
-                    _isAutoPausedByBlacklist = true;
-                    ApplyServicePauseState();
-                }
-                else if (!isInBlacklist && _isAutoPausedByBlacklist)
-                {
-                    _isAutoPausedByBlacklist = false;
-                    ApplyServicePauseState();
-                }
-            }
-            catch
-            {
-                // Ignore errors
+                Dispatcher.BeginInvoke(new Action(CheckForegroundBlacklist));
             }
         };
-        _foregroundMonitorTimer.Start();
+
+        _foregroundHook = SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero,
+            _winEventDelegate,
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
     }
 
     private void UpdateTrayMenuState(System.Windows.Controls.ContextMenu menu)

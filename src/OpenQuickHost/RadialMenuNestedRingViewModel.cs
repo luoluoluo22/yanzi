@@ -87,8 +87,8 @@ public class RadialMenuNestedRingViewModel : INotifyPropertyChanged
 
     public double EllipseX => CenterX - 100;
     public double EllipseY => CenterY - 100;
-    public double CenterEllipseX => CenterX - 24;
-    public double CenterEllipseY => CenterY - 24;
+    public double CenterEllipseX => CenterX - 36;
+    public double CenterEllipseY => CenterY - 36;
     public double TitleX => CenterX - 75;
     public double TitleY => CenterY - 10;
 

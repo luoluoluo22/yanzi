@@ -40,6 +40,103 @@
             <Setter Property="BorderThickness" Value="0" />
         </Style>
 
+        <Style x:Key="KeyCapBtn" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <TextBlock Text="{TemplateBinding Content}"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       FontSize="{TemplateBinding FontSize}"
+                                       FontWeight="{TemplateBinding FontWeight}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource BrushAccent}"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource BrushAccent}"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PreviewKeyCapStyle" TargetType="Button">
+            <Setter Property="Background" Value="{Binding BackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{Binding BorderBrush}"/>
+            <Setter Property="Foreground" Value="{Binding TextBrush}"/>
+            <Setter Property="ToolTip" Value="{Binding RuleSummary}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5">
+                            <Grid>
+                                <TextBlock x:Name="normalText"
+                                           Text="{TemplateBinding Content}"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           FontSize="{TemplateBinding FontSize}"
+                                           FontWeight="{TemplateBinding FontWeight}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock x:Name="addIcon"
+                                           Text="+"
+                                           Foreground="{DynamicResource BrushAccent}"
+                                           FontSize="15"
+                                           FontWeight="Bold"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Visibility="Collapsed"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsConfigured}" Value="False"/>
+                                    <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="normalText" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="addIcon" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource BrushAccent}"/>
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource BrushSurface}"/>
+                            </MultiDataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="SidebarListBoxItemStyle" TargetType="ListBoxItem">
             <Setter Property="Margin" Value="10,2" />
             <Setter Property="Padding" Value="0" />
@@ -3417,7 +3514,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <Grid Margin="0,0,8,0">
                                                         <Border x:Name="ExtensionSearchAnchor"
-                                                                Height="30"
+                                                                Height="32"
                                                                 Background="{DynamicResource BrushBG}"
                                                                 BorderBrush="{DynamicResource BrushBorder}"
                                                                 BorderThickness="1"
@@ -3426,6 +3523,7 @@
                                                                 <Grid.ColumnDefinitions>
                                                                     <ColumnDefinition Width="30"/>
                                                                     <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="24"/>
                                                                 </Grid.ColumnDefinitions>
                                                                 <Viewbox Width="14" Height="14" VerticalAlignment="Center" HorizontalAlignment="Center">
                                                                     <Path Data="{local:IconGeometry search}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform"/>
@@ -3444,7 +3542,7 @@
                                                                          PreviewKeyDown="MouseGestureExtensionSearchBox_PreviewKeyDown"/>
                                                                 <TextBlock Grid.Column="1"
                                                                            Text="搜索扩展..."
-                                                                           Foreground="#FF666666"
+                                                                           Foreground="#FF555555"
                                                                            VerticalAlignment="Center"
                                                                            IsHitTestVisible="False"
                                                                            Margin="2,0,0,0">
@@ -3459,6 +3557,18 @@
                                                                         </Style>
                                                                     </TextBlock.Style>
                                                                 </TextBlock>
+                                                                <Button Grid.Column="2"
+                                                                        Click="MouseGestureExtensionDropdownToggle_Click"
+                                                                        Background="Transparent"
+                                                                        BorderThickness="0"
+                                                                        Padding="0"
+                                                                        Focusable="False"
+                                                                        HorizontalAlignment="Stretch"
+                                                                        VerticalAlignment="Stretch"
+                                                                        Cursor="Hand"
+                                                                        ToolTip="展开扩展列表">
+                                                                    <Path Data="M 0 0 L 4 4 L 8 0 Z" Fill="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                </Button>
                                                             </Grid>
                                                         </Border>
                                                         <Popup PlacementTarget="{Binding ElementName=ExtensionSearchAnchor}"
@@ -3492,7 +3602,7 @@
                                                             </Border>
                                                         </Popup>
                                                     </Grid>
-                                                    <Button Grid.Column="1" Content="绑定扩展" Style="{StaticResource SecondaryBtn}" Height="30" Padding="10,0" Click="BindCommonMouseGestureButton_Click"/>
+                                                    <Button Grid.Column="1" Content="绑定扩展" Style="{StaticResource SecondaryBtn}" Height="32" Padding="10,0" Click="BindCommonMouseGestureButton_Click"/>
                                                 </Grid>
                                                 <Grid Margin="0,8,0,0">
                                                     <Grid.ColumnDefinitions>
@@ -3501,7 +3611,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <Grid Margin="0,0,8,0">
                                                         <Border x:Name="AppSearchAnchor"
-                                                                Height="30"
+                                                                Height="32"
                                                                 Background="{DynamicResource BrushBG}"
                                                                 BorderBrush="{DynamicResource BrushBorder}"
                                                                 BorderThickness="1"
@@ -3510,6 +3620,7 @@
                                                                 <Grid.ColumnDefinitions>
                                                                     <ColumnDefinition Width="30"/>
                                                                     <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="24"/>
                                                                 </Grid.ColumnDefinitions>
                                                                 <Viewbox Width="14" Height="14" VerticalAlignment="Center" HorizontalAlignment="Center">
                                                                     <Path Data="{local:IconGeometry search}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform"/>
@@ -3528,7 +3639,7 @@
                                                                          PreviewKeyDown="MouseGestureAppSearchBox_PreviewKeyDown"/>
                                                                 <TextBlock Grid.Column="1"
                                                                            Text="搜索应用..."
-                                                                           Foreground="#FF666666"
+                                                                           Foreground="#FF555555"
                                                                            VerticalAlignment="Center"
                                                                            IsHitTestVisible="False"
                                                                            Margin="2,0,0,0">
@@ -3543,6 +3654,18 @@
                                                                         </Style>
                                                                     </TextBlock.Style>
                                                                 </TextBlock>
+                                                                <Button Grid.Column="2"
+                                                                        Click="MouseGestureAppDropdownToggle_Click"
+                                                                        Background="Transparent"
+                                                                        BorderThickness="0"
+                                                                        Padding="0"
+                                                                        Focusable="False"
+                                                                        HorizontalAlignment="Stretch"
+                                                                        VerticalAlignment="Stretch"
+                                                                        Cursor="Hand"
+                                                                        ToolTip="展开应用列表">
+                                                                    <Path Data="M 0 0 L 4 4 L 8 0 Z" Fill="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                </Button>
                                                             </Grid>
                                                         </Border>
                                                         <Popup PlacementTarget="{Binding ElementName=AppSearchAnchor}"
@@ -4126,6 +4249,106 @@
                                     </Grid>
 
                                     <Rectangle Height="1" Fill="{DynamicResource BrushTextMain}" Margin="0,0,0,12"/>
+
+                                    <!-- 键鼠动作全景地图与预览区 -->
+                                    <Border Background="{DynamicResource BrushSurface}"
+                                            BorderBrush="{DynamicResource BrushBorder}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="14,12"
+                                            Margin="0,0,0,16">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,10">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Ellipse Width="8" Height="8" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="键鼠动作全景地图" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="（🟢 绿色高亮表已用键；悬浮查动作；点击下方定位或创建规则）" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <!-- 左侧：键盘触发全景图 -->
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="14"/>
+                                                    <!-- 右侧：鼠标触发键卡片 -->
+                                                    <ColumnDefinition Width="200"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- 键盘全景图 (左侧) -->
+                                                <Border Grid.Column="0" Background="{DynamicResource BrushBG}" CornerRadius="6" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="10">
+                                                    <StackPanel>
+                                                        <TextBlock Text="⌨ 键盘触发全景图 (0-9 &amp; A-Z)" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+
+                                                        <!-- 1-0 数字行 -->
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
+                                                            <Button Content="1" Tag="1" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[1]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="2" Tag="2" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[2]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="3" Tag="3" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[3]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="4" Tag="4" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[4]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="5" Tag="5" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[5]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="6" Tag="6" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[6]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="7" Tag="7" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[7]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="8" Tag="8" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[8]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="9" Tag="9" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[9]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="0" Tag="0" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[0]}" Width="28" Height="28" Margin="1.5"/>
+                                                        </StackPanel>
+
+                                                        <!-- QWERTY 行 -->
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
+                                                            <Button Content="Q" Tag="Q" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[Q]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="W" Tag="W" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[W]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="E" Tag="E" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[E]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="R" Tag="R" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[R]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="T" Tag="T" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[T]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="Y" Tag="Y" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[Y]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="U" Tag="U" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[U]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="I" Tag="I" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[I]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="O" Tag="O" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[O]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="P" Tag="P" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[P]}" Width="28" Height="28" Margin="1.5"/>
+                                                        </StackPanel>
+
+                                                        <!-- ASDFGH 行 -->
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
+                                                            <Button Content="A" Tag="A" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[A]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="S" Tag="S" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[S]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="D" Tag="D" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[D]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="F" Tag="F" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[F]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="G" Tag="G" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[G]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="H" Tag="H" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[H]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="J" Tag="J" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[J]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="K" Tag="K" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[K]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="L" Tag="L" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[L]}" Width="28" Height="28" Margin="1.5"/>
+                                                        </StackPanel>
+
+                                                        <!-- ZXCVBNM 行 -->
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <Button Content="Z" Tag="Z" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[Z]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="X" Tag="X" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[X]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="C" Tag="C" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[C]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="V" Tag="V" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[V]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="B" Tag="B" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[B]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="N" Tag="N" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[N]}" Width="28" Height="28" Margin="1.5"/>
+                                                            <Button Content="M" Tag="M" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[M]}" Width="28" Height="28" Margin="1.5"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- 鼠标触发键 (右侧) -->
+                                                <Border Grid.Column="2" Background="{DynamicResource BrushBG}" CornerRadius="6" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="10">
+                                                    <StackPanel>
+                                                        <TextBlock Text="🖱 鼠标触发键" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                                        <UniformGrid Columns="1">
+                                                            <Button Content="右键 (Right)" Tag="Right" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[Right]}" Height="28" Margin="0,0,0,6"/>
+                                                            <Button Content="侧键1 (X1)" Tag="X1" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[X1]}" Height="28" Margin="0,0,0,6"/>
+                                                            <Button Content="侧键2 (X2)" Tag="X2" Click="YarnSelectPreviewKey_Click" Style="{StaticResource PreviewKeyCapStyle}" DataContext="{Binding YarnSelectPreviewKeyMap[X2]}" Height="28"/>
+                                                        </UniformGrid>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
                                     <Grid Margin="0,0,0,10">
                                         <TextBlock Text="规则列表" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
@@ -4136,90 +4359,304 @@
                                     <ItemsControl ItemsSource="{Binding YarnSelectRules}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0" Padding="0,10">
+                                                <Border Background="{Binding ItemBackgroundBrush}" BorderBrush="{Binding ItemBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8,8" Margin="0,0,0,6">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="52"/>
-                                                            <ColumnDefinition Width="86"/>
+                                                            <ColumnDefinition Width="42"/>
+                                                            <ColumnDefinition Width="118"/>
                                                             <ColumnDefinition Width="130"/>
                                                             <ColumnDefinition Width="*"/>
                                                             <ColumnDefinition Width="1.2*"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
                                                         <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center"/>
-                                                        <TextBox Grid.Column="1"
-                                                                 Text="{Binding TriggerKey, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                                                 Height="30"
-                                                                 Margin="0,0,8,0"
-                                                                 ToolTip="填写单个字母/数字，或 Right、X1、X2"/>
+                                                        <Grid Grid.Column="1" Margin="0,0,8,0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="28"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBox Grid.Column="0"
+                                                                     Text="{Binding TriggerKey, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                     Height="32"
+                                                                     Padding="6,2"
+                                                                     VerticalContentAlignment="Center"
+                                                                     ToolTip="填写单个字母/数字，或 Right、X1、X2"/>
+                                                            <Button Grid.Column="1"
+                                                                    x:Name="KeyPickerBtn"
+                                                                    Click="YarnSelectKeyPickerButton_Click"
+                                                                    Height="32"
+                                                                    Margin="2,0,0,0"
+                                                                    Style="{StaticResource SecondaryBtn}"
+                                                                    Padding="0"
+                                                                    ToolTip="可视化选择触发按键/鼠标键">
+                                                                <Path Data="{local:IconGeometry keyboard-outline}"
+                                                                      Fill="{DynamicResource BrushTextMain}"
+                                                                      Width="14"
+                                                                      Height="14"
+                                                                      Stretch="Uniform"/>
+                                                            </Button>
+                                                            <Popup x:Name="KeyPickerPopup"
+                                                                   PlacementTarget="{Binding ElementName=KeyPickerBtn}"
+                                                                   Placement="Bottom"
+                                                                   IsOpen="{Binding IsKeyPickerOpen, Mode=TwoWay}"
+                                                                   StaysOpen="False"
+                                                                   AllowsTransparency="True"
+                                                                   PopupAnimation="Fade"
+                                                                   Opened="KeyPickerPopup_Opened">
+                                                                <Border Background="{DynamicResource BrushBG}"
+                                                                        BorderBrush="{DynamicResource BrushBorder}"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="10"
+                                                                        Padding="12"
+                                                                        Margin="0,6,0,0"
+                                                                        Width="350"
+                                                                        SnapsToDevicePixels="True"
+                                                                        PreviewKeyDown="YarnSelectKeyPickerPopup_PreviewKeyDown"
+                                                                        Focusable="True">
+                                                                    <Border.Effect>
+                                                                        <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="4" Opacity="0.4"/>
+                                                                    </Border.Effect>
+                                                                    <StackPanel>
+                                                                        <Grid Margin="0,0,0,8">
+                                                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                                <Path Data="{local:IconGeometry keyboard}" Fill="{DynamicResource BrushAccent}" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                                                <TextBlock Text="选择触发键 / 鼠标键" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                                            </StackPanel>
+                                                                            <Button HorizontalAlignment="Right"
+                                                                                    Style="{StaticResource SecondaryBtn}"
+                                                                                    Padding="6,2"
+                                                                                    Height="22"
+                                                                                    FontSize="{DynamicResource FontSizeTiny}"
+                                                                                    Content="✕"
+                                                                                    Click="CloseYarnSelectKeyPicker_Click"/>
+                                                                        </Grid>
+
+                                                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,10"/>
+
+                                                                        <TextBlock Text="🖱 鼠标触发键" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                                                        <UniformGrid Columns="3" Margin="0,0,0,10">
+                                                                            <Button Content="右键 (Right)" Tag="Right" Click="YarnSelectKeyOptionButton_Click" Height="30" Margin="2" Style="{StaticResource KeyCapBtn}" ToolTip="按住鼠标左键拖选时，按鼠标右键触发"/>
+                                                                            <Button Content="侧键1 (X1)" Tag="X1" Click="YarnSelectKeyOptionButton_Click" Height="30" Margin="2" Style="{StaticResource KeyCapBtn}" ToolTip="按住鼠标左键拖选时，按鼠标侧键1(后退)触发"/>
+                                                                            <Button Content="侧键2 (X2)" Tag="X2" Click="YarnSelectKeyOptionButton_Click" Height="30" Margin="2" Style="{StaticResource KeyCapBtn}" ToolTip="按住鼠标左键拖选时，按鼠标侧键2(前进)触发"/>
+                                                                        </UniformGrid>
+
+                                                                        <TextBlock Text="⌨ 键盘触发键" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+
+                                                                        <UniformGrid Columns="10" Margin="0,0,0,4">
+                                                                            <Button Content="1" Tag="1" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="2" Tag="2" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="3" Tag="3" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="4" Tag="4" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="5" Tag="5" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="6" Tag="6" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="7" Tag="7" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="8" Tag="8" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="9" Tag="9" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="0" Tag="0" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                        </UniformGrid>
+
+                                                                        <UniformGrid Columns="10" Margin="0,0,0,4">
+                                                                            <Button Content="Q" Tag="Q" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="W" Tag="W" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="E" Tag="E" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="R" Tag="R" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
+                                                                            <Button Content="1" Tag="1" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="2" Tag="2" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="3" Tag="3" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="4" Tag="4" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="5" Tag="5" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="6" Tag="6" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="7" Tag="7" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="8" Tag="8" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="9" Tag="9" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="0" Tag="0" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                        </UniformGrid>
+
+                                                                        <UniformGrid Columns="10" Margin="0,0,0,4">
+                                                                            <Button Content="Q" Tag="Q" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="W" Tag="W" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="E" Tag="E" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="R" Tag="R" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="T" Tag="T" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="Y" Tag="Y" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="U" Tag="U" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="I" Tag="I" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="O" Tag="O" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="P" Tag="P" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                        </UniformGrid>
+
+                                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
+                                                                            <Button Content="A" Tag="A" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="S" Tag="S" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="D" Tag="D" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="F" Tag="F" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="G" Tag="G" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="H" Tag="H" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="J" Tag="J" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="K" Tag="K" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="L" Tag="L" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                        </StackPanel>
+
+                                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                                                                            <Button Content="Z" Tag="Z" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="X" Tag="X" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="C" Tag="C" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="V" Tag="V" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="B" Tag="B" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="N" Tag="N" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="M" Tag="M" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                        </StackPanel>
+
+                                                                        <Border Background="{DynamicResource BrushSurface}" CornerRadius="4" Padding="6,4">
+                                                                            <TextBlock Text="💡 提示：点击上方的虚拟键盘/鼠标键完成选择，或在弹窗打开时直接敲击物理键盘按键。"
+                                                                                       Foreground="{DynamicResource BrushTextSec}"
+                                                                                       FontSize="{DynamicResource FontSizeTiny}"
+                                                                                       TextWrapping="Wrap"/>
+                                                                        </Border>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </Popup>
+                                                        </Grid>
                                                         <ComboBox Grid.Column="2"
-                                                                  Height="30"
+                                                                  Height="32"
+                                                                  Padding="6,2"
+                                                                  VerticalContentAlignment="Center"
                                                                   Margin="0,0,8,0"
                                                                   ItemsSource="{Binding DataContext.YarnSelectActionOptions, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                   DisplayMemberPath="Label"
                                                                   SelectedValuePath="Value"
                                                                   SelectedValue="{Binding ActionType, Mode=TwoWay}"/>
-                                                        <StackPanel Grid.Column="3" Margin="0,0,8,0">
-                                                            <TextBox Text="{Binding ExtensionSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                     Height="30"
-                                                                     ToolTip="搜索并选择扩展。动作类型为运行扩展时，会把选中文本作为参数传入"
-                                                                     GotKeyboardFocus="YarnSelectExtensionSearchBox_GotKeyboardFocus"
-                                                                     TextChanged="YarnSelectExtensionSearchBox_TextChanged"
-                                                                     PreviewKeyDown="YarnSelectExtensionSearchBox_PreviewKeyDown"/>
-                                                            <ListBox ItemsSource="{Binding FilteredExtensionOptions}"
-                                                                     MaxHeight="126"
-                                                                     Margin="0,6,0,0"
-                                                                     Visibility="{Binding FilteredExtensionListVisibility}"
-                                                                     Background="{DynamicResource BrushBG}"
-                                                                     BorderBrush="{DynamicResource BrushBorder}"
-                                                                     BorderThickness="1"
-                                                                     Foreground="{DynamicResource BrushTextMain}"
-                                                                     PreviewKeyDown="YarnSelectExtensionListBox_PreviewKeyDown"
-                                                                     MouseDoubleClick="YarnSelectExtensionListBox_MouseDoubleClick">
-                                                                <ListBox.ItemTemplate>
-                                                                    <DataTemplate>
-                                                                        <Grid Margin="0,2">
-                                                                            <Grid.ColumnDefinitions>
-                                                                                <ColumnDefinition Width="30"/>
-                                                                                <ColumnDefinition Width="*"/>
-                                                                            </Grid.ColumnDefinitions>
-                                                                            <Border Width="24"
-                                                                                    Height="24"
-                                                                                    CornerRadius="6"
-                                                                                    Background="{Binding AccentBrush}"
-                                                                                    ClipToBounds="True"
-                                                                                    VerticalAlignment="Center">
-                                                                                <Grid>
-                                                                                    <Image Source="{Binding IconSource}"
-                                                                                           Stretch="UniformToFill"
-                                                                                           Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                                                    <Viewbox Width="14"
-                                                                                             Height="14"
-                                                                                             Stretch="Uniform"
-                                                                                             Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                                                        <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
-                                                                                    </Viewbox>
-                                                                                    <TextBlock Text="{Binding DisplayGlyph}"
-                                                                                               Foreground="{DynamicResource BrushTextMain}"
-                                                                                               FontSize="{DynamicResource FontSizeSmall}"
-                                                                                               FontWeight="SemiBold"
-                                                                                               HorizontalAlignment="Center"
-                                                                                               VerticalAlignment="Center"
-                                                                                               Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        <Grid Grid.Column="3"
+                                                               Margin="0,0,8,0"
+                                                               Visibility="{Binding IsRunExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Border x:Name="ExtensionSearchBoxBorder"
+                                                                    Background="{DynamicResource BrushSurface}"
+                                                                    BorderBrush="{DynamicResource BrushBorder}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="6"
+                                                                    Height="32">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="24"/>
+                                                                    </Grid.ColumnDefinitions>
+
+                                                                    <Border Grid.Column="0" Margin="8,0,4,0" VerticalAlignment="Center">
+                                                                        <Path Data="{local:IconGeometry search}" Fill="{DynamicResource BrushTextSec}" Width="12" Height="12" Stretch="Uniform"/>
+                                                                    </Border>
+
+                                                                    <TextBox Grid.Column="1"
+                                                                             x:Name="ExtensionSearchInput"
+                                                                             Text="{Binding ExtensionSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                             Background="Transparent"
+                                                                             BorderThickness="0"
+                                                                             Foreground="{DynamicResource BrushTextMain}"
+                                                                             FontSize="{DynamicResource FontSizeSmall}"
+                                                                             Padding="2,0"
+                                                                             VerticalContentAlignment="Center"
+                                                                             ToolTip="输入扩展名称搜索，或点击下拉箭头选择"
+                                                                             GotKeyboardFocus="YarnSelectExtensionSearchBox_GotKeyboardFocus"
+                                                                             TextChanged="YarnSelectExtensionSearchBox_TextChanged"
+                                                                             PreviewKeyDown="YarnSelectExtensionSearchBox_PreviewKeyDown"/>
+
+                                                                    <TextBlock Grid.Column="1"
+                                                                               Text="输入扩展名..."
+                                                                               Foreground="#FF555555"
+                                                                               FontSize="{DynamicResource FontSizeSmall}"
+                                                                               VerticalAlignment="Center"
+                                                                               Padding="4,0,0,0"
+                                                                               IsHitTestVisible="False">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                <Style.Triggers>
+                                                                                    <MultiDataTrigger>
+                                                                                        <MultiDataTrigger.Conditions>
+                                                                                            <Condition Binding="{Binding ExtensionSearchText}" Value=""/>
+                                                                                            <Condition Binding="{Binding IsKeyboardFocusWithin, ElementName=ExtensionSearchInput}" Value="False"/>
+                                                                                        </MultiDataTrigger.Conditions>
+                                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                                    </MultiDataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
+
+                                                                    <Button Grid.Column="2"
+                                                                            Click="YarnSelectExtensionDropdownToggle_Click"
+                                                                            Background="Transparent"
+                                                                            BorderThickness="0"
+                                                                            Padding="0"
+                                                                            Focusable="False"
+                                                                            HorizontalAlignment="Stretch"
+                                                                            VerticalAlignment="Stretch"
+                                                                            Cursor="Hand"
+                                                                            ToolTip="展开扩展列表">
+                                                                        <Path Data="M 0 0 L 4 4 L 8 0 Z" Fill="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                    </Button>
+                                                                </Grid>
+                                                            </Border>
+
+                                                            <Popup PlacementTarget="{Binding ElementName=ExtensionSearchBoxBorder}"
+                                                                   Placement="Bottom"
+                                                                   IsOpen="{Binding IsExtensionPickerOpen, Mode=TwoWay}"
+                                                                   StaysOpen="False"
+                                                                   AllowsTransparency="True"
+                                                                   PopupAnimation="Slide"
+                                                                   Width="{Binding ElementName=ExtensionSearchBoxBorder, Path=ActualWidth}"
+                                                                   Margin="0,4,0,0">
+                                                                <Border Background="{DynamicResource BrushBG}"
+                                                                        BorderBrush="{DynamicResource BrushBorder}"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="8"
+                                                                        Padding="4">
+                                                                    <Border.Effect>
+                                                                        <DropShadowEffect Color="#000000" BlurRadius="12" ShadowDepth="4" Opacity="0.4"/>
+                                                                    </Border.Effect>
+                                                                    <ListBox ItemsSource="{Binding FilteredExtensionOptions}"
+                                                                             MaxHeight="180"
+                                                                             Background="Transparent"
+                                                                             BorderThickness="0"
+                                                                             Foreground="{DynamicResource BrushTextMain}"
+                                                                             PreviewKeyDown="YarnSelectExtensionListBox_PreviewKeyDown"
+                                                                             MouseDoubleClick="YarnSelectExtensionListBox_MouseDoubleClick">
+                                                                        <ListBox.ItemTemplate>
+                                                                            <DataTemplate>
+                                                                                <Grid Margin="0,2" Height="30">
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="26"/>
+                                                                                        <ColumnDefinition Width="*"/>
+                                                                                    </Grid.ColumnDefinitions>
+                                                                                    <Border Width="20"
+                                                                                            Height="20"
+                                                                                            CornerRadius="4"
+                                                                                            Background="{Binding AccentBrush}"
+                                                                                            ClipToBounds="True"
+                                                                                            VerticalAlignment="Center">
+                                                                                        <Grid>
+                                                                                            <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                                            <Viewbox Width="12" Height="12" Stretch="Uniform" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                                                            </Viewbox>
+                                                                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                                        </Grid>
+                                                                                    </Border>
+                                                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}"/>
+                                                                                    </StackPanel>
                                                                                 </Grid>
-                                                                            </Border>
-                                                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                                                <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}"/>
-                                                                                <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextTrimming="CharacterEllipsis"/>
-                                                                            </StackPanel>
-                                                                        </Grid>
-                                                                    </DataTemplate>
-                                                                </ListBox.ItemTemplate>
-                                                            </ListBox>
-                                                        </StackPanel>
+                                                                            </DataTemplate>
+                                                                        </ListBox.ItemTemplate>
+                                                                    </ListBox>
+                                                                </Border>
+                                                            </Popup>
+                                                        </Grid>
                                                         <TextBox Grid.Column="4"
                                                                  Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                 Height="30"
+                                                                 Height="32"
+                                                                 Padding="6,2"
+                                                                 VerticalContentAlignment="Center"
                                                                  Margin="0,0,8,0"
                                                                  ToolTip="备注"/>
                                                         <Button Grid.Column="5"

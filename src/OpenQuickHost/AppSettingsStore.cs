@@ -1132,14 +1132,21 @@ public sealed class YarnSelectSettings
             return string.Empty;
         }
 
-        return key.ToLowerInvariant() switch
+        var lower = key.ToLowerInvariant();
+        if (lower.StartsWith("right", StringComparison.Ordinal) || lower == "右键")
         {
-            "right" or "右键" => "Right",
-            "x1" or "侧键1" => "X1",
-            "x2" or "侧键2" => "X2",
-            _ when key.Length == 1 => key.ToUpperInvariant(),
-            _ => key.ToUpperInvariant()
-        };
+            return "Right";
+        }
+        if (lower.StartsWith("x1", StringComparison.Ordinal) || lower == "侧键1")
+        {
+            return "X1";
+        }
+        if (lower.StartsWith("x2", StringComparison.Ordinal) || lower == "侧键2")
+        {
+            return "X2";
+        }
+
+        return key.Length == 1 ? key.ToUpperInvariant() : key;
     }
 }
 
