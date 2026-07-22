@@ -1099,8 +1099,10 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding EnvironmentStatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                        <Button Grid.Column="1" Content="保存环境变量" Style="{StaticResource PrimaryBtn}" Height="32" Padding="14,0" Click="SaveEnvironmentVariablesButton_Click"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Visibility="{Binding IsEnvVarsSaveStatusVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Ellipse Width="6" Height="6" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="已保存" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                        </StackPanel>
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -1623,7 +1625,10 @@
                                                        VerticalAlignment="Center" 
                                                        TextWrapping="Wrap"/>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button x:Name="SavePersonalSyncButton" Content="保存配置" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="SaveWebDavSettingsButton_Click"/>
+                                                <StackPanel VerticalAlignment="Center" Orientation="Horizontal" Margin="0,0,12,0" Visibility="{Binding IsWebDavSaveStatusVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Ellipse Width="6" Height="6" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="已保存" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                                </StackPanel>
                                                 <Button x:Name="TestPersonalSyncButton" Content="测试连接" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="TestWebDavButton_Click"/>
                                                 <Button x:Name="ClearPersonalSyncButton" Content="清空云端" Style="{StaticResource SecondaryBtn}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="ClearCloudButton_Click" Foreground="#FFEF4444"/>
                                                 <Button x:Name="SyncPersonalSyncButton" Content="立即同步" Style="{StaticResource PrimaryBtn}" Height="32" Padding="20,0" Click="SyncWebDavButton_Click"/>
@@ -1976,7 +1981,10 @@
                                     <TextBlock Text="全局信息层" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                     <TextBlock Text="{Binding YanmSummary}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <Button Content="保存" Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Right" Click="SaveYanmSettings_Click"/>
+                                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Visibility="{Binding IsYanmSaveStatusVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Ellipse Width="6" Height="6" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="已保存" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                </StackPanel>
                             </Grid>
                             <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12"/>
 
@@ -2081,7 +2089,6 @@
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
                                             <Button Content="管理白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickYanmWhitelistProcessButton_Click"/>
-                                            <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveYanmSettings_Click"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -2103,7 +2110,6 @@
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
                                             <Button Content="管理黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickYanmBlacklistProcessButton_Click"/>
-                                            <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveYanmSettings_Click"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -2478,7 +2484,10 @@
                                         </Grid>
                                         <StackPanel Visibility="{Binding EnableWanPush, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <TextBox Style="{DynamicResource GlobalTextBoxStyle}" Text="{Binding WanPushUuid, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="28" Padding="6,0" FontSize="10" Background="{DynamicResource BrushInputBG}" Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}" Margin="0,6,0,0"/>
-                                            <Button Content="保存应用" Style="{StaticResource SecondaryBtn}" Height="22" Padding="10,0" FontSize="10" Margin="0,6,0,0" Click="SaveWanPushUuidButton_Click" HorizontalAlignment="Right"/>
+                                            <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Margin="0,6,0,0" Visibility="{Binding IsWanPushSaveStatusVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Ellipse Width="6" Height="6" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="已保存" Foreground="{DynamicResource BrushTextSec}" FontSize="10" VerticalAlignment="Center"/>
+                                            </StackPanel>
                                         </StackPanel>
                                         <TextBlock Text="当手机与电脑不在同一个 Wi-Fi 时，通过加密通道实现远程接收通知与消息推送。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46" Visibility="{Binding EnableWanPush, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                                     </StackPanel>
@@ -3728,7 +3737,10 @@
                                     <TextBlock Text="游戏轮盘模式" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                     <TextBlock Text="{Binding RadialMenuSummary}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <Button Content="保存配置" Style="{StaticResource PrimaryBtn}" Height="32" Padding="16,0" HorizontalAlignment="Right" Click="SaveQuickPanelTrigger_Click"/>
+                                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Visibility="{Binding IsQuickPanelSaveStatusVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Ellipse Width="6" Height="6" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="已保存" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                </StackPanel>
                             </Grid>
                             <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12"/>
 
@@ -4196,7 +4208,6 @@
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
                                             <Button Content="管理白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialWhitelistProcessButton_Click"/>
-                                            <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -4218,7 +4229,6 @@
                                                  VerticalScrollBarVisibility="Auto"/>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0">
                                             <Button Content="管理黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="PickRadialBlacklistProcessButton_Click"/>
-                                            <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Margin="0,8,0,0" Click="SaveQuickPanelTrigger_Click"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -4234,7 +4244,10 @@
                                     <TextBlock Text="选中即操作" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                     <TextBlock Text="{Binding YarnSelectSummary}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <Button Content="保存" Style="{StaticResource PrimaryBtn}" HorizontalAlignment="Right" Click="SaveYarnSelectSettings_Click"/>
+                                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Visibility="{Binding IsYarnSelectSaveStatusVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Ellipse Width="6" Height="6" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="已保存" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                </StackPanel>
                             </Grid>
                             <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12"/>
 
@@ -4685,7 +4698,6 @@
                                              VerticalScrollBarVisibility="Auto"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                                         <Button Content="管理白名单" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="PickYarnSelectWhitelistProcessButton_Click"/>
-                                        <Button Content="保存白名单" Style="{StaticResource SecondaryBtn}" Click="SaveYarnSelectSettings_Click"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
@@ -4702,7 +4714,6 @@
                                              VerticalScrollBarVisibility="Auto"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                                         <Button Content="管理黑名单" Style="{StaticResource SecondaryBtn}" Margin="0,0,8,0" Click="PickYarnSelectBlacklistProcessButton_Click"/>
-                                        <Button Content="保存黑名单" Style="{StaticResource SecondaryBtn}" Click="SaveYarnSelectSettings_Click"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
@@ -5457,7 +5468,10 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <Button Grid.Column="1" Content="重置" Style="{StaticResource SecondaryBtn}" Click="ResetSystemPromptButton_Click" Margin="0,0,10,0" />
-                                        <Button Grid.Column="2" Content="保存" Style="{StaticResource PrimaryBtn}" Click="SaveAiSettingsButton_Click" IsEnabled="{Binding HasAiSettingsChanged}"/>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal" Visibility="{Binding IsAiSaveStatusVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Ellipse Width="6" Height="6" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="已保存" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                        </StackPanel>
                                     </Grid>
                                 </StackPanel>
                             </Border>

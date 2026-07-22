@@ -1250,6 +1250,59 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private DispatcherTimer ShowSaveStatusTemporarily(DispatcherTimer? existingTimer, Action<bool> setVisibleAction)
+    {
+        setVisibleAction(true);
+        existingTimer?.Stop();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        timer.Tick += (s, e) =>
+        {
+            timer.Stop();
+            setVisibleAction(false);
+        };
+        timer.Start();
+        return timer;
+    }
+
+    private DispatcherTimer? _wanPushSaveTimer;
+    private DispatcherTimer? _wanPushStatusHideTimer;
+    private bool _isWanPushSaveStatusVisible;
+
+    public bool IsWanPushSaveStatusVisible
+    {
+        get => _isWanPushSaveStatusVisible;
+        private set
+        {
+            if (_isWanPushSaveStatusVisible == value) return;
+            _isWanPushSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void QueueWanPushSave(int delayMs = 500)
+    {
+        if (_wanPushSaveTimer == null)
+        {
+            _wanPushSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
+            _wanPushSaveTimer.Tick += (s, e) => { _wanPushSaveTimer.Stop(); SaveWanPushUuid(); };
+        }
+        else
+        {
+            _wanPushSaveTimer.Stop();
+            _wanPushSaveTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        }
+        _wanPushSaveTimer.Start();
+    }
+
+    private void FlushWanPushSave()
+    {
+        if (_wanPushSaveTimer != null && _wanPushSaveTimer.IsEnabled)
+        {
+            _wanPushSaveTimer.Stop();
+            SaveWanPushUuid();
+        }
+    }
+
     public string WanPushUuid
     {
         get => _settings.WanPushUuid;
@@ -1258,13 +1311,19 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (value == _settings.WanPushUuid) return;
             _settings = _settings with { WanPushUuid = value };
             OnPropertyChanged();
+            QueueWanPushSave(500);
         }
     }
 
     private void SaveWanPushUuidButton_Click(object sender, RoutedEventArgs e)
     {
+        SaveWanPushUuid();
+    }
+
+    private void SaveWanPushUuid()
+    {
         AppSettingsStore.Save(_settings);
-        ShowToast("广域网推送配置已保存");
+        _wanPushStatusHideTimer = ShowSaveStatusTemporarily(_wanPushStatusHideTimer, visible => IsWanPushSaveStatusVisible = visible);
     }
 
     private void EnableLanSync_Click(object sender, RoutedEventArgs e)
@@ -2148,6 +2207,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set => UpdateRadialMenu(value, settings => settings.CustomShortcut = value);
     }
 
+    private DispatcherTimer? _quickPanelSaveTimer;
+    private DispatcherTimer? _quickPanelStatusHideTimer;
+    private bool _isQuickPanelSaveStatusVisible;
+
+    public bool IsQuickPanelSaveStatusVisible
+    {
+        get => _isQuickPanelSaveStatusVisible;
+        private set
+        {
+            if (_isQuickPanelSaveStatusVisible == value) return;
+            _isQuickPanelSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string RadialBlacklistedProcessesText
     {
         get => string.Join(", ", _settings.RadialMenu.BlacklistedProcesses ?? []);
@@ -2155,6 +2229,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             _settings.RadialMenu.BlacklistedProcesses = ParseProcessList(value);
             OnPropertyChanged();
+            QueueQuickPanelTriggerSave(500);
         }
     }
 
@@ -2165,6 +2240,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             _settings.RadialMenu.WhitelistedProcesses = ParseProcessList(value);
             OnPropertyChanged();
+            QueueQuickPanelTriggerSave(500);
         }
     }
 
@@ -2257,6 +2333,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set => UpdateYarnSelect(value, settings => settings.LeftSideButtonPaste = value);
     }
 
+    private DispatcherTimer? _yarnSelectSaveTimer;
+    private DispatcherTimer? _yarnSelectStatusHideTimer;
+    private bool _isYarnSelectSaveStatusVisible;
+
+    public bool IsYarnSelectSaveStatusVisible
+    {
+        get => _isYarnSelectSaveStatusVisible;
+        private set
+        {
+            if (_isYarnSelectSaveStatusVisible == value) return;
+            _isYarnSelectSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string YarnSelectBlacklistedProcessesText
     {
         get => string.Join(", ", _settings.YarnSelect.BlacklistedProcesses ?? []);
@@ -2267,6 +2358,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             OnPropertyChanged();
+            QueueYarnSelectSave(500);
         }
     }
 
@@ -2280,6 +2372,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             OnPropertyChanged();
+            QueueYarnSelectSave(500);
         }
     }
 
@@ -2326,6 +2419,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set => UpdateYanm(value, settings => settings.CustomShortcut = value);
     }
 
+    private DispatcherTimer? _yanmSaveTimer;
+    private DispatcherTimer? _yanmStatusHideTimer;
+    private bool _isYanmSaveStatusVisible;
+
+    public bool IsYanmSaveStatusVisible
+    {
+        get => _isYanmSaveStatusVisible;
+        private set
+        {
+            if (_isYanmSaveStatusVisible == value) return;
+            _isYanmSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string YanmBlacklistedProcessesText
     {
         get => string.Join(", ", _settings.Yanm.BlacklistedProcesses ?? []);
@@ -2333,6 +2441,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             _settings.Yanm.BlacklistedProcesses = ParseProcessList(value);
             OnPropertyChanged();
+            QueueYanmSave(500);
         }
     }
 
@@ -2349,6 +2458,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             _settings.Yanm.WhitelistedProcesses = ParseProcessList(value);
             OnPropertyChanged();
+            QueueYanmSave(500);
         }
     }
 
@@ -2965,6 +3075,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         // 关闭时立即保存，不使用防抖
         _windowBoundsPersistTimer?.Stop();
         PersistWindowBounds();
+        FlushYarnSelectSave();
+        FlushYanmSave();
+        FlushQuickPanelTriggerSave();
+        FlushAiSettingsSave();
+        FlushWebDavSettingsSave();
+        FlushEnvironmentVariablesSave();
+        FlushWanPushSave();
     }
 
     private void PersistWindowBoundsDebounced()
@@ -3979,7 +4096,51 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshSyncActivityLog();
     }
 
+    private DispatcherTimer? _webDavSaveTimer;
+    private DispatcherTimer? _webDavStatusHideTimer;
+    private bool _isWebDavSaveStatusVisible;
+
+    public bool IsWebDavSaveStatusVisible
+    {
+        get => _isWebDavSaveStatusVisible;
+        private set
+        {
+            if (_isWebDavSaveStatusVisible == value) return;
+            _isWebDavSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void QueueWebDavSettingsSave(int delayMs = 500)
+    {
+        if (_webDavSaveTimer == null)
+        {
+            _webDavSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
+            _webDavSaveTimer.Tick += (s, e) => { _webDavSaveTimer.Stop(); SaveWebDavSettings(); };
+        }
+        else
+        {
+            _webDavSaveTimer.Stop();
+            _webDavSaveTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        }
+        _webDavSaveTimer.Start();
+    }
+
+    private void FlushWebDavSettingsSave()
+    {
+        if (_webDavSaveTimer != null && _webDavSaveTimer.IsEnabled)
+        {
+            _webDavSaveTimer.Stop();
+            SaveWebDavSettings();
+        }
+    }
+
     private void SaveWebDavSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveWebDavSettings();
+    }
+
+    private void SaveWebDavSettings()
     {
         _personalSyncSecrets.GitHubToken = GitHubTokenBox?.Password ?? string.Empty;
         _personalSyncSecrets.GiteeToken = GiteeTokenBox?.Password ?? string.Empty;
@@ -3996,10 +4157,55 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _settings = AppSettingsStore.Load();
         RefreshWebDavSummary();
         SyncStatusText = "个人同步配置已保存。";
+        _webDavStatusHideTimer = ShowSaveStatusTemporarily(_webDavStatusHideTimer, visible => IsWebDavSaveStatusVisible = visible);
         RefreshSyncActivityLog();
     }
 
+    private DispatcherTimer? _aiSaveTimer;
+    private DispatcherTimer? _aiStatusHideTimer;
+    private bool _isAiSaveStatusVisible;
+
+    public bool IsAiSaveStatusVisible
+    {
+        get => _isAiSaveStatusVisible;
+        private set
+        {
+            if (_isAiSaveStatusVisible == value) return;
+            _isAiSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void QueueAiSettingsSave(int delayMs = 500)
+    {
+        if (_aiSaveTimer == null)
+        {
+            _aiSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
+            _aiSaveTimer.Tick += (s, e) => { _aiSaveTimer.Stop(); SaveAiSettings(); };
+        }
+        else
+        {
+            _aiSaveTimer.Stop();
+            _aiSaveTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        }
+        _aiSaveTimer.Start();
+    }
+
+    private void FlushAiSettingsSave()
+    {
+        if (_aiSaveTimer != null && _aiSaveTimer.IsEnabled)
+        {
+            _aiSaveTimer.Stop();
+            SaveAiSettings();
+        }
+    }
+
     private void SaveAiSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveAiSettings();
+    }
+
+    private void SaveAiSettings()
     {
         // 1. 同步服务商列表到 _settings
         _settings.AiServiceProviders = AiServiceProvidersList.Select(vm => {
@@ -4044,9 +4250,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         // 6. 重置状态
         HasAiSettingsChanged = false;
-
-        // 7. Toast
-        ShowToast("AI 配置已保存");
+        _aiStatusHideTimer = ShowSaveStatusTemporarily(_aiStatusHideTimer, visible => IsAiSaveStatusVisible = visible);
     }
 
     private void AddProviderButton_Click(object sender, RoutedEventArgs e)
@@ -4353,6 +4557,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void AiSettings_TextChanged(object sender, TextChangedEventArgs e)
     {
         CheckAiSettingsChanged();
+        QueueAiSettingsSave(500);
     }
 
     private void EditSystemPromptInNewWindow_Click(object sender, RoutedEventArgs e)
@@ -4371,7 +4576,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void AddEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
     {
         EnvironmentVariables.Add(new EnvironmentVariableEditorItem("NOTION_TOKEN", string.Empty, "Notion Integration Token"));
-        EnvironmentStatusText = "已添加一行环境变量，填写后点击保存。";
+        EnvironmentStatusText = "已添加一行环境变量。";
+        QueueEnvironmentVariablesSave(200);
     }
 
     private void RemoveEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
@@ -4379,11 +4585,56 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (sender is FrameworkElement { DataContext: EnvironmentVariableEditorItem item })
         {
             EnvironmentVariables.Remove(item);
-            EnvironmentStatusText = "已移除一行环境变量，点击保存后生效。";
+            EnvironmentStatusText = "已移除一行环境变量。";
+            QueueEnvironmentVariablesSave(200);
+        }
+    }
+
+    private DispatcherTimer? _envVarsSaveTimer;
+    private DispatcherTimer? _envVarsStatusHideTimer;
+    private bool _isEnvVarsSaveStatusVisible;
+
+    public bool IsEnvVarsSaveStatusVisible
+    {
+        get => _isEnvVarsSaveStatusVisible;
+        private set
+        {
+            if (_isEnvVarsSaveStatusVisible == value) return;
+            _isEnvVarsSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void QueueEnvironmentVariablesSave(int delayMs = 500)
+    {
+        if (_envVarsSaveTimer == null)
+        {
+            _envVarsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
+            _envVarsSaveTimer.Tick += (s, e) => { _envVarsSaveTimer.Stop(); SaveEnvironmentVariables(); };
+        }
+        else
+        {
+            _envVarsSaveTimer.Stop();
+            _envVarsSaveTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        }
+        _envVarsSaveTimer.Start();
+    }
+
+    private void FlushEnvironmentVariablesSave()
+    {
+        if (_envVarsSaveTimer != null && _envVarsSaveTimer.IsEnabled)
+        {
+            _envVarsSaveTimer.Stop();
+            SaveEnvironmentVariables();
         }
     }
 
     private void SaveEnvironmentVariablesButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveEnvironmentVariables();
+    }
+
+    private void SaveEnvironmentVariables()
     {
         var variables = EnvironmentVariables
             .Where(static item => !string.IsNullOrWhiteSpace(item.Name))
@@ -4398,15 +4649,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         AppEnvironmentVariableStore.Save(variables);
         _mainWindow.NotifyQuickPanelSettingsChanged("environment-variables-saved", refreshYanmOverlay: false);
-        EnvironmentVariables.Clear();
-        foreach (var variable in AppEnvironmentVariableStore.Load())
-        {
-            EnvironmentVariables.Add(new EnvironmentVariableEditorItem(variable.Name, variable.Value, variable.Description));
-        }
-
         _settings = AppSettingsStore.Load();
         EnvironmentStatusText = BuildEnvironmentSummary();
-        ShowToast("环境变量已保存");
+        _envVarsStatusHideTimer = ShowSaveStatusTemporarily(_envVarsStatusHideTimer, visible => IsEnvVarsSaveStatusVisible = visible);
     }
 
     private void CheckAiSettingsChanged()
@@ -4547,7 +4792,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SetPersonalSyncButtonsEnabled(bool enabled)
     {
-        if (SavePersonalSyncButton != null) SavePersonalSyncButton.IsEnabled = enabled;
         if (TestPersonalSyncButton != null) TestPersonalSyncButton.IsEnabled = enabled;
         if (ClearPersonalSyncButton != null) ClearPersonalSyncButton.IsEnabled = enabled;
         if (SyncPersonalSyncButton != null) SyncPersonalSyncButton.IsEnabled = enabled;
@@ -8022,6 +8266,30 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             MouseTriggerModes.None;
     }
 
+    private void QueueQuickPanelTriggerSave(int delayMs = 500)
+    {
+        if (_quickPanelSaveTimer == null)
+        {
+            _quickPanelSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
+            _quickPanelSaveTimer.Tick += (s, e) => { _quickPanelSaveTimer.Stop(); SaveQuickPanelTriggerSettings(); };
+        }
+        else
+        {
+            _quickPanelSaveTimer.Stop();
+            _quickPanelSaveTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        }
+        _quickPanelSaveTimer.Start();
+    }
+
+    private void FlushQuickPanelTriggerSave()
+    {
+        if (_quickPanelSaveTimer != null && _quickPanelSaveTimer.IsEnabled)
+        {
+            _quickPanelSaveTimer.Stop();
+            SaveQuickPanelTriggerSettings();
+        }
+    }
+
     private void SaveQuickPanelTriggerSettings()
     {
         SaveRadialMenuSlots();
@@ -8040,6 +8308,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _mainWindow.RefreshAppSettings();
         _mainWindow.NotifyQuickPanelSettingsChanged("quickpanel-trigger-settings-saved");
         SyncStatusText = $"鼠标面板触发已保存：{QuickPanelTriggerSummary}";
+        _quickPanelStatusHideTimer = ShowSaveStatusTemporarily(_quickPanelStatusHideTimer, visible => IsQuickPanelSaveStatusVisible = visible);
         OnPropertyChanged(nameof(MouseGestureTriggerSummary));
         OnPropertyChanged(nameof(MouseGestureTriggerMode));
         OnPropertyChanged(nameof(MouseGestureManagementSummary));
@@ -8173,6 +8442,39 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         update(_settings.YarnSelect);
         OnPropertyChanged();
         OnPropertyChanged(nameof(YarnSelectSummary));
+        QueueYarnSelectSave(200);
+    }
+
+    private void QueueYarnSelectSave(int delayMs = 500)
+    {
+        if (_yarnSelectSaveTimer == null)
+        {
+            _yarnSelectSaveTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(delayMs)
+            };
+            _yarnSelectSaveTimer.Tick += (s, e) =>
+            {
+                _yarnSelectSaveTimer.Stop();
+                SaveYarnSelectSettings();
+            };
+        }
+        else
+        {
+            _yarnSelectSaveTimer.Stop();
+            _yarnSelectSaveTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        }
+
+        _yarnSelectSaveTimer.Start();
+    }
+
+    private void FlushYarnSelectSave()
+    {
+        if (_yarnSelectSaveTimer != null && _yarnSelectSaveTimer.IsEnabled)
+        {
+            _yarnSelectSaveTimer.Stop();
+            SaveYarnSelectSettings();
+        }
     }
 
     private void UpdateYanm<T>(T value, Action<YanmSettings> update)
@@ -8189,6 +8491,31 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(YanmSummary));
         OnPropertyChanged(nameof(YanmAssignedMouseTriggerSummary));
         OnPropertyChanged(nameof(QuickPanelTriggerSummary));
+        QueueYanmSave(200);
+    }
+
+    private void QueueYanmSave(int delayMs = 500)
+    {
+        if (_yanmSaveTimer == null)
+        {
+            _yanmSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
+            _yanmSaveTimer.Tick += (s, e) => { _yanmSaveTimer.Stop(); SaveYanmSettings(); };
+        }
+        else
+        {
+            _yanmSaveTimer.Stop();
+            _yanmSaveTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        }
+        _yanmSaveTimer.Start();
+    }
+
+    private void FlushYanmSave()
+    {
+        if (_yanmSaveTimer != null && _yanmSaveTimer.IsEnabled)
+        {
+            _yanmSaveTimer.Stop();
+            SaveYanmSettings();
+        }
     }
 
     private void SaveYanmSettings_Click(object sender, RoutedEventArgs e)
@@ -8227,6 +8554,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AppSettingsStore.Save(_settings);
         _mainWindow.NotifyQuickPanelSettingsChanged("yanm-settings-saved");
         SyncStatusText = $"燕幕设置已保存：{YanmSummary}";
+        _yanmStatusHideTimer = ShowSaveStatusTemporarily(_yanmStatusHideTimer, visible => IsYanmSaveStatusVisible = visible);
         OnPropertyChanged(nameof(EnableYanm));
         OnPropertyChanged(nameof(YanmActivationKey));
         OnPropertyChanged(nameof(YanmTriggerHold));
@@ -8261,6 +8589,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AppSettingsStore.Save(_settings);
         _mainWindow.NotifyQuickPanelSettingsChanged("yarnselect-settings-saved");
         SyncStatusText = $"燕选设置已保存：{YarnSelectSummary}";
+        _yarnSelectStatusHideTimer = ShowSaveStatusTemporarily(_yarnSelectStatusHideTimer, visible => IsYarnSelectSaveStatusVisible = visible);
         RefreshYarnSelectBindings();
     }
 
@@ -8293,7 +8622,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         foreach (var rule in _settings.YarnSelect.Rules.Select(YarnSelectSettings.NormalizeRule))
         {
             var item = new YarnSelectRuleItem(rule);
-            item.OnChangedAction = RefreshYarnSelectPreviewMap;
+            item.OnChangedAction = () => { RefreshYarnSelectPreviewMap(); QueueYarnSelectSave(500); };
             ApplyYarnSelectExtensionSelection(item);
             YarnSelectRules.Add(item);
         }
@@ -9802,7 +10131,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     ActionType = YarnSelectActionTypes.Copy,
                     Description = $"{normalized} 触发动作"
                 });
-                newRule.OnChangedAction = RefreshYarnSelectPreviewMap;
+                newRule.OnChangedAction = () => { RefreshYarnSelectPreviewMap(); QueueYarnSelectSave(500); };
                 ApplyYarnSelectExtensionSelection(newRule);
                 YarnSelectRules.Add(newRule);
                 SaveYarnSelectSettings();
@@ -9826,11 +10155,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             ActionType = YarnSelectActionTypes.RunExtension,
             Description = "新燕选规则"
         });
-        item.OnChangedAction = RefreshYarnSelectPreviewMap;
+        item.OnChangedAction = () => { RefreshYarnSelectPreviewMap(); QueueYarnSelectSave(500); };
         ApplyYarnSelectExtensionSelection(item);
         YarnSelectRules.Add(item);
         OnPropertyChanged(nameof(YarnSelectSummary));
         RefreshYarnSelectPreviewMap();
+        QueueYarnSelectSave(200);
     }
 
     private void DeleteYarnSelectRuleButton_Click(object sender, RoutedEventArgs e)
@@ -11401,6 +11731,7 @@ public sealed class YarnSelectRuleItem : INotifyPropertyChanged
 
             _extensionId = value;
             OnPropertyChanged();
+            OnChangedAction?.Invoke();
         }
     }
 
@@ -11471,6 +11802,7 @@ public sealed class YarnSelectRuleItem : INotifyPropertyChanged
 
             _description = value;
             OnPropertyChanged();
+            OnChangedAction?.Invoke();
         }
     }
 

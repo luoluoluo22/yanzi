@@ -3,10 +3,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <Version>0.2.22</Version>
-    <FileVersion>0.2.22.0</FileVersion>
-    <AssemblyVersion>0.2.22.0</AssemblyVersion>
-    <InformationalVersion>0.2.22</InformationalVersion>
+    <Version>0.2.23</Version>
+    <FileVersion>0.2.23.0</FileVersion>
+    <AssemblyVersion>0.2.23.0</AssemblyVersion>
+    <InformationalVersion>0.2.23</InformationalVersion>
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);1701;1603</NoWarn>
     <ImplicitUsings>enable</ImplicitUsings>
