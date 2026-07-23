@@ -4796,9 +4796,8 @@
 
                                 <!-- Card Grid View -->
                                 <ScrollViewer x:Name="ExtensionCardsScrollViewer"
-                                              VerticalScrollBarVisibility="Auto"
+                                              VerticalScrollBarVisibility="Disabled"
                                               HorizontalScrollBarVisibility="Disabled"
-                                              MaxHeight="600"
                                               SizeChanged="ExtensionCardsScrollViewer_SizeChanged">
                                     <Grid Width="{Binding ViewportWidth, ElementName=ExtensionCardsScrollViewer}">
                                     <ItemsControl ItemsSource="{Binding ExtensionItems}"

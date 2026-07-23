@@ -5249,7 +5249,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ClearSelectedExtensionItem();
     }
 
-    private void ExtensionCardsScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
+    private void ExtensionCardsContainer_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         ScheduleExtensionCardWidthUpdate();
     }
@@ -7379,6 +7379,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void ExtensionCardsScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ScheduleExtensionCardWidthUpdate();
+    }
+
     private void ScheduleExtensionCardWidthUpdate()
     {
         if (ExtensionCardsScrollViewer == null)
@@ -7400,11 +7405,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         const double cardGap = 14;
         const double viewportPaddingAllowance = 24;
 
-        var viewportWidth = ExtensionCardsScrollViewer.ViewportWidth;
-        if (double.IsNaN(viewportWidth) || viewportWidth <= 0 || double.IsInfinity(viewportWidth))
-        {
-            viewportWidth = ExtensionCardsScrollViewer.ActualWidth;
-        }
+        var viewportWidth = ExtensionCardsScrollViewer.ActualWidth;
 
         var availableWidth = Math.Max(0, viewportWidth - viewportPaddingAllowance);
         if (availableWidth <= 0)

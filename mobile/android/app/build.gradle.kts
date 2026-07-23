@@ -10,8 +10,8 @@ android {
         applicationId = "cc.luoluoluo.yanzi.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.2.18"
+        versionCode = 24
+        versionName = "0.2.24"
     }
 
     signingConfigs {

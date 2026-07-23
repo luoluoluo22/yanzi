@@ -226,53 +226,92 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="MenuItem">
-                            <Border x:Name="border"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    CornerRadius="8"
-                                    Margin="4,1">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="36" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
+                            <Grid x:Name="Grid">
+                                <Border x:Name="border"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        CornerRadius="8"
+                                        Margin="4,1">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="36" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
 
-                                    <!-- Icon -->
-                                    <ContentPresenter x:Name="Icon" 
-                                                     ContentSource="Icon"
-                                                     HorizontalAlignment="Center"
-                                                     VerticalAlignment="Center"
-                                                     Width="18" Height="18"
-                                                     Opacity="0.9"/>
-                                    
-                                    <ContentPresenter Grid.Column="1"
-                                                      ContentSource="Header"
-                                                      VerticalAlignment="Center"
-                                                      Margin="6,0,25,0">
-                                        <ContentPresenter.Resources>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}"/>
-                                            </Style>
-                                        </ContentPresenter.Resources>
-                                    </ContentPresenter>
+                                        <!-- Icon -->
+                                        <ContentPresenter x:Name="Icon" 
+                                                          ContentSource="Icon"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"
+                                                          Width="18" Height="18"
+                                                          Opacity="0.9"/>
+                                        
+                                        <ContentPresenter Grid.Column="1"
+                                                          ContentSource="Header"
+                                                          VerticalAlignment="Center"
+                                                          Margin="6,0,25,0">
+                                            <ContentPresenter.Resources>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}"/>
+                                                </Style>
+                                            </ContentPresenter.Resources>
+                                        </ContentPresenter>
 
-                                    <TextBlock Grid.Column="2"
-                                               x:Name="InputGestureText"
-                                               Text="{TemplateBinding InputGestureText}"
-                                               Foreground="{DynamicResource BrushMenuItemGestureText}"
-                                               FontSize="{DynamicResource FontSizeSmall}"
-                                               VerticalAlignment="Center"
-                                               Margin="0,0,12,0"/>
-                                </Grid>
-                            </Border>
+                                        <TextBlock Grid.Column="2"
+                                                   x:Name="InputGestureText"
+                                                   Text="{TemplateBinding InputGestureText}"
+                                                   Foreground="{DynamicResource BrushMenuItemGestureText}"
+                                                   FontSize="{DynamicResource FontSizeSmall}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,12,0"/>
+
+                                        <Path x:Name="RightArrow"
+                                              Grid.Column="2"
+                                              Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"
+                                              Fill="{DynamicResource BrushTextSec}"
+                                              Stretch="Uniform"
+                                              Width="10" Height="10"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,10,0"
+                                              Visibility="Collapsed" />
+                                    </Grid>
+                                </Border>
+
+                                <Popup x:Name="PART_Popup"
+                                       AllowsTransparency="True"
+                                       Focusable="False"
+                                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                                       Placement="Right"
+                                       PopupAnimation="Fade"
+                                       VerticalOffset="-4">
+                                    <Border Background="{DynamicResource BrushContextMenuBG}"
+                                            BorderBrush="{DynamicResource BrushContextMenuBorder}"
+                                            BorderThickness="1"
+                                            CornerRadius="10"
+                                            Padding="4">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="15" Direction="270" ShadowDepth="2" Opacity="0.5"/>
+                                        </Border.Effect>
+                                        <ScrollViewer x:Name="SubMenuScrollViewer" VerticalScrollBarVisibility="Auto">
+                                            <ItemsPresenter x:Name="PART_ItemsPresenter" KeyboardNavigation.DirectionalNavigation="Cycle" Grid.IsSharedSizeScope="True"/>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Popup>
+                            </Grid>
+
                             <ControlTemplate.Triggers>
+                                <Trigger Property="HasItems" Value="True">
+                                    <Setter TargetName="RightArrow" Property="Visibility" Value="Visible"/>
+                                    <Setter TargetName="InputGestureText" Property="Visibility" Value="Collapsed"/>
+                                </Trigger>
                                 <Trigger Property="IsHighlighted" Value="True">
                                     <Setter TargetName="border" Property="Background" Value="{DynamicResource BrushMenuItemHighlightBG}"/>
                                     <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
                                 </Trigger>
                                 <Trigger Property="IsEnabled" Value="False">
                                     <Setter Property="Foreground" Value="{DynamicResource BrushMenuItemDisabledText}"/>
+                                    <Setter TargetName="Icon" Property="Opacity" Value="0.35"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>

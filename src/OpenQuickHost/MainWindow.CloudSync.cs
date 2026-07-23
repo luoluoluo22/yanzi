@@ -1238,6 +1238,34 @@ public partial class MainWindow
             return (true, false, "缺少 extensionId 参数");
         }
 
+        if (string.Equals(message.Kind, "run-powershell", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(message.Kind, "run-shell", StringComparison.OrdinalIgnoreCase))
+        {
+            var cmd = text;
+            if (string.IsNullOrWhiteSpace(cmd) && message.Payload.TryGetValue("command", out var cmdElem))
+            {
+                cmd = cmdElem.ValueKind == JsonValueKind.String ? cmdElem.GetString() : cmdElem.ToString();
+            }
+
+            var execResult = await ExecuteMobilePowerShellCommandAsync(cmd ?? string.Empty);
+            var responsePayload = JsonSerializer.Serialize(new
+            {
+                output = execResult.output,
+                exitCode = execResult.exitCode
+            });
+            return (true, execResult.success, responsePayload);
+        }
+
+        if (string.Equals(message.Kind, "fs-list", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(message.Kind, "fs-read", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(message.Kind, "fs-write", StringComparison.OrdinalIgnoreCase))
+        {
+            var jsonPayload = JsonSerializer.Serialize(message.Payload);
+            using var doc = JsonDocument.Parse(jsonPayload);
+            var fsResult = ExecuteMobileFsOperation(message.Kind.ToLowerInvariant(), doc.RootElement);
+            return (true, fsResult.success, fsResult.jsonOutput);
+        }
+
         await Dispatcher.InvokeAsync(() =>
         {
             LastRunMessage = $"{title}：{text}";
@@ -1253,6 +1281,147 @@ public partial class MainWindow
         });
 
         return (false, true, string.Empty);
+    }
+
+    private static async Task<(bool success, string output, int exitCode)> ExecuteMobilePowerShellCommandAsync(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            return (false, "命令不能为空。", 1);
+        }
+
+        try
+        {
+            using var process = new System.Diagnostics.Process();
+            process.StartInfo.FileName = "powershell.exe";
+            var prependedCommand = "$ProgressPreference = 'SilentlyContinue';\r\n" + command;
+            var bytes = Encoding.Unicode.GetBytes(prependedCommand);
+            var base64 = Convert.ToBase64String(bytes);
+
+            process.StartInfo.Arguments = $"-NoProfile -NonInteractive -EncodedCommand {base64}";
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+
+            var outputBuilder = new StringBuilder();
+            var errorBuilder = new StringBuilder();
+
+            process.OutputDataReceived += (s, e) => { if (e.Data != null) outputBuilder.AppendLine(e.Data); };
+            process.ErrorDataReceived += (s, e) => { if (e.Data != null) errorBuilder.AppendLine(e.Data); };
+
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await process.WaitForExitAsync(cts.Token);
+
+            var outText = outputBuilder.ToString().Trim();
+            var errText = errorBuilder.ToString().Trim();
+
+            var combined = string.IsNullOrWhiteSpace(errText)
+                ? outText
+                : (string.IsNullOrWhiteSpace(outText) ? errText : $"{outText}\n{errText}");
+
+            return (process.ExitCode == 0, combined, process.ExitCode);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"执行 PowerShell 命令异常: {ex.Message}", 1);
+        }
+    }
+
+    private static string ResolveFsPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || string.Equals(path, "Desktop", StringComparison.OrdinalIgnoreCase))
+        {
+            return Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        }
+        if (path.StartsWith("Desktop\\", StringComparison.OrdinalIgnoreCase))
+        {
+            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            return Path.Combine(desktopPath, path.Substring(8));
+        }
+        if (path.StartsWith("Desktop/", StringComparison.OrdinalIgnoreCase))
+        {
+            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            return Path.Combine(desktopPath, path.Substring(8));
+        }
+        return path;
+    }
+
+    private static (bool success, string jsonOutput) ExecuteMobileFsOperation(string kind, JsonElement payload)
+    {
+        try
+        {
+            if (kind == "fs-list")
+            {
+                var rawPath = payload.TryGetProperty("path", out var p) ? p.GetString() ?? string.Empty : string.Empty;
+                var path = ResolveFsPath(rawPath);
+
+                if (!Directory.Exists(path) && !File.Exists(path))
+                {
+                    return (false, JsonSerializer.Serialize(new { error = $"路径不存在: {path}" }));
+                }
+
+                var items = new List<object>();
+                if (Directory.Exists(path))
+                {
+                    var dirInfo = new DirectoryInfo(path);
+                    foreach (var dir in dirInfo.GetDirectories())
+                    {
+                        items.Add(new { name = dir.Name, isDir = true, size = 0L, lastModified = new DateTimeOffset(dir.LastWriteTimeUtc).ToUnixTimeMilliseconds() });
+                    }
+                    foreach (var file in dirInfo.GetFiles())
+                    {
+                        items.Add(new { name = file.Name, isDir = false, size = file.Length, lastModified = new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds() });
+                    }
+                }
+
+                return (true, JsonSerializer.Serialize(new { currentPath = path, items }));
+            }
+            else if (kind == "fs-read")
+            {
+                var path = payload.TryGetProperty("path", out var p) ? p.GetString() ?? string.Empty : string.Empty;
+                if (!File.Exists(path))
+                {
+                    return (false, JsonSerializer.Serialize(new { error = $"文件不存在: {path}" }));
+                }
+                var ext = Path.GetExtension(path).ToLowerInvariant();
+                bool isImage = ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".bmp" || ext == ".ico";
+                if (isImage)
+                {
+                    var bytes = File.ReadAllBytes(path);
+                    var base64 = Convert.ToBase64String(bytes);
+                    return (true, JsonSerializer.Serialize(new { path, content = base64, isBase64 = true, ext }));
+                }
+                var content = File.ReadAllText(path);
+                return (true, JsonSerializer.Serialize(new { path, content, isBase64 = false, ext }));
+            }
+            else if (kind == "fs-write")
+            {
+                var path = payload.TryGetProperty("path", out var p) ? p.GetString() ?? string.Empty : string.Empty;
+                var content = payload.TryGetProperty("content", out var c) ? c.GetString() ?? string.Empty : string.Empty;
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    return (false, JsonSerializer.Serialize(new { error = "路径不能为空" }));
+                }
+                var dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                File.WriteAllText(path, content);
+                return (true, JsonSerializer.Serialize(new { path, ok = true }));
+            }
+        }
+        catch (Exception ex)
+        {
+            return (false, JsonSerializer.Serialize(new { error = ex.Message }));
+        }
+
+        return (false, JsonSerializer.Serialize(new { error = "未知文件操作" }));
     }
 
     private static string CopyMobileMessageToClipboard(DeviceMessageRecord message, string text, string? screenshotDataUrl, string? localFilePath)

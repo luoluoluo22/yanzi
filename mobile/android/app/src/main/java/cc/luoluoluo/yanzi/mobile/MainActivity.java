@@ -677,7 +677,7 @@ extends Activity {
                 JSONObject payload = new JSONObject().put("path", (Object)targetPath);
                 JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/fs/list", payload, token, "\u83b7\u53d6\u6587\u4ef6\u5217\u8868");
                 
-                String processedPath = res.optString("path", "");
+                String processedPath = res.optString("currentPath", res.optString("path", ""));
                 JSONArray items = res.optJSONArray("items");
                 
                 this.runOnUiThread(() -> {
@@ -710,12 +710,8 @@ extends Activity {
                         row.setClickable(true);
                         row.setTag((Object)name);
                         
-                        ImageView ivIcon = new ImageView((Context)this);
-                        String iconName = isDir ? "folder" : "file-document-outline";
-                        int iconColor = isDir ? Color.rgb(34, 211, 238) : Color.rgb(200, 200, 200);
-                        ivIcon.setImageDrawable((android.graphics.drawable.Drawable)new PathDrawable(MobileIconLibrary.resolveOrDefault(iconName), iconColor));
-                        
-                        row.addView((View)ivIcon, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(24), this.dp(24)));
+                        TextView tvEmoji = this.textView(this.getFileTypeIcon(name, isDir), 16, -1, false);
+                        row.addView((View)tvEmoji, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
                         
                         LinearLayout textContainer = new LinearLayout((Context)this);
                         textContainer.setOrientation(1);
@@ -735,6 +731,56 @@ extends Activity {
                         tcParams.leftMargin = this.dp(10);
                         row.addView((View)textContainer, (ViewGroup.LayoutParams)tcParams);
                         
+                        Runnable openFileRunnable = () -> {
+                            String separator = processedPath.endsWith("\\") || processedPath.endsWith("/") ? "" : "\\";
+                            String fullFilePath = processedPath + separator + name;
+                            boolean isText = this.isTextFile(name);
+                            boolean isImage = this.isImageFile(name);
+                            
+                            if (isText || isImage) {
+                                Toast.makeText(this.getApplicationContext(), isImage ? "正在加载图片..." : "正在加载文件内容...", Toast.LENGTH_SHORT).show();
+                                this.executor.execute(() -> {
+                                    try {
+                                        String readToken = this.prefs.getString("token", "").trim();
+                                        String readBaseUrl = this.normalizedBaseUrl();
+                                        JSONObject readPayload = new JSONObject().put("path", (Object)fullFilePath);
+                                        JSONObject readRes = YanziApiClient.postJson(readBaseUrl, "/v1/fs/read", readPayload, readToken, "读取文件");
+                                        String content = readRes.optString("content", "");
+                                        if (!content.isEmpty() || readRes.has("content") || readRes.optBoolean("ok", false)) {
+                                            this.runOnUiThread(() -> {
+                                                if (isImage) {
+                                                    this.showImagePreviewDialog(fullFilePath, name, content);
+                                                } else {
+                                                    this.showTextEditorDialog(fullFilePath, name, content);
+                                                }
+                                            });
+                                        } else {
+                                            String error = readRes.optString("error", "文件无法读取");
+                                            this.runOnUiThread(() -> {
+                                                Toast.makeText(this.getApplicationContext(), "加载失败: " + error, Toast.LENGTH_LONG).show();
+                                            });
+                                        }
+                                    } catch (Exception ex) {
+                                        this.runOnUiThread(() -> {
+                                            Toast.makeText(this.getApplicationContext(), "加载失败: " + ex.getMessage(), Toast.LENGTH_LONG).show();
+                                        });
+                                    }
+                                });
+                            } else {
+                                Toast.makeText(this.getApplicationContext(), "非文本图片文件，正在电脑上打开...", Toast.LENGTH_SHORT).show();
+                                this.executor.execute(() -> {
+                                    try {
+                                        String runToken = this.prefs.getString("token", "").trim();
+                                        String runBaseUrl = this.normalizedBaseUrl();
+                                        JSONObject runPayload = new JSONObject().put("command", (Object)("Start-Process \"" + fullFilePath + "\""));
+                                        YanziApiClient.postJson(runBaseUrl, "/v1/shell/run", runPayload, runToken, "打开文件");
+                                    } catch (Exception ex) {
+                                        Log.e("YanziFS", "Run file error", ex);
+                                    }
+                                });
+                            }
+                        };
+
                         if (isDir) {
                             row.setOnClickListener(v -> {
                                 String separator = processedPath.endsWith("\\") || processedPath.endsWith("/") ? "" : "\\";
@@ -742,58 +788,14 @@ extends Activity {
                                 this.loadFileList(nextPath);
                             });
                         } else {
+                            row.setOnClickListener(v -> openFileRunnable.run());
                             Button btnOpen = new Button((Context)this);
                             btnOpen.setText((CharSequence)"打开");
                             btnOpen.setTextColor(-1);
                             btnOpen.setBackgroundColor(Color.rgb(30, 41, 59));
                             btnOpen.setTextSize(11f);
                             btnOpen.setAllCaps(false);
-                            
-                            btnOpen.setOnClickListener(v -> {
-                                String separator = processedPath.endsWith("\\") || processedPath.endsWith("/") ? "" : "\\";
-                                String fullFilePath = processedPath + separator + name;
-                                boolean isText = this.isTextFile(name);
-                                
-                                if (isText) {
-                                    Toast.makeText(this.getApplicationContext(), "正在加载文件内容...", Toast.LENGTH_SHORT).show();
-                                    this.executor.execute(() -> {
-                                        try {
-                                            String readToken = this.prefs.getString("token", "").trim();
-                                            String readBaseUrl = this.normalizedBaseUrl();
-                                            JSONObject readPayload = new JSONObject().put("path", (Object)fullFilePath);
-                                            JSONObject readRes = YanziApiClient.postJson(readBaseUrl, "/v1/fs/read", readPayload, readToken, "读取文件");
-                                            if (readRes.optBoolean("ok", false)) {
-                                                String content = readRes.optString("content", "");
-                                                this.runOnUiThread(() -> {
-                                                    this.showTextEditorDialog(fullFilePath, name, content);
-                                                });
-                                            } else {
-                                                String error = readRes.optString("error", "未知错误");
-                                                this.runOnUiThread(() -> {
-                                                    Toast.makeText(this.getApplicationContext(), "加载失败: " + error, Toast.LENGTH_LONG).show();
-                                                });
-                                            }
-                                        } catch (Exception ex) {
-                                            this.runOnUiThread(() -> {
-                                                Toast.makeText(this.getApplicationContext(), "加载失败: " + ex.getMessage(), Toast.LENGTH_LONG).show();
-                                            });
-                                        }
-                                    });
-                                } else {
-                                    Toast.makeText(this.getApplicationContext(), "非文本文件，正在电脑上打开...", Toast.LENGTH_SHORT).show();
-                                    this.executor.execute(() -> {
-                                        try {
-                                            String runToken = this.prefs.getString("token", "").trim();
-                                            String runBaseUrl = this.normalizedBaseUrl();
-                                            JSONObject runPayload = new JSONObject().put("command", (Object)("Start-Process \"" + fullFilePath + "\""));
-                                            YanziApiClient.postJson(runBaseUrl, "/v1/shell/run", runPayload, runToken, "打开文件");
-                                        } catch (Exception ex) {
-                                            Log.e("YanziFS", "Run file error", ex);
-                                        }
-                                    });
-                                }
-                            });
-                            
+                            btnOpen.setOnClickListener(v -> openFileRunnable.run());
                             row.addView((View)btnOpen, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(60), this.dp(30)));
                         }
                         
@@ -1372,59 +1374,51 @@ extends Activity {
         this.aiTabPage.setBackgroundColor(Color.rgb((int)17, (int)17, (int)17));
         this.aiDrawerLayout = new DrawerLayout((Context)this);
         this.aiDrawerLayout.setFitsSystemWindows(true);
-        LinearLayout mainContent = new LinearLayout((Context)this);
-        mainContent.setOrientation(1);
+        android.widget.RelativeLayout mainContent = new android.widget.RelativeLayout((Context)this);
         LinearLayout topBar = new LinearLayout((Context)this);
+        topBar.setId(10001);
         topBar.setOrientation(0);
         topBar.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
         topBar.setGravity(16);
-        ImageView hamburgerBtn = new ImageView((Context)this);
-        hamburgerBtn.setClickable(true);
-        hamburgerBtn.setFocusable(true);
-        hamburgerBtn.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-        hamburgerBtn.setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault("menu"), Color.WHITE));
-        hamburgerBtn.setOnClickListener(v -> this.aiDrawerLayout.openDrawer(3));
-        topBar.addView((View)hamburgerBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
-        ImageView clearBtn = new ImageView((Context)this);
-        clearBtn.setClickable(true);
-        clearBtn.setFocusable(true);
-        clearBtn.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-        clearBtn.setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault("delete"), Color.WHITE));
-        clearBtn.setOnClickListener(v -> this.clearAiHistory());
-        topBar.addView((View)clearBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
-        TextView title = this.textView("AI 助手", 20, -1, true);
-        title.setGravity(17);
-        topBar.addView((View)title, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-        ImageView speakBtn = new ImageView((Context)this);
-        speakBtn.setClickable(true);
-        speakBtn.setFocusable(true);
-        speakBtn.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-        speakBtn.setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault(this.isTtsEnabled ? "volume-high" : "volume-mute"), Color.WHITE));
-        speakBtn.setOnClickListener(v -> this.toggleTtsStatus(speakBtn));
-        topBar.addView((View)speakBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
-        this.wakeToggleBtn = new ImageView((Context)this);
-        this.wakeToggleBtn.setClickable(true);
-        this.wakeToggleBtn.setFocusable(true);
-        this.wakeToggleBtn.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-        this.wakeToggleBtn.setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault("hearing"), Color.WHITE));
-        this.wakeToggleBtn.setColorFilter(Color.rgb(148, 163, 184));
-        this.wakeToggleBtn.setOnClickListener(v -> this.toggleWakeListening());
-        topBar.addView((View)this.wakeToggleBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
-        ImageView aiSettingsBtn = new ImageView((Context)this);
-        aiSettingsBtn.setClickable(true);
-        aiSettingsBtn.setFocusable(true);
-        aiSettingsBtn.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-        aiSettingsBtn.setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault("settings"), Color.WHITE));
-        aiSettingsBtn.setOnClickListener(v -> this.showAiSettingsDialog());
-        topBar.addView((View)aiSettingsBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
-        mainContent.addView((View)topBar);
+        topBar.setBackgroundColor(Color.rgb(17, 17, 17));
+        
+        android.widget.RelativeLayout.LayoutParams topParams = new android.widget.RelativeLayout.LayoutParams(-1, -2);
+        topParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
+        mainContent.addView((View)topBar, (ViewGroup.LayoutParams)topParams);
         ScrollView chatScroll = new ScrollView((Context)this);
         chatScroll.setFillViewport(true);
         this.aiChatHistory = new LinearLayout((Context)this);
         this.aiChatHistory.setOrientation(1);
         this.aiChatHistory.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
         chatScroll.addView((View)this.aiChatHistory);
-        mainContent.addView((View)chatScroll, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
+
+        View.OnLongClickListener clearHistoryListener = v -> {
+            PopupMenu popup = new PopupMenu(this, v);
+            popup.getMenu().add(0, 1, 1, (CharSequence)"清空历史");
+            popup.setOnMenuItemClickListener(item -> {
+                if (item.getItemId() == 1) {
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle((CharSequence)"确认清空")
+                        .setMessage((CharSequence)"确定要清空全部聊天历史记录吗？")
+                        .setPositiveButton((CharSequence)"清空", (dialog, which) -> {
+                            this.clearAiHistory();
+                        })
+                        .setNegativeButton((CharSequence)"取消", null)
+                        .show();
+                    return true;
+                }
+                return false;
+            });
+            popup.show();
+            return true;
+        };
+        chatScroll.setOnLongClickListener(clearHistoryListener);
+        this.aiChatHistory.setOnLongClickListener(clearHistoryListener);
+
+        android.widget.RelativeLayout.LayoutParams chatParams = new android.widget.RelativeLayout.LayoutParams(-1, -1);
+        chatParams.addRule(android.widget.RelativeLayout.BELOW, 10001);
+        chatParams.addRule(android.widget.RelativeLayout.ABOVE, 10002);
+        mainContent.addView((View)chatScroll, (ViewGroup.LayoutParams)chatParams);
         
         this.aiAttachmentScrollView = new HorizontalScrollView((Context)this);
         this.aiAttachmentScrollView.setVisibility(View.GONE);
@@ -1566,8 +1560,10 @@ extends Activity {
         this.aiSendButtonDefaultBackground = this.aiSendButton.getBackground();
         this.aiSendButton.setOnClickListener(v -> this.handleAiSendButtonClick());
         bottomArea.addView((View)this.aiSendButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(48)));
-        bottomShell.addView((View)bottomArea);
-        mainContent.addView((View)bottomShell);
+        bottomShell.setId(10002);
+        android.widget.RelativeLayout.LayoutParams bottomParams = new android.widget.RelativeLayout.LayoutParams(-1, -2);
+        bottomParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_BOTTOM);
+        mainContent.addView((View)bottomShell, (ViewGroup.LayoutParams)bottomParams);
         this.aiDrawerLayout.addView((View)mainContent, (ViewGroup.LayoutParams)new DrawerLayout.LayoutParams(-1, -1));
         LinearLayout drawerContent = new LinearLayout((Context)this);
         drawerContent.setOrientation(1);
@@ -1673,7 +1669,6 @@ extends Activity {
         this.profileTabPage = this.createTabPage();
         root.addView((View)this.yanmTabPage);
         root.addView((View)this.mobileExtensionTabPage);
-        root.addView((View)this.desktopExtensionTabPage);
         root.addView((View)this.profileTabPage);
         LinearLayout yanmHeader = new LinearLayout((Context)this);
         yanmHeader.setOrientation(LinearLayout.HORIZONTAL);
@@ -1928,7 +1923,7 @@ extends Activity {
         LinearLayout subTabBar = new LinearLayout((Context)this);
         subTabBar.setOrientation(0);
         subTabBar.setGravity(16);
-        subTabBar.setPadding(0, 0, 0, this.dp(12));
+        subTabBar.setPadding(this.dp(20), 0, this.dp(20), this.dp(12));
         
         this.btnShowChat = new Button((Context)this);
         this.btnShowChat.setText((CharSequence)"聊天");
@@ -1976,7 +1971,7 @@ extends Activity {
         LinearLayout desktopHeader = new LinearLayout((Context)this);
         desktopHeader.setOrientation(0);
         desktopHeader.setGravity(16);
-        desktopHeader.setPadding(0, 0, 0, this.dp(10));
+        desktopHeader.setPadding(this.dp(20), this.dp(24), this.dp(20), this.dp(10));
         
         TextView tvTitle = this.textView("电脑", 28, -1, true);
         desktopHeader.addView((View)tvTitle);
@@ -2013,13 +2008,14 @@ extends Activity {
         
         this.mainDesktopContentLayout = new LinearLayout((Context)this);
         this.mainDesktopContentLayout.setOrientation(1);
-        this.mainDesktopContentLayout.setVisibility(8);
+        this.mainDesktopContentLayout.setVisibility(0);
         this.mainDesktopContentLayout.addView((View)subTabBar);
-        this.desktopExtensionTabPage.addView((View)this.mainDesktopContentLayout);
+        this.desktopExtensionTabPage.addView((View)this.mainDesktopContentLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
         
         LinearLayout extensionsContainer = new LinearLayout((Context)this);
         this.extensionsContainer = extensionsContainer;
         extensionsContainer.setOrientation(1);
+        extensionsContainer.setPadding(this.dp(20), 0, this.dp(20), 0);
         
         LinearLayout fileManagerContainer = new LinearLayout((Context)this);
         this.fileManagerContainer = fileManagerContainer;
@@ -2028,12 +2024,6 @@ extends Activity {
         LinearLayout shellContainer = new LinearLayout((Context)this);
         this.shellContainer = shellContainer;
         shellContainer.setOrientation(1);
-        
-        int screenHeight = this.getResources().getDisplayMetrics().heightPixels;
-        int pagerHeight = screenHeight - this.dp(200);
-        if (pagerHeight < this.dp(400)) {
-            pagerHeight = this.dp(500);
-        }
         
         this.desktopViewPager = new androidx.viewpager.widget.ViewPager((Context)this);
         this.desktopViewPager.setId(android.view.View.generateViewId());
@@ -2085,7 +2075,7 @@ extends Activity {
         this.btnShowFileManager.setOnClickListener(v -> this.selectSubTab(2));
         this.btnShowShell.setOnClickListener(v -> this.selectSubTab(3));
         
-        this.mainDesktopContentLayout.addView((View)this.desktopViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, pagerHeight));
+        this.mainDesktopContentLayout.addView((View)this.desktopViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
 
         LinearLayout extensionsSearchRow = new LinearLayout((Context)this);
         extensionsSearchRow.setOrientation(0);
@@ -2131,7 +2121,14 @@ extends Activity {
         
         this.extensionList = new LinearLayout((Context)this);
         this.extensionList.setOrientation(1);
-        extensionsContainer.addView((View)this.extensionList);
+
+        ScrollView extensionsScrollView = new ScrollView((Context)this);
+        extensionsScrollView.setNestedScrollingEnabled(true);
+        extensionsScrollView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        extensionsScrollView.addView((View)this.extensionList);
+        
+        LinearLayout.LayoutParams extScrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
+        extensionsContainer.addView((View)extensionsScrollView, (ViewGroup.LayoutParams)extScrollParams);
         this.renderCachedExtensions();
 
         // YanShell UI (Termux-style)
@@ -2176,7 +2173,7 @@ extends Activity {
         this.tvShellOutput.setVisibility(8);
         
         sv.addView((View)this.tvShellOutput);
-        LinearLayout.LayoutParams outputParams = new LinearLayout.LayoutParams(-1, this.dp(350));
+        LinearLayout.LayoutParams outputParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
         shellPanel.addView((View)sv, (ViewGroup.LayoutParams)outputParams);
         
         // 2. 输入行在下方
@@ -2307,7 +2304,7 @@ extends Activity {
         LinearLayout.LayoutParams ekParams = new LinearLayout.LayoutParams(-1, -2);
         ekParams.topMargin = this.dp(6);
         shellPanel.addView((View)extraKeysScroll, (ViewGroup.LayoutParams)ekParams);
-        shellContainer.addView((View)shellPanel);
+        shellContainer.addView((View)shellPanel, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
         
         // 软键盘 Enter 直接执行
         this.etShellInput.setOnEditorActionListener((v, actionId, event) -> {
@@ -2362,31 +2359,23 @@ extends Activity {
         // YanPath UI
         LinearLayout fsPanel = new LinearLayout((Context)this);
         fsPanel.setOrientation(1);
-        fsPanel.addView((View)this.textView("文件管理 (YanPath)", 16, -1, true));
         
         LinearLayout pathRow = new LinearLayout((Context)this);
         pathRow.setOrientation(0);
         pathRow.setGravity(16);
-        pathRow.setPadding(0, this.dp(4), 0, this.dp(8));
-        
-        Button btnRoot = new Button((Context)this);
-        btnRoot.setText((CharSequence)"根");
-        btnRoot.setTextColor(-1);
-        btnRoot.setBackgroundColor(Color.rgb(30, 41, 59));
-        btnRoot.setAllCaps(false);
-        btnRoot.setTextSize(12f);
+        pathRow.setPadding(0, this.dp(2), 0, this.dp(6));
         
         Button btnBack = new Button((Context)this);
-        btnBack.setText((CharSequence)"返回");
+        btnBack.setText((CharSequence)"←");
         btnBack.setTextColor(-1);
         btnBack.setBackgroundColor(Color.rgb(30, 41, 59));
         btnBack.setAllCaps(false);
-        btnBack.setTextSize(12f);
+        btnBack.setTextSize(16f);
+        btnBack.setTypeface(Typeface.DEFAULT_BOLD);
+        btnBack.setPadding(0, 0, 0, 0);
         
-        pathRow.addView((View)btnRoot, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(45), this.dp(32)));
-        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(this.dp(60), this.dp(32));
-        backParams.leftMargin = this.dp(6);
-        backParams.rightMargin = this.dp(6);
+        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(this.dp(36), this.dp(32));
+        backParams.rightMargin = this.dp(8);
         pathRow.addView((View)btnBack, (ViewGroup.LayoutParams)backParams);
         
         this.breadcrumbsScrollView = new HorizontalScrollView((Context)this);
@@ -2403,8 +2392,39 @@ extends Activity {
         fsSearchRow.setOrientation(0);
         fsSearchRow.setGravity(16);
         LinearLayout.LayoutParams fsSearchParams = new LinearLayout.LayoutParams(-1, -2);
-        fsSearchParams.setMargins(0, this.dp(6), 0, this.dp(6));
+        fsSearchParams.setMargins(0, this.dp(4), 0, this.dp(6));
         
+        Button btnPlusMenu = new Button((Context)this);
+        btnPlusMenu.setText((CharSequence)"+");
+        btnPlusMenu.setTextColor(-1);
+        btnPlusMenu.setBackgroundColor(Color.rgb(30, 41, 59));
+        btnPlusMenu.setAllCaps(false);
+        btnPlusMenu.setTextSize(18f);
+        btnPlusMenu.setTypeface(Typeface.DEFAULT_BOLD);
+        btnPlusMenu.setPadding(0, 0, 0, 0);
+        
+        btnPlusMenu.setOnClickListener(v -> {
+            PopupMenu popup = new PopupMenu(this, v);
+            popup.getMenu().add(0, 1, 1, (CharSequence)"文件");
+            popup.getMenu().add(0, 2, 2, (CharSequence)"照片");
+            popup.getMenu().add(0, 3, 3, (CharSequence)"拍照");
+            popup.setOnMenuItemClickListener(item -> {
+                switch (item.getItemId()) {
+                    case 1:
+                        this.startFsUploadFile();
+                        return true;
+                    case 2:
+                        this.startFsUploadPhoto();
+                        return true;
+                    case 3:
+                        this.startFsTakePhoto();
+                        return true;
+                }
+                return false;
+            });
+            popup.show();
+        });
+
         this.fsSearchInput = new EditText((Context)this);
         this.fsSearchInput.setHint((CharSequence)"输入关键字筛选当前目录...");
         this.fsSearchInput.setTextColor(-1);
@@ -2419,11 +2439,16 @@ extends Activity {
         btnFsSearch.setTextColor(-1);
         btnFsSearch.setBackgroundColor(Color.rgb(30, 41, 59));
         btnFsSearch.setAllCaps(false);
+        btnFsSearch.setTextSize(12f);
         
+        LinearLayout.LayoutParams plusParams = new LinearLayout.LayoutParams(this.dp(36), this.dp(36));
+        plusParams.rightMargin = this.dp(6);
+        fsSearchRow.addView((View)btnPlusMenu, (ViewGroup.LayoutParams)plusParams);
+
         LinearLayout.LayoutParams fsInputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        fsInputParams.rightMargin = this.dp(8);
+        fsInputParams.rightMargin = this.dp(6);
         fsSearchRow.addView((View)this.fsSearchInput, (ViewGroup.LayoutParams)fsInputParams);
-        fsSearchRow.addView((View)btnFsSearch, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(36)));
+        fsSearchRow.addView((View)btnFsSearch, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(60), this.dp(36)));
         fsPanel.addView((View)fsSearchRow);
         
         this.fsSearchInput.addTextChangedListener(new android.text.TextWatcher() {
@@ -2441,56 +2466,27 @@ extends Activity {
             this.hideKeyboard((View)this.fsSearchInput);
         });
         
-        LinearLayout uploadRow = new LinearLayout((Context)this);
-        uploadRow.setOrientation(0);
-        uploadRow.setGravity(16);
-        uploadRow.setPadding(0, this.dp(4), 0, this.dp(8));
-        
-        Button btnUploadFile = new Button((Context)this);
-        btnUploadFile.setText((CharSequence)"上传文件");
-        btnUploadFile.setTextColor(-1);
-        btnUploadFile.setBackgroundColor(Color.rgb(30, 41, 59));
-        btnUploadFile.setAllCaps(false);
-        btnUploadFile.setTextSize(11f);
-        
-        Button btnUploadPhoto = new Button((Context)this);
-        btnUploadPhoto.setText((CharSequence)"上传照片");
-        btnUploadPhoto.setTextColor(-1);
-        btnUploadPhoto.setBackgroundColor(Color.rgb(30, 41, 59));
-        btnUploadPhoto.setAllCaps(false);
-        btnUploadPhoto.setTextSize(11f);
-        
-        Button btnCamera = new Button((Context)this);
-        btnCamera.setText((CharSequence)"拍照");
-        btnCamera.setTextColor(-1);
-        btnCamera.setBackgroundColor(Color.rgb(30, 41, 59));
-        btnCamera.setAllCaps(false);
-        btnCamera.setTextSize(11f);
-        
-        LinearLayout.LayoutParams btnUploadParams = new LinearLayout.LayoutParams(0, this.dp(34), 1.0f);
-        btnUploadParams.rightMargin = this.dp(6);
-        uploadRow.addView((View)btnUploadFile, (ViewGroup.LayoutParams)btnUploadParams);
-        uploadRow.addView((View)btnUploadPhoto, (ViewGroup.LayoutParams)btnUploadParams);
-        btnUploadParams.rightMargin = 0;
-        uploadRow.addView((View)btnCamera, (ViewGroup.LayoutParams)btnUploadParams);
-        fsPanel.addView((View)uploadRow);
-        
-        btnUploadFile.setOnClickListener(v -> this.startFsUploadFile());
-        btnUploadPhoto.setOnClickListener(v -> this.startFsUploadPhoto());
-        btnCamera.setOnClickListener(v -> this.startFsTakePhoto());
-        
         this.fileListLayout = new LinearLayout((Context)this);
         this.fileListLayout.setOrientation(1);
-        fsPanel.addView((View)this.fileListLayout);
-        fileManagerContainer.addView((View)fsPanel);
         
-        btnRoot.setOnClickListener(v -> this.loadFileList(""));
+        ScrollView fileListScrollView = new ScrollView((Context)this);
+        fileListScrollView.setNestedScrollingEnabled(true);
+        fileListScrollView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        fileListScrollView.addView((View)this.fileListLayout);
+        
+        LinearLayout.LayoutParams listScrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
+        fsPanel.addView((View)fileListScrollView, (ViewGroup.LayoutParams)listScrollParams);
+        fileManagerContainer.addView((View)fsPanel, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
+        
         btnBack.setOnClickListener(v -> {
-            if (this.currentPath == null || this.currentPath.isEmpty()) return;
+            if (this.currentPath == null || this.currentPath.isEmpty() || this.currentPath.equalsIgnoreCase("Desktop")) {
+                this.loadFileList("Desktop");
+                return;
+            }
             java.io.File file = new java.io.File(this.currentPath);
             String parent = file.getParent();
             if (parent == null) {
-                this.loadFileList("");
+                this.loadFileList("Desktop");
             } else {
                 this.loadFileList(parent);
             }
@@ -2623,6 +2619,7 @@ extends Activity {
         this.setupAiTabPage();
         this.loadAiHistory();
         shell.addView((View)this.aiTabPage, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
+        shell.addView((View)this.desktopExtensionTabPage, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
         shell.addView((View)this.buildBottomTabs(), (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(64)));
         this.setContentView((View)shell);
         this.selectTab("yanm");
@@ -2721,7 +2718,7 @@ extends Activity {
         boolean isProfile = "profile".equals(key);
         this.yanmTabPage.setVisibility(isYanm ? 0 : 8);
         this.mobileExtensionTabPage.setVisibility(isMobile ? 0 : 8);
-        this.swipeRefresh.setVisibility(isAi ? 8 : 0);
+        this.swipeRefresh.setVisibility((isAi || isDesktop) ? 8 : 0);
         this.aiTabPage.setVisibility(isAi ? 0 : 8);
         this.desktopExtensionTabPage.setVisibility(isDesktop ? 0 : 8);
         this.profileTabPage.setVisibility(isProfile ? 0 : 8);
@@ -3652,11 +3649,14 @@ extends Activity {
             this.extensionList.addView((View)this.textView("\u6682\u65e0\u53ef\u8fdc\u7a0b\u6267\u884c\u6269\u5c55\u3002", 13, Color.rgb((int)148, (int)163, (int)184), false));
             return;
         }
+        this.extensionList.setGravity(Gravity.CENTER_HORIZONTAL);
         GridLayout grid = new GridLayout((Context)this);
         grid.setColumnCount(4);
-        this.extensionList.addView((View)grid);
+        LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(-2, -2);
+        gridParams.gravity = Gravity.CENTER_HORIZONTAL;
+        this.extensionList.addView((View)grid, (ViewGroup.LayoutParams)gridParams);
         int screenWidth = this.getResources().getDisplayMetrics().widthPixels;
-        int cellWidth = Math.max(this.dp(72), (screenWidth - this.dp(56)) / 4);
+        int cellWidth = Math.max(this.dp(72), (screenWidth - this.dp(40)) / 4);
         for (RemoteExtension extension : filtered) {
             LinearLayout card = this.iconCard();
             card.setGravity(17);
@@ -3668,7 +3668,7 @@ extends Activity {
             GridLayout.LayoutParams cardParams = new GridLayout.LayoutParams();
             cardParams.width = cellWidth;
             cardParams.height = -2;
-            cardParams.setMargins(this.dp(3), this.dp(6), this.dp(3), this.dp(6));
+            cardParams.setMargins(this.dp(2), this.dp(3), this.dp(2), this.dp(3));
             card.setLayoutParams((ViewGroup.LayoutParams)cardParams);
             Path path = MobileIconLibrary.resolveOrDefault(extension.icon);
             ImageView img = new ImageView((Context)this);
@@ -4118,10 +4118,10 @@ extends Activity {
             }
         } else {
             if (this.offlineHintView != null) {
-                this.offlineHintView.setVisibility(View.VISIBLE);
+                this.offlineHintView.setVisibility(View.GONE);
             }
             if (this.mainDesktopContentLayout != null) {
-                this.mainDesktopContentLayout.setVisibility(View.GONE);
+                this.mainDesktopContentLayout.setVisibility(View.VISIBLE);
             }
             if (this.tvDesktopConnectionStatus != null) {
                 this.tvDesktopConnectionStatus.setText(" (未上线)");
@@ -4246,7 +4246,7 @@ extends Activity {
         this.breadcrumbsLayout.removeAllViews();
         if (path == null || path.isEmpty()) {
             TextView tv = new TextView((Context)this);
-            tv.setText("盘符根");
+            tv.setText("桌面");
             tv.setTextColor(Color.rgb(148, 163, 184));
             tv.setTextSize(13f);
             this.breadcrumbsLayout.addView(tv);
@@ -4374,6 +4374,73 @@ extends Activity {
                 });
             }
         });
+    }
+
+    private boolean isImageFile(String fileName) {
+        if (fileName == null) return false;
+        String nameLower = fileName.toLowerCase(java.util.Locale.ROOT);
+        return nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") 
+            || nameLower.endsWith(".gif") || nameLower.endsWith(".webp") || nameLower.endsWith(".bmp") 
+            || nameLower.endsWith(".ico") || nameLower.endsWith(".svg");
+    }
+
+    private String getFileTypeIcon(String fileName, boolean isDir) {
+        if (isDir) return "📁";
+        if (fileName == null) return "📄";
+        String lower = fileName.toLowerCase(java.util.Locale.ROOT);
+        if (isImageFile(lower)) return "🖼️";
+        if (isTextFile(lower)) return "📄";
+        if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z") || lower.endsWith(".tar") || lower.endsWith(".gz")) return "📦";
+        if (lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".avi") || lower.endsWith(".mov")) return "🎬";
+        if (lower.endsWith(".mp3") || lower.endsWith(".flac") || lower.endsWith(".wav") || lower.endsWith(".aac")) return "🎵";
+        if (lower.endsWith(".exe") || lower.endsWith(".msi") || lower.endsWith(".apk")) return "⚙️";
+        return "📄";
+    }
+
+    private void showImagePreviewDialog(String fullFilePath, String fileName, String base64Content) {
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder((Context)this);
+        builder.setTitle((CharSequence)("图片预览: " + fileName));
+
+        LinearLayout container = new LinearLayout((Context)this);
+        container.setOrientation(1);
+        container.setGravity(Gravity.CENTER);
+        container.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
+
+        ImageView imageView = new ImageView((Context)this);
+        imageView.setAdjustViewBounds(true);
+        imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        imageView.setMaxHeight(this.dp(400));
+        imageView.setMaxWidth(this.dp(320));
+
+        try {
+            byte[] bytes = android.util.Base64.decode(base64Content, android.util.Base64.DEFAULT);
+            android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            if (bitmap != null) {
+                imageView.setImageBitmap(bitmap);
+            } else {
+                TextView tvErr = this.textView("图片解析失败，可能格式损坏", 14, Color.RED, false);
+                container.addView((View)tvErr);
+            }
+        } catch (Exception e) {
+            TextView tvErr = this.textView("图片解码异常: " + e.getMessage(), 14, Color.RED, false);
+            container.addView((View)tvErr);
+        }
+
+        container.addView((View)imageView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
+        builder.setView((View)container);
+
+        builder.setPositiveButton((CharSequence)"在电脑打开", (dialog, which) -> {
+            this.executor.execute(() -> {
+                try {
+                    String runToken = this.prefs.getString("token", "").trim();
+                    String runBaseUrl = this.normalizedBaseUrl();
+                    JSONObject runPayload = new JSONObject().put("command", (Object)("Start-Process \"" + fullFilePath + "\""));
+                    YanziApiClient.postJson(runBaseUrl, "/v1/shell/run", runPayload, runToken, "打开文件");
+                } catch (Exception ignored) {}
+            });
+        });
+        builder.setNegativeButton((CharSequence)"关闭", null);
+        builder.show();
     }
 
     private boolean isTextFile(String fileName) {
@@ -8572,44 +8639,131 @@ extends Activity {
             return path.startsWith("/v1/fs/") || path.equals("/v1/shell/run");
         }
 
-        private static JSONObject requestDesktopLocalApi(String path, String token, String action, String method, JSONObject payload) throws Exception {
-            String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
-            if (lanBaseUrl == null && sContext != null) {
-                lanBaseUrl = LanDiscoveryManager.discoverNow(sContext);
+        private static String getDeviceIdStatic(Context context) {
+            if (context != null) {
+                SharedPreferences p = context.getSharedPreferences("yanzi-mobile", 0);
+                String id = p.getString("deviceId", null);
+                if (id != null && !id.trim().isEmpty()) return id;
+                String created = "android-" + java.util.UUID.randomUUID();
+                p.edit().putString("deviceId", created).apply();
+                return created;
             }
-            String[] candidates = lanBaseUrl == null
-                ? new String[]{"http://127.0.0.1:53919"}
-                : new String[]{lanBaseUrl, "http://127.0.0.1:53919"};
-            Exception lastError = null;
-            for (String candidateBaseUrl : candidates) {
-                if (candidateBaseUrl == null || candidateBaseUrl.trim().isEmpty()) {
-                    continue;
+            return "android-mobile-fallback";
+        }
+
+        private static String extractRelayResultPayload(JSONObject detail) {
+            if (detail == null) return "";
+            JSONObject payload = detail.optJSONObject("payload");
+            if (payload != null) {
+                JSONObject execResult = payload.optJSONObject("executionResult");
+                if (execResult != null) {
+                    String output = execResult.optString("output", "");
+                    if (!output.trim().isEmpty()) return output;
                 }
+                String payloadResp = payload.optString("responsePayload", payload.optString("output", ""));
+                if (!payloadResp.trim().isEmpty()) return payloadResp;
+            }
+            String resp = detail.optString("responsePayload", detail.optString("ackedOutput", detail.optString("result", "")));
+            if (!resp.trim().isEmpty()) return resp;
+            return "";
+        }
+
+        private static JSONObject requestCloudRelayApi(String path, String token, String action, String method, JSONObject payload) throws Exception {
+            long startTime = System.currentTimeMillis();
+            android.util.Log.i("YanziRelay", "==> [START] requestCloudRelayApi: path=" + path + ", action=" + action);
+            String baseUrl = "https://sync.luoluoluo.cc.cd";
+            String deviceId = getDeviceIdStatic(sContext);
+            String deviceName = MainActivity.buildDeviceDisplayName();
+            try {
+                YanziApiClient.registerDevice(baseUrl, token, deviceId, deviceName);
+                android.util.Log.i("YanziRelay", "--> Registered device: id=" + deviceId + " (" + (System.currentTimeMillis() - startTime) + "ms)");
+            } catch (Exception regEx) {
+                android.util.Log.w("YanziRelay", "--> Register device failed: " + regEx.getMessage());
+            }
+
+            String kind = "run-powershell";
+            if (path.startsWith("/v1/fs/list")) {
+                kind = "fs-list";
+            } else if (path.startsWith("/v1/fs/read")) {
+                kind = "fs-read";
+            } else if (path.startsWith("/v1/fs/write")) {
+                kind = "fs-write";
+            } else if (path.equals("/v1/shell/run")) {
+                kind = "run-powershell";
+            }
+
+            String cmdText = payload == null ? "" : payload.optString("command", payload.optString("text", ""));
+            JSONObject msgPayload = payload != null ? payload : new JSONObject().put("path", (Object)path);
+
+            JSONObject relayPayload = new JSONObject()
+                .put("sourceDeviceId", (Object)deviceId)
+                .put("targetPlatform", (Object)"desktop")
+                .put("kind", (Object)kind)
+                .put("title", (Object)action)
+                .put("text", (Object)cmdText)
+                .put("payload", (Object)msgPayload);
+
+            long postStart = System.currentTimeMillis();
+            JSONObject postRes = YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", relayPayload, token, action);
+            String messageId = postRes.optString("messageId", "");
+            android.util.Log.i("YanziRelay", "--> Post relay message OK: messageId=" + messageId + " (" + (System.currentTimeMillis() - postStart) + "ms)");
+
+            if (messageId.isEmpty()) {
+                throw new IllegalStateException("中继消息投递失败");
+            }
+
+            long pollStart = System.currentTimeMillis();
+            for (int attempt = 0; attempt < 35; attempt++) {
+                int sleepMs = attempt < 15 ? 150 : 350;
+                Thread.sleep(sleepMs);
+                try {
+                    JSONObject detail = fetchMessageDetail(baseUrl, token, messageId);
+                    String status = detail.optString("status", "");
+                    String respPayload = extractRelayResultPayload(detail);
+                    android.util.Log.i("YanziRelay", "--> Poll attempt #" + attempt + ": status=" + status + ", payloadLength=" + respPayload.length() + " (" + (System.currentTimeMillis() - pollStart) + "ms)");
+
+                    if ("completed".equalsIgnoreCase(status) || "acked".equalsIgnoreCase(status) || "executed".equalsIgnoreCase(status) || !respPayload.isEmpty()) {
+                        if (!respPayload.trim().isEmpty()) {
+                            android.util.Log.i("YanziRelay", "<== [SUCCESS] Relay completed in " + (System.currentTimeMillis() - startTime) + "ms total!");
+                            try {
+                                return new JSONObject(respPayload);
+                            } catch (Exception e) {
+                                return new JSONObject().put("output", (Object)respPayload).put("exitCode", 0);
+                            }
+                        }
+                    }
+                } catch (Exception pollEx) {
+                    android.util.Log.w("YanziRelay", "--> Poll attempt #" + attempt + " error: " + pollEx.getMessage());
+                }
+            }
+            throw new IllegalStateException("远程设备未响应，请确认电脑处于在线状态。");
+        }
+
+        private static JSONObject requestDesktopLocalApi(String path, String token, String action, String method, JSONObject payload) throws Exception {
+            long lanStart = System.currentTimeMillis();
+            String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
+            android.util.Log.i("YanziRelay", "==> requestDesktopLocalApi: lanBaseUrl=" + lanBaseUrl);
+
+            if (lanBaseUrl != null && !lanBaseUrl.trim().isEmpty() && !lanBaseUrl.contains("127.0.0.1")) {
                 try {
                     String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                    if ((lanToken == null || lanToken.trim().isEmpty()) && candidateBaseUrl.contains("127.0.0.1")) {
-                        lanToken = "yanzi-local-dev-token";
-                    }
-                    int timeoutMs = path.contains("/fs/list") ? 8000 : 15000;
-                    JSONObject result = YanziApiClient.doRequest(candidateBaseUrl, path, lanToken != null ? lanToken : token, action, method, payload, timeoutMs);
+                    int timeoutMs = 800;
+                    JSONObject result = YanziApiClient.doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, method, payload, timeoutMs);
                     YanziApiClient.handleLanSuccess(action, path);
+                    android.util.Log.i("YanziRelay", "<== LAN Direct OK in " + (System.currentTimeMillis() - lanStart) + "ms");
                     return result;
-                }
-                catch (Exception e) {
-                    lastError = e;
-                    if (sContext != null && !candidateBaseUrl.contains("127.0.0.1")) {
-                        LanDiscoveryManager.clearLanBaseUrl(sContext);
-                    }
+                } catch (Exception e) {
+                    android.util.Log.i("YanziRelay", "--> LAN Direct failed (" + (System.currentTimeMillis() - lanStart) + "ms): " + e.getMessage());
+                    if (sContext != null) LanDiscoveryManager.clearLanBaseUrl(sContext);
                 }
             }
-            String message = lastError == null || lastError.getMessage() == null ? "未发现电脑端本地服务" : lastError.getMessage();
-            if (sContext != null) {
-                MobileDiagnostics.append(sContext, "电脑本地接口不可用(" + action + "): " + message);
-            } else {
-                LanDiscoveryManager.cachedLanBaseUrl = null;
-                LanDiscoveryManager.cachedLanApiToken = null;
+
+            android.util.Log.i("YanziRelay", "--> Fallback to Cloud Relay");
+            try {
+                return requestCloudRelayApi(path, token, action, method, payload);
+            } catch (Exception relayEx) {
+                throw new IllegalStateException("远程中继响应失败：" + relayEx.getMessage(), relayEx);
             }
-            throw new IllegalStateException("电脑本地接口不可用：" + message + "。请确认电脑端燕子正在运行，已开启 Agent API；同一局域网使用“局域网同步”，数据线调试请先执行 adb reverse tcp:53919 tcp:53919。", lastError);
         }
 
         private static String toUserMessage(Exception ex) {
@@ -8771,8 +8925,20 @@ extends Activity {
             popup.getMenu().add(0, 6, 5, (CharSequence)"\u5220\u9664");
         }
         popup.getMenu().add(0, 7, 6, (CharSequence)"朗读文本");
+        popup.getMenu().add(0, 99, 7, (CharSequence)"清空全部历史");
         
         popup.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 99) {
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle((CharSequence)"确认清空")
+                    .setMessage((CharSequence)"确定要清空全部聊天历史记录吗？")
+                    .setPositiveButton((CharSequence)"清空", (dialog, which) -> {
+                        this.clearAiHistory();
+                    })
+                    .setNegativeButton((CharSequence)"取消", null)
+                    .show();
+                return true;
+            }
             switch (item.getItemId()) {
                 case 1:
                     ClipboardManager manager = (ClipboardManager)this.getSystemService("clipboard");
@@ -10926,6 +11092,7 @@ extends Activity {
         
         ScrollView scroll = new ScrollView((Context)this);
         this.chatMessageScrollView = scroll;
+        scroll.setFillViewport(true);
         scroll.setNestedScrollingEnabled(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         scroll.setOnTouchListener((v, event) -> {
@@ -10946,7 +11113,7 @@ extends Activity {
         this.chatMessageListLayout = new LinearLayout((Context)this);
         this.chatMessageListLayout.setOrientation(LinearLayout.VERTICAL);
         this.chatMessageListLayout.setPadding(0, this.dp(8), 0, this.dp(8));
-        scroll.addView((View)this.chatMessageListLayout);
+        scroll.addView((View)this.chatMessageListLayout, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -1));
         
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
         this.chatContainerLayout.addView((View)scroll, (ViewGroup.LayoutParams)scrollParams);

@@ -1754,7 +1754,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         menu.Closed += (_, _) =>
         {
             _editInteractionActive = false;
-            if (IsVisible)
+            if (IsVisible && !_mainWindow.IsRadialPickerMode)
             {
                 Activate();
                 _selectionTimer.Start();
@@ -1770,76 +1770,170 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         HostAssets.AppendLog($"Radial edit menu opened: page={target.PageId}, index={target.Index + 1}, hasCommand={target.Item.Command != null}, hasChild={target.Item.HasChildPage}.");
     }
 
+    private static System.Windows.Shapes.Path CreateMenuIcon(string iconKey, System.Windows.Media.Brush fillBrush)
+    {
+        var geometry = ExtensionIconLibrary.ResolveVectorIcon(iconKey.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) ? iconKey : $"mdi:{iconKey}");
+        return new System.Windows.Shapes.Path
+        {
+            Data = geometry,
+            Fill = fillBrush,
+            Stretch = Stretch.Uniform,
+            Width = 16,
+            Height = 16,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
+        };
+    }
+
+    private void PopulateAddMenuOptions(ItemsControl parentMenu, RadialEditTarget target)
+    {
+        var normalBrush = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("BrushTextSec") ?? System.Windows.Media.Brushes.Gray;
+
+        // 1. 已有扩展 (搜索图标，点击直接调出原有搜索界面)
+        var existingExtensionItem = new MenuItem
+        {
+            Header = "已有扩展",
+            Icon = CreateMenuIcon("search", normalBrush)
+        };
+        existingExtensionItem.Click += (_, _) =>
+        {
+            OpenSearchPickerForTarget(target);
+        };
+        parentMenu.Items.Add(existingExtensionItem);
+
+        // 2. 新建扩展 (一级独立项)
+        var createNewExtensionItem = new MenuItem
+        {
+            Header = "新建扩展",
+            Icon = CreateMenuIcon("plus", normalBrush)
+        };
+        createNewExtensionItem.Click += (_, _) =>
+        {
+            CreateNewExtensionForTarget(target);
+        };
+        parentMenu.Items.Add(createNewExtensionItem);
+
+        // 3. 模拟按键
+        var setSimulatedKeyItem = new MenuItem
+        {
+            Header = "模拟按键",
+            Icon = CreateMenuIcon("keyboard", normalBrush)
+        };
+        setSimulatedKeyItem.Click += (_, _) =>
+        {
+            SetSimulatedKeyForTarget(target);
+        };
+        parentMenu.Items.Add(setSimulatedKeyItem);
+
+        // 4. 子环
+        if (!target.Item.HasChildPage)
+        {
+            var addChildItem = new MenuItem
+            {
+                Header = "子环",
+                Icon = CreateMenuIcon("circle-outline", normalBrush)
+            };
+            addChildItem.Click += (_, _) =>
+            {
+                AddChildPageToTarget(target);
+            };
+            parentMenu.Items.Add(addChildItem);
+        }
+    }
+
+    private ContextMenu BuildAddMenu(RadialEditTarget target)
+    {
+        var menu = new ContextMenu();
+        PopulateAddMenuOptions(menu, target);
+        return menu;
+    }
+
+    private void ShowAddMenuForTarget(RadialEditTarget target)
+    {
+        _editInteractionActive = true;
+        var menu = BuildAddMenu(target);
+        menu.PlacementTarget = this;
+        menu.Closed += (_, _) =>
+        {
+            _editInteractionActive = false;
+            if (IsVisible && !_mainWindow.IsRadialPickerMode)
+            {
+                Activate();
+                _selectionTimer.Start();
+            }
+        };
+
+        menu.Placement = PlacementMode.AbsolutePoint;
+        var cursor = Forms.Cursor.Position;
+        menu.HorizontalOffset = cursor.X;
+        menu.VerticalOffset = cursor.Y;
+        menu.IsOpen = true;
+        ActiveTitle = "添加槽位项";
+    }
+
     private ContextMenu BuildEditContextMenu(RadialEditTarget target)
     {
         var menu = new ContextMenu();
+        var normalBrush = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("BrushTextSec") ?? System.Windows.Media.Brushes.Gray;
+        var dangerBrush = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#EF4444"));
 
-        var addCommandItem = new MenuItem { Header = "添加扩展/应用/系统项" };
-        addCommandItem.Click += (_, _) => AddCommandToTarget(target);
-        menu.Items.Add(addCommandItem);
+        bool hasContent = target.Item.Command != null || target.Item.HasChildPage;
 
-        var setSimulatedKeyItem = new MenuItem { Header = "设置模拟按键" };
-        setSimulatedKeyItem.Click += (_, _) => SetSimulatedKeyForTarget(target);
-        menu.Items.Add(setSimulatedKeyItem);
+        PopulateAddMenuOptions(menu, target);
 
-        var clearCommandItem = new MenuItem
+        if (hasContent)
         {
-            Header = "删除扩展/应用/系统项",
-            IsEnabled = target.Item.Command != null
-        };
-        clearCommandItem.Click += (_, _) => ClearCommandFromTarget(target);
-        menu.Items.Add(clearCommandItem);
+            menu.Items.Add(new Separator());
 
-        var cutItem = new MenuItem
+            var clearItem = new MenuItem
+            {
+                Header = "删除",
+                Icon = CreateMenuIcon("trash", dangerBrush)
+            };
+            clearItem.Click += (_, _) => ClearSlotContentFromTarget(target);
+            menu.Items.Add(clearItem);
+
+            var cutItem = new MenuItem
+            {
+                Header = "剪切槽位",
+                Icon = CreateMenuIcon("cut", normalBrush)
+            };
+            cutItem.Click += (_, _) => CutRadialSlot(target);
+            menu.Items.Add(cutItem);
+        }
+
+        if (_cutSlotPayload != null)
         {
-            Header = "剪切槽位",
-            IsEnabled = target.Item.Command != null || target.Item.HasChildPage
-        };
-        cutItem.Click += (_, _) => CutRadialSlot(target);
-        menu.Items.Add(cutItem);
-
-        var pasteItem = new MenuItem
-        {
-            Header = "粘贴到此槽位",
-            IsEnabled = _cutSlotPayload != null
-        };
-        pasteItem.Click += (_, _) => PasteRadialSlot(target);
-        menu.Items.Add(pasteItem);
-
-        menu.Items.Add(new Separator());
-
-        var addChildItem = new MenuItem
-        {
-            Header = "添加子环",
-            IsEnabled = !target.Item.HasChildPage
-        };
-        addChildItem.Click += (_, _) => AddChildPageToTarget(target);
-        menu.Items.Add(addChildItem);
-
-        var clearChildItem = new MenuItem
-        {
-            Header = "删除子环",
-            IsEnabled = target.Item.HasChildPage
-        };
-        clearChildItem.Click += (_, _) => ClearChildPageFromTarget(target);
-        menu.Items.Add(clearChildItem);
+            var pasteItem = new MenuItem
+            {
+                Header = "粘贴到此槽位",
+                Icon = CreateMenuIcon("paste", normalBrush)
+            };
+            pasteItem.Click += (_, _) => PasteRadialSlot(target);
+            menu.Items.Add(pasteItem);
+        }
 
         if (!string.IsNullOrWhiteSpace(_activeProcessName))
         {
-            menu.Items.Add(new Separator());
             bool isBound = IsRadialSlotBoundToCurrentApp(target);
             if (isBound)
             {
-                var unbindItem = new MenuItem { Header = $"取消绑定 (当前应用: {_activeProcessName})" };
+                menu.Items.Add(new Separator());
+                var unbindItem = new MenuItem
+                {
+                    Header = $"取消绑定 (当前应用: {_activeProcessName})",
+                    Icon = CreateMenuIcon("link", normalBrush)
+                };
                 unbindItem.Click += (_, _) => UnbindRadialSlotFromCurrentApp(target);
                 menu.Items.Add(unbindItem);
             }
-            else
+            else if (hasContent)
             {
+                menu.Items.Add(new Separator());
                 var bindItem = new MenuItem 
                 { 
                     Header = $"绑定到当前应用: {_activeProcessName}",
-                    IsEnabled = target.Item.Command != null || target.Item.HasChildPage
+                    Icon = CreateMenuIcon("link", normalBrush)
                 };
                 bindItem.Click += (_, _) => BindRadialSlotToCurrentApp(target);
                 menu.Items.Add(bindItem);
@@ -1849,29 +1943,55 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return menu;
     }
 
-    private async void AddCommandToTarget(RadialEditTarget target)
+    private void AddCommandToTarget(RadialEditTarget target)
+    {
+        ShowAddMenuForTarget(target);
+    }
+
+    private async void OpenSearchPickerForTarget(RadialEditTarget target)
+    {
+        await Dispatcher.InvokeAsync(async () =>
+        {
+            try
+            {
+                var result = await _mainWindow.ShowForRadialPickerAsync(!target.Item.HasChildPage);
+                if (result == null)
+                {
+                    return;
+                }
+
+                if (result.Action == RadialSlotPickerWindow.PickerAction.AddChildPage)
+                {
+                    AddChildPageToTarget(target);
+                    return;
+                }
+
+                if (result.Command == null)
+                {
+                    return;
+                }
+
+                SaveRadialSlotCommand(target.PageId, target.Index, result.Command.ExtensionId, string.Empty);
+                HostAssets.AppendLog($"Radial edit assigned command: page={target.PageId}, index={target.Index + 1}, command={result.Command.Title}.");
+            }
+            finally
+            {
+                _editModeLocked = false;
+                UpdateCenterText();
+            }
+        }, DispatcherPriority.Input);
+    }
+
+    private void CreateNewExtensionForTarget(RadialEditTarget target)
     {
         try
         {
-            var result = await _mainWindow.ShowForRadialPickerAsync(!target.Item.HasChildPage);
-            if (result == null)
+            var createdCommand = _mainWindow.OpenAddExtensionForSlot(this);
+            if (createdCommand != null)
             {
-                return;
+                SaveRadialSlotCommand(target.PageId, target.Index, createdCommand.ExtensionId, string.Empty);
+                HostAssets.AppendLog($"Radial edit assigned new created extension: page={target.PageId}, index={target.Index + 1}, command={createdCommand.Title}.");
             }
-
-            if (result.Action == RadialSlotPickerWindow.PickerAction.AddChildPage)
-            {
-                AddChildPageToTarget(target);
-                return;
-            }
-
-            if (result.Command == null)
-            {
-                return;
-            }
-
-            SaveRadialSlotCommand(target.PageId, target.Index, result.Command.ExtensionId, string.Empty);
-            HostAssets.AppendLog($"Radial edit assigned command: page={target.PageId}, index={target.Index + 1}, command={result.Command.Title}.");
         }
         finally
         {
@@ -1919,6 +2039,18 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private void ClearCommandFromTarget(RadialEditTarget target)
     {
         SaveRadialSlotCommand(target.PageId, target.Index, null, null);
+    }
+
+    private void ClearSlotContentFromTarget(RadialEditTarget target)
+    {
+        if (target.Item.HasChildPage)
+        {
+            ClearChildPageFromTarget(target);
+        }
+        else
+        {
+            ClearCommandFromTarget(target);
+        }
     }
 
     private void CutRadialSlot(RadialEditTarget target)
@@ -2051,6 +2183,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         EnsureRadialPageSlotCapacity(page);
+
+        page.Slots[target.Index] = null;
+        page.SlotTitles[target.Index] = null;
 
         var removedId = page.ChildPageIds[target.Index];
         page.ChildPageIds[target.Index] = null;

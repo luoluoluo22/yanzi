@@ -129,6 +129,25 @@ public sealed class LocalAgentApiServer : IDisposable
         }
     }
 
+    private static string ResolveFsPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || string.Equals(path, "Desktop", StringComparison.OrdinalIgnoreCase))
+        {
+            return Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        }
+        if (path.StartsWith("Desktop\\", StringComparison.OrdinalIgnoreCase))
+        {
+            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            return Path.Combine(desktopPath, path.Substring(8));
+        }
+        if (path.StartsWith("Desktop/", StringComparison.OrdinalIgnoreCase))
+        {
+            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            return Path.Combine(desktopPath, path.Substring(8));
+        }
+        return path;
+    }
+
     private async Task HandleRequestAsync(HttpListenerContext context)
     {
         var request = context.Request;
@@ -503,6 +522,11 @@ public sealed class LocalAgentApiServer : IDisposable
                     var items = new List<object>();
                     string currentPath = "";
 
+                    if (string.IsNullOrEmpty(targetPath) || string.Equals(targetPath, "Desktop", StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                    }
+
                     if (string.IsNullOrEmpty(targetPath))
                     {
                         foreach (var drive in DriveInfo.GetDrives())
@@ -610,7 +634,7 @@ public sealed class LocalAgentApiServer : IDisposable
             if (request.HttpMethod == "POST" && path == "/v1/fs/read")
             {
                 var payload = await ReadJsonBodyAsync(request);
-                var targetPath = GetString(payload, "path");
+                var targetPath = ResolveFsPath(GetString(payload, "path"));
 
                 if (string.IsNullOrEmpty(targetPath))
                 {
@@ -634,12 +658,31 @@ public sealed class LocalAgentApiServer : IDisposable
                         return;
                     }
 
+                    var ext = fileInfo.Extension.ToLowerInvariant();
+                    bool isImage = ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".bmp" || ext == ".ico";
+                    if (isImage)
+                    {
+                        var bytes = File.ReadAllBytes(fullPath);
+                        var base64 = Convert.ToBase64String(bytes);
+                        await WriteJsonAsync(response, 200, new
+                        {
+                            ok = true,
+                            path = fullPath,
+                            content = base64,
+                            isBase64 = true,
+                            ext = ext
+                        });
+                        return;
+                    }
+
                     string content = File.ReadAllText(fullPath, Encoding.UTF8);
                     await WriteJsonAsync(response, 200, new
                     {
                         ok = true,
                         path = fullPath,
-                        content = content
+                        content = content,
+                        isBase64 = false,
+                        ext = ext
                     });
                 }
                 catch (Exception ex)

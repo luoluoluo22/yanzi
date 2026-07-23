@@ -479,7 +479,11 @@ public partial class LoginWindow : Window
         {
             return "网络连接超时（15秒限制），请检查网络连接或代理设置并重试。";
         }
-        if (message.Contains("No such host is known") || message.Contains("HttpRequestException") || message.Contains("SocketException"))
+        if (message.Contains("SSL connection could not be established") || message.Contains("AuthenticationException") || message.Contains("unexpected EOF") || message.Contains("transport stream"))
+        {
+            return "网络 SSL 握手失败，请检查网络代理/VPN设置或防火墙是否拦截了加密连接。";
+        }
+        if (message.Contains("No such host is known") || message.Contains("HttpRequestException") || message.Contains("SocketException") || message.Contains("Cloud request failed"))
         {
             return "网络连接失败，无法连接到同步服务器，请检查网络。";
         }
