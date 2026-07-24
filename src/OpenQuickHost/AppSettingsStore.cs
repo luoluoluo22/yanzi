@@ -386,6 +386,7 @@ public static class AppSettingsStore
             : settings.RadialMenu.Pages[0].Id;
         settings.RadialMenu.ActivationKey = RadialActivationKeys.Normalize(settings.RadialMenu.ActivationKey);
         settings.RadialMenu.CustomShortcut = (settings.RadialMenu.CustomShortcut ?? string.Empty).Trim();
+        settings.GlobalServiceBlacklistedProcesses = NormalizeProcessList(settings.GlobalServiceBlacklistedProcesses);
         settings.RadialMenu.WhitelistedProcesses = NormalizeProcessList(settings.RadialMenu.WhitelistedProcesses);
         settings.RadialMenu.BlacklistedProcesses = NormalizeProcessList(settings.RadialMenu.BlacklistedProcesses);
         settings.RadialMenu.Slots = settings.RadialMenu.Pages[0].Slots.ToList();

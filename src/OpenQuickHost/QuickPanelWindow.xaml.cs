@@ -2500,6 +2500,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         ClearReleaseTarget();
         Topmost = false;
         Hide();
+        MemoryOptimizationService.OptimizeMemoryInBackground();
     }
 
     private void HidePanelIfAllowed()

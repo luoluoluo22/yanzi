@@ -835,6 +835,8 @@ public partial class App : WpfApplication
                 mainWindow.RefreshAppSettings();
             }
 
+            CheckForegroundBlacklist();
+
             ShowDesktopNotification("全局黑名单", $"全局服务黑名单已更新。");
         }
     }

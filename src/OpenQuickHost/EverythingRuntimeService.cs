@@ -58,53 +58,102 @@ public static class EverythingRuntimeService
     {
         lock (SyncLock)
         {
+            var configUpdated = EnsureOptimizedConfig(HostAssets.EverythingRuntimeConfigPath);
+
+            var configPath = HostAssets.EverythingRuntimeConfigPath;
+            var dbPath = HostAssets.EverythingRuntimeDatabasePath;
+            var isDbStale = File.Exists(configPath) && File.Exists(dbPath) && File.GetLastWriteTimeUtc(configPath) > File.GetLastWriteTimeUtc(dbPath);
+
+            if (configUpdated || isDbStale)
+            {
+                HostAssets.AppendLog("Everything config updated or database stale with old index, purging stale DB and restarting runtime to apply exclusions...");
+                StopOwnedRuntime();
+                KillAllYanziEverythingProcesses();
+                try
+                {
+                    if (File.Exists(dbPath))
+                    {
+                        File.Delete(dbPath);
+                    }
+                }
+                catch { }
+            }
+
             if (EverythingSearchService.IsIpcReachable())
             {
                 return true;
             }
 
-            if (EverythingProcessExists())
-            {
-                HostAssets.AppendLog("Everything runtime skipped: existing Everything process detected.");
-                return false;
-            }
-            var runtimeExecutablePath = GetBundledRuntimeExecutablePath();
-            if (!File.Exists(runtimeExecutablePath))
-            {
-                HostAssets.AppendLog($"Everything runtime skipped: bundled executable not found at {runtimeExecutablePath}.");
-                return false;
-            }
+            return TryStartRuntime(isRetry: false);
+        }
+    }
 
-            Directory.CreateDirectory(HostAssets.EverythingRuntimeDataPath);
+    private static bool TryStartRuntime(bool isRetry)
+    {
+        if (EverythingProcessExists())
+        {
+            HostAssets.AppendLog("Everything runtime skipped: existing Everything process detected.");
+            return false;
+        }
 
+        var runtimeExecutablePath = GetBundledRuntimeExecutablePath();
+        if (!File.Exists(runtimeExecutablePath))
+        {
+            HostAssets.AppendLog($"Everything runtime skipped: bundled executable not found at {runtimeExecutablePath}.");
+            return false;
+        }
+
+        Directory.CreateDirectory(HostAssets.EverythingRuntimeDataPath);
+        EnsureOptimizedConfig(HostAssets.EverythingRuntimeConfigPath);
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = runtimeExecutablePath,
+                Arguments = BuildArguments(),
+                WorkingDirectory = Path.GetDirectoryName(runtimeExecutablePath) ?? AppContext.BaseDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            var process = Process.Start(startInfo);
+            if (process != null)
+            {
+                _launchedProcessId = process.Id;
+                ChildProcessTracker.AddProcess(process);
+            }
+            HostAssets.AppendLog($"Everything runtime launch requested: path={runtimeExecutablePath}, args={startInfo.Arguments}");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Everything runtime launch failed: {ex.Message}");
+            return false;
+        }
+
+        var isReady = WaitForIpcReady(TimeSpan.FromSeconds(5));
+        if (!isReady && !isRetry)
+        {
+            HostAssets.AppendLog("Everything runtime failed to respond, attempting automatic recovery by resetting database...");
+            StopOwnedRuntime();
+            KillAllYanziEverythingProcesses();
             try
             {
-                var startInfo = new ProcessStartInfo
+                if (File.Exists(HostAssets.EverythingRuntimeDatabasePath))
                 {
-                    FileName = runtimeExecutablePath,
-                    Arguments = BuildArguments(),
-                    WorkingDirectory = Path.GetDirectoryName(runtimeExecutablePath) ?? AppContext.BaseDirectory,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                };
-
-                var process = Process.Start(startInfo);
-                if (process != null)
-                {
-                    _launchedProcessId = process.Id;
-                    ChildProcessTracker.AddProcess(process);
+                    File.Delete(HostAssets.EverythingRuntimeDatabasePath);
                 }
-                HostAssets.AppendLog($"Everything runtime launch requested: path={runtimeExecutablePath}, args={startInfo.Arguments}");
             }
             catch (Exception ex)
             {
-                HostAssets.AppendLog($"Everything runtime launch failed: {ex.Message}");
-                return false;
+                HostAssets.AppendLog($"Failed to delete corrupted Everything database: {ex.Message}");
             }
 
-            return WaitForIpcReady(TimeSpan.FromSeconds(5));
+            return TryStartRuntime(isRetry: true);
         }
+
+        return isReady;
     }
 
     public static void StopOwnedRuntime()
@@ -220,5 +269,44 @@ public static class EverythingRuntimeService
     private static string Quote(string value)
     {
         return $"\"{value}\"";
+    }
+
+    private static bool EnsureOptimizedConfig(string configPath)
+    {
+        try
+        {
+            const string defaultExcludes = @"exclude_folders=""C:\Windows\WinSxS"";""*\node_modules"";""*\.git"";""*\.vs"";""*\AppData\Local\Temp"";""*\$Recycle.Bin"";""*\System Volume Information""";
+            if (!File.Exists(configPath))
+            {
+                File.WriteAllText(configPath, $"exclude_list_enabled=1\r\n{defaultExcludes}\r\n", System.Text.Encoding.UTF8);
+                return true;
+            }
+
+            var content = File.ReadAllText(configPath);
+            if (!content.Contains("exclude_folders=") || content.Contains("exclude_folders=\r\n") || content.Contains("exclude_folders=\n") || content.Contains("exclude_folders=\"\""))
+            {
+                var updated = System.Text.RegularExpressions.Regex.Replace(
+                    content,
+                    @"(?m)^exclude_folders=.*$",
+                    defaultExcludes);
+
+                if (!updated.Contains("exclude_list_enabled=1"))
+                {
+                    updated = System.Text.RegularExpressions.Regex.Replace(
+                        updated,
+                        @"(?m)^exclude_list_enabled=.*$",
+                        "exclude_list_enabled=1");
+                }
+
+                File.WriteAllText(configPath, updated, System.Text.Encoding.UTF8);
+                return true;
+            }
+        }
+        catch
+        {
+            // Ignore failure to ensure config
+        }
+
+        return false;
     }
 }

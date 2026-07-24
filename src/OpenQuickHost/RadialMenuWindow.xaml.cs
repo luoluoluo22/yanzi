@@ -205,9 +205,13 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private static System.Windows.Media.Brush DefaultButtonIconBrush =>
+        (System.Windows.Application.Current?.TryFindResource("BrushRadialText") as System.Windows.Media.Brush)
+        ?? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFFFFFFF")!;
+
     public System.Windows.Media.Brush PinButtonBrush => _isPinned
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFF59E0B")!
-        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+        : DefaultButtonIconBrush;
 
     public string PinButtonTooltip => _isPinned ? "已常驻，失去焦点和执行命令时不自动关闭" : "点击后常驻，失去焦点和执行命令时不自动关闭";
 
@@ -244,7 +248,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public System.Windows.Media.Brush AddButtonBrush => _isAddHoverActive
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF10B981")!
-        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+        : DefaultButtonIconBrush;
 
     public bool IsDeleteHoverActive
     {
@@ -260,7 +264,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public System.Windows.Media.Brush DeleteButtonBrush => _isDeleteHoverActive
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFEF4444")!
-        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+        : DefaultButtonIconBrush;
 
     public bool IsSearchHoverActive
     {
@@ -276,7 +280,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public System.Windows.Media.Brush SearchButtonBrush => _isSearchHoverActive
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF3B82F6")!
-        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+        : DefaultButtonIconBrush;
 
     public bool IsCloseHoverActive
     {
@@ -292,7 +296,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public System.Windows.Media.Brush CloseButtonBrush => _isCloseHoverActive
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFEF4444")!
-        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+        : DefaultButtonIconBrush;
 
     public bool IsEditHoverActive
     {
@@ -416,7 +420,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public System.Windows.Media.Brush EditButtonBrush => _editModeLocked
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF3B82F6")!
-        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
+        : DefaultButtonIconBrush;
 
     private void LoadRadialMenuPages()
     {
@@ -1423,7 +1427,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (TryRenameChildPageCenter(e.GetPosition(this)))
+        var point = e.GetPosition(this);
+        if (ShowCenterRenameContextMenuIfHit(point))
         {
             e.Handled = true;
             return;
@@ -1652,19 +1657,77 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return Math.Sqrt(dx * dx + dy * dy) <= 40;
     }
 
-    private bool TryRenameChildPageCenter(System.Windows.Point point)
+    private bool ShowCenterRenameContextMenuIfHit(System.Windows.Point point)
     {
+        string? targetPageId = null;
+
         for (int i = SubRings.Count - 1; i >= 0; i--)
         {
             var ring = SubRings[i];
-            if (IsPointNear(point, ring.CenterX, ring.CenterY, 34))
+            if (IsPointNear(point, ring.CenterX, ring.CenterY, 36))
             {
-                RenameRadialPage(ring.PageId);
-                return true;
+                targetPageId = ring.PageId;
+                break;
             }
         }
 
-        return false;
+        if (targetPageId == null && IsPointInCenter(point))
+        {
+            targetPageId = _currentPageId;
+        }
+
+        if (string.IsNullOrEmpty(targetPageId))
+        {
+            return false;
+        }
+
+        var settings = AppSettingsStore.Load();
+        settings.RadialMenu ??= new RadialMenuSettings();
+        settings.RadialMenu.Pages ??= [];
+        var page = settings.RadialMenu.Pages.FirstOrDefault(item => item.Id.Equals(targetPageId, StringComparison.OrdinalIgnoreCase));
+        if (page == null)
+        {
+            return false;
+        }
+
+        ShowPageCenterContextMenu(page);
+        return true;
+    }
+
+    private void ShowPageCenterContextMenu(RadialMenuPageSettings page)
+    {
+        _editInteractionActive = true;
+        var menu = new ContextMenu();
+        var normalBrush = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("BrushTextSec") ?? System.Windows.Media.Brushes.Gray;
+
+        var renameItem = new MenuItem
+        {
+            Header = "重命名",
+            Icon = CreateMenuIcon("pencil", normalBrush)
+        };
+        renameItem.Click += (_, _) =>
+        {
+            RenameRadialPage(page.Id);
+        };
+        menu.Items.Add(renameItem);
+
+        menu.PlacementTarget = this;
+        menu.Closed += (_, _) =>
+        {
+            _editInteractionActive = false;
+            if (IsVisible && !_mainWindow.IsRadialPickerMode)
+            {
+                Activate();
+                _selectionTimer.Start();
+            }
+        };
+
+        menu.Placement = PlacementMode.AbsolutePoint;
+        var cursor = Forms.Cursor.Position;
+        menu.HorizontalOffset = cursor.X;
+        menu.VerticalOffset = cursor.Y;
+        menu.IsOpen = true;
+        ActiveTitle = $"轮盘：{page.Name}";
     }
 
     private static bool IsPointNear(System.Windows.Point point, double centerX, double centerY, double radius)
@@ -1685,7 +1748,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var dialog = new SimpleTextInputWindow("重命名子环", "输入新的子环名称。", page.Name)
+        var dialog = new SimpleTextInputWindow("重命名轮盘", "输入新的轮盘名称。", page.Name)
         {
             Owner = this
         };
@@ -1702,7 +1765,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         page.Name = name;
         PersistRadialSettings(settings);
+        LoadRadialMenuPages();
         BuildItems((settings.RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
+        UpdateCenterText();
         ActiveTitle = $"已重命名：{name}";
     }
 
@@ -2914,6 +2979,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         GrandChildItems.Clear();
 
         base.Hide();
+        MemoryOptimizationService.OptimizeMemoryInBackground();
     }
 
     private static string? FindExecutablePath(string processName)
@@ -3160,7 +3226,7 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 
     public bool IsSectorVisible => SectorGeometry != null && (!IsEmpty || IsHovered || IsSelected);
 
-    public double Scale => IsSelected ? 1.12 : 1.0;
+    public double Scale => 1.0;
 
     public bool IsEmpty => Command == null && string.IsNullOrWhiteSpace(ChildPageId);
 

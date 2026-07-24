@@ -2222,6 +2222,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string GlobalServiceBlacklistedProcessesText
+    {
+        get => string.Join(", ", _settings.GlobalServiceBlacklistedProcesses ?? []);
+        set
+        {
+            _settings.GlobalServiceBlacklistedProcesses = ParseProcessList(value);
+            OnPropertyChanged();
+            QueueQuickPanelTriggerSave(500);
+        }
+    }
+
     public string RadialBlacklistedProcessesText
     {
         get => string.Join(", ", _settings.RadialMenu.BlacklistedProcesses ?? []);
@@ -8354,6 +8365,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             _settings.RadialMenu.WhitelistedProcesses = list;
             OnPropertyChanged(nameof(RadialWhitelistedProcessesText));
+            SaveQuickPanelTriggerSettings();
+        });
+    }
+
+    private void PickGlobalServiceBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
+    {
+        OpenProcessPickerForList("全局服务黑名单", _settings.GlobalServiceBlacklistedProcesses ?? new(), list =>
+        {
+            _settings.GlobalServiceBlacklistedProcesses = list;
+            OnPropertyChanged(nameof(GlobalServiceBlacklistedProcessesText));
             SaveQuickPanelTriggerSettings();
         });
     }
