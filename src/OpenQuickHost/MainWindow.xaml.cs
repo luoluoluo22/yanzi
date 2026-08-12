@@ -327,6 +327,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _quickPanel = new QuickPanelWindow(this);
         _radialMenu = new RadialMenuWindow(this);
+        Dispatcher.InvokeAsync(() => _radialMenu?.Warmup(), System.Windows.Threading.DispatcherPriority.Background);
         _yanmOverlay = new YanmOverlayWindow(this);
         _windowBoundExtensionsService = new WindowBoundExtensionsService(this);
         _windowSnapAssistService = new WindowSnapAssistService();

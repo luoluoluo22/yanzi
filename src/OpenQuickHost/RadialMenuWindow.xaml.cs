@@ -479,6 +479,36 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// 预热轮盘窗口：在程序启动时提前创建 HWND 句柄、完成 WPF 首次透明窗口尺寸测量与 VisualTree 编译，
+    /// 彻底消除用户首次呼出轮盘时的掉帧和顿挫感。
+    /// </summary>
+    public void Warmup()
+    {
+        try
+        {
+            var helper = new System.Windows.Interop.WindowInteropHelper(this);
+            helper.EnsureHandle();
+
+            LoadRadialMenuPages();
+            _currentPageId = _pages.FirstOrDefault()?.Id ?? string.Empty;
+            BuildItems(220);
+
+            Opacity = 0;
+            Left = -10000;
+            Top = -10000;
+            Show();
+            UpdateLayout();
+            Hide();
+            Opacity = 1.0;
+            HostAssets.AppendLog("RadialMenuWindow: Warmup completed successfully.");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"RadialMenuWindow.Warmup EXCEPTION: {ex}");
+        }
+    }
+
     public void ShowAtMouse()
     {
         var screen = System.Windows.Forms.Screen.FromPoint(Forms.Cursor.Position);
