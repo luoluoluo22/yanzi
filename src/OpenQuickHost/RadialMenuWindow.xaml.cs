@@ -1944,12 +1944,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         bool hasContent = target.Item.Command != null || target.Item.HasChildPage;
 
-        PopulateAddMenuOptions(menu, target);
-
         if (hasContent)
         {
-            menu.Items.Add(new Separator());
-
             var editItem = new MenuItem
             {
                 Header = "编辑",
@@ -1973,17 +1969,35 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             };
             cutItem.Click += (_, _) => CutRadialSlot(target);
             menu.Items.Add(cutItem);
-        }
 
-        if (_cutSlotPayload != null)
-        {
-            var pasteItem = new MenuItem
+            if (_cutSlotPayload != null)
             {
-                Header = "粘贴到此槽位",
-                Icon = CreateMenuIcon("paste", normalBrush)
-            };
-            pasteItem.Click += (_, _) => PasteRadialSlot(target);
-            menu.Items.Add(pasteItem);
+                var pasteItem = new MenuItem
+                {
+                    Header = "粘贴到此槽位",
+                    Icon = CreateMenuIcon("paste", normalBrush)
+                };
+                pasteItem.Click += (_, _) => PasteRadialSlot(target);
+                menu.Items.Add(pasteItem);
+            }
+
+            menu.Items.Add(new Separator());
+            PopulateAddMenuOptions(menu, target);
+        }
+        else
+        {
+            PopulateAddMenuOptions(menu, target);
+
+            if (_cutSlotPayload != null)
+            {
+                var pasteItem = new MenuItem
+                {
+                    Header = "粘贴到此槽位",
+                    Icon = CreateMenuIcon("paste", normalBrush)
+                };
+                pasteItem.Click += (_, _) => PasteRadialSlot(target);
+                menu.Items.Add(pasteItem);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(_activeProcessName))
