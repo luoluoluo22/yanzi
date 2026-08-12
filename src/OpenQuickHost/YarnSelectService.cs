@@ -9,6 +9,7 @@ public static class YarnSelectService
 {
     private const int WhMouseLl = 14;
     private const int WhKeyboardLl = 13;
+    private const int WmMouseMove = 0x0200;
     private const int WmLButtonDown = 0x0201;
     private const int WmLButtonUp = 0x0202;
     private const int WmRButtonDown = 0x0204;
@@ -165,15 +166,21 @@ public static class YarnSelectService
         return hook != IntPtr.Zero ? hook : SetWindowsHookEx(WhKeyboardLl, proc, IntPtr.Zero, 0);
     }
 
-    private static IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private static unsafe IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode < 0 || !_settings.Enabled)
         {
             return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
         }
 
-        var message = wParam.ToInt32();
-        var mouse = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+        var message = (int)wParam;
+        // YarnSelect 不需要处理 WM_MOUSEMOVE 消息，1 纳秒极速透传
+        if (message == WmMouseMove)
+        {
+            return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
+        }
+
+        var mouse = *(MSLLHOOKSTRUCT*)lParam;
         if ((mouse.flags & LlInjected) != 0)
         {
             return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
@@ -223,20 +230,20 @@ public static class YarnSelectService
         return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
     }
 
-    private static IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private static unsafe IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode < 0 || !_settings.Enabled || !_leftButtonDown)
         {
             return CallNextHookEx(_keyboardHookId, nCode, wParam, lParam);
         }
 
-        var message = wParam.ToInt32();
+        var message = (int)wParam;
         if (message != WmKeyDown && message != WmSysKeyDown)
         {
             return CallNextHookEx(_keyboardHookId, nCode, wParam, lParam);
         }
 
-        var keyboard = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+        var keyboard = *(KBDLLHOOKSTRUCT*)lParam;
         if ((keyboard.flags & LlInjected) != 0 || HasModifierDown() || !CanTrigger())
         {
             return CallNextHookEx(_keyboardHookId, nCode, wParam, lParam);
@@ -474,7 +481,7 @@ public static class YarnSelectService
             }
 
             _ = GetWindowThreadProcessId(hwnd, out var processId);
-            return processId == 0 ? string.Empty : Process.GetProcessById((int)processId).ProcessName;
+            return ProcessHelper.GetProcessNameByPid(processId);
         }
         catch
         {
@@ -482,42 +489,9 @@ public static class YarnSelectService
         }
     }
 
-    private static string NormalizeProcessName(string value)
-    {
-        value = (value ?? string.Empty).Trim();
-        return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? value[..^4]
-            : value;
-    }
-
     private static bool ProcessNameMatches(string processName, string pattern)
     {
-        var normalizedProcess = NormalizeProcessName(processName);
-        var normalizedPattern = NormalizeProcessName(pattern);
-        if (string.IsNullOrWhiteSpace(normalizedPattern))
-        {
-            return false;
-        }
-
-        if (normalizedPattern.Contains('*', StringComparison.Ordinal))
-        {
-            var parts = normalizedPattern.Split('*', StringSplitOptions.RemoveEmptyEntries);
-            var index = 0;
-            foreach (var part in parts)
-            {
-                var found = normalizedProcess.IndexOf(part, index, StringComparison.OrdinalIgnoreCase);
-                if (found < 0)
-                {
-                    return false;
-                }
-
-                index = found + part.Length;
-            }
-
-            return true;
-        }
-
-        return normalizedProcess.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase);
+        return ProcessHelper.ProcessNameMatches(processName, pattern);
     }
 
     private static void LogBlockedForegroundProcess(string processName, string reason)

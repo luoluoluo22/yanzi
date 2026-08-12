@@ -4720,17 +4720,24 @@
 
                             <TextBlock Text="使用方式：拖拽选中文字后不要松开左键，直接按 C / S / R 等按键。第一次使用建议先在普通文本框中测试。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,14,0,0"/>
                         </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
 
-                        <!-- Extensions View -->
-                        <Grid x:Name="ExtensionsSectionRoot" Visibility="{Binding IsExtensionsSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <!-- Extensions View -->
+                <Grid x:Name="ExtensionsSectionRoot" Grid.Row="1" Margin="30,10,30,30" Visibility="{Binding IsExtensionsSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="0" x:Name="ExtensionDetailColumn" />
                             </Grid.ColumnDefinitions>
 
-                            <!-- Main Content Area -->
-                            <StackPanel Grid.Column="0" Margin="0,0,16,0">
-
+                            <!-- Main Content Area (Independent Vertical Scroll) -->
+                            <ScrollViewer Grid.Column="0"
+                                          x:Name="ExtensionCardsScrollViewer"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          SizeChanged="ExtensionCardsScrollViewer_SizeChanged"
+                                          Margin="0,0,16,0">
+                                <StackPanel Margin="0,0,4,0">
 
                                 <!-- Top Info Card -->
                                 <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,0,0,16">
@@ -4795,11 +4802,7 @@
                                 </Border>
 
                                 <!-- Card Grid View -->
-                                <ScrollViewer x:Name="ExtensionCardsScrollViewer"
-                                              VerticalScrollBarVisibility="Disabled"
-                                              HorizontalScrollBarVisibility="Disabled"
-                                              SizeChanged="ExtensionCardsScrollViewer_SizeChanged">
-                                    <Grid Width="{Binding ViewportWidth, ElementName=ExtensionCardsScrollViewer}">
+                                <Grid Width="{Binding ViewportWidth, ElementName=ExtensionCardsScrollViewer}">
                                     <ItemsControl ItemsSource="{Binding ExtensionItems}"
                                                   Visibility="{Binding ExtensionsListVisibility}">
                                         <ItemsControl.ItemsPanel>
@@ -5061,8 +5064,8 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                     </Grid>
-                                </ScrollViewer>
                             </StackPanel>
+                        </ScrollViewer>
 
                             <!-- Right Detail Panel -->
                             <Border Grid.Column="1" 
@@ -5265,8 +5268,6 @@
                                 </Grid>
                             </Border>
                         </Grid>
-                    </StackPanel>
-                </ScrollViewer>
 
                 <Grid x:Name="AiSectionRoot" Grid.Row="1"
                       Margin="30,10,30,30"

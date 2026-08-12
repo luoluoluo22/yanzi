@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -216,15 +216,23 @@ public static class MouseGestureService
         return registrations.Count;
     }
 
-    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private static unsafe IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode < 0)
         {
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
 
-        var msg = wParam.ToInt32();
-        var data = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+        var msg = (int)wParam;
+
+        // 1. WM_MOUSEMOVE 极速短路：未在画手势时，1 纳秒内放行
+        if (msg == WmMouseMove && !_rightDown && !_middleDown)
+        {
+            return CallNextHookEx(_hookId, nCode, wParam, lParam);
+        }
+
+        // 2. Unsafe 零分配指针读取
+        var data = *(MSLLHOOKSTRUCT*)lParam;
         if ((data.flags & LlInjected) != 0)
         {
             return CallNextHookEx(_hookId, nCode, wParam, lParam);

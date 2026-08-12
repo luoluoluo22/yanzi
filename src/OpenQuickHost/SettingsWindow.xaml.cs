@@ -2663,7 +2663,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public bool IsGeneralSelected => SelectedNavigation?.Key == "general";
 
-    public bool IsNormalSettingsVisible => !IsAiSelected;
+    public bool IsNormalSettingsVisible => !IsAiSelected && !IsExtensionsSelected;
 
     public bool IsAiSelected => SelectedNavigation?.Key == "ai";
 
@@ -7376,7 +7376,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         // Preserve scroll position to prevent unwanted scroll jump
-        var scrollOffset = MainContentScrollViewer?.VerticalOffset ?? 0;
+        var scrollOffset = ExtensionCardsScrollViewer?.VerticalOffset ?? 0;
 
         var isOpen = SelectedExtensionItem != null;
         ExtensionDetailColumn.Width = isOpen ? new GridLength(380) : new GridLength(0);
@@ -7384,9 +7384,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ScheduleExtensionCardWidthUpdate();
 
         // Restore scroll position after layout update
-        if (MainContentScrollViewer != null)
+        if (ExtensionCardsScrollViewer != null)
         {
-            Dispatcher.BeginInvoke(new Action(() => MainContentScrollViewer.ScrollToVerticalOffset(scrollOffset)), DispatcherPriority.Loaded);
+            Dispatcher.BeginInvoke(new Action(() => ExtensionCardsScrollViewer.ScrollToVerticalOffset(scrollOffset)), DispatcherPriority.Loaded);
         }
     }
 
@@ -7416,7 +7416,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         const double cardGap = 14;
         const double viewportPaddingAllowance = 24;
 
-        var viewportWidth = ExtensionCardsScrollViewer.ActualWidth;
+        var viewportWidth = ExtensionCardsScrollViewer.ViewportWidth > 0
+            ? ExtensionCardsScrollViewer.ViewportWidth
+            : ExtensionCardsScrollViewer.ActualWidth;
 
         var availableWidth = Math.Max(0, viewportWidth - viewportPaddingAllowance);
         if (availableWidth <= 0)

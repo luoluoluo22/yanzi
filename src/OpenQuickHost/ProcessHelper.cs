@@ -54,7 +54,114 @@ namespace OpenQuickHost
                     // Ignore
                 }
             }
+
             return null;
+        }
+        public static string GetProcessNameByPid(uint processId)
+        {
+            if (processId == 0) return string.Empty;
+
+            try
+            {
+                var proc = Process.GetProcessById((int)processId);
+                var name = proc.ProcessName;
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    return name;
+                }
+            }
+            catch
+            {
+                // Process.GetProcessById 在管理员权限进程/全屏游戏下可能抛出 Access Denied 异常
+            }
+
+            try
+            {
+                IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, (int)processId);
+                if (hProcess != IntPtr.Zero)
+                {
+                    try
+                    {
+                        int capacity = 1024;
+                        StringBuilder sb = new StringBuilder(capacity);
+                        if (QueryFullProcessImageName(hProcess, 0, sb, ref capacity))
+                        {
+                            var fullPath = sb.ToString();
+                            return System.IO.Path.GetFileNameWithoutExtension(fullPath);
+                        }
+                    }
+                    finally
+                    {
+                        CloseHandle(hProcess);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore
+            }
+
+            return string.Empty;
+        }
+
+        public static bool ProcessNameMatches(string processName, string pattern)
+        {
+            if (string.IsNullOrWhiteSpace(processName) || string.IsNullOrWhiteSpace(pattern))
+            {
+                return false;
+            }
+
+            var normalizedProcess = NormalizeProcessName(processName);
+            var normalizedPattern = NormalizeProcessName(pattern);
+
+            if (normalizedPattern.Contains('*') || normalizedPattern.Contains('?'))
+            {
+                return FilePatternMatches(normalizedProcess, normalizedPattern);
+            }
+
+            if (pattern.Contains('\\') || pattern.Contains('/'))
+            {
+                var fileName = System.IO.Path.GetFileName(pattern);
+                if (!string.IsNullOrWhiteSpace(fileName))
+                {
+                    return ProcessNameMatches(processName, fileName);
+                }
+            }
+
+            return normalizedProcess.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static string NormalizeProcessName(string value)
+        {
+            value = (value ?? string.Empty).Trim();
+            return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? value[..^4]
+                : value;
+        }
+
+        private static bool FilePatternMatches(string filename, string pattern)
+        {
+            var parts = pattern.Split(['*', '?'], StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+            {
+                return true;
+            }
+
+            var normalizedFileName = filename.ToLowerInvariant();
+            var index = 0;
+            foreach (var part in parts)
+            {
+                var lowerPart = part.ToLowerInvariant();
+                var found = normalizedFileName.IndexOf(lowerPart, index, StringComparison.Ordinal);
+                if (found < 0)
+                {
+                    return false;
+                }
+
+                index = found + part.Length;
+            }
+
+            return true;
         }
     }
 }

@@ -55,6 +55,7 @@ public class InputHookService
     private static QuickPanelMouseTriggerSettings _settings = new();
     private static RadialMenuSettings _radialSettings = new();
     private static YanmSettings _yanmSettings = new();
+    private static List<string> _globalServiceBlacklistedProcesses = [];
     private static bool _windowSnapAssistEnabled;
     private static string _windowSnapAssistMouseTriggerMode = MouseTriggerModes.None;
     private static bool _isEnabled;
@@ -215,6 +216,7 @@ public class InputHookService
         _settings = appSettings.QuickPanelMouseTriggers ?? new QuickPanelMouseTriggerSettings();
         _radialSettings = appSettings.RadialMenu ?? new RadialMenuSettings();
         _yanmSettings = appSettings.Yanm ?? new YanmSettings();
+        _globalServiceBlacklistedProcesses = appSettings.GlobalServiceBlacklistedProcesses ?? [];
         _windowSnapAssistEnabled = appSettings.EnableWindowSnapAssist;
         _windowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(appSettings.WindowSnapAssistMouseTriggerMode);
         if (_longPressTimer != null)
@@ -278,12 +280,24 @@ public class InputHookService
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
-    private static IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private static unsafe IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
         {
-            var message = wParam.ToInt32();
-            var mouse = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+            var message = (int)wParam;
+
+            // 1. 高频 WM_MOUSEMOVE 1 纳秒极速短路（Fast-Path Short-Circuit）
+            // 当用户未按住触发键、未在长按/拖拽时，1 纳秒内立刻透传放行，避免高回报率电竞鼠标微卡顿
+            if (message == WM_MOUSEMOVE &&
+                _trackedButton == TrackedMouseButton.None &&
+                _pendingLongPressTarget == ActiveTriggerTarget.None &&
+                _windowSnapMoveQueued == 0)
+            {
+                return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
+            }
+
+            // 2. Unsafe 零分配指针读取（消除堆内存 GC 停顿）
+            var mouse = *(MSLLHOOKSTRUCT*)lParam;
             if ((mouse.flags & LLMHF_INJECTED) != 0)
             {
                 return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
@@ -491,12 +505,12 @@ public class InputHookService
         return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
     }
 
-    private static IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private static unsafe IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
         {
-            var message = wParam.ToInt32();
-            var keyboard = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+            var message = (int)wParam;
+            var keyboard = *(KBDLLHOOKSTRUCT*)lParam;
             if ((keyboard.flags & LLKHF_INJECTED) != 0)
             {
                 return CallNextHookEx(_keyboardHookID, nCode, wParam, lParam);
@@ -1042,6 +1056,20 @@ public class InputHookService
     private static bool IsTriggerAllowedForTarget(ActiveTriggerTarget target, bool logBlocked = true)
     {
         var processName = GetForegroundProcessName();
+        if (!string.IsNullOrWhiteSpace(processName))
+        {
+            var globalBlacklist = _globalServiceBlacklistedProcesses ?? [];
+            if (globalBlacklist.Any(item => ProcessHelper.ProcessNameMatches(processName, item)))
+            {
+                if (logBlocked)
+                {
+                    HostAssets.AppendLog($"Input hook: {target} trigger blocked by global service blacklist, process={processName}.");
+                }
+
+                return false;
+            }
+        }
+
         var (whitelist, blacklist) = target switch
         {
             ActiveTriggerTarget.Radial => (_radialSettings.WhitelistedProcesses ?? [], _radialSettings.BlacklistedProcesses ?? []),
@@ -1081,40 +1109,7 @@ public class InputHookService
 
     private static bool ProcessNameMatches(string processName, string pattern)
     {
-        var normalizedProcess = NormalizeProcessName(processName);
-        var normalizedPattern = NormalizeProcessName(pattern);
-        if (string.IsNullOrWhiteSpace(normalizedPattern))
-        {
-            return false;
-        }
-
-        if (normalizedPattern.Contains('*', StringComparison.Ordinal))
-        {
-            var parts = normalizedPattern.Split('*', StringSplitOptions.RemoveEmptyEntries);
-            var index = 0;
-            foreach (var part in parts)
-            {
-                var found = normalizedProcess.IndexOf(part, index, StringComparison.OrdinalIgnoreCase);
-                if (found < 0)
-                {
-                    return false;
-                }
-
-                index = found + part.Length;
-            }
-
-            return true;
-        }
-
-        return normalizedProcess.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeProcessName(string value)
-    {
-        value = (value ?? string.Empty).Trim();
-        return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? value[..^4]
-            : value;
+        return ProcessHelper.ProcessNameMatches(processName, pattern);
     }
 
     private static string GetForegroundProcessName()
@@ -1148,7 +1143,7 @@ public class InputHookService
             }
 
             _ = GetWindowThreadProcessId(hwnd, out var processId);
-            var processName = processId == 0 ? string.Empty : Process.GetProcessById((int)processId).ProcessName;
+            var processName = ProcessHelper.GetProcessNameByPid(processId);
             CacheForegroundProcessName(hwnd, processName, now);
             return processName;
         }

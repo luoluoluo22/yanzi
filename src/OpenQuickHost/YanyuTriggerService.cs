@@ -563,8 +563,7 @@ public static class YanyuTriggerService
             }
 
             _ = NativeMethods.GetWindowThreadProcessId(handle, out var processId);
-            using var process = Process.GetProcessById((int)processId);
-            return process.ProcessName;
+            return ProcessHelper.GetProcessNameByPid(processId);
         }
         catch
         {

@@ -975,7 +975,7 @@ public partial class App : WpfApplication
             var settings = AppSettingsStore.Load();
             var blacklist = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
 
-            bool isInBlacklist = blacklist.Contains(currentProcess, StringComparer.OrdinalIgnoreCase);
+            bool isInBlacklist = blacklist.Any(p => ProcessHelper.ProcessNameMatches(currentProcess, p));
 
             if (isInBlacklist && !_isAutoPausedByBlacklist)
             {
