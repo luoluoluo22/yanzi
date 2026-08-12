@@ -7,7 +7,7 @@
         Height="1400"
         WindowStyle="None"
         AllowsTransparency="True"
-        Background="Transparent"
+        Background="#01000000"
         ShowInTaskbar="False"
         WindowStartupLocation="Manual"
         Topmost="True"

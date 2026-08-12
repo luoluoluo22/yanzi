@@ -73,6 +73,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         MouseWheel += RadialMenuWindow_MouseWheel;
         MouseLeftButtonDown += RadialMenuWindow_MouseLeftButtonDown;
         MouseRightButtonDown += RadialMenuWindow_MouseRightButtonDown;
+        Deactivated += (_, _) =>
+        {
+            if (IsVisible && !_editModeLocked)
+            {
+                _selectionTimer.Stop();
+                Hide();
+            }
+        };
         Loaded += (_, _) => RebuildItemsForCurrentLayout("loaded");
         SizeChanged += (_, _) =>
         {
