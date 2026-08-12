@@ -1441,7 +1441,17 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             }
         }
 
-        ReturnToParentPage();
+        // 如果在子页面中，点击空白处返回上一级；如果在顶级主页，点击空白处直接隐去关盘
+        if (_pageStack.Count > 0)
+        {
+            ReturnToParentPage();
+        }
+        else
+        {
+            _editModeLocked = false;
+            _selectionTimer.Stop();
+            Hide();
+        }
     }
 
     private void PinButton_Click(object sender, RoutedEventArgs e)
