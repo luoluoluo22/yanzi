@@ -318,7 +318,10 @@ internal static class ExtensionIconLibrary
         {
             var localPath = resolvedPath.StartsWith("file://", StringComparison.OrdinalIgnoreCase)
                 ? new Uri(resolvedPath, UriKind.Absolute).LocalPath
-                : null;
+                : (File.Exists(resolvedPath) || Directory.Exists(resolvedPath) ? resolvedPath : null);
+
+            HostAssets.AppendLog($"[IconLog] ResolveImageSource: iconReference='{iconReference}', resolvedPath='{resolvedPath}', localPath='{localPath}', exists={(!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))}.");
+
             if (!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))
             {
                 if (ShouldPreferBitmapContent(localPath))
@@ -329,6 +332,7 @@ internal static class ExtensionIconLibrary
                 }
 
                 var systemIcon = NativeFileIconService.GetIcon(localPath, Directory.Exists(localPath));
+                HostAssets.AppendLog($"[IconLog] NativeFileIconService.GetIcon for '{localPath}' returned {(systemIcon != null ? "SUCCESS" : "NULL")}.");
                 if (systemIcon != null)
                 {
                     ImageCache[resolvedPath] = systemIcon;
@@ -338,6 +342,7 @@ internal static class ExtensionIconLibrary
                 if (CanExtractAssociatedIcon(localPath))
                 {
                     var extracted = TryExtractAssociatedIcon(localPath);
+                    HostAssets.AppendLog($"[IconLog] TryExtractAssociatedIcon for '{localPath}' returned {(extracted != null ? "SUCCESS" : "NULL")}.");
                     if (extracted != null)
                     {
                         ImageCache[resolvedPath] = extracted;
@@ -350,8 +355,9 @@ internal static class ExtensionIconLibrary
             ImageCache[resolvedPath] = bitmap;
             return bitmap;
         }
-        catch
+        catch (Exception ex)
         {
+            HostAssets.AppendLog($"[IconLog] ResolveImageSource EXCEPTION for '{iconReference}': {ex}");
             ImageCache[resolvedPath] = null;
             return null;
         }

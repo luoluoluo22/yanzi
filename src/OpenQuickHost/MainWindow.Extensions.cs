@@ -427,16 +427,24 @@ public partial class MainWindow
             fileName = fullPath;
         }
 
+        var displayName = isDirectory ? fileName : Path.GetFileNameWithoutExtension(fileName);
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            displayName = fileName;
+        }
+
         var extensionId = $"quick-open-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}";
+        var iconPath = isDirectory ? "mdi:folder" : fullPath;
         var manifest = new LocalExtensionManifest
         {
             Id = extensionId,
-            Name = fileName,
+            Name = displayName,
             Version = "1.0.0",
             Category = isDirectory ? "目录" : "文件",
             Description = isDirectory ? $"打开目录：{fullPath}" : $"打开文件：{fullPath}",
             Keywords = new[]
             {
+                displayName,
                 fileName,
                 Path.GetFileNameWithoutExtension(fileName),
                 Path.GetExtension(fullPath),
@@ -445,8 +453,10 @@ public partial class MainWindow
                 "拖拽导入"
             }.Where(static value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             OpenTarget = fullPath,
-            Icon = isDirectory ? "mdi:folder" : "mdi:file"
+            Icon = iconPath
         };
+
+        HostAssets.AppendLog($"[IconLog] CreateQuickOpenExtensionFromPath: inputPath='{path}', fullPath='{fullPath}', displayName='{displayName}', iconPath='{iconPath}'.");
 
         var json = JsonSerializer.Serialize(manifest, new JsonSerializerOptions
         {

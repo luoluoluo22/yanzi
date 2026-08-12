@@ -85,10 +85,12 @@ public static class NativeFileIconService
         }
 
         var cleanPath = ExtractCleanPath(path);
+        HostAssets.AppendLog($"[IconLog] NativeFileIconService.GetIcon: rawPath='{path}', cleanPath='{cleanPath}', isFolder={isFolder}.");
 
         // 如果是快捷方式，我们需要获取它指向的实际 EXE 文件路径
         if (!isFolder && IsShortcutPath(cleanPath) && TryResolveShortcutIconTarget(cleanPath, out var resolvedTarget))
         {
+            HostAssets.AppendLog($"[IconLog] Shortcut resolved: '{cleanPath}' -> '{resolvedTarget}'.");
             cleanPath = ExtractCleanPath(resolvedTarget);
         }
 
@@ -99,9 +101,19 @@ public static class NativeFileIconService
             if (!isFolder && cleanPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(cleanPath))
             {
                 var hq = LoadHighQualityIcon(cleanPath, 256);
+                HostAssets.AppendLog($"[IconLog] LoadHighQualityIcon for '{cleanPath}' returned {(hq != null ? "SUCCESS" : "NULL")}.");
                 if (hq != null) return hq;
             }
-            return LoadSmallIcon(cleanPath, isFolder);
+            var small = LoadSmallIcon(cleanPath, isFolder);
+            HostAssets.AppendLog($"[IconLog] LoadSmallIcon for '{cleanPath}' returned {(small != null ? "SUCCESS" : "NULL")}.");
+            if (small == null && IsShortcutPath(path))
+            {
+                // 兜底：直接从 .lnk 快捷方式本身读取 Shell 图标
+                var rawSmall = LoadSmallIcon(path, isFolder);
+                HostAssets.AppendLog($"[IconLog] Fallback raw LoadSmallIcon for original .lnk '{path}' returned {(rawSmall != null ? "SUCCESS" : "NULL")}.");
+                return rawSmall;
+            }
+            return small;
         });
     }
 
@@ -205,6 +217,7 @@ public static class NativeFileIconService
 
             var iconLocation = ((string?)shortcut.IconLocation)?.Trim();
             var iconPath = ParseShortcutIconPath(iconLocation);
+            HostAssets.AppendLog($"[IconLog] TryResolveShortcutIconTarget: shortcutPath='{shortcutPath}', iconLocation='{iconLocation}', parsedIconPath='{iconPath}'.");
             if (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath))
             {
                 targetPath = iconPath;
@@ -212,6 +225,7 @@ public static class NativeFileIconService
             }
 
             var resolvedTarget = ((string?)shortcut.TargetPath)?.Trim();
+            HostAssets.AppendLog($"[IconLog] TryResolveShortcutIconTarget: resolvedTarget='{resolvedTarget}', targetExists={(File.Exists(resolvedTarget) || Directory.Exists(resolvedTarget))}.");
             if (!string.IsNullOrWhiteSpace(resolvedTarget) &&
                 (File.Exists(resolvedTarget) || Directory.Exists(resolvedTarget)))
             {

@@ -1950,6 +1950,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             menu.Items.Add(new Separator());
 
+            var editItem = new MenuItem
+            {
+                Header = "编辑",
+                Icon = CreateMenuIcon("pencil", normalBrush)
+            };
+            editItem.Click += (_, _) => EditSlotContentFromTarget(target);
+            menu.Items.Add(editItem);
+
             var clearItem = new MenuItem
             {
                 Header = "删除",
@@ -2104,6 +2112,55 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private void ClearCommandFromTarget(RadialEditTarget target)
     {
         SaveRadialSlotCommand(target.PageId, target.Index, null, null);
+    }
+
+    private async void EditSlotContentFromTarget(RadialEditTarget target)
+    {
+        try
+        {
+            if (target.Item.HasChildPage)
+            {
+                ShowPageCenterContextMenu(new RadialMenuPageSettings
+                {
+                    Id = target.Item.ChildPageId,
+                    Name = target.Item.ChildPageTitle
+                });
+                return;
+            }
+
+            var command = target.Item.Command;
+            if (command == null)
+            {
+                return;
+            }
+
+            const string simulatedPrefix = "keysim::";
+            if (command.ExtensionId.StartsWith(simulatedPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                SetSimulatedKeyForTarget(target);
+                return;
+            }
+
+            var result = await _mainWindow.EditExtensionFromSettingsAsync(command.ExtensionId, this);
+            if (result.ok)
+            {
+                ActiveTitle = string.IsNullOrWhiteSpace(result.message) ? "已保存扩展修改" : result.message;
+                LoadRadialMenuPages();
+            }
+            else if (!string.IsNullOrWhiteSpace(result.message))
+            {
+                ActiveTitle = result.message;
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Radial edit slot failed: page={target.PageId}, index={target.Index + 1}, error={ex}");
+        }
+        finally
+        {
+            _editModeLocked = false;
+            UpdateCenterText();
+        }
     }
 
     private void ClearSlotContentFromTarget(RadialEditTarget target)
