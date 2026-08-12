@@ -69,7 +69,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public Task<RadialPickerResult?> ShowForRadialPickerAsync(bool allowAddChildPage)
     {
-        _radialPickerTcs?.TrySetResult(null);
+        HostAssets.AppendLog($"[PickerLog] MainWindow.ShowForRadialPickerAsync: allowAddChild={allowAddChildPage}.");
+        if (_radialPickerTcs != null && !_radialPickerTcs.Task.IsCompleted)
+        {
+            HostAssets.AppendLog($"[PickerLog] Overwriting active _radialPickerTcs! Stack:\n{new System.Diagnostics.StackTrace()}");
+            _radialPickerTcs.TrySetResult(null);
+        }
         _radialPickerTcs = new TaskCompletionSource<RadialPickerResult?>();
         IsRadialPickerMode = true;
         RadialPickerAllowAddChild = allowAddChildPage;
@@ -91,8 +96,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ConfirmRadialPickerSelection()
     {
+        HostAssets.AppendLog($"[PickerLog] ConfirmRadialPickerSelection: SelectedCommand='{SelectedCommand?.Title}', extId='{SelectedCommand?.ExtensionId}', target='{SelectedCommand?.OpenTarget}'. Stack:\n{new System.Diagnostics.StackTrace()}");
         if (SelectedCommand == null)
+        {
+            HostAssets.AppendLog("[PickerLog] ConfirmRadialPickerSelection FAILED: SelectedCommand is null!");
             return;
+        }
 
         var result = new RadialPickerResult(RadialSlotPickerWindow.PickerAction.AddCommand, SelectedCommand);
         IsRadialPickerMode = false;

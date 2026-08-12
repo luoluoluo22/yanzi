@@ -536,7 +536,6 @@ public partial class MainWindow
         }
 
         Topmost = true;
-        Topmost = false;
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
     }
@@ -1193,9 +1192,11 @@ public partial class MainWindow
 
         if (IsRadialPickerMode)
         {
-            IsRadialPickerMode = false;
-            _radialPickerTcs?.TrySetResult(null);
+            SetSearchScopePopupOpen(false);
+            Hide();
+            return;
         }
+
         ShowInTaskbar = false;
         SetSearchScopePopupOpen(false);
         Hide();

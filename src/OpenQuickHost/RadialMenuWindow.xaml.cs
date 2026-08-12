@@ -75,7 +75,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         MouseRightButtonDown += RadialMenuWindow_MouseRightButtonDown;
         Deactivated += (_, _) =>
         {
-            if (IsVisible && !_editModeLocked && !_editInteractionActive && !_mainWindow.IsRadialPickerMode)
+            HostAssets.AppendLog($"[PickerLog] RadialMenu Deactivated: isVisible={IsVisible}, isEditLocked={_editModeLocked}, isEditActive={_editInteractionActive}, isPickerMode={_mainWindow.IsRadialPickerMode}, popupOpen={_mainWindow.SearchScopePopup?.IsOpen}.");
+            if (_mainWindow.IsRadialPickerMode || _mainWindow.SearchScopePopup?.IsOpen == true)
+            {
+                return;
+            }
+            if (IsVisible && !_editModeLocked && !_editInteractionActive)
             {
                 _selectionTimer.Stop();
                 Hide();
@@ -1418,6 +1423,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private void RadialMenuWindow_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         var clickPoint = e.GetPosition(this);
+        HostAssets.AppendLog($"[PickerLog] RadialMenu LeftButtonDown: isPickerMode={_mainWindow.IsRadialPickerMode}, popupOpen={_mainWindow.SearchScopePopup?.IsOpen}, isEditLocked={_editModeLocked}, pageStack={_pageStack.Count}, point=({clickPoint.X:F1},{clickPoint.Y:F1}).");
+        if (_mainWindow.IsRadialPickerMode || _mainWindow.SearchScopePopup?.IsOpen == true)
+        {
+            return;
+        }
         if (_editModeLocked)
         {
             if (IsPointInCenter(clickPoint))
@@ -2085,43 +2095,55 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private async void OpenSearchPickerForTarget(RadialEditTarget target)
     {
-        await Dispatcher.InvokeAsync(async () =>
+        HostAssets.AppendLog($"[PickerLog] OpenSearchPickerForTarget START: page={target.PageId}, index={target.Index}.");
+        try
         {
-            try
+            var result = await _mainWindow.ShowForRadialPickerAsync(!target.Item.HasChildPage);
+            HostAssets.AppendLog($"[PickerLog] ShowForRadialPickerAsync RETURNED: resultIsNull={(result == null)}, action={result?.Action}, commandTitle='{result?.Command?.Title}', extId='{result?.Command?.ExtensionId}', openTarget='{result?.Command?.OpenTarget}'.");
+            if (result == null)
             {
-                var result = await _mainWindow.ShowForRadialPickerAsync(!target.Item.HasChildPage);
-                if (result == null)
-                {
-                    return;
-                }
-
-                if (result.Action == RadialSlotPickerWindow.PickerAction.AddChildPage)
-                {
-                    AddChildPageToTarget(target);
-                    return;
-                }
-
-                if (result.Command == null)
-                {
-                    return;
-                }
-
-                SaveRadialSlotCommand(target.PageId, target.Index, result.Command.ExtensionId, string.Empty);
-                HostAssets.AppendLog($"Radial edit assigned command: page={target.PageId}, index={target.Index + 1}, command={result.Command.Title}.");
-
-                if (!IsVisible)
-                {
-                    Show();
-                }
-                Activate();
-                RebuildItemsForCurrentLayout("assigned-picker-command");
+                return;
             }
-            finally
+
+            if (result.Action == RadialSlotPickerWindow.PickerAction.AddChildPage)
             {
-                _editModeLocked = false;
-                UpdateCenterText();
+                AddChildPageToTarget(target);
+                return;
             }
-        }, DispatcherPriority.Input);
+
+            if (result.Command == null)
+            {
+                return;
+            }
+
+            var effectiveId = !string.IsNullOrWhiteSpace(result.Command.ExtensionId)
+                ? result.Command.ExtensionId
+                : (!string.IsNullOrWhiteSpace(result.Command.OpenTarget) ? $"result::{result.Command.OpenTarget}" : null);
+
+            if (string.IsNullOrWhiteSpace(effectiveId))
+            {
+                HostAssets.AppendLog("Radial edit assigned command FAIL: effectiveId is null or empty.");
+                return;
+            }
+
+            SaveRadialSlotCommand(target.PageId, target.Index, effectiveId, string.Empty);
+            HostAssets.AppendLog($"Radial edit assigned command: page={target.PageId}, index={target.Index + 1}, command={result.Command.Title}, id={effectiveId}.");
+
+            if (!IsVisible)
+            {
+                Show();
+            }
+            Activate();
+            RebuildItemsForCurrentLayout("assigned-picker-command");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[PickerLog] OpenSearchPickerForTarget EXCEPTION: {ex}");
+        }
+        finally
+        {
+            UpdateCenterText();
+        }
     }
 
     private void CreateNewExtensionForTarget(RadialEditTarget target)
