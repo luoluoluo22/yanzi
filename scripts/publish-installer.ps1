@@ -97,6 +97,7 @@ Assert-PayloadFile "NativeWindowRefs\PresentationFramework.dll"
 Assert-PayloadFile "NativeWindowRefs\PresentationCore.dll"
 Assert-PayloadFile "NativeWindowRefs\WindowsBase.dll"
 Assert-PayloadFile "NativeWindowRefs\System.Xaml.dll"
+Assert-PayloadFile "NativeWindowRefs\System.Windows.Forms.dll"
 
 Write-Host "Published installer payload:"
 Write-Host "  $publishDir"

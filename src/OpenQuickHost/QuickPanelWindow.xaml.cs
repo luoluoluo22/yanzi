@@ -89,6 +89,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         ShowActivated = false;
         _mainWindow = mainWindow;
+        _ = new System.Windows.Interop.WindowInteropHelper(this).Handle;
         _settings = AppSettingsStore.Load();
         _releaseTargetTimer = new DispatcherTimer
         {

@@ -438,7 +438,6 @@ public static class ScriptExtensionRunner
     {
         var references = new List<MetadataReference>(
             global::Basic.Reference.Assemblies.Net90.ReferenceInfos.All
-                .Where(info => !info.FileName.Contains(".Private."))
                 .Select(static info => (MetadataReference)info.Reference));
 
         var bundledDirectory = GetBundledNativeWindowReferenceDirectory();
@@ -473,15 +472,14 @@ public static class ScriptExtensionRunner
         }
 
         var finalReferences = references
-            .GroupBy(static reference => string.IsNullOrWhiteSpace(reference.Display) ? Guid.NewGuid().ToString() : reference.Display, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(static reference =>
+            {
+                var display = reference.Display;
+                if (string.IsNullOrWhiteSpace(display)) return Guid.NewGuid().ToString();
+                return Path.GetFileName(display);
+            }, StringComparer.OrdinalIgnoreCase)
             .Select(static group => group.First())
             .ToList();
-
-        bool hasPrivateXml = finalReferences.Any(r => r.Display != null && r.Display.Contains("System.Private.Xml", StringComparison.OrdinalIgnoreCase));
-        if (hasPrivateXml)
-        {
-            finalReferences.RemoveAll(r => r.Display != null && r.Display.Contains("System.Xml.XmlSerializer", StringComparison.OrdinalIgnoreCase));
-        }
 
         return finalReferences.ToArray();
     }
@@ -687,7 +685,8 @@ public static class ScriptExtensionRunner
                      "WindowsBase.dll",
                      "PresentationCore.dll",
                      "PresentationFramework.dll",
-                     "System.Xaml.dll"
+                     "System.Xaml.dll",
+                     "System.Windows.Forms.dll"
                  })
         {
             AddTrustedPlatformAssembly(paths, trustedPlatformAssemblies, fileName);
@@ -712,6 +711,7 @@ public static class ScriptExtensionRunner
             AddCandidateFile(paths, directory, "PresentationCore.dll");
             AddCandidateFile(paths, directory, "PresentationFramework.dll");
             AddCandidateFile(paths, directory, "System.Xaml.dll");
+            AddCandidateFile(paths, directory, "System.Windows.Forms.dll");
         }
 
         return paths

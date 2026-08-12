@@ -310,6 +310,7 @@ public class InputHookService
                 {
                     HostAssets.AppendLog("Input hook: Ctrl+left click triggered.");
                     InvokeShowPanel();
+                    return (IntPtr)1;
                 }
                 else if (IsControlDown() && TryTriggerMouseMode(MouseTriggerModes.CtrlLeftClick, mouse.pt))
                 {
@@ -328,6 +329,8 @@ public class InputHookService
                     _activeTriggerTarget = ActiveTriggerTarget.Panel;
                     HostAssets.AppendLog("Input hook: Ctrl+right click triggered.");
                     InvokeShowPanel();
+                    _rightButtonDownSwallowed = true;
+                    return (IntPtr)1;
                 }
                 else if (IsControlDown() && TryTriggerMouseMode(MouseTriggerModes.CtrlRightClick, mouse.pt))
                 {
@@ -356,6 +359,8 @@ public class InputHookService
                     _activeTriggerTarget = ActiveTriggerTarget.Panel;
                     HostAssets.AppendLog("Input hook: Ctrl+middle click triggered for panel.");
                     InvokeShowPanel();
+                    _middleButtonDownSwallowed = true;
+                    return (IntPtr)1;
                 }
                 else if (IsControlDown() && TryTriggerMouseMode(MouseTriggerModes.CtrlMiddleClick, mouse.pt))
                 {
@@ -369,6 +374,8 @@ public class InputHookService
                     _activeTriggerTarget = ActiveTriggerTarget.Panel;
                     HostAssets.AppendLog("Input hook: middle button down triggered for panel.");
                     InvokeShowPanel();
+                    _middleButtonDownSwallowed = true;
+                    return (IntPtr)1;
                 }
                 else if (TryTriggerMouseMode(MouseTriggerModes.MiddleDown, mouse.pt))
                 {
@@ -393,6 +400,7 @@ public class InputHookService
                         _activeTriggerTarget = ActiveTriggerTarget.Panel;
                         HostAssets.AppendLog("Input hook: X1 button down triggered.");
                         InvokeShowPanel();
+                        return (IntPtr)1;
                     }
                     else if (TryTriggerMouseMode(MouseTriggerModes.X1Down, mouse.pt))
                     {
@@ -409,6 +417,7 @@ public class InputHookService
                         _activeTriggerTarget = ActiveTriggerTarget.Panel;
                         HostAssets.AppendLog("Input hook: X2 button down triggered.");
                         InvokeShowPanel();
+                        return (IntPtr)1;
                     }
                     else if (TryTriggerMouseMode(MouseTriggerModes.X2Down, mouse.pt))
                     {
@@ -472,6 +481,7 @@ public class InputHookService
             {
                 HostAssets.AppendLog("Input hook: horizontal wheel triggered.");
                 InvokeShowPanel();
+                return (IntPtr)1;
             }
             else if (message == WM_MOUSEHWHEEL && TryTriggerMouseMode(MouseTriggerModes.HorizontalWheel, mouse.pt))
             {

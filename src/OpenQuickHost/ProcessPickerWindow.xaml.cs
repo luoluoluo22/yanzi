@@ -75,7 +75,8 @@ public partial class ProcessPickerWindow : Window
                     Icon = icon
                 };
             })
-            .OrderBy(p => p.ProcessName)
+            .OrderByDescending(p => !string.IsNullOrWhiteSpace(defaultProcess) && p.ProcessName.Equals(defaultProcess, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(p => p.ProcessName)
             .ToList();
 
         if (initialList != null)
@@ -106,16 +107,6 @@ public partial class ProcessPickerWindow : Window
                     Blacklist.Add(new BlacklistItem { ProcessName = process, ExecutablePath = exePath, Icon = icon });
                 }
             }
-        }
-
-        // 默认将前台程序也加进去（如果在外部未被加入）
-        if (!string.IsNullOrWhiteSpace(defaultProcess) && !Blacklist.Any(p => p.ProcessName.Equals(defaultProcess, StringComparison.OrdinalIgnoreCase)))
-        {
-            var processItem = _allRunningProcesses.FirstOrDefault(p => p.ProcessName.Equals(defaultProcess, StringComparison.OrdinalIgnoreCase));
-            var icon = processItem?.Icon;
-            var exePath = processItem?.ExecutablePath;
-            if (icon == null) icon = FallbackIconResolver.GetFallbackIcon(defaultProcess);
-            Blacklist.Add(new BlacklistItem { ProcessName = defaultProcess, ExecutablePath = exePath, Icon = icon });
         }
 
         RefreshComboBoxItemsSource();
