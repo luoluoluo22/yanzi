@@ -3698,7 +3698,16 @@ public sealed class CommandItem : INotifyPropertyChanged
         InlineScriptSource = inlineScriptSource;
         IconReference = iconReference;
         _iconSource = iconSourceOverride ?? ExtensionIconLibrary.ResolveImageSource(iconReference, extensionDirectoryPath);
+        if (_iconSource == null && !string.IsNullOrWhiteSpace(openTarget) && (File.Exists(openTarget) || Directory.Exists(openTarget)))
+        {
+            _iconSource = ExtensionIconLibrary.ResolveImageSource(openTarget, extensionDirectoryPath);
+        }
+
         VectorIcon = ExtensionIconLibrary.ResolveVectorIcon(iconReference);
+        if (_iconSource != null && (iconReference == "mdi:file" || iconReference == "mdi:document" || string.IsNullOrWhiteSpace(iconReference)))
+        {
+            VectorIcon = null;
+        }
         
         var vectorColorHex = "#FFFFFFFF";
         if (iconReference != null && iconReference.LastIndexOf('#') is var hashIdx && hashIdx > 0)
