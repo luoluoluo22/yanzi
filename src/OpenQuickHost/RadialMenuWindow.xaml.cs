@@ -75,7 +75,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         MouseRightButtonDown += RadialMenuWindow_MouseRightButtonDown;
         Deactivated += (_, _) =>
         {
-            if (IsVisible && !_editModeLocked)
+            if (IsVisible && !_editModeLocked && !_editInteractionActive && !_mainWindow.IsRadialPickerMode)
             {
                 _selectionTimer.Stop();
                 Hide();
@@ -2108,6 +2108,13 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
                 SaveRadialSlotCommand(target.PageId, target.Index, result.Command.ExtensionId, string.Empty);
                 HostAssets.AppendLog($"Radial edit assigned command: page={target.PageId}, index={target.Index + 1}, command={result.Command.Title}.");
+
+                if (!IsVisible)
+                {
+                    Show();
+                }
+                Activate();
+                RebuildItemsForCurrentLayout("assigned-picker-command");
             }
             finally
             {
