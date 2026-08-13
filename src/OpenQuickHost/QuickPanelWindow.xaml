@@ -147,186 +147,62 @@
                 <RowDefinition Height="1"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            <!-- Sidebar -->
-            <Border Grid.RowSpan="4" BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" Padding="0,8">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="1"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+            <!-- Sidebar Background & Border -->
+            <Border Grid.Column="0" Grid.RowSpan="4" BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" Padding="0,8"/>
 
-                    <Border Grid.Row="1">
-                        <StackPanel HorizontalAlignment="Center">
-                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="通用收藏" Click="ToggleGlobalFavorites_Click">
-                            <Viewbox Width="16" Height="16">
-                                <Canvas Width="24" Height="24">
-                                    <Path Fill="#FFFBBF24">
-                                        <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
-                                    </Path>
-                                </Canvas>
-                            </Viewbox>
-                        </Button>
-                        <ItemsControl ItemsSource="{Binding GlobalGroups}" Margin="0,4,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Style="{StaticResource GroupButtonStyle}"
-                                            Margin="0,0,0,4"
-                                            Tag="{Binding}"
-                                            Click="GlobalGroupButton_Click"
-                                            ToolTip="{Binding Name}">
-                                        <Button.ContextMenu>
-                                            <ContextMenu>
-                                                <MenuItem Header="重命名分组" Click="RenameGlobalGroup_Click" CommandParameter="{Binding}" />
-                                                <MenuItem Header="删除分组" Click="DeleteGlobalGroup_Click" CommandParameter="{Binding}" />
-                                            </ContextMenu>
-                                        </Button.ContextMenu>
-                                        <TextBlock Text="{Binding ShortName}"
-                                                   FontSize="{DynamicResource FontSizeSmall}"
-                                                   FontWeight="SemiBold">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                            <Setter Property="Foreground" Value="#FF6EA8FF"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建通用分组" Click="AddGlobalGroupButton_Click">
-                            <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
-                                    <Path.Style>
-                                        <Style TargetType="Path">
-                                            <Setter Property="Opacity" Value="0.3"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
-                                                    <Setter Property="Opacity" Value="1"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Path.Style>
+            <!-- Sidebar Global Groups (Row 1) -->
+            <Border Grid.Column="0" Grid.Row="1" VerticalAlignment="Top" Margin="0,4,0,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="通用收藏" Click="ToggleGlobalFavorites_Click">
+                        <Viewbox Width="16" Height="16">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="#FFFBBF24">
+                                    <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
                                 </Path>
-                            </Viewbox>
-                        </Button>
-                        </StackPanel>
-                    </Border>
-
-                    <Rectangle Grid.Row="2" Height="1" Fill="#18FFFFFF" Margin="6,0"/>
-
-                    <Border Grid.Row="3">
-                        <StackPanel HorizontalAlignment="Center" Margin="0,8,0,0">
-                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="专属收藏" Click="ToggleContextFavorites_Click">
-                            <Viewbox Width="16" Height="16">
-                                <Canvas Width="24" Height="24">
-                                    <Path Fill="#FFFBBF24">
-                                        <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
-                                    </Path>
-                                </Canvas>
-                            </Viewbox>
-                        </Button>
-                        <ItemsControl ItemsSource="{Binding ContextGroups}" Margin="0,4,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Style="{StaticResource GroupButtonStyle}"
-                                            Margin="0,0,0,4"
-                                            Tag="{Binding}"
-                                            Click="ContextGroupButton_Click"
-                                            ToolTip="{Binding Name}">
-                                        <Button.ContextMenu>
-                                            <ContextMenu>
-                                                <MenuItem Header="重命名分组" Click="RenameContextGroup_Click" CommandParameter="{Binding}" />
-                                                <MenuItem Header="删除分组" Click="DeleteContextGroup_Click" CommandParameter="{Binding}" />
-                                            </ContextMenu>
-                                        </Button.ContextMenu>
-                                        <TextBlock Text="{Binding ShortName}"
-                                                   FontSize="{DynamicResource FontSizeSmall}"
-                                                   FontWeight="SemiBold">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                            <Setter Property="Foreground" Value="#FF6EA8FF"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建专属分组" Click="AddContextGroupButton_Click">
-                            <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
-                                    <Path.Style>
-                                        <Style TargetType="Path">
-                                            <Setter Property="Opacity" Value="0.3"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
-                                                    <Setter Property="Opacity" Value="1"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Path.Style>
-                                </Path>
-                            </Viewbox>
-                        </Button>
-                        </StackPanel>
-                    </Border>
-                    
-                    <StackPanel Grid.Row="4" VerticalAlignment="Bottom" HorizontalAlignment="Center">
-                        <Button Style="{StaticResource SidebarButtonStyle}" Margin="0,0,0,6" Click="MobileMessagesButton_Click" Width="32" Height="32" ToolTip="手机消息">
-                            <Grid Width="20" Height="20">
-                                <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <Path Data="{local:IconGeometry mobile}" Fill="#FFFFFFFF" Stretch="Uniform"/>
-                                </Viewbox>
-                                <Ellipse x:Name="MobileDiscoverBadge" Width="6" Height="6" Fill="#FF22C55E" Margin="0,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
-                                <Ellipse x:Name="MobileMessageBadge" Width="6" Height="6" Fill="#FFE11D48" Margin="0,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource SidebarButtonStyle}" Click="SettingsButton_Click" Width="32" Height="32" ToolTip="设置">
-                            <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry settings}" Fill="#FF888888" Stretch="Uniform"/>
-                            </Viewbox>
-                        </Button>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- Top Bar -->
-            <Grid Grid.Column="1" Grid.Row="0" Margin="8,8,8,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <Button Width="28"
-                            Height="28"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            ToolTip="{Binding EditButtonTooltip}"
-                            Click="EditModeButton_Click"
-                            Style="{StaticResource SidebarButtonStyle}">
-                        <Viewbox Width="14" Height="14">
-                            <Path Data="{local:IconGeometry pen}" Stretch="Uniform">
+                            </Canvas>
+                        </Viewbox>
+                    </Button>
+                    <ItemsControl ItemsSource="{Binding GlobalGroups}" Margin="0,4,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource GroupButtonStyle}"
+                                        Margin="0,0,0,4"
+                                        Tag="{Binding}"
+                                        Click="GlobalGroupButton_Click"
+                                        ToolTip="{Binding Name}">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="重命名分组" Click="RenameGlobalGroup_Click" CommandParameter="{Binding}" />
+                                            <MenuItem Header="删除分组" Click="DeleteGlobalGroup_Click" CommandParameter="{Binding}" />
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <TextBlock Text="{Binding ShortName}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
+                                               FontWeight="SemiBold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="Foreground" Value="#FF6EA8FF"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建通用分组" Click="AddGlobalGroupButton_Click">
+                        <Viewbox Width="16" Height="16">
+                            <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
                                 <Path.Style>
                                     <Style TargetType="Path">
-                                        <Setter Property="Fill" Value="{DynamicResource BrushTextMain}"/>
+                                        <Setter Property="Opacity" Value="0.3"/>
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsEditMode}" Value="True">
-                                                <Setter Property="Fill" Value="#FFF59E0B"/>
+                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                <Setter Property="Opacity" Value="1"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -334,67 +210,171 @@
                             </Path>
                         </Viewbox>
                     </Button>
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding EditModeHintText}"
-                               Foreground="{DynamicResource BrushTextMain}"
-                               FontSize="{DynamicResource FontSizeNormal}"
-                               FontWeight="SemiBold"
-                               VerticalAlignment="Center"
-                               Margin="10,0,0,0"
-                               TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+            </Border>
 
-                    <Button Grid.Column="2"
-                            Width="28"
-                            Height="28"
-                            Margin="0,0,6,0"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            ToolTip="{Binding PinButtonTooltip}"
-                            Click="PinAutoHideButton_Click"
-                            Style="{StaticResource SidebarButtonStyle}">
-                        <Viewbox Width="14" Height="14">
-                            <Path Data="{local:IconGeometry pin}"
-                                  Fill="{Binding PinButtonBrush}"
-                                  Stretch="Uniform"/>
+            <!-- Sidebar Contextual Groups (Row 3: Top Aligned with ContextSectionTitle) -->
+            <Border Grid.Column="0" Grid.Row="3" VerticalAlignment="Top" Margin="0,4,0,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="专属收藏" Click="ToggleContextFavorites_Click">
+                        <Viewbox Width="16" Height="16">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="#FFFBBF24">
+                                    <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
+                                </Path>
+                            </Canvas>
                         </Viewbox>
                     </Button>
-                    
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="6" Padding="8,4" Width="112" Margin="0,0,4,0">
-                            <Grid>
-                                <Viewbox Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                    <Path Data="{local:IconGeometry search}" 
-                                          Fill="#FF888888" Opacity="0.8"/>
-                                </Viewbox>
-                                <TextBox x:Name="HubSearchBox"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         Foreground="{DynamicResource BrushTextMain}"
-                                         FontSize="{DynamicResource FontSizeSmall}"
-                                         Margin="18,0,0,0"
-                                         VerticalAlignment="Center"
-                                         CaretBrush="#FF3B82F6"
-                                         TextChanged="HubSearchBox_TextChanged"/>
-                                <TextBlock Text="搜索..." 
-                                           IsHitTestVisible="False"
-                                           Foreground="{DynamicResource BrushTextMuted}" 
-                                           FontSize="{DynamicResource FontSizeSmall}" 
-                                           Margin="20,0,0,0" 
-                                           VerticalAlignment="Center">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Text, ElementName=HubSearchBox}" Value="">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding ContextGroups}" Margin="0,4,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource GroupButtonStyle}"
+                                        Margin="0,0,0,4"
+                                        Tag="{Binding}"
+                                        Click="ContextGroupButton_Click"
+                                        ToolTip="{Binding Name}">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="重命名分组" Click="RenameContextGroup_Click" CommandParameter="{Binding}" />
+                                            <MenuItem Header="删除分组" Click="DeleteContextGroup_Click" CommandParameter="{Binding}" />
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <TextBlock Text="{Binding ShortName}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
+                                               FontWeight="SemiBold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="Foreground" Value="#FF6EA8FF"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建专属分组" Click="AddContextGroupButton_Click">
+                        <Viewbox Width="16" Height="16">
+                            <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Opacity" Value="0.3"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                <Setter Property="Opacity" Value="1"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                        </Viewbox>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <!-- Sidebar Footer Buttons (Row 3: Bottom Aligned) -->
+            <StackPanel Grid.Column="0" Grid.Row="3" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,8">
+                <Button x:Name="MobileMessagesButton" Style="{StaticResource SidebarButtonStyle}" Margin="0,0,0,6" Click="MobileMessagesButton_Click" Width="32" Height="32" ToolTip="手机消息">
+                    <Grid Width="20" Height="20">
+                        <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Path Data="{local:IconGeometry mobile}" Fill="#FFFFFFFF" Stretch="Uniform"/>
+                        </Viewbox>
+                        <Ellipse x:Name="MobileDiscoverBadge" Width="6" Height="6" Fill="#FF22C55E" Margin="0,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
+                        <Ellipse x:Name="MobileMessageBadge" Width="6" Height="6" Fill="#FFE11D48" Margin="0,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
+                    </Grid>
+                </Button>
+                <Button x:Name="SettingsButton" Style="{StaticResource SidebarButtonStyle}" Click="SettingsButton_Click" Width="32" Height="32" ToolTip="设置">
+                    <Viewbox Width="16" Height="16">
+                        <Path Data="{local:IconGeometry settings}" Fill="#FF888888" Stretch="Uniform"/>
+                    </Viewbox>
+                </Button>
+            </StackPanel>
+
+            <!-- Top Bar -->
+            <Grid Grid.Column="1" Grid.Row="0" Margin="8,8,8,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button x:Name="EditModeButton"
+                        Grid.Column="0"
+                        Width="28"
+                        Height="28"
+                        ToolTip="{Binding EditButtonTooltip}"
+                        Click="EditModeButton_Click"
+                        Style="{StaticResource SidebarButtonStyle}">
+                    <Viewbox Width="14" Height="14">
+                        <Path Data="{local:IconGeometry pen}" Stretch="Uniform">
+                            <Path.Style>
+                                <Style TargetType="Path">
+                                    <Setter Property="Fill" Value="{DynamicResource BrushTextMain}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsEditMode}" Value="True">
+                                            <Setter Property="Fill" Value="#FF3B82F6"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Path.Style>
+                        </Path>
+                    </Viewbox>
+                </Button>
+
+                <!-- 填充中间空间的可延伸搜索框 -->
+                <Border Grid.Column="1" Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="6" Padding="8,4" Margin="6,0,6,0">
+                    <Grid>
+                        <Viewbox Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <Path Data="{local:IconGeometry search}" 
+                                  Fill="#FF888888" Opacity="0.8"/>
+                        </Viewbox>
+                        <TextBox x:Name="HubSearchBox"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Foreground="{DynamicResource BrushTextMain}"
+                                 FontSize="{DynamicResource FontSizeSmall}"
+                                 Margin="18,0,0,0"
+                                 VerticalAlignment="Center"
+                                 CaretBrush="#FF3B82F6"
+                                 TextChanged="HubSearchBox_TextChanged"/>
+                        <TextBlock Text="搜索..." 
+                                   IsHitTestVisible="False"
+                                   Foreground="{DynamicResource BrushTextMuted}" 
+                                   FontSize="{DynamicResource FontSizeSmall}" 
+                                   Margin="20,0,0,0" 
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=HubSearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+
+                <!-- 最右侧置顶按钮 -->
+                <Button x:Name="PinAutoHideButton"
+                        Grid.Column="2"
+                        Width="28"
+                        Height="28"
+                        ToolTip="{Binding PinButtonTooltip}"
+                        Click="PinAutoHideButton_Click"
+                        Style="{StaticResource SidebarButtonStyle}">
+                    <Viewbox Width="14" Height="14">
+                        <Path Data="{local:IconGeometry pin}"
+                              Fill="{Binding PinButtonBrush}"
+                              Stretch="Uniform"/>
+                    </Viewbox>
+                </Button>
             </Grid>
 
             <Grid Grid.Column="1" Grid.Row="1" Margin="6,0,6,6" MouseWheel="GlobalPanel_MouseWheel">
@@ -463,7 +443,7 @@
                                                 <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
-                                                        <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                                        <Path Data="{local:IconGeometry publish}" Fill="#3B82F6" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
@@ -523,12 +503,12 @@
                                                                 <Setter Property="Background" Value="#FF3B82F6"/>
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                                <Setter Property="Background" Value="#FF2563EB"/>
-                                                                <Setter Property="BorderBrush" Value="#FFFFFFFF"/>
-                                                                <Setter Property="BorderThickness" Value="2"/>
+                                                                <Setter Property="Background" Value="#503B82F6"/>
+                                                                <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                                                                <Setter Property="BorderThickness" Value="2.5"/>
                                                                 <Setter Property="RenderTransform">
                                                                     <Setter.Value>
-                                                                        <ScaleTransform ScaleX="1.08" ScaleY="1.08"/>
+                                                                        <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
                                                                     </Setter.Value>
                                                                 </Setter>
                                                             </DataTrigger>
@@ -542,7 +522,7 @@
                                                     <!-- Empty: + icon via Viewbox -->
                                                     <Viewbox Width="18" Height="18"
                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                             Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                             Visibility="{Binding ShouldShowEmptyPlusIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                         <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
                                                             <Path.Style>
                                                                 <Style TargetType="Path">
@@ -558,6 +538,20 @@
                                                             </Path.Style>
                                                         </Path>
                                                     </Viewbox>
+
+                                                    <!-- Drop Target Hover Icon Preview -->
+                                                    <Grid Visibility="{Binding HasDropPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Image Source="{Binding DropPreviewIconSource}" Stretch="UniformToFill"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="{Binding HasDropPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                 Visibility="{Binding HasDropPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Data="{Binding DropPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                        </Viewbox>
+                                                        <TextBlock Text="{Binding DropPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding UseDropPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    </Grid>
                                                     
                                                     <!-- Occupied -->
                                                     <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -757,7 +751,7 @@
                                                 <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
-                                                        <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                                        <Path Data="{local:IconGeometry publish}" Fill="#3B82F6" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
@@ -817,12 +811,12 @@
                                                                 <Setter Property="Background" Value="#FF3B82F6"/>
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                                <Setter Property="Background" Value="#FF2563EB"/>
-                                                                <Setter Property="BorderBrush" Value="#FFFFFFFF"/>
-                                                                <Setter Property="BorderThickness" Value="2"/>
+                                                                <Setter Property="Background" Value="#503B82F6"/>
+                                                                <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                                                                <Setter Property="BorderThickness" Value="2.5"/>
                                                                 <Setter Property="RenderTransform">
                                                                     <Setter.Value>
-                                                                        <ScaleTransform ScaleX="1.08" ScaleY="1.08"/>
+                                                                        <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
                                                                     </Setter.Value>
                                                                 </Setter>
                                                             </DataTrigger>
@@ -1124,7 +1118,7 @@
                                             <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
-                                                    <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                                    <Path Data="{local:IconGeometry publish}" Fill="#3B82F6" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
@@ -1181,12 +1175,12 @@
                                                             <Setter Property="Background" Value="#FF3B82F6"/>
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                            <Setter Property="Background" Value="#FF2563EB"/>
-                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF"/>
-                                                            <Setter Property="BorderThickness" Value="2"/>
+                                                            <Setter Property="Background" Value="#503B82F6"/>
+                                                            <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                                                            <Setter Property="BorderThickness" Value="2.5"/>
                                                             <Setter Property="RenderTransform">
                                                                 <Setter.Value>
-                                                                    <ScaleTransform ScaleX="1.08" ScaleY="1.08"/>
+                                                                    <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
                                                                 </Setter.Value>
                                                             </Setter>
                                                         </DataTrigger>

@@ -89,6 +89,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         ShowActivated = false;
         _mainWindow = mainWindow;
+        LocationChanged += (_, _) => UpdateGuideBannerPosition();
         _ = new System.Windows.Interop.WindowInteropHelper(this).Handle;
         _settings = AppSettingsStore.Load();
         _releaseTargetTimer = new DispatcherTimer
@@ -126,19 +127,50 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         LoadSlots();
         DataContext = this;
 
-        PreviewKeyDown += (s, e) =>
+        AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler((s, e) =>
         {
-            if (e.Key == Key.Escape) Hide();
-        };
+            if (e.Key == Key.Escape)
+            {
+                var focusedObj = FocusManager.GetFocusedElement(this);
+                HostAssets.AppendLog($"QuickPanel Esc pressed: IsEditMode={IsEditMode}, IsActive={IsActive}, Focused={focusedObj?.GetType().Name ?? "null"}");
+
+                if (IsEditMode)
+                {
+                    ToggleEditModeWithLauncherAlignment();
+                    e.Handled = true;
+                }
+                else if (Environment.TickCount64 - _lastEscExitEditModeTick >= 600)
+                {
+                    HidePanelIfAllowed();
+                    e.Handled = true;
+                }
+                else
+                {
+                    e.Handled = true;
+                }
+            }
+        }), handledEventsToo: true);
 
         InputHookService.OnGlobalMouseDown += InputHookService_OnGlobalMouseDown;
+        InputHookService.OnGlobalEscapePressed += InputHookService_OnGlobalEscapePressed;
         AddHandler(ContextMenuService.ContextMenuOpeningEvent, new ContextMenuEventHandler(QuickPanelWindow_ContextMenuOpening));
 
         RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
         Closed += (s, e) =>
         {
+            InputHookService.OnGlobalEscapePressed -= InputHookService_OnGlobalEscapePressed;
             RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
         };
+    }
+
+    private void InputHookService_OnGlobalEscapePressed()
+    {
+        if (IsEditMode)
+        {
+            var focusedObj = FocusManager.GetFocusedElement(this);
+            HostAssets.AppendLog($"Global low-level Esc triggered: IsEditMode={IsEditMode}, IsActive={IsActive}, Focused={focusedObj?.GetType().Name ?? "null"}");
+            Dispatcher.BeginInvoke(new Action(() => ToggleEditModeWithLauncherAlignment()));
+        }
     }
 
     public ObservableCollection<SlotViewModel> GlobalSlots { get; } = new();
@@ -242,9 +274,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     public string EditButtonTooltip => IsEditMode ? "完成编辑" : "编辑面板";
 
-    public string EditModeHintText => IsEditMode
-        ? "编辑模式：拖动图标可移动/交换；按住 Ctrl 拖到图标上成组。"
-        : PanelTitle;
+    public string EditModeHintText => PanelTitle;
 
     public ObservableCollection<SlotViewModel> ActiveFolderSlots
     {
@@ -766,11 +796,6 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            if (IsEditMode)
-            {
-                return;
-            }
-
             if (vm.Command != null)
             {
                 _ = ExecuteSlotCommandAsync(vm, "quick-panel-click");
@@ -802,10 +827,123 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void EditModeButton_Click(object sender, RoutedEventArgs e)
     {
-        IsEditMode = !IsEditMode;
-        if (!IsEditMode)
+        ToggleEditModeWithLauncherAlignment();
+    }
+
+    private EditModeGuideBannerWindow? _guideBannerWindow;
+    private long _lastEscExitEditModeTick = 0;
+
+    public void ToggleEditModeWithLauncherAlignment()
+    {
+        if (IsEditMode)
         {
+            _lastEscExitEditModeTick = Environment.TickCount64;
+            _suppressAutoHideUntilUtc = DateTime.UtcNow.AddMilliseconds(2000);
+            IsEditMode = false;
+
             StopFolderHoverTimer();
+            CloseGuideBannerWindow();
+            Topmost = false;
+            if (_mainWindow != null)
+            {
+                _mainWindow.Topmost = false;
+                _mainWindow.Hide();
+            }
+            Activate();
+            Focus();
+            HostAssets.AppendLog("Quick panel edit mode disabled: launcher window hidden, auto-hide suppressed, quick panel stays visible.");
+            return;
+        }
+
+        IsEditMode = true;
+        Topmost = true;
+
+        // 唤起主启动器并与面板并排在屏幕中央居中显示
+        if (_mainWindow != null)
+        {
+            _mainWindow.Show();
+            if (_mainWindow.WindowState == WindowState.Minimized)
+            {
+                _mainWindow.WindowState = WindowState.Normal;
+            }
+            _mainWindow.Activate();
+
+            AlignLauncherAndPanelInScreenCenter();
+        }
+
+        ShowGuideBannerWindow();
+    }
+
+    private void AlignLauncherAndPanelInScreenCenter()
+    {
+        try
+        {
+            if (_mainWindow == null) return;
+
+            var workArea = SystemParameters.WorkArea;
+            double mainWidth = _mainWindow.Width > 0 ? _mainWindow.Width : 800;
+            double mainHeight = _mainWindow.Height > 0 ? _mainWindow.Height : 600;
+
+            Show();
+
+            double panelWidth = Width > 0 ? Width : 480;
+            double panelHeight = Height > 0 ? Height : 600;
+            double gap = 20;
+
+            double totalWidth = mainWidth + panelWidth + gap;
+            double startLeft = Math.Max(workArea.Left, workArea.Left + (workArea.Width - totalWidth) / 2);
+
+            _mainWindow.Left = startLeft;
+            _mainWindow.Top = Math.Max(workArea.Top, workArea.Top + (workArea.Height - mainHeight) / 2);
+
+            Left = startLeft + mainWidth + gap;
+            Top = Math.Max(workArea.Top, workArea.Top + (workArea.Height - panelHeight) / 2);
+
+            _mainWindow.Topmost = true;
+            _mainWindow.Topmost = false;
+            BringToFront();
+            Activate();
+            Focus();
+
+            UpdateGuideBannerPosition();
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"AlignLauncherAndPanelInScreenCenter error: {ex.Message}");
+        }
+    }
+
+    private void ShowGuideBannerWindow()
+    {
+        if (_guideBannerWindow == null)
+        {
+            _guideBannerWindow = new EditModeGuideBannerWindow();
+        }
+        _guideBannerWindow.Show();
+        UpdateGuideBannerPosition();
+    }
+
+    private void CloseGuideBannerWindow()
+    {
+        if (_guideBannerWindow != null)
+        {
+            try
+            {
+                _guideBannerWindow.Close();
+            }
+            catch { }
+            _guideBannerWindow = null;
+        }
+    }
+
+    private void UpdateGuideBannerPosition()
+    {
+        if (_guideBannerWindow?.IsVisible == true && _mainWindow != null)
+        {
+            double minLeft = Math.Min(_mainWindow.Left, Left);
+            double maxRight = Math.Max(_mainWindow.Left + _mainWindow.Width, Left + Width);
+            double maxBottom = Math.Max(_mainWindow.Top + _mainWindow.Height, Top + Height);
+            _guideBannerWindow.UpdatePosition(minLeft, maxRight, maxBottom);
         }
     }
 
@@ -1183,7 +1321,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
             e.Effects = System.Windows.DragDropEffects.Move;
             _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
-            SetReleaseTarget(target);
+            SetReleaseTarget(target, source.Command);
             StopFolderHoverTimer();
 
             e.Handled = true;
@@ -1194,14 +1332,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (e.Data.GetDataPresent(typeof(CommandItem)))
         {
             var command = e.Data.GetData(typeof(CommandItem)) as CommandItem;
-            if (command == null || (target.Item != null && !target.IsFolder))
+            if (command == null)
             {
                 e.Effects = System.Windows.DragDropEffects.None;
             }
             else
             {
                 _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
-                SetReleaseTarget(target);
+                SetReleaseTarget(target, command);
                 e.Effects = System.Windows.DragDropEffects.Copy;
             }
 
@@ -1297,7 +1435,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             {
                 AddCommandToFolder(target, command);
             }
-            else if (command != null && target.Item == null)
+            else if (command != null)
             {
                 AddCommandToSlot(target, command);
             }
@@ -1378,6 +1516,13 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        // 1. 优先检查鼠标松开时是否命中了顶栏/侧边栏的 Action 按钮 (编辑、置顶、设置、手机消息)
+        if (TryExecuteActionButtonUnderCursor())
+        {
+            return;
+        }
+
+        // 2. 查找并执行槽位 Command
         var slot = _hoveredSlot ?? ResolveSlotUnderCursor();
         if (slot?.Command == null)
         {
@@ -1389,21 +1534,74 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         _ = ExecuteSlotCommandAsync(slot, "quick-panel-hold-release");
     }
 
-    private void SetReleaseTarget(SlotViewModel? slot)
+    private bool TryExecuteActionButtonUnderCursor()
+    {
+        try
+        {
+            var point = NativeMethods.GetCursorPosition();
+            var localPoint = PointFromScreen(point);
+            var hit = InputHitTest(localPoint) as DependencyObject;
+            while (hit != null)
+            {
+                if (hit is System.Windows.Controls.Button button)
+                {
+                    if (button.Name == "EditModeButton" || button == EditModeButton)
+                    {
+                        HostAssets.AppendLog("Quick panel hold release: triggered EditModeButton under cursor.");
+                        Dispatcher.BeginInvoke(new Action(() => ToggleEditModeWithLauncherAlignment()));
+                        return true;
+                    }
+                    if (button.Name == "PinAutoHideButton" || button == PinAutoHideButton)
+                    {
+                        HostAssets.AppendLog("Quick panel hold release: triggered PinAutoHideButton under cursor.");
+                        Dispatcher.BeginInvoke(new Action(() => PinAutoHideButton_Click(button, new RoutedEventArgs())));
+                        return true;
+                    }
+                    if (button.Name == "SettingsButton" || button == SettingsButton)
+                    {
+                        HostAssets.AppendLog("Quick panel hold release: triggered SettingsButton under cursor.");
+                        Dispatcher.BeginInvoke(new Action(() => SettingsButton_Click(button, new RoutedEventArgs())));
+                        return true;
+                    }
+                    if (button.Name == "MobileMessagesButton" || button == MobileMessagesButton)
+                    {
+                        HostAssets.AppendLog("Quick panel hold release: triggered MobileMessagesButton under cursor.");
+                        Dispatcher.BeginInvoke(new Action(() => MobileMessagesButton_Click(button, new RoutedEventArgs())));
+                        return true;
+                    }
+                }
+                hit = VisualTreeHelper.GetParent(hit);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"TryExecuteActionButtonUnderCursor error: {ex.Message}");
+        }
+
+        return false;
+    }
+
+    private void SetReleaseTarget(SlotViewModel? slot, CommandItem? dropPreviewCommand = null)
     {
         if (ReferenceEquals(_hoveredSlot, slot))
         {
+            if (_hoveredSlot != null && dropPreviewCommand != null && _hoveredSlot.DropPreviewCommand != dropPreviewCommand)
+            {
+                _hoveredSlot.DropPreviewCommand = dropPreviewCommand;
+            }
             return;
         }
 
         if (_hoveredSlot != null)
         {
+            _hoveredSlot.DropPreviewCommand = null;
             _hoveredSlot.IsReleaseTarget = false;
         }
 
         _hoveredSlot = slot;
         if (_hoveredSlot != null)
         {
+            _hoveredSlot.DropPreviewCommand = dropPreviewCommand;
             _hoveredSlot.IsReleaseTarget = true;
         }
     }
@@ -1412,6 +1610,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     {
         if (_hoveredSlot != null)
         {
+            _hoveredSlot.DropPreviewCommand = null;
             _hoveredSlot.IsReleaseTarget = false;
         }
 
@@ -2499,6 +2698,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         HideFolderPreview();
         CollapseFolder();
         ClearReleaseTarget();
+        CloseGuideBannerWindow();
         Topmost = false;
         Hide();
         MemoryOptimizationService.OptimizeMemoryInBackground();
@@ -2506,9 +2706,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void HidePanelIfAllowed()
     {
-        if (_isPinned)
+        if (_isPinned || IsEditMode || Environment.TickCount64 - _lastEscExitEditModeTick < 600)
         {
-            HostAssets.AppendLog("Quick panel hide skipped because panel is pinned.");
+            HostAssets.AppendLog("Quick panel hide skipped because panel is pinned, in edit mode, or recently exited edit mode.");
             return;
         }
 
@@ -3434,6 +3634,37 @@ public class SlotViewModel : INotifyPropertyChanged
     private List<int> _containerPath = [];
     private int _sourceFolderIndex = -1;
     private int _sourceFolderItemIndex = -1;
+    private CommandItem? _dropPreviewCommand;
+
+    public CommandItem? DropPreviewCommand
+    {
+        get => _dropPreviewCommand;
+        set
+        {
+            if (ReferenceEquals(_dropPreviewCommand, value)) return;
+            _dropPreviewCommand = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDropPreviewIcon));
+            OnPropertyChanged(nameof(DropPreviewIconSource));
+            OnPropertyChanged(nameof(DropPreviewVectorIcon));
+            OnPropertyChanged(nameof(DropPreviewGlyph));
+            OnPropertyChanged(nameof(HasDropPreviewImageIcon));
+            OnPropertyChanged(nameof(HasDropPreviewVectorIcon));
+            OnPropertyChanged(nameof(UseDropPreviewGlyphIcon));
+            OnPropertyChanged(nameof(ShouldShowEmptyPlusIcon));
+        }
+    }
+
+    public bool HasDropPreviewIcon => _dropPreviewCommand != null;
+    public ImageSource? DropPreviewIconSource => _dropPreviewCommand?.IconSource;
+    public Geometry? DropPreviewVectorIcon => _dropPreviewCommand?.VectorIcon;
+    public string DropPreviewGlyph => _dropPreviewCommand?.DisplayGlyph ?? string.Empty;
+
+    public bool HasDropPreviewImageIcon => _dropPreviewCommand != null && _dropPreviewCommand.HasImageIcon;
+    public bool HasDropPreviewVectorIcon => _dropPreviewCommand != null && _dropPreviewCommand.HasVectorIcon;
+    public bool UseDropPreviewGlyphIcon => _dropPreviewCommand != null && _dropPreviewCommand.UseGlyphIcon;
+
+    public bool ShouldShowEmptyPlusIcon => IsEmpty && !HasDropPreviewIcon;
 
     public CommandItem? Command => _command;
 

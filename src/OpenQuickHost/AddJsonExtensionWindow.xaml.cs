@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -81,6 +81,8 @@ public partial class AddJsonExtensionWindow : Window
 
         Loaded += (_, _) =>
         {
+            EnsureCenteredAndFitsScreen();
+
             // 依据编辑状态动态展示窗口标题
             if (_isEditMode)
             {
@@ -151,6 +153,33 @@ public partial class AddJsonExtensionWindow : Window
             // 异步初始化高级编辑器与内联脚本编辑器，支持 4 秒超时无缝降级
             _ = InitializeWebViewEditorsAsync();
         };
+    }
+
+    private void EnsureCenteredAndFitsScreen()
+    {
+        try
+        {
+            var workArea = SystemParameters.WorkArea;
+
+            // 若屏幕工作区较小或应用了高 DPI 缩放，自动微调宽高防止超出工作区边缘
+            if (Width > workArea.Width * 0.92)
+            {
+                Width = Math.Max(MinWidth, workArea.Width * 0.92);
+            }
+            if (Height > workArea.Height * 0.92)
+            {
+                Height = Math.Max(MinHeight, workArea.Height * 0.92);
+            }
+
+            // 强制在当前显示屏工作区中央精准定位
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            Left = Math.Max(workArea.Left, workArea.Left + (workArea.Width - Width) / 2);
+            Top = Math.Max(workArea.Top, workArea.Top + (workArea.Height - Height) / 2);
+        }
+        catch
+        {
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
     }
 
     private static bool ShouldOpenAdvancedEditorForExistingJson(string initialJson)

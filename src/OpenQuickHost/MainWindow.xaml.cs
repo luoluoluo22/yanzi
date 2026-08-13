@@ -229,6 +229,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public MainWindow()
     {
         InitializeComponent();
+        AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler((s, e) =>
+        {
+            if (e.Key == Key.Escape && _quickPanel?.IsEditMode == true)
+            {
+                var focusedObj = FocusManager.GetFocusedElement(this);
+                HostAssets.AppendLog($"MainWindow Esc pressed during EditMode: IsActive={IsActive}, Focused={focusedObj?.GetType().Name ?? "null"}");
+                _quickPanel.ToggleEditModeWithLauncherAlignment();
+                e.Handled = true;
+            }
+        }), handledEventsToo: true);
         CleanAllTemporaryExtensions();
         UpdateFooterMenuHint(isMenuOpen: false);
         _defaultWindowWidth = Width;
@@ -1259,7 +1269,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var payload = new System.Windows.DataObject(typeof(CommandItem), runnable);
         WindowBindingDropOverlayWindow? bindingOverlay = null;
-        if (runnable.Source is CommandSource.LocalExtension or CommandSource.Cloud)
+        if ((runnable.Source is CommandSource.LocalExtension or CommandSource.Cloud) &&
+            (_quickPanel?.IsEditMode != true) &&
+            (_quickPanel?.IsVisible != true))
         {
             bindingOverlay = new WindowBindingDropOverlayWindow(runnable, this, _appSettings.WindowBindings?.MarginPixels ?? 14);
             bindingOverlay.BindingDropped += (hwnd, corner, offsetX, offsetY) =>
@@ -1644,6 +1656,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (e.Key == Key.Escape)
         {
+            if (_quickPanel?.IsEditMode == true)
+            {
+                _quickPanel.ToggleEditModeWithLauncherAlignment();
+                e.Handled = true;
+                return;
+            }
             if (IsHostedViewOpen)
             {
                 CloseHostedView();

@@ -41,7 +41,8 @@ public class InputHookService
     private static LowLevelKeyboardProc _keyboardProc = KeyboardHookCallback;
     private static IntPtr _mouseHookID = IntPtr.Zero;
     private static IntPtr _keyboardHookID = IntPtr.Zero;
-    private static DispatcherTimer? _longPressTimer;
+    private static readonly IntPtr SYNTHETIC_EXTRA_INFO = new(0x51554943); // "QUIC"
+    private static System.Threading.Timer? _longPressTimer;
     private static Action? _onLongPressRelease;
     private static Action? _onRadialRelease;
     public static event Action? OnGlobalMouseDown;
@@ -155,41 +156,41 @@ public class InputHookService
             HostAssets.AppendLog($"Input hook: failed to install low level keyboard hook, lastError={Marshal.GetLastWin32Error()}; CapsLock radial trigger disabled for this session.");
         }
         
-        _longPressTimer = new DispatcherTimer();
-        _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 50, 1500));
-        _longPressTimer.Tick += (s, e) =>
-        {
-            _longPressTimer.Stop();
-            if (_trackedButton == TrackedMouseButton.None || _pendingLongPressTarget == ActiveTriggerTarget.None)
-            {
-                HostAssets.AppendLog($"Input hook: ignored long press tick because state is inactive, tracked={_trackedButton}, target={_pendingLongPressTarget}.");
-                _pendingLongPressTarget = ActiveTriggerTarget.None;
-                return;
-            }
-
-            _dragTriggered = true;
-            _releaseShouldExecute = true;
-            _activeTriggerTarget = _pendingLongPressTarget;
-            _pendingLongPressTarget = ActiveTriggerTarget.None;
-            HostAssets.AppendLog($"Input hook: {_trackedButton} long press triggered for {_activeTriggerTarget}.");
-            
-            // Invoke the appropriate show method based on the target
-            if (_activeTriggerTarget == ActiveTriggerTarget.Radial)
-            {
-                InvokeShowRadial();
-            }
-            else if (_activeTriggerTarget == ActiveTriggerTarget.Yanm)
-            {
-                InvokeShowYanm();
-            }
-            else
-            {
-                InvokeShowPanel();
-            }
-        };
+        _longPressTimer = new System.Threading.Timer(OnLongPressTimerTick, null, Timeout.Infinite, Timeout.Infinite);
 
         _isEnabled = true;
         HostAssets.AppendLog($"Input hook: started. mouseHook=0x{_mouseHookID.ToInt64():X}, keyboardHook=0x{_keyboardHookID.ToInt64():X}, triggers={DescribeSettings()}.");
+    }
+
+    private static void OnLongPressTimerTick(object? state)
+    {
+        if (_trackedButton == TrackedMouseButton.None || _pendingLongPressTarget == ActiveTriggerTarget.None)
+        {
+            HostAssets.AppendLog($"Input hook: ignored long press tick because state is inactive, tracked={_trackedButton}, target={_pendingLongPressTarget}.");
+            _pendingLongPressTarget = ActiveTriggerTarget.None;
+            return;
+        }
+
+        var target = _pendingLongPressTarget;
+        _dragTriggered = true;
+        _releaseShouldExecute = true;
+        _activeTriggerTarget = target;
+        _pendingLongPressTarget = ActiveTriggerTarget.None;
+        HostAssets.AppendLog($"Input hook: {_trackedButton} long press triggered for {_activeTriggerTarget}.");
+        
+        // Invoke the appropriate show method based on the target
+        if (target == ActiveTriggerTarget.Radial)
+        {
+            InvokeShowRadial();
+        }
+        else if (target == ActiveTriggerTarget.Yanm)
+        {
+            InvokeShowYanm();
+        }
+        else
+        {
+            InvokeShowPanel();
+        }
     }
 
     public static void Stop()
@@ -203,7 +204,7 @@ public class InputHookService
         var mouseUnhooked = _mouseHookID == IntPtr.Zero || UnhookWindowsHookEx(_mouseHookID);
         var keyboardUnhooked = _keyboardHookID == IntPtr.Zero || UnhookWindowsHookEx(_keyboardHookID);
         HostAssets.AppendLog($"Input hook: stopped. mouseUnhooked={mouseUnhooked}, keyboardUnhooked={keyboardUnhooked}.");
-        _longPressTimer?.Stop();
+        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _mouseHookID = IntPtr.Zero;
         _keyboardHookID = IntPtr.Zero;
         ResetTransientMouseState();
@@ -219,10 +220,7 @@ public class InputHookService
         _globalServiceBlacklistedProcesses = appSettings.GlobalServiceBlacklistedProcesses ?? [];
         _windowSnapAssistEnabled = appSettings.EnableWindowSnapAssist;
         _windowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(appSettings.WindowSnapAssistMouseTriggerMode);
-        if (_longPressTimer != null)
-        {
-            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 50, 1500));
-        }
+        ResetTransientMouseState();
 
         ResetTransientMouseState();
         HostAssets.AppendLog($"Input hook: settings reloaded, transient mouse state reset, triggers={DescribeSettings()}.");
@@ -298,7 +296,7 @@ public class InputHookService
 
             // 2. Unsafe 零分配指针读取（消除堆内存 GC 停顿）
             var mouse = *(MSLLHOOKSTRUCT*)lParam;
-            if ((mouse.flags & LLMHF_INJECTED) != 0)
+            if ((mouse.flags & LLMHF_INJECTED) != 0 || mouse.dwExtraInfo == SYNTHETIC_EXTRA_INFO)
             {
                 return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
             }
@@ -505,6 +503,8 @@ public class InputHookService
         return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
     }
 
+    public static event Action? OnGlobalEscapePressed;
+
     private static unsafe IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
@@ -514,6 +514,11 @@ public class InputHookService
             if ((keyboard.flags & LLKHF_INJECTED) != 0)
             {
                 return CallNextHookEx(_keyboardHookID, nCode, wParam, lParam);
+            }
+
+            if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) && keyboard.vkCode == 0x1B)
+            {
+                OnGlobalEscapePressed?.Invoke();
             }
 
             if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
@@ -669,7 +674,7 @@ public class InputHookService
 
     private static void StartLongPressTimer()
     {
-        _longPressTimer?.Stop();
+        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _pendingLongPressTarget = ResolveLongPressTarget(_trackedButton);
         if (_pendingLongPressTarget == ActiveTriggerTarget.None)
         {
@@ -677,13 +682,9 @@ public class InputHookService
             return;
         }
 
-        if (_longPressTimer != null)
-        {
-            _longPressTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.LongPressMilliseconds, 50, 1500));
-        }
-
-        _longPressTimer?.Start();
-        HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={Math.Clamp(_settings.LongPressMilliseconds, 50, 1500)}ms.");
+        var intervalMs = Math.Clamp(_settings.LongPressMilliseconds, 50, 1500);
+        _longPressTimer?.Change(intervalMs, Timeout.Infinite);
+        HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={intervalMs}ms.");
     }
 
     private static void HandleMouseMove(POINT point)
@@ -749,7 +750,7 @@ public class InputHookService
         }
 
         _dragTriggered = true;
-        _longPressTimer?.Stop();
+        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         if (panelDrag)
         {
             _releaseShouldExecute = true;
@@ -782,7 +783,7 @@ public class InputHookService
 
     private static void CancelLongPressOnMovement(POINT point)
     {
-        if (_longPressTimer?.IsEnabled != true || _trackedButton == TrackedMouseButton.None)
+        if (_trackedButton == TrackedMouseButton.None || _pendingLongPressTarget == ActiveTriggerTarget.None)
         {
             return;
         }
@@ -795,7 +796,7 @@ public class InputHookService
             return;
         }
 
-        _longPressTimer.Stop();
+        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _pendingLongPressTarget = ActiveTriggerTarget.None;
         HostAssets.AppendLog($"Input hook: canceled {_trackedButton} long press because mouse moved.");
     }
@@ -807,7 +808,7 @@ public class InputHookService
             return false;
         }
 
-        _longPressTimer?.Stop();
+        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         var swallowRelease = (button is TrackedMouseButton.Right or TrackedMouseButton.Middle or TrackedMouseButton.X1 or TrackedMouseButton.X2) && _releaseShouldExecute;
         var downSwallowedByMouseGesture = button switch
         {
@@ -855,7 +856,7 @@ public class InputHookService
 
     private static void ResetTransientMouseState()
     {
-        _longPressTimer?.Stop();
+        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _dragTriggered = false;
         _releaseShouldExecute = false;
         _rightButtonDownSwallowed = false;
@@ -873,22 +874,39 @@ public class InputHookService
 
     private static void ReplayShortRightClickAfterHookReturns()
     {
-        _ = Task.Run(async () =>
+        var downPt = _downPoint;
+        ThreadPool.QueueUserWorkItem(_ =>
         {
-            await Task.Delay(25);
-            SendSyntheticRightClick();
+            SendSyntheticRightClick(downPt);
         });
     }
 
-    private static void SendSyntheticRightClick()
+    private static void SendSyntheticRightClick(POINT downPt)
     {
+        GetCursorPos(out var currentPt);
+        var dx = currentPt.x - downPt.x;
+        var dy = currentPt.y - downPt.y;
+        bool needRestoreCursor = (dx * dx + dy * dy) > 4;
+
+        if (needRestoreCursor)
+        {
+            SetCursorPos(downPt.x, downPt.y);
+        }
+
         var inputs = new[]
         {
-            MouseInput(MOUSEEVENTF_RIGHTDOWN),
-            MouseInput(MOUSEEVENTF_RIGHTUP)
+            MouseInput(MOUSEEVENTF_RIGHTDOWN, SYNTHETIC_EXTRA_INFO),
+            MouseInput(MOUSEEVENTF_RIGHTUP, SYNTHETIC_EXTRA_INFO)
         };
         var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
-        HostAssets.AppendLog($"Input hook: replayed short right click, SendInput sent={sent}/2.");
+
+        if (needRestoreCursor)
+        {
+            Thread.Sleep(1);
+            SetCursorPos(currentPt.x, currentPt.y);
+        }
+
+        HostAssets.AppendLog($"Input hook: replayed short right click at ({downPt.x},{downPt.y}), SendInput sent={sent}/2.");
     }
 
     private static void ReplayMouseButtonUpAfterHookReturns(TrackedMouseButton button)
@@ -904,15 +922,14 @@ public class InputHookService
             return;
         }
 
-        _ = Task.Run(async () =>
+        ThreadPool.QueueUserWorkItem(_ =>
         {
-            await Task.Delay(25);
-            var sent = SendInput(1, [MouseInput(flags)], Marshal.SizeOf<INPUT>());
+            var sent = SendInput(1, [MouseInput(flags, SYNTHETIC_EXTRA_INFO)], Marshal.SizeOf<INPUT>());
             HostAssets.AppendLog($"Input hook: replayed {button} button up after swallowed release, SendInput sent={sent}/1.");
         });
     }
 
-    private static INPUT MouseInput(uint flags)
+    private static INPUT MouseInput(uint flags, IntPtr extraInfo = default)
     {
         return new INPUT
         {
@@ -921,7 +938,8 @@ public class InputHookService
             {
                 mi = new MOUSEINPUT
                 {
-                    dwFlags = flags
+                    dwFlags = flags,
+                    dwExtraInfo = extraInfo
                 }
             }
         };
@@ -1309,6 +1327,12 @@ public class InputHookService
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int X, int Y);
 
     private enum TrackedMouseButton
     {
