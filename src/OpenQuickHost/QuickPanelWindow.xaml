@@ -398,28 +398,50 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Button x:Name="EditModeButton"
-                        Grid.Column="0"
-                        Width="34"
-                        Height="34"
-                        ToolTip="{Binding EditButtonTooltip}"
-                        Click="EditModeButton_Click"
-                        Style="{StaticResource SidebarButtonStyle}">
-                    <Viewbox Width="14" Height="14">
-                        <Path Data="{local:IconGeometry pen}" Stretch="Uniform">
-                            <Path.Style>
-                                <Style TargetType="Path">
-                                    <Setter Property="Fill" Value="{DynamicResource BrushTextMain}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsEditMode}" Value="True">
-                                            <Setter Property="Fill" Value="#FF3B82F6"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Path.Style>
-                        </Path>
-                    </Viewbox>
-                </Button>
+                <Grid Grid.Column="0" Width="34" Height="34">
+                    <Button x:Name="EditModeButton"
+                            Width="34"
+                            Height="34"
+                            ToolTip="{Binding EditButtonTooltip}"
+                            Click="EditModeButton_Click"
+                            MouseEnter="EditModeButton_MouseEnter"
+                            MouseLeave="EditModeButton_MouseLeave"
+                            Style="{StaticResource SidebarButtonStyle}">
+                        <Viewbox Width="14" Height="14">
+                            <Path Data="{local:IconGeometry pen}" Stretch="Uniform">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Fill" Value="{DynamicResource BrushTextMain}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsEditMode}" Value="True">
+                                                <Setter Property="Fill" Value="#FF3B82F6"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                        </Viewbox>
+                    </Button>
+
+                    <!-- 3秒顺时针悬浮进度外框动画 (Clockwise Progress Ring) -->
+                    <Path x:Name="EditModeHoverProgressRing"
+                          IsHitTestVisible="False"
+                          Width="34" Height="34"
+                          Stroke="#FF3B82F6"
+                          StrokeThickness="2"
+                          StrokeDashArray="94.25 94.25"
+                          StrokeDashOffset="94.25"
+                          Visibility="Collapsed"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center">
+                        <Path.Data>
+                            <EllipseGeometry Center="17,17" RadiusX="15" RadiusY="15"/>
+                        </Path.Data>
+                        <Path.RenderTransform>
+                            <RotateTransform Angle="-90" CenterX="17" CenterY="17"/>
+                        </Path.RenderTransform>
+                    </Path>
+                </Grid>
 
                 <!-- 填充中间空间的可延伸搜索框 -->
                 <Border Grid.Column="1" Height="34" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="10,0" Margin="6,0,6,0">

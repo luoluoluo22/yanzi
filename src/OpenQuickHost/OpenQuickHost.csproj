@@ -50,6 +50,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Resource>
+    <Content Include="Assets\edit-guide.gif">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Resource Include="Assets\Icons\*.svg" />
     <Resource Include="Assets\mdi-icons.json" />
     <None Include="..\..\third_party\everything-sdk\Everything64.dll" Link="Everything64.dll">

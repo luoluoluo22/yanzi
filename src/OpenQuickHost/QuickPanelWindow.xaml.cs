@@ -825,8 +825,144 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private System.Windows.Media.Animation.Storyboard? _hoverProgressStoryboard;
+    private EditModeHoverDemoWindow? _hoverDemoWindow;
+
+    private void EditModeButton_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        StopEditButtonHoverTimer();
+
+        // 1. 触发全局 GIF 缓存预热（完全运行于后台 Task，UI 线程 0 毫秒开销）
+        _ = EditModeGuideCache.EnsureLoadedAsync();
+
+        // 2. 开启 3 秒逆时针旋转外框动画
+        if (EditModeHoverProgressRing != null)
+        {
+            EditModeHoverProgressRing.Visibility = Visibility.Visible;
+
+            var dashAnim = new System.Windows.Media.Animation.DoubleAnimation
+            {
+                From = 94.25,
+                To = 0.0,
+                Duration = new Duration(TimeSpan.FromSeconds(3)),
+                FillBehavior = System.Windows.Media.Animation.FillBehavior.HoldEnd
+            };
+
+            System.Windows.Media.Animation.Storyboard.SetTarget(dashAnim, EditModeHoverProgressRing);
+            System.Windows.Media.Animation.Storyboard.SetTargetProperty(dashAnim, new PropertyPath(System.Windows.Shapes.Path.StrokeDashOffsetProperty));
+
+            _hoverProgressStoryboard = new System.Windows.Media.Animation.Storyboard();
+            _hoverProgressStoryboard.Children.Add(dashAnim);
+            _hoverProgressStoryboard.Completed += (s, ev) =>
+            {
+                if (EditModeHoverProgressRing != null)
+                {
+                    EditModeHoverProgressRing.Visibility = Visibility.Collapsed;
+                }
+                _hoverProgressStoryboard = null;
+                ShowEditModeHoverDemoWindow();
+            };
+
+            _hoverProgressStoryboard.Begin();
+        }
+    }
+
+    private DispatcherTimer? _hoverDismissTimer;
+
+    private void StartHoverDismissTimer()
+    {
+        StopHoverDismissTimer();
+        _hoverDismissTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(500)
+        };
+        _hoverDismissTimer.Tick += (s, e) =>
+        {
+            StopHoverDismissTimer();
+            if (_hoverDemoWindow != null)
+            {
+                if (!_hoverDemoWindow.IsMouseOverWindow && !EditModeButton.IsMouseOver)
+                {
+                    CloseEditModeHoverDemoWindow();
+                }
+            }
+        };
+        _hoverDismissTimer.Start();
+    }
+
+    private void StopHoverDismissTimer()
+    {
+        if (_hoverDismissTimer != null)
+        {
+            _hoverDismissTimer.Stop();
+            _hoverDismissTimer = null;
+        }
+    }
+
+    private void EditModeButton_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        StopEditButtonHoverTimer();
+        if (_hoverDemoWindow != null && _hoverDemoWindow.IsVisible)
+        {
+            StartHoverDismissTimer();
+        }
+    }
+
+    private void StopEditButtonHoverTimer()
+    {
+        if (_hoverProgressStoryboard != null)
+        {
+            try
+            {
+                _hoverProgressStoryboard.Stop();
+            }
+            catch { }
+            _hoverProgressStoryboard = null;
+        }
+
+        if (EditModeHoverProgressRing != null)
+        {
+            EditModeHoverProgressRing.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void ShowEditModeHoverDemoWindow()
+    {
+        if (!IsVisible) return;
+        CloseEditModeHoverDemoWindow();
+        _hoverDemoWindow = new EditModeHoverDemoWindow
+        {
+            Owner = this
+        };
+        _hoverDemoWindow.MouseLeftDemoWindow += (s, e) =>
+        {
+            if (!EditModeButton.IsMouseOver)
+            {
+                StartHoverDismissTimer();
+            }
+        };
+        _hoverDemoWindow.PositionToRightOf(this);
+        _hoverDemoWindow.Show();
+    }
+
+    private void CloseEditModeHoverDemoWindow()
+    {
+        StopHoverDismissTimer();
+        if (_hoverDemoWindow != null)
+        {
+            try
+            {
+                _hoverDemoWindow.Close();
+            }
+            catch { }
+            _hoverDemoWindow = null;
+        }
+    }
+
     private void EditModeButton_Click(object sender, RoutedEventArgs e)
     {
+        StopEditButtonHoverTimer();
+        CloseEditModeHoverDemoWindow();
         ToggleEditModeWithLauncherAlignment();
     }
 
@@ -855,6 +991,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void CloseGuideBannerWindow()
     {
+        StopEditButtonHoverTimer();
+        CloseEditModeHoverDemoWindow();
         if (_guideBannerWindow != null)
         {
             try
@@ -2433,6 +2571,11 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (_hoverDemoWindow != null && _hoverDemoWindow.IsVisible)
+        {
+            return;
+        }
+
         _releaseTargetTimer.Stop();
         HidePanelIfAllowed();
     }
@@ -2719,10 +2862,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     {
         _releaseTargetTimer.Stop();
         StopFolderHoverTimer();
+        StopEditButtonHoverTimer();
         HideFolderPreview();
         CollapseFolder();
         ClearReleaseTarget();
         CloseGuideBannerWindow();
+        CloseEditModeHoverDemoWindow();
         Topmost = false;
         Hide();
         MemoryOptimizationService.OptimizeMemoryInBackground();
