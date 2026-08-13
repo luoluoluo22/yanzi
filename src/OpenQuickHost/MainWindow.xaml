@@ -356,9 +356,13 @@
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding Text, ElementName=SearchBox}" Value=""/>
+                                                <Condition Binding="{Binding IsKeyboardFocused, ElementName=SearchBox}" Value="False"/>
+                                            </MultiDataTrigger.Conditions>
                                             <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
+                                        </MultiDataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </TextBlock.Style>

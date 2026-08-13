@@ -831,6 +831,72 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     }
 
     private EditModeGuideBannerWindow? _guideBannerWindow;
+    private EditModeMidGuideWindow? _midGuideWindow;
+
+    private void ShowGuideBannerWindow()
+    {
+        if (_guideBannerWindow == null)
+        {
+            _guideBannerWindow = new EditModeGuideBannerWindow
+            {
+                OnExitEditModeRequested = () => ToggleEditModeWithLauncherAlignment()
+            };
+        }
+        _guideBannerWindow.Show();
+
+        if (_midGuideWindow == null)
+        {
+            _midGuideWindow = new EditModeMidGuideWindow();
+        }
+        _midGuideWindow.Show();
+
+        UpdateGuideBannerPosition();
+    }
+
+    private void CloseGuideBannerWindow()
+    {
+        if (_guideBannerWindow != null)
+        {
+            try
+            {
+                _guideBannerWindow.Close();
+            }
+            catch { }
+            _guideBannerWindow = null;
+        }
+
+        if (_midGuideWindow != null)
+        {
+            try
+            {
+                _midGuideWindow.Close();
+            }
+            catch { }
+            _midGuideWindow = null;
+        }
+    }
+
+    private void UpdateGuideBannerPosition()
+    {
+        if (_mainWindow != null)
+        {
+            if (_guideBannerWindow?.IsVisible == true)
+            {
+                double minLeft = Math.Min(_mainWindow.Left, Left);
+                double maxRight = Math.Max(_mainWindow.Left + _mainWindow.Width, Left + Width);
+                double maxBottom = Math.Max(_mainWindow.Top + _mainWindow.Height, Top + Height);
+                _guideBannerWindow.UpdatePosition(minLeft, maxRight, maxBottom);
+            }
+
+            if (_midGuideWindow?.IsVisible == true)
+            {
+                double launcherRight = _mainWindow.Left + _mainWindow.Width;
+                double panelLeft = Left;
+                double centerY = Top + (Height / 2);
+                _midGuideWindow.UpdatePosition(launcherRight, panelLeft, centerY);
+            }
+        }
+    }
     private long _lastEscExitEditModeTick = 0;
 
     public void ToggleEditModeWithLauncherAlignment()
@@ -888,7 +954,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
             double panelWidth = Width > 0 ? Width : 480;
             double panelHeight = Height > 0 ? Height : 600;
-            double gap = 20;
+            double gap = 86;
 
             double totalWidth = mainWidth + panelWidth + gap;
             double startLeft = Math.Max(workArea.Left, workArea.Left + (workArea.Width - totalWidth) / 2);
@@ -910,40 +976,6 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             HostAssets.AppendLog($"AlignLauncherAndPanelInScreenCenter error: {ex.Message}");
-        }
-    }
-
-    private void ShowGuideBannerWindow()
-    {
-        if (_guideBannerWindow == null)
-        {
-            _guideBannerWindow = new EditModeGuideBannerWindow();
-        }
-        _guideBannerWindow.Show();
-        UpdateGuideBannerPosition();
-    }
-
-    private void CloseGuideBannerWindow()
-    {
-        if (_guideBannerWindow != null)
-        {
-            try
-            {
-                _guideBannerWindow.Close();
-            }
-            catch { }
-            _guideBannerWindow = null;
-        }
-    }
-
-    private void UpdateGuideBannerPosition()
-    {
-        if (_guideBannerWindow?.IsVisible == true && _mainWindow != null)
-        {
-            double minLeft = Math.Min(_mainWindow.Left, Left);
-            double maxRight = Math.Max(_mainWindow.Left + _mainWindow.Width, Left + Width);
-            double maxBottom = Math.Max(_mainWindow.Top + _mainWindow.Height, Top + Height);
-            _guideBannerWindow.UpdatePosition(minLeft, maxRight, maxBottom);
         }
     }
 
@@ -1628,7 +1660,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         try
         {
             var command = vm.Command;
-            HostAssets.AppendLog($"Quick panel execute: source={launchSource}, slot={vm.Index}, extension={command.ExtensionId}.");
+            command.UsageCount++;
+            vm.NotifyGamingStatCardChanged();
+            HostAssets.AppendLog($"Quick panel execute: source={launchSource}, slot={vm.Index}, extension={command.ExtensionId}, usageCount={command.UsageCount}.");
             _releaseTargetTimer.Stop();
             if (TryExtractGeneratedPasteText(command, out var pasteText))
             {
@@ -1894,37 +1928,10 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async void RemoveExtension_Click(object sender, RoutedEventArgs e)
+    private void RemoveExtension_Click(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem mi && mi.CommandParameter is SlotViewModel vm)
         {
-            if (!vm.IsFolder && (vm.IsShortcut || CountExtensionReferences(vm.Command?.ExtensionId) > 1))
-            {
-                var refShort = BuildSlotReference(vm);
-                var contShort = refShort == null ? null : GetSlotContainer(refShort);
-                if (contShort != null && refShort!.Index >= 0 && refShort.Index < contShort.Count)
-                {
-                    contShort[refShort.Index] = null;
-                    RefreshAllLegacySlots();
-                    SaveQuickPanelSettings("quickpanel-remove-slot-shortcut");
-                    LoadSlots();
-                    RefreshActiveFolderAfterMutation();
-                }
-                return;
-            }
-
-            if (!vm.IsFolder && vm.Command?.Source == CommandSource.LocalExtension)
-            {
-                var result = await _mainWindow.DeleteExtensionFromQuickPanelAsync(vm.Command.ExtensionId, this);
-                if (!result.ok && !string.IsNullOrWhiteSpace(result.message))
-                {
-                    System.Windows.MessageBox.Show(this, result.message, "删除扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-
-                LoadSlots();
-                return;
-            }
-
             var reference = BuildSlotReference(vm);
             var container = reference == null ? null : GetSlotContainer(reference);
             if (container != null && reference!.Index >= 0 && reference.Index < container.Count)
@@ -1934,6 +1941,23 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 SaveQuickPanelSettings("quickpanel-remove-slot");
                 LoadSlots();
                 RefreshActiveFolderAfterMutation();
+            }
+        }
+    }
+
+    private async void DeleteExtension_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem mi && mi.CommandParameter is SlotViewModel vm)
+        {
+            if (!vm.IsFolder && vm.Command?.Source == CommandSource.LocalExtension)
+            {
+                var result = await _mainWindow.DeleteExtensionFromQuickPanelAsync(vm.Command.ExtensionId, this);
+                if (!result.ok && !string.IsNullOrWhiteSpace(result.message))
+                {
+                    System.Windows.MessageBox.Show(this, result.message, "删除扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
+                LoadSlots();
             }
         }
     }
@@ -3786,6 +3810,7 @@ public class SlotViewModel : INotifyPropertyChanged
     public bool CanPublish => !IsFolder && _command?.Source == CommandSource.LocalExtension;
     public bool CanOpenDirectory => CanEdit && !string.IsNullOrWhiteSpace(_command?.ExtensionDirectoryPath);
     public bool CanRemoveFromFixedSlots => _item != null;
+    public bool CanDeleteExtension => !IsFolder && _command?.Source == CommandSource.LocalExtension;
     public string FavoriteLabel => _isFavorite ? "取消收藏" : "收藏";
     public string Title => IsFolder ? _folderName : _command?.Title ?? string.Empty;
     public string DisplayTitle => IsCSharpPrebuilding ? "编译中..." : Title;
@@ -3832,6 +3857,90 @@ public class SlotViewModel : INotifyPropertyChanged
     public void RefreshRunningState()
     {
         OnPropertyChanged(nameof(IsRunning));
+        OnPropertyChanged(nameof(RunningStatusText));
+        OnPropertyChanged(nameof(RunningStatusBrush));
+    }
+
+    // Gaming Equipment Stat Card Properties
+    public int UsageCount => _command?.UsageCount ?? 0;
+
+    public string RarityText
+    {
+        get
+        {
+            if (IsFolder) return "✦ 传奇合集包";
+            int count = UsageCount;
+            if (count >= 25) return "✦ 传说级工具";
+            if (count >= 10) return "★ 史诗级工具";
+            if (count >= 2 || IsContextual) return "◆ 稀有级工具";
+            return "• 普通级工具";
+        }
+    }
+
+    public System.Windows.Media.Brush RarityBrush
+    {
+        get
+        {
+            if (IsFolder) return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFF59E0B"));
+            int count = UsageCount;
+            if (count >= 25) return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFF59E0B")); // 传说金
+            if (count >= 10) return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF8B5CF6")); // 史诗紫
+            if (count >= 2 || IsContextual) return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF3B82F6")); // 稀有蓝
+            return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF4B5563")); // 普通灰
+        }
+    }
+
+    public System.Windows.Media.Brush RarityBadgeBackground
+    {
+        get
+        {
+            if (IsFolder) return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#35F59E0B"));
+            int count = UsageCount;
+            if (count >= 25) return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#35F59E0B"));
+            if (count >= 10) return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#358B5CF6"));
+            if (count >= 2 || IsContextual) return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#353B82F6"));
+            return new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#254B5563"));
+        }
+    }
+
+    public string ItemCategoryText
+    {
+        get
+        {
+            if (IsFolder) return "📁 集合目录";
+            if (IsContextual) return "🎯 应用专属扩展";
+            if (_command?.Source == CommandSource.LocalExtension) return "⚡ C# 脚本扩展";
+            if (_command?.Source == CommandSource.Local) return "🛠️ 系统内置工具";
+            return "⚡ 快捷实用指令";
+        }
+    }
+
+    public string RunningStatusText => IsRunning ? "🟢 后台运行中" : "⚪ 待击发";
+
+    public System.Windows.Media.Brush RunningStatusBrush => IsRunning
+        ? new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF22C55E"))
+        : new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF9CA3AF"));
+
+    public string CardDescription
+    {
+        get
+        {
+            if (IsFolder) return $"包含 {FolderExtensionIds.Count} 个常用扩展收纳槽位。";
+            if (!string.IsNullOrWhiteSpace(_command?.Description)) return _command.Description;
+            return "收纳精选快捷扩展动作，随时随地一键高效击发。";
+        }
+    }
+
+    public void NotifyGamingStatCardChanged()
+    {
+        OnPropertyChanged(nameof(UsageCount));
+        OnPropertyChanged(nameof(RarityText));
+        OnPropertyChanged(nameof(RarityBrush));
+        OnPropertyChanged(nameof(RarityBadgeBackground));
+        OnPropertyChanged(nameof(ItemCategoryText));
+        OnPropertyChanged(nameof(RunningStatusText));
+        OnPropertyChanged(nameof(RunningStatusBrush));
+        OnPropertyChanged(nameof(CardDescription));
     }
 
     public QuickPanelSlotItem? CloneSlotItem()

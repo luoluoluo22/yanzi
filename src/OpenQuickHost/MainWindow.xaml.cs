@@ -3781,6 +3781,10 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public string Subtitle { get; }
 
+    public string Description => Subtitle;
+
+    public int UsageCount { get; set; } = 0;
+
     public string DisplaySubtitle => string.IsNullOrWhiteSpace(_queryPreviewSubtitle) ? Subtitle : _queryPreviewSubtitle;
 
     public string EffectiveSubtitle => IsCSharpPrebuilding

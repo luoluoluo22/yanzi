@@ -87,28 +87,52 @@ public static class NativeFileIconService
         var cleanPath = ExtractCleanPath(path);
         HostAssets.AppendLog($"[IconLog] NativeFileIconService.GetIcon: rawPath='{path}', cleanPath='{cleanPath}', isFolder={isFolder}.");
 
-        // 如果是快捷方式，我们需要获取它指向的实际 EXE 文件路径
-        if (!isFolder && IsShortcutPath(cleanPath) && TryResolveShortcutIconTarget(cleanPath, out var resolvedTarget))
-        {
-            HostAssets.AppendLog($"[IconLog] Shortcut resolved: '{cleanPath}' -> '{resolvedTarget}'.");
-            cleanPath = ExtractCleanPath(resolvedTarget);
-        }
-
-        var cacheKey = BuildCacheKey(cleanPath, isFolder);
+        var cacheKey = !isFolder && (IsShortcutPath(path) || IsShortcutPath(cleanPath)) ? path : BuildCacheKey(cleanPath, isFolder);
         return IconCache.GetOrAdd(cacheKey, _ =>
         {
-            // .exe 文件优先使用 IShellItemImageFactory 获取高品质图标 (256x256)
-            if (!isFolder && cleanPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(cleanPath))
+            if (!isFolder)
             {
-                var hq = LoadHighQualityIcon(cleanPath, 256);
-                HostAssets.AppendLog($"[IconLog] LoadHighQualityIcon for '{cleanPath}' returned {(hq != null ? "SUCCESS" : "NULL")}.");
-                if (hq != null) return hq;
+                // 1. 优先尝试为原始文件/快捷方式 (.lnk / .exe / .url) 提取 Windows Shell 权威 256x256 高品质原画图标
+                if (File.Exists(path))
+                {
+                    var rawHq = LoadHighQualityIcon(path, 256);
+                    HostAssets.AppendLog($"[IconLog] LoadHighQualityIcon for raw path '{path}' returned {(rawHq != null ? "SUCCESS" : "NULL")}.");
+                    if (rawHq != null) return rawHq;
+                }
+
+                // 2. 如果原始路径是快捷方式且直接提取失败，解析其真实 Target Path 提取高品质图标
+                string? resolvedTarget = null;
+                if (IsShortcutPath(cleanPath) && TryResolveShortcutIconTarget(cleanPath, out var target1))
+                {
+                    resolvedTarget = ExtractCleanPath(target1);
+                }
+                else if (IsShortcutPath(path) && TryResolveShortcutIconTarget(path, out var target2))
+                {
+                    resolvedTarget = ExtractCleanPath(target2);
+                }
+
+                if (!string.IsNullOrWhiteSpace(resolvedTarget) && File.Exists(resolvedTarget))
+                {
+                    var targetHq = LoadHighQualityIcon(resolvedTarget, 256);
+                    HostAssets.AppendLog($"[IconLog] LoadHighQualityIcon for resolved target '{resolvedTarget}' returned {(targetHq != null ? "SUCCESS" : "NULL")}.");
+                    if (targetHq != null) return targetHq;
+                }
+
+                // 3. 尝试 cleanPath 的 LoadHighQualityIcon
+                if (!string.IsNullOrWhiteSpace(cleanPath) && File.Exists(cleanPath))
+                {
+                    var cleanHq = LoadHighQualityIcon(cleanPath, 256);
+                    HostAssets.AppendLog($"[IconLog] LoadHighQualityIcon for cleanPath '{cleanPath}' returned {(cleanHq != null ? "SUCCESS" : "NULL")}.");
+                    if (cleanHq != null) return cleanHq;
+                }
             }
-            var small = LoadSmallIcon(cleanPath, isFolder);
-            HostAssets.AppendLog($"[IconLog] LoadSmallIcon for '{cleanPath}' returned {(small != null ? "SUCCESS" : "NULL")}.");
+
+            // 4. 小图标兜底
+            var targetToUse = !string.IsNullOrWhiteSpace(cleanPath) ? cleanPath : path;
+            var small = LoadSmallIcon(targetToUse, isFolder);
+            HostAssets.AppendLog($"[IconLog] LoadSmallIcon for '{targetToUse}' returned {(small != null ? "SUCCESS" : "NULL")}.");
             if (small == null && IsShortcutPath(path))
             {
-                // 兜底：直接从 .lnk 快捷方式本身读取 Shell 图标
                 var rawSmall = LoadSmallIcon(path, isFolder);
                 HostAssets.AppendLog($"[IconLog] Fallback raw LoadSmallIcon for original .lnk '{path}' returned {(rawSmall != null ? "SUCCESS" : "NULL")}.");
                 return rawSmall;

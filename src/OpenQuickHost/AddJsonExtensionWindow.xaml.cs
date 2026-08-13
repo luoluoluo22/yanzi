@@ -1658,15 +1658,29 @@ public partial class AddJsonExtensionWindow : Window
         IconPreviewGlyph.Visibility = Visibility.Collapsed;
 
         var iconReference = NullIfEmpty(IconBox.Text);
+        var openTarget = NullIfEmpty(OpenTargetBox.Text);
         var previewDirectory = ResolvePreviewDirectory();
 
         var imageSource = ExtensionIconLibrary.ResolveImageSource(iconReference, previewDirectory);
-        if (imageSource != null)
+        if (imageSource == null && !string.IsNullOrWhiteSpace(openTarget))
+        {
+            imageSource = ExtensionIconLibrary.ResolveImageSource(openTarget, previewDirectory);
+        }
+
+        var isGenericIconRef = string.IsNullOrWhiteSpace(iconReference) ||
+                               iconReference.Equals("mdi:file", StringComparison.OrdinalIgnoreCase) ||
+                               iconReference.Equals("file", StringComparison.OrdinalIgnoreCase) ||
+                               iconReference.Equals("mdi:document", StringComparison.OrdinalIgnoreCase) ||
+                               iconReference.Equals("document", StringComparison.OrdinalIgnoreCase);
+
+        if (imageSource != null && (isGenericIconRef || ExtensionIconLibrary.ResolveVectorIcon(iconReference) == null))
         {
             IconPreviewImage.Source = imageSource;
             IconPreviewImage.Visibility = Visibility.Visible;
             IconPreviewHostBackgroundToImage();
-            IconPreviewHintText.Text = "当前使用图片图标或本地图标路径。";
+            IconPreviewHintText.Text = !string.IsNullOrWhiteSpace(openTarget) && isGenericIconRef
+                ? "当前显示打开目标（快捷方式/程序）图标。"
+                : "当前使用图片图标或本地图标路径。";
             HighlightSelectedBuiltInButton(null);
             return;
         }
@@ -1694,6 +1708,16 @@ public partial class AddJsonExtensionWindow : Window
             IconPreviewHostBackgroundToAccent();
             IconPreviewHintText.Text = $"当前使用内置图标：{iconReference}";
             HighlightSelectedBuiltInButton(iconReference);
+            return;
+        }
+
+        if (imageSource != null)
+        {
+            IconPreviewImage.Source = imageSource;
+            IconPreviewImage.Visibility = Visibility.Visible;
+            IconPreviewHostBackgroundToImage();
+            IconPreviewHintText.Text = "当前使用目标文件图标。";
+            HighlightSelectedBuiltInButton(null);
             return;
         }
 

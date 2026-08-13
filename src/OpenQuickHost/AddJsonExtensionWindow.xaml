@@ -1603,7 +1603,7 @@
                 <TextBox x:Name="CategoryBox" />
                 <TextBox x:Name="DescriptionBox" />
                 <TextBox x:Name="KeywordsBox" />
-                <TextBox x:Name="OpenTargetBox" />
+                <TextBox x:Name="OpenTargetBox" TextChanged="IconPreviewContext_TextChanged" />
                 <TextBox x:Name="QueryPrefixesBox" />
                 <TextBox x:Name="QueryTargetTemplateBox" />
                 <TextBox x:Name="IconBox" TextChanged="IconBox_TextChanged" />

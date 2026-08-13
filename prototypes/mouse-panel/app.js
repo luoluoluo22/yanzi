@@ -402,7 +402,8 @@
           { label: "编辑扩展", action: "edit" },
           { label: item.running ? "停止运行" : "标记运行中", action: "run" },
           { sep: true },
-          { label: "移除扩展", action: "remove", danger: true },
+          { label: "移除扩展", action: "remove" },
+          { label: "删除扩展", action: "delete", danger: true },
         ]
       : [{ label: "粘贴扩展", action: "paste" }, { label: "添加扩展", action: "add" }];
 
