@@ -80,6 +80,7 @@
         <Style x:Key="SlotButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="ToolTip">
                 <Setter.Value>
                     <ToolTip Background="Transparent"
@@ -185,6 +186,14 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                    <Setter Property="Cursor" Value="Arrow"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsDragging}" Value="True">
+                    <Setter Property="Cursor" Value="SizeAll"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
         <DataTemplate x:Key="FolderPreviewIconTemplate">
@@ -227,6 +236,7 @@
     </Window.Resources>
 
     <Border Margin="1"
+            x:Name="MainCardBorder"
             Background="{DynamicResource BrushDialogBG}"
             CornerRadius="0"
             BorderBrush="{DynamicResource BrushBorder}"
@@ -609,196 +619,252 @@
                                                 </MenuItem>
                                             </ContextMenu>
                                         </Button.ContextMenu>
-                                        <StackPanel Margin="0,4" HorizontalAlignment="Center">
-                                            <Border Width="40" Height="40" CornerRadius="9" 
-                                                    ClipToBounds="True"
-                                                    HorizontalAlignment="Center"
-                                                    Margin="0,0,0,3">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}"/>
-                                                        <Setter Property="BorderBrush" Value="Transparent"/>
-                                                        <Setter Property="BorderThickness" Value="0"/>
-                                                        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
-                                                        <Setter Property="RenderTransform">
-                                                            <Setter.Value>
-                                                                <ScaleTransform ScaleX="1" ScaleY="1"/>
-                                                            </Setter.Value>
-                                                        </Setter>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
-                                                                <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
-                                                                <Setter Property="Background" Value="#FF3B82F6"/>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                                <Setter Property="Background" Value="#503B82F6"/>
-                                                                <Setter Property="BorderBrush" Value="#FF3B82F6"/>
-                                                                <Setter Property="BorderThickness" Value="2.5"/>
-                                                                <Setter Property="RenderTransform">
-                                                                    <Setter.Value>
-                                                                        <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
-                                                                    </Setter.Value>
-                                                                </Setter>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
-                                                                <Setter Property="Background" Value="Transparent"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Border.Style>
-                                                <Grid>
-                                                    <!-- Empty: + icon via Viewbox -->
-                                                    <Viewbox Width="18" Height="18"
-                                                             HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                             Visibility="{Binding ShouldShowEmptyPlusIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
-                                                            <Path.Style>
-                                                                <Style TargetType="Path">
-                                                                    <Setter Property="Fill" Value="{DynamicResource BrushTextSec}"/>
-                                                                    <Setter Property="Opacity" Value="0"/>
+                                        <Grid>
+                                            <!-- Left Insert Indicator (Vertical Bar) -->
+                                            <Border Width="3" Height="32" CornerRadius="1.5"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                    Margin="-2,8,0,0" IsHitTestVisible="False"
+                                                    Background="#FF38BDF8"
+                                                    Visibility="{Binding IsInsertTargetLeft, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#FF38BDF8" Opacity="0.95"/>
+                                                </Border.Effect>
+                                            </Border>
+
+                                            <!-- Right Insert Indicator (Vertical Bar) -->
+                                            <Border Width="3" Height="32" CornerRadius="1.5"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,8,-2,0" IsHitTestVisible="False"
+                                                    Background="#FF38BDF8"
+                                                    Visibility="{Binding IsInsertTargetRight, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#FF38BDF8" Opacity="0.95"/>
+                                                </Border.Effect>
+                                            </Border>
+
+                                            <StackPanel Margin="0,4" HorizontalAlignment="Center">
+                                                <Border Width="40" Height="40" CornerRadius="9" 
+                                                        ClipToBounds="True"
+                                                        HorizontalAlignment="Center"
+                                                        Margin="0,0,0,3">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="{Binding DisplayAccentBrush, FallbackValue='#FF1E1E1E'}"/>
+                                                            <Setter Property="BorderBrush" Value="Transparent"/>
+                                                            <Setter Property="BorderThickness" Value="0"/>
+                                                            <Setter Property="Opacity" Value="1"/>
+                                                            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                                                            <Setter Property="RenderTransform">
+                                                                <Setter.Value>
+                                                                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsDragging}" Value="True">
+                                                                    <Setter Property="Opacity" Value="0.35"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding HasSwapPreviewIcon}" Value="True">
+                                                                    <Setter Property="Opacity" Value="0.90"/>
+                                                                    <Setter Property="BorderBrush" Value="#803B82F6"/>
+                                                                    <Setter Property="BorderThickness" Value="1.5"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                                    <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                    <Setter Property="Background" Value="#FF3B82F6"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
+                                                                    <Setter Property="Background" Value="#503B82F6"/>
+                                                                    <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                                                                    <Setter Property="BorderThickness" Value="2.5"/>
+                                                                    <Setter Property="RenderTransform">
+                                                                        <Setter.Value>
+                                                                            <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
+                                                                        </Setter.Value>
+                                                                    </Setter>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding HasEffectiveImageIcon}" Value="True">
+                                                                    <Setter Property="Background" Value="Transparent"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <Grid>
+                                                        <!-- Empty: + icon via Viewbox -->
+                                                        <Viewbox Width="18" Height="18"
+                                                                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                 Visibility="{Binding ShouldShowEmptyPlusIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
+                                                                <Path.Style>
+                                                                    <Style TargetType="Path">
+                                                                        <Setter Property="Fill" Value="{DynamicResource BrushTextSec}"/>
+                                                                        <Setter Property="Opacity" Value="0"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                                <Setter Property="Opacity" Value="1"/>
+                                                                                <Setter Property="Fill" Value="White"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Path.Style>
+                                                            </Path>
+                                                        </Viewbox>
+
+                                                        <!-- Drop Target Hover Icon Preview -->
+                                                        <Grid Visibility="{Binding HasDropPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}" Opacity="0.85">
+                                                            <Image Source="{Binding DropPreviewIconSource}" Stretch="UniformToFill"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding HasDropPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                     Visibility="{Binding HasDropPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Path Data="{Binding DropPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Viewbox>
+                                                            <TextBlock Text="{Binding DropPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                       Visibility="{Binding UseDropPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        </Grid>
+
+                                                        <!-- Swap Target Hover Icon Preview on Drag Source Slot -->
+                                                        <Grid Visibility="{Binding HasSwapPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}" Opacity="0.85">
+                                                            <Image Source="{Binding SwapPreviewIconSource}" Stretch="UniformToFill"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding HasSwapPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                     Visibility="{Binding HasSwapPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Path Data="{Binding SwapPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Viewbox>
+                                                            <TextBlock Text="{Binding SwapPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                       Visibility="{Binding UseSwapPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        </Grid>
+                                                        
+                                                        <!-- Occupied -->
+                                                        <Grid Visibility="{Binding ShouldShowOccupiedContent, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Grid.Style>
+                                                                <Style TargetType="Grid">
+                                                                    <Setter Property="Opacity" Value="1" />
                                                                     <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
-                                                                            <Setter Property="Opacity" Value="1"/>
-                                                                            <Setter Property="Fill" Value="White"/>
+                                                                        <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
+                                                                            <Setter Property="Opacity" Value="0.55" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
+                                                                            <Setter Property="Opacity" Value="0.45" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding HasDropPreviewIcon}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding HasSwapPreviewIcon}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
                                                                         </DataTrigger>
                                                                     </Style.Triggers>
                                                                 </Style>
-                                                            </Path.Style>
-                                                        </Path>
-                                                    </Viewbox>
-
-                                                    <!-- Drop Target Hover Icon Preview -->
-                                                    <Grid Visibility="{Binding HasDropPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Image Source="{Binding DropPreviewIconSource}" Stretch="UniformToFill"
-                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                               Visibility="{Binding HasDropPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                 Visibility="{Binding HasDropPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                            <Path Data="{Binding DropPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
-                                                        </Viewbox>
-                                                        <TextBlock Text="{Binding DropPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                            </Grid.Style>
+                                                            <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
+                                                                          Width="36"
+                                                                          Height="36"
+                                                                          Visibility="{Binding HasFolderPreview, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <UniformGrid Columns="2" Rows="2"/>
+                                                                    </ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                            <Image Source="{Binding Icon}" Stretch="UniformToFill"
                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                   Visibility="{Binding UseDropPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                    </Grid>
-                                                    
-                                                    <!-- Occupied -->
-                                                    <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Grid.Style>
-                                                            <Style TargetType="Grid">
-                                                                <Setter Property="Opacity" Value="1" />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
-                                                                        <Setter Property="Opacity" Value="0.55" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Grid.Style>
-                                                        <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
-                                                                      Width="36"
-                                                                      Height="36"
-                                                                      Visibility="{Binding HasFolderPreview, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                            <ItemsControl.ItemsPanel>
-                                                                <ItemsPanelTemplate>
-                                                                    <UniformGrid Columns="2" Rows="2"/>
-                                                                </ItemsPanelTemplate>
-                                                            </ItemsControl.ItemsPanel>
-                                                            <ItemsControl.ItemTemplate>
-                                                                <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                        <Image Source="{Binding Icon}" Stretch="UniformToFill"
-                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Viewbox Width="20" Height="20"
-                                                                 HorizontalAlignment="Center"
-                                                                 VerticalAlignment="Center"
-                                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                            <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
-                                                        </Viewbox>
-                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
-                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"
-                                                                BorderBrush="#CCFFFFFF" BorderThickness="1"
-                                                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,1,1,0"
-                                                                Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <!-- Favorite indicator -->
-                                                        <Border Width="10" Height="10" CornerRadius="5" Background="#FFFBBF24"
-                                                                HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3,3,0,0"
-                                                                Visibility="{Binding IsFavorite, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Grid Width="18"
-                                                              Height="18"
-                                                              Background="Transparent"
-                                                              HorizontalAlignment="Right"
-                                                              VerticalAlignment="Bottom"
-                                                              Margin="0,0,1,1"
-                                                              IsHitTestVisible="False"
-                                                              Visibility="{Binding HasFolderBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                            <Path Data="M18,0 L18,18 L0,18 Z" Fill="#FF1D4ED8" Stretch="Fill"/>
-                                                            <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="7.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,1"/>
-                                                        </Grid>
-                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2,0,0,2" IsHitTestVisible="False">
-                                                            <!-- Shortcut indicator -->
-                                                            <Border Background="#CC1E293B" CornerRadius="4" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="2.5" Width="14" Height="14" Visibility="{Binding IsShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                                <Viewbox Width="9" Height="9">
-                                                                    <Path Data="M19,15V19H5V5H11V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V15H19M16.5,3L14.79,4.79L18.5,8.5H13A5,5 0 0,0 8,13.5V17H10V13.5A3,3 0 0,1 13,10.5H18.5L14.79,14.21L16.5,16L23,9.5L16.5,3Z" Fill="White"/>
-                                                                </Viewbox>
-                                                            </Border>
-                                                            <!-- Running indicator (Green Dot) -->
-                                                            <Border Width="9" Height="9" CornerRadius="4.5" Background="#FF10B981"
+                                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Viewbox Width="20" Height="20"
+                                                                     HorizontalAlignment="Center"
+                                                                     VerticalAlignment="Center"
+                                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Viewbox>
+                                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"
                                                                     BorderBrush="#CCFFFFFF" BorderThickness="1"
-                                                                    Margin="2,0,0,0" VerticalAlignment="Center"
-                                                                    Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        </StackPanel>
+                                                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,1,1,0"
+                                                                    Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <!-- Favorite indicator -->
+                                                            <Border Width="10" Height="10" CornerRadius="5" Background="#FFFBBF24"
+                                                                    HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3,3,0,0"
+                                                                    Visibility="{Binding IsFavorite, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Grid Width="18"
+                                                                  Height="18"
+                                                                  Background="Transparent"
+                                                                  HorizontalAlignment="Right"
+                                                                  VerticalAlignment="Bottom"
+                                                                  Margin="0,0,1,1"
+                                                                  IsHitTestVisible="False"
+                                                                  Visibility="{Binding HasFolderBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Path Data="M18,0 L18,18 L0,18 Z" Fill="#FF1D4ED8" Stretch="Fill"/>
+                                                                <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="7.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,1"/>
+                                                            </Grid>
+                                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2,0,0,2" IsHitTestVisible="False">
+                                                                <!-- Shortcut indicator -->
+                                                                <Border Background="#CC1E293B" CornerRadius="4" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="2.5" Width="14" Height="14" Visibility="{Binding IsShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                    <Viewbox Width="9" Height="9">
+                                                                        <Path Data="M19,15V19H5V5H11V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V15H19M16.5,3L14.79,4.79L18.5,8.5H13A5,5 0 0,0 8,13.5V17H10V13.5A3,3 0 0,1 13,10.5H18.5L14.79,14.21L16.5,16L23,9.5L16.5,3Z" Fill="White"/>
+                                                                    </Viewbox>
+                                                                </Border>
+                                                                <!-- Running indicator (Green Dot) -->
+                                                                <Border Width="9" Height="9" CornerRadius="4.5" Background="#FF10B981"
+                                                                        BorderBrush="#CCFFFFFF" BorderThickness="1"
+                                                                        Margin="2,0,0,0" VerticalAlignment="Center"
+                                                                        Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        <Border Background="#C0181818"
+                                                                Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                        <Path Width="14"
+                                                              Height="14"
+                                                              Data="M12,2 A10,10 0 1,1 2,12"
+                                                              Stroke="{DynamicResource BrushTextMain}"
+                                                              StrokeThickness="2"
+                                                              StrokeStartLineCap="Round"
+                                                              StrokeEndLineCap="Round"
+                                                              Stretch="Uniform"
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center"
+                                                              RenderTransformOrigin="0.5,0.5"
+                                                              Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path.RenderTransform>
+                                                                <RotateTransform Angle="0" />
+                                                            </Path.RenderTransform>
+                                                            <Path.Triggers>
+                                                                <EventTrigger RoutedEvent="Loaded">
+                                                                    <BeginStoryboard>
+                                                                        <Storyboard RepeatBehavior="Forever">
+                                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                             From="0"
+                                                                                             To="360"
+                                                                                             Duration="0:0:1.0" />
+                                                                        </Storyboard>
+                                                                    </BeginStoryboard>
+                                                                </EventTrigger>
+                                                            </Path.Triggers>
+                                                        </Path>
                                                     </Grid>
-                                                    <Border Background="#C0181818"
-                                                            Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                    <Path Width="14"
-                                                          Height="14"
-                                                          Data="M12,2 A10,10 0 1,1 2,12"
-                                                          Stroke="{DynamicResource BrushTextMain}"
-                                                          StrokeThickness="2"
-                                                          StrokeStartLineCap="Round"
-                                                          StrokeEndLineCap="Round"
-                                                          Stretch="Uniform"
-                                                          HorizontalAlignment="Center"
-                                                          VerticalAlignment="Center"
-                                                          RenderTransformOrigin="0.5,0.5"
-                                                          Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path.RenderTransform>
-                                                            <RotateTransform Angle="0" />
-                                                        </Path.RenderTransform>
-                                                        <Path.Triggers>
-                                                            <EventTrigger RoutedEvent="Loaded">
-                                                                <BeginStoryboard>
-                                                                    <Storyboard RepeatBehavior="Forever">
-                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                         From="0"
-                                                                                         To="360"
-                                                                                         Duration="0:0:1.0" />
-                                                                    </Storyboard>
-                                                                </BeginStoryboard>
-                                                            </EventTrigger>
-                                                        </Path.Triggers>
-                                                    </Path>
-                                                </Grid>
-                                            </Border>
-                                            <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}" 
-                                                       FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
-                                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                        </StackPanel>
+                                                </Border>
+                                                <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}" 
+                                                           FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Grid>
                                     </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -963,13 +1029,26 @@
 
             <Grid Grid.Column="1" Grid.Row="3" Margin="6,4,6,8" MouseWheel="ContextPanel_MouseWheel">
                 <StackPanel>
-                    <TextBlock Text="{Binding ContextSectionTitle}"
-                               Foreground="{DynamicResource BrushTextMuted}"
-                               FontSize="{DynamicResource FontSizeSmallPlus}"
-                               FontWeight="SemiBold"
-                               HorizontalAlignment="Center"
-                               Margin="0,0,0,6"
-                               ToolTip="{Binding ContextHintText}"/>
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Margin="0,0,0,6"
+                                ToolTip="{Binding ContextHintText}">
+                        <Border Width="20" Height="20"
+                                CornerRadius="4"
+                                Margin="0,0,6,0"
+                                VerticalAlignment="Center"
+                                Visibility="{Binding HasContextProcessIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Image Source="{Binding ContextProcessIcon}"
+                                   Width="20" Height="20"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                   VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="{Binding ContextSectionTitle}"
+                                   Foreground="{DynamicResource BrushTextMuted}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
                     <ItemsControl ItemsSource="{Binding ContextSlots}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -1077,16 +1156,40 @@
                                                 </MenuItem>
                                             </ContextMenu>
                                         </Button.ContextMenu>
-                                        <StackPanel Margin="0,4" HorizontalAlignment="Center">
+                                        <Grid>
+                                            <!-- Left Insert Indicator (Vertical Bar) -->
+                                            <Border Width="3" Height="32" CornerRadius="1.5"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                    Margin="-2,8,0,0" IsHitTestVisible="False"
+                                                    Background="#FF38BDF8"
+                                                    Visibility="{Binding IsInsertTargetLeft, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#FF38BDF8" Opacity="0.95"/>
+                                                </Border.Effect>
+                                            </Border>
+
+                                            <!-- Right Insert Indicator (Vertical Bar) -->
+                                            <Border Width="3" Height="32" CornerRadius="1.5"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,8,-2,0" IsHitTestVisible="False"
+                                                    Background="#FF38BDF8"
+                                                    Visibility="{Binding IsInsertTargetRight, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#FF38BDF8" Opacity="0.95"/>
+                                                </Border.Effect>
+                                            </Border>
+
+                                            <StackPanel Margin="0,4" HorizontalAlignment="Center">
                                             <Border Width="40" Height="40" CornerRadius="9"
                                                     ClipToBounds="True"
                                                     HorizontalAlignment="Center"
                                                     Margin="0,0,0,3">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}"/>
+                                                        <Setter Property="Background" Value="{Binding DisplayAccentBrush, FallbackValue='#FF1E1E1E'}"/>
                                                         <Setter Property="BorderBrush" Value="Transparent"/>
                                                         <Setter Property="BorderThickness" Value="0"/>
+                                                        <Setter Property="Opacity" Value="1"/>
                                                         <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
                                                         <Setter Property="RenderTransform">
                                                             <Setter.Value>
@@ -1094,6 +1197,14 @@
                                                             </Setter.Value>
                                                         </Setter>
                                                         <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsDragging}" Value="True">
+                                                                <Setter Property="Opacity" Value="0.35"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding HasSwapPreviewIcon}" Value="True">
+                                                                <Setter Property="Opacity" Value="0.90"/>
+                                                                <Setter Property="BorderBrush" Value="#803B82F6"/>
+                                                                <Setter Property="BorderThickness" Value="1.5"/>
+                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsEmpty}" Value="True">
                                                                 <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
                                                             </DataTrigger>
@@ -1110,7 +1221,7 @@
                                                                     </Setter.Value>
                                                                 </Setter>
                                                             </DataTrigger>
-                                                            <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                            <DataTrigger Binding="{Binding HasEffectiveImageIcon}" Value="True">
                                                                 <Setter Property="Background" Value="Transparent"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
@@ -1119,7 +1230,7 @@
                                                 <Grid>
                                                     <Viewbox Width="18" Height="18"
                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                             Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                             Visibility="{Binding ShouldShowEmptyPlusIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                         <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
                                                             <Path.Style>
                                                                 <Style TargetType="Path">
@@ -1136,13 +1247,47 @@
                                                         </Path>
                                                     </Viewbox>
 
-                                                    <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <!-- Drop Target Hover Icon Preview -->
+                                                    <Grid Visibility="{Binding HasDropPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}" Opacity="0.85">
+                                                        <Image Source="{Binding DropPreviewIconSource}" Stretch="UniformToFill"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="{Binding HasDropPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                 Visibility="{Binding HasDropPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Data="{Binding DropPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                        </Viewbox>
+                                                        <TextBlock Text="{Binding DropPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding UseDropPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    </Grid>
+
+                                                    <!-- Swap Target Hover Icon Preview on Drag Source Slot -->
+                                                    <Grid Visibility="{Binding HasSwapPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}" Opacity="0.85">
+                                                        <Image Source="{Binding SwapPreviewIconSource}" Stretch="UniformToFill"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="{Binding HasSwapPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                 Visibility="{Binding HasSwapPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Data="{Binding SwapPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                        </Viewbox>
+                                                        <TextBlock Text="{Binding SwapPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding UseSwapPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    </Grid>
+
+                                                    <Grid Visibility="{Binding ShouldShowOccupiedContent, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                         <Grid.Style>
                                                             <Style TargetType="Grid">
                                                                 <Setter Property="Opacity" Value="1" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
                                                                         <Setter Property="Opacity" Value="0.55" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding HasDropPreviewIcon}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding HasSwapPreviewIcon}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
@@ -1244,6 +1389,7 @@
                                                 </TextBlock.Style>
                                             </TextBlock>
                                         </StackPanel>
+                                    </Grid>
                                     </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -1404,31 +1550,57 @@
                 </StackPanel>
             </Grid>
 
-            <Border Grid.Column="1"
-                    Grid.RowSpan="4"
-                    Panel.ZIndex="20"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Top"
-                    Margin="0,46,8,0"
-                    Padding="8,6"
-                    CornerRadius="10"
-                    Background="#E61F2937"
-                    BorderBrush="#334ADE80"
-                    BorderThickness="1"
-                    IsHitTestVisible="False"
-                    Visibility="{Binding IsDraggingSlot, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <StackPanel>
-                    <TextBlock Text="普通拖放：放入 / 交换"
-                               Foreground="{DynamicResource BrushTextMain}"
-                               FontSize="10.5"
-                               FontWeight="SemiBold" />
-                    <TextBlock Text="按住 Ctrl：成组 / 加入分组"
-                               Foreground="#FF86EFAC"
-                               FontSize="10.5"
-                               FontWeight="SemiBold"
-                               Margin="0,2,0,0" />
-                </StackPanel>
-            </Border>
+            <!-- Drag & Drop Grouping Hint Popup (Floats on the right outside the main panel only when hovering over occupied slots) -->
+            <Popup x:Name="DragHintPopup"
+                   IsOpen="{Binding ShowDragGroupingHint, Mode=OneWay}"
+                   Placement="Right"
+                   PlacementTarget="{Binding ElementName=MainCardBorder}"
+                   HorizontalOffset="10"
+                   VerticalOffset="46"
+                   AllowsTransparency="True"
+                   PopupAnimation="Fade">
+                <Border Padding="10,8"
+                        CornerRadius="10"
+                        Background="#F2181F2C"
+                        BorderBrush="#404ADE80"
+                        BorderThickness="1">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="12" ShadowDepth="3" Direction="270" Color="#000000" Opacity="0.5"/>
+                    </Border.Effect>
+                    <StackPanel VerticalAlignment="Center">
+                        <!-- Insert mode hint -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                    Visibility="{Binding IsInsertMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Border Background="#3338BDF8" CornerRadius="3" Padding="5,2" Margin="0,0,8,0" VerticalAlignment="Center">
+                                <TextBlock Text="📍 插入" Foreground="#FF38BDF8" FontSize="11" FontWeight="Bold"/>
+                            </Border>
+                            <TextBlock Text="松开鼠标：插入此位置，后续依次后移"
+                                       Foreground="#FFBAE6FD"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                        
+                        <!-- Swap / Group mode hint -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                    Visibility="{Binding IsNotInsertMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Border Background="#3310B981" CornerRadius="3" Padding="5,2" Margin="0,0,8,0" VerticalAlignment="Center">
+                                <TextBlock Text="Ctrl" Foreground="#FF86EFAC" FontSize="11" FontWeight="Bold"/>
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="按住 Ctrl 拖放：成组 / 加入分组"
+                                           Foreground="#FF86EFAC"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="直接松开：与该槽位交换位置"
+                                           Foreground="{DynamicResource BrushTextSec}"
+                                           FontSize="10"
+                                           Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Popup>
 
             <Border Grid.Column="1"
                     Grid.RowSpan="4"

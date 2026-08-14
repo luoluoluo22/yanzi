@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Input;
 using System.Windows.Controls;
 using System.Linq;
@@ -209,6 +211,54 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         ? "你在用什么软件，这里就显示它专属的工具。"
         : $"你在用什么软件，这里就显示它专属的工具。当前识别：{_foregroundAppContext.ProcessName}。";
 
+    private ImageSource? _contextProcessIcon;
+    public ImageSource? ContextProcessIcon
+    {
+        get => _contextProcessIcon;
+        private set
+        {
+            if (!ReferenceEquals(_contextProcessIcon, value))
+            {
+                _contextProcessIcon = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasContextProcessIcon));
+            }
+        }
+    }
+
+    public bool HasContextProcessIcon => ContextProcessIcon != null;
+
+    private bool _showDragGroupingHint;
+    public bool ShowDragGroupingHint
+    {
+        get => _showDragGroupingHint;
+        set
+        {
+            if (_showDragGroupingHint != value)
+            {
+                _showDragGroupingHint = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private bool _isInsertMode;
+    public bool IsInsertMode
+    {
+        get => _isInsertMode;
+        set
+        {
+            if (_isInsertMode != value)
+            {
+                _isInsertMode = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsNotInsertMode));
+            }
+        }
+    }
+
+    public bool IsNotInsertMode => !IsInsertMode;
+
     public System.Windows.Media.Brush PinButtonBrush => _isPinned
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFF59E0B")!
         : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF888888")!;
@@ -360,7 +410,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     public bool IsDraggingSlot
     {
         get => _isDraggingSlot;
-        private set
+        set
         {
             if (value == _isDraggingSlot)
             {
@@ -1532,6 +1582,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         _dragStartPoint = e.GetPosition(this);
         _dragSourceSlot = vm;
+        HostAssets.AppendLog($"[DragDiagnostic] MouseDown: Index={vm.Index}, Title='{vm.Title}', HasImage={vm.HasImageIcon}, HasVector={vm.HasVectorIcon}, UseGlyph={vm.UseGlyphIcon}, CommandTitle='{vm.Command?.Title}', Accent={vm.Command?.AccentBrush}");
     }
 
     private void SlotButton_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
@@ -1550,62 +1601,132 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        var slotToDrag = _dragSourceSlot;
+        _dragStartPoint = null; // 立即清空，杜绝二次重入
+
         StopFolderHoverTimer();
         HideFolderPreview();
+        HostAssets.AppendLog($"[DragDiagnostic] DragStart: Index={slotToDrag.Index}, Title='{slotToDrag.Title}', IsFolder={slotToDrag.IsFolder}");
         var payload = new System.Windows.DataObject();
-        payload.SetData(typeof(SlotViewModel), _dragSourceSlot);
+        payload.SetData(typeof(SlotViewModel), slotToDrag);
 
         WindowBindingDropOverlayWindow? bindingOverlay = null;
         DispatcherTimer? bindingOverlayTimer = null;
-        var draggedCommand = _dragSourceSlot.Command;
-        if (!_dragSourceSlot.IsFolder && draggedCommand != null)
+        var draggedCommand = slotToDrag.Command;
+        if (!slotToDrag.IsFolder && draggedCommand != null)
         {
             payload.SetData(typeof(CommandItem), draggedCommand);
-            bindingOverlay = new WindowBindingDropOverlayWindow(draggedCommand, _mainWindow, _mainWindow.GetWindowBindingMarginPixels());
-            bindingOverlay.BindingDropped += (hwnd, corner, offsetX, offsetY) =>
-            {
-                _ = _mainWindow.BindExtensionToWindowFromDropAsync(draggedCommand, hwnd, corner, offsetX, offsetY);
-            };
             bindingOverlayTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(80)
+                Interval = TimeSpan.FromMilliseconds(200)
             };
             bindingOverlayTimer.Tick += (_, _) =>
             {
-                if (bindingOverlay == null || bindingOverlay.IsVisible || IsCursorInsideQuickPanel())
+                if (IsCursorInsideQuickPanel())
                 {
+                    if (bindingOverlay?.IsVisible == true)
+                    {
+                        bindingOverlay.Hide();
+                    }
                     return;
                 }
 
-                bindingOverlay.ShowFullDesktop();
+                if (bindingOverlay == null)
+                {
+                    bindingOverlay = new WindowBindingDropOverlayWindow(draggedCommand, _mainWindow, _mainWindow.GetWindowBindingMarginPixels());
+                    bindingOverlay.BindingDropped += (hwnd, corner, offsetX, offsetY) =>
+                    {
+                        _ = _mainWindow.BindExtensionToWindowFromDropAsync(draggedCommand, hwnd, corner, offsetX, offsetY);
+                    };
+                }
+
+                if (!bindingOverlay.IsVisible)
+                {
+                    bindingOverlay.ShowFullDesktop();
+                }
             };
             bindingOverlayTimer.Start();
         }
 
         var sourceElement = (UIElement)sender;
+        var ghostWindow = QuickPanelDragGhostWindow.Instance;
+        try
+        {
+            var relativePoint = e.GetPosition((IInputElement)sender);
+            var initialCursor = NativeMethods.GetCursorPosition();
+
+            ghostWindow.ShowGhost(slotToDrag, relativePoint, initialCursor.X, initialCursor.Y);
+            _activeDragGhostWindow = ghostWindow;
+        }
+        catch { }
+
+        void UpdateGhost()
+        {
+            try
+            {
+                var curPixels = NativeMethods.GetCursorPosition();
+                ghostWindow.UpdatePositionPixels(curPixels.X, curPixels.Y);
+            }
+            catch { }
+        }
+
         System.Windows.GiveFeedbackEventHandler feedbackHandler = (_, args) =>
         {
             args.UseDefaultCursors = false;
-            System.Windows.Input.Mouse.SetCursor(System.Windows.Input.Cursors.Arrow);
+            System.Windows.Input.Mouse.SetCursor(System.Windows.Input.Cursors.SizeAll);
             args.Handled = true;
+            UpdateGhost();
         };
         sourceElement.GiveFeedback += feedbackHandler;
 
+        System.Windows.QueryContinueDragEventHandler queryContinueHandler = (_, _) =>
+        {
+            UpdateGhost();
+        };
+        sourceElement.QueryContinueDrag += queryContinueHandler;
+
+        var sourceSlot = _dragSourceSlot;
         try
         {
+            if (sourceSlot != null)
+            {
+                sourceSlot.IsDragging = true;
+            }
             IsDraggingSlot = true;
             Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
             DragDrop.DoDragDrop((DependencyObject)sender, payload, System.Windows.DragDropEffects.Move | System.Windows.DragDropEffects.Copy);
         }
         finally
         {
+            ShowDragGroupingHint = false;
+            if (sourceSlot != null)
+            {
+                sourceSlot.IsDragging = false;
+                sourceSlot.SwapPreviewCommand = null;
+            }
+            if (_dragSourceSlot != null)
+            {
+                _dragSourceSlot.IsDragging = false;
+                _dragSourceSlot.SwapPreviewCommand = null;
+            }
             IsDraggingSlot = false;
             sourceElement.GiveFeedback -= feedbackHandler;
-            bindingOverlayTimer?.Stop();
-            if (bindingOverlay?.IsVisible == true)
+            sourceElement.QueryContinueDrag -= queryContinueHandler;
+            _activeDragGhostWindow = null;
+            try
             {
-                bindingOverlay.Close();
+                ghostWindow.HideGhost();
             }
+            catch { }
+            try
+            {
+                bindingOverlayTimer?.Stop();
+                if (bindingOverlay?.IsVisible == true)
+                {
+                    bindingOverlay.Close();
+                }
+            }
+            catch { }
         }
         _dragStartPoint = null;
         _dragSourceSlot = null;
@@ -1749,8 +1870,17 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         HidePanelIfAllowed();
     }
 
+    private static QuickPanelDragGhostWindow? _activeDragGhostWindow;
+
     private void SlotButton_DragOver(object sender, System.Windows.DragEventArgs e)
     {
+        try
+        {
+            var curPixels = NativeMethods.GetCursorPosition();
+            _activeDragGhostWindow?.UpdatePositionPixels(curPixels.X, curPixels.Y);
+        }
+        catch { }
+
         if (sender is not FrameworkElement { Tag: SlotViewModel target })
         {
             e.Effects = System.Windows.DragDropEffects.None;
@@ -1783,12 +1913,91 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             {
                 e.Effects = System.Windows.DragDropEffects.None;
                 StopFolderHoverTimer();
+                ShowDragGroupingHint = false;
+                IsInsertMode = false;
+                if (source != null && source.SwapPreviewCommand != null)
+                {
+                    source.SwapPreviewCommand = null;
+                }
                 return;
             }
 
             e.Effects = System.Windows.DragDropEffects.Move;
             _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
-            SetReleaseTarget(target, source.Command);
+
+            // Calculate horizontal position relative to target slot for edge-insertion vs center-swap
+            var element = sender as FrameworkElement ?? this;
+            System.Windows.Point mousePos = e.GetPosition(element);
+            double actualWidth = element.ActualWidth > 0 ? element.ActualWidth : 60.0;
+
+            bool isInsertLeft = mousePos.X < actualWidth * 0.28;
+            bool isInsertRight = mousePos.X > actualWidth * 0.72;
+            bool isInsertMode = isInsertLeft || isInsertRight;
+
+            if (IsInsertMode != isInsertMode)
+            {
+                IsInsertMode = isInsertMode;
+            }
+            if (!ShowDragGroupingHint)
+            {
+                ShowDragGroupingHint = true;
+            }
+
+            if (isInsertMode)
+            {
+                // Edge insertion mode: highlight vertical caret indicator, hide swap/drop preview
+                if (target.IsInsertTargetLeft != isInsertLeft) target.IsInsertTargetLeft = isInsertLeft;
+                if (target.IsInsertTargetRight != isInsertRight) target.IsInsertTargetRight = isInsertRight;
+                if (target.DropPreviewCommand != null) target.DropPreviewCommand = null;
+                if (target.IsReleaseTarget) target.IsReleaseTarget = false;
+                if (source.SwapPreviewCommand != null) source.SwapPreviewCommand = null;
+                if (_dragSourceSlot != null && _dragSourceSlot.SwapPreviewCommand != null)
+                {
+                    _dragSourceSlot.SwapPreviewCommand = null;
+                }
+            }
+            else
+            {
+                // Center mode: clear caret indicator, show swap/group preview
+                if (target.IsInsertTargetLeft || target.IsInsertTargetRight)
+                {
+                    target.ClearInsertIndicators();
+                }
+                bool isCtrlDown = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+                if (target.IsOccupied)
+                {
+                    if (!isCtrlDown)
+                    {
+                        if (source.SwapPreviewCommand != target.Command)
+                        {
+                            source.SwapPreviewCommand = target.Command;
+                        }
+                        if (_dragSourceSlot != null && _dragSourceSlot.SwapPreviewCommand != target.Command)
+                        {
+                            _dragSourceSlot.SwapPreviewCommand = target.Command;
+                        }
+                    }
+                    else
+                    {
+                        if (source.SwapPreviewCommand != null) source.SwapPreviewCommand = null;
+                        if (_dragSourceSlot != null && _dragSourceSlot.SwapPreviewCommand != null)
+                        {
+                            _dragSourceSlot.SwapPreviewCommand = null;
+                        }
+                    }
+                }
+                else
+                {
+                    if (source.SwapPreviewCommand != null) source.SwapPreviewCommand = null;
+                    if (_dragSourceSlot != null && _dragSourceSlot.SwapPreviewCommand != null)
+                    {
+                        _dragSourceSlot.SwapPreviewCommand = null;
+                    }
+                }
+
+                SetReleaseTarget(target, source.Command);
+            }
+
             StopFolderHoverTimer();
 
             e.Handled = true;
@@ -1806,7 +2015,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             else
             {
                 _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
-                SetReleaseTarget(target, command);
+                target.IsReleaseTarget = true;
                 e.Effects = System.Windows.DragDropEffects.Copy;
             }
 
@@ -1841,6 +2050,10 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void SlotButton_DragLeave(object sender, System.Windows.DragEventArgs e)
     {
+        if (sender is FrameworkElement { Tag: SlotViewModel target })
+        {
+            target.ClearInsertIndicators();
+        }
         StopFolderHoverTimer();
     }
 
@@ -1859,6 +2072,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             {
                 StopFolderHoverTimer();
                 MoveFolderChildToSlot(source, target);
+                ClearReleaseTarget();
                 e.Handled = true;
                 return;
             }
@@ -1870,7 +2084,16 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             if (source != null && !ReferenceEquals(source, target))
             {
                 StopFolderHoverTimer();
-                if (IsControlKeyDown(e) && !source.IsFolder && source.Command != null)
+
+                bool isInsertLeft = target.IsInsertTargetLeft;
+                bool isInsertRight = target.IsInsertTargetRight;
+                target.ClearInsertIndicators();
+
+                if (isInsertLeft || isInsertRight)
+                {
+                    InsertAndShiftSlot(source, target, insertBefore: isInsertLeft);
+                }
+                else if (IsControlKeyDown(e) && !source.IsFolder && source.Command != null)
                 {
                     if (target.IsFolder)
                     {
@@ -1890,6 +2113,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                     MoveOrSwapSlot(source, target);
                 }
 
+                ClearReleaseTarget();
                 e.Handled = true;
                 return;
             }
@@ -2075,10 +2299,19 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void ClearReleaseTarget()
     {
+        ShowDragGroupingHint = false;
+        IsInsertMode = false;
         if (_hoveredSlot != null)
         {
             _hoveredSlot.DropPreviewCommand = null;
             _hoveredSlot.IsReleaseTarget = false;
+            _hoveredSlot.ClearInsertIndicators();
+        }
+
+        if (_dragSourceSlot != null)
+        {
+            _dragSourceSlot.SwapPreviewCommand = null;
+            _dragSourceSlot.ClearInsertIndicators();
         }
 
         _hoveredSlot = null;
@@ -2847,6 +3080,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void Window_Deactivated(object sender, EventArgs e)
     {
+        if (_isDraggingSlot)
+        {
+            HostAssets.AppendLog("Window_Deactivated: ignored because dragging slot.");
+            return;
+        }
+
         if (DateTime.UtcNow <= _suppressAutoHideUntilUtc)
         {
             return;
@@ -2885,6 +3124,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             _previousForegroundWindow = NativeMethods.GetForegroundWindow();
             _previousFocusWindow = NativeMethods.GetForegroundFocusWindow();
             _foregroundAppContext = BuildForegroundAppContext(_previousForegroundWindow);
+            UpdateContextProcessIcon(_previousForegroundWindow);
             var cursorPixels = NativeMethods.GetCursorPosition();
             var cursorDips = DeviceToDips(cursorPixels);
 
@@ -3172,9 +3412,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void HidePanelIfAllowed()
     {
-        if (_isPinned || IsEditMode || Environment.TickCount64 - _lastEscExitEditModeTick < 600)
+        if (_isPinned || IsEditMode || _isDraggingSlot || Environment.TickCount64 - _lastEscExitEditModeTick < 600)
         {
-            HostAssets.AppendLog("Quick panel hide skipped because panel is pinned, in edit mode, or recently exited edit mode.");
+            HostAssets.AppendLog("Quick panel hide skipped because panel is pinned, in edit mode, dragging slot, or recently exited edit mode.");
             return;
         }
 
@@ -3526,6 +3766,111 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
 
         CreateFolderFromSlots(source, target);
+    }
+
+    private void InsertAndShiftSlot(SlotViewModel source, SlotViewModel target, bool insertBefore)
+    {
+        var sourceReference = BuildSlotReference(source);
+        var targetReference = BuildSlotReference(target);
+        if (sourceReference == null || targetReference == null)
+        {
+            HostAssets.AppendLog(
+                $"Quick panel drag insert ignored: missing slot reference, sourceContext={source.IsContextual}, targetContext={target.IsContextual}.");
+            return;
+        }
+
+        var sourceContainer = GetSlotContainer(sourceReference);
+        var targetContainer = GetSlotContainer(targetReference);
+        if (sourceContainer == null || targetContainer == null)
+        {
+            HostAssets.AppendLog(
+                $"Quick panel drag insert ignored: missing slot container, sourceGroup={sourceReference.GroupId}, targetGroup={targetReference.GroupId}.");
+            return;
+        }
+
+        int maxSlots = target.IsContextual ? _currentContextSlotCount : _currentGlobalSlotCount;
+        while (sourceContainer.Count < maxSlots)
+        {
+            sourceContainer.Add(null);
+        }
+        while (targetContainer.Count < maxSlots)
+        {
+            targetContainer.Add(null);
+        }
+
+        if (ReferenceEquals(sourceContainer, targetContainer))
+        {
+            // 同一容器内插入并挤位顺移
+            var sourceIndex = sourceReference.Index;
+            var targetIndex = targetReference.Index;
+            if (sourceIndex >= 0 && sourceIndex < sourceContainer.Count &&
+                targetIndex >= 0 && targetIndex < sourceContainer.Count)
+            {
+                var itemToMove = sourceContainer[sourceIndex];
+                sourceContainer.RemoveAt(sourceIndex);
+
+                // 如果源位置在目标位置之前，移除后目标位置索引自动前移了1位
+                int insertPos;
+                if (sourceIndex < targetIndex)
+                {
+                    insertPos = insertBefore ? (targetIndex - 1) : targetIndex;
+                }
+                else
+                {
+                    insertPos = insertBefore ? targetIndex : (targetIndex + 1);
+                }
+
+                if (insertPos < 0) insertPos = 0;
+                if (insertPos > sourceContainer.Count) insertPos = sourceContainer.Count;
+
+                sourceContainer.Insert(insertPos, itemToMove);
+
+                // 规范化容器长度为 maxSlots
+                while (sourceContainer.Count > maxSlots)
+                {
+                    sourceContainer.RemoveAt(sourceContainer.Count - 1);
+                }
+                while (sourceContainer.Count < maxSlots)
+                {
+                    sourceContainer.Add(null);
+                }
+            }
+        }
+        else
+        {
+            // 跨容器插入（例如从通用组拖到专属组）
+            var sourceIndex = sourceReference.Index;
+            var targetIndex = targetReference.Index;
+            if (sourceIndex >= 0 && sourceIndex < sourceContainer.Count &&
+                targetIndex >= 0 && targetIndex < targetContainer.Count)
+            {
+                var itemToMove = sourceContainer[sourceIndex];
+                sourceContainer[sourceIndex] = null; // 源位置变为空
+
+                int insertPos = insertBefore ? targetIndex : (targetIndex + 1);
+                if (insertPos < 0) insertPos = 0;
+                if (insertPos > targetContainer.Count) insertPos = targetContainer.Count;
+
+                targetContainer.Insert(insertPos, itemToMove);
+
+                // 移除末尾多出的槽位以保持固定数量
+                while (targetContainer.Count > maxSlots)
+                {
+                    targetContainer.RemoveAt(targetContainer.Count - 1);
+                }
+                while (targetContainer.Count < maxSlots)
+                {
+                    targetContainer.Add(null);
+                }
+            }
+        }
+
+        RefreshAllLegacySlots();
+        SaveQuickPanelSettings("quickpanel-drag-insert-shift-slot");
+        HostAssets.AppendLog(
+            $"Quick panel drag insert saved: sourceGroup={sourceReference.GroupId}, sourceIndex={sourceReference.Index}, targetGroup={targetReference.GroupId}, targetIndex={targetReference.Index}, insertBefore={insertBefore}.");
+        LoadSlots();
+        RefreshActiveFolderAfterMutation();
     }
 
     private void MoveOrSwapSlot(SlotViewModel source, SlotViewModel target)
@@ -4030,6 +4375,99 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private static readonly ConcurrentDictionary<string, ImageSource?> _processIconCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private void UpdateContextProcessIcon(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || _foregroundAppContext == null)
+        {
+            ContextProcessIcon = null;
+            return;
+        }
+
+        var processName = _foregroundAppContext.ProcessName;
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            ContextProcessIcon = null;
+            return;
+        }
+
+        if (_processIconCache.TryGetValue(processName, out var cached))
+        {
+            ContextProcessIcon = cached;
+            return;
+        }
+
+        ImageSource? iconSource = null;
+        try
+        {
+            _ = NativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
+            if (processId != 0)
+            {
+                try
+                {
+                    using var proc = Process.GetProcessById((int)processId);
+                    var exePath = proc.MainModule?.FileName;
+                    if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
+                    {
+                        using var sysIcon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
+                        if (sysIcon != null)
+                        {
+                            var bmp = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                                sysIcon.Handle,
+                                Int32Rect.Empty,
+                                BitmapSizeOptions.FromEmptyOptions());
+                            bmp.Freeze();
+                            iconSource = bmp;
+                        }
+                    }
+                }
+                catch
+                {
+                    // 进程权限受限，降级到窗口句柄读取
+                }
+            }
+
+            if (iconSource == null && hwnd != IntPtr.Zero)
+            {
+                var hIcon = NativeMethods.SendMessage(hwnd, 0x007F /* WM_GETICON */, (IntPtr)0 /* ICON_SMALL */, IntPtr.Zero);
+                if (hIcon == IntPtr.Zero)
+                {
+                    hIcon = NativeMethods.SendMessage(hwnd, 0x007F /* WM_GETICON */, (IntPtr)2 /* ICON_SMALL2 */, IntPtr.Zero);
+                }
+                if (hIcon == IntPtr.Zero)
+                {
+                    hIcon = NativeMethods.SendMessage(hwnd, 0x007F /* WM_GETICON */, (IntPtr)1 /* ICON_BIG */, IntPtr.Zero);
+                }
+                if (hIcon == IntPtr.Zero)
+                {
+                    hIcon = NativeMethods.GetClassLongPtr(hwnd, -34 /* GCLP_HICONSM */);
+                }
+                if (hIcon == IntPtr.Zero)
+                {
+                    hIcon = NativeMethods.GetClassLongPtr(hwnd, -14 /* GCLP_HICON */);
+                }
+
+                if (hIcon != IntPtr.Zero)
+                {
+                    var bmp = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                        hIcon,
+                        Int32Rect.Empty,
+                        BitmapSizeOptions.FromEmptyOptions());
+                    bmp.Freeze();
+                    iconSource = bmp;
+                }
+            }
+        }
+        catch
+        {
+            // 忽略图标提取异常
+        }
+
+        _processIconCache[processName] = iconSource;
+        ContextProcessIcon = iconSource;
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) => 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
@@ -4118,6 +4556,11 @@ public class SlotViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(HasDropPreviewVectorIcon));
             OnPropertyChanged(nameof(UseDropPreviewGlyphIcon));
             OnPropertyChanged(nameof(ShouldShowEmptyPlusIcon));
+            OnPropertyChanged(nameof(ShouldShowOccupiedContent));
+            OnPropertyChanged(nameof(DropPreviewTitle));
+            OnPropertyChanged(nameof(DisplayTitle));
+            OnPropertyChanged(nameof(DisplayAccentBrush));
+            OnPropertyChanged(nameof(HasEffectiveImageIcon));
         }
     }
 
@@ -4125,12 +4568,108 @@ public class SlotViewModel : INotifyPropertyChanged
     public ImageSource? DropPreviewIconSource => _dropPreviewCommand?.IconSource;
     public Geometry? DropPreviewVectorIcon => _dropPreviewCommand?.VectorIcon;
     public string DropPreviewGlyph => _dropPreviewCommand?.DisplayGlyph ?? string.Empty;
+    public string DropPreviewTitle => _dropPreviewCommand?.Title ?? string.Empty;
 
     public bool HasDropPreviewImageIcon => _dropPreviewCommand != null && _dropPreviewCommand.HasImageIcon;
     public bool HasDropPreviewVectorIcon => _dropPreviewCommand != null && _dropPreviewCommand.HasVectorIcon;
     public bool UseDropPreviewGlyphIcon => _dropPreviewCommand != null && _dropPreviewCommand.UseGlyphIcon;
 
-    public bool ShouldShowEmptyPlusIcon => IsEmpty && !HasDropPreviewIcon;
+    private CommandItem? _swapPreviewCommand;
+    public CommandItem? SwapPreviewCommand
+    {
+        get => _swapPreviewCommand;
+        set
+        {
+            if (ReferenceEquals(_swapPreviewCommand, value)) return;
+            _swapPreviewCommand = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasSwapPreviewIcon));
+            OnPropertyChanged(nameof(SwapPreviewIconSource));
+            OnPropertyChanged(nameof(SwapPreviewVectorIcon));
+            OnPropertyChanged(nameof(SwapPreviewGlyph));
+            OnPropertyChanged(nameof(HasSwapPreviewImageIcon));
+            OnPropertyChanged(nameof(HasSwapPreviewVectorIcon));
+            OnPropertyChanged(nameof(UseSwapPreviewGlyphIcon));
+            OnPropertyChanged(nameof(ShouldShowEmptyPlusIcon));
+            OnPropertyChanged(nameof(ShouldShowOccupiedContent));
+            OnPropertyChanged(nameof(SwapPreviewTitle));
+            OnPropertyChanged(nameof(DisplayTitle));
+            OnPropertyChanged(nameof(DisplayAccentBrush));
+            OnPropertyChanged(nameof(HasEffectiveImageIcon));
+        }
+    }
+
+    public bool HasSwapPreviewIcon => _swapPreviewCommand != null;
+    public ImageSource? SwapPreviewIconSource => _swapPreviewCommand?.IconSource;
+    public Geometry? SwapPreviewVectorIcon => _swapPreviewCommand?.VectorIcon;
+    public string SwapPreviewGlyph => _swapPreviewCommand?.DisplayGlyph ?? string.Empty;
+    public string SwapPreviewTitle => _swapPreviewCommand?.Title ?? string.Empty;
+    public bool HasSwapPreviewImageIcon => _swapPreviewCommand != null && _swapPreviewCommand.HasImageIcon;
+    public bool HasSwapPreviewVectorIcon => _swapPreviewCommand != null && _swapPreviewCommand.HasVectorIcon;
+    public bool UseSwapPreviewGlyphIcon => _swapPreviewCommand != null && _swapPreviewCommand.UseGlyphIcon;
+
+    public System.Windows.Media.Brush DisplayAccentBrush
+    {
+        get
+        {
+            if (HasDropPreviewIcon && _dropPreviewCommand?.AccentBrush != null)
+            {
+                return _dropPreviewCommand.AccentBrush;
+            }
+            if (HasSwapPreviewIcon && _swapPreviewCommand?.AccentBrush != null)
+            {
+                return _swapPreviewCommand.AccentBrush;
+            }
+            return _command?.AccentBrush ?? System.Windows.Media.Brushes.Transparent;
+        }
+    }
+
+    public bool HasEffectiveImageIcon
+    {
+        get
+        {
+            if (HasDropPreviewIcon) return HasDropPreviewImageIcon;
+            if (HasSwapPreviewIcon) return HasSwapPreviewImageIcon;
+            return HasImageIcon;
+        }
+    }
+
+    public bool ShouldShowOccupiedContent => IsOccupied && !HasDropPreviewIcon && !HasSwapPreviewIcon;
+    public bool ShouldShowEmptyPlusIcon => IsEmpty && !HasDropPreviewIcon && !HasSwapPreviewIcon;
+
+    private bool _isInsertTargetLeft;
+    public bool IsInsertTargetLeft
+    {
+        get => _isInsertTargetLeft;
+        set
+        {
+            if (_isInsertTargetLeft != value)
+            {
+                _isInsertTargetLeft = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private bool _isInsertTargetRight;
+    public bool IsInsertTargetRight
+    {
+        get => _isInsertTargetRight;
+        set
+        {
+            if (_isInsertTargetRight != value)
+            {
+                _isInsertTargetRight = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public void ClearInsertIndicators()
+    {
+        IsInsertTargetLeft = false;
+        IsInsertTargetRight = false;
+    }
 
     public CommandItem? Command => _command;
 
@@ -4223,6 +4762,20 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(FavoriteLabel));
     }
 
+    private bool _isDragging;
+    public bool IsDragging
+    {
+        get => _isDragging;
+        set
+        {
+            if (_isDragging != value)
+            {
+                _isDragging = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     public bool IsReleaseTarget
     {
         get => _isReleaseTarget;
@@ -4255,7 +4808,21 @@ public class SlotViewModel : INotifyPropertyChanged
     public bool CanDeleteExtension => !IsFolder && _command?.Source == CommandSource.LocalExtension;
     public string FavoriteLabel => _isFavorite ? "取消收藏" : "收藏";
     public string Title => IsFolder ? _folderName : _command?.Title ?? string.Empty;
-    public string DisplayTitle => IsCSharpPrebuilding ? "编译中..." : Title;
+    public string DisplayTitle
+    {
+        get
+        {
+            if (HasDropPreviewIcon)
+            {
+                return DropPreviewTitle;
+            }
+            if (HasSwapPreviewIcon)
+            {
+                return SwapPreviewTitle;
+            }
+            return IsCSharpPrebuilding ? "编译中..." : Title;
+        }
+    }
     public ImageSource? Icon => IsFolder ? null : _command?.IconSource;
     public Geometry? VectorIcon => IsFolder ? null : _command?.VectorIcon;
     public bool HasImageIcon => !IsFolder && (_command?.HasImageIcon ?? false);
@@ -4577,6 +5144,12 @@ internal static class NativeMethods
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool IsWindow(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetClassLongPtrW")]
+    public static extern IntPtr GetClassLongPtr(IntPtr hWnd, int nIndex);
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
