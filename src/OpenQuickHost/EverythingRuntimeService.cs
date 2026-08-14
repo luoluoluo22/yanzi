@@ -9,6 +9,7 @@ public static class EverythingRuntimeService
     private const string RuntimeExecutableName = "Everything.exe";
     private static readonly Lock SyncLock = new();
     private static int? _launchedProcessId;
+    private const int ConfigSchemaVersion = 2;
 
     public static void EnsureStartedInBackground()
     {
@@ -58,22 +59,18 @@ public static class EverythingRuntimeService
     {
         lock (SyncLock)
         {
-            var configUpdated = EnsureOptimizedConfig(HostAssets.EverythingRuntimeConfigPath);
+            var needsDbRebuild = EnsureOptimizedConfig(HostAssets.EverythingRuntimeConfigPath);
 
-            var configPath = HostAssets.EverythingRuntimeConfigPath;
-            var dbPath = HostAssets.EverythingRuntimeDatabasePath;
-            var isDbStale = File.Exists(configPath) && File.Exists(dbPath) && File.GetLastWriteTimeUtc(configPath) > File.GetLastWriteTimeUtc(dbPath);
-
-            if (configUpdated || isDbStale)
+            if (needsDbRebuild)
             {
-                HostAssets.AppendLog("Everything config updated or database stale with old index, purging stale DB and restarting runtime to apply exclusions...");
+                HostAssets.AppendLog("Everything config updated, purging database and restarting runtime to apply new exclusions...");
                 StopOwnedRuntime();
                 KillAllYanziEverythingProcesses();
                 try
                 {
-                    if (File.Exists(dbPath))
+                    if (File.Exists(HostAssets.EverythingRuntimeDatabasePath))
                     {
-                        File.Delete(dbPath);
+                        File.Delete(HostAssets.EverythingRuntimeDatabasePath);
                     }
                 }
                 catch { }
@@ -200,8 +197,8 @@ public static class EverythingRuntimeService
                 try
                 {
                     var path = process.MainModule?.FileName;
-                    if (path != null && (path.Contains("Yanzi", StringComparison.OrdinalIgnoreCase) || 
-                                         path.Contains("OpenQuickHost", StringComparison.OrdinalIgnoreCase) || 
+                    if (path != null && (path.Contains("Yanzi", StringComparison.OrdinalIgnoreCase) ||
+                                         path.Contains("OpenQuickHost", StringComparison.OrdinalIgnoreCase) ||
                                          path.Contains("EverythingRuntime", StringComparison.OrdinalIgnoreCase)))
                     {
                         process.Kill();
@@ -275,30 +272,64 @@ public static class EverythingRuntimeService
     {
         try
         {
-            const string defaultExcludes = @"exclude_folders=""C:\Windows\WinSxS"";""*\node_modules"";""*\.git"";""*\.vs"";""*\AppData\Local\Temp"";""*\$Recycle.Bin"";""*\System Volume Information""";
-            if (!File.Exists(configPath))
+            const string defaultExcludes = @"exclude_folders=""C:\Windows\WinSxS"";""*\.git"";""*\.vs"";""*\.vscode"";""*\.idea"";""*\.vs\"";""*node_modules"";""*\.nuget"";""*\.gradle"";""*\.cargo"";""*\.pub-cache"";""*\.cocoapods"";""*\.elm-stuff"";""*vendor\bundle"";""*\.hackage"";""*\.stack-work"";""*\.cargo\registry"";""*__pycache__"";""*\.pytest_cache"";""*\.mypy_cache"";""*\.tox"";""*build\android"";""*build\ios"";""*Pods"";""*DerivedData"";""*~\$*"";""*\.tmp\"";""*\.cache\"";""*AppData\Local\Temp"";""*\node_modules\.*"";""*\.next"";""*\.nuxt"";""*\.output"";""*\.svelte-kit"";""dist\android"";""dist\ios"";""*\.parcel-cache"";""*\.turbo"";""*\.vite\cache"";""*\.eslintcache"";""*\.sass-cache"";""*\.webpack\cache"";""*bower_components"";""*jspm_packages"";""*jspm\"";""*\.yarn\cache"";""*\.pnpm-store"";""*\.bun\cache"";""*\.cache\packages"";""*\.local\share\npm"";""*AppData\Local\npm"";""*AppData\Roaming\npm-cache"";""*\.sdkman\candidates"";""*\.rbenv"";""*\.nvm"";""*\.deno"";""*\.dartTool"";""*\.pub-cache\hosted"";""*\.pub-cache\resolved"";""*packages\terraform-provider"";""*\.terraform\providers"";""*Go\pkg\mod"";""*pkg\mod"";""*vendor\github.com"";""*vendor\golang.org"";""*vendor\gopkg.in"";""*\.gopath\src"";""*vendor\bundle\ruby"";""*vendor\cache"";""*vendor\doc"";""*vendor\paths.rb"";""*Library\Caches\com.apple"";""*Library\Developer"";""*Library\Android\sdk\build-tools"";""*Library\Android\sdk\platform-tools"";""*SDK"";""*build\tools"";""*cmake-build"";""*cmake\"";""*cmake\Debug"";""*cmake\Release"";""*CMakeFiles"";""*CMakeScripts"";""*cmake_install.cmake"";""*Makefile"";""*CMakeCache.txt"";""*.VC.db"";""*\.obj"";""*\.o"";""*\.a"";""*\.lib"";""*\.so"";""*\.dylib"";""*\.dll"";""*\.pdb"";""*\.ilk"";""*\.exp"";""*\.res"";""*\.aps"";""*\.bsc"";""*\.sdf"";""*\.opensdf"";""*\.suo"";""*\.user"";""*Debug\"";""*Release\"";""*RelWithDebInfo\"";""*MinSizeRel\"";""*x64\"";""*x86\"";""*ARM64\"";""*Win32\"";""bin\obj"";""obj\bin"";""obj\x64"";""obj\ARM64"";""*Intermediate\"";""*Generated Files\"";""*ipch\"";""*\.tlog"";""*\.lastbuildstate"";""*\$Recycle.Bin"";""*\System Volume Information""";
+            var content = File.Exists(configPath) ? File.ReadAllText(configPath) : string.Empty;
+
+            var currentVersion = 0;
+            var versionMatch = System.Text.RegularExpressions.Regex.Match(content, @"^exclude_schema_version=(\d+)", System.Text.RegularExpressions.RegexOptions.Multiline);
+            if (versionMatch.Success)
             {
-                File.WriteAllText(configPath, $"exclude_list_enabled=1\r\n{defaultExcludes}\r\n", System.Text.Encoding.UTF8);
-                return true;
+                int.TryParse(versionMatch.Groups[1].Value, out currentVersion);
             }
 
-            var content = File.ReadAllText(configPath);
-            if (!content.Contains("exclude_folders=") || content.Contains("exclude_folders=\r\n") || content.Contains("exclude_folders=\n") || content.Contains("exclude_folders=\"\""))
+            var needsUpdate = false;
+
+            // Check if schema version needs update (triggers DB rebuild)
+            if (currentVersion < ConfigSchemaVersion)
             {
-                var updated = System.Text.RegularExpressions.Regex.Replace(
+                needsUpdate = true;
+                content = System.Text.RegularExpressions.Regex.Replace(
+                    content,
+                    @"(?m)^exclude_schema_version=.*$",
+                    $"exclude_schema_version={ConfigSchemaVersion}");
+                if (!System.Text.RegularExpressions.Regex.IsMatch(content, @"^exclude_schema_version=", System.Text.RegularExpressions.RegexOptions.Multiline))
+                {
+                    content = $"exclude_schema_version={ConfigSchemaVersion}\r\n" + content;
+                }
+            }
+
+            // Enable exclude list if not already enabled
+            if (!content.Contains("exclude_list_enabled=1"))
+            {
+                content = System.Text.RegularExpressions.Regex.Replace(
+                    content,
+                    @"(?m)^exclude_list_enabled=.*$",
+                    "exclude_list_enabled=1");
+                if (!content.Contains("exclude_list_enabled=1"))
+                {
+                    content = "exclude_list_enabled=1\r\n" + content;
+                }
+                needsUpdate = true;
+            }
+
+            // Always update exclude_folders to the latest comprehensive list
+            if (!System.Text.RegularExpressions.Regex.IsMatch(content, @"(?m)^exclude_folders=""C:\\Windows\\WinSxS"""))
+            {
+                content = System.Text.RegularExpressions.Regex.Replace(
                     content,
                     @"(?m)^exclude_folders=.*$",
                     defaultExcludes);
-
-                if (!updated.Contains("exclude_list_enabled=1"))
+                if (!System.Text.RegularExpressions.Regex.IsMatch(content, @"(?m)^exclude_folders=""C:\\Windows\\WinSxS"""))
                 {
-                    updated = System.Text.RegularExpressions.Regex.Replace(
-                        updated,
-                        @"(?m)^exclude_list_enabled=.*$",
-                        "exclude_list_enabled=1");
+                    content = defaultExcludes + "\r\n" + content;
                 }
+                needsUpdate = true;
+            }
 
-                File.WriteAllText(configPath, updated, System.Text.Encoding.UTF8);
+            if (needsUpdate)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(configPath) ?? AppContext.BaseDirectory);
+                File.WriteAllText(configPath, content, System.Text.Encoding.UTF8);
                 return true;
             }
         }

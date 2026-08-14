@@ -53,7 +53,10 @@ public partial class MainWindow
         {
             foreach (var command in _allCommands)
             {
-                command.SetQueryPreview(null, null);
+                if (command.HasQueryPreview)
+                {
+                    command.SetQueryPreview(null, null);
+                }
             }
 
             FilteredCommands.Clear();
@@ -96,61 +99,45 @@ public partial class MainWindow
         Interlocked.Increment(ref _fileSearchRequestVersion);
         _fileSearchDebounceTimer.Stop();
 
-        var localCommands = parsed.IsEmpty
-            ? EnumerateScopeCommands(parsed.ScopeKey)
-                .Where(IsSearchResultEnabled)
-            : EnumerateScopeCommands(parsed.ScopeKey)
-                .Where(IsSearchResultEnabled)
-                .Select(command => new
-                {
-                    Command = command,
-                    Match = BuildCommandMatch(command, parsed.Term, AllowsRawQueryArgument(parsed.ScopeKey))
-                })
-                .Where(x => x.Match.IsMatch)
-                .Select(x => x.Command);
+        var allowRawQueryArgumentInline = AllowsRawQueryArgument(parsed.ScopeKey);
+        var trimmedQuery = parsed.Term ?? string.Empty;
 
         foreach (var command in _allCommands)
         {
-            command.SetQueryPreview(null, null);
+            if (command.HasQueryPreview)
+            {
+                command.SetQueryPreview(null, null);
+            }
         }
 
-        var matches = localCommands
-            .DistinctBy(command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
-            .Select(command => new
-            {
-                Command = command,
-                Score = ScoreSearchResult(command, parsed.Term) + GetRecentlyAddedOrderingBoost(command, parsed)
-            })
-            .OrderByDescending(x => x.Score)
-            .ThenBy(x => x.Command.Category, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(x => x.Command.Title, StringComparer.OrdinalIgnoreCase)
-            .Select(x => x.Command)
-            .ToList();
+        var matches = ComputeFilterMatches(parsed, trimmedQuery, allowRawQueryArgumentInline);
 
-        var allowRawQueryArgument = AllowsRawQueryArgument(parsed.ScopeKey);
-        var leadingCommand = matches.FirstOrDefault(static command => command.SupportsQueryArgument);
-        if (leadingCommand != null && !string.IsNullOrWhiteSpace(parsed.Term))
+        var allowRawQueryArgument = allowRawQueryArgumentInline;
+        var leadingCommand = matches.Count > 0 && !string.IsNullOrWhiteSpace(trimmedQuery)
+            ? FindFirstSupportingQueryArgument(matches)
+            : null;
+        if (leadingCommand != null)
         {
-            _activeQueryArgument = ExtractQueryArgument(leadingCommand, parsed.Term, allowRawQueryArgument);
+            _activeQueryArgument = ExtractQueryArgument(leadingCommand, trimmedQuery, allowRawQueryArgument);
             if (string.IsNullOrWhiteSpace(_activeQueryArgument) && allowRawQueryArgument)
             {
-                _activeQueryArgument = parsed.Term;
+                _activeQueryArgument = trimmedQuery;
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(parsed.Term))
+        if (!string.IsNullOrWhiteSpace(trimmedQuery))
         {
-            foreach (var command in matches.Where(static item => item.SupportsQueryArgument))
+            for (var i = 0; i < matches.Count; i++)
             {
-                ApplyQueryPreview(command, parsed.Term, allowRawQueryArgument);
+                var command = matches[i];
+                if (command.SupportsQueryArgument)
+                {
+                    ApplyQueryPreview(command, trimmedQuery, allowRawQueryArgument);
+                }
             }
         }
 
-        FilteredCommands.Clear();
-        foreach (var item in matches)
-        {
-            FilteredCommands.Add(item);
-        }
+        FilteredCommands.ReplaceAll(matches);
 
         if (string.Equals(parsed.ScopeKey, SearchScopeApplication, StringComparison.OrdinalIgnoreCase))
         {
@@ -173,6 +160,63 @@ public partial class MainWindow
             QueueAllScopeFileSearchResults(parsed.Term, matches, preserveSelection, previousSelectedCommand);
         }
     }
+
+    private List<CommandItem> ComputeFilterMatches(SearchQueryState parsed, string trimmedQuery, bool allowRawQueryArgument)
+    {
+        var scope = parsed.ScopeKey;
+        var isEmpty = parsed.IsEmpty;
+        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var scored = _filterMatchScratch;
+        scored.Clear();
+
+        foreach (var command in EnumerateScopeCommands(scope))
+        {
+            if (!IsSearchResultEnabled(command))
+            {
+                continue;
+            }
+
+            if (!isEmpty)
+            {
+                var match = BuildCommandMatch(command, trimmedQuery, allowRawQueryArgument);
+                if (!match.IsMatch)
+                {
+                    continue;
+                }
+            }
+
+            if (!seenIds.Add(command.ExtensionId))
+            {
+                continue;
+            }
+
+            var score = ScoreSearchResult(command, trimmedQuery) + GetRecentlyAddedOrderingBoost(command, parsed);
+            scored.Add(new ScoredCommand(command, score));
+        }
+
+        scored.Sort(_filterMatchSorter);
+
+        var result = new List<CommandItem>(scored.Count);
+        for (var i = 0; i < scored.Count; i++)
+        {
+            result.Add(scored[i].Command);
+        }
+        return result;
+    }
+
+    private static CommandItem? FindFirstSupportingQueryArgument(List<CommandItem> commands)
+    {
+        for (var i = 0; i < commands.Count; i++)
+        {
+            if (commands[i].SupportsQueryArgument)
+            {
+                return commands[i];
+            }
+        }
+        return null;
+    }
+
+    private readonly record struct ScoredCommand(CommandItem Command, int Score);
 
     private IEnumerable<CommandItem> EnumerateScopeCommands(string scopeKey)
     {
@@ -620,40 +664,80 @@ public partial class MainWindow
 
     private void UpdateSearchScopeCounts(SearchQueryState parsed)
     {
+        if (SearchScopes.Count == 0)
+        {
+            return;
+        }
+
+        var isFileScopeSelected = string.Equals(SelectedSearchScope?.Key, SearchScopeFile, StringComparison.OrdinalIgnoreCase);
+        var currentPinnedProvider = string.IsNullOrEmpty(parsed.ScopeKey) ? null : (SelectedSearchScope?.Key ?? string.Empty);
+
+        if (!parsed.IsEmpty)
+        {
+            var term = parsed.Term ?? string.Empty;
+            var countsByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var command in _allCommands)
+            {
+                if (!IsSearchResultEnabled(command))
+                {
+                    continue;
+                }
+                foreach (var scope in SearchScopes)
+                {
+                    if (string.Equals(scope.Key, SearchScopeFile, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (isFileScopeSelected && command.Source == CommandSource.File)
+                        {
+                            countsByKey[scope.Key] = (countsByKey.TryGetValue(scope.Key, out var existing) ? existing : 0) + 1;
+                        }
+                        continue;
+                    }
+                    if (string.Equals(scope.Key, SearchScopeYanyu, StringComparison.OrdinalIgnoreCase))
+                    {
+                        countsByKey[scope.Key] = CountYanyuResults(term);
+                        continue;
+                    }
+                    if (TryGetPinnedSearchProviderCommand(scope.Key, out _))
+                    {
+                        if (string.Equals(scope.Key, currentPinnedProvider, StringComparison.OrdinalIgnoreCase))
+                        {
+                            countsByKey[scope.Key] = (countsByKey.TryGetValue(scope.Key, out var p) ? p : 0) + 1;
+                        }
+                        continue;
+                    }
+                    if (BuildCommandMatch(command, term, AllowsRawQueryArgument(scope.Key)).IsMatch)
+                    {
+                        countsByKey[scope.Key] = (countsByKey.TryGetValue(scope.Key, out var v) ? v : 0) + 1;
+                    }
+                }
+            }
+
+            foreach (var scope in SearchScopes)
+            {
+                scope.Count = countsByKey.TryGetValue(scope.Key, out var count) ? count : 0;
+            }
+            return;
+        }
+
         foreach (var scope in SearchScopes)
         {
-            var scopedQuery = parsed with { ScopeKey = scope.Key };
-            scope.Count = CountScopeResults(scopedQuery);
+            if (string.Equals(scope.Key, SearchScopeFile, StringComparison.OrdinalIgnoreCase))
+            {
+                scope.Count = isFileScopeSelected ? FilteredCommands.Count(command => command.Source == CommandSource.File) : 0;
+                continue;
+            }
+            if (string.Equals(scope.Key, SearchScopeYanyu, StringComparison.OrdinalIgnoreCase))
+            {
+                scope.Count = CountYanyuResults(string.Empty);
+                continue;
+            }
+            if (TryGetPinnedSearchProviderCommand(scope.Key, out _))
+            {
+                scope.Count = string.Equals(scope.Key, currentPinnedProvider, StringComparison.OrdinalIgnoreCase) ? FilteredCommands.Count : 0;
+                continue;
+            }
+            scope.Count = 0;
         }
-    }
-
-    private int CountScopeResults(SearchQueryState query)
-    {
-        if (string.Equals(query.ScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase))
-        {
-            return string.Equals(SelectedSearchScope?.Key, SearchScopeFile, StringComparison.OrdinalIgnoreCase)
-                ? FilteredCommands.Count(command => command.Source == CommandSource.File)
-                : 0;
-        }
-
-        if (string.Equals(query.ScopeKey, SearchScopeYanyu, StringComparison.OrdinalIgnoreCase))
-        {
-            return CountYanyuResults(query.Term);
-        }
-
-        if (TryGetPinnedSearchProviderCommand(query.ScopeKey, out _))
-        {
-            return string.Equals(SelectedSearchScope?.Key, query.ScopeKey, StringComparison.OrdinalIgnoreCase)
-                ? FilteredCommands.Count
-                : 0;
-        }
-
-        var commandCount = query.IsEmpty
-            ? 0
-            : EnumerateScopeCommands(query.ScopeKey).Count(command =>
-                IsSearchResultEnabled(command) &&
-                BuildCommandMatch(command, query.Term, AllowsRawQueryArgument(query.ScopeKey)).IsMatch);
-        return commandCount;
     }
 
     private bool IsSearchResultEnabled(CommandItem command) =>
@@ -1054,7 +1138,10 @@ public partial class MainWindow
     {
         foreach (var command in _allCommands)
         {
-            command.SetQueryPreview(null, null);
+            if (command.HasQueryPreview)
+            {
+                command.SetQueryPreview(null, null);
+            }
         }
 
         if (string.IsNullOrWhiteSpace(query))
@@ -1102,11 +1189,7 @@ public partial class MainWindow
             .Select(BuildCommandFromResultItem)
             .ToList();
 
-        FilteredCommands.Clear();
-        foreach (var item in fileCommands)
-        {
-            FilteredCommands.Add(item);
-        }
+        FilteredCommands.ReplaceAll(fileCommands);
 
         SelectedCommand = FilteredCommands.FirstOrDefault();
         CommandList.SelectedItem = SelectedCommand;
@@ -1147,27 +1230,39 @@ public partial class MainWindow
             return;
         }
 
-        var merged = baseMatches
-            .Concat(response.Results
-                .Select(BuildResultItemFromEverythingResult)
-                .Select(BuildCommandFromResultItem))
-            .DistinctBy(command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
-            .Select(command => new
-            {
-                Command = command,
-                Score = ScoreSearchResult(command, query) + GetRecentlyAddedOrderingBoost(command, new SearchQueryState(SearchScopeAll, query, string.IsNullOrWhiteSpace(query)))
-            })
-            .OrderByDescending(x => x.Score)
-            .ThenBy(x => x.Command.Category, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(x => x.Command.Title, StringComparer.OrdinalIgnoreCase)
-            .Select(x => x.Command)
-            .ToList();
+        var mergedScratch = _filterMatchScratch;
+        mergedScratch.Clear();
+        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var allScopeQ = new SearchQueryState(SearchScopeAll, query, string.IsNullOrWhiteSpace(query));
 
-        FilteredCommands.Clear();
-        foreach (var item in merged)
+        foreach (var command in baseMatches)
         {
-            FilteredCommands.Add(item);
+            if (seenIds.Add(command.ExtensionId))
+            {
+                var score = ScoreSearchResult(command, query) + GetRecentlyAddedOrderingBoost(command, allScopeQ);
+                mergedScratch.Add(new ScoredCommand(command, score));
+            }
         }
+
+        foreach (var result in response.Results)
+        {
+            var command = BuildCommandFromResultItem(BuildResultItemFromEverythingResult(result));
+            if (seenIds.Add(command.ExtensionId))
+            {
+                var score = ScoreSearchResult(command, query) + GetRecentlyAddedOrderingBoost(command, allScopeQ);
+                mergedScratch.Add(new ScoredCommand(command, score));
+            }
+        }
+
+        mergedScratch.Sort(_filterMatchSorter);
+
+        var merged = new List<CommandItem>(mergedScratch.Count);
+        for (var i = 0; i < mergedScratch.Count; i++)
+        {
+            merged.Add(mergedScratch[i].Command);
+        }
+
+        FilteredCommands.ReplaceAll(merged);
 
         SelectedCommand = preserveSelection
             ? TryRestoreSelection(previousSelectedCommand, FilteredCommands) ?? TryRestoreSelection(SelectedCommand, FilteredCommands) ?? FilteredCommands.FirstOrDefault()
@@ -1187,7 +1282,10 @@ public partial class MainWindow
     {
         foreach (var command in _allCommands)
         {
-            command.SetQueryPreview(null, null);
+            if (command.HasQueryPreview)
+            {
+                command.SetQueryPreview(null, null);
+            }
         }
 
         var searchProvider = ResolveSearchProviderForCommand(providerCommand);
@@ -1241,11 +1339,7 @@ public partial class MainWindow
             }))
             .ToList();
 
-        FilteredCommands.Clear();
-        foreach (var item in resultCommands)
-        {
-            FilteredCommands.Add(item);
-        }
+        FilteredCommands.ReplaceAll(resultCommands);
 
         SelectedCommand = FilteredCommands.FirstOrDefault();
         CommandList.SelectedItem = SelectedCommand;

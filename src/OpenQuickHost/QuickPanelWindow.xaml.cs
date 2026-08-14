@@ -31,10 +31,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    private const int GlobalSlotCount = 12;
-    private const int ContextSlotCount = 12;
+    private const int DefaultGlobalSlotCount = 12;
+    private const int DefaultContextSlotCount = 12;
     private const int FolderSlotCount = 24;
-    private const int QuickPanelColumnCount = 4;
+    private const int MinRowCount = 1;
+    private const int MaxRowCount = 8;
+    private const int MinColumnCount = 3;
+    private const int MaxColumnCount = 8;
+    private const double BaseWindowWidth = 284;
+    private const double SlotColumnWidth = 56;
     private const double FolderOverlayBaseHeightDips = 520;
     private const double FolderOverlayDepthStepDips = 42;
     private const double FolderOverlayMinHeightDips = 360;
@@ -42,6 +47,11 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private const double SlotGridHorizontalMarginDips = 6;
     private const double SlotIconWidthDips = 40;
     private const double CursorIconSafetyDips = 6;
+    private const double SlotRowHeight = 58;
+    private const double BaseWindowHeight = 560;
+    private const double RowToolbarHeight = 40;
+    private int _currentGlobalSlotCount;
+    private int _currentContextSlotCount;
     private readonly MainWindow _mainWindow;
     private AppSettings _settings;
     private readonly List<SlotViewModel> _allGlobalSlots = new();
@@ -92,6 +102,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         LocationChanged += (_, _) => UpdateGuideBannerPosition();
         _ = new System.Windows.Interop.WindowInteropHelper(this).Handle;
         _settings = AppSettingsStore.Load();
+        _currentGlobalSlotCount = _settings.QuickPanelGlobalRowCount * _settings.QuickPanelGlobalColumnCount;
+        _currentContextSlotCount = _settings.QuickPanelContextRowCount * _settings.QuickPanelContextColumnCount;
+
+        // Apply dynamic window size
+        UpdateDimensions();
+
         _releaseTargetTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(40)
@@ -269,12 +285,41 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(EditButtonTooltip));
             OnPropertyChanged(nameof(EditModeHintText));
+            OnPropertyChanged(nameof(DynamicWindowHeight));
+            UpdateDimensions();
         }
     }
 
     public string EditButtonTooltip => IsEditMode ? "完成编辑" : "编辑面板";
 
     public string EditModeHintText => PanelTitle;
+
+    public int GlobalRowCount => _settings?.QuickPanelGlobalRowCount ?? 3;
+    public int GlobalColumnCount => _settings?.QuickPanelGlobalColumnCount ?? 4;
+    public int ContextRowCount => _settings?.QuickPanelContextRowCount ?? 3;
+    public int ContextColumnCount => _settings?.QuickPanelContextColumnCount ?? 4;
+
+    public bool CanAddGlobalRow => GlobalRowCount < MaxRowCount;
+    public bool CanRemoveGlobalRow => GlobalRowCount > MinRowCount;
+    public bool CanAddGlobalColumn => GlobalColumnCount < MaxColumnCount;
+    public bool CanRemoveGlobalColumn => GlobalColumnCount > MinColumnCount;
+
+    public bool CanAddContextRow => ContextRowCount < MaxRowCount;
+    public bool CanRemoveContextRow => ContextRowCount > MinRowCount;
+    public bool CanAddContextColumn => ContextColumnCount < MaxColumnCount;
+    public bool CanRemoveContextColumn => ContextColumnCount > MinColumnCount;
+
+    public int CurrentRowCount => Math.Max(GlobalRowCount, ContextRowCount);
+    public bool CanAddRow => CanAddGlobalRow || CanAddContextRow;
+    public bool CanRemoveRow => CanRemoveGlobalRow || CanRemoveContextRow;
+    public double DynamicWindowHeight => BaseWindowHeight + (GlobalRowCount - 3) * SlotRowHeight + (ContextRowCount - 3) * SlotRowHeight + (IsEditMode ? 64 : 0);
+
+    public void UpdateDimensions()
+    {
+        int maxCols = Math.Max(GlobalColumnCount, ContextColumnCount);
+        Width = BaseWindowWidth + (maxCols - 4) * SlotColumnWidth;
+        Height = DynamicWindowHeight;
+    }
 
     public ObservableCollection<SlotViewModel> ActiveFolderSlots
     {
@@ -384,13 +429,13 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 if (command != null)
                     GlobalSlots.Add(new SlotViewModel(GlobalSlots.Count, command, true));
             }
-            while (GlobalSlots.Count < GlobalSlotCount)
+            while (GlobalSlots.Count < _currentGlobalSlotCount)
                 GlobalSlots.Add(new SlotViewModel(GlobalSlots.Count, null, false));
         }
         else
         {
             var group = GetSelectedGlobalGroupSettings();
-            for (int i = 0; i < GlobalSlotCount; i++)
+            for (int i = 0; i < _currentGlobalSlotCount; i++)
             {
                 var slotItem = group?.SlotItems.ElementAtOrDefault(i);
                 GlobalSlots.Add(CreateSlotViewModel(i, slotItem, allCommands, isContextual: false, group?.Id, []));
@@ -410,14 +455,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         else
         {
             var group = GetSelectedContextGroupSettings();
-            for (int i = 0; i < ContextSlotCount; i++)
+            for (int i = 0; i < _currentContextSlotCount; i++)
             {
                 var slotItem = group?.SlotItems.ElementAtOrDefault(i);
                 ContextSlots.Add(CreateSlotViewModel(i, slotItem, allCommands, isContextual: true, group?.Id, []));
             }
         }
 
-        while (ContextSlots.Count < ContextSlotCount)
+        while (ContextSlots.Count < _currentContextSlotCount)
             ContextSlots.Add(new SlotViewModel(ContextSlots.Count, null, false, isContextual: true));
 
         _allGlobalSlots.Clear();
@@ -430,6 +475,245 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         _lastLoadedContextGroupId = currentContextGroup?.Id;
         _lastLoadedGlobalGroupId = currentGlobalGroup?.Id;
         _needsReload = false;
+    }
+
+    public void AddGlobalRow()
+    {
+        if (_settings.QuickPanelGlobalRowCount >= MaxRowCount) return;
+        _settings.QuickPanelGlobalRowCount++;
+        _currentGlobalSlotCount = _settings.QuickPanelGlobalRowCount * _settings.QuickPanelGlobalColumnCount;
+
+        foreach (var group in _settings.QuickPanelGlobalGroups)
+        {
+            for (int i = 0; i < _settings.QuickPanelGlobalColumnCount; i++)
+            {
+                group.SlotItems.Add(null);
+            }
+        }
+
+        AppSettingsStore.Save(_settings);
+        LoadSlots();
+        UpdateDimensions();
+        NotifyGridPropertiesChanged();
+    }
+
+    public void RemoveGlobalRow()
+    {
+        if (_settings.QuickPanelGlobalRowCount <= MinRowCount) return;
+        var currentSlotCount = _settings.QuickPanelGlobalRowCount * _settings.QuickPanelGlobalColumnCount;
+        var colCount = _settings.QuickPanelGlobalColumnCount;
+
+        foreach (var group in _settings.QuickPanelGlobalGroups)
+        {
+            for (int i = 0; i < colCount; i++)
+            {
+                if (group.SlotItems.Count > currentSlotCount - colCount)
+                {
+                    group.SlotItems.RemoveAt(group.SlotItems.Count - 1);
+                }
+            }
+        }
+
+        _settings.QuickPanelGlobalRowCount--;
+        _currentGlobalSlotCount = _settings.QuickPanelGlobalRowCount * _settings.QuickPanelGlobalColumnCount;
+
+        AppSettingsStore.Save(_settings);
+        LoadSlots();
+        UpdateDimensions();
+        NotifyGridPropertiesChanged();
+    }
+
+    public void AddGlobalColumn()
+    {
+        if (_settings.QuickPanelGlobalColumnCount >= MaxColumnCount) return;
+        int oldCols = _settings.QuickPanelGlobalColumnCount;
+        int rows = _settings.QuickPanelGlobalRowCount;
+        int newCols = oldCols + 1;
+        _settings.QuickPanelGlobalColumnCount = newCols;
+        _currentGlobalSlotCount = rows * newCols;
+
+        foreach (var group in _settings.QuickPanelGlobalGroups)
+        {
+            var oldItems = group.SlotItems.ToList();
+            var newItems = new List<QuickPanelSlotItem?>();
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < oldCols; c++)
+                {
+                    int oldIndex = r * oldCols + c;
+                    newItems.Add(oldIndex < oldItems.Count ? oldItems[oldIndex] : null);
+                }
+                newItems.Add(null);
+            }
+            group.SlotItems = newItems;
+        }
+
+        AppSettingsStore.Save(_settings);
+        LoadSlots();
+        UpdateDimensions();
+        NotifyGridPropertiesChanged();
+    }
+
+    public void RemoveGlobalColumn()
+    {
+        if (_settings.QuickPanelGlobalColumnCount <= MinColumnCount) return;
+        int oldCols = _settings.QuickPanelGlobalColumnCount;
+        int rows = _settings.QuickPanelGlobalRowCount;
+        int newCols = oldCols - 1;
+        _settings.QuickPanelGlobalColumnCount = newCols;
+        _currentGlobalSlotCount = rows * newCols;
+
+        foreach (var group in _settings.QuickPanelGlobalGroups)
+        {
+            var oldItems = group.SlotItems.ToList();
+            var newItems = new List<QuickPanelSlotItem?>();
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < newCols; c++)
+                {
+                    int oldIndex = r * oldCols + c;
+                    newItems.Add(oldIndex < oldItems.Count ? oldItems[oldIndex] : null);
+                }
+            }
+            group.SlotItems = newItems;
+        }
+
+        AppSettingsStore.Save(_settings);
+        LoadSlots();
+        UpdateDimensions();
+        NotifyGridPropertiesChanged();
+    }
+
+    public void AddContextRow()
+    {
+        if (_settings.QuickPanelContextRowCount >= MaxRowCount) return;
+        _settings.QuickPanelContextRowCount++;
+        _currentContextSlotCount = _settings.QuickPanelContextRowCount * _settings.QuickPanelContextColumnCount;
+
+        foreach (var group in _settings.QuickPanelContextGroups)
+        {
+            for (int i = 0; i < _settings.QuickPanelContextColumnCount; i++)
+            {
+                group.SlotItems.Add(null);
+            }
+        }
+
+        AppSettingsStore.Save(_settings);
+        LoadSlots();
+        UpdateDimensions();
+        NotifyGridPropertiesChanged();
+    }
+
+    public void RemoveContextRow()
+    {
+        if (_settings.QuickPanelContextRowCount <= MinRowCount) return;
+        var currentSlotCount = _settings.QuickPanelContextRowCount * _settings.QuickPanelContextColumnCount;
+        var colCount = _settings.QuickPanelContextColumnCount;
+
+        foreach (var group in _settings.QuickPanelContextGroups)
+        {
+            for (int i = 0; i < colCount; i++)
+            {
+                if (group.SlotItems.Count > currentSlotCount - colCount)
+                {
+                    group.SlotItems.RemoveAt(group.SlotItems.Count - 1);
+                }
+            }
+        }
+
+        _settings.QuickPanelContextRowCount--;
+        _currentContextSlotCount = _settings.QuickPanelContextRowCount * _settings.QuickPanelContextColumnCount;
+
+        AppSettingsStore.Save(_settings);
+        LoadSlots();
+        UpdateDimensions();
+        NotifyGridPropertiesChanged();
+    }
+
+    public void AddContextColumn()
+    {
+        if (_settings.QuickPanelContextColumnCount >= MaxColumnCount) return;
+        int oldCols = _settings.QuickPanelContextColumnCount;
+        int rows = _settings.QuickPanelContextRowCount;
+        int newCols = oldCols + 1;
+        _settings.QuickPanelContextColumnCount = newCols;
+        _currentContextSlotCount = rows * newCols;
+
+        foreach (var group in _settings.QuickPanelContextGroups)
+        {
+            var oldItems = group.SlotItems.ToList();
+            var newItems = new List<QuickPanelSlotItem?>();
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < oldCols; c++)
+                {
+                    int oldIndex = r * oldCols + c;
+                    newItems.Add(oldIndex < oldItems.Count ? oldItems[oldIndex] : null);
+                }
+                newItems.Add(null);
+            }
+            group.SlotItems = newItems;
+        }
+
+        AppSettingsStore.Save(_settings);
+        LoadSlots();
+        UpdateDimensions();
+        NotifyGridPropertiesChanged();
+    }
+
+    public void RemoveContextColumn()
+    {
+        if (_settings.QuickPanelContextColumnCount <= MinColumnCount) return;
+        int oldCols = _settings.QuickPanelContextColumnCount;
+        int rows = _settings.QuickPanelContextRowCount;
+        int newCols = oldCols - 1;
+        _settings.QuickPanelContextColumnCount = newCols;
+        _currentContextSlotCount = rows * newCols;
+
+        foreach (var group in _settings.QuickPanelContextGroups)
+        {
+            var oldItems = group.SlotItems.ToList();
+            var newItems = new List<QuickPanelSlotItem?>();
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < newCols; c++)
+                {
+                    int oldIndex = r * oldCols + c;
+                    newItems.Add(oldIndex < oldItems.Count ? oldItems[oldIndex] : null);
+                }
+            }
+            group.SlotItems = newItems;
+        }
+
+        AppSettingsStore.Save(_settings);
+        LoadSlots();
+        UpdateDimensions();
+        NotifyGridPropertiesChanged();
+    }
+
+    public void AddRow() => AddGlobalRow();
+    public void RemoveRow() => RemoveGlobalRow();
+
+    private void NotifyGridPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(GlobalRowCount));
+        OnPropertyChanged(nameof(GlobalColumnCount));
+        OnPropertyChanged(nameof(CanAddGlobalRow));
+        OnPropertyChanged(nameof(CanRemoveGlobalRow));
+        OnPropertyChanged(nameof(CanAddGlobalColumn));
+        OnPropertyChanged(nameof(CanRemoveGlobalColumn));
+
+        OnPropertyChanged(nameof(ContextRowCount));
+        OnPropertyChanged(nameof(ContextColumnCount));
+        OnPropertyChanged(nameof(CanAddContextRow));
+        OnPropertyChanged(nameof(CanRemoveContextRow));
+        OnPropertyChanged(nameof(CanAddContextColumn));
+        OnPropertyChanged(nameof(CanRemoveContextColumn));
+
+        OnPropertyChanged(nameof(CurrentRowCount));
+        OnPropertyChanged(nameof(CanAddRow));
+        OnPropertyChanged(nameof(CanRemoveRow));
+        OnPropertyChanged(nameof(DynamicWindowHeight));
     }
 
     private SlotViewModel CreateSlotViewModel(
@@ -540,7 +824,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         group.SlotItems.Clear();
         var sourceSlots = isContextual ? ContextSlots : GlobalSlots;
-        var slotCount = isContextual ? ContextSlotCount : GlobalSlotCount;
+        var slotCount = isContextual ? _currentContextSlotCount : _currentGlobalSlotCount;
         for (int i = 0; i < slotCount; i++)
         {
             var vm = sourceSlots.ElementAtOrDefault(i);
@@ -598,6 +882,19 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         HasUnreadMessages = false;
         _mainWindow.ShowMobileInboxWindow();
     }
+
+    private void AddGlobalRow_Click(object sender, RoutedEventArgs e) => AddGlobalRow();
+    private void RemoveGlobalRow_Click(object sender, RoutedEventArgs e) => RemoveGlobalRow();
+    private void AddGlobalColumn_Click(object sender, RoutedEventArgs e) => AddGlobalColumn();
+    private void RemoveGlobalColumn_Click(object sender, RoutedEventArgs e) => RemoveGlobalColumn();
+
+    private void AddContextRow_Click(object sender, RoutedEventArgs e) => AddContextRow();
+    private void RemoveContextRow_Click(object sender, RoutedEventArgs e) => RemoveContextRow();
+    private void AddContextColumn_Click(object sender, RoutedEventArgs e) => AddContextColumn();
+    private void RemoveContextColumn_Click(object sender, RoutedEventArgs e) => RemoveContextColumn();
+
+    private void AddRow_Click(object sender, RoutedEventArgs e) => AddGlobalRow();
+    private void RemoveRow_Click(object sender, RoutedEventArgs e) => RemoveGlobalRow();
 
     private void AddGlobalGroupButton_Click(object sender, RoutedEventArgs e)
     {
@@ -2636,25 +2933,25 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return defaultLeft;
         }
 
+        var cols = Math.Max(GlobalColumnCount, ContextColumnCount);
+        if (cols <= 0) cols = 4;
         var slotGridWidth = Math.Max(0, Width - SidebarWidthDips - SlotGridHorizontalMarginDips * 2);
-        var cellWidth = slotGridWidth / QuickPanelColumnCount;
+        var cellWidth = slotGridWidth / cols;
         var slotGridLeft = SidebarWidthDips + SlotGridHorizontalMarginDips;
-        var targetLocalXs = new[]
+        var targetLocalXs = new List<double> { Width / 2 };
+        for (int i = 1; i <= cols; i++)
         {
-            Width / 2,
-            slotGridLeft + cellWidth * 2,
-            slotGridLeft + cellWidth,
-            slotGridLeft + cellWidth * 3,
-            SidebarWidthDips / 2,
-            Width - 12
-        };
+            targetLocalXs.Add(slotGridLeft + cellWidth * i);
+        }
+        targetLocalXs.Add(SidebarWidthDips / 2);
+        targetLocalXs.Add(Width - 12);
 
         return targetLocalXs
             .Select(targetLocalX =>
             {
                 var left = Clamp(cursorXDips - targetLocalX, screenBounds.Left, screenBounds.Right - Width);
                 var actualLocalX = cursorXDips - left;
-                var isOverIcon = IsOverTopRowIcon(actualLocalX, slotGridLeft, cellWidth);
+                var isOverIcon = IsOverTopRowIcon(actualLocalX, slotGridLeft, cellWidth, cols);
                 var score = (isOverIcon ? 100000 : 0) + Math.Abs(left - defaultLeft);
                 return new { Left = left, Score = score };
             })
@@ -2663,9 +2960,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             .Left;
     }
 
-    private static bool IsOverTopRowIcon(double localX, double slotGridLeft, double cellWidth)
+    private static bool IsOverTopRowIcon(double localX, double slotGridLeft, double cellWidth, int columnCount = 4)
     {
-        for (var column = 0; column < QuickPanelColumnCount; column++)
+        for (var column = 0; column < columnCount; column++)
         {
             var iconLeft = slotGridLeft + column * cellWidth + (cellWidth - SlotIconWidthDips) / 2 - CursorIconSafetyDips;
             var iconRight = iconLeft + SlotIconWidthDips + CursorIconSafetyDips * 2;
@@ -3284,12 +3581,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        while (sourceGroup.SlotItems.Count < (source.IsContextual ? ContextSlotCount : GlobalSlotCount))
+        while (sourceGroup.SlotItems.Count < (source.IsContextual ? _currentContextSlotCount : _currentGlobalSlotCount))
         {
             sourceGroup.SlotItems.Add(null);
         }
 
-        while (targetGroup.SlotItems.Count < (target.IsContextual ? ContextSlotCount : GlobalSlotCount))
+        while (targetGroup.SlotItems.Count < (target.IsContextual ? _currentContextSlotCount : _currentGlobalSlotCount))
         {
             targetGroup.SlotItems.Add(null);
         }

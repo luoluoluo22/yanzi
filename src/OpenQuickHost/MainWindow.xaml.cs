@@ -225,6 +225,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastAppliedFilterScopeKey = SearchScopeAll;
     private uint _lastKnownWindowDpi = 96;
     private bool _dpiRefreshRequested;
+    private readonly List<ScoredCommand> _filterMatchScratch = new(256);
+    private static readonly Comparison<ScoredCommand> _filterMatchSorter = CompareScoredCommands;
+
+    private static int CompareScoredCommands(ScoredCommand left, ScoredCommand right)
+    {
+        var scoreDelta = right.Score.CompareTo(left.Score);
+        if (scoreDelta != 0) return scoreDelta;
+        var categoryDelta = string.Compare(left.Command.Category, right.Command.Category, StringComparison.OrdinalIgnoreCase);
+        if (categoryDelta != 0) return categoryDelta;
+        return string.Compare(left.Command.Title, right.Command.Title, StringComparison.OrdinalIgnoreCase);
+    }
 
     public MainWindow()
     {
@@ -305,7 +316,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _allCommands = CreateSeedCommands();
         _allCommands.AddRange(LocalExtensionCatalog.LoadCommands());
-        _allCommands.AddRange(CreateInstalledApplicationCommands());
         _localExtensionIndex = _allCommands
             .Where(x => x.Source == CommandSource.LocalExtension)
             .GroupBy(x => x.ExtensionId, StringComparer.OrdinalIgnoreCase)
@@ -315,7 +325,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ApplyNewExtensionState(localCommand);
         }
 
-        FilteredCommands = new ObservableCollection<CommandItem>(_allCommands);
+        FilteredCommands = new BulkObservableCollection<CommandItem>(_allCommands);
         _attachedFiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(AttachedFilesVisibility));
         SearchScopes = new ObservableCollection<SearchScopeTab>(BuildSearchScopes());
         _selectedSearchScope = SearchScopes.First();
@@ -407,7 +417,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public ObservableCollection<CommandItem> FilteredCommands { get; }
+    public BulkObservableCollection<CommandItem> FilteredCommands { get; }
 
     public ObservableCollection<AttachedFileItem> AttachedFiles => _attachedFiles;
 
@@ -669,9 +679,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsHostedViewOpen => _activeHostedView != null;
 
-    public System.Windows.Media.Brush PinButtonBrush => _isPinned
-        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFF59E0B")!
-        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF777777")!;
+    public System.Windows.Media.Brush PinButtonBrush => _isPinned ? PinBrushes.Active : PinBrushes.Inactive;
 
     public string PinButtonTooltip => _isPinned ? "已固定，失去焦点时不自动关闭" : "点击固定，失去焦点时不自动关闭";
 
@@ -795,6 +803,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SearchBox.Focus();
         SetSearchScopePopupOpen(true);
         StartBackgroundWebDavSync();
+        _ = LoadInstalledApplicationsAsync();
         _windowBoundExtensionsService.Start(_appSettings.WindowBindings);
         if (_appSettings.EnableWindowSnapAssist)
         {
@@ -2706,6 +2715,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private Task LoadInstalledApplicationsAsync()
+    {
+        return Task.Run(() =>
+        {
+            var commands = CreateInstalledApplicationCommands();
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (commands.Count == 0)
+                {
+                    return;
+                }
+                _allCommands.AddRange(commands);
+                OnPropertyChanged(nameof(VisibleCountText));
+                OnPropertyChanged(nameof(FooterHint));
+            }, DispatcherPriority.Background);
+        });
+    }
+
     private static string InferApplicationGlyph(string title)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -3658,6 +3685,86 @@ public sealed class CloudQuickPanelConfigSnapshot
     }
 }
 
+internal static class PinBrushes
+{
+    public static readonly System.Windows.Media.Brush Active =
+        FreezeBrush(new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xF5, 0x9E, 0x0B)));
+    public static readonly System.Windows.Media.Brush Inactive =
+        FreezeBrush(new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x77, 0x77, 0x77)));
+
+    private static System.Windows.Media.Brush FreezeBrush(System.Windows.Media.Brush brush)
+    {
+        if (brush.CanFreeze)
+        {
+            brush.Freeze();
+        }
+        return brush;
+    }
+}
+
+internal static class AccentBrushCache
+{
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Windows.Media.Brush> Cache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Windows.Media.Brush> ColorOnlyCache = new(StringComparer.OrdinalIgnoreCase);
+
+    public static System.Windows.Media.Brush Get(string? accentHex)
+    {
+        if (string.IsNullOrWhiteSpace(accentHex))
+        {
+            return System.Windows.Media.Brushes.Transparent;
+        }
+
+        return Cache.GetOrAdd(accentHex, static hex =>
+        {
+            try
+            {
+                var brush = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(hex)!;
+                if (brush.CanFreeze)
+                {
+                    brush.Freeze();
+                }
+                return brush;
+            }
+            catch
+            {
+                return System.Windows.Media.Brushes.Transparent;
+            }
+        });
+    }
+
+    public static System.Windows.Media.Brush GetVectorColor(string? iconReference)
+    {
+        if (string.IsNullOrWhiteSpace(iconReference))
+        {
+            return System.Windows.Media.Brushes.White;
+        }
+
+        var hashIdx = iconReference.LastIndexOf('#');
+        if (hashIdx <= 0 || hashIdx >= iconReference.Length - 1)
+        {
+            return System.Windows.Media.Brushes.White;
+        }
+
+        var hex = iconReference[hashIdx..];
+        return ColorOnlyCache.GetOrAdd(hex, static color =>
+        {
+            try
+            {
+                var brush = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(color)!;
+                if (brush.CanFreeze)
+                {
+                    brush.Freeze();
+                }
+                return brush;
+            }
+            catch
+            {
+                return System.Windows.Media.Brushes.White;
+            }
+        });
+    }
+}
+
 public sealed class CommandItem : INotifyPropertyChanged
 {
     private string? _queryPreviewSubtitle;
@@ -3705,7 +3812,7 @@ public sealed class CommandItem : INotifyPropertyChanged
         Category = category;
         OpenTarget = openTarget;
         Keywords = keywords.ToArray();
-        AccentBrush = (SolidColorBrush)new BrushConverter().ConvertFromString(accentHex)!;
+        AccentBrush = AccentBrushCache.Get(accentHex);
         Source = source;
         ExtensionId = string.IsNullOrWhiteSpace(extensionId)
             ? CloudSyncClient.CreateExtensionId(this)
@@ -3737,19 +3844,7 @@ public sealed class CommandItem : INotifyPropertyChanged
             VectorIcon = null;
         }
         
-        var vectorColorHex = "#FFFFFFFF";
-        if (iconReference != null && iconReference.LastIndexOf('#') is var hashIdx && hashIdx > 0)
-        {
-            vectorColorHex = iconReference[hashIdx..];
-        }
-        try
-        {
-            VectorIconBrush = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(vectorColorHex)!;
-        }
-        catch
-        {
-            VectorIconBrush = System.Windows.Media.Brushes.White;
-        }
+        VectorIconBrush = AccentBrushCache.GetVectorColor(iconReference);
         
         Startup = startup;
         LaunchArguments = launchArguments;
@@ -4023,10 +4118,13 @@ public sealed class CommandItem : INotifyPropertyChanged
 
         _queryPreviewSubtitle = subtitle;
         _queryPreviewActionLabel = actionLabel;
+        HasQueryPreview = !string.IsNullOrEmpty(_queryPreviewSubtitle) || !string.IsNullOrEmpty(_queryPreviewActionLabel);
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplaySubtitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EffectiveSubtitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayActionLabel)));
     }
+
+    public bool HasQueryPreview { get; private set; }
 
     public void SetIconSource(ImageSource? iconSource)
     {

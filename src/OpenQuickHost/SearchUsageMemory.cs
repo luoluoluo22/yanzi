@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Windows.Threading;
 
 namespace OpenQuickHost;
 
@@ -10,6 +11,10 @@ public sealed class SearchUsageMemory
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true
     };
+
+    private static readonly object SaveLock = new();
+    private static SearchUsageMemory? _pendingMemory;
+    private static DispatcherTimer? _saveDebounceTimer;
 
     public Dictionary<string, SearchUsageEntry> Items { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -35,8 +40,66 @@ public sealed class SearchUsageMemory
 
     public static void Save(SearchUsageMemory memory)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(HostAssets.SearchMemoryPath)!);
-        File.WriteAllText(HostAssets.SearchMemoryPath, JsonSerializer.Serialize(memory, JsonOptions));
+        if (memory == null)
+        {
+            return;
+        }
+
+        lock (SaveLock)
+        {
+            _pendingMemory = memory;
+            if (_saveDebounceTimer == null)
+            {
+                _saveDebounceTimer = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromSeconds(2)
+                };
+                _saveDebounceTimer.Tick += (_, _) =>
+                {
+                    _saveDebounceTimer!.Stop();
+                    SearchUsageMemory? toWrite;
+                    lock (SaveLock)
+                    {
+                        toWrite = _pendingMemory;
+                        _pendingMemory = null;
+                    }
+                    if (toWrite != null)
+                    {
+                        WriteToDisk(toWrite);
+                    }
+                };
+            }
+            _saveDebounceTimer.Stop();
+            _saveDebounceTimer.Start();
+        }
+    }
+
+    public static void FlushPendingSaves()
+    {
+        SearchUsageMemory? toWrite;
+        lock (SaveLock)
+        {
+            toWrite = _pendingMemory;
+            _pendingMemory = null;
+            _saveDebounceTimer?.Stop();
+        }
+        if (toWrite != null)
+        {
+            WriteToDisk(toWrite);
+        }
+    }
+
+    private static void WriteToDisk(SearchUsageMemory memory)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(HostAssets.SearchMemoryPath)!);
+            File.WriteAllText(HostAssets.SearchMemoryPath, JsonSerializer.Serialize(memory, JsonOptions));
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SearchUsageMemory.Save failed: {ex.Message}");
+        }
     }
 
     public void Record(string key)

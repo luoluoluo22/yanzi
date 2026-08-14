@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:OpenQuickHost"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
-        Title="鼠标面板" Height="560" Width="284"
+        Title="鼠标面板" Width="284"
         WindowStyle="None"
         Background="Transparent"
         UseLayoutRounding="True"
@@ -500,13 +500,14 @@
                 </Button>
             </Grid>
 
-            <Grid Grid.Column="1" Grid.Row="1" Margin="6,0,6,6" MouseWheel="GlobalPanel_MouseWheel">
-                <ItemsControl ItemsSource="{Binding GlobalSlots}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Columns="4"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
+            <Grid Grid.Column="1" Grid.Row="1" Margin="6,0,6,4" MouseWheel="GlobalPanel_MouseWheel">
+                <StackPanel>
+                    <ItemsControl ItemsSource="{Binding GlobalSlots}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="{Binding GlobalColumnCount}"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Button Style="{StaticResource SlotButtonStyle}"
@@ -802,11 +803,165 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                    <!-- Global Slots Row/Column Toolbar (Edit Mode Only) -->
+                    <Border HorizontalAlignment="Center"
+                            Margin="0,6,0,2"
+                            Background="#14FFFFFF"
+                            BorderBrush="#1AFFFFFF"
+                            BorderThickness="1"
+                            CornerRadius="14"
+                            Padding="6,2"
+                            Visibility="{Binding IsEditMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <!-- 行数控制 -->
+                            <Button Click="RemoveGlobalRow_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanRemoveGlobalRow}"
+                                    ToolTip="删除通用槽位一行 (最少1行)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H5V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <TextBlock Text="{Binding GlobalRowCount, StringFormat='{}{0}行'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="10.5"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"
+                                       ToolTip="通用槽位行数"/>
+                            <Button Click="AddGlobalRow_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanAddGlobalRow}"
+                                    ToolTip="添加通用槽位一行 (最多8行)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <!-- 分隔竖线 -->
+                            <Rectangle Width="1" Height="12" Fill="#25FFFFFF" Margin="6,0"/>
+
+                            <!-- 列数控制 -->
+                            <Button Click="RemoveGlobalColumn_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanRemoveGlobalColumn}"
+                                    ToolTip="减少通用槽位一列 (最少3列)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H5V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <TextBlock Text="{Binding GlobalColumnCount, StringFormat='{}{0}列'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="10.5"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"
+                                       ToolTip="通用槽位列数"/>
+                            <Button Click="AddGlobalColumn_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanAddGlobalColumn}"
+                                    ToolTip="增加通用槽位一列 (最多8列)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </Grid>
 
             <Rectangle Grid.ColumnSpan="2" Grid.Row="2" Height="1" Fill="#18FFFFFF" Margin="8,2"/>
 
-            <Grid Grid.Column="1" Grid.Row="3" Margin="6,6,6,8" MouseWheel="ContextPanel_MouseWheel">
+            <Grid Grid.Column="1" Grid.Row="3" Margin="6,4,6,8" MouseWheel="ContextPanel_MouseWheel">
                 <StackPanel>
                     <TextBlock Text="{Binding ContextSectionTitle}"
                                Foreground="{DynamicResource BrushTextMuted}"
@@ -818,7 +973,7 @@
                     <ItemsControl ItemsSource="{Binding ContextSlots}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <UniformGrid Columns="4"/>
+                                    <UniformGrid Columns="{Binding ContextColumnCount}"/>
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
@@ -1093,6 +1248,159 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <!-- Context Slots Row/Column Toolbar (Edit Mode Only) -->
+                    <Border HorizontalAlignment="Center"
+                            Margin="0,6,0,2"
+                            Background="#14FFFFFF"
+                            BorderBrush="#1AFFFFFF"
+                            BorderThickness="1"
+                            CornerRadius="14"
+                            Padding="6,2"
+                            Visibility="{Binding IsEditMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <!-- 行数控制 -->
+                            <Button Click="RemoveContextRow_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanRemoveContextRow}"
+                                    ToolTip="删除专属槽位一行 (最少1行)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H5V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <TextBlock Text="{Binding ContextRowCount, StringFormat='{}{0}行'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="10.5"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"
+                                       ToolTip="专属槽位行数"/>
+                            <Button Click="AddContextRow_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanAddContextRow}"
+                                    ToolTip="添加专属槽位一行 (最多8行)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <!-- 分隔竖线 -->
+                            <Rectangle Width="1" Height="12" Fill="#25FFFFFF" Margin="6,0"/>
+
+                            <!-- 列数控制 -->
+                            <Button Click="RemoveContextColumn_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanRemoveContextColumn}"
+                                    ToolTip="减少专属槽位一列 (最少3列)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H5V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <TextBlock Text="{Binding ContextColumnCount, StringFormat='{}{0}列'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="10.5"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"
+                                       ToolTip="专属槽位列数"/>
+                            <Button Click="AddContextColumn_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanAddContextColumn}"
+                                    ToolTip="增加专属槽位一列 (最多8列)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Grid>
 

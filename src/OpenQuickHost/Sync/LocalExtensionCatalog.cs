@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Globalization;
+using System.Threading.Tasks;
 
 namespace OpenQuickHost.Sync;
 
@@ -81,7 +83,7 @@ public static class LocalExtensionCatalog
             return [];
         }
 
-        var entries = new List<LocalExtensionCatalogEntry>();
+        var candidates = new List<(string ManifestPath, string Directory)>();
         foreach (var dir in GetCatalogDirectories())
         {
             var manifestPath = Path.Combine(dir, "manifest.json");
@@ -89,18 +91,35 @@ public static class LocalExtensionCatalog
             {
                 continue;
             }
+            candidates.Add((manifestPath, dir));
+        }
+
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 4)
+        };
+
+        var entries = new ConcurrentBag<LocalExtensionCatalogEntry>();
+        Parallel.ForEach(candidates, parallelOptions, candidate =>
+        {
+            var manifestPath = candidate.ManifestPath;
             try
             {
                 var json = File.ReadAllText(manifestPath);
                 var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(json, JsonOptions);
                 if (manifest == null || string.IsNullOrWhiteSpace(manifest.Id) || string.IsNullOrWhiteSpace(manifest.Name))
                 {
-                    continue;
+                    return;
                 }
 
                 if (HiddenBuiltInSampleIds.Contains(manifest.Id))
                 {
-                    continue;
+                    return;
                 }
 
                 entries.Add(new LocalExtensionCatalogEntry(manifestPath, manifest));
@@ -110,9 +129,9 @@ public static class LocalExtensionCatalog
                 // Skip invalid manifests so one broken extension does not block the host.
                 HostAssets.AppendLog($"加载本地扩展失败: {manifestPath}, 异常: {ex.Message}");
             }
-        }
+        });
 
-        return entries;
+        return entries.ToList();
     }
 
     private static IReadOnlyList<string> GetCatalogDirectories()

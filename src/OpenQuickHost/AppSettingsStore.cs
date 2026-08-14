@@ -192,10 +192,8 @@ public static class AppSettingsStore
 
     private static void WriteSanitizedSettings(AppSettings settings)
     {
-        var persisted = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings, JsonOptions), JsonOptions)
-                        ?? new AppSettings();
-        AiCredentialStore.RemovePlaintext(persisted);
-        var json = JsonSerializer.Serialize(persisted, JsonOptions);
+        AiCredentialStore.RemovePlaintext(settings);
+        var json = JsonSerializer.Serialize(settings, JsonOptions);
         File.WriteAllText(SettingsPath, json);
     }
 
@@ -242,50 +240,33 @@ public static class AppSettingsStore
             });
         }
 
-        foreach (var group in settings.QuickPanelGlobalGroups.Concat(settings.QuickPanelContextGroups))
+        if (settings.QuickPanelGlobalRowCount <= 0)
         {
-            group.Id = string.IsNullOrWhiteSpace(group.Id) ? Guid.NewGuid().ToString("N") : group.Id;
-            group.Name = string.IsNullOrWhiteSpace(group.Name) ? "未命名" : group.Name.Trim();
-            group.ContextProcessName = group.ContextProcessName?.Trim();
-            group.ContextDisplayName = group.ContextDisplayName?.Trim();
-            group.Slots ??= [];
-            group.SlotItems ??= [];
-            while (group.Slots.Count < 12)
-            {
-                group.Slots.Add(null);
-            }
-            if (group.Slots.Count > 12)
-            {
-                group.Slots = group.Slots.Take(12).ToList();
-            }
-
-            if (group.SlotItems.Count == 0)
-            {
-                group.SlotItems = group.Slots
-                    .Take(12)
-                    .Select(static slot => string.IsNullOrWhiteSpace(slot)
-                        ? null
-                        : new QuickPanelSlotItem { ExtensionId = slot })
-                    .ToList();
-            }
-
-            while (group.SlotItems.Count < 12)
-            {
-                group.SlotItems.Add(null);
-            }
-
-            if (group.SlotItems.Count > 12)
-            {
-                group.SlotItems = group.SlotItems.Take(12).ToList();
-            }
-
-            for (var index = 0; index < group.SlotItems.Count; index++)
-            {
-                group.SlotItems[index] = NormalizeSlotItem(group.SlotItems[index]);
-            }
-
-            group.Slots = ProjectLegacySlots(group.SlotItems);
+            settings.QuickPanelGlobalRowCount = settings.QuickPanelRowCount > 0 ? settings.QuickPanelRowCount : 3;
         }
+        if (settings.QuickPanelGlobalColumnCount <= 0)
+        {
+            settings.QuickPanelGlobalColumnCount = 4;
+        }
+        if (settings.QuickPanelContextRowCount <= 0)
+        {
+            settings.QuickPanelContextRowCount = settings.QuickPanelRowCount > 0 ? settings.QuickPanelRowCount : 3;
+        }
+        if (settings.QuickPanelContextColumnCount <= 0)
+        {
+            settings.QuickPanelContextColumnCount = 4;
+        }
+
+        settings.QuickPanelGlobalRowCount = Math.Max(1, Math.Min(8, settings.QuickPanelGlobalRowCount));
+        settings.QuickPanelGlobalColumnCount = Math.Max(3, Math.Min(8, settings.QuickPanelGlobalColumnCount));
+        settings.QuickPanelContextRowCount = Math.Max(1, Math.Min(8, settings.QuickPanelContextRowCount));
+        settings.QuickPanelContextColumnCount = Math.Max(3, Math.Min(8, settings.QuickPanelContextColumnCount));
+
+        var globalSlotCount = settings.QuickPanelGlobalRowCount * settings.QuickPanelGlobalColumnCount;
+        var contextSlotCount = settings.QuickPanelContextRowCount * settings.QuickPanelContextColumnCount;
+
+        NormalizeGroupList(settings.QuickPanelGlobalGroups, globalSlotCount);
+        NormalizeGroupList(settings.QuickPanelContextGroups, contextSlotCount);
 
         settings.GlobalFavoriteExtensionIds ??= settings.FavoriteExtensionIds?.ToList() ?? [];
         settings.ContextFavoriteExtensionIds ??= [];
@@ -754,6 +735,54 @@ public static class AppSettingsStore
         return result;
     }
 
+    private static void NormalizeGroupList(List<QuickPanelGroupSettings> groups, int slotCount)
+    {
+        foreach (var group in groups)
+        {
+            group.Id = string.IsNullOrWhiteSpace(group.Id) ? Guid.NewGuid().ToString("N") : group.Id;
+            group.Name = string.IsNullOrWhiteSpace(group.Name) ? "未命名" : group.Name.Trim();
+            group.ContextProcessName = group.ContextProcessName?.Trim();
+            group.ContextDisplayName = group.ContextDisplayName?.Trim();
+            group.Slots ??= [];
+            group.SlotItems ??= [];
+            while (group.Slots.Count < slotCount)
+            {
+                group.Slots.Add(null);
+            }
+            if (group.Slots.Count > slotCount)
+            {
+                group.Slots = group.Slots.Take(slotCount).ToList();
+            }
+
+            if (group.SlotItems.Count == 0)
+            {
+                group.SlotItems = group.Slots
+                    .Take(slotCount)
+                    .Select(static slot => string.IsNullOrWhiteSpace(slot)
+                        ? null
+                        : new QuickPanelSlotItem { ExtensionId = slot })
+                    .ToList();
+            }
+
+            while (group.SlotItems.Count < slotCount)
+            {
+                group.SlotItems.Add(null);
+            }
+
+            if (group.SlotItems.Count > slotCount)
+            {
+                group.SlotItems = group.SlotItems.Take(slotCount).ToList();
+            }
+
+            for (var index = 0; index < group.SlotItems.Count; index++)
+            {
+                group.SlotItems[index] = NormalizeSlotItem(group.SlotItems[index]);
+            }
+
+            group.Slots = ProjectLegacySlots(group.SlotItems);
+        }
+    }
+
     private static bool HasWebDavConfigValues(string? serverUrl, string? rootPath, string? username)
     {
         return !string.IsNullOrWhiteSpace(serverUrl) ||
@@ -859,6 +888,16 @@ public sealed record AppSettings
     public string CustomBackupDirectory { get; set; } = string.Empty;
 
     public List<string?> QuickPanelSlots { get; set; } = Enumerable.Repeat<string?>(null, 28).ToList();
+
+    public int QuickPanelRowCount { get; set; } = 3;
+
+    public int QuickPanelGlobalRowCount { get; set; } = 3;
+
+    public int QuickPanelGlobalColumnCount { get; set; } = 4;
+
+    public int QuickPanelContextRowCount { get; set; } = 3;
+
+    public int QuickPanelContextColumnCount { get; set; } = 4;
 
     public List<QuickPanelGroupSettings> QuickPanelGlobalGroups { get; set; } = [];
 
