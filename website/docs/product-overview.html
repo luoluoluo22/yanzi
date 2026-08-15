@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>产品说明 - 燕子在线文档</title>
-  <meta name="description" content="燕子是一款免费开源的 Windows 效率启动器，通过搜索、鼠标面板、桌面小组件和 AI 助手帮你快速操作电脑。">
+  <meta name="description" content="燕子是一款免费开源的 Windows 效率工具。长按右键弹轮盘，鼠标秒板一划就到，AI 一句话也能做工具。">
   <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,31 +38,29 @@
       <div class="guide-stack">
         <div class="doc-content-header" style="margin-bottom: 2rem;">
           <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">产品说明</h1>
-          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">燕子是一款完全免费、开源的 Windows 效率启动器，帮你用键盘和鼠标更快地完成日常操作。</p>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">燕子是一款完全免费、开源的 Windows 效率工具。它把常用功能放到鼠标边上，让你少点几次鼠标，少找几次文件，少重复几次操作。</p>
         </div>
 
         <article class="guide-card">
           <h2>燕子是什么</h2>
-          <p>燕子把你电脑上的应用、文件、网站、脚本和自动化流程统一整理为"扩展"，通过键盘搜索或鼠标面板一步直达，帮你省去重复的桌面翻找和鼠标点击。</p>
-          <p>它由四个核心模块组成，各司其职又互相配合：</p>
+          <p>燕子把你电脑上最常用的东西收拢到一个地方：软件、文件、网站、脚本和自己做的小工具。你不用再回桌面找图标，也不用层层点菜单，长按右键就能直接动手。</p>
+          <p>它主要解决三件事：</p>
           <ul>
-            <li><strong>燕子搜索</strong>：<code>Alt+Space</code> 全局唤出搜索栏，秒搜一切</li>
-            <li><strong>燕环</strong>（鼠标快捷面板）：长按右键弹出网格盘，一划即达</li>
-            <li><strong>燕幕</strong>（桌面信息层）：常驻桌面的浮动小组件，随时可见</li>
-            <li><strong>燕语</strong>（AI 助手）：自然语言对话，一键生成专属扩展</li>
+            <li><strong>更快打开东西</strong>：长按右键弹出轮盘菜单，常用操作一划即达</li>
+            <li><strong>更快做工具</strong>：对着 AI 说一句话，就能生成能用的扩展</li>
+            <li><strong>更安心使用</strong>：数据默认存在本地，不用担心上传和丢失</li>
           </ul>
         </article>
 
         <article class="guide-card">
           <h2>燕子搜索——键盘党的主力入口</h2>
-          <p>按下 <code>Alt+Space</code> 即可在屏幕中央唤出搜索栏。直接打字就能搜到已安装的应用程序、自定义扩展、网页书签或系统命令，支持中文、拼音首字母和英文。</p>
-          <h3>支持的搜索方式</h3>
+          <p>按下 <code>Alt+Space</code> 就能在屏幕中央唤出搜索栏。你只要输入几个字，就能快速找到软件、文件或网页。</p>
+          <h3>你可以这样用</h3>
           <ul>
-            <li>输入 <code>微信</code> 或拼音缩写 <code>wx</code> 打开微信</li>
-            <li>输入 <code>chrome</code> 或 <code>谷歌浏览器</code> 打开 Chrome</li>
-            <li>输入 <code>jsq</code>（计算器拼音首字母）打开计算器</li>
-            <li>输入 <code>谷歌 今天的新闻</code> 直接在浏览器里用 Google 搜索</li>
-            <li>输入 <code>@下载 report</code> 在下载目录里搜索文件</li>
+            <li>输入 <code>微信</code>，直接打开微信</li>
+            <li>输入 <code>chrome</code>，直接打开浏览器</li>
+            <li>输入 <code>gg 今天的新闻</code>，直接用搜索引擎找内容</li>
+            <li>输入 <code>@下载 report</code>，在下载目录里找文件</li>
           </ul>
           <h3>常用键盘操作</h3>
           <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
@@ -75,14 +73,20 @@
               <tr><td style="padding:0.5rem 0.75rem;"><code>Up / Down</code></td><td style="padding:0.5rem 0.75rem;">上下切换选中项</td></tr>
               <tr><td style="padding:0.5rem 0.75rem;"><code>Enter</code></td><td style="padding:0.5rem 0.75rem;">执行选中项</td></tr>
               <tr><td style="padding:0.5rem 0.75rem;"><code>Esc</code></td><td style="padding:0.5rem 0.75rem;">关闭搜索栏</td></tr>
-              <tr><td style="padding:0.5rem 0.75rem;"><code>Ctrl + K</code></td><td style="padding:0.5rem 0.75rem;">打开动作菜单（删除、编辑、固定到面板等）</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Ctrl + K</code></td><td style="padding:0.5rem 0.75rem;">打开动作菜单</td></tr>
             </tbody>
           </table>
         </article>
 
         <article class="guide-card">
           <h2>燕环——鼠标党的快捷面板</h2>
-          <p>长按鼠标右键约 300 毫秒，一个网格图标面板会在光标附近弹出。把最常用的应用、网站、脚本放进去，鼠标一划就能触发，不用回到桌面找图标。</p>
+          <p>长按鼠标右键，常用工具会在光标附近弹出来。你把最常用的软件、文件、网站放进去，下次就不用再回桌面找图标。</p>
+          <h3>你可以怎么理解它</h3>
+          <ul>
+            <li><strong>像一个鼠标边上的快捷菜单</strong>：最常用的东西放在手边</li>
+            <li><strong>像一个更快的桌面</strong>：不用翻桌面找图标</li>
+            <li><strong>像一个给小白准备的工具抽屉</strong>：点一下就能用，不需要记复杂操作</li>
+          </ul>
           <h3>触发方式</h3>
           <ul>
             <li><strong>长按鼠标右键</strong>：在任意位置长按鼠标右键约 300ms，面板在光标附近弹出</li>
@@ -94,26 +98,31 @@
             <li>在搜索结果上点击右键，选择"添加到鼠标面板"</li>
             <li>下次长按右键时就能看到它了</li>
           </ol>
-          <p>面板支持多个分组页面，按类别整理项目（如"工作"、"娱乐"、"开发"），并支持拖拽调整位置。</p>
+          <p>面板支持多个分组页面，按类别整理项目，并支持拖拽调整位置。</p>
         </article>
 
         <article class="guide-card">
           <h2>燕幕——桌面常驻信息层</h2>
-          <p>燕幕是一组可以常驻在桌面上的浮动小组件窗口，始终保持在其他窗口上方。你可以用它来显示时钟、系统监控、便签、快捷入口等信息，省去反复切换窗口查看的麻烦。</p>
+          <p>燕幕是一组可以常驻在桌面上的浮动小组件窗口，始终保持在其他窗口上方。你可以用它来显示时钟、便签、快捷入口等信息，不用切换窗口就能看到。</p>
           <h3>支持的小组件类型</h3>
           <ul>
             <li><strong>时钟与日期</strong>：在桌面上显示实时时钟和日期</li>
-            <li><strong>系统监控</strong>：CPU、内存等系统状态信息</li>
             <li><strong>便签</strong>：桌面常驻的笔记小组件，随手记录</li>
             <li><strong>快捷入口</strong>：常用应用和网站的一键启动按钮</li>
             <li><strong>自定义小组件</strong>：开发者可通过扩展系统创建任意内容的桌面组件</li>
           </ul>
-          <p>小组件可以自由拖拽定位和调整大小，位置配置会自动保存并在云同步中同步到其他设备。</p>
+          <p>小组件可以自由拖拽定位和调整大小，位置配置会自动保存。</p>
         </article>
 
         <article class="guide-card">
           <h2>燕语——AI 智能助手</h2>
-          <p>燕语是燕子内置的 AI 对话助手。你可以用自然语言描述需求，AI 会自动帮你生成一个可用的扩展，无需手动编写任何代码。</p>
+          <p>燕语是燕子内置的 AI 对话能力。你只要说一句“帮我做一个什么工具”，它就能帮你生成可用的扩展，不需要懂编程。</p>
+          <h3>你可以这样理解</h3>
+          <ul>
+            <li>像跟一个会写工具的助手说需求</li>
+            <li>像把你的想法直接变成按钮</li>
+            <li>像给小白一个“不会写代码也能做工具”的入口</li>
+          </ul>
           <h3>示例对话</h3>
           <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
             <thead><tr style="border-bottom:1px solid var(--border);">
@@ -131,34 +140,34 @@
 
         <article class="guide-card">
           <h2>扩展系统：万物皆扩展</h2>
-          <p>燕子的核心设计理念是<strong>万物皆扩展</strong>。所有的功能、程序、网站或自动化流程都可以变成一个独立的扩展（本质上是一个 <code>manifest.json</code> 文件）：</p>
+          <p>燕子的核心设计理念是<strong>万物皆扩展</strong>。你今天想到的一个小动作，都有机会变成一个能直接点的工具。</p>
           <ul>
-            <li><strong>安装</strong>：从扩展商店一键安装社区贡献的扩展</li>
+            <li><strong>安装</strong>：从扩展商店一键安装别人做好的工具</li>
             <li><strong>自建</strong>：自己写一个简单的 JSON 文件就能创建扩展</li>
-            <li><strong>AI 生成</strong>：用燕语描述需求，让 AI 帮你写</li>
+            <li><strong>AI 生成</strong>：用一句话描述需求，让 AI 帮你写</li>
             <li><strong>分享</strong>：把扩展发布到商店供其他用户使用</li>
-            <li><strong>同步</strong>：扩展随云同步在多台电脑之间自动同步</li>
+            <li><strong>同步</strong>：扩展可跟着你的配置一起保存到本地或云端</li>
           </ul>
-          <p>扩展能力覆盖从简单的"打开一个网页"到复杂的"运行 C# 脚本并弹出自定义界面"，适合从小白到开发者的不同需求层级。</p>
+          <p>它既适合只想“点一下就完成”的小白，也适合愿意继续深度定制的开发者。</p>
         </article>
 
         <article class="guide-card">
-          <h2>云同步：多设备无缝衔接</h2>
-          <p>燕子支持个人私有云盘同步，你的扩展、面板布局和个人配置可以在多台电脑之间自动保持一致。目前支持两种同步方式：</p>
+          <h2>数据与同步</h2>
+          <p>燕子的默认思路是：先把数据放在你自己的电脑里，够用、安心、好理解。</p>
           <ul>
-            <li><strong>WebDAV 同步</strong>（推荐坚果云）：把数据存在你自己的网盘里</li>
-            <li><strong>GitHub 同步</strong>：把数据备份到你自己的 GitHub 私有仓库</li>
+            <li><strong>本地优先</strong>：配置默认存在本地，不会无缘无故上传</li>
+            <li><strong>可选同步</strong>：如果你想多台电脑一起用，可以再接自己的网盘或仓库</li>
+            <li><strong>数据归你自己</strong>：无论同步还是备份，最终都在你自己的空间里</li>
           </ul>
-          <p>所有数据都存储在你自己的空间，不经过任何第三方公共服务器。</p>
         </article>
 
         <article class="guide-card">
           <h2>开源与安全</h2>
           <ul>
-            <li><strong>完全开源</strong>：客户端、云端 Worker 代码全部开源，源码可审计</li>
-            <li><strong>隐私第一</strong>：没有任何隐藏上传行为，数据全部保存在你本地电脑和个人网盘中</li>
-            <li><strong>免费无广告</strong>：不设会员门槛，不加第三方广告，只做纯粹的效率引擎</li>
-            <li><strong>移动端伴侣</strong>：Android 伴侣应用可接收桌面端推送通知，实现跨设备信息联动</li>
+            <li><strong>完全开源</strong>：客户端、云端代码全部开源，源码可审计</li>
+            <li><strong>隐私第一</strong>：没有隐藏上传行为，数据默认保存在你本地电脑里</li>
+            <li><strong>免费无广告</strong>：不设会员门槛，不加第三方广告，只做纯粹的效率工具</li>
+            <li><strong>移动端伴侣</strong>：Android 伴侣应用可接收桌面端通知，实现跨设备信息联动</li>
           </ul>
         </article>
 

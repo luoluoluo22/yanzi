@@ -582,7 +582,7 @@ public sealed class PersonalSyncService
             return new WebDavYanmStateSyncResult(false, false, SyncRootDisplay, remoteUpdatedAtUtc, payloadBytes);
         }
 
-        if (remoteUpdatedAtUtc > localUpdatedAtUtc.AddSeconds(1) || localUpdatedAtUtc == DateTime.MinValue)
+        if (ShouldPreferRemoteYanmState(localUpdatedAtUtc, remoteUpdatedAtUtc, localYanm, remote.Yanm))
         {
             ApplyYanmStateSnapshot(remote.Yanm, remoteUpdatedAtUtc);
             return new WebDavYanmStateSyncResult(false, true, SyncRootDisplay, remoteUpdatedAtUtc, payloadBytes);
@@ -608,12 +608,22 @@ public sealed class PersonalSyncService
     private async Task<bool> ClearCloudCoreAsync(CancellationToken cancellationToken)
     {
         await ProbeCoreAsync(cancellationToken);
+        var purgeTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            RemoteIndexPath,
+            "state/launcher-config.json",
+            "state/yanm-state.json",
+            LauncherConfigObjectStore.ManifestPath,
+            LauncherConfigObjectStore.HistoryIndexPath,
+            $"{LauncherConfigObjectStore.DirectoryPath}/yanm-layout.json"
+        };
+
         var remoteIndex = await LoadRemoteIndexAsync(cancellationToken);
         foreach (var entry in remoteIndex.Items)
         {
             if (!string.IsNullOrWhiteSpace(entry.PackagePath))
             {
-                await _backend.DeleteFileAsync(entry.PackagePath, cancellationToken);
+                purgeTargets.Add(entry.PackagePath);
             }
         }
 
@@ -625,29 +635,23 @@ public sealed class PersonalSyncService
             {
                 if (!string.IsNullOrWhiteSpace(restorePoint.Path))
                 {
-                    await _backend.DeleteFileAsync(restorePoint.Path, cancellationToken);
+                    purgeTargets.Add(restorePoint.Path);
                 }
                 if (!string.IsNullOrWhiteSpace(restorePoint.ChangeSetPath))
                 {
-                    await _backend.DeleteFileAsync(restorePoint.ChangeSetPath, cancellationToken);
+                    purgeTargets.Add(restorePoint.ChangeSetPath);
                 }
             }
-            await _backend.DeleteFileAsync(LauncherConfigObjectStore.HistoryIndexPath, cancellationToken);
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Personal sync clear restore history deferred: {ex.Message}");
         }
 
-        await _backend.DeleteFileAsync(RemoteIndexPath, cancellationToken);
-        await _backend.DeleteFileAsync("state/launcher-config.json", cancellationToken);
-        await _backend.DeleteFileAsync("state/yanm-state.json", cancellationToken);
-        await _backend.DeleteFileAsync(LauncherConfigObjectStore.ManifestPath, cancellationToken);
-        foreach (var definition in LauncherConfigObjectStore.Definitions)
+        foreach (var path in purgeTargets.OrderByDescending(static item => item.Length))
         {
-            await _backend.DeleteFileAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+            await _backend.DeleteFileAsync(path, cancellationToken);
         }
-        await _backend.DeleteFileAsync($"{LauncherConfigObjectStore.DirectoryPath}/yanm-layout.json", cancellationToken);
 
         if (File.Exists(HostAssets.WebDavSyncStatePath))
         {
@@ -783,17 +787,16 @@ public sealed class PersonalSyncService
 
         if (explicitLocalUpdatedAtUtc == null && legacyLocalUpdatedAtUtc == null)
         {
-            ApplyLauncherConfigSnapshot(remote.Config, remoteUpdatedAtUtc);
-            return (false, true);
+            if (HasMeaningfulLauncherConfig(remote.Config))
+            {
+                ApplyLauncherConfigSnapshot(remote.Config, remoteUpdatedAtUtc);
+                return (false, true);
+            }
+
+            return (false, false);
         }
 
-        if (remoteUpdatedAtUtc > localUpdatedAtUtc.AddSeconds(1))
-        {
-            ApplyLauncherConfigSnapshot(remote.Config, remoteUpdatedAtUtc);
-            return (false, true);
-        }
-
-        if (IsLikelyFreshLocalLauncherConfig(localConfig) && HasMeaningfulLauncherConfig(remote.Config))
+        if (ShouldPreferRemoteLauncherConfig(localUpdatedAtUtc, remoteUpdatedAtUtc, localConfig, remote.Config))
         {
             ApplyLauncherConfigSnapshot(remote.Config, remoteUpdatedAtUtc);
             return (false, true);
@@ -1275,6 +1278,71 @@ public sealed class PersonalSyncService
     private static bool IsLikelyFreshLocalLauncherConfig(CloudQuickPanelConfigSnapshot config)
     {
         return CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(config);
+    }
+
+    private static bool ShouldPreferRemoteLauncherConfig(
+        DateTime localUpdatedAtUtc,
+        DateTime remoteUpdatedAtUtc,
+        CloudQuickPanelConfigSnapshot localConfig,
+        CloudQuickPanelConfigSnapshot remoteConfig)
+    {
+        if (remoteUpdatedAtUtc == DateTime.MinValue)
+        {
+            return false;
+        }
+
+        if (localUpdatedAtUtc == DateTime.MinValue)
+        {
+            return true;
+        }
+
+        var timeDelta = remoteUpdatedAtUtc - localUpdatedAtUtc;
+        if (timeDelta > TimeSpan.FromSeconds(5))
+        {
+            return true;
+        }
+
+        if (timeDelta < TimeSpan.FromSeconds(-5))
+        {
+            return false;
+        }
+
+        if (IsLikelyFreshLocalLauncherConfig(localConfig))
+        {
+            return HasMeaningfulLauncherConfig(remoteConfig);
+        }
+
+        return false;
+    }
+
+    private static bool ShouldPreferRemoteYanmState(
+        DateTime localUpdatedAtUtc,
+        DateTime remoteUpdatedAtUtc,
+        YanmSettings localYanm,
+        YanmSettings remoteYanm)
+    {
+        if (remoteUpdatedAtUtc == DateTime.MinValue)
+        {
+            return false;
+        }
+
+        if (localUpdatedAtUtc == DateTime.MinValue)
+        {
+            return true;
+        }
+
+        var timeDelta = remoteUpdatedAtUtc - localUpdatedAtUtc;
+        if (timeDelta > TimeSpan.FromSeconds(5))
+        {
+            return true;
+        }
+
+        if (timeDelta < TimeSpan.FromSeconds(-5))
+        {
+            return false;
+        }
+
+        return !HasYanmComponentState(localYanm) && HasYanmComponentState(remoteYanm);
     }
 
     private static bool HasAiConfigPayload(CloudQuickPanelConfigSnapshot snapshot)

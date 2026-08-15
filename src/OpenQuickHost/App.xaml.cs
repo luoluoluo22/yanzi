@@ -1,6 +1,11 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Threading;
+using WpfColor = System.Windows.Media.Color;
+using WpfPen = System.Windows.Media.Pen;
+using WpfBrush = System.Windows.Media.SolidColorBrush;
 using Microsoft.Win32;
 using OpenQuickHost.Sync;
 using Forms = System.Windows.Forms;
@@ -39,6 +44,7 @@ public static class WindowDwmBehavior
 public partial class App : WpfApplication
 {
     private const string SingleInstanceAppId = "Yanzi.OpenQuickHost";
+
     private Forms.NotifyIcon? _notifyIcon;
     private SettingsWindow? _settingsWindow;
     private RunningExtensionsWindow? _runningExtensionsWindow;
@@ -1071,12 +1077,12 @@ public partial class App : WpfApplication
             using var bitmap = new Bitmap(32, 32);
             using (var g = Graphics.FromImage(bitmap))
             {
-                g.Clear(Color.Transparent);
-                using var fill = new SolidBrush(Color.FromArgb(255, 96, 96, 96));
-                using var border = new Pen(Color.FromArgb(255, 150, 150, 150), 2);
+                g.Clear(System.Drawing.Color.Transparent);
+                using var fill = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(255, 96, 96, 96));
+                using var border = new System.Drawing.Pen(System.Drawing.Color.FromArgb(255, 150, 150, 150), 2);
                 g.FillEllipse(fill, 4, 4, 24, 24);
                 g.DrawEllipse(border, 4, 4, 24, 24);
-                using var slash = new Pen(Color.FromArgb(255, 220, 220, 220), 3);
+                using var slash = new System.Drawing.Pen(System.Drawing.Color.FromArgb(255, 220, 220, 220), 3);
                 g.DrawLine(slash, 10, 22, 22, 10);
             }
 
@@ -1091,18 +1097,25 @@ public partial class App : WpfApplication
     public static void EnableSilentLoading(Window window)
     {
         var startupLocation = window.WindowStartupLocation;
-        bool isFirstRender = true;
+        var originalWidth = window.Width;
+        var originalHeight = window.Height;
+        var originalSizeToContent = window.SizeToContent;
+        var originalShowInTaskbar = window.ShowInTaskbar;
+        var originalResizeMode = window.ResizeMode;
+        var originalAllowsTransparency = window.AllowsTransparency;
+        var isFirstRender = true;
 
-        double originalWidth = window.Width;
-        double originalHeight = window.Height;
-        SizeToContent originalSizeToContent = window.SizeToContent;
-
-        window.WindowState = WindowState.Minimized;
         window.ShowInTaskbar = false;
+        window.ResizeMode = ResizeMode.NoResize;
+        window.Background = new SolidColorBrush(WpfColor.FromRgb(17, 17, 17));
 
-        window.ContentRendered += (s, e) =>
+        void RevealWindow()
         {
-            if (!isFirstRender) return;
+            if (!isFirstRender)
+            {
+                return;
+            }
+
             isFirstRender = false;
 
             var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
@@ -1111,8 +1124,6 @@ public partial class App : WpfApplication
                 int disableTransitions = 1;
                 DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
             }
-
-            window.WindowState = WindowState.Normal;
 
             window.SizeToContent = originalSizeToContent;
             if (!double.IsNaN(originalWidth)) window.Width = originalWidth;
@@ -1131,7 +1142,10 @@ public partial class App : WpfApplication
                 window.Top = (screenHeight - window.Height) / 2;
             }
 
-            window.ShowInTaskbar = true;
+            window.ShowInTaskbar = originalShowInTaskbar;
+            window.ResizeMode = originalResizeMode;
+            window.AllowsTransparency = originalAllowsTransparency;
+            window.Opacity = 1;
             window.Activate();
             window.Focus();
 
@@ -1140,7 +1154,11 @@ public partial class App : WpfApplication
                 int disableTransitions = 0;
                 DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
             }
-        };
+        }
+
+        window.Loaded += (_, _) => window.Dispatcher.BeginInvoke((Action)RevealWindow, DispatcherPriority.Loaded);
+        window.ContentRendered += (_, _) => window.Dispatcher.BeginInvoke((Action)RevealWindow, DispatcherPriority.Render);
+        window.Dispatcher.BeginInvoke((Action)RevealWindow, DispatcherPriority.Background);
     }
 
     public new static App? Current => System.Windows.Application.Current as App;
@@ -1156,28 +1174,35 @@ public partial class App : WpfApplication
 
         try
         {
-            HostAssets.AppendLog($"Settings window open requested: section={sectionKey ?? "default"}, existing={_settingsWindow != null && _settingsWindow.IsLoaded}.");
+            HostAssets.AppendLog($"Settings window open requested: section={sectionKey ?? "default"}, existing={_settingsWindow != null && _settingsWindow.IsLoaded}, visible={_settingsWindow?.IsVisible ?? false}, opacity={_settingsWindow?.Opacity.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "n/a"}.");
             if (_settingsWindow == null)
             {
+                HostAssets.AppendLog("Settings window not cached, creating new instance.");
                 _settingsWindow = new SettingsWindow(mainWindow);
                 HostAssets.AppendLog("Settings window created.");
+            }
+            else if (!_settingsWindow.IsLoaded)
+            {
+                HostAssets.AppendLog($"Settings window exists but not loaded yet. visibility={_settingsWindow.Visibility}, opacity={_settingsWindow.Opacity}, windowState={_settingsWindow.WindowState}.");
             }
 
             if (_settingsWindow.WindowState == WindowState.Minimized)
             {
+                HostAssets.AppendLog("Settings window was minimized, restoring to normal.");
                 _settingsWindow.WindowState = WindowState.Normal;
             }
 
             if (!_settingsWindow.IsVisible)
             {
+                HostAssets.AppendLog($"Settings window is not visible before Show(). opacity={_settingsWindow.Opacity}, visibility={_settingsWindow.Visibility}.");
                 _settingsWindow.Show();
-                HostAssets.AppendLog("Settings window shown.");
+                HostAssets.AppendLog($"Settings window shown. opacity={_settingsWindow.Opacity}, visibility={_settingsWindow.Visibility}.");
             }
 
             _settingsWindow.NavigateTo(sectionKey);
             _settingsWindow.Activate();
             _settingsWindow.Focus();
-            HostAssets.AppendLog("Settings window activated.");
+            HostAssets.AppendLog($"Settings window activated. opacity={_settingsWindow.Opacity}, active={_settingsWindow.IsActive}.");
         }
         catch (Exception ex)
         {

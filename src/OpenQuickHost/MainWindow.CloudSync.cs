@@ -3442,15 +3442,31 @@ public partial class MainWindow
                 AddKnownLocalDynamicObject(state, write.ObjectId);
             }
 
+            var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
             foreach (var write in writes.Values)
             {
                 if (state.Conflicts.TryGetValue(write.ObjectId, out var existingConflict))
                 {
-                    existingConflict.LocalSchemaVersion = write.Envelope.SchemaVersion;
-                    existingConflict.LocalDeleted = write.Envelope.Deleted;
-                    existingConflict.LocalPayload = write.Envelope.Payload.Clone();
-                    existingConflict.DetectedAtUtc = DateTime.UtcNow.ToString("O");
-                    continue;
+                    var isSameDeviceConflict = string.Equals(existingConflict.RemoteDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
+                    if (isSameDeviceConflict)
+                    {
+                        // 远端版本由本机历史上传，且本机正在进行新修改：自动解除误判冲突并加入待上传队列
+                        state.Conflicts.Remove(write.ObjectId);
+                        AddPendingCloudObject(
+                            state,
+                            write.ObjectId,
+                            localUpdatedAtUtc,
+                            existingConflict.RemoteRevision);
+                        HostAssets.AppendLog($"PushQuickPanelObjects: Auto-cleared same-device conflict and promoted to pending upload: object={write.ObjectId}");
+                    }
+                    else
+                    {
+                        existingConflict.LocalSchemaVersion = write.Envelope.SchemaVersion;
+                        existingConflict.LocalDeleted = write.Envelope.Deleted;
+                        existingConflict.LocalPayload = write.Envelope.Payload.Clone();
+                        existingConflict.DetectedAtUtc = DateTime.UtcNow.ToString("O");
+                        continue;
+                    }
                 }
                 var matchesBaseline = state.Objects.TryGetValue(write.ObjectId, out var baseline) &&
                                       LauncherConfigObjectStore.HasEquivalentPayload(
@@ -3534,21 +3550,33 @@ public partial class MainWindow
                         continue;
                     }
 
-                    state.Conflicts[objectId] = new CloudObjectConflictRecord
+                    var isSameDevice = string.Equals(latestRemote.UpdatedByDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
+                    if (isSameDevice)
                     {
-                        ObjectId = objectId,
-                        DetectedAtUtc = DateTime.UtcNow.ToString("O"),
-                        LocalSchemaVersion = write.Envelope.SchemaVersion,
-                        LocalDeleted = write.Envelope.Deleted,
-                        LocalPayload = write.Envelope.Payload.Clone(),
-                        RemoteRevision = latestRemote.Revision,
-                        RemoteUpdatedAtUtc = latestRemote.UpdatedAtUtc,
-                        RemoteDeviceId = latestRemote.UpdatedByDeviceId,
-                        RemoteDeviceName = latestRemote.UpdatedByDeviceName
-                    };
-                    RemovePendingCloudObject(state, objectId);
-                    remoteWonConflict = true;
-                    HostAssets.AppendLog($"Cloud object conflict preserved for user resolution: object={objectId}, remoteRevision={latestRemote.Revision}, remoteDevice={latestRemote.UpdatedByDeviceName ?? latestRemote.UpdatedByDeviceId ?? "unknown"}");
+                        // 远端最新版本亦由本机写入：自动重置 expectedRevision 并在下轮重试覆盖，不阻塞报人工冲突
+                        pending.LastExpectedRevision = latestRemote.Revision;
+                        pending.LastError = string.Empty;
+                        state.Conflicts.Remove(objectId);
+                        HostAssets.AppendLog($"Cloud object revision conflict auto-rebased for same device: object={objectId}, remoteRevision={latestRemote.Revision}");
+                    }
+                    else
+                    {
+                        state.Conflicts[objectId] = new CloudObjectConflictRecord
+                        {
+                            ObjectId = objectId,
+                            DetectedAtUtc = DateTime.UtcNow.ToString("O"),
+                            LocalSchemaVersion = write.Envelope.SchemaVersion,
+                            LocalDeleted = write.Envelope.Deleted,
+                            LocalPayload = write.Envelope.Payload.Clone(),
+                            RemoteRevision = latestRemote.Revision,
+                            RemoteUpdatedAtUtc = latestRemote.UpdatedAtUtc,
+                            RemoteDeviceId = latestRemote.UpdatedByDeviceId,
+                            RemoteDeviceName = latestRemote.UpdatedByDeviceName
+                        };
+                        RemovePendingCloudObject(state, objectId);
+                        remoteWonConflict = true;
+                        HostAssets.AppendLog($"Cloud object conflict preserved for user resolution: object={objectId}, remoteRevision={latestRemote.Revision}, remoteDevice={latestRemote.UpdatedByDeviceName ?? latestRemote.UpdatedByDeviceId ?? "unknown"}");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -3935,21 +3963,33 @@ public partial class MainWindow
                 await RefreshCloudObjectCacheAsync(state);
                 if (state.Objects.TryGetValue(objectId, out var latestRemote))
                 {
-                    state.Conflicts[objectId] = new CloudObjectConflictRecord
+                    var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+                    var isSameDevice = string.Equals(latestRemote.UpdatedByDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
+                    if (isSameDevice)
                     {
-                        ObjectId = objectId,
-                        DetectedAtUtc = DateTime.UtcNow.ToString("O"),
-                        LocalSchemaVersion = write.Envelope.SchemaVersion,
-                        LocalDeleted = write.Envelope.Deleted,
-                        LocalPayload = write.Envelope.Payload.Clone(),
-                        RemoteRevision = latestRemote.Revision,
-                        RemoteUpdatedAtUtc = latestRemote.UpdatedAtUtc,
-                        RemoteDeviceId = latestRemote.UpdatedByDeviceId,
-                        RemoteDeviceName = latestRemote.UpdatedByDeviceName
-                    };
-                    RemovePendingCloudObject(state, objectId);
-                    HostAssets.AppendLog(
-                        $"Yanm object conflict preserved: object={objectId}, remoteRevision={latestRemote.Revision}, reason={reason}");
+                        pending.LastExpectedRevision = latestRemote.Revision;
+                        pending.LastError = string.Empty;
+                        state.Conflicts.Remove(objectId);
+                        HostAssets.AppendLog($"Yanm object revision conflict auto-rebased for same device: object={objectId}, remoteRevision={latestRemote.Revision}");
+                    }
+                    else
+                    {
+                        state.Conflicts[objectId] = new CloudObjectConflictRecord
+                        {
+                            ObjectId = objectId,
+                            DetectedAtUtc = DateTime.UtcNow.ToString("O"),
+                            LocalSchemaVersion = write.Envelope.SchemaVersion,
+                            LocalDeleted = write.Envelope.Deleted,
+                            LocalPayload = write.Envelope.Payload.Clone(),
+                            RemoteRevision = latestRemote.Revision,
+                            RemoteUpdatedAtUtc = latestRemote.UpdatedAtUtc,
+                            RemoteDeviceId = latestRemote.UpdatedByDeviceId,
+                            RemoteDeviceName = latestRemote.UpdatedByDeviceName
+                        };
+                        RemovePendingCloudObject(state, objectId);
+                        HostAssets.AppendLog(
+                            $"Yanm object conflict preserved: object={objectId}, remoteRevision={latestRemote.Revision}, reason={reason}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -4014,6 +4054,7 @@ public partial class MainWindow
                 state.KnownLocalDynamicObjectIds)
             .ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
 
+        var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
         foreach (var write in localWrites.Values)
         {
             if (!state.Objects.TryGetValue(write.ObjectId, out var remote))
@@ -4027,8 +4068,17 @@ public partial class MainWindow
                 continue;
             }
 
-            // 首次接入对象协议时云端是权威，但本机非默认差异不会丢失：
-            // 保存为显式冲突副本，用户可以在设置页选择重新采用本地版本。
+            // 同设备自动转为待上传，覆盖历史版本，无需人工裁决
+            var isSameDevice = string.Equals(remote.UpdatedByDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
+            if (isSameDevice)
+            {
+                AddPendingCloudObject(state, write.ObjectId, localUpdatedAtUtc, remote.Revision);
+                state.Conflicts.Remove(write.ObjectId);
+                HostAssets.AppendLog($"Yanm object auto-promoted to pending upload for same device: object={write.ObjectId}, remoteRevision={remote.Revision}");
+                continue;
+            }
+
+            // 仅当云端对象来自其他设备（跨设备）且内容不一致时，才保留为显式冲突副本
             if (HasYanmLayoutUserContent(settings.Yanm))
             {
                 state.Conflicts[write.ObjectId] = new CloudObjectConflictRecord

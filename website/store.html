@@ -8,7 +8,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>燕子扩展商店</title>
   <link rel="canonical" href="https://yanzi.luoluoluo.cc.cd/store.html">
-  <meta name="description" content="燕子扩展商店，目前仅展示两个真实测试扩展。">
+  <meta name="description" content="燕子扩展商店，帮你快速找到常用工具和现成扩展。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -263,8 +263,8 @@
             <input id="store-search" class="store-search-input" type="search" placeholder="搜索扩展名、关键词...">
           </div>
           <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1.5rem;">
-            <p id="store-status" style="margin: 0; font-size: 0.9rem; color: var(--text-dim);">正在加载...</p>
-            <p id="local-client-status" style="margin: 0; font-size: 0.9rem; color: var(--accent);">本机安装状态后台检测中...</p>
+            <p id="store-status" style="margin: 0; font-size: 0.9rem; color: var(--text-dim);">找一找适合你的现成工具</p>
+            <p id="local-client-status" style="margin: 0; font-size: 0.9rem; color: var(--accent);">本机状态检测中，安装不受影响</p>
           </div>
         </div>
       </section>
@@ -330,7 +330,7 @@
 
       function renderGrid(items) {
         storeGrid.innerHTML = "";
-        storeStatus.textContent = `共 ${totalItems} 个扩展`;
+        storeStatus.textContent = totalItems ? `共 ${totalItems} 个工具` : "找一找适合你的现成工具";
 
         if (!items.length) {
           storeGrid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; padding: 4rem; color: var(--text-dim);">没有找到匹配的扩展</p>`;
@@ -403,7 +403,7 @@
           </div>
         </div>
         <div class="detail-body">
-          <p>${escapeHtml(item.description)}</p>
+          <p>${escapeHtml(item.description || "这个工具可以直接用来帮你少点几次鼠标。")}</p>
           <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--accent);">${escapeHtml(getLocalStatusLabel(item))}</p>
           
           <div style="display: flex; gap: 1rem; margin-top: 2.5rem;">

@@ -75,25 +75,74 @@ async function performWorkflow(task) {
 
 // 1.1 等待操作 (Wait)
 async function handleWaitStep(step) {
-  const timeout = step.timeout || 5000;
+  const timeout = Math.min(step.timeout || 5000, 30000);
   
   if (step.selector) {
-    // 等待指定 DOM 元素加载出现
-    const selector = step.selector;
-    const startTime = Date.now();
-    while (true) {
-      if (document.querySelector(selector)) {
-        return; // 元素出现，返回成功
-      }
-      if (Date.now() - startTime > timeout) {
-        throw new Error(`等待元素超时: ${selector}`);
-      }
-      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms 轮询一次
-    }
+    await waitForElement(step.selector, timeout);
   } else {
     // 仅仅是静态延时等待
     await new Promise(resolve => setTimeout(resolve, timeout));
   }
+}
+
+function waitForElement(selector, timeout) {
+  if (document.querySelector(selector)) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    let finished = false;
+    let observer = null;
+    let fallbackPoll = null;
+    let timer = null;
+
+    const cleanup = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      observer?.disconnect();
+      if (fallbackPoll) {
+        clearInterval(fallbackPoll);
+      }
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+
+    const resolveOnce = () => {
+      cleanup();
+      resolve();
+    };
+
+    const rejectOnce = () => {
+      cleanup();
+      reject(new Error(`等待元素超时: ${selector}`));
+    };
+
+    observer = new MutationObserver(() => {
+      if (document.querySelector(selector)) {
+        resolveOnce();
+      }
+    });
+
+    timer = window.setTimeout(rejectOnce, timeout);
+
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true
+    });
+
+    fallbackPoll = window.setInterval(() => {
+      if (document.querySelector(selector)) {
+        resolveOnce();
+      } else if (Date.now() - startTime > timeout) {
+        rejectOnce();
+      }
+    }, 500);
+  });
 }
 
 // 1.2 高保真输入操作 (Fill)

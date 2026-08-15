@@ -1,4 +1,5 @@
 const mobilePollRateLimitMap = new Map();
+const mobilePollRateLimitMaxEntries = 5000;
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const PASSWORD_ITERATIONS = 100000;
 const VERIFICATION_CODE_TTL_MINUTES = 10;
@@ -1829,11 +1830,16 @@ async function handleRequest(request, env) {
       }
     };
 
+    const pollIntervalMs = 2000;
+    const maxStreamDurationMs = 30 * 60 * 1000;
+    const startedAt = Date.now();
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
     (async () => {
       try {
         await sendSseMessage({ type: "connected" });
 
-        while (!isClosed) {
+        while (!isClosed && Date.now() - startedAt < maxStreamDurationMs) {
           const rows = await env.DB.prepare(
             `select
               message_id,
@@ -1880,11 +1886,16 @@ async function handleRequest(request, env) {
               .run();
           }
 
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          if (isClosed || Date.now() - startedAt >= maxStreamDurationMs) {
+            break;
+          }
+
+          await sleep(pollIntervalMs);
         }
       } catch (err) {
         // SSE loop exception
       } finally {
+        isClosed = true;
         try {
           await writer.close();
         } catch (e) {}
@@ -1909,8 +1920,11 @@ async function handleRequest(request, env) {
     const rateLimitKey = `${auth.userId}:${deviceId}`;
     const lastRequestTime = mobilePollRateLimitMap.get(rateLimitKey) || 0;
     mobilePollRateLimitMap.set(rateLimitKey, now);
-    if (mobilePollRateLimitMap.size > 5000) {
-      mobilePollRateLimitMap.clear();
+    if (mobilePollRateLimitMap.size > mobilePollRateLimitMaxEntries) {
+      const oldestKey = mobilePollRateLimitMap.keys().next().value;
+      if (oldestKey !== undefined) {
+        mobilePollRateLimitMap.delete(oldestKey);
+      }
     }
     if (now - lastRequestTime < 3000) {
       return json({

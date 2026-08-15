@@ -45,7 +45,8 @@
     bindDownloads();
   }
 
-  setTimeout(bindDownloads, 300);
-  setTimeout(bindDownloads, 1200);
-  setTimeout(bindDownloads, 2500);
+  const retryDelays = [300, 1200];
+  retryDelays.forEach((delay) => {
+    setTimeout(bindDownloads, delay);
+  });
 })();

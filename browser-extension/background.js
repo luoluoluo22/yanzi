@@ -2,6 +2,10 @@ let ws = null;
 let reconnectDelay = 1000;
 const maxReconnectDelay = 30000;
 let isConnected = false;
+let reconnectTimer = null;
+const LOG_BATCH_INTERVAL_MS = 5000;
+let pendingLogs = [];
+let logFlushTimer = null;
 
 // 辅助函数：更新连接状态到本地存储，供 popup 读取
 function updateStatus(status) {
@@ -15,19 +19,37 @@ function logEvent(message) {
   const timestamp = new Date().toLocaleTimeString();
   const logMessage = `[${timestamp}] ${message}`;
   console.log(logMessage);
-  
+
+  pendingLogs.push(logMessage);
+  if (!logFlushTimer) {
+    logFlushTimer = setTimeout(flushLogs, LOG_BATCH_INTERVAL_MS);
+  }
+}
+
+function flushLogs() {
+  logFlushTimer = null;
+  if (!pendingLogs.length) {
+    return;
+  }
+
+  const batch = pendingLogs.splice(0, pendingLogs.length);
   chrome.storage.local.get({ logs: [] }, (result) => {
-    let logs = result.logs;
-    logs.push(logMessage);
-    if (logs.length > 50) {
-      logs.shift(); // 仅保留最近 50 条日志
-    }
-    chrome.storage.local.set({ logs: logs });
+    const logs = result.logs.concat(batch).slice(-50);
+    chrome.storage.local.set({ logs });
   });
 }
 
 // 连接本地 WebSocket 服务
 function connectWebSocket() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
   logEvent("尝试连接到燕子启动器本地服务...");
   
   ws = new WebSocket("ws://127.0.0.1:53919/v1/browser/ws");
@@ -35,6 +57,7 @@ function connectWebSocket() {
   ws.onopen = () => {
     updateStatus("connected");
     reconnectDelay = 1000; // 重连成功，重置延迟
+    reconnectTimer = null;
     
     // 发送握手注册消息
     ws.send(JSON.stringify({
@@ -58,6 +81,7 @@ function connectWebSocket() {
   
   ws.onclose = () => {
     updateStatus("disconnected");
+    ws = null;
     scheduleReconnect();
   };
   
@@ -69,8 +93,13 @@ function connectWebSocket() {
 
 // 自动重连逻辑 (指数退避)
 function scheduleReconnect() {
+  if (reconnectTimer) {
+    return;
+  }
+
   logEvent(`连接断开，将在 ${reconnectDelay / 1000} 秒后尝试重新连接...`);
-  setTimeout(() => {
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
     connectWebSocket();
     reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
   }, reconnectDelay);
@@ -134,6 +163,10 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   // 1. 处理来自控制面板的重连请求
   if (message.action === "reconnect") {
     logEvent("收到来自控制面板的重新连接请求...");
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     if (ws) {
       try { ws.close(); } catch(e){}
     }
@@ -168,9 +201,9 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 setInterval(() => {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "ping" }));
-  } else if (!ws || ws.readyState === WebSocket.CLOSED) {
+  } else if ((!ws || ws.readyState === WebSocket.CLOSED) && !reconnectTimer) {
     // 兜底重连
-    connectWebSocket();
+    scheduleReconnect();
   }
 }, 20000);
 

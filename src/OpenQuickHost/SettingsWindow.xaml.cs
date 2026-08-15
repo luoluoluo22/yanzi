@@ -18,6 +18,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using WpfColor = System.Windows.Media.Color;
 using OpenQuickHost.Sync;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfPoint = System.Windows.Point;
@@ -109,7 +110,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public SettingsWindow(MainWindow mainWindow)
     {
+        HostAssets.AppendLog($"SettingsWindow ctor start. thread={Environment.CurrentManagedThreadId}, will InitializeComponent().");
         InitializeComponent();
+        HostAssets.AppendLog($"SettingsWindow InitializeComponent completed. Content={Content?.GetType().Name ?? "null"}, width={Width}, height={Height}.");
+        Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(17, 17, 17));
+        Opacity = 1;
+        App.EnableSilentLoading(this);
+        HostAssets.AppendLog($"SettingsWindow silent loading attached. opacity={Opacity}, showActivated={ShowActivated}, background={Background}.");
         _mainWindow = mainWindow;
         _settings = AppSettingsStore.Load();
         _personalSyncSettings = ClonePersonalSyncSettings(_settings.PersonalSync);
@@ -195,7 +202,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         base.OnSourceInitialized(e);
         _source = (HwndSource?)PresentationSource.FromVisual(this);
         _source?.AddHook(SettingsWindowWndProc);
-        HostAssets.AppendLog("SettingsWindow: OnSourceInitialized called. Updating DWM Theme.");
+        HostAssets.AppendLog($"SettingsWindow: OnSourceInitialized called. handle={_source?.Handle}, opacity={Opacity}, visibility={Visibility}, showActivated={ShowActivated}.");
         App.UpdateWindowDwmTheme(this);
     }
 
@@ -1726,6 +1733,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             _personalSyncSettings.Provider = normalized;
             OnPropertyChanged();
             OnPropertyChanged(nameof(SelectedPersonalSyncProviderDisplayName));
+            OnPropertyChanged(nameof(PersonalSyncActionButtonText));
             OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkText));
             OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkUrl));
             OnPropertyChanged(nameof(HasSelectedPersonalSyncProviderQuickLink));
@@ -1757,6 +1765,48 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public bool IsGitSyncProvider => IsSyncProviderGitHub || IsSyncProviderGitee || IsSyncProviderGitLab || IsSyncProviderGitea;
 
+    private string _syncActiveSubTab = "cloud";
+    public string SyncActiveSubTab
+    {
+        get => _syncActiveSubTab;
+        set
+        {
+            if (_syncActiveSubTab == value)
+            {
+                return;
+            }
+
+            _syncActiveSubTab = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSyncCloudTabActive));
+            OnPropertyChanged(nameof(IsSyncBackupTabActive));
+            OnPropertyChanged(nameof(IsSyncHistoryTabActive));
+        }
+    }
+
+    public bool IsSyncCloudTabActive => SyncActiveSubTab == "cloud";
+    public bool IsSyncBackupTabActive => SyncActiveSubTab == "backup";
+    public bool IsSyncHistoryTabActive => SyncActiveSubTab == "history";
+
+    private bool _isAccountSyncObjectsExpanded;
+    public bool IsAccountSyncObjectsExpanded
+    {
+        get => _isAccountSyncObjectsExpanded;
+        set
+        {
+            if (_isAccountSyncObjectsExpanded == value)
+            {
+                return;
+            }
+
+            _isAccountSyncObjectsExpanded = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AccountSyncObjectsToggleText));
+        }
+    }
+
+    public string AccountSyncObjectsToggleText => IsAccountSyncObjectsExpanded ? "收起明细 ▴" : "查看明细 ▾";
+
     public bool ShowPersonalSyncAdvancedOptions
     {
         get => _showPersonalSyncAdvancedOptions;
@@ -1776,6 +1826,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public string PersonalSyncAdvancedOptionsButtonText => ShowPersonalSyncAdvancedOptions ? "隐藏高级配置" : "显示高级配置";
 
     public string SelectedPersonalSyncProviderDisplayName => PersonalSyncProviders.GetDisplayName(SelectedPersonalSyncProvider);
+
+    public string PersonalSyncActionButtonText => $"立即同步至 {SelectedPersonalSyncProviderDisplayName}";
 
     public string SelectedPersonalSyncProviderQuickLinkText => SelectedPersonalSyncProvider switch
     {
@@ -2708,6 +2760,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SettingsWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        HostAssets.AppendLog($"SettingsWindow Loaded. opacity={Opacity}, visibility={Visibility}, actualWidth={ActualWidth}, actualHeight={ActualHeight}.");
         // 初始化原始AI设置值
         _originalAiBaseUrl = _settings.AiBaseUrl;
         _originalAiApiKey = _settings.AiApiKey;
@@ -2731,6 +2784,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ScheduleExtensionCardWidthUpdate();
         Dispatcher.BeginInvoke(new Action(() =>
         {
+            HostAssets.AppendLog($"SettingsWindow deferred UI refresh. opacity={Opacity}, isLoaded={IsLoaded}, isVisible={IsVisible}.");
             RebuildDynamicSettingsSearchItems();
             RefreshSelectedSectionHighlights();
         }), DispatcherPriority.Loaded);
@@ -5009,11 +5063,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             PersonalSyncCommitItems.Clear();
             PersonalSyncCommitStatusText = "提交记录当前仅支持 Git 同步仓库 (GitHub/Gitee/GitLab/Gitea)。";
-            if (LastSyncStatusTextBlock != null)
-            {
-                LastSyncStatusTextBlock.Text = "上次同步: 成功";
-                LastSyncStatusTextBlock.ToolTip = "同步已成功完成 (WebDav/S3 等其他模式)";
-            }
             return;
         }
 
@@ -5046,21 +5095,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 ? "仓库暂无提交记录。"
                 : $"最近 {PersonalSyncCommitItems.Count} 条提交，可点击打开云端详情。";
 
-            if (LastSyncStatusTextBlock != null)
-            {
-                if (PersonalSyncCommitItems.Count > 0)
-                {
-                    var latest = PersonalSyncCommitItems[0];
-                    LastSyncStatusTextBlock.Text = $"上次同步: {latest.Message}";
-                    LastSyncStatusTextBlock.ToolTip = $"最新提交: {latest.Message}\n作者: {latest.Author}\n时间: {latest.LocalTimeLabel}\nSHA: {latest.ShortSha}";
-                }
-                else
-                {
-                    LastSyncStatusTextBlock.Text = "上次同步: 成功";
-                    LastSyncStatusTextBlock.ToolTip = "暂无提交记录";
-                }
-            }
-
             CloudSyncDiagnostics.Log(
                 "SettingsWindow.PersonalSync",
                 "Refresh personal sync commits completed",
@@ -5071,11 +5105,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             PersonalSyncCommitItems.Clear();
             PersonalSyncCommitStatusText = $"读取提交记录失败：{ex.Message}";
-            if (LastSyncStatusTextBlock != null)
-            {
-                LastSyncStatusTextBlock.Text = "上次同步: 失败";
-                LastSyncStatusTextBlock.ToolTip = $"读取记录失败：{ex.Message}";
-            }
             CloudSyncDiagnostics.Log(
                 "SettingsWindow.PersonalSync",
                 "Refresh personal sync commits failed",
@@ -5718,6 +5747,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(SelectedPersonalSyncProvider));
         OnPropertyChanged(nameof(PersonalSyncAutoSyncDelaySeconds));
         OnPropertyChanged(nameof(SelectedPersonalSyncProviderDisplayName));
+        OnPropertyChanged(nameof(PersonalSyncActionButtonText));
         OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkText));
         OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkUrl));
         OnPropertyChanged(nameof(HasSelectedPersonalSyncProviderQuickLink));
@@ -10642,6 +10672,46 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void TogglePersonalSyncAdvancedOptionsButton_Click(object sender, RoutedEventArgs e)
     {
         ShowPersonalSyncAdvancedOptions = !ShowPersonalSyncAdvancedOptions;
+    }
+
+    private void SyncSubTab_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.RadioButton { Tag: string tabKey } && !string.IsNullOrWhiteSpace(tabKey))
+        {
+            SyncActiveSubTab = tabKey;
+            if (tabKey == "history")
+            {
+                RefreshSyncActivityLog();
+                _ = RefreshPersonalSyncCommitsAsync();
+                _ = RefreshPersonalConfigRestorePointsAsync();
+            }
+        }
+    }
+
+    private void ToggleAccountSyncObjectsButton_Click(object sender, RoutedEventArgs e)
+    {
+        IsAccountSyncObjectsExpanded = !IsAccountSyncObjectsExpanded;
+    }
+
+    private void CopySyncLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(SyncActivityLogText))
+            {
+                System.Windows.Clipboard.SetText(SyncActivityLogText);
+                HostAssets.AppendLog("SettingsWindow: SyncActivityLog copied to clipboard.");
+                System.Windows.MessageBox.Show(this, "同步日志已成功复制到剪贴板。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                System.Windows.MessageBox.Show(this, "暂无日志可复制。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SettingsWindow: CopySyncLog failed: {ex.Message}");
+        }
     }
 }
 

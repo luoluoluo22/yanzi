@@ -300,6 +300,7 @@
       }
 
       confettiLayer.replaceChildren();
+      const fragment = document.createDocumentFragment();
 
       for (let index = 0; index < 34; index += 1) {
         const piece = document.createElement("span");
@@ -311,9 +312,10 @@
         piece.style.setProperty("--rotate", `${Math.random() * 520 - 260}deg`);
         piece.style.setProperty("--delay", `${Math.random() * 90}ms`);
         piece.style.background = ["#60a5fa", "#22c55e", "#f59e0b", "#f472b6", "#a78bfa"][index % 5];
-        confettiLayer.appendChild(piece);
+        fragment.appendChild(piece);
       }
 
+      confettiLayer.appendChild(fragment);
       window.setTimeout(() => confettiLayer.replaceChildren(), 1200);
     }
   }
@@ -465,6 +467,7 @@
     }
 
     layer.replaceChildren();
+    const fragment = document.createDocumentFragment();
 
     for (let index = 0; index < 34; index += 1) {
       const piece = document.createElement("span");
@@ -478,9 +481,10 @@
       piece.style.setProperty("--rotate", `${Math.random() * 520 - 260}deg`);
       piece.style.setProperty("--delay", `${Math.random() * 90}ms`);
       piece.style.background = ["#60a5fa", "#22c55e", "#f59e0b", "#f472b6", "#a78bfa"][index % 5];
-      layer.appendChild(piece);
+      fragment.appendChild(piece);
     }
 
+    layer.appendChild(fragment);
     window.setTimeout(() => layer.replaceChildren(), 1200);
   }
 
