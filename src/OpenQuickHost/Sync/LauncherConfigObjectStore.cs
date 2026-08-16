@@ -50,6 +50,7 @@ internal static class LauncherConfigObjectStore
                 EnableAutoUpdate = snapshot.EnableAutoUpdate,
                 EnableBrowserHelper = snapshot.EnableBrowserHelper,
                 PreferManualExtensionEditor = snapshot.PreferManualExtensionEditor,
+                EnableEverything = snapshot.EnableEverything,
                 EnvironmentVariables = snapshot.EnvironmentVariables
             }),
             Create("settings.ai", updatedAt, sourceDeviceId, sourceDeviceName, new LauncherAiSettingsPayload
@@ -363,6 +364,7 @@ internal static class LauncherConfigObjectStore
                     snapshot.EnableAutoUpdate = runtime.EnableAutoUpdate ?? snapshot.EnableAutoUpdate;
                     snapshot.EnableBrowserHelper = runtime.EnableBrowserHelper ?? snapshot.EnableBrowserHelper;
                     snapshot.PreferManualExtensionEditor = runtime.PreferManualExtensionEditor ?? snapshot.PreferManualExtensionEditor;
+                    snapshot.EnableEverything = runtime.EnableEverything ?? snapshot.EnableEverything;
                     snapshot.EnvironmentVariables = runtime.EnvironmentVariables ?? snapshot.EnvironmentVariables;
                     return true;
                 case "settings.ai":
@@ -639,6 +641,7 @@ internal sealed class LauncherRuntimeSettingsPayload
     public bool? EnableAutoUpdate { get; set; }
     public bool? EnableBrowserHelper { get; set; }
     public bool? PreferManualExtensionEditor { get; set; }
+    public bool? EnableEverything { get; set; }
     public List<AppEnvironmentVariableSettings>? EnvironmentVariables { get; set; }
 }
 

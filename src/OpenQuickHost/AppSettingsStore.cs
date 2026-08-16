@@ -188,6 +188,7 @@ public static class AppSettingsStore
         settings = Normalize(settings);
         AiCredentialStore.Capture(settings);
         WriteSanitizedSettings(settings);
+        HostAssets.AppendLog($"[AppSettingsStore] Saved settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
     }
 
     private static void WriteSanitizedSettings(AppSettings settings)
@@ -947,6 +948,8 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
     public bool EnableBrowserHelper { get; set; } = true;
 
     public bool EnableWanPush { get; set; } = false;
+
+    public bool EnableEverything { get; set; } = true;
 
     public PersonalSyncSettings PersonalSync { get; set; } = new();
 

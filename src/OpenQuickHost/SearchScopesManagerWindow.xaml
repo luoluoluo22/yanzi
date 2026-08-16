@@ -101,6 +101,10 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
+                <CheckBox x:Name="EnableEverythingCheckBox"
+                          Content="启用 Everything 文件搜索"
+                          VerticalAlignment="Center"
+                          Foreground="{DynamicResource BrushTextMain}" />
                 <Button Grid.Column="1"
                         Content="取消"
                         Style="{StaticResource SecondaryBtn}"

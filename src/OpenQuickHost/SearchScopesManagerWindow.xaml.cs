@@ -63,6 +63,7 @@ namespace OpenQuickHost
             }
 
             ScopesListBox.ItemsSource = _items;
+            EnableEverythingCheckBox.IsChecked = _settings.EnableEverything;
         }
 
         private void MoveUpButton_Click(object sender, RoutedEventArgs e)
@@ -105,7 +106,25 @@ namespace OpenQuickHost
                 });
             }
 
+            var wasEnabled = _settings.EnableEverything;
+            var isEnabled = EnableEverythingCheckBox.IsChecked == true;
+            _settings.EnableEverything = isEnabled;
+
+            if (wasEnabled != isEnabled)
+            {
+                if (isEnabled)
+                {
+                    EverythingRuntimeService.EnsureStartedInBackground();
+                }
+                else
+                {
+                    EverythingRuntimeService.StopOwnedRuntime();
+                    EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                }
+            }
+
             AppSettingsStore.Save(_settings);
+            _mainWindow.RefreshAppSettings();
             _mainWindow.NotifyQuickPanelSettingsChanged("search-scopes-saved", refreshYanmOverlay: false);
             DialogResult = true;
             Close();

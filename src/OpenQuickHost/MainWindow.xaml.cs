@@ -455,6 +455,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsStoreMode));
             OnPropertyChanged(nameof(StoreVisibility));
             OnPropertyChanged(nameof(NormalLauncherVisibility));
+            OnPropertyChanged(nameof(IsFileSearchScopeActive));
             OnPropertyChanged(nameof(AiChatModelDisplayText));
 
             if (IsStoreMode)
@@ -628,8 +629,130 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsFileSearchScopeActive =>
+        string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase) &&
+        !IsAiChatMode;
+
+    private bool _isFileSearching;
+    public bool IsFileSearching
+    {
+        get => _isFileSearching;
+        set
+        {
+            if (_isFileSearching == value) return;
+            _isFileSearching = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string _fileSearchingText = "搜索中...";
+    public string FileSearchingText
+    {
+        get => _fileSearchingText;
+        set
+        {
+            if (_fileSearchingText == value) return;
+            _fileSearchingText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private static ImageSource? _cachedEverythingIcon;
+    public ImageSource? EverythingIconSource
+    {
+        get
+        {
+            if (_cachedEverythingIcon != null)
+            {
+                return _cachedEverythingIcon;
+            }
+
+            try
+            {
+                var bundledExe = Path.Combine(AppContext.BaseDirectory, "EverythingRuntime", "Everything.exe");
+                if (File.Exists(bundledExe))
+                {
+                    _cachedEverythingIcon = ExtensionIconLibrary.TryExtractAssociatedIcon(bundledExe);
+                    if (_cachedEverythingIcon != null)
+                    {
+                        return _cachedEverythingIcon;
+                    }
+                }
+
+                var devPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "third_party", "everything-runtime", "package", "everything.exe"));
+                if (File.Exists(devPath))
+                {
+                    _cachedEverythingIcon = ExtensionIconLibrary.TryExtractAssociatedIcon(devPath);
+                    if (_cachedEverythingIcon != null)
+                    {
+                        return _cachedEverythingIcon;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore icon extraction failures
+            }
+
+            return null;
+        }
+    }
+
+    public bool HasEverythingIcon => EverythingIconSource != null;
+
+    public bool IsFileSearchEnabledInHomeView
+    {
+        get => _appSettings.EnableEverything;
+        set
+        {
+            HostAssets.AppendLog($"[MainWindow] IsFileSearchEnabledInHomeView setter called with value={value}, current={_appSettings.EnableEverything}");
+            if (value == _appSettings.EnableEverything)
+            {
+                return;
+            }
+
+            _appSettings = _appSettings with
+            {
+                EnableEverything = value,
+                LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O")
+            };
+            AppSettingsStore.Save(_appSettings);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(VisibleCountText));
+            OnPropertyChanged(nameof(FooterHint));
+            NotifyQuickPanelSettingsChanged("everything-engine-toggle", refreshYanmOverlay: false);
+
+            if (value)
+            {
+                _ = Task.Run(async () =>
+                {
+                    EverythingRuntimeService.EnsureRunning();
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        ApplyFilter(SearchBox?.Text);
+                    });
+                });
+            }
+            else
+            {
+                EverythingRuntimeService.StopOwnedRuntime();
+                EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                ApplyFilter(SearchBox?.Text);
+            }
+        }
+    }
+
+    private void FileSearchToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.CheckBox cb)
+        {
+            HostAssets.AppendLog($"[MainWindow] FileSearchToggle_Click: IsChecked={cb.IsChecked}");
+            IsFileSearchEnabledInHomeView = cb.IsChecked == true;
+        }
+    }
+
     public string VisibleCountText => string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase)
-        ? $"{FilteredCommands.Count} 个文件结果"
+        ? (!_appSettings.EnableEverything ? "文件搜索未启用" : $"{FilteredCommands.Count} 个文件结果")
         : string.Equals(_activeFilterScopeKey, SearchScopeAi, StringComparison.OrdinalIgnoreCase)
             ? $"{AiChatMessages.Count} 条对话"
             : $"{FilteredCommands.Count} 条结果";
@@ -669,13 +792,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? Visibility.Collapsed
         : Visibility.Visible;
 
-    public string FooterHint => SelectedCommand == null
-        ? "Up / Down 切换   Enter 执行   → 菜单   Esc 收起"
-        : SelectedCommand.IsFileSystemResult
-            ? "Up / Down 切换   Enter 打开   右键原生菜单   Esc 收起"
-        : SelectedCommand.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
-            ? $"{SelectedCommand.Title}   ·   {BuildQueryPreviewText(SelectedCommand, _activeQueryArgument)}"
-            : $"{SelectedCommand.Title}   ·   {SelectedCommand.Category}   ·   → 菜单";
+    public string FooterHint => IsFileSearchScopeActive && !_appSettings.EnableEverything
+        ? "Everything 文件搜索已关闭 · 点击上方开关即可启用"
+        : SelectedCommand == null
+            ? "Up / Down 切换   Enter 执行   → 菜单   Esc 收起"
+            : SelectedCommand.IsFileSystemResult
+                ? "Up / Down 切换   Enter 打开   右键原生菜单   Esc 收起"
+            : SelectedCommand.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
+                ? $"{SelectedCommand.Title}   ·   {BuildQueryPreviewText(SelectedCommand, _activeQueryArgument)}"
+                : $"{SelectedCommand.Title}   ·   {SelectedCommand.Category}   ·   → 菜单";
 
     public bool IsHostedViewOpen => _activeHostedView != null;
 
@@ -3303,6 +3428,10 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? PreferManualExtensionEditor { get; set; }
 
+    [JsonPropertyName("enableEverything")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? EnableEverything { get; set; }
+
     [JsonPropertyName("launcherHotkey")]
     public string LauncherHotkey { get; set; } = "Alt+Space";
 
@@ -3426,6 +3555,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             EnableAutoUpdate = settings.EnableAutoUpdate,
             EnableBrowserHelper = settings.EnableBrowserHelper,
             PreferManualExtensionEditor = settings.PreferManualExtensionEditor,
+            EnableEverything = settings.EnableEverything,
             LauncherHotkey = settings.LauncherHotkey,
             LaunchAtStartup = settings.LaunchAtStartup,
             RefreshCloudOnStartup = settings.RefreshCloudOnStartup,
@@ -3484,6 +3614,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             EnableAutoUpdate = EnableAutoUpdate ?? true,
             EnableBrowserHelper = EnableBrowserHelper ?? true,
             PreferManualExtensionEditor = PreferManualExtensionEditor ?? false,
+            EnableEverything = EnableEverything ?? true,
             LauncherHotkey = LauncherHotkey,
             LaunchAtStartup = LaunchAtStartup,
             RefreshCloudOnStartup = RefreshCloudOnStartup,
@@ -3559,6 +3690,7 @@ public sealed class CloudQuickPanelConfigSnapshot
                snapshot.EnableAutoUpdate == false ||
                snapshot.EnableBrowserHelper == false ||
                snapshot.PreferManualExtensionEditor == true ||
+               snapshot.EnableEverything == false ||
                !string.Equals(snapshot.ThemeMode, "Dark", StringComparison.OrdinalIgnoreCase) ||
                snapshot.LaunchAtStartup == false ||
                snapshot.RefreshCloudOnStartup == false ||

@@ -79,9 +79,27 @@ public partial class MainWindow
 
         if (string.Equals(parsed.ScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase))
         {
+            if (!_appSettings.EnableEverything)
+            {
+                IsFileSearching = false;
+                FilteredCommands.Clear();
+                SelectedCommand = null;
+                CommandList.SelectedItem = null;
+                _hasAppliedFilterOnce = true;
+                _lastAppliedFilterText = normalizedQueryText;
+                _lastAppliedFilterScopeKey = parsed.ScopeKey;
+                OnPropertyChanged(nameof(VisibleCountText));
+                OnPropertyChanged(nameof(FooterHint));
+                OnPropertyChanged(nameof(IsFileSearchScopeActive));
+                OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
+                return;
+            }
+
             QueueFileSearchResults(parsed.Term);
             return;
         }
+
+        IsFileSearching = false;
 
         if (TryGetPinnedSearchProviderCommand(parsed.ScopeKey, out var providerCommand))
         {
@@ -153,9 +171,12 @@ public partial class MainWindow
         _lastAppliedFilterScopeKey = parsed.ScopeKey;
         OnPropertyChanged(nameof(VisibleCountText));
         OnPropertyChanged(nameof(FooterHint));
+        OnPropertyChanged(nameof(IsFileSearchScopeActive));
+        OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
 
         if (string.Equals(parsed.ScopeKey, SearchScopeAll, StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(parsed.Term))
+            !string.IsNullOrWhiteSpace(parsed.Term) &&
+            _appSettings.EnableEverything)
         {
             QueueAllScopeFileSearchResults(parsed.Term, matches, preserveSelection, previousSelectedCommand);
         }
@@ -1146,6 +1167,7 @@ public partial class MainWindow
 
         if (string.IsNullOrWhiteSpace(query))
         {
+            IsFileSearching = false;
             if (requestVersion != _fileSearchRequestVersion)
             {
                 return;
@@ -1156,16 +1178,33 @@ public partial class MainWindow
             CommandList.SelectedItem = null;
             OnPropertyChanged(nameof(VisibleCountText));
             OnPropertyChanged(nameof(FooterHint));
+            OnPropertyChanged(nameof(IsFileSearchScopeActive));
+            OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
             return;
         }
 
-        var response = await Task.Run(() => EverythingSearchService.Search(query, 256));
+        FileSearchingText = !EverythingSearchService.IsDatabaseLoaded()
+            ? "Everything 正在初始化索引，请稍候..."
+            : "搜索中...";
+        IsFileSearching = true;
+
+        var response = await Task.Run(() =>
+        {
+            if (!EverythingSearchService.IsIpcReachable())
+            {
+                EverythingRuntimeService.EnsureRunning();
+            }
+            return EverythingSearchService.Search(query, 256);
+        });
+
         if (requestVersion != _fileSearchRequestVersion ||
             !string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(_pendingFileSearchTerm, query, StringComparison.Ordinal))
         {
             return;
         }
+
+        IsFileSearching = false;
 
         if (!response.Success)
         {
@@ -1181,6 +1220,8 @@ public partial class MainWindow
             CommandList.SelectedItem = null;
             OnPropertyChanged(nameof(VisibleCountText));
             OnPropertyChanged(nameof(FooterHint));
+            OnPropertyChanged(nameof(IsFileSearchScopeActive));
+            OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
             return;
         }
 
@@ -1195,6 +1236,8 @@ public partial class MainWindow
         CommandList.SelectedItem = SelectedCommand;
         OnPropertyChanged(nameof(VisibleCountText));
         OnPropertyChanged(nameof(FooterHint));
+        OnPropertyChanged(nameof(IsFileSearchScopeActive));
+        OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
 
         if (fileCommands.Count == 0)
         {
@@ -1444,6 +1487,7 @@ public partial class MainWindow
     private bool IsFileIconLoadScopeActive()
     {
         return string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(_activeFilterScopeKey, SearchScopeAll, StringComparison.OrdinalIgnoreCase) ||
                TryGetPinnedSearchProviderCommand(_activeFilterScopeKey, out _);
     }
 

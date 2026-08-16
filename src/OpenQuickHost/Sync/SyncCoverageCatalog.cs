@@ -93,6 +93,7 @@ internal static class SyncCoverageCatalog
         yield return Account(nameof(AppSettings.EnvironmentVariables), SyncPayloadPolicy.MetadataOnly,
             "只同步变量名和说明，变量值保留在本机 DPAPI 存储中。");
         yield return Account(nameof(AppSettings.YanyuRules));
+        yield return Account(nameof(AppSettings.EnableEverything));
         yield return Account(nameof(AppSettings.EnableWindowSnapAssist));
         yield return Account(nameof(AppSettings.WindowSnapAssistHotkey));
         yield return Account(nameof(AppSettings.WindowSnapAssistMouseTriggerMode));

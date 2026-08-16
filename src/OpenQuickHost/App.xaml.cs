@@ -215,11 +215,20 @@ public partial class App : WpfApplication
 
         SyncConfigLoader.EnsureExampleFile();
         var settings = AppSettingsStore.Load();
+        HostAssets.AppendLog($"[App.OnStartup] Loaded settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
         ApplyTheme(settings.ThemeMode);
         EventManager.RegisterClassHandler(typeof(Window), Window.LoadedEvent, new RoutedEventHandler(Window_GlobalLoaded));
         SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
         StartupRegistrationService.Apply(settings.LaunchAtStartup);
-        EverythingRuntimeService.EnsureStartedInBackground();
+        if (settings.EnableEverything)
+        {
+            HostAssets.AppendLog("[App.OnStartup] Starting Everything background service because EnableEverything is true");
+            EverythingRuntimeService.EnsureStartedInBackground();
+        }
+        else
+        {
+            HostAssets.AppendLog("[App.OnStartup] Everything background service is disabled in settings");
+        }
 
         _ = Task.Run(() => OpenQuickHost.Sync.ExtensionRecycleBinService.PurgeExpiredItems(30));
 
@@ -1216,7 +1225,7 @@ public partial class App : WpfApplication
         {
             try
             {
-                if (_settingsWindow != null && _settingsWindow.IsLoaded)
+                if (_settingsWindow != null)
                 {
                     _settingsWindow.ReloadSettingsFromDisk();
                     HostAssets.AppendLog("Settings window settings reloaded from disk due to external sync.");

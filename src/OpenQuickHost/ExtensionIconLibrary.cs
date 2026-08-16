@@ -642,7 +642,7 @@ internal static class ExtensionIconLibrary
                string.Equals(extension, ".appref-ms", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static ImageSource? TryExtractAssociatedIcon(string localPath)
+    public static ImageSource? TryExtractAssociatedIcon(string localPath)
     {
         System.Drawing.Icon? icon = null;
 

@@ -12,6 +12,7 @@
             </ResourceDictionary.MergedDictionaries>
 
             <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+            <local:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
 
             <!-- Global Text Styles -->
             <Style x:Key="TitleText" TargetType="TextBlock">
@@ -90,6 +91,55 @@
             <Style TargetType="CheckBox">
                 <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
                 <Setter Property="FontSize" Value="13"/>
+            </Style>
+
+            <Style x:Key="RaycastSwitchStyle" TargetType="CheckBox">
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="CheckBox">
+                            <Grid Width="36" Height="20">
+                                <Border x:Name="Track"
+                                        CornerRadius="10"
+                                        Background="{DynamicResource BrushBorder}" />
+                                <Ellipse x:Name="Thumb"
+                                        Width="16"
+                                        Height="16"
+                                        Margin="2,0,0,0"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center"
+                                        Fill="White">
+                                    <Ellipse.RenderTransform>
+                                        <TranslateTransform X="0" />
+                                    </Ellipse.RenderTransform>
+                                </Ellipse>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Track" Property="Background" Value="#FF3B82F6" />
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="Thumb" 
+                                                               Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                               To="16" Duration="0:0:0.15" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="Thumb" 
+                                                               Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                               To="0" Duration="0:0:0.15" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <Style TargetType="ListView">

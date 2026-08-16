@@ -81,18 +81,37 @@ public static class EverythingRuntimeService
                 return true;
             }
 
+            StopOwnedRuntime();
+            KillAllYanziEverythingProcesses();
+
             return TryStartRuntime(isRetry: false);
+        }
+    }
+
+    public static void RebuildDatabaseAndRestart()
+    {
+        lock (SyncLock)
+        {
+            StopOwnedRuntime();
+            KillAllYanziEverythingProcesses();
+            try
+            {
+                if (File.Exists(HostAssets.EverythingRuntimeDatabasePath))
+                {
+                    File.Delete(HostAssets.EverythingRuntimeDatabasePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to delete Everything database for rebuild: {ex.Message}");
+            }
+
+            _ = Task.Run(() => EnsureRunning());
         }
     }
 
     private static bool TryStartRuntime(bool isRetry)
     {
-        if (EverythingProcessExists())
-        {
-            HostAssets.AppendLog("Everything runtime skipped: existing Everything process detected.");
-            return false;
-        }
-
         var runtimeExecutablePath = GetBundledRuntimeExecutablePath();
         if (!File.Exists(runtimeExecutablePath))
         {
@@ -176,6 +195,7 @@ public static class EverythingRuntimeService
             }
 
             process.Kill(entireProcessTree: true);
+            try { process.WaitForExit(1000); } catch { }
             HostAssets.AppendLog($"Everything runtime stopped: pid={processId.Value}");
         }
         catch (ArgumentException)
@@ -202,6 +222,7 @@ public static class EverythingRuntimeService
                                          path.Contains("EverythingRuntime", StringComparison.OrdinalIgnoreCase)))
                     {
                         process.Kill();
+                        try { process.WaitForExit(1000); } catch { }
                         HostAssets.AppendLog($"Killed lingering Everything process: pid={process.Id}");
                     }
                 }

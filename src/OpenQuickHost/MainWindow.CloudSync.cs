@@ -2982,6 +2982,7 @@ public partial class MainWindow
             snapshot.EnableAutoUpdate != null && settings.EnableAutoUpdate != incoming.EnableAutoUpdate ||
             snapshot.EnableBrowserHelper != null && settings.EnableBrowserHelper != incoming.EnableBrowserHelper ||
             snapshot.PreferManualExtensionEditor != null && settings.PreferManualExtensionEditor != incoming.PreferManualExtensionEditor ||
+            snapshot.EnableEverything != null && settings.EnableEverything != incoming.EnableEverything ||
             !string.Equals(settings.LauncherHotkey, incoming.LauncherHotkey, StringComparison.Ordinal) ||
             settings.LaunchAtStartup != incoming.LaunchAtStartup ||
             settings.RefreshCloudOnStartup != incoming.RefreshCloudOnStartup ||
@@ -3122,6 +3123,11 @@ public partial class MainWindow
         if (snapshot.EnableAutoUpdate != null) settings.EnableAutoUpdate = incoming.EnableAutoUpdate;
         if (snapshot.EnableBrowserHelper != null) settings.EnableBrowserHelper = incoming.EnableBrowserHelper;
         if (snapshot.PreferManualExtensionEditor != null) settings.PreferManualExtensionEditor = incoming.PreferManualExtensionEditor;
+        if (snapshot.EnableEverything != null)
+        {
+            HostAssets.AppendLog($"[CloudSync] ApplyCloudLauncherSettings applying EnableEverything: {settings.EnableEverything} -> {incoming.EnableEverything}");
+            settings.EnableEverything = incoming.EnableEverything;
+        }
         settings.LauncherHotkey = incoming.LauncherHotkey;
         settings.LaunchAtStartup = incoming.LaunchAtStartup;
         settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;
@@ -4387,6 +4393,7 @@ public partial class MainWindow
                snapshot.EnableAutoUpdate == null ||
                snapshot.EnableBrowserHelper == null ||
                snapshot.PreferManualExtensionEditor == null ||
+               snapshot.EnableEverything == null ||
                snapshot.MouseGestureAppBindings == null ||
                snapshot.SearchScopeConfigs == null ||
                snapshot.EnvironmentVariables == null;
@@ -5244,6 +5251,10 @@ public partial class MainWindow
         _appSettings = settings;
         _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
         OnPropertyChanged(nameof(AiChatModelDisplayText));
+        OnPropertyChanged(nameof(IsFileSearchScopeActive));
+        OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
+        OnPropertyChanged(nameof(VisibleCountText));
+        OnPropertyChanged(nameof(FooterHint));
         if (!_listenerServicesPaused)
         {
             InputHookService.ReloadSettings();
@@ -6046,6 +6057,7 @@ public partial class MainWindow
             QueueCloudYanmStateSync(reason);
         }
         QueueBackgroundWebDavSync($"config-{reason}");
+        App.Current?.ReloadSettingsWindowIfOpen();
     }
 
     private static bool IsYanmSettingsChangeReason(string reason)

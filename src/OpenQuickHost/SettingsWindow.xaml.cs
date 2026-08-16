@@ -145,6 +145,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshCloudOnStartup = _settings.RefreshCloudOnStartup;
         CloseToTray = _settings.CloseToTray;
         EnableAutoUpdate = _settings.EnableAutoUpdate;
+        EnableEverything = _settings.EnableEverything;
         EnableWindowSnapAssist = _settings.EnableWindowSnapAssist;
         LauncherHotkey = _settings.LauncherHotkey;
         LoadPersonalSyncStateFromSettings();
@@ -931,6 +932,73 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             _settings = _settings with { LaunchAtStartup = value };
             OnPropertyChanged();
+        }
+    }
+
+    public bool EnableEverything
+    {
+        get => _settings.EnableEverything;
+        set
+        {
+            if (value == _settings.EnableEverything)
+            {
+                return;
+            }
+
+            _settings = _settings with { EnableEverything = value };
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(EverythingRunningStatusText));
+            OnPropertyChanged(nameof(EverythingRunningStatusBrush));
+            if (value)
+            {
+                _ = Task.Run(async () =>
+                {
+                    EverythingRuntimeService.EnsureRunning();
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        OnPropertyChanged(nameof(EverythingRunningStatusText));
+                        OnPropertyChanged(nameof(EverythingRunningStatusBrush));
+                        _mainWindow.RefreshAppSettings();
+                    });
+                });
+            }
+            else
+            {
+                EverythingRuntimeService.StopOwnedRuntime();
+                EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                _mainWindow.RefreshAppSettings();
+            }
+        }
+    }
+
+    public string EverythingRunningStatusText => _settings.EnableEverything
+        ? "服务已启用（Everything 后台运行中）"
+        : "服务已停用（Everything 已退出）";
+
+    public System.Windows.Media.Brush EverythingRunningStatusBrush => _settings.EnableEverything
+        ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94))
+        : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+
+    private void RebuildEverythingIndexButton_Click(object sender, RoutedEventArgs e)
+    {
+        EverythingRuntimeService.RebuildDatabaseAndRestart();
+        System.Windows.MessageBox.Show("已触发 Everything 索引数据库重建，正在后台重新扫描全盘...", "重建索引", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+    }
+
+    private void OpenEverythingDataFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(HostAssets.EverythingRuntimeDataPath);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = HostAssets.EverythingRuntimeDataPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"打开目录失败: {ex.Message}");
         }
     }
 
@@ -2871,6 +2939,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _settings.Yanm ??= new YanmSettings();
         OnPropertyChanged(nameof(LaunchAtStartup));
         OnPropertyChanged(nameof(RefreshCloudOnStartup));
+        OnPropertyChanged(nameof(EnableEverything));
         OnPropertyChanged(nameof(CloseToTray));
         OnPropertyChanged(nameof(EnableYanm));
         OnPropertyChanged(nameof(YanmActivationKey));
@@ -3176,14 +3245,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        _settings = _settings with
+        var latest = AppSettingsStore.Load();
+        latest = latest with
         {
             SettingsWindowLeft = Left,
             SettingsWindowTop = Top,
             SettingsWindowWidth = Width,
             SettingsWindowHeight = Height
         };
-        AppSettingsStore.Save(_settings);
+        _settings = latest;
+        AppSettingsStore.Save(latest);
     }
 
     private void SettingsSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)

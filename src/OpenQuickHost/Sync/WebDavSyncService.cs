@@ -901,6 +901,7 @@ public sealed class WebDavSyncService
         if (snapshot.EnableAutoUpdate != null) settings.EnableAutoUpdate = incoming.EnableAutoUpdate;
         if (snapshot.EnableBrowserHelper != null) settings.EnableBrowserHelper = incoming.EnableBrowserHelper;
         if (snapshot.PreferManualExtensionEditor != null) settings.PreferManualExtensionEditor = incoming.PreferManualExtensionEditor;
+        if (snapshot.EnableEverything != null) settings.EnableEverything = incoming.EnableEverything;
         settings.LauncherHotkey = incoming.LauncherHotkey;
         settings.LaunchAtStartup = incoming.LaunchAtStartup;
         settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;

@@ -667,7 +667,60 @@
             <Grid Grid.Row="1"
                   Margin="10,5,10,5"
                   Visibility="{Binding NormalLauncherVisibility}">
-                <ListBox x:Name="CommandList"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 文件类目置顶第一行：极简 Everything 开关条 -->
+                <Border Grid.Row="0"
+                        Margin="4,2,4,4"
+                        Padding="12,7"
+                        CornerRadius="7"
+                        Background="#0DFFFFFF"
+                        BorderBrush="{DynamicResource BrushBorder}"
+                        BorderThickness="1"
+                        Visibility="{Binding IsFileSearchScopeActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                            <Image Source="{Binding EverythingIconSource}"
+                                   Width="16"
+                                   Height="16"
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                   SnapsToDevicePixels="True"
+                                   Visibility="{Binding HasEverythingIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            <Path Data="{local:IconGeometry search}"
+                                  Fill="#FF3B82F6"
+                                  Stretch="Uniform"
+                                  Width="15"
+                                  Height="15"
+                                  Visibility="{Binding HasEverythingIcon, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                        </Grid>
+                        <TextBlock Grid.Column="1"
+                                   Text="Everything 引擎"
+                                   Foreground="{DynamicResource BrushTextMain}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
+                                   FontWeight="Medium"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,0,0"/>
+                        <CheckBox Grid.Column="2"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Center"
+                                  Style="{StaticResource RaycastSwitchStyle}"
+                                  IsChecked="{Binding IsFileSearchEnabledInHomeView, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  Click="FileSearchToggle_Click"
+                                  ToolTip="开启或关闭 Everything 引擎"/>
+                    </Grid>
+                </Border>
+
+                <ListBox Grid.Row="1"
+                         x:Name="CommandList"
                          Background="Transparent"
                          BorderThickness="0"
                          ItemsSource="{Binding FilteredCommands}"
@@ -1177,6 +1230,28 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+
+                <!-- 文件搜索中 Loading 动画与文案 -->
+                <Grid Grid.Row="1"
+                      Panel.ZIndex="5"
+                      Visibility="{Binding IsFileSearching, Converter={StaticResource BooleanToVisibilityConverter}}"
+                      Background="Transparent"
+                      IsHitTestVisible="False">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,0,0,30">
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="140"
+                                     Height="4"
+                                     Foreground="#FF3B82F6"
+                                     Background="#22FFFFFF"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding FileSearchingText}"
+                                   Foreground="{DynamicResource BrushTextSec}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
+                                   Margin="0,12,0,0"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
 
                 <!-- 4. 商店加载中 Loading Overlay -->
                 <Grid x:Name="StoreLoadingOverlay"
