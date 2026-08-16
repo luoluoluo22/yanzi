@@ -19,6 +19,8 @@ internal static class ExtensionIconLibrary
 
     private static readonly IReadOnlyDictionary<string, string> MdiIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
+        ["arrow-left"] = "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z",
+        ["arrow-right"] = "M4,11V13H16L10.5,18.5L11.92,19.92L19.84,12L11.92,4.08L10.5,5.5L16,11H4Z",
         ["search"] = "M15.5,14H14.71L14.43,13.73C15.41,12.59 16,11.11 16,9.5A6.5,6.5 0 1,0 9.5,16C11.11,16 12.59,15.41 13.73,14.43L14,14.71V15.5L19,20.5L20.5,19L15.5,14M9.5,14C7.01,14 5,11.99 5,9.5C5,7.01 7.01,5 9.5,5C11.99,5 14,7.01 14,9.5C14,11.99 11.99,14 9.5,14Z",
         ["translate"] = "M12.87,15.07L11,13.2L11.05,13.15C12.32,11.74 13.22,10.13 13.75,8.43H15.82V6.43H10.43V5H8.43V6.43H3V8.43H11.84C11.35,9.85 10.57,11.19 9.5,12.39C8.81,11.62 8.24,10.76 7.75,9.85H5.75C6.33,11.19 7.13,12.44 8.15,13.56L4.4,17.32L5.81,18.73L9.5,15.04L11.8,17.34L12.87,15.07M17.5,10H15.5L11,22H13L14,19H19L20,22H22L17.5,10M14.75,17L16.5,12.33L18.25,17H14.75Z",
         ["folder"] = "M10,4H2C0.89,4 0,4.89 0,6V18A2,2 0 0,0 2,20H22A2,2 0 0,0 24,18V8C24,6.89 23.1,6 22,6H12L10,4Z",
@@ -79,7 +81,7 @@ internal static class ExtensionIconLibrary
         ["delete"] = "circle-delete.svg",
         ["check"] = "circle-check.svg",
         ["close"] = "close.svg",
-        ["arrow-left"] = "arrow-left-solid.svg",
+        ["arrow-left-solid"] = "arrow-left-solid.svg",
         ["warning"] = "circle-warning.svg",
         ["user"] = "user.svg",
         ["users"] = "users.svg",
@@ -642,8 +644,21 @@ internal static class ExtensionIconLibrary
                string.Equals(extension, ".appref-ms", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ImageSource?> AssociatedIconCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public static ImageSource? TryExtractAssociatedIcon(string localPath)
     {
+        if (string.IsNullOrWhiteSpace(localPath))
+        {
+            return null;
+        }
+
+        if (AssociatedIconCache.TryGetValue(localPath, out var cached))
+        {
+            return cached;
+        }
+
         System.Drawing.Icon? icon = null;
 
         try
@@ -652,6 +667,7 @@ internal static class ExtensionIconLibrary
 
             if (icon == null)
             {
+                AssociatedIconCache[localPath] = null;
                 return null;
             }
 
@@ -664,10 +680,12 @@ internal static class ExtensionIconLibrary
                 bitmap.Freeze();
             }
 
+            AssociatedIconCache[localPath] = bitmap;
             return bitmap;
         }
         catch
         {
+            AssociatedIconCache[localPath] = null;
             return null;
         }
         finally

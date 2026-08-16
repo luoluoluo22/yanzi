@@ -669,6 +669,20 @@ public static class NativeFileIconService
     {
         try
         {
+            // 1. 优先使用 Windows 权威 COM 接口 IShellItemImageFactory 直接提取系统与 UWP 高清 Fluent 原生图标
+            var hqIcon = LoadHighQualityIcon(path, 256);
+            if (hqIcon != null)
+            {
+                return hqIcon;
+            }
+
+            var smallIcon = LoadHighQualityIcon(path, 48);
+            if (smallIcon != null)
+            {
+                return smallIcon;
+            }
+
+            // 2. 降级尝试从 UWP AppxManifest 注册表清单与资源包中解析
             string? logoPath = GetUwpLogoPath(path);
             if (!string.IsNullOrEmpty(logoPath) && File.Exists(logoPath))
             {

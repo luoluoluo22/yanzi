@@ -51,6 +51,47 @@ public static class KeyboardDoubleTapService
     private static bool _winDoubleTapEnabled = true;
     private static bool _hasReleasedWinForYanmHold;
     private static string _yanmActivationKey = YanmActivationKeys.Win;
+    private static bool _capsLockDown;
+    private static bool _capsLockUsedForLauncher;
+    private static long _capsLockDownTimestamp;
+
+    private static void SendSyntheticCapsLockToggle()
+    {
+        const uint keyEventKeyUp = 0x0002;
+        keybd_event((byte)VkCapsLock, 0x45, 0, UIntPtr.Zero);
+        keybd_event((byte)VkCapsLock, 0x45, keyEventKeyUp, UIntPtr.Zero);
+    }
+
+    private static bool IsLauncherWindowActive()
+    {
+        var mainWindow = MainWindow.Instance;
+        if (mainWindow == null) return false;
+        try
+        {
+            return mainWindow.Dispatcher.Invoke(() => mainWindow.IsVisible && mainWindow.IsActive && mainWindow.WindowState != WindowState.Minimized);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void DispatchLauncherCapsAction(MainWindow.LauncherCapsAction action, string key)
+    {
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            MainWindow.Instance?.HandleCapsNavigation(action);
+            MainWindow.Instance?.FlashGuideKey(key);
+        });
+    }
+
+    private static void DispatchCapsGuideState(bool isCapsDown, string? activeKey)
+    {
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            MainWindow.Instance?.SetCapsGuideState(isCapsDown, activeKey);
+        });
+    }
 
     public static bool IsRunning => _hookId != IntPtr.Zero;
     public static bool IsYanmTriggerHeld => _winOverlayActive;
@@ -213,6 +254,62 @@ public static class KeyboardDoubleTapService
 
     private static bool HandleKeyDown(int vkCode)
     {
+        if (vkCode == VkCapsLock)
+        {
+            _capsLockDown = true;
+            _capsLockUsedForLauncher = false;
+            _capsLockDownTimestamp = Environment.TickCount64;
+            if (IsLauncherWindowActive())
+            {
+                DispatchCapsGuideState(isCapsDown: true, activeKey: null);
+                return true; // 拦截 CapsLock 按下，避免在搜索框内直接触发系统大写锁定
+            }
+            return IsYanmTriggerKey(YanmActivationKeys.CapsLock) ? HandleYanmTriggerDown(YanmActivationKeys.CapsLock) : false;
+        }
+
+        // 当按住 CapsLock 且启动器窗口处于前台激活时，拦截 WSAD / 空格 / Enter 等
+        if (_capsLockDown && IsLauncherWindowActive())
+        {
+            switch (vkCode)
+            {
+                case 0x57: // 'W' - 向上
+                case 0x45: // 'E'
+                case 0x4B: // 'K'
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.MoveUp, "W");
+                    return true;
+
+                case 0x53: // 'S' - 向下
+                case 0x4A: // 'J'
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.MoveDown, "S");
+                    return true;
+
+                case 0x41: // 'A' - 左 (返回输入框)
+                case 0x48: // 'H'
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.ReturnToSearch, "A");
+                    return true;
+
+                case 0x44: // 'D' - 右 (操作菜单)
+                case 0x4C: // 'L'
+                case 0x46: // 'F'
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.OpenMenu, "D");
+                    return true;
+
+                case 0x20: // Space - 空格直接运行！
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.Execute, "Space");
+                    return true;
+
+                case 0x0D: // Enter
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.Execute, "Space");
+                    return true;
+            }
+        }
+
         switch (vkCode)
         {
             case VkLControl:
@@ -253,8 +350,6 @@ public static class KeyboardDoubleTapService
             case VkRWin:
                 _rightWinDown = true;
                 return IsYanmTriggerKey(YanmActivationKeys.Win) ? HandleYanmTriggerDown(YanmActivationKeys.Win) : false;
-            case VkCapsLock:
-                return IsYanmTriggerKey(YanmActivationKeys.CapsLock) ? HandleYanmTriggerDown(YanmActivationKeys.CapsLock) : false;
         }
 
         if (ShouldReleaseWinForYanmPassthrough())
@@ -268,6 +363,25 @@ public static class KeyboardDoubleTapService
 
     private static bool HandleKeyUp(int vkCode)
     {
+        if (vkCode == VkCapsLock)
+        {
+            _capsLockDown = false;
+            var isLauncherActive = IsLauncherWindowActive();
+            var duration = Environment.TickCount64 - _capsLockDownTimestamp;
+
+            if (isLauncherActive)
+            {
+                DispatchCapsGuideState(isCapsDown: false, activeKey: null);
+                // 如果是短按（< 350ms）且未在按住期间使用任何 WSAD 组合键，则判定为切换大小写
+                if (!_capsLockUsedForLauncher && duration < 350)
+                {
+                    SendSyntheticCapsLockToggle();
+                }
+                return true;
+            }
+            return IsYanmTriggerKey(YanmActivationKeys.CapsLock) ? HandleYanmTriggerUp(YanmActivationKeys.CapsLock) : false;
+        }
+
         ModifierTapKind releasedKind;
         switch (vkCode)
         {
@@ -299,8 +413,6 @@ public static class KeyboardDoubleTapService
             case VkRWin:
                 _rightWinDown = false;
                 return IsYanmTriggerKey(YanmActivationKeys.Win) ? HandleYanmTriggerUp(YanmActivationKeys.Win) : false;
-            case VkCapsLock:
-                return IsYanmTriggerKey(YanmActivationKeys.CapsLock) ? HandleYanmTriggerUp(YanmActivationKeys.CapsLock) : false;
             default:
                 _sequenceDirty = true;
                 return false;

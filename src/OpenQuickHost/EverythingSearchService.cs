@@ -198,17 +198,40 @@ public static class EverythingSearchService
         };
     }
 
+    [ThreadStatic]
+    private static StringBuilder? _threadPathBuffer;
+
+    private static StringBuilder GetThreadPathBuffer()
+    {
+        var buffer = _threadPathBuffer;
+        if (buffer == null)
+        {
+            buffer = new StringBuilder(1024);
+            _threadPathBuffer = buffer;
+        }
+        else
+        {
+            buffer.Clear();
+        }
+
+        return buffer;
+    }
+
     private static string GetResultFullPath(uint index)
     {
-        const int initialCapacity = 1024;
-        var buffer = new StringBuilder(initialCapacity);
+        var buffer = GetThreadPathBuffer();
+        if (buffer.Capacity < 1024)
+        {
+            buffer.EnsureCapacity(1024);
+        }
+
         EverythingApi.Everything_GetResultFullPathNameW(index, buffer, (uint)buffer.Capacity);
         if (buffer.Length > 0)
         {
             return buffer.ToString();
         }
 
-        buffer = new StringBuilder(32768);
+        buffer.EnsureCapacity(32768);
         EverythingApi.Everything_GetResultFullPathNameW(index, buffer, (uint)buffer.Capacity);
         return buffer.ToString();
     }

@@ -569,64 +569,7 @@ public partial class MainWindow
         }
     }
 
-    private void UpdateSearchInlineCompletion()
-    {
-        var text = SearchBox.Text ?? string.Empty;
-        if (text.Length == 0 || text.StartsWith('@') || text.Contains(' ') || SearchBox.CaretIndex != text.Length)
-        {
-            SearchInlineCompletionSuffix = string.Empty;
-            SearchInlineCompletionPrefixWidth = 0;
-            return;
-        }
 
-        var candidate = FilteredCommands
-            .FirstOrDefault(command =>
-                !string.IsNullOrWhiteSpace(command.Title) &&
-                command.Title.StartsWith(text, StringComparison.OrdinalIgnoreCase) &&
-                !command.Title.Equals(text, StringComparison.OrdinalIgnoreCase));
-
-        if (candidate == null)
-        {
-            SearchInlineCompletionSuffix = string.Empty;
-            SearchInlineCompletionPrefixWidth = 0;
-            return;
-        }
-
-        SearchInlineCompletionSuffix = candidate.Title[text.Length..];
-        SearchInlineCompletionPrefixWidth = MeasureSearchTextWidth(text);
-    }
-
-    private bool AcceptSearchInlineCompletion()
-    {
-        if (string.IsNullOrWhiteSpace(SearchInlineCompletionSuffix) || SearchBox.CaretIndex != SearchBox.Text.Length)
-        {
-            return false;
-        }
-
-        SearchBox.Text += SearchInlineCompletionSuffix;
-        SearchBox.CaretIndex = SearchBox.Text.Length;
-        SearchInlineCompletionSuffix = string.Empty;
-        return true;
-    }
-
-    private double MeasureSearchTextWidth(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return 0;
-        }
-
-        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var formattedText = new FormattedText(
-            text,
-            CultureInfo.CurrentUICulture,
-            System.Windows.FlowDirection.LeftToRight,
-            new Typeface(SearchBox.FontFamily, SearchBox.FontStyle, SearchBox.FontWeight, SearchBox.FontStretch),
-            SearchBox.FontSize,
-            System.Windows.Media.Brushes.Transparent,
-            dpi);
-        return formattedText.WidthIncludingTrailingWhitespace + 1;
-    }
 
     private static string NormalizeSearchScopeAlias(string value)
     {
@@ -697,12 +640,27 @@ public partial class MainWindow
         {
             var term = parsed.Term ?? string.Empty;
             var countsByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            // 燕语数量单次计算，避免在命令遍历中重复执行数百次 LINQ
+            countsByKey[SearchScopeYanyu] = CountYanyuResults(term);
+
+            var allowRawLookup = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var scope in SearchScopes)
+            {
+                allowRawLookup[scope.Key] = AllowsRawQueryArgument(scope.Key);
+            }
+
             foreach (var command in _allCommands)
             {
                 if (!IsSearchResultEnabled(command))
                 {
                     continue;
                 }
+
+                var defaultMatch = BuildCommandMatch(command, term, false);
+                var rawAllowedMatch = defaultMatch;
+                var hasComputedRaw = false;
+
                 foreach (var scope in SearchScopes)
                 {
                     if (string.Equals(scope.Key, SearchScopeFile, StringComparison.OrdinalIgnoreCase))
@@ -715,7 +673,6 @@ public partial class MainWindow
                     }
                     if (string.Equals(scope.Key, SearchScopeYanyu, StringComparison.OrdinalIgnoreCase))
                     {
-                        countsByKey[scope.Key] = CountYanyuResults(term);
                         continue;
                     }
                     if (TryGetPinnedSearchProviderCommand(scope.Key, out _))
@@ -726,7 +683,29 @@ public partial class MainWindow
                         }
                         continue;
                     }
-                    if (BuildCommandMatch(command, term, AllowsRawQueryArgument(scope.Key)).IsMatch)
+
+                    if (!SearchScopeAllows(command, scope.Key))
+                    {
+                        continue;
+                    }
+
+                    var allowRaw = allowRawLookup.TryGetValue(scope.Key, out var ar) && ar;
+                    bool isMatch;
+                    if (!allowRaw)
+                    {
+                        isMatch = defaultMatch.IsMatch;
+                    }
+                    else
+                    {
+                        if (!hasComputedRaw)
+                        {
+                            rawAllowedMatch = BuildCommandMatch(command, term, true);
+                            hasComputedRaw = true;
+                        }
+                        isMatch = rawAllowedMatch.IsMatch;
+                    }
+
+                    if (isMatch)
                     {
                         countsByKey[scope.Key] = (countsByKey.TryGetValue(scope.Key, out var v) ? v : 0) + 1;
                     }

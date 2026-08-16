@@ -223,6 +223,14 @@
                      Opened="CommandListContextMenu_Opened"
                      Closed="CommandListContextMenu_Closed"
                      PreviewKeyDown="CommandListContextMenu_PreviewKeyDown">
+            <MenuItem Header="返回"
+                      InputGestureText="←"
+                      Click="BackToSearchMenuItem_Click">
+                <MenuItem.Icon>
+                    <Path Data="{local:IconGeometry arrow-left}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform" Width="14" Height="14" />
+                </MenuItem.Icon>
+            </MenuItem>
+            <Separator />
             <MenuItem Header="打开"
                       Click="OpenFileResultMenuItem_Click" />
             <MenuItem Header="打开路径"
@@ -250,6 +258,14 @@
                      Opened="CommandListContextMenu_Opened"
                      Closed="CommandListContextMenu_Closed"
                      PreviewKeyDown="CommandListContextMenu_PreviewKeyDown">
+            <MenuItem Header="返回"
+                      InputGestureText="←"
+                      Click="BackToSearchMenuItem_Click">
+                <MenuItem.Icon>
+                    <Path Data="{local:IconGeometry arrow-left}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform" Width="14" Height="14" />
+                </MenuItem.Icon>
+            </MenuItem>
+            <Separator />
             <MenuItem Header="执行默认动作"
                       Click="OpenGenericResultMenuItem_Click" />
             <MenuItem Header="查看详情"
@@ -264,7 +280,8 @@
         </ContextMenu>
     </Window.Resources>
 
-    <Border Margin="1"
+    <Border x:Name="MainWindowBorder"
+            Margin="1"
             CornerRadius="0"
             Background="{DynamicResource BrushDialogBG}"
             BorderBrush="{DynamicResource BrushBorder}"
@@ -317,16 +334,6 @@
                     </Viewbox>
 
                     <Grid Grid.Column="1">
-                        <TextBlock IsHitTestVisible="False"
-                                   VerticalAlignment="Center"
-                                   FontSize="{DynamicResource FontSizeTitle}"
-                                   Foreground="{DynamicResource BrushTextMuted}"
-                                   Visibility="{Binding SearchInlineCompletionVisibility}"
-                                   Text="{Binding SearchInlineCompletionSuffix}">
-                            <TextBlock.RenderTransform>
-                                <TranslateTransform X="{Binding SearchInlineCompletionPrefixWidth}" />
-                            </TextBlock.RenderTransform>
-                        </TextBlock>
                         <TextBox x:Name="SearchBox"
                                  AllowDrop="True"
                                  FontSize="{DynamicResource FontSizeTitle}"
@@ -741,6 +748,15 @@
                         <ContextMenu Opened="CommandListContextMenu_Opened"
                                      Closed="CommandListContextMenu_Closed"
                                      PreviewKeyDown="CommandListContextMenu_PreviewKeyDown">
+                            <MenuItem x:Name="BackToSearchMenuItem"
+                                      Header="返回"
+                                      InputGestureText="Caps+A"
+                                      Click="BackToSearchMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry arrow-left}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform" Width="14" Height="14" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator />
                             <MenuItem x:Name="SetCommandShortcutMenuItem"
                                       Header="设置快捷键"
                                       Visibility="Collapsed"
@@ -1034,23 +1050,27 @@
                                                  Orientation="Horizontal"
                                                  VerticalAlignment="Center"
                                                  Margin="8,0,5,0">
+
+                                           <!-- 快捷键徽标 (如果该项配置了快捷键) -->
                                         <Border Background="{DynamicResource BrushBG}"
                                                 BorderBrush="{DynamicResource BrushBorderStrong}"
                                                 BorderThickness="1"
                                                 CornerRadius="6"
                                                 Padding="8,4"
-                                                Margin="0,0,8,0"
+                                                Margin="0,0,4,0"
                                                 Visibility="{Binding HasGlobalShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <TextBlock Text="{Binding ShortcutLabel}"
                                                        Foreground="{DynamicResource BrushTextSec}"
                                                        FontSize="{DynamicResource FontSizeTiny}"
                                                        FontWeight="SemiBold" />
                                         </Border>
+
+                                        <!-- 普通分类标签 (扩展/应用/文件等) -->
                                         <TextBlock Text="{Binding DisplayTypeLabel}" 
                                                    Foreground="{DynamicResource BrushTextSec}" 
                                                    FontSize="{DynamicResource FontSizeSmallPlus}" 
                                                    VerticalAlignment="Center"
-                                                   Visibility="{Binding HasDisplayTypeLabel, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                   Visibility="{Binding HasDisplayTypeLabel, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     </StackPanel>
                                 </Grid>
 
@@ -2312,28 +2332,7 @@ Visibility="{Binding AiChatVisibility}">
                                 Style="{StaticResource SecondaryBtn}">
                         </Button>
                     </StackPanel>
-                    
-                    <!-- 普通模式下的指示文本 -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                Cursor="Hand"
-                                PreviewMouseLeftButtonDown="FooterMenuHint_Click"
-                                Visibility="{Binding NormalFooterMenuVisibility}">
-                        <TextBlock x:Name="FooterMenuHintText"
-                                   Text="右箭头菜单"
-                                   Foreground="{DynamicResource BrushTextSec}"
-                                   FontSize="{DynamicResource FontSizeSmallPlus}"
-                                   VerticalAlignment="Center"/>
-                        <Border Background="{DynamicResource BrushBG}"
-                                CornerRadius="3"
-                                Padding="6,2"
-                                Margin="8,0,0,0"
-                                VerticalAlignment="Center">
-                            <TextBlock x:Name="FooterMenuHintKeyText"
-                                       Text="→"
-                                       Foreground="{DynamicResource BrushTextSec}"
-                                       FontSize="{DynamicResource FontSizeTiny}"/>
-                        </Border>
-                    </StackPanel>
+
 
                     <!-- 选择模式下的主要蓝色高亮按钮 -->
                     <Button x:Name="FooterRadialPickerConfirmButton"
@@ -2460,6 +2459,209 @@ Visibility="{Binding AiChatVisibility}">
                                         </StackPanel>
                                     </Grid>
                                 </Button>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+
+                    <!-- 启动器右侧极客快捷键伴随悬浮窗 -->
+                    <Popup x:Name="CapsGuidePopup"
+                           Placement="Right"
+                           PlacementTarget="{Binding ElementName=MainWindowBorder}"
+                           HorizontalOffset="12"
+                           AllowsTransparency="True"
+                           PopupAnimation="Fade"
+                           Focusable="False">
+                        <Border Background="{DynamicResource BrushDialogBG}"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="12,12"
+                                Width="146">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="22" Direction="0" ShadowDepth="0" Color="#000000" Opacity="0.5"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <!-- 顶部标题 -->
+                                <TextBlock Text="盲操指南"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource BrushTextSec}"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,0,0,8" />
+
+                                <!-- 顶部 Caps 状态修饰键帽 (按住 [CAPS] +) -->
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,0,10">
+                                    <TextBlock Text="按住"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,5,0" />
+                                    
+                                    <Border Padding="9,3"
+                                            CornerRadius="5"
+                                            VerticalAlignment="Center">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1AFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsCapsIndicatorActive, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect BlurRadius="12" Color="#3B82F6" Opacity="0.8" ShadowDepth="0"/>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="CAPS"
+                                                   FontSize="10"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   HorizontalAlignment="Center"/>
+                                    </Border>
+
+                                    <TextBlock Text="+"
+                                               FontSize="12"
+                                               FontWeight="Bold"
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               VerticalAlignment="Center"
+                                               Margin="5,0,0,0" />
+                                </StackPanel>
+
+                                <!-- 上一项: [ W ] -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="7,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeyWFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="W" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="上一项" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
+
+                                <!-- 下一项: [ S ] -->
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="7,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeySFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="S" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="下一项" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
+
+                                <Separator Background="{DynamicResource BrushSeparator}" Margin="0,0,0,8"/>
+
+                                <!-- 返回输入: [ A ] -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="7,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeyAFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="A" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="返回输入" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
+
+                                <!-- 操作菜单: [ D ] -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="7,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeyDFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="D" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="操作菜单" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
+
+                                <!-- 执行: [ 空格 ] -->
+                                <Grid Margin="0,0,0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="5,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeySpaceFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="空格" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="直接运行" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
                             </StackPanel>
                         </Border>
                     </Popup>

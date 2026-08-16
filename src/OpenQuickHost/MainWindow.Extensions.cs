@@ -1291,6 +1291,10 @@ public partial class MainWindow
     private void Window_Deactivated(object? sender, EventArgs e)
     {
         SetSearchScopePopupOpen(false);
+        if (CapsGuidePopup != null)
+        {
+            CapsGuidePopup.IsOpen = false;
+        }
 
         if (_isPinned || !IsVisible)
         {
@@ -1323,6 +1327,7 @@ public partial class MainWindow
     private void MainWindow_Activated(object? sender, EventArgs e)
     {
         SetSearchScopePopupOpen(true);
+        UpdateCapsGuidePopupPosition();
     }
 
     private void MainWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)

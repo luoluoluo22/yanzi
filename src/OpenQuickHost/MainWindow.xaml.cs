@@ -203,8 +203,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _pendingProviderSearchTerm = string.Empty;
     private string _pendingProviderSearchScopeKey = string.Empty;
     private CommandItem? _pendingProviderSearchCommand;
-    private string _searchInlineCompletionSuffix = string.Empty;
-    private double _searchInlineCompletionPrefixWidth;
     private SearchScopeTab? _selectedSearchScope;
     private bool _listenerServicesPaused;
     private readonly double _defaultWindowWidth;
@@ -237,8 +235,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return string.Compare(left.Command.Title, right.Command.Title, StringComparison.OrdinalIgnoreCase);
     }
 
+    public static MainWindow? Instance { get; private set; }
+
     public MainWindow()
     {
+        Instance = this;
         InitializeComponent();
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler((s, e) =>
         {
@@ -248,6 +249,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 HostAssets.AppendLog($"MainWindow Esc pressed during EditMode: IsActive={IsActive}, Focused={focusedObj?.GetType().Name ?? "null"}");
                 _quickPanel.ToggleEditModeWithLauncherAlignment();
                 e.Handled = true;
+                return;
+            }
+
+            if (HandleNavigationShortcut(e))
+            {
+                return;
             }
         }), handledEventsToo: true);
         CleanAllTemporaryExtensions();
@@ -311,7 +318,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _searchDebounceTimer.Stop();
             ApplyFilter(SearchBox.Text);
-            UpdateSearchInlineCompletion();
         };
 
         _allCommands = CreateSeedCommands();
@@ -608,10 +614,129 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _lastActionableCommand = value;
             }
 
+            UpdateAdjacentSelectionHints();
+            UpdateCapsGuidePopupPosition();
             OnPropertyChanged();
             OnPropertyChanged(nameof(EffectiveSelectedCommand));
             OnPropertyChanged(nameof(FooterHint));
         }
+    }
+
+    private void UpdateAdjacentSelectionHints()
+    {
+        if (FilteredCommands == null || FilteredCommands.Count == 0) return;
+        var selectedIndex = _selectedCommand == null ? -1 : FilteredCommands.IndexOf(_selectedCommand);
+        for (int i = 0; i < FilteredCommands.Count; i++)
+        {
+            var item = FilteredCommands[i];
+            item.IsPreviousToSelected = (selectedIndex >= 0 && i == selectedIndex - 1);
+            item.IsNextToSelected = (selectedIndex >= 0 && i == selectedIndex + 1);
+        }
+    }
+
+    public void UpdateCapsGuidePopupPosition()
+    {
+        if (CapsGuidePopup == null) return;
+
+        if (!IsVisible || WindowState == WindowState.Minimized || CommandList == null || !CommandList.IsVisible || FilteredCommands == null || FilteredCommands.Count == 0)
+        {
+            CapsGuidePopup.IsOpen = false;
+            return;
+        }
+
+        CapsGuidePopup.IsOpen = true;
+
+        if (CommandList.SelectedItem != null)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+            {
+                if (CapsGuidePopup == null || !CapsGuidePopup.IsOpen || CommandList == null) return;
+                var container = CommandList.ItemContainerGenerator.ContainerFromItem(CommandList.SelectedItem) as FrameworkElement;
+                if (container != null && container.IsLoaded)
+                {
+                    try
+                    {
+                        var relativePoint = container.TransformToAncestor(this).Transform(new System.Windows.Point(0, 0));
+                        var targetOffset = relativePoint.Y + (container.ActualHeight / 2) - 85;
+                        if (targetOffset < 30) targetOffset = 30;
+                        if (targetOffset > ActualHeight - 200) targetOffset = ActualHeight - 200;
+                        
+                        CapsGuidePopup.VerticalOffset = targetOffset;
+                    }
+                    catch
+                    {
+                        CapsGuidePopup.VerticalOffset = 80;
+                    }
+                }
+            });
+        }
+        else
+        {
+            CapsGuidePopup.VerticalOffset = 80;
+        }
+    }
+
+    private bool _isCapsIndicatorActive;
+    public bool IsCapsIndicatorActive
+    {
+        get => _isCapsIndicatorActive;
+        set
+        {
+            if (_isCapsIndicatorActive != value)
+            {
+                _isCapsIndicatorActive = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private string? _activeFlashedKey;
+    public string? ActiveFlashedKey
+    {
+        get => _activeFlashedKey;
+        set
+        {
+            if (_activeFlashedKey != value)
+            {
+                _activeFlashedKey = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsKeyWFlashed));
+                OnPropertyChanged(nameof(IsKeySFlashed));
+                OnPropertyChanged(nameof(IsKeyAFlashed));
+                OnPropertyChanged(nameof(IsKeyDFlashed));
+                OnPropertyChanged(nameof(IsKeySpaceFlashed));
+            }
+        }
+    }
+
+    public bool IsKeyWFlashed => _activeFlashedKey == "W";
+    public bool IsKeySFlashed => _activeFlashedKey == "S";
+    public bool IsKeyAFlashed => _activeFlashedKey == "A";
+    public bool IsKeyDFlashed => _activeFlashedKey == "D";
+    public bool IsKeySpaceFlashed => _activeFlashedKey == "Space";
+
+    private DispatcherTimer? _keyFlashTimer;
+
+    public void SetCapsGuideState(bool isCapsDown, string? activeKey)
+    {
+        IsCapsIndicatorActive = isCapsDown;
+        if (!string.IsNullOrEmpty(activeKey))
+        {
+            FlashGuideKey(activeKey);
+        }
+    }
+
+    public void FlashGuideKey(string key)
+    {
+        ActiveFlashedKey = key;
+        _keyFlashTimer?.Stop();
+        _keyFlashTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(240) };
+        _keyFlashTimer.Tick += (s, e) =>
+        {
+            _keyFlashTimer?.Stop();
+            ActiveFlashedKey = null;
+        };
+        _keyFlashTimer.Start();
     }
 
     public string LastRunMessage
@@ -757,40 +882,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? $"{AiChatMessages.Count} 条对话"
             : $"{FilteredCommands.Count} 条结果";
 
-    public string SearchInlineCompletionSuffix
-    {
-        get => _searchInlineCompletionSuffix;
-        private set
-        {
-            if (value == _searchInlineCompletionSuffix)
-            {
-                return;
-            }
 
-            _searchInlineCompletionSuffix = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(SearchInlineCompletionVisibility));
-        }
-    }
-
-    public double SearchInlineCompletionPrefixWidth
-    {
-        get => _searchInlineCompletionPrefixWidth;
-        private set
-        {
-            if (Math.Abs(value - _searchInlineCompletionPrefixWidth) < 0.1)
-            {
-                return;
-            }
-
-            _searchInlineCompletionPrefixWidth = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public Visibility SearchInlineCompletionVisibility => string.IsNullOrWhiteSpace(SearchInlineCompletionSuffix)
-        ? Visibility.Collapsed
-        : Visibility.Visible;
 
     public string FooterHint => IsFileSearchScopeActive && !_appSettings.EnableEverything
         ? "Everything 文件搜索已关闭 · 点击上方开关即可启用"
@@ -1030,7 +1122,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrEmpty(SearchBox.Text))
         {
             ApplyFilter(string.Empty);
-            UpdateSearchInlineCompletion();
         }
         else
         {
@@ -1066,6 +1157,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void SearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key == Key.A && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            SearchBox.SelectAll();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
         {
             CopySearchSelectionToClipboard();
@@ -1090,7 +1188,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 _searchDebounceTimer.Stop();
                 ApplyFilter(SearchBox.Text);
-                UpdateSearchInlineCompletion();
             }
             RunSelectedCommand();
             e.Handled = true;
@@ -1098,10 +1195,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         else if (e.Key == Key.Tab)
         {
             TryHandleSearchScopeTabNavigation(e);
-        }
-        else if (e.Key == Key.Right && AcceptSearchInlineCompletion())
-        {
-            e.Handled = true;
         }
         else if (e.Key == Key.Right && CanOpenCommandMenuFromSearchBox())
         {
@@ -1115,8 +1208,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (FilteredCommands.Count == 0 ||
             SelectedCommand == null ||
             SearchBox.SelectionLength > 0 ||
-            SearchBox.CaretIndex != SearchBox.Text.Length ||
-            !string.IsNullOrWhiteSpace(SearchInlineCompletionSuffix))
+            SearchBox.CaretIndex != SearchBox.Text.Length)
         {
             return false;
         }
@@ -1820,6 +1912,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private bool _isContextMenuOpen;
+    public bool IsContextMenuOpen
+    {
+        get => _isContextMenuOpen;
+        set
+        {
+            if (_isContextMenuOpen != value)
+            {
+                _isContextMenuOpen = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     private void CommandListContextMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not System.Windows.Controls.ContextMenu menu)
@@ -1827,7 +1933,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        UpdateFooterMenuHint(isMenuOpen: true);
+        IsContextMenuOpen = true;
 
         Dispatcher.BeginInvoke(() =>
         {
@@ -1840,7 +1946,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CommandListContextMenu_Closed(object sender, RoutedEventArgs e)
     {
-        UpdateFooterMenuHint(isMenuOpen: false);
+        IsContextMenuOpen = false;
 
         if (_commandActionsMenuOrigin == CommandActionsMenuOrigin.SearchBox)
         {
@@ -1852,27 +1958,163 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CommandList.Focus();
     }
 
+    private void BackToSearchMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        CloseActiveContextMenu();
+    }
+
+    private void CloseActiveContextMenu()
+    {
+        if (CommandList.ContextMenu?.IsOpen == true)
+        {
+            CommandList.ContextMenu.IsOpen = false;
+        }
+
+        if (TryFindResource("FileResultContextMenu") is ContextMenu fileMenu && fileMenu.IsOpen)
+        {
+            fileMenu.IsOpen = false;
+        }
+
+        if (TryFindResource("GenericResultContextMenu") is ContextMenu genericMenu && genericMenu.IsOpen)
+        {
+            genericMenu.IsOpen = false;
+        }
+
+        if (_commandActionsMenuOrigin == CommandActionsMenuOrigin.SearchBox)
+        {
+            SearchBox.Focus();
+            SearchBox.CaretIndex = SearchBox.Text.Length;
+        }
+        else
+        {
+            CommandList.Focus();
+        }
+    }
+
     private void CommandListContextMenu_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == Key.Left || e.Key == Key.Escape)
+        var actualKey = e.Key switch
+        {
+            Key.ImeProcessed => e.ImeProcessedKey,
+            Key.System => e.SystemKey,
+            _ => e.Key
+        };
+
+        var isAltDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
+        var isShiftDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+
+        if (e.Key == Key.Left || 
+            e.Key == Key.Escape || 
+            (e.Key == Key.Tab && isShiftDown) ||
+            (isAltDown && (actualKey == Key.A || actualKey == Key.H)))
         {
             if (sender is System.Windows.Controls.ContextMenu menu)
             {
                 menu.IsOpen = false;
             }
 
-            if (_commandActionsMenuOrigin == CommandActionsMenuOrigin.SearchBox)
-            {
-                SearchBox.Focus();
-                SearchBox.CaretIndex = SearchBox.Text.Length;
-            }
-            else
-            {
-                CommandList.Focus();
-            }
-
+            CloseActiveContextMenu();
             e.Handled = true;
         }
+    }
+
+    private bool HandleNavigationShortcut(System.Windows.Input.KeyEventArgs e)
+    {
+        var actualKey = e.Key switch
+        {
+            Key.ImeProcessed => e.ImeProcessedKey,
+            Key.System => e.SystemKey,
+            _ => e.Key
+        };
+
+        var isAltDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
+        var isCtrlDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+
+        // 1. Alt + WSAD / HJKL 极客全盲操导航 (与输入框所有的 Ctrl+A/C/V/Z 编辑快捷键 100% 零冲突)
+        if (isAltDown && !isCtrlDown)
+        {
+            switch (actualKey)
+            {
+                case Key.W: // 上
+                case Key.K:
+                    MoveSelection(-1);
+                    e.Handled = true;
+                    return true;
+
+                case Key.S: // 下
+                case Key.J:
+                    MoveSelection(1);
+                    e.Handled = true;
+                    return true;
+
+                case Key.A: // 左 (返回搜索输入框)
+                case Key.H:
+                    SearchBox.Focus();
+                    SearchBox.CaretIndex = SearchBox.Text.Length;
+                    e.Handled = true;
+                    return true;
+
+                case Key.D: // 右 (打开操作菜单)
+                case Key.L:
+                    var origin = SearchBox.IsKeyboardFocusWithin ? CommandActionsMenuOrigin.SearchBox : CommandActionsMenuOrigin.ResultsList;
+                    OpenCommandActionsMenu(origin);
+                    e.Handled = true;
+                    return true;
+            }
+        }
+
+        // 2. Ctrl + J / K (Vim 经典上下切项，在文本框中无任何冲突)
+        if (isCtrlDown && !isAltDown)
+        {
+            if (actualKey == Key.K)
+            {
+                MoveSelection(-1);
+                e.Handled = true;
+                return true;
+            }
+            if (actualKey == Key.J)
+            {
+                MoveSelection(1);
+                e.Handled = true;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void HandleCapsNavigation(LauncherCapsAction action)
+    {
+        switch (action)
+        {
+            case LauncherCapsAction.MoveUp:
+                MoveSelection(-1);
+                break;
+            case LauncherCapsAction.MoveDown:
+                MoveSelection(1);
+                break;
+            case LauncherCapsAction.ReturnToSearch:
+                CloseActiveContextMenu();
+                SearchBox.Focus();
+                SearchBox.CaretIndex = SearchBox.Text.Length;
+                break;
+            case LauncherCapsAction.OpenMenu:
+                var origin = SearchBox.IsKeyboardFocusWithin ? CommandActionsMenuOrigin.SearchBox : CommandActionsMenuOrigin.ResultsList;
+                OpenCommandActionsMenu(origin);
+                break;
+            case LauncherCapsAction.Execute:
+                RunSelectedCommand();
+                break;
+        }
+    }
+
+    public enum LauncherCapsAction
+    {
+        MoveUp,
+        MoveDown,
+        ReturnToSearch,
+        OpenMenu,
+        Execute
     }
 
     private enum CommandActionsMenuOrigin
@@ -1883,21 +2125,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void UpdateFooterMenuHint(bool isMenuOpen)
     {
-        if (FooterMenuHintText == null || FooterMenuHintKeyText == null)
-        {
-            return;
-        }
-
-        if (IsRadialPickerMode)
-        {
-            FooterMenuHintText.Text = "确认添加";
-            FooterMenuHintKeyText.Text = "Enter";
-        }
-        else
-        {
-            FooterMenuHintText.Text = isMenuOpen ? "左箭头返回" : "右箭头菜单";
-            FooterMenuHintKeyText.Text = isMenuOpen ? "←" : "→";
-        }
     }
 
     private void FooterQuickMenuButton_Click(object sender, RoutedEventArgs e)
@@ -4011,6 +4238,34 @@ public sealed class CommandItem : INotifyPropertyChanged
     public string Description => Subtitle;
 
     public int UsageCount { get; set; } = 0;
+
+    private bool _isPreviousToSelected;
+    public bool IsPreviousToSelected
+    {
+        get => _isPreviousToSelected;
+        set
+        {
+            if (_isPreviousToSelected != value)
+            {
+                _isPreviousToSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPreviousToSelected)));
+            }
+        }
+    }
+
+    private bool _isNextToSelected;
+    public bool IsNextToSelected
+    {
+        get => _isNextToSelected;
+        set
+        {
+            if (_isNextToSelected != value)
+            {
+                _isNextToSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsNextToSelected)));
+            }
+        }
+    }
 
     public string DisplaySubtitle => string.IsNullOrWhiteSpace(_queryPreviewSubtitle) ? Subtitle : _queryPreviewSubtitle;
 
