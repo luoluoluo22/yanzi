@@ -147,9 +147,26 @@ function handleAiPromptTransferTask(task, targetUrl) {
     if (tabs && tabs.length > 0) {
       const existingTab = tabs[0];
       const tabId = existingTab.id;
-      logEvent(`发现已存在的 DeepSeek 标签页 [TabID: ${tabId}]，直接复用`);
+      logEvent(`发现已存在的 DeepSeek 标签页 [TabID: ${tabId}], isNewSession=${task.isNewSession}, url=${existingTab.url}`);
       
-      // 激活该标签页
+      const isSpecificChat = existingTab.url && (existingTab.url.includes("/a/chat/s/") || existingTab.url.includes("/chat/"));
+      
+      if (task.isNewSession && isSpecificChat) {
+        logEvent(`[AiTransfer] 新会话需重置标签页至主站根路径开启全新对话`);
+        chrome.tabs.update(tabId, { url: "https://chat.deepseek.com/", active: true }, () => {
+          chrome.tabs.onUpdated.addListener(function listener(updatedTabId, info) {
+            if (updatedTabId === tabId && info.status === "complete") {
+              chrome.tabs.onUpdated.removeListener(listener);
+              setTimeout(() => {
+                injectAndStart(tabId, task);
+              }, 800);
+            }
+          });
+        });
+        return;
+      }
+
+      // 激活该标签页并直接注入执行
       chrome.tabs.update(tabId, { active: true }, () => {
         injectAndStart(tabId, task);
       });

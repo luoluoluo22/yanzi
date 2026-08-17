@@ -1439,6 +1439,7 @@ public partial class AddJsonExtensionWindow : Window
 
             // 更新 UI 进入生成中状态
             SetAiAutoGeneratingState(true, "正在将提示词传递至 DeepSeek 网页端并自动发送...");
+            HostAssets.AppendLog($"[AI Transfer Dispatch] isNewSession={isNewSession}, sessionId={_currentAiSession?.Id}, sessionTitle={_currentAiSession?.Title}, promptLen={prompt.Length}");
 
             var (success, jsonResult, error) = await agentServer.RunBrowserAiPromptTransferAsync(prompt, "deepseek", 120, isNewSession);
 
