@@ -965,11 +965,11 @@
 
                 <Grid x:Name="AdvancedModePanel" Grid.Column="0" Visibility="Collapsed">
                     <Grid.ColumnDefinitions>
-                        <!-- 栏 1：会话历史 (190px) -->
-                        <ColumnDefinition Width="190" MinWidth="150" MaxWidth="280" x:Name="AiHistoryColDef" />
+                        <!-- 栏 1：会话历史 (175px) -->
+                        <ColumnDefinition Width="175" MinWidth="140" MaxWidth="240" x:Name="AiHistoryColDef" />
                         <ColumnDefinition Width="1" />
-                        <!-- 栏 2：对话交互区 (360px) -->
-                        <ColumnDefinition Width="360" MinWidth="280" MaxWidth="500" x:Name="AiChatColDef" />
+                        <!-- 栏 2：对话交互区 (自适应) -->
+                        <ColumnDefinition Width="380" MinWidth="280" x:Name="AiChatColDef" />
                         <ColumnDefinition Width="1" />
                         <!-- 栏 3：JSON / 代码工作区 (*) -->
                         <ColumnDefinition Width="*" MinWidth="320" />
@@ -1389,8 +1389,8 @@
                             </Grid>
                         </Border>
 
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="22,20">
-                            <StackPanel MaxWidth="440" HorizontalAlignment="Left">
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,18">
+                            <StackPanel HorizontalAlignment="Stretch">
                             <TextBlock Text="在启动器中显示为" Style="{StaticResource SectionTitleStyle}" />
                             <Border Background="{DynamicResource BrushSecondaryBtnBG}"
                                     BorderBrush="{DynamicResource BrushBorder}"
