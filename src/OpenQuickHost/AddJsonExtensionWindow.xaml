@@ -458,8 +458,8 @@
 
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="360" />
+                    <ColumnDefinition Width="*" x:Name="MainWorkspaceColDef" />
+                    <ColumnDefinition Width="360" x:Name="RightPropertiesColDef" />
                 </Grid.ColumnDefinitions>
 
                 <ScrollViewer x:Name="SimpleModePanel" Grid.Column="0"
@@ -1060,13 +1060,43 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <!-- 对话区顶部 -->
-                            <Border Grid.Row="0" Padding="14,10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Background="{DynamicResource BrushSecondaryBtnBG}">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="💬" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" />
-                                    <TextBlock x:Name="ActiveSessionTitleText" Text="AI 对话区" Margin="8,0,0,0"
-                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                </StackPanel>
+                            <!-- 对话区顶部：标题 + 源码/预览切换按钮 -->
+                            <Border Grid.Row="0" Padding="14,8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Background="{DynamicResource BrushSecondaryBtnBG}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="💬" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ActiveSessionTitleText" Text="AI 对话区" Margin="8,0,0,0"
+                                                   Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <!-- 源码 vs 预览 切换分段按钮 -->
+                                    <Border Grid.Column="1" CornerRadius="7" Padding="2"
+                                            Background="{DynamicResource BrushBG}"
+                                            BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
+                                        <StackPanel Orientation="Horizontal">
+                                            <RadioButton x:Name="AiViewSourceTab" Style="{StaticResource ModeTabStyle}"
+                                                         GroupName="AiRightViewMode" IsChecked="True"
+                                                         Checked="AiViewMode_Checked" Padding="8,3">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="&lt;/&gt;" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" />
+                                                    <TextBlock Text="源码" Margin="4,0,0,0" FontSize="11" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </RadioButton>
+                                            <RadioButton x:Name="AiViewPreviewTab" Style="{StaticResource ModeTabStyle}"
+                                                         GroupName="AiRightViewMode"
+                                                         Checked="AiViewMode_Checked" Padding="8,3">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="👁" FontSize="11" VerticalAlignment="Center" />
+                                                    <TextBlock Text="预览" Margin="4,0,0,0" FontSize="11" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </RadioButton>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
                             </Border>
 
                             <Grid Grid.Row="1">
@@ -1211,10 +1241,10 @@
                         </Grid>
                     </Border>
 
-                    <Border Grid.Column="3" Background="{DynamicResource BrushBorder}" Width="1" />
+                    <Border x:Name="AiCodeSplitter" Grid.Column="3" Background="{DynamicResource BrushBorder}" Width="1" />
 
                     <!-- ==================== 第 3 栏：JSON / 代码工作区 (Col 4) ==================== -->
-                    <Grid Grid.Column="4">
+                    <Grid x:Name="AiCodeWorkspacePanel" Grid.Column="4">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
@@ -1305,7 +1335,7 @@
                 </Grid>
 
 
-                <Border Grid.Column="1"
+                <Border x:Name="RightPropertiesPanel" Grid.Column="1"
                         Background="{DynamicResource BrushSecondaryBtnBG}"
                         BorderBrush="{DynamicResource BrushBorder}"
                         BorderThickness="1,0,0,0">

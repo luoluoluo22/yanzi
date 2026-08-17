@@ -961,6 +961,59 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
+    private void AiViewMode_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing) return;
+        UpdateAiRightViewMode();
+    }
+
+    public void UpdateAiRightViewMode()
+    {
+        if (AdvancedModePanel == null || RightPropertiesPanel == null) return;
+
+        bool isAdvanced = AdvancedModeTab?.IsChecked == true || AdvancedModePanel.Visibility == Visibility.Visible;
+
+        if (!isAdvanced)
+        {
+            // 简单模式：右侧固定展示为 360px 宽度的属性预览栏
+            RightPropertiesPanel.Visibility = Visibility.Visible;
+            if (RightPropertiesColDef != null)
+            {
+                RightPropertiesColDef.Width = new GridLength(360);
+            }
+            if (AiCodeWorkspacePanel != null) AiCodeWorkspacePanel.Visibility = Visibility.Collapsed;
+            if (AiCodeSplitter != null) AiCodeSplitter.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // AI 模式：根据 AiViewSourceTab / AiViewPreviewTab 单选按钮动态切换
+        bool isSourceMode = AiViewSourceTab?.IsChecked == true;
+
+        if (isSourceMode)
+        {
+            // 源码模式：展开第 3 栏 Monaco Editor，折叠外部属性栏
+            if (AiCodeWorkspacePanel != null) AiCodeWorkspacePanel.Visibility = Visibility.Visible;
+            if (AiCodeSplitter != null) AiCodeSplitter.Visibility = Visibility.Visible;
+            RightPropertiesPanel.Visibility = Visibility.Collapsed;
+            if (RightPropertiesColDef != null)
+            {
+                RightPropertiesColDef.Width = new GridLength(0);
+            }
+        }
+        else
+        {
+            // 预览模式：折叠第 3 栏 Monaco Editor，展开外部属性栏并占满右侧全部空间
+            if (AiCodeWorkspacePanel != null) AiCodeWorkspacePanel.Visibility = Visibility.Collapsed;
+            if (AiCodeSplitter != null) AiCodeSplitter.Visibility = Visibility.Collapsed;
+            RightPropertiesPanel.Visibility = Visibility.Visible;
+            if (RightPropertiesColDef != null)
+            {
+                RightPropertiesColDef.Width = new GridLength(1, GridUnitType.Star);
+            }
+            UpdatePreview();
+        }
+    }
+
     public System.Collections.ObjectModel.ObservableCollection<ExtAiSessionItem> AiSessions { get; } = new();
     private ExtAiSessionItem? _currentAiSession;
 
@@ -986,6 +1039,8 @@ public partial class AddJsonExtensionWindow : Window
             AiSessionListBox.ItemsSource = AiSessions;
             AiSessionListBox.SelectedIndex = 0;
         }
+
+        UpdateAiRightViewMode();
     }
 
     private void AiSessionListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)

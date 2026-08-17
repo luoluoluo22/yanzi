@@ -640,6 +640,7 @@ public partial class AddJsonExtensionWindow
         if (SimpleModePanel == null || AdvancedModePanel == null) return;
         SimpleModePanel.Visibility = Visibility.Visible;
         AdvancedModePanel.Visibility = Visibility.Collapsed;
+        UpdateAiRightViewMode();
         if (_isInitializing) return;
         // 从 JSON 同步回简单表单
         if (!string.IsNullOrWhiteSpace(ManualJsonInputBox.Text))
@@ -656,6 +657,7 @@ public partial class AddJsonExtensionWindow
         SimpleModePanel.Visibility = Visibility.Collapsed;
         AdvancedModePanel.Visibility = Visibility.Visible;
         UpdateBrowserExtensionBannerVisibility();
+        UpdateAiRightViewMode();
         if (_isInitializing) return;
 
         if (!ShouldKeepCurrentAdvancedJson())
