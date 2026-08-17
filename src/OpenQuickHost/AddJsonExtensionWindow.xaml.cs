@@ -1141,6 +1141,8 @@ public partial class AddJsonExtensionWindow : Window
         string extName = "自定义扩展";
         string extType = "扩展";
         string? extIcon = null;
+        string? accentHex = "#3B82F6";
+        Geometry? vectorGeo = null;
 
         try
         {
@@ -1167,13 +1169,32 @@ public partial class AddJsonExtensionWindow : Window
             if (root.TryGetProperty("icon", out var ip) && ip.ValueKind == JsonValueKind.String)
             {
                 extIcon = ip.GetString();
+                if (!string.IsNullOrWhiteSpace(extIcon))
+                {
+                    vectorGeo = ExtensionIconLibrary.ResolveVectorIcon(extIcon);
+                }
+            }
+            if (root.TryGetProperty("accentHex", out var ap) && ap.ValueKind == JsonValueKind.String)
+            {
+                accentHex = ap.GetString() ?? accentHex;
             }
         }
         catch { }
 
+        System.Windows.Media.Brush bgBrush;
+        try
+        {
+            bgBrush = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(accentHex ?? "#3B82F6"));
+        }
+        catch
+        {
+            bgBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(59, 130, 246));
+        }
+
+        string glyph = !string.IsNullOrWhiteSpace(extName) ? extName.Substring(0, 1).ToUpperInvariant() : "E";
         int versionIndex = (_currentAiSession?.Messages.Count(m => !string.IsNullOrWhiteSpace(m.ExtractedJson)) ?? 0) + 1;
 
-        return new ExtAiChatMessage
+        var msg = new ExtAiChatMessage
         {
             Role = "assistant",
             Content = summary,
@@ -1181,8 +1202,76 @@ public partial class AddJsonExtensionWindow : Window
             VersionNumber = versionIndex,
             ExtensionName = extName,
             ExtensionType = extType,
-            ExtensionIcon = extIcon
+            ExtensionIcon = extIcon,
+            IconVectorGeometry = vectorGeo,
+            IconGlyphText = glyph,
+            CardIconBgBrush = bgBrush,
+            Timestamp = DateTime.Now
         };
+
+        // 3 分钟内重复时间点消隐
+        if (_currentAiSession != null && _currentAiSession.Messages.Count > 0)
+        {
+            var lastMsg = _currentAiSession.Messages[^1];
+            if (Math.Abs((msg.Timestamp - lastMsg.Timestamp).TotalMinutes) < 3.0 && msg.TimeText == lastMsg.TimeText)
+            {
+                msg.ShowTimestamp = false;
+            }
+        }
+
+        return msg;
+    }
+
+    private async void AiRunVersionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string json } && !string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                // 1. 若当前 JSON 与此版本不同，先恢复为此版本
+                if (ManualJsonInputBox != null && ManualJsonInputBox.Text != json)
+                {
+                    ManualJsonInputBox.Text = json;
+                    if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+                    {
+                        _isUpdatingWebView = true;
+                        _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(json)})");
+                        _isUpdatingWebView = false;
+                    }
+                    TryPopulateManualFormFromJson(json, showError: false);
+                    SyncSimpleFromHiddenForm();
+                    UpdatePreview();
+                }
+
+                if (_currentAiSession != null)
+                {
+                    _currentAiSession.CurrentJson = json;
+                }
+
+                // 2. 立即执行试运行
+                await RunTestAndRenderAsync(
+                    ManualTestExtensionButton,
+                    ManualTestResultPanel,
+                    ManualTestSummaryText,
+                    ManualTestLogTextBox,
+                    ManualCopyTestFailureButton,
+                    useManualJson: true);
+
+                // 3. 更新对应版本卡片右上角的运行状态徽章
+                if (_currentAiSession != null)
+                {
+                    var matchMsg = _currentAiSession.Messages.LastOrDefault(m => m.ExtractedJson == json);
+                    if (matchMsg != null)
+                    {
+                        matchMsg.TestStatus = _testSucceeded ? "success" : "failed";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"运行失败：{ex.Message}");
+            }
+        }
     }
 
     private void AiRestoreVersionButton_Click(object sender, RoutedEventArgs e)
@@ -1280,10 +1369,6 @@ public partial class AddJsonExtensionWindow : Window
         try
         {
             ErrorText.Visibility = Visibility.Collapsed;
-            if (SidePanelAiStatusText != null)
-            {
-                SidePanelAiStatusText.Visibility = Visibility.Collapsed;
-            }
 
             var prompt = TryBuildManualCopyPrompt();
             if (string.IsNullOrWhiteSpace(prompt) && !string.IsNullOrWhiteSpace(_aiGuidePrompt))
@@ -1306,11 +1391,21 @@ public partial class AddJsonExtensionWindow : Window
             if (_currentAiSession != null)
             {
                 var promptDisplay = !string.IsNullOrWhiteSpace(userInput) ? userInput : "生成扩展 JSON";
-                _currentAiSession.Messages.Add(new ExtAiChatMessage
+                var userMsg = new ExtAiChatMessage
                 {
                     Role = "user",
-                    Content = promptDisplay
-                });
+                    Content = promptDisplay,
+                    Timestamp = DateTime.Now
+                };
+                if (_currentAiSession.Messages.Count > 0)
+                {
+                    var lastMsg = _currentAiSession.Messages[^1];
+                    if (Math.Abs((userMsg.Timestamp - lastMsg.Timestamp).TotalMinutes) < 3.0 && userMsg.TimeText == lastMsg.TimeText)
+                    {
+                        userMsg.ShowTimestamp = false;
+                    }
+                }
+                _currentAiSession.Messages.Add(userMsg);
                 if (_currentAiSession.Title == "新建扩展会话" || _currentAiSession.Title.StartsWith("会话 "))
                 {
                     _currentAiSession.Title = promptDisplay.Length > 12 ? promptDisplay.Substring(0, 12) + "..." : promptDisplay;
@@ -1328,12 +1423,6 @@ public partial class AddJsonExtensionWindow : Window
             if (agentServer == null || !agentServer.IsBrowserConnected)
             {
                 ShowError("燕子浏览器助手未连接。请先打开 Chrome 或 Edge 浏览器并确认插件已开启。");
-                if (SidePanelAiStatusText != null)
-                {
-                    SidePanelAiStatusText.Text = "浏览器助手未连接，请先打开浏览器插件";
-                    SidePanelAiStatusText.Foreground = RedBrush;
-                    SidePanelAiStatusText.Visibility = Visibility.Visible;
-                }
                 return;
             }
 
@@ -1346,17 +1435,11 @@ public partial class AddJsonExtensionWindow : Window
             {
                 SetAiAutoGeneratingState(false, null);
                 ShowError($"AI 生成失败：{error ?? "未知错误"}");
-                if (SidePanelAiStatusText != null)
-                {
-                    SidePanelAiStatusText.Text = $"生成失败：{error}";
-                    SidePanelAiStatusText.Foreground = RedBrush;
-                    SidePanelAiStatusText.Visibility = Visibility.Visible;
-                }
                 return;
             }
 
             // 成功提取到 JSON
-            SetAiAutoGeneratingState(false, "已成功生成并提取 JSON，正在自动试运行...");
+            SetAiAutoGeneratingState(false, null);
 
             // 写入编辑器
             ManualJsonInputBox.Text = jsonResult;
@@ -1380,13 +1463,6 @@ public partial class AddJsonExtensionWindow : Window
                 ScrollAiChatToEnd();
             }
 
-            if (SidePanelAiStatusText != null)
-            {
-                SidePanelAiStatusText.Text = "✅ DeepSeek 生成成功！已载入并自动启动试运行。";
-                SidePanelAiStatusText.Foreground = GreenBrush;
-                SidePanelAiStatusText.Visibility = Visibility.Visible;
-            }
-
             // 自动触发试运行
             await Task.Delay(300);
             ManualTestExtensionButton_Click(this, new RoutedEventArgs());
@@ -1404,21 +1480,7 @@ public partial class AddJsonExtensionWindow : Window
         if (ManualDeepSeekButton != null)
         {
             ManualDeepSeekButton.IsEnabled = !isGenerating;
-            ManualDeepSeekButton.Content = isGenerating ? "⏳ 生成中..." : "⚡ 发送";
-        }
-
-        if (SidePanelAiStatusText != null)
-        {
-            if (string.IsNullOrWhiteSpace(statusText))
-            {
-                SidePanelAiStatusText.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                SidePanelAiStatusText.Text = statusText;
-                SidePanelAiStatusText.Foreground = AccentBrush;
-                SidePanelAiStatusText.Visibility = Visibility.Visible;
-            }
+            ManualDeepSeekButton.Opacity = isGenerating ? 0.6 : 1.0;
         }
     }
 
@@ -2869,6 +2931,16 @@ public partial class AddJsonExtensionWindow : Window
             _testCompleted = true;
             _testSucceeded = result.Success;
 
+            // 成功时不弹日志面板打扰用户，只有失败时才弹出
+            if (result.Success)
+            {
+                resultPanel.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                resultPanel.Visibility = Visibility.Visible;
+            }
+
             summaryText.Foreground = result.Success ? GreenBrush : RedBrush;
             summaryText.Text = result.Summary;
             logTextBox.Text = result.Log;
@@ -2876,6 +2948,16 @@ public partial class AddJsonExtensionWindow : Window
             if (ManualAiFixTestFailureButton != null)
             {
                 ManualAiFixTestFailureButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
+            }
+
+            // 更新 AI 对话区最新版本卡片的运行状态标识
+            if (_currentAiSession != null)
+            {
+                var latestMsg = _currentAiSession.Messages.LastOrDefault(m => m.HasVersionCard);
+                if (latestMsg != null)
+                {
+                    latestMsg.TestStatus = result.Success ? "success" : "failed";
+                }
             }
         }
         catch (Exception ex)
@@ -5010,7 +5092,7 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
     #endregion
 }
 
-public sealed class ExtAiChatMessage
+public sealed class ExtAiChatMessage : System.ComponentModel.INotifyPropertyChanged
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Role { get; set; } = "user"; // "user" | "assistant" | "error"
@@ -5020,8 +5102,42 @@ public sealed class ExtAiChatMessage
     public string? ExtensionName { get; set; }
     public string? ExtensionType { get; set; }
     public string? ExtensionIcon { get; set; }
+    public Geometry? IconVectorGeometry { get; set; }
+    public string? IconGlyphText { get; set; }
+    public System.Windows.Media.Brush CardIconBgBrush { get; set; } = new SolidColorBrush(System.Windows.Media.Color.FromRgb(59, 130, 246));
+
+    private string? _testStatus; // null | "success" | "failed"
+    public string? TestStatus
+    {
+        get => _testStatus;
+        set
+        {
+            _testStatus = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TestStatus)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TestSuccessVisibility)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TestFailedVisibility)));
+        }
+    }
+
+    public Visibility TestSuccessVisibility => TestStatus == "success" ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility TestFailedVisibility => TestStatus == "failed" ? Visibility.Visible : Visibility.Collapsed;
+
     public DateTime Timestamp { get; set; } = DateTime.Now;
     public string TimeText => Timestamp.ToString("HH:mm");
+
+    private bool _showTimestamp = true;
+    public bool ShowTimestamp
+    {
+        get => _showTimestamp;
+        set
+        {
+            _showTimestamp = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(ShowTimestamp)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TimestampVisibility)));
+        }
+    }
+    public Visibility TimestampVisibility => ShowTimestamp ? Visibility.Visible : Visibility.Collapsed;
+
     public bool IsUser => Role == "user";
     public bool IsAssistant => Role == "assistant";
     public bool IsError => Role == "error";
@@ -5029,7 +5145,11 @@ public sealed class ExtAiChatMessage
     public Visibility UserVisibility => IsUser ? Visibility.Visible : Visibility.Collapsed;
     public Visibility AssistantVisibility => IsAssistant ? Visibility.Visible : Visibility.Collapsed;
     public Visibility VersionCardVisibility => HasVersionCard ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility IconVectorVisibility => IconVectorGeometry != null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility IconGlyphVisibility => IconVectorGeometry == null ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ErrorVisibility => IsError ? Visibility.Visible : Visibility.Collapsed;
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 }
 
 public sealed class ExtAiSessionItem : System.ComponentModel.INotifyPropertyChanged

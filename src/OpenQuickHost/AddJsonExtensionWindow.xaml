@@ -1125,29 +1125,27 @@
                                         <DataTemplate>
                                             <Grid Margin="0,0,0,12">
                                                 <!-- 用户消息 -->
-                                                <StackPanel HorizontalAlignment="Right" MaxWidth="300" Visibility="{Binding UserVisibility}">
+                                                <StackPanel HorizontalAlignment="Right" MaxWidth="340" Visibility="{Binding UserVisibility}">
                                                     <Border Background="#1A3B82F6" BorderBrush="#333B82F6" BorderThickness="1" CornerRadius="12,12,2,12" Padding="10,8">
                                                         <TextBlock Text="{Binding Content}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" />
                                                     </Border>
-                                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" HorizontalAlignment="Right" Margin="0,3,4,0" />
+                                                    <TextBlock Text="{Binding TimeText}" Visibility="{Binding TimestampVisibility}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" HorizontalAlignment="Right" Margin="0,3,4,0" />
                                                 </StackPanel>
 
                                                 <!-- AI 助手消息 -->
                                                 <StackPanel HorizontalAlignment="Left" MaxWidth="440" Visibility="{Binding AssistantVisibility}">
                                                     <Border Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="12,12,12,2" Padding="12,10">
                                                         <StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                                                <TextBlock Text="🤖 DeepSeek" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="Bold" />
-                                                                <Border Visibility="{Binding VersionCardVisibility}" Background="#1A3B82F6" CornerRadius="4" Margin="8,0,0,0" Padding="5,1">
-                                                                    <TextBlock Text="{Binding VersionNumber, StringFormat='版本 #{0}'}" Foreground="{DynamicResource BrushAccent}" FontSize="10.5" FontWeight="SemiBold" />
-                                                                </Border>
-                                                            </StackPanel>
+                                                            <!-- 顶部版本标签（无 DeepSeek 字样） -->
+                                                            <Border Visibility="{Binding VersionCardVisibility}" HorizontalAlignment="Left" Background="#1A3B82F6" CornerRadius="4" Margin="0,0,0,6" Padding="6,1.5">
+                                                                <TextBlock Text="{Binding VersionNumber, StringFormat='版本 #{0}'}" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="SemiBold" />
+                                                            </Border>
                                                             
                                                             <TextBlock Text="{Binding Content}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" />
 
                                                             <!-- 生成的扩展版本快照卡片 -->
                                                             <Border Visibility="{Binding VersionCardVisibility}" Margin="0,8,0,2"
-                                                                    Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                                                    Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="9" Padding="10,9">
                                                                 <Grid>
                                                                     <Grid.RowDefinitions>
                                                                         <RowDefinition Height="Auto" />
@@ -1155,31 +1153,53 @@
                                                                     </Grid.RowDefinitions>
                                                                     <Grid Grid.Row="0">
                                                                         <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto" />
                                                                             <ColumnDefinition Width="*" />
                                                                             <ColumnDefinition Width="Auto" />
                                                                         </Grid.ColumnDefinitions>
-                                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                                            <TextBlock Text="📦" FontSize="12" VerticalAlignment="Center" />
-                                                                            <TextBlock Text="{Binding ExtensionName, FallbackValue='新扩展'}" Margin="6,0,0,0"
-                                                                                       Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                                                        </StackPanel>
-                                                                        <Border Grid.Column="1" Background="#14FFFFFF" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
-                                                                            <TextBlock Text="{Binding ExtensionType, FallbackValue='扩展'}" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" />
+
+                                                                        <!-- 1. 卡片左侧图标（与预览区 100% 一致） -->
+                                                                        <Border Grid.Column="0" Width="28" Height="28" CornerRadius="7" Background="{Binding CardIconBgBrush}" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                                            <Grid>
+                                                                                <Viewbox Width="16" Height="16" Visibility="{Binding IconVectorVisibility}" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                                    <Path Data="{Binding IconVectorGeometry}" Fill="#FFFFFF" Stretch="Uniform" />
+                                                                                </Viewbox>
+                                                                                <TextBlock Text="{Binding IconGlyphText}" Visibility="{Binding IconGlyphVisibility}"
+                                                                                           Foreground="#FFFFFF" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                            </Grid>
                                                                         </Border>
+
+                                                                        <!-- 2. 名称与类型 -->
+                                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                            <TextBlock Text="{Binding ExtensionName, FallbackValue='新扩展'}"
+                                                                                       Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                            <TextBlock Text="{Binding ExtensionType, FallbackValue='扩展'}"
+                                                                                       Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" Margin="0,2,0,0" />
+                                                                        </StackPanel>
+
+                                                                        <!-- 3. 右上角运行状态徽章（✅ / ❌） -->
+                                                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                            <Border Visibility="{Binding TestSuccessVisibility}" Background="#1A22C55E" BorderBrush="#3322C55E" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                                                                                <TextBlock Text="✅ 运行正常" Foreground="#22C55E" FontSize="10.5" FontWeight="SemiBold" />
+                                                                            </Border>
+                                                                            <Border Visibility="{Binding TestFailedVisibility}" Background="#1AEF4444" BorderBrush="#33EF4444" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                                                                                <TextBlock Text="❌ 运行报错" Foreground="#EF4444" FontSize="10.5" FontWeight="SemiBold" />
+                                                                            </Border>
+                                                                        </StackPanel>
                                                                     </Grid>
 
-                                                                    <!-- 操作栏：回退/应用此版本 + 复制该版本 JSON -->
-                                                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0" HorizontalAlignment="Right">
-                                                                        <Button Content="📋 复制代码" Style="{DynamicResource GhostButtonStyle}" Height="24" Padding="6,0" FontSize="11"
-                                                                                Tag="{Binding ExtractedJson}" Click="AiCopyVersionJsonButton_Click" ToolTip="复制此版本的 JSON 源码" />
-                                                                        <Button Content="↺ 应用此版本" Style="{DynamicResource PrimaryButtonStyle}" Height="24" Padding="8,0" FontSize="11" Margin="6,0,0,0"
-                                                                                Tag="{Binding ExtractedJson}" Click="AiRestoreVersionButton_Click" ToolTip="将编辑器和预览恢复为此版本" />
+                                                                    <!-- 4. 底部操作栏：运行此版本 + 应用此版本 -->
+                                                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Right">
+                                                                        <Button Content="↺ 应用" Style="{DynamicResource GhostButtonStyle}" Height="25" Padding="8,0" FontSize="11"
+                                                                                Tag="{Binding ExtractedJson}" Click="AiRestoreVersionButton_Click" ToolTip="恢复编辑器与预览为此版本" />
+                                                                        <Button Content="▶ 运行" Style="{DynamicResource PrimaryButtonStyle}" Height="25" Padding="12,0" FontSize="11" Margin="6,0,0,0"
+                                                                                Tag="{Binding ExtractedJson}" Click="AiRunVersionButton_Click" ToolTip="立即载入并试运行此版本" />
                                                                     </StackPanel>
                                                                 </Grid>
                                                             </Border>
                                                         </StackPanel>
                                                     </Border>
-                                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="4,3,0,0" />
+                                                    <TextBlock Text="{Binding TimeText}" Visibility="{Binding TimestampVisibility}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="4,3,0,0" />
                                                 </StackPanel>
 
                                                 <!-- 错误自愈消息 -->
@@ -1194,6 +1214,7 @@
                                                             <Button Content="⚡ 发送给 DeepSeek 自动修复" Style="{DynamicResource PrimaryButtonStyle}" Height="28" Padding="10,0" FontSize="11" Click="ManualAiFixTestFailureButton_Click" />
                                                         </StackPanel>
                                                     </Border>
+                                                    <TextBlock Text="{Binding TimeText}" Visibility="{Binding TimestampVisibility}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="4,3,0,0" />
                                                 </StackPanel>
                                             </Grid>
                                         </DataTemplate>
@@ -1233,31 +1254,20 @@
                                         </Grid>
 
                                         <!-- 底部操作按钮 -->
-                                        <Grid Grid.Row="1" Margin="0,6,0,0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <TextBlock x:Name="SidePanelAiStatusText" Grid.Column="0"
-                                                       Foreground="{DynamicResource BrushAccent}" FontSize="11"
-                                                       TextWrapping="Wrap" VerticalAlignment="Center" Visibility="Collapsed" />
-
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button x:Name="ManualDeepSeekButton"
-                                                        Style="{DynamicResource PrimaryButtonStyle}"
-                                                        Width="30" Height="30" Padding="0"
-                                                        ToolTip="发送需求 (Enter 发送，Shift+Enter 换行)"
-                                                        Click="DeepSeekAutoGenerateButton_Click">
-                                                    <Path Data="{local:IconGeometry arrow-left}"
-                                                          Fill="#FFFFFF" Stretch="Uniform" Width="13" Height="13"
-                                                          RenderTransformOrigin="0.5,0.5">
-                                                        <Path.RenderTransform>
-                                                            <RotateTransform Angle="90" />
-                                                        </Path.RenderTransform>
-                                                    </Path>
-                                                </Button>
-                                            </StackPanel>
+                                        <Grid Grid.Row="1" Margin="0,4,0,0">
+                                            <Button x:Name="ManualDeepSeekButton" HorizontalAlignment="Right"
+                                                    Style="{DynamicResource PrimaryButtonStyle}"
+                                                    Width="30" Height="30" Padding="0"
+                                                    ToolTip="发送需求 (Enter 发送，Shift+Enter 换行)"
+                                                    Click="DeepSeekAutoGenerateButton_Click">
+                                                <Path Data="{local:IconGeometry arrow-left}"
+                                                      Fill="#FFFFFF" Stretch="Uniform" Width="13" Height="13"
+                                                      RenderTransformOrigin="0.5,0.5">
+                                                    <Path.RenderTransform>
+                                                        <RotateTransform Angle="90" />
+                                                    </Path.RenderTransform>
+                                                </Path>
+                                            </Button>
                                         </Grid>
                                     </Grid>
                                 </Border>
