@@ -964,6 +964,25 @@ public partial class AddJsonExtensionWindow : Window
     private void AiViewMode_Checked(object sender, RoutedEventArgs e)
     {
         if (_isInitializing) return;
+        if (AiViewPreviewTab2 != null && AiViewSourceTab2 != null)
+        {
+            if (AiViewPreviewTab?.IsChecked == true) AiViewPreviewTab2.IsChecked = true;
+            else if (AiViewSourceTab?.IsChecked == true) AiViewSourceTab2.IsChecked = true;
+        }
+        UpdateAiRightViewMode();
+    }
+
+    private void AiViewSourceTab2_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing) return;
+        if (AiViewSourceTab != null) AiViewSourceTab.IsChecked = true;
+        UpdateAiRightViewMode();
+    }
+
+    private void AiViewPreviewTab2_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing) return;
+        if (AiViewPreviewTab != null) AiViewPreviewTab.IsChecked = true;
         UpdateAiRightViewMode();
     }
 
@@ -975,8 +994,9 @@ public partial class AddJsonExtensionWindow : Window
 
         if (!isAdvanced)
         {
-            // 简单模式：右侧固定展示为 360px 宽度的属性预览栏
+            // 简单模式：右侧固定展示为 360px 宽度的属性预览栏，且不显示顶部切回源码按钮
             RightPropertiesPanel.Visibility = Visibility.Visible;
+            if (RightPropertiesHeader != null) RightPropertiesHeader.Visibility = Visibility.Collapsed;
             if (RightPropertiesColDef != null)
             {
                 RightPropertiesColDef.Width = new GridLength(360);
@@ -988,6 +1008,7 @@ public partial class AddJsonExtensionWindow : Window
 
         // AI 模式：根据 AiViewSourceTab / AiViewPreviewTab 单选按钮动态切换
         bool isSourceMode = AiViewSourceTab?.IsChecked == true;
+        if (RightPropertiesHeader != null) RightPropertiesHeader.Visibility = Visibility.Visible;
 
         if (isSourceMode)
         {

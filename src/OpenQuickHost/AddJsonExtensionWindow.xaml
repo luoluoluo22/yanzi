@@ -1060,7 +1060,7 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <!-- 对话区顶部：标题 + 源码/预览切换按钮 -->
+                            <!-- 对话区顶部：标题 + 复制提示词按钮 -->
                             <Border Grid.Row="0" Padding="14,8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Background="{DynamicResource BrushSecondaryBtnBG}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -1073,29 +1073,11 @@
                                                    Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center" />
                                     </StackPanel>
 
-                                    <!-- 源码 vs 预览 切换分段按钮 -->
-                                    <Border Grid.Column="1" CornerRadius="7" Padding="2"
-                                            Background="{DynamicResource BrushBG}"
-                                            BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
-                                        <StackPanel Orientation="Horizontal">
-                                            <RadioButton x:Name="AiViewSourceTab" Style="{StaticResource ModeTabStyle}"
-                                                         GroupName="AiRightViewMode" IsChecked="True"
-                                                         Checked="AiViewMode_Checked" Padding="8,3">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="&lt;/&gt;" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" />
-                                                    <TextBlock Text="源码" Margin="4,0,0,0" FontSize="11" VerticalAlignment="Center" />
-                                                </StackPanel>
-                                            </RadioButton>
-                                            <RadioButton x:Name="AiViewPreviewTab" Style="{StaticResource ModeTabStyle}"
-                                                         GroupName="AiRightViewMode"
-                                                         Checked="AiViewMode_Checked" Padding="8,3">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="👁" FontSize="11" VerticalAlignment="Center" />
-                                                    <TextBlock Text="预览" Margin="4,0,0,0" FontSize="11" VerticalAlignment="Center" />
-                                                </StackPanel>
-                                            </RadioButton>
-                                        </StackPanel>
-                                    </Border>
+                                    <!-- 复制提示词按钮（右上角） -->
+                                    <Button x:Name="ManualCopyPromptButton" Grid.Column="1" Content="📋 复制提示词"
+                                            Style="{DynamicResource GhostButtonStyle}"
+                                            Height="28" Padding="10,0" FontSize="11.5"
+                                            Click="ManualCopyPromptButton_Click" />
                                 </Grid>
                             </Border>
 
@@ -1225,13 +1207,9 @@
                                                        TextWrapping="Wrap" VerticalAlignment="Center" Visibility="Collapsed" />
 
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button x:Name="ManualCopyPromptButton" Content="复制提示词"
-                                                        Style="{DynamicResource GhostButtonStyle}"
-                                                        Height="26" Padding="8,0" FontSize="11" Margin="0,0,6,0"
-                                                        Click="ManualCopyPromptButton_Click" />
                                                 <Button x:Name="ManualDeepSeekButton" Content="⚡ 发送"
                                                         Style="{DynamicResource PrimaryButtonStyle}"
-                                                        Height="28" Padding="14,0" FontSize="12"
+                                                        Height="28" Padding="16,0" FontSize="12"
                                                         Click="DeepSeekAutoGenerateButton_Click" />
                                             </StackPanel>
                                         </Grid>
@@ -1250,7 +1228,7 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <!-- 工具栏：格式化/查找/替换/复制 -->
+                        <!-- 工具栏：格式化/查找/替换/复制 + 右侧：源码/预览切换分段按钮 -->
                         <Border Grid.Row="0" Margin="14,10,14,8"
                                 Background="{DynamicResource BrushSecondaryBtnBG}"
                                 BorderBrush="{DynamicResource BrushBorder}"
@@ -1262,6 +1240,8 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="6" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="10" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Orientation="Horizontal" Grid.Column="0">
@@ -1275,6 +1255,30 @@
                                     <Button Content="替换" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="8,0" FontSize="11.5" Margin="4,0,0,0" Click="ReplaceManualJsonButton_Click" />
                                     <Button Content="全换" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="8,0" FontSize="11.5" Margin="4,0,0,0" Click="ReplaceAllManualJsonButton_Click" />
                                 </StackPanel>
+
+                                <!-- 源码 vs 预览 切换分段按钮 -->
+                                <Border Grid.Column="7" CornerRadius="7" Padding="2"
+                                        Background="{DynamicResource BrushBG}"
+                                        BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton x:Name="AiViewSourceTab" Style="{StaticResource ModeTabStyle}"
+                                                     GroupName="AiRightViewMode" IsChecked="True"
+                                                     Checked="AiViewMode_Checked" Padding="8,3">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&lt;/&gt;" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" />
+                                                <TextBlock Text="源码" Margin="4,0,0,0" FontSize="11" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </RadioButton>
+                                        <RadioButton x:Name="AiViewPreviewTab" Style="{StaticResource ModeTabStyle}"
+                                                     GroupName="AiRightViewMode"
+                                                     Checked="AiViewMode_Checked" Padding="8,3">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="👁" FontSize="11" VerticalAlignment="Center" />
+                                                <TextBlock Text="预览" Margin="4,0,0,0" FontSize="11" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </RadioButton>
+                                    </StackPanel>
+                                </Border>
                             </Grid>
                         </Border>
 
@@ -1339,8 +1343,54 @@
                         Background="{DynamicResource BrushSecondaryBtnBG}"
                         BorderBrush="{DynamicResource BrushBorder}"
                         BorderThickness="1,0,0,0">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="22,24">
-                        <StackPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- 预览面板顶部工具栏（在 AI 模式下提供切回源码按钮） -->
+                        <Border x:Name="RightPropertiesHeader" Grid.Row="0"
+                                Padding="16,10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1"
+                                Background="{DynamicResource BrushSecondaryBtnBG}" Visibility="Collapsed">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="👁" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" />
+                                    <TextBlock Text="实时外观与属性预览" Margin="6,0,0,0" Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+
+                                <!-- 源码 vs 预览 切换分段按钮 -->
+                                <Border Grid.Column="1" CornerRadius="7" Padding="2"
+                                        Background="{DynamicResource BrushBG}"
+                                        BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton x:Name="AiViewSourceTab2" Style="{StaticResource ModeTabStyle}"
+                                                     GroupName="AiRightViewMode2"
+                                                     Checked="AiViewSourceTab2_Checked" Padding="8,3">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&lt;/&gt;" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" />
+                                                <TextBlock Text="源码" Margin="4,0,0,0" FontSize="11" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </RadioButton>
+                                        <RadioButton x:Name="AiViewPreviewTab2" Style="{StaticResource ModeTabStyle}"
+                                                     GroupName="AiRightViewMode2" IsChecked="True"
+                                                     Checked="AiViewPreviewTab2_Checked" Padding="8,3">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="👁" FontSize="11" VerticalAlignment="Center" />
+                                                <TextBlock Text="预览" Margin="4,0,0,0" FontSize="11" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </RadioButton>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="22,20">
+                            <StackPanel MaxWidth="440" HorizontalAlignment="Left">
                             <TextBlock Text="在启动器中显示为" Style="{StaticResource SectionTitleStyle}" />
                             <Border Background="{DynamicResource BrushSecondaryBtnBG}"
                                     BorderBrush="{DynamicResource BrushBorder}"
@@ -1679,6 +1729,7 @@
                             </Border>
                         </StackPanel>
                     </ScrollViewer>
+                    </Grid>
                 </Border>
             </Grid>
 
@@ -1741,7 +1792,8 @@
                                    Foreground="{StaticResource RedBrush}" FontSize="12.5" FontWeight="SemiBold"
                                    Visibility="Collapsed" VerticalAlignment="Center" />
                         <TextBlock x:Name="HeaderDescription"
-                                   Text="选好类型，填几项关键信息就能保存。"
+                                   Text=""
+                                   Visibility="Collapsed"
                                    Foreground="{DynamicResource BrushTextSec}" FontSize="11.5"
                                    VerticalAlignment="Center" />
                     </StackPanel>
