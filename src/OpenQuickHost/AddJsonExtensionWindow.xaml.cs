@@ -634,12 +634,7 @@ public partial class AddJsonExtensionWindow : Window
             if (_currentAiSession != null)
             {
                 _currentAiSession.CurrentJson = jsonResult;
-                _currentAiSession.Messages.Add(new ExtAiChatMessage
-                {
-                    Role = "assistant",
-                    Content = "✅ DeepSeek 已完成代码修复并覆写编辑器，正在重新验证...",
-                    ExtractedJson = jsonResult
-                });
+                _currentAiSession.Messages.Add(CreateAssistantVersionMessage(jsonResult, "✅ DeepSeek 已完成修复并覆写编辑器，正在重新试运行验证..."));
                 _currentAiSession.LastUpdatedAt = DateTime.Now;
                 ScrollAiChatToEnd();
             }
@@ -1141,13 +1136,135 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
+    private ExtAiChatMessage CreateAssistantVersionMessage(string jsonResult, string summary)
+    {
+        string extName = "自定义扩展";
+        string extType = "扩展";
+        string? extIcon = null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonResult);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("name", out var np) && np.ValueKind == JsonValueKind.String)
+            {
+                extName = np.GetString() ?? extName;
+            }
+            if (root.TryGetProperty("type", out var tp) && tp.ValueKind == JsonValueKind.String)
+            {
+                extType = tp.GetString() switch
+                {
+                    "open-target" => "打开目标",
+                    "open-url" => "打开网址",
+                    "inline-csharp" => "C# 脚本",
+                    "powershell" => "PowerShell",
+                    "system-action" => "系统控制",
+                    "shell" => "命令行",
+                    "custom-protocol" => "协议交互",
+                    _ => tp.GetString() ?? "扩展"
+                };
+            }
+            if (root.TryGetProperty("icon", out var ip) && ip.ValueKind == JsonValueKind.String)
+            {
+                extIcon = ip.GetString();
+            }
+        }
+        catch { }
+
+        int versionIndex = (_currentAiSession?.Messages.Count(m => !string.IsNullOrWhiteSpace(m.ExtractedJson)) ?? 0) + 1;
+
+        return new ExtAiChatMessage
+        {
+            Role = "assistant",
+            Content = summary,
+            ExtractedJson = jsonResult,
+            VersionNumber = versionIndex,
+            ExtensionName = extName,
+            ExtensionType = extType,
+            ExtensionIcon = extIcon
+        };
+    }
+
+    private void AiRestoreVersionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string json } && !string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                if (ManualJsonInputBox != null)
+                {
+                    ManualJsonInputBox.Text = json;
+                }
+                if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+                {
+                    _isUpdatingWebView = true;
+                    _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(json)})");
+                    _isUpdatingWebView = false;
+                }
+                TryPopulateManualFormFromJson(json, showError: false);
+                SyncSimpleFromHiddenForm();
+                UpdatePreview();
+
+                if (_currentAiSession != null)
+                {
+                    _currentAiSession.CurrentJson = json;
+                    _currentAiSession.LastUpdatedAt = DateTime.Now;
+                }
+
+                ShowError("已将编辑器与预览恢复为此版本！");
+                if (ErrorText != null)
+                {
+                    ErrorText.Foreground = GreenBrush;
+                    ErrorText.Visibility = Visibility.Visible;
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"应用版本失败：{ex.Message}");
+            }
+        }
+    }
+
+    private async void AiCopyVersionJsonButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string json && !string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                await Task.Run(() => CopyTextToClipboard(json));
+                var origContent = btn.Content;
+                btn.Content = "已复制";
+                await Task.Delay(1200);
+                btn.Content = origContent;
+            }
+            catch (Exception ex)
+            {
+                ShowError($"复制失败：{ex.Message}");
+            }
+        }
+    }
+
+    private void CustomPromptTextBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            if (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift))
+            {
+                // Shift + Enter: 允许正常换行
+                return;
+            }
+            else
+            {
+                // Enter: 拦截换行并触发发送
+                e.Handled = true;
+                DeepSeekAutoGenerateButton_Click(this, new RoutedEventArgs());
+            }
+        }
+    }
+
     private void CustomPromptTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && !Keyboard.IsKeyDown(Key.LeftShift) && !Keyboard.IsKeyDown(Key.RightShift))
-        {
-            e.Handled = true;
-            DeepSeekAutoGenerateButton_Click(this, new RoutedEventArgs());
-        }
+        // 兼容处理
     }
 
     private void ScrollAiChatToEnd()
@@ -1258,12 +1375,7 @@ public partial class AddJsonExtensionWindow : Window
             if (_currentAiSession != null)
             {
                 _currentAiSession.CurrentJson = jsonResult;
-                _currentAiSession.Messages.Add(new ExtAiChatMessage
-                {
-                    Role = "assistant",
-                    Content = "✅ 已成功生成扩展 JSON 并自动载入编辑器，正在启动试运行验证...",
-                    ExtractedJson = jsonResult
-                });
+                _currentAiSession.Messages.Add(CreateAssistantVersionMessage(jsonResult, "✅ 已成功生成扩展 JSON 并载入编辑器，正在启动试运行验证..."));
                 _currentAiSession.LastUpdatedAt = DateTime.Now;
                 ScrollAiChatToEnd();
             }
@@ -4904,13 +5016,19 @@ public sealed class ExtAiChatMessage
     public string Role { get; set; } = "user"; // "user" | "assistant" | "error"
     public string Content { get; set; } = "";
     public string? ExtractedJson { get; set; }
+    public int VersionNumber { get; set; } = 0;
+    public string? ExtensionName { get; set; }
+    public string? ExtensionType { get; set; }
+    public string? ExtensionIcon { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.Now;
     public string TimeText => Timestamp.ToString("HH:mm");
     public bool IsUser => Role == "user";
     public bool IsAssistant => Role == "assistant";
     public bool IsError => Role == "error";
+    public bool HasVersionCard => IsAssistant && !string.IsNullOrWhiteSpace(ExtractedJson);
     public Visibility UserVisibility => IsUser ? Visibility.Visible : Visibility.Collapsed;
     public Visibility AssistantVisibility => IsAssistant ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility VersionCardVisibility => HasVersionCard ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ErrorVisibility => IsError ? Visibility.Visible : Visibility.Collapsed;
 }
 

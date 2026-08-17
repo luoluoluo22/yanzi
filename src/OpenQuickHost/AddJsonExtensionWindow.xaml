@@ -1133,20 +1133,57 @@
                                                 </StackPanel>
 
                                                 <!-- AI 助手消息 -->
-                                                <StackPanel HorizontalAlignment="Left" MaxWidth="300" Visibility="{Binding AssistantVisibility}">
-                                                    <Border Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="12,12,12,2" Padding="10,8">
+                                                <StackPanel HorizontalAlignment="Left" MaxWidth="440" Visibility="{Binding AssistantVisibility}">
+                                                    <Border Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="12,12,12,2" Padding="12,10">
                                                         <StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                                                 <TextBlock Text="🤖 DeepSeek" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="Bold" />
+                                                                <Border Visibility="{Binding VersionCardVisibility}" Background="#1A3B82F6" CornerRadius="4" Margin="8,0,0,0" Padding="5,1">
+                                                                    <TextBlock Text="{Binding VersionNumber, StringFormat='版本 #{0}'}" Foreground="{DynamicResource BrushAccent}" FontSize="10.5" FontWeight="SemiBold" />
+                                                                </Border>
                                                             </StackPanel>
+                                                            
                                                             <TextBlock Text="{Binding Content}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" />
+
+                                                            <!-- 生成的扩展版本快照卡片 -->
+                                                            <Border Visibility="{Binding VersionCardVisibility}" Margin="0,8,0,2"
+                                                                    Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                                                <Grid>
+                                                                    <Grid.RowDefinitions>
+                                                                        <RowDefinition Height="Auto" />
+                                                                        <RowDefinition Height="Auto" />
+                                                                    </Grid.RowDefinitions>
+                                                                    <Grid Grid.Row="0">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                            <TextBlock Text="📦" FontSize="12" VerticalAlignment="Center" />
+                                                                            <TextBlock Text="{Binding ExtensionName, FallbackValue='新扩展'}" Margin="6,0,0,0"
+                                                                                       Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                                        </StackPanel>
+                                                                        <Border Grid.Column="1" Background="#14FFFFFF" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                                                                            <TextBlock Text="{Binding ExtensionType, FallbackValue='扩展'}" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" />
+                                                                        </Border>
+                                                                    </Grid>
+
+                                                                    <!-- 操作栏：回退/应用此版本 + 复制该版本 JSON -->
+                                                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0" HorizontalAlignment="Right">
+                                                                        <Button Content="📋 复制代码" Style="{DynamicResource GhostButtonStyle}" Height="24" Padding="6,0" FontSize="11"
+                                                                                Tag="{Binding ExtractedJson}" Click="AiCopyVersionJsonButton_Click" ToolTip="复制此版本的 JSON 源码" />
+                                                                        <Button Content="↺ 应用此版本" Style="{DynamicResource PrimaryButtonStyle}" Height="24" Padding="8,0" FontSize="11" Margin="6,0,0,0"
+                                                                                Tag="{Binding ExtractedJson}" Click="AiRestoreVersionButton_Click" ToolTip="将编辑器和预览恢复为此版本" />
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Border>
                                                         </StackPanel>
                                                     </Border>
                                                     <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="4,3,0,0" />
                                                 </StackPanel>
 
                                                 <!-- 错误自愈消息 -->
-                                                <StackPanel HorizontalAlignment="Left" MaxWidth="300" Visibility="{Binding ErrorVisibility}">
+                                                <StackPanel HorizontalAlignment="Left" MaxWidth="440" Visibility="{Binding ErrorVisibility}">
                                                     <Border Background="#1AF87171" BorderBrush="#33F87171" BorderThickness="1" CornerRadius="12" Padding="10,8">
                                                         <StackPanel>
                                                             <StackPanel Orientation="Horizontal">
@@ -1186,9 +1223,9 @@
                                                      GotFocus="CustomPromptTextBox_GotFocus"
                                                      LostFocus="CustomPromptTextBox_LostFocus"
                                                      TextChanged="CustomPromptTextBox_TextChanged"
-                                                     KeyDown="CustomPromptTextBox_KeyDown" />
+                                                     PreviewKeyDown="CustomPromptTextBox_PreviewKeyDown" />
                                             <TextBlock x:Name="CustomPromptPlaceholder"
-                                                       Text="输入扩展功能需求或修改指令..."
+                                                       Text="输入扩展功能需求或修改指令（Enter 发送，Shift+Enter 换行）..."
                                                        Foreground="{DynamicResource BrushTextSec}"
                                                        FontSize="{DynamicResource FontSizeSmallPlus}"
                                                        IsHitTestVisible="False" Margin="2,1,0,0"
@@ -1207,10 +1244,19 @@
                                                        TextWrapping="Wrap" VerticalAlignment="Center" Visibility="Collapsed" />
 
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button x:Name="ManualDeepSeekButton" Content="⚡ 发送"
+                                                <Button x:Name="ManualDeepSeekButton"
                                                         Style="{DynamicResource PrimaryButtonStyle}"
-                                                        Height="28" Padding="16,0" FontSize="12"
-                                                        Click="DeepSeekAutoGenerateButton_Click" />
+                                                        Width="30" Height="30" Padding="0"
+                                                        ToolTip="发送需求 (Enter 发送，Shift+Enter 换行)"
+                                                        Click="DeepSeekAutoGenerateButton_Click">
+                                                    <Path Data="{local:IconGeometry arrow-left}"
+                                                          Fill="#FFFFFF" Stretch="Uniform" Width="13" Height="13"
+                                                          RenderTransformOrigin="0.5,0.5">
+                                                        <Path.RenderTransform>
+                                                            <RotateTransform Angle="90" />
+                                                        </Path.RenderTransform>
+                                                    </Path>
+                                                </Button>
                                             </StackPanel>
                                         </Grid>
                                     </Grid>
