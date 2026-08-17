@@ -151,8 +151,16 @@ public partial class AddJsonExtensionWindow : Window
             // 初始化完成，允许同步
             _isInitializing = false;
 
+            // 启动浏览器助手连接状态监测定时器，实时感知插件连接状态并自动消隐引导横幅
+            StartBrowserExtensionStateWatcher();
+
             // 异步初始化高级编辑器与内联脚本编辑器，支持 4 秒超时无缝降级
             _ = InitializeWebViewEditorsAsync();
+        };
+
+        Closed += (s, e) =>
+        {
+            _browserExtensionCheckTimer?.Stop();
         };
     }
 
@@ -353,12 +361,151 @@ public partial class AddJsonExtensionWindow : Window
             ManualTestLogTextBox.Text);
     }
 
+    private bool _isExtensionGuideDismissed = false;
+    private System.Windows.Threading.DispatcherTimer? _browserExtensionCheckTimer;
+
+    private void StartBrowserExtensionStateWatcher()
+    {
+        UpdateBrowserExtensionBannerVisibility();
+
+        _browserExtensionCheckTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1.5)
+        };
+        _browserExtensionCheckTimer.Tick += (s, ev) => UpdateBrowserExtensionBannerVisibility();
+        _browserExtensionCheckTimer.Start();
+    }
+
+    private void UpdateBrowserExtensionBannerVisibility()
+    {
+        if (BrowserExtensionGuideBanner == null) return;
+
+        var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+        bool isConnected = agentServer != null && agentServer.IsBrowserConnected;
+
+        if (isConnected)
+        {
+            _isExtensionGuideDismissed = false;
+            BrowserExtensionGuideBanner.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            if (!_isExtensionGuideDismissed && AdvancedModePanel.Visibility == Visibility.Visible)
+            {
+                BrowserExtensionGuideBanner.Visibility = Visibility.Visible;
+            }
+        }
+    }
+
+    private void DismissExtensionGuide_Click(object sender, RoutedEventArgs e)
+    {
+        _isExtensionGuideDismissed = true;
+        if (BrowserExtensionGuideBanner != null)
+        {
+            BrowserExtensionGuideBanner.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void QuickInstallBrowserExtension_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var extPath = FindBrowserExtensionDirectory();
+            if (string.IsNullOrEmpty(extPath) || !Directory.Exists(extPath))
+            {
+                ShowError("未找到内置的浏览器插件目录。");
+                return;
+            }
+
+            // 1. 在资源管理器中高亮定位 manifest.json 文件或文件夹
+            var manifestFile = Path.Combine(extPath, "manifest.json");
+            if (File.Exists(manifestFile))
+            {
+                Process.Start("explorer.exe", $"/select,\"{manifestFile}\"");
+            }
+            else
+            {
+                Process.Start("explorer.exe", $"\"{extPath}\"");
+            }
+
+            // 2. 唤起默认浏览器打开扩展管理页
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "chrome://extensions",
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "edge://extensions",
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            }
+
+            System.Windows.MessageBox.Show(
+                this,
+                "已为你打开插件目录与浏览器扩展页！\n\n【极速加载步骤】：\n1. 开启浏览器右上角的「开发者模式」；\n2. 将高亮选中的 browser-extension 文件夹直接拖入浏览器即可！\n\n安装完成后燕子将自动感知并就绪。",
+                "燕子浏览器助手加载指引",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Quick install browser extension failed: {ex}");
+            ShowError($"打开插件目录失败：{ex.Message}");
+        }
+    }
+
+    private void OpenExtensionTutorial_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://github.com/luoluoluo22/yanzi#readme",
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            QuickInstallBrowserExtension_Click(sender, e);
+        }
+    }
+
+    private static string? FindBrowserExtensionDirectory()
+    {
+        try
+        {
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var dir1 = Path.Combine(baseDir, "browser-extension");
+            if (Directory.Exists(dir1)) return dir1;
+
+            var dir2 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\..\browser-extension"));
+            if (Directory.Exists(dir2)) return dir2;
+
+            var dir3 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\browser-extension"));
+            if (Directory.Exists(dir3)) return dir3;
+        }
+        catch { }
+
+        return null;
+    }
+
     private void CustomPromptTextBox_GotFocus(object sender, RoutedEventArgs e)
     {
         if (CustomPromptPlaceholder != null)
         {
             CustomPromptPlaceholder.Visibility = Visibility.Collapsed;
         }
+        UpdateBrowserExtensionBannerVisibility();
     }
 
     private void CustomPromptTextBox_LostFocus(object sender, RoutedEventArgs e)

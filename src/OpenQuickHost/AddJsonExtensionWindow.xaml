@@ -1069,8 +1069,45 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- 对话气泡消息流 -->
-                            <ScrollViewer Grid.Row="1" x:Name="AiChatScrollViewer" Padding="12,12" VerticalScrollBarVisibility="Auto">
+                            <Grid Grid.Row="1">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <!-- 浏览器插件未连接智能引导卡片 -->
+                                <Border x:Name="BrowserExtensionGuideBanner" Grid.Row="0"
+                                        Margin="12,10,12,6" Padding="12,10"
+                                        Background="#143B82F6" BorderBrush="#333B82F6" BorderThickness="1" CornerRadius="10"
+                                        Visibility="Collapsed">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="💡" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" />
+                                                <TextBlock Text="未检测到燕子浏览器助手" Margin="6,0,0,0" Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="✕" Style="{DynamicResource GhostButtonStyle}" Width="20" Height="20" Padding="0" FontSize="10" ToolTip="暂时忽略" Click="DismissExtensionGuide_Click" />
+                                        </Grid>
+                                        <TextBlock Grid.Row="1" Text="加载插件后，燕子可 1 秒自动唤起 DeepSeek 生成并回传代码，无需手动复制粘贴。"
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,4,0,8" TextWrapping="Wrap" />
+                                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                            <Button Content="⚡ 5秒快速加载 (软件已内置)" Style="{DynamicResource PrimaryButtonStyle}" Height="26" Padding="10,0" FontSize="11" Click="QuickInstallBrowserExtension_Click" />
+                                            <Button Content="📖 安装指引" Style="{DynamicResource GhostButtonStyle}" Height="26" Padding="8,0" FontSize="11" Margin="6,0,0,0" Click="OpenExtensionTutorial_Click" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 对话气泡消息流 -->
+                                <ScrollViewer Grid.Row="1" x:Name="AiChatScrollViewer" Padding="12,6" VerticalScrollBarVisibility="Auto">
                                 <ItemsControl x:Name="AiChatItemsControl">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -1114,6 +1151,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </ScrollViewer>
+                            </Grid>
 
                             <!-- 底部一体化输入框 -->
                             <Border Grid.Row="2" Padding="10,8" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0">

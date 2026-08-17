@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -655,6 +655,7 @@ public partial class AddJsonExtensionWindow
         if (SimpleModePanel == null || AdvancedModePanel == null) return;
         SimpleModePanel.Visibility = Visibility.Collapsed;
         AdvancedModePanel.Visibility = Visibility.Visible;
+        UpdateBrowserExtensionBannerVisibility();
         if (_isInitializing) return;
 
         if (!ShouldKeepCurrentAdvancedJson())
