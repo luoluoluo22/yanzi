@@ -964,170 +964,305 @@
 
 
                 <Grid x:Name="AdvancedModePanel" Grid.Column="0" Visibility="Collapsed">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <!-- 栏 1：会话历史 (190px) -->
+                        <ColumnDefinition Width="190" MinWidth="150" MaxWidth="280" x:Name="AiHistoryColDef" />
+                        <ColumnDefinition Width="1" />
+                        <!-- 栏 2：对话交互区 (360px) -->
+                        <ColumnDefinition Width="360" MinWidth="280" MaxWidth="500" x:Name="AiChatColDef" />
+                        <ColumnDefinition Width="1" />
+                        <!-- 栏 3：JSON / 代码工作区 (*) -->
+                        <ColumnDefinition Width="*" MinWidth="320" />
+                    </Grid.ColumnDefinitions>
 
-                    <Grid Grid.Row="0" Margin="28,24,18,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="编辑扩展 JSON" Foreground="{DynamicResource BrushTextMain}"
-                                       FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold" />
-                            <TextBlock Text="直接修改代码，与简单扩展实时同步。"
-                                       Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}"
-                                       Margin="0,3,0,0" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button x:Name="ManualCopyJsonButton" Content="复制 JSON"
-                                    Style="{DynamicResource GhostButtonStyle}"
-                                    Height="32" Padding="14,0"
-                                    Click="ManualCopyJsonButton_Click" />
-                            <Button x:Name="ManualCopyPromptButton" Content="复制提示词"
-                                    Style="{DynamicResource GhostButtonStyle}"
-                                    Height="32" Padding="14,0" Margin="8,0,0,0"
-                                    Click="ManualCopyPromptButton_Click" />
-                        </StackPanel>
-                    </Grid>
-
-                    <Border Grid.Row="1" Margin="28,0,18,12"
-                            Background="{DynamicResource BrushSecondaryBtnBG}"
-                            BorderBrush="{DynamicResource BrushBorder}"
-                            BorderThickness="1" CornerRadius="10" Padding="10">
+                    <!-- ==================== 第 1 栏：会话历史 (Col 0) ==================== -->
+                    <Border Grid.Column="0" Background="{DynamicResource BrushSecondaryBtnBG}"
+                            BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="14" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="8" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Button Content="格式化" Style="{DynamicResource GhostButtonStyle}"
-                                    Height="30" Padding="12,0"
-                                    Click="FormatManualJsonButton_Click" />
-                            <TextBox x:Name="ManualJsonFindBox" Grid.Column="2"
-                                     Style="{StaticResource FormTextBoxStyle}" Height="30"
-                                     FontFamily="Consolas" ToolTip="查找内容（Ctrl+F 聚焦）" />
-                            <TextBox x:Name="ManualJsonReplaceBox" Grid.Column="4"
-                                     Style="{StaticResource FormTextBoxStyle}" Height="30"
-                                     FontFamily="Consolas" ToolTip="替换为" />
-                            <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="8,0,0,0">
-                                <Button Content="查找" Style="{DynamicResource GhostButtonStyle}"
-                                        Height="30" Padding="10,0" Click="FindManualJsonButton_Click" />
-                                <Button Content="替换" Style="{DynamicResource GhostButtonStyle}"
-                                        Height="30" Padding="10,0" Margin="6,0,0,0"
-                                        Click="ReplaceManualJsonButton_Click" />
-                                <Button Content="全部替换" Style="{DynamicResource GhostButtonStyle}"
-                                        Height="30" Padding="10,0" Margin="6,0,0,0"
-                                        Click="ReplaceAllManualJsonButton_Click" />
-                            </StackPanel>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <!-- 顶部新建会话按钮 -->
+                            <Border Grid.Row="0" Padding="12,12,12,10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                <Button x:Name="NewAiSessionButton"
+                                        Style="{DynamicResource PrimaryButtonStyle}"
+                                        Height="32" HorizontalAlignment="Stretch"
+                                        Click="NewAiSessionButton_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="➕" FontSize="11" VerticalAlignment="Center" />
+                                        <TextBlock Text="新建会话" Margin="6,0,0,0" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </Border>
+
+                            <!-- 会话列表 -->
+                            <ListBox x:Name="AiSessionListBox" Grid.Row="1"
+                                     Background="Transparent" BorderThickness="0"
+                                     Padding="6,8"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     SelectionChanged="AiSessionListBox_SelectionChanged">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Margin" Value="0,0,0,4" />
+                                        <Setter Property="Padding" Value="10,8" />
+                                        <Setter Property="Cursor" Value="Hand" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <Border x:Name="ItemBorder" CornerRadius="8"
+                                                            Background="Transparent"
+                                                            BorderBrush="Transparent" BorderThickness="1"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsSelected" Value="True">
+                                                            <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource BrushListViewItemSelected}" />
+                                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#333B82F6" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}"
+                                                           FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource BrushTextSec}"
+                                                           FontSize="{DynamicResource FontSizeTiny}" Margin="0,3,0,0" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
                         </Grid>
                     </Border>
 
-                    <Grid Grid.Row="2" Margin="28,0,18,18">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*" x:Name="JsonEditorRow" />
-                            <RowDefinition Height="Auto" x:Name="InlineScriptSplitterRow" />
-                            <RowDefinition Height="0" x:Name="InlineScriptRow" />
-                        </Grid.RowDefinitions>
+                    <Border Grid.Column="1" Background="{DynamicResource BrushBorder}" Width="1" />
 
-                        <!-- 上方：JSON 编辑器 -->
-                        <Border Grid.Row="0"
-                                Background="{DynamicResource BrushSecondaryBtnBG}"
-                                BorderBrush="{DynamicResource BrushBorder}"
-                                BorderThickness="1.4" CornerRadius="10" Margin="0,0,0,4">
-                            <Grid>
-                                <!-- WebView2 高级编辑器（首选） -->
-                                <wv2:WebView2 x:Name="JsonWebViewEditor"
-                                              Visibility="Collapsed" />
+                    <!-- ==================== 第 2 栏：对话交互区 (Col 2) ==================== -->
+                    <Border Grid.Column="2" Background="{DynamicResource BrushBG}"
+                            BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                                <!-- 原生 TextBox（离线降级 Fallback） -->
-                                <TextBox x:Name="ManualJsonInputBox"
-                                         Padding="18" AcceptsReturn="True" AcceptsTab="True"
-                                         TextWrapping="NoWrap"
-                                         VerticalScrollBarVisibility="Auto"
-                                         HorizontalScrollBarVisibility="Auto"
-                                         Background="Transparent" BorderThickness="0"
-                                         Foreground="{DynamicResource BrushTextMain}"
-                                         FontFamily="Consolas" FontSize="13.5"
-                                         CaretBrush="{DynamicResource BrushAccent}"
-                                         SelectionBrush="{StaticResource TextSelectionBrush}"
-                                         TextChanged="ManualJsonInputBox_TextChanged" />
+                            <!-- 对话区顶部 -->
+                            <Border Grid.Row="0" Padding="14,10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Background="{DynamicResource BrushSecondaryBtnBG}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="💬" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="ActiveSessionTitleText" Text="AI 对话区" Margin="8,0,0,0"
+                                               Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
 
-                                <!-- 双击跳转状态栏 -->
-                                <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
-                                        Margin="0,0,16,16" Padding="10,5" CornerRadius="12"
-                                        Background="{DynamicResource BrushDialogBG}" BorderThickness="1"
-                                        Cursor="Hand"
-                                        PreviewMouseLeftButtonDown="ManualJsonStatusText_MouseLeftButtonDown"
-                                        ToolTip="双击可自动跳转到错误所在的行或列">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Ellipse x:Name="ManualJsonStatusDot" Width="7" Height="7"
-                                                 Fill="{DynamicResource BrushTextSec}" VerticalAlignment="Center" />
-                                        <TextBlock x:Name="ManualJsonStatusText" Margin="8,0,0,0"
-                                                   Text="等待输入" Foreground="{DynamicResource BrushTextSec}"
-                                                   FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </Border>
+                            <!-- 对话气泡消息流 -->
+                            <ScrollViewer Grid.Row="1" x:Name="AiChatScrollViewer" Padding="12,12" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="AiChatItemsControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,12">
+                                                <!-- 用户消息 -->
+                                                <StackPanel HorizontalAlignment="Right" MaxWidth="300" Visibility="{Binding UserVisibility}">
+                                                    <Border Background="#1A3B82F6" BorderBrush="#333B82F6" BorderThickness="1" CornerRadius="12,12,2,12" Padding="10,8">
+                                                        <TextBlock Text="{Binding Content}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" />
+                                                    </Border>
+                                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" HorizontalAlignment="Right" Margin="0,3,4,0" />
+                                                </StackPanel>
 
-                        <!-- 中间：分割线 (GridSplitter) -->
-                        <GridSplitter Grid.Row="1" Height="4" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" Visibility="Collapsed" x:Name="InlineScriptSplitter" />
+                                                <!-- AI 助手消息 -->
+                                                <StackPanel HorizontalAlignment="Left" MaxWidth="300" Visibility="{Binding AssistantVisibility}">
+                                                    <Border Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="12,12,12,2" Padding="10,8">
+                                                        <StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                                <TextBlock Text="🤖 DeepSeek" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="Bold" />
+                                                            </StackPanel>
+                                                            <TextBlock Text="{Binding Content}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="4,3,0,0" />
+                                                </StackPanel>
 
-                        <!-- 下方：内联脚本独立编辑器 -->
-                        <Border Grid.Row="2" x:Name="InlineScriptPanel"
-                                Background="{DynamicResource BrushSecondaryBtnBG}"
-                                BorderBrush="{DynamicResource BrushBorder}"
-                                BorderThickness="1.4" CornerRadius="10" Margin="0,4,0,0"
-                                Visibility="Collapsed">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-                                
-                                <!-- 顶部：脚本语言指示与同步状态 -->
-                                <Border Grid.Row="0" Background="#14FFFFFF" CornerRadius="8,8,0,0" Padding="12,8">
+                                                <!-- 错误自愈消息 -->
+                                                <StackPanel HorizontalAlignment="Left" MaxWidth="300" Visibility="{Binding ErrorVisibility}">
+                                                    <Border Background="#1AF87171" BorderBrush="#33F87171" BorderThickness="1" CornerRadius="12" Padding="10,8">
+                                                        <StackPanel>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="⚠️" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                                                <TextBlock Text="试运行报错" Foreground="{DynamicResource RedBrush}" FontSize="11.5" FontWeight="Bold" VerticalAlignment="Center" />
+                                                            </StackPanel>
+                                                            <TextBlock Text="{Binding Content}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,4,0,8" />
+                                                            <Button Content="⚡ 发送给 DeepSeek 自动修复" Style="{DynamicResource PrimaryButtonStyle}" Height="28" Padding="10,0" FontSize="11" Click="ManualAiFixTestFailureButton_Click" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- 底部一体化输入框 -->
+                            <Border Grid.Row="2" Padding="10,8" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0">
+                                <Border Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="10,8">
                                     <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                            <TextBlock Text="⚡" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                            <TextBlock x:Name="InlineScriptTitle" Text="内联脚本代码编辑器" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                            <Border x:Name="InlineScriptLanguageBadgeHost" Background="#1A3B82F6" CornerRadius="4" Margin="8,0,0,0" Padding="6,2" VerticalAlignment="Center">
-                                                <TextBlock x:Name="InlineScriptLanguageBadge" Text="C#" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                            </Border>
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="与上方 JSON 实时双向同步" Foreground="{DynamicResource BrushTextSec}" FontSize="11" VerticalAlignment="Center" />
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <!-- 输入框 -->
+                                        <Grid Grid.Row="0" MinHeight="48">
+                                            <TextBox x:Name="CustomPromptTextBox"
+                                                     Background="Transparent" BorderThickness="0"
+                                                     AcceptsReturn="True" TextWrapping="Wrap"
+                                                     VerticalScrollBarVisibility="Auto" Padding="0"
+                                                     Foreground="{DynamicResource BrushTextMain}"
+                                                     CaretBrush="{DynamicResource BrushAccent}"
+                                                     FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                     GotFocus="CustomPromptTextBox_GotFocus"
+                                                     LostFocus="CustomPromptTextBox_LostFocus"
+                                                     TextChanged="CustomPromptTextBox_TextChanged"
+                                                     KeyDown="CustomPromptTextBox_KeyDown" />
+                                            <TextBlock x:Name="CustomPromptPlaceholder"
+                                                       Text="输入扩展功能需求或修改指令..."
+                                                       Foreground="{DynamicResource BrushTextSec}"
+                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                       IsHitTestVisible="False" Margin="2,1,0,0"
+                                                       TextWrapping="Wrap" VerticalAlignment="Top" />
+                                        </Grid>
+
+                                        <!-- 底部操作按钮 -->
+                                        <Grid Grid.Row="1" Margin="0,6,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock x:Name="SidePanelAiStatusText" Grid.Column="0"
+                                                       Foreground="{DynamicResource BrushAccent}" FontSize="11"
+                                                       TextWrapping="Wrap" VerticalAlignment="Center" Visibility="Collapsed" />
+
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button x:Name="ManualCopyPromptButton" Content="复制提示词"
+                                                        Style="{DynamicResource GhostButtonStyle}"
+                                                        Height="26" Padding="8,0" FontSize="11" Margin="0,0,6,0"
+                                                        Click="ManualCopyPromptButton_Click" />
+                                                <Button x:Name="ManualDeepSeekButton" Content="⚡ 发送"
+                                                        Style="{DynamicResource PrimaryButtonStyle}"
+                                                        Height="28" Padding="14,0" FontSize="12"
+                                                        Click="DeepSeekAutoGenerateButton_Click" />
+                                            </StackPanel>
+                                        </Grid>
                                     </Grid>
                                 </Border>
+                            </Border>
+                        </Grid>
+                    </Border>
 
-                                <Grid Grid.Row="1">
-                                    <wv2:WebView2 x:Name="ScriptWebViewEditor"
-                                                  Visibility="Collapsed" />
-                                    
-                                    <TextBox x:Name="InlineScriptInputBox"
-                                             Padding="16" AcceptsReturn="True" AcceptsTab="True"
-                                             TextWrapping="NoWrap"
-                                             VerticalScrollBarVisibility="Auto"
-                                             HorizontalScrollBarVisibility="Auto"
-                                             Background="Transparent" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BrushBorder}"
-                                             Foreground="{DynamicResource BrushTextMain}"
-                                             FontFamily="Consolas" FontSize="13.5"
-                                             CaretBrush="{DynamicResource BrushAccent}"
-                                             SelectionBrush="{StaticResource TextSelectionBrush}"
-                                             TextChanged="InlineScriptInputBox_TextChanged" />
-                                </Grid>
+                    <Border Grid.Column="3" Background="{DynamicResource BrushBorder}" Width="1" />
+
+                    <!-- ==================== 第 3 栏：JSON / 代码工作区 (Col 4) ==================== -->
+                    <Grid Grid.Column="4">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- 工具栏：格式化/查找/替换/复制 -->
+                        <Border Grid.Row="0" Margin="14,10,14,8"
+                                Background="{DynamicResource BrushSecondaryBtnBG}"
+                                BorderBrush="{DynamicResource BrushBorder}"
+                                BorderThickness="1" CornerRadius="10" Padding="8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="6" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" Grid.Column="0">
+                                    <Button Content="格式化" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" FontSize="11.5" Click="FormatManualJsonButton_Click" />
+                                    <Button x:Name="ManualCopyJsonButton" Content="复制" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="10,0" FontSize="11.5" Margin="6,0,0,0" Click="ManualCopyJsonButton_Click" />
+                                </StackPanel>
+                                <TextBox x:Name="ManualJsonFindBox" Grid.Column="2" Style="{StaticResource FormTextBoxStyle}" Height="28" FontFamily="Consolas" FontSize="11.5" ToolTip="查找内容（Ctrl+F 聚焦）" />
+                                <TextBox x:Name="ManualJsonReplaceBox" Grid.Column="4" Style="{StaticResource FormTextBoxStyle}" Height="28" FontFamily="Consolas" FontSize="11.5" ToolTip="替换为" />
+                                <StackPanel Grid.Column="5" Orientation="Horizontal" Margin="6,0,0,0">
+                                    <Button Content="查找" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="8,0" FontSize="11.5" Click="FindManualJsonButton_Click" />
+                                    <Button Content="替换" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="8,0" FontSize="11.5" Margin="4,0,0,0" Click="ReplaceManualJsonButton_Click" />
+                                    <Button Content="全换" Style="{DynamicResource GhostButtonStyle}" Height="28" Padding="8,0" FontSize="11.5" Margin="4,0,0,0" Click="ReplaceAllManualJsonButton_Click" />
+                                </StackPanel>
                             </Grid>
                         </Border>
+
+                        <!-- 编辑器区域 -->
+                        <Grid Grid.Row="1" Margin="14,0,14,14">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" x:Name="JsonEditorRow" />
+                                <RowDefinition Height="Auto" x:Name="InlineScriptSplitterRow" />
+                                <RowDefinition Height="0" x:Name="InlineScriptRow" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.4" CornerRadius="10" Margin="0,0,0,4">
+                                <Grid>
+                                    <wv2:WebView2 x:Name="JsonWebViewEditor" Visibility="Collapsed" />
+                                    <TextBox x:Name="ManualJsonInputBox" Padding="14" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource BrushTextMain}" FontFamily="Consolas" FontSize="13" CaretBrush="{DynamicResource BrushAccent}" SelectionBrush="{StaticResource TextSelectionBrush}" TextChanged="ManualJsonInputBox_TextChanged" />
+                                    <!-- 双击跳转状态栏 -->
+                                    <Border VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,0,14,14" Padding="8,4" CornerRadius="10" Background="{DynamicResource BrushDialogBG}" BorderThickness="1" Cursor="Hand" PreviewMouseLeftButtonDown="ManualJsonStatusText_MouseLeftButtonDown" ToolTip="双击可自动跳转到错误所在的行或列">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse x:Name="ManualJsonStatusDot" Width="6" Height="6" Fill="{DynamicResource BrushTextSec}" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="ManualJsonStatusText" Margin="6,0,0,0" Text="等待输入" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
+
+                            <GridSplitter Grid.Row="1" Height="4" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" Visibility="Collapsed" x:Name="InlineScriptSplitter" />
+
+                            <Border Grid.Row="2" x:Name="InlineScriptPanel" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.4" CornerRadius="10" Margin="0,4,0,0" Visibility="Collapsed">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Border Grid.Row="0" Background="#14FFFFFF" CornerRadius="8,8,0,0" Padding="10,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="⚡" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                                <TextBlock x:Name="InlineScriptTitle" Text="内联脚本代码编辑器" Foreground="{DynamicResource BrushTextMain}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <Border x:Name="InlineScriptLanguageBadgeHost" Background="#1A3B82F6" CornerRadius="4" Margin="6,0,0,0" Padding="4,1" VerticalAlignment="Center">
+                                                    <TextBlock x:Name="InlineScriptLanguageBadge" Text="C#" Foreground="{DynamicResource BrushAccent}" FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="与上方 JSON 实时双向同步" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+                                    <Grid Grid.Row="1">
+                                        <wv2:WebView2 x:Name="ScriptWebViewEditor" Visibility="Collapsed" />
+                                        <TextBox x:Name="InlineScriptInputBox" Padding="14" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Background="Transparent" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" FontFamily="Consolas" FontSize="13" CaretBrush="{DynamicResource BrushAccent}" SelectionBrush="{StaticResource TextSelectionBrush}" TextChanged="InlineScriptInputBox_TextChanged" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </Grid>
 
@@ -1474,29 +1609,6 @@
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
-
-                            <Border Margin="0,22,0,0" Padding="14"
-                                    Background="#0D3B82F6"
-                                    BorderBrush="#333B82F6"
-                                    BorderThickness="1" CornerRadius="10">
-                                <StackPanel>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="✨" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" />
-                                        <TextBlock Text="让 AI 帮你写完整 JSON" Margin="6,0,0,0"
-                                                   Foreground="{DynamicResource BrushTextMain}"
-                                                   FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                    <TextBlock Text="复制提示词到任意 AI 对话，得到 JSON 后切到「高级模式」粘贴即可。"
-                                               Foreground="{DynamicResource BrushTextSec}"
-                                               FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap"
-                                               Margin="0,8,0,10" />
-                                    <Button x:Name="SidePanelCopyPromptButton" Content="复制提示词"
-                                            Style="{DynamicResource GhostButtonStyle}"
-                                            HorizontalAlignment="Left"
-                                            Height="30" Padding="14,0" FontSize="{DynamicResource FontSizeSmallPlus}"
-                                            Click="ManualCopyPromptButton_Click" />
-                                </StackPanel>
-                            </Border>
                         </StackPanel>
                     </ScrollViewer>
                 </Border>
@@ -1520,6 +1632,12 @@
                         <TextBlock Text="测试日志" Foreground="{DynamicResource BrushTextMain}"
                                    FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button x:Name="ManualAiFixTestFailureButton" Content="⚡ DeepSeek 自动修复"
+                                    Style="{DynamicResource PrimaryButtonStyle}"
+                                    Height="28" Padding="12,0" FontSize="{DynamicResource FontSizeSmall}"
+                                    Margin="0,0,6,0"
+                                    Visibility="Collapsed"
+                                    Click="ManualAiFixTestFailureButton_Click" />
                             <Button x:Name="ManualCopyTestFailureButton" Content="复制日志"
                                     Style="{DynamicResource GhostButtonStyle}"
                                     Height="28" Padding="10,0" FontSize="{DynamicResource FontSizeSmall}"

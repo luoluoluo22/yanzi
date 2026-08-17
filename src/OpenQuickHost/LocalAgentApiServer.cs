@@ -22,6 +22,71 @@ public sealed class LocalAgentApiServer : IDisposable
 
     private static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingBrowserTasks = new(StringComparer.OrdinalIgnoreCase);
 
+    public async Task<(bool success, string? jsonResult, string? error)> RunBrowserAiPromptTransferAsync(string prompt, string aiSite = "deepseek", int timeoutSeconds = 120)
+    {
+        if (_activeBrowserSocket == null || _activeBrowserSocket.State != WebSocketState.Open)
+        {
+            return (false, null, "燕子浏览器助手未连接。请先打开浏览器并确保已启用“燕子浏览器助手”插件。");
+        }
+
+        var taskId = Guid.NewGuid().ToString("N");
+        var taskPayload = new Dictionary<string, object>
+        {
+            ["type"] = "task_request",
+            ["taskId"] = taskId,
+            ["action"] = "ai_prompt_transfer",
+            ["aiSite"] = aiSite,
+            ["prompt"] = prompt,
+            ["timeoutSeconds"] = timeoutSeconds
+        };
+
+        var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingBrowserTasks[taskId] = tcs;
+
+        try
+        {
+            var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
+            await _activeBrowserSocket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, _cts.Token);
+            HostAssets.AppendLog($"[LocalAgentApi] Dispatched AI prompt transfer task to browser extension: taskId={taskId}, site={aiSite}, promptLength={prompt.Length}");
+        }
+        catch (Exception ex)
+        {
+            _pendingBrowserTasks.TryRemove(taskId, out _);
+            return (false, null, $"向浏览器助手发送指令失败: {ex.Message}");
+        }
+
+        using (var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds + 10)))
+        {
+            var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
+            if (completedTask == tcs.Task)
+            {
+                var resultDoc = await tcs.Task;
+                string? status = resultDoc.TryGetProperty("status", out var statusProp) ? statusProp.GetString() : null;
+                string? message = resultDoc.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : null;
+
+                if (status == "success")
+                {
+                    if (resultDoc.TryGetProperty("data", out var dataProp) &&
+                        dataProp.TryGetProperty("rawJson", out var jsonProp))
+                    {
+                        var rawJson = jsonProp.GetString();
+                        return (true, rawJson, null);
+                    }
+                    return (false, null, "已从 AI 页面完成生成，但未提取到有效的 JSON 代码块。");
+                }
+                else
+                {
+                    return (false, null, string.IsNullOrWhiteSpace(message) ? "DeepSeek 网页端生成异常或超时" : message);
+                }
+            }
+            else
+            {
+                _pendingBrowserTasks.TryRemove(taskId, out _);
+                return (false, null, $"AI 响应超时（等待超过 {timeoutSeconds} 秒未返回）");
+            }
+        }
+    }
+
     private readonly string _prefix;
     private readonly string _token;
     private readonly Action<string?> _onMutated;

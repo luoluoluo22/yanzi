@@ -141,6 +141,7 @@ public partial class AddJsonExtensionWindow : Window
             
             // 初始化简单模式：根据已加载的 manifest 推断类型并把字段同步到简单控件
             InitializeSimpleMode();
+            InitializeAiWorkbenchSessions();
             if (_isEditMode && ShouldOpenAdvancedEditorForExistingJson(_initialJson))
             {
                 AdvancedModeTab.IsChecked = true;
@@ -320,6 +321,14 @@ public partial class AddJsonExtensionWindow : Window
         ManualTestSummaryText.Text = string.Empty;
         UpdateManualJsonValidationState();
 
+        // 实时同步解析 JSON 到隐藏表单与右侧预览区
+        if (!_isInitializing && _lastJsonValid && !string.IsNullOrWhiteSpace(ManualJsonInputBox.Text))
+        {
+            TryPopulateManualFormFromJson(ManualJsonInputBox.Text, showError: false);
+            SyncSimpleFromHiddenForm();
+            UpdatePreview();
+        }
+
         // 动态检测 JSON 并同步更新下方的内联脚本独立编辑器状态与高度分栏
         UpdateInlineScriptPanelState();
 
@@ -342,6 +351,166 @@ public partial class AddJsonExtensionWindow : Window
         await CopyTestLogToClipboardAsync(
             ManualCopyTestFailureButton,
             ManualTestLogTextBox.Text);
+    }
+
+    private void CustomPromptTextBox_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (CustomPromptPlaceholder != null)
+        {
+            CustomPromptPlaceholder.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void CustomPromptTextBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (CustomPromptPlaceholder != null)
+        {
+            CustomPromptPlaceholder.Visibility = string.IsNullOrEmpty(CustomPromptTextBox.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+    }
+
+    private void CustomPromptTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (CustomPromptPlaceholder != null)
+        {
+            CustomPromptPlaceholder.Visibility = string.IsNullOrEmpty(CustomPromptTextBox.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+    }
+
+    private async void ManualAiFixTestFailureButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            ErrorText.Visibility = Visibility.Collapsed;
+
+            var currentJson = ManualJsonInputBox.Text.Trim();
+            var errorSummary = ManualTestSummaryText.Text.Trim();
+            var errorLog = ManualTestLogTextBox.Text.Trim();
+            var customPrompt = CustomPromptTextBox?.Text?.Trim();
+
+            if (string.IsNullOrWhiteSpace(currentJson))
+            {
+                ShowError("当前编辑器中无 JSON 内容，无法生成修复指令。");
+                return;
+            }
+
+            var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+            if (agentServer == null || !agentServer.IsBrowserConnected)
+            {
+                ShowError("燕子浏览器助手未连接。请先打开 Chrome 或 Edge 浏览器并确认插件已开启。");
+                return;
+            }
+
+            // 构造错误修复专属提示词
+            var fixPromptBuilder = new StringBuilder();
+            fixPromptBuilder.AppendLine("刚才生成的 Yanzi 扩展 JSON 在试运行测试时发生错误，请根据以下报错信息进行分析并修复该扩展的 JSON 代码。");
+            fixPromptBuilder.AppendLine();
+            fixPromptBuilder.AppendLine("【一、当前出现错误的 JSON 配置】：");
+            fixPromptBuilder.AppendLine("```json");
+            fixPromptBuilder.AppendLine(currentJson);
+            fixPromptBuilder.AppendLine("```");
+            fixPromptBuilder.AppendLine();
+            fixPromptBuilder.AppendLine("【二、试运行报错摘要与执行日志】：");
+            if (!string.IsNullOrWhiteSpace(errorSummary))
+            {
+                fixPromptBuilder.AppendLine($"[错误摘要]: {errorSummary}");
+            }
+            if (!string.IsNullOrWhiteSpace(errorLog))
+            {
+                fixPromptBuilder.AppendLine("[详细日志]:");
+                fixPromptBuilder.AppendLine(errorLog);
+            }
+            if (!string.IsNullOrWhiteSpace(customPrompt))
+            {
+                fixPromptBuilder.AppendLine();
+                fixPromptBuilder.AppendLine("【三、原始自定义需求】：");
+                fixPromptBuilder.AppendLine(customPrompt);
+            }
+            fixPromptBuilder.AppendLine();
+            fixPromptBuilder.AppendLine("【四、修复要求】：");
+            fixPromptBuilder.AppendLine("1. 仔细分析报错原因（如 C# 编译错误、缺少 using/命名空间、语法错误、进程启动参数格式错误、类型不匹配等），进行针对性修复。");
+            fixPromptBuilder.AppendLine("2. 仅返回修复后的完整合法 ```json ... ``` 代码块，不要附加任何解释说明文字。");
+
+            var fixPrompt = fixPromptBuilder.ToString();
+
+            // 设置 UI 进入修复中状态
+            ManualAiFixTestFailureButton.IsEnabled = false;
+            ManualAiFixTestFailureButton.Content = "⏳ 正在自动修复...";
+            ManualTestSummaryText.Foreground = AccentBrush;
+            if (_currentAiSession != null)
+            {
+                _currentAiSession.Messages.Add(new ExtAiChatMessage
+                {
+                    Role = "user",
+                    Content = "⚡ 试运行出现异常，请求 DeepSeek 自动诊断修复..."
+                });
+                _currentAiSession.LastUpdatedAt = DateTime.Now;
+                ScrollAiChatToEnd();
+            }
+
+            var (success, jsonResult, error) = await agentServer.RunBrowserAiPromptTransferAsync(fixPrompt, "deepseek", 120);
+
+            if (!success || string.IsNullOrWhiteSpace(jsonResult))
+            {
+                ManualAiFixTestFailureButton.IsEnabled = true;
+                ManualAiFixTestFailureButton.Content = "⚡ DeepSeek 自动修复";
+                ManualTestSummaryText.Foreground = RedBrush;
+                ManualTestSummaryText.Text = $"DeepSeek 自动修复失败: {error ?? "未知错误"}";
+                ShowError($"AI 自动修复失败：{error}");
+                return;
+            }
+
+            // 成功获取到修复后的 JSON
+            ManualAiFixTestFailureButton.IsEnabled = true;
+            ManualAiFixTestFailureButton.Content = "⚡ DeepSeek 自动修复";
+            ManualTestSummaryText.Foreground = GreenBrush;
+            ManualTestSummaryText.Text = "✅ DeepSeek 已完成代码修复，正在重新自动试运行...";
+
+            // 写入编辑器
+            ManualJsonInputBox.Text = jsonResult;
+            if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+            {
+                _isUpdatingWebView = true;
+                _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(jsonResult)})");
+                _isUpdatingWebView = false;
+            }
+
+            // 同步表单数据与右侧实时预览
+            TryPopulateManualFormFromJson(jsonResult, showError: false);
+            SyncSimpleFromHiddenForm();
+            UpdatePreview();
+
+            if (_currentAiSession != null)
+            {
+                _currentAiSession.CurrentJson = jsonResult;
+                _currentAiSession.Messages.Add(new ExtAiChatMessage
+                {
+                    Role = "assistant",
+                    Content = "✅ DeepSeek 已完成代码修复并覆写编辑器，正在重新验证...",
+                    ExtractedJson = jsonResult
+                });
+                _currentAiSession.LastUpdatedAt = DateTime.Now;
+                ScrollAiChatToEnd();
+            }
+
+            // 再次自动触发试运行验证
+            await Task.Delay(400);
+            ManualTestExtensionButton_Click(this, new RoutedEventArgs());
+        }
+        catch (Exception ex)
+        {
+            if (ManualAiFixTestFailureButton != null)
+            {
+                ManualAiFixTestFailureButton.IsEnabled = true;
+                ManualAiFixTestFailureButton.Content = "⚡ DeepSeek 自动修复";
+            }
+            HostAssets.AppendLog($"DeepSeek auto fix failed: {ex}");
+            ShowError($"自动修复异常：{ex.Message}");
+        }
     }
 
     private void ManualTemplateButton_Click(object sender, RoutedEventArgs e)
@@ -645,6 +814,253 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
+    public System.Collections.ObjectModel.ObservableCollection<ExtAiSessionItem> AiSessions { get; } = new();
+    private ExtAiSessionItem? _currentAiSession;
+
+    private void InitializeAiWorkbenchSessions()
+    {
+        if (AiSessions.Count == 0)
+        {
+            var defaultSession = new ExtAiSessionItem
+            {
+                Title = "新建扩展会话",
+                CurrentJson = ManualJsonInputBox?.Text ?? _initialJson ?? string.Empty
+            };
+            defaultSession.Messages.Add(new ExtAiChatMessage
+            {
+                Role = "assistant",
+                Content = "你好！我是 DeepSeek AI 扩展开发助手。请在下方输入你想要实现的功能需求（例如：打开计算器、清理回收站、翻译选中文本等），我会为你生成完整的扩展 JSON 并自动试运行。"
+            });
+            AiSessions.Add(defaultSession);
+        }
+
+        if (AiSessionListBox != null)
+        {
+            AiSessionListBox.ItemsSource = AiSessions;
+            AiSessionListBox.SelectedIndex = 0;
+        }
+    }
+
+    private void AiSessionListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (AiSessionListBox?.SelectedItem is ExtAiSessionItem session)
+        {
+            _currentAiSession = session;
+            if (ActiveSessionTitleText != null)
+            {
+                ActiveSessionTitleText.Text = session.Title;
+            }
+            if (AiChatItemsControl != null)
+            {
+                AiChatItemsControl.ItemsSource = session.Messages;
+            }
+            if (!string.IsNullOrWhiteSpace(session.CurrentJson) && ManualJsonInputBox != null && ManualJsonInputBox.Text != session.CurrentJson)
+            {
+                ManualJsonInputBox.Text = session.CurrentJson;
+                if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+                {
+                    _isUpdatingWebView = true;
+                    _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(session.CurrentJson)})");
+                    _isUpdatingWebView = false;
+                }
+                TryPopulateManualFormFromJson(session.CurrentJson, showError: false);
+                SyncSimpleFromHiddenForm();
+                UpdatePreview();
+            }
+            ScrollAiChatToEnd();
+        }
+    }
+
+    private void NewAiSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        var newSession = new ExtAiSessionItem
+        {
+            Title = $"会话 {AiSessions.Count + 1}",
+            CurrentJson = string.Empty
+        };
+        newSession.Messages.Add(new ExtAiChatMessage
+        {
+            Role = "assistant",
+            Content = "你好！请输入你的新扩展功能需求，我会即时为你构建代码。"
+        });
+        AiSessions.Insert(0, newSession);
+        AiSessionListBox.SelectedItem = newSession;
+        if (CustomPromptTextBox != null)
+        {
+            CustomPromptTextBox.Clear();
+            CustomPromptTextBox.Focus();
+        }
+    }
+
+    private void CustomPromptTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && !Keyboard.IsKeyDown(Key.LeftShift) && !Keyboard.IsKeyDown(Key.RightShift))
+        {
+            e.Handled = true;
+            DeepSeekAutoGenerateButton_Click(this, new RoutedEventArgs());
+        }
+    }
+
+    private void ScrollAiChatToEnd()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            AiChatScrollViewer?.ScrollToEnd();
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private async void DeepSeekAutoGenerateButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            ErrorText.Visibility = Visibility.Collapsed;
+            if (SidePanelAiStatusText != null)
+            {
+                SidePanelAiStatusText.Visibility = Visibility.Collapsed;
+            }
+
+            var prompt = TryBuildManualCopyPrompt();
+            if (string.IsNullOrWhiteSpace(prompt) && !string.IsNullOrWhiteSpace(_aiGuidePrompt))
+            {
+                prompt = _aiGuidePrompt;
+            }
+
+            if (string.IsNullOrWhiteSpace(prompt))
+            {
+                ShowError("请先填写扩展的需求或关键信息，以便生成对应的 AI 提示词。");
+                return;
+            }
+
+            var userInput = (CustomPromptTextBox?.Text ?? string.Empty).Trim();
+            if (_currentAiSession == null && AiSessions.Count > 0)
+            {
+                _currentAiSession = AiSessions[0];
+            }
+
+            if (_currentAiSession != null)
+            {
+                var promptDisplay = !string.IsNullOrWhiteSpace(userInput) ? userInput : "生成扩展 JSON";
+                _currentAiSession.Messages.Add(new ExtAiChatMessage
+                {
+                    Role = "user",
+                    Content = promptDisplay
+                });
+                if (_currentAiSession.Title == "新建扩展会话" || _currentAiSession.Title.StartsWith("会话 "))
+                {
+                    _currentAiSession.Title = promptDisplay.Length > 12 ? promptDisplay.Substring(0, 12) + "..." : promptDisplay;
+                }
+                _currentAiSession.LastUpdatedAt = DateTime.Now;
+                ScrollAiChatToEnd();
+            }
+
+            if (CustomPromptTextBox != null)
+            {
+                CustomPromptTextBox.Text = string.Empty;
+            }
+
+            var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+            if (agentServer == null || !agentServer.IsBrowserConnected)
+            {
+                ShowError("燕子浏览器助手未连接。请先打开 Chrome 或 Edge 浏览器并确认插件已开启。");
+                if (SidePanelAiStatusText != null)
+                {
+                    SidePanelAiStatusText.Text = "浏览器助手未连接，请先打开浏览器插件";
+                    SidePanelAiStatusText.Foreground = RedBrush;
+                    SidePanelAiStatusText.Visibility = Visibility.Visible;
+                }
+                return;
+            }
+
+            // 更新 UI 进入生成中状态
+            SetAiAutoGeneratingState(true, "正在将提示词传递至 DeepSeek 网页端并自动发送...");
+
+            var (success, jsonResult, error) = await agentServer.RunBrowserAiPromptTransferAsync(prompt, "deepseek", 120);
+
+            if (!success || string.IsNullOrWhiteSpace(jsonResult))
+            {
+                SetAiAutoGeneratingState(false, null);
+                ShowError($"AI 生成失败：{error ?? "未知错误"}");
+                if (SidePanelAiStatusText != null)
+                {
+                    SidePanelAiStatusText.Text = $"生成失败：{error}";
+                    SidePanelAiStatusText.Foreground = RedBrush;
+                    SidePanelAiStatusText.Visibility = Visibility.Visible;
+                }
+                return;
+            }
+
+            // 成功提取到 JSON
+            SetAiAutoGeneratingState(false, "已成功生成并提取 JSON，正在自动试运行...");
+
+            // 写入编辑器
+            ManualJsonInputBox.Text = jsonResult;
+            if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+            {
+                _isUpdatingWebView = true;
+                _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(jsonResult)})");
+                _isUpdatingWebView = false;
+            }
+
+            // 同步表单数据与右侧实时预览
+            TryPopulateManualFormFromJson(jsonResult, showError: false);
+            SyncSimpleFromHiddenForm();
+            UpdatePreview();
+
+            if (_currentAiSession != null)
+            {
+                _currentAiSession.CurrentJson = jsonResult;
+                _currentAiSession.Messages.Add(new ExtAiChatMessage
+                {
+                    Role = "assistant",
+                    Content = "✅ 已成功生成扩展 JSON 并自动载入编辑器，正在启动试运行验证...",
+                    ExtractedJson = jsonResult
+                });
+                _currentAiSession.LastUpdatedAt = DateTime.Now;
+                ScrollAiChatToEnd();
+            }
+
+            if (SidePanelAiStatusText != null)
+            {
+                SidePanelAiStatusText.Text = "✅ DeepSeek 生成成功！已载入并自动启动试运行。";
+                SidePanelAiStatusText.Foreground = GreenBrush;
+                SidePanelAiStatusText.Visibility = Visibility.Visible;
+            }
+
+            // 自动触发试运行
+            await Task.Delay(300);
+            ManualTestExtensionButton_Click(this, new RoutedEventArgs());
+        }
+        catch (Exception ex)
+        {
+            SetAiAutoGeneratingState(false, null);
+            HostAssets.AppendLog($"DeepSeek auto generate failed: {ex}");
+            ShowError($"自动生成异常：{ex.Message}");
+        }
+    }
+
+    private void SetAiAutoGeneratingState(bool isGenerating, string? statusText)
+    {
+        if (ManualDeepSeekButton != null)
+        {
+            ManualDeepSeekButton.IsEnabled = !isGenerating;
+            ManualDeepSeekButton.Content = isGenerating ? "⏳ 生成中..." : "⚡ 发送";
+        }
+
+        if (SidePanelAiStatusText != null)
+        {
+            if (string.IsNullOrWhiteSpace(statusText))
+            {
+                SidePanelAiStatusText.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                SidePanelAiStatusText.Text = statusText;
+                SidePanelAiStatusText.Foreground = AccentBrush;
+                SidePanelAiStatusText.Visibility = Visibility.Visible;
+            }
+        }
+    }
+
     private async void ManualCopyJsonButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -675,7 +1091,26 @@ public partial class AddJsonExtensionWindow : Window
 
     private string TryBuildManualCopyPrompt()
     {
-        return BuildDetailedPrompt(BuildManualRequestSummary());
+        var baseSummary = BuildManualRequestSummary();
+        var custom = CustomPromptTextBox?.Text?.Trim();
+
+        if (string.IsNullOrWhiteSpace(baseSummary) && !string.IsNullOrWhiteSpace(custom))
+        {
+            baseSummary = custom;
+        }
+
+        var basePrompt = BuildDetailedPrompt(baseSummary);
+
+        if (!string.IsNullOrWhiteSpace(custom) && !string.Equals(baseSummary, custom, StringComparison.Ordinal))
+        {
+            var sb = new StringBuilder(basePrompt);
+            sb.AppendLine();
+            sb.AppendLine("【三、用户补充自定义要求（优先级最高，必须满足）】：");
+            sb.AppendLine(custom);
+            return sb.ToString();
+        }
+
+        return basePrompt;
     }
 
     private string BuildManualRequestSummary()
@@ -2077,6 +2512,10 @@ public partial class AddJsonExtensionWindow : Window
             summaryText.Text = result.Summary;
             logTextBox.Text = result.Log;
             copyFailureButton.Visibility = string.IsNullOrWhiteSpace(result.Log) ? Visibility.Collapsed : Visibility.Visible;
+            if (ManualAiFixTestFailureButton != null)
+            {
+                ManualAiFixTestFailureButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
+            }
         }
         catch (Exception ex)
         {
@@ -2087,6 +2526,10 @@ public partial class AddJsonExtensionWindow : Window
             summaryText.Text = "测试执行失败。";
             logTextBox.Text = ex.ToString();
             copyFailureButton.Visibility = Visibility.Visible;
+            if (ManualAiFixTestFailureButton != null)
+            {
+                ManualAiFixTestFailureButton.Visibility = Visibility.Visible;
+            }
         }
         finally
         {
@@ -4204,4 +4647,43 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
     }
 
     #endregion
+}
+
+public sealed class ExtAiChatMessage
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Role { get; set; } = "user"; // "user" | "assistant" | "error"
+    public string Content { get; set; } = "";
+    public string? ExtractedJson { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.Now;
+    public string TimeText => Timestamp.ToString("HH:mm");
+    public bool IsUser => Role == "user";
+    public bool IsAssistant => Role == "assistant";
+    public bool IsError => Role == "error";
+    public Visibility UserVisibility => IsUser ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility AssistantVisibility => IsAssistant ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ErrorVisibility => IsError ? Visibility.Visible : Visibility.Collapsed;
+}
+
+public sealed class ExtAiSessionItem : System.ComponentModel.INotifyPropertyChanged
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    private string _title = "新建扩展会话";
+    public string Title
+    {
+        get => _title;
+        set
+        {
+            _title = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Title)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TimeText)));
+        }
+    }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime LastUpdatedAt { get; set; } = DateTime.Now;
+    public string TimeText => LastUpdatedAt.ToString("HH:mm");
+    public System.Collections.ObjectModel.ObservableCollection<ExtAiChatMessage> Messages { get; set; } = new();
+    public string CurrentJson { get; set; } = "";
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 }

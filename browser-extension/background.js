@@ -116,43 +116,80 @@ function sendToLocalClient(message) {
 
 // 核心任务处理逻辑
 function handleTask(task) {
-  logEvent(`开始执行任务 [${task.taskId}]，目标网址: ${task.url}`);
+  const targetUrl = task.url || (task.action === "ai_prompt_transfer" ? "https://chat.deepseek.com/" : "");
+  logEvent(`开始执行任务 [${task.taskId}]，动作: ${task.action}, 目标网址: ${targetUrl}`);
   
-  // 1. 静默创建后台 Tab 页 (active: false)
-  chrome.tabs.create({ url: task.url, active: false }, (tab) => {
+  if (task.action === "ai_prompt_transfer") {
+    handleAiPromptTransferTask(task, targetUrl);
+    return;
+  }
+
+  // 普通自动化任务：静默创建后台 Tab 页 (active: false)
+  chrome.tabs.create({ url: targetUrl, active: false }, (tab) => {
     const tabId = tab.id;
     
     // 监听页面加载状态
     chrome.tabs.onUpdated.addListener(function listener(updatedTabId, info) {
       if (updatedTabId === tabId && info.status === "complete") {
-        // 移除监听器，防止多次执行
         chrome.tabs.onUpdated.removeListener(listener);
-        
         logEvent(`网页加载完成，开始注入执行脚本 [TabID: ${tabId}]`);
-        
-        // 2. 动态注入 content.js
-        chrome.scripting.executeScript({
-          target: { tabId: tabId },
-          files: ["content.js"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            logEvent(`脚本注入失败: ${chrome.runtime.lastError.message}`);
-            sendToLocalClient({
-              type: "task_response",
-              taskId: task.taskId,
-              status: "error",
-              message: chrome.runtime.lastError.message
-            });
-            chrome.tabs.remove(tabId);
-            return;
+        injectAndStart(tabId, task);
+      }
+    });
+  });
+}
+
+// 专门处理 AI 任务：优先复用已打开的 AI 标签页
+function handleAiPromptTransferTask(task, targetUrl) {
+  const urlPattern = "*://chat.deepseek.com/*";
+  
+  chrome.tabs.query({ url: urlPattern }, (tabs) => {
+    if (tabs && tabs.length > 0) {
+      const existingTab = tabs[0];
+      const tabId = existingTab.id;
+      logEvent(`发现已存在的 DeepSeek 标签页 [TabID: ${tabId}]，直接复用`);
+      
+      // 激活该标签页
+      chrome.tabs.update(tabId, { active: true }, () => {
+        injectAndStart(tabId, task);
+      });
+    } else {
+      logEvent(`未发现 DeepSeek 标签页，正在创建新标签页: ${targetUrl}`);
+      chrome.tabs.create({ url: targetUrl, active: true }, (tab) => {
+        const tabId = tab.id;
+        chrome.tabs.onUpdated.addListener(function listener(updatedTabId, info) {
+          if (updatedTabId === tabId && info.status === "complete") {
+            chrome.tabs.onUpdated.removeListener(listener);
+            logEvent(`DeepSeek 页面加载完成，开始注入执行脚本 [TabID: ${tabId}]`);
+            // 稍等 800ms 确保 SPA 框架完全初始化
+            setTimeout(() => {
+              injectAndStart(tabId, task);
+            }, 800);
           }
-          
-          // 3. 向 content.js 发送具体任务配置
-          chrome.tabs.sendMessage(tabId, {
-            type: "start_task",
-            task: task
-          });
         });
+      });
+    }
+  });
+}
+
+// 注入脚本并启动任务
+function injectAndStart(tabId, task) {
+  chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    files: ["content.js"]
+  }, () => {
+    if (chrome.runtime.lastError) {
+      logEvent(`脚本注入提示: ${chrome.runtime.lastError.message}`);
+      // 部分情况下即使脚本已注入也会报错，尝试直接通信
+    }
+    
+    // 向 content.js 发送具体任务配置
+    chrome.tabs.sendMessage(tabId, {
+      type: "start_task",
+      task: task
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        logEvent(`消息发送警告: ${chrome.runtime.lastError.message}`);
       }
     });
   });

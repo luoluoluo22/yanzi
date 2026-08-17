@@ -9,7 +9,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // 核心任务执行引擎
 function executeTask(task) {
   try {
-    if (task.action === "scrape") {
+    if (task.action === "ai_prompt_transfer") {
+      performAiPromptTransfer(task);
+    } else if (task.action === "scrape") {
       performScrape(task);
     } else if (task.action === "autofill") {
       performAutofill(task);
@@ -21,6 +23,198 @@ function executeTask(task) {
   } catch (err) {
     sendResult(task.taskId, "error", null, task.closeOnComplete, `执行异常: ${err.message}`);
   }
+}
+
+// ==========================================
+// 0. AI 提示词自动传递与 JSON 提取引擎 (AI Transfer Engine)
+// ==========================================
+async function performAiPromptTransfer(task) {
+  const prompt = task.prompt || "";
+  const timeoutMs = (task.timeoutSeconds || 120) * 1000;
+  console.log("%c[Yanzi AiTransfer] 收到 DeepSeek 任务 [ID: " + task.taskId + "], 提示词长度: " + prompt.length, "color: #3b82f6; font-weight: bold;");
+
+  if (!prompt) {
+    sendResult(task.taskId, "error", null, false, "提示词内容为空");
+    return;
+  }
+
+  try {
+    // 1. 等待并定位输入框
+    console.log("%c[Yanzi AiTransfer] 正在定位 DeepSeek 输入框...", "color: #3b82f6;");
+    const inputSelector = "textarea#chat-input, textarea[placeholder*='输入'], textarea[placeholder*='DeepSeek'], textarea, div[contenteditable='true']";
+    await waitForElement(inputSelector, 15000);
+
+    const inputEl = document.querySelector(inputSelector);
+    if (!inputEl) {
+      throw new Error("未找到 DeepSeek 输入框元素");
+    }
+
+    // 2. 聚焦并高保真填入提示词
+    console.log("%c[Yanzi AiTransfer] 正在填入提示词...", "color: #3b82f6;");
+    inputEl.focus();
+    if (inputEl.tagName === "TEXTAREA" || inputEl.tagName === "INPUT") {
+      inputEl.value = prompt;
+      inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+      inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+      if (inputEl._valueTracker) {
+        inputEl._valueTracker.setValue(prompt);
+      }
+    } else {
+      inputEl.innerText = prompt;
+      inputEl.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    }
+
+    await new Promise(r => setTimeout(r, 400));
+
+    // 3. 点击发送按钮
+    console.log("%c[Yanzi AiTransfer] 正在点击发送...", "color: #3b82f6;");
+    let sent = false;
+
+    const sendButtons = Array.from(document.querySelectorAll("button, div[role='button']")).filter(btn => {
+      const aria = btn.getAttribute("aria-label") || "";
+      const text = btn.innerText || "";
+      const isSend = aria.includes("发送") || aria.includes("Send") || text.includes("发送");
+      const hasSvg = btn.querySelector("svg") !== null;
+      return isSend || (hasSvg && btn.closest("form, div[class*='input'], div[class*='chat']"));
+    });
+
+    if (sendButtons.length > 0) {
+      const sendBtn = sendButtons[sendButtons.length - 1];
+      sendBtn.click();
+      sent = true;
+      console.log("%c[Yanzi AiTransfer] 点击了发送按钮", "color: #10b981;");
+    }
+
+    if (!sent) {
+      inputEl.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true
+      }));
+      console.log("%c[Yanzi AiTransfer] 触发了 Enter 键提交", "color: #10b981;");
+    }
+
+    // 4. 监听生成开始与完成
+    console.log("%c[Yanzi AiTransfer] 正在监听 DeepSeek 生成响应...", "color: #3b82f6;");
+    await new Promise(r => setTimeout(r, 2000));
+
+    const startTime = Date.now();
+    let finalJson = null;
+    let stableText = "";
+    let stableCount = 0;
+
+    while (Date.now() - startTime < timeoutMs) {
+      await new Promise(r => setTimeout(r, 1000));
+
+      // 检测停止按钮
+      const isGenerating = document.querySelector("button[aria-label*='停止'], div[role='button']:has(rect), div[role='button'][aria-label*='Stop']") !== null;
+
+      // 实时尝试从 DOM 提取合法 JSON
+      const candidateJson = extractJsonFromDeepSeekDom();
+
+      if (candidateJson) {
+        if (candidateJson === stableText) {
+          stableCount++;
+        } else {
+          stableCount = 0;
+          stableText = candidateJson;
+        }
+
+        // 完成条件：停止按钮消失，或者内容已稳定 2 秒以上且符合 JSON 规范
+        if (!isGenerating || stableCount >= 2) {
+          finalJson = candidateJson;
+          console.log("%c[Yanzi AiTransfer] 成功提取到合法 JSON (长度: " + finalJson.length + ")", "color: #10b981; font-weight: bold;");
+          break;
+        }
+      }
+    }
+
+    if (!finalJson) {
+      // 最终兜底尝试提取
+      finalJson = extractJsonFromDeepSeekDom();
+    }
+
+    if (!finalJson) {
+      throw new Error("等待超时，未能在 DeepSeek 页面中提取到有效的 JSON 扩展定义");
+    }
+
+    console.log("%c[Yanzi AiTransfer] 回传 JSON 结果至燕子桌面端...", "color: #10b981; font-weight: bold;");
+    sendResult(task.taskId, "success", {
+      rawJson: finalJson,
+      site: "deepseek"
+    }, false);
+
+  } catch (err) {
+    console.error("%c[Yanzi AiTransfer] 错误: " + err.message, "color: #ef4444;");
+    sendResult(task.taskId, "error", null, false, "DeepSeek 自动化失败: " + err.message);
+  }
+}
+
+// 核心：从 DeepSeek 页面 DOM 多级提取合法扩展 JSON
+function extractJsonFromDeepSeekDom() {
+  // 1. 扫描所有 pre, code, .md-code-block
+  const codeNodes = Array.from(document.querySelectorAll("pre code, pre, .md-code-block, code, div[class*='code']"));
+  for (let i = codeNodes.length - 1; i >= 0; i--) {
+    const text = codeNodes[i].innerText || "";
+    const parsed = tryParseValidExtensionJson(text);
+    if (parsed) return parsed;
+  }
+
+  // 2. 扫描所有 markdown 正文
+  const markdownNodes = Array.from(document.querySelectorAll(".ds-markdown, div[class*='markdown'], div[class*='message']"));
+  for (let i = markdownNodes.length - 1; i >= 0; i--) {
+    const text = markdownNodes[i].innerText || "";
+    const matches = text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
+    for (const m of matches) {
+      const parsed = tryParseValidExtensionJson(m[1]);
+      if (parsed) return parsed;
+    }
+    const parsed = tryParseValidExtensionJson(text);
+    if (parsed) return parsed;
+  }
+
+  // 3. 扫描整个 body
+  const bodyText = document.body.innerText || "";
+  const bodyMatches = Array.from(bodyText.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)).reverse();
+  for (const m of bodyMatches) {
+    const parsed = tryParseValidExtensionJson(m[1]);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+// 辅助：校验并格式化为标准 JSON 字符串
+function tryParseValidExtensionJson(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  let text = raw.trim();
+  text = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+
+  // 尝试直接解析
+  try {
+    const obj = JSON.parse(text);
+    if (obj && typeof obj === "object" && (obj.id || obj.name || obj.openTarget || obj.runtime || obj.category)) {
+      return JSON.stringify(obj, null, 2);
+    }
+  } catch (e) {}
+
+  // 截取最外层 { ... }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const sub = text.substring(firstBrace, lastBrace + 1);
+    try {
+      const obj = JSON.parse(sub);
+      if (obj && typeof obj === "object" && (obj.id || obj.name || obj.openTarget || obj.runtime || obj.category)) {
+        return JSON.stringify(obj, null, 2);
+      }
+    } catch (e) {}
+  }
+
+  return null;
 }
 
 // ==========================================
