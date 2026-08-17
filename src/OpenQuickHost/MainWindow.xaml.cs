@@ -180,9 +180,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _cloudReconnectTimer;
     private readonly DispatcherTimer _desktopPresenceHeartbeatTimer;
     private readonly DispatcherTimer _mobileMessagePollTimer;
-    private readonly DispatcherTimer _fileSearchDebounceTimer;
     private readonly DispatcherTimer _searchDebounceTimer;
-    private int _fileSearchRequestVersion;
+    private readonly SearchPipelineManager _searchPipelineManager = new();
     private DateTimeOffset _lastFileSearchManualInitPromptAt = DateTimeOffset.MinValue;
     private bool _backgroundWebDavSyncRunning;
     private bool _backgroundWebDavSyncRequested;
@@ -198,11 +197,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int _cloudReconnectAttemptCount;
     private string? _cloudReconnectPendingReason;
     private string? _desktopDeviceId;
-    private string _pendingFileSearchTerm = string.Empty;
     private string _activeFilterScopeKey = SearchScopeAll;
-    private string _pendingProviderSearchTerm = string.Empty;
-    private string _pendingProviderSearchScopeKey = string.Empty;
-    private CommandItem? _pendingProviderSearchCommand;
     private SearchScopeTab? _selectedSearchScope;
     private bool _listenerServicesPaused;
     private readonly double _defaultWindowWidth;
@@ -304,15 +299,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
         _mobileMessagePollTimer.Tick += MobileMessagePollTimer_Tick;
 
-        _fileSearchDebounceTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(120)
-        };
-        _fileSearchDebounceTimer.Tick += FileSearchDebounceTimer_Tick;
-
         _searchDebounceTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(120)
+            Interval = TimeSpan.FromMilliseconds(40)
         };
         _searchDebounceTimer.Tick += (s, e) =>
         {
@@ -638,7 +627,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (CapsGuidePopup == null) return;
 
-        if (!IsVisible || WindowState == WindowState.Minimized || CommandList == null || !CommandList.IsVisible || FilteredCommands == null || FilteredCommands.Count == 0)
+        if (!_appSettings.ShowBlindOperationGuide || !IsVisible || WindowState == WindowState.Minimized || CommandList == null || !CommandList.IsVisible || FilteredCommands == null || FilteredCommands.Count == 0)
         {
             CapsGuidePopup.IsOpen = false;
             return;
@@ -673,6 +662,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         else
         {
             CapsGuidePopup.VerticalOffset = 80;
+        }
+    }
+
+    private void CloseBlindGuide_Click(object sender, RoutedEventArgs e)
+    {
+        _appSettings.ShowBlindOperationGuide = false;
+        AppSettingsStore.Save(_appSettings);
+        if (CapsGuidePopup != null)
+        {
+            CapsGuidePopup.IsOpen = false;
+        }
+        LastRunMessage = "已关闭盲操指南，可点击右下角 '?' 图标重新开启。";
+    }
+
+    private void FooterBlindGuideHelpButton_Click(object sender, RoutedEventArgs e)
+    {
+        _appSettings.ShowBlindOperationGuide = !_appSettings.ShowBlindOperationGuide;
+        AppSettingsStore.Save(_appSettings);
+        if (_appSettings.ShowBlindOperationGuide)
+        {
+            UpdateCapsGuidePopupPosition();
+            LastRunMessage = "已开启盲操指南。";
+        }
+        else
+        {
+            if (CapsGuidePopup != null)
+            {
+                CapsGuidePopup.IsOpen = false;
+            }
+            LastRunMessage = "已隐藏盲操指南。";
         }
     }
 

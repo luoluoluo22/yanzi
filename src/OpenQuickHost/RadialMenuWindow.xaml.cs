@@ -36,8 +36,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private string _pageTitle = "燕环";
 
     private IntPtr _previousForegroundWindow;
+    private bool _wasActivatedForEdit;
     private bool _editModeLocked;
     private bool _editInteractionActive;
+    private bool _isOpeningSubDialog;
     private bool _isChildRingLocked;
     private bool _isGrandChildRingLocked;
     private bool _isGreatGrandChildRingLocked;
@@ -86,7 +88,20 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 Hide();
             }
         };
-        Loaded += (_, _) => RebuildItemsForCurrentLayout("loaded");
+        SourceInitialized += (_, _) => EnsureNoActivateStyle();
+        Loaded += (_, _) =>
+        {
+            EnsureNoActivateStyle();
+            RebuildItemsForCurrentLayout("loaded");
+        };
+        InputHookService.OnGlobalEscapePressed += () =>
+        {
+            if (IsVisible && !_editModeLocked && !_editInteractionActive)
+            {
+                _selectionTimer.Stop();
+                Hide();
+            }
+        };
         SizeChanged += (_, _) =>
         {
             if (IsVisible)
@@ -502,6 +517,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             var helper = new System.Windows.Interop.WindowInteropHelper(this);
             helper.EnsureHandle();
+            EnsureNoActivateStyle();
 
             LoadRadialMenuPages();
             _currentPageId = _pages.FirstOrDefault()?.Id ?? string.Empty;
@@ -555,6 +571,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         Height = Math.Max(dipHeight, 2400);
 
         _isExecuting = false;
+        _wasActivatedForEdit = false;
         _editModeLocked = false;
         _editInteractionActive = false;
         IsChildRingLocked = false;
@@ -654,7 +671,6 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         _ = Dispatcher.InvokeAsync(() =>
         {
             Opacity = 1;
-            Activate();
             _selectionTimer.Start();
             UpdateSelectionFromCursor();
         }, DispatcherPriority.Render);
@@ -705,6 +721,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         if (_editModeLocked || Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             _editModeLocked = true;
+            EnsureActivatedForEdit();
             LoadRadialMenuPages();
             _selectionTimer.Stop();
             UpdateEditModeState();
@@ -803,9 +820,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         InputHookService.MarkCapsLockAsUsed();
         try
         {
-            await Task.Delay(50);
-
-            if (_previousForegroundWindow != IntPtr.Zero)
+            if (_wasActivatedForEdit && _previousForegroundWindow != IntPtr.Zero)
             {
                 var restored = RadialMenuNativeMethods.SetForegroundWindow(_previousForegroundWindow);
                 HostAssets.AppendLog($"Radial menu restore foreground: restored={restored}, {DescribeWindow(_previousForegroundWindow)}.");
@@ -829,6 +844,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         finally
         {
+            _wasActivatedForEdit = false;
             _isExecuting = false;
             if (_isPinned && IsVisible)
             {
@@ -1508,6 +1524,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         if (_editModeLocked || Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             _editModeLocked = true;
+            EnsureActivatedForEdit();
             if (item.Ring != RadialMenuRing.Child)
             {
                 foreach (var ring in SubRings)
@@ -1557,6 +1574,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        EnsureActivatedForEdit();
         SetSelectedForItem(item);
         OpenEditMenuForTarget(new RadialEditTarget(item.OwnerPageId, item.Index, item));
         e.Handled = true;
@@ -1765,18 +1783,23 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         };
         renameItem.Click += (_, _) =>
         {
-            RenameRadialPage(page.Id);
+            _isOpeningSubDialog = true;
+            Dispatcher.BeginInvoke(new Action(() => RenameRadialPage(page.Id)));
         };
         menu.Items.Add(renameItem);
 
         menu.PlacementTarget = this;
         menu.Closed += (_, _) =>
         {
-            _editInteractionActive = false;
-            if (IsVisible && !_mainWindow.IsRadialPickerMode)
+            HostAssets.AppendLog($"[RadialMenuLog] PageCenterContextMenu closed: isOpeningSubDialog={_isOpeningSubDialog}");
+            if (!_isOpeningSubDialog)
             {
-                Activate();
-                _selectionTimer.Start();
+                _editInteractionActive = false;
+                if (IsVisible && !_mainWindow.IsRadialPickerMode)
+                {
+                    Activate();
+                    _selectionTimer.Start();
+                }
             }
         };
 
@@ -1797,36 +1820,52 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void RenameRadialPage(string pageId)
     {
-        var settings = AppSettingsStore.Load();
-        settings.RadialMenu ??= new RadialMenuSettings();
-        settings.RadialMenu.Pages ??= [];
-        var page = settings.RadialMenu.Pages.FirstOrDefault(item => item.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
-        if (page == null)
+        _isOpeningSubDialog = true;
+        _editInteractionActive = true;
+        try
         {
-            return;
-        }
+            var settings = AppSettingsStore.Load();
+            settings.RadialMenu ??= new RadialMenuSettings();
+            settings.RadialMenu.Pages ??= [];
+            var page = settings.RadialMenu.Pages.FirstOrDefault(item => item.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
+            if (page == null)
+            {
+                return;
+            }
 
-        var dialog = new SimpleTextInputWindow("重命名轮盘", "输入新的轮盘名称。", page.Name)
-        {
-            Owner = this
-        };
-        if (dialog.ShowDialog() != true)
-        {
-            return;
-        }
+            var dialog = new SimpleTextInputWindow("重命名轮盘", "输入新的轮盘名称。", page.Name)
+            {
+                Topmost = true,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen
+            };
+            if (dialog.ShowDialog() != true)
+            {
+                return;
+            }
 
-        var name = dialog.ValueText.Trim();
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return;
-        }
+            var name = dialog.ValueText.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return;
+            }
 
-        page.Name = name;
-        PersistRadialSettings(settings);
-        LoadRadialMenuPages();
-        BuildItems((settings.RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
-        UpdateCenterText();
-        ActiveTitle = $"已重命名：{name}";
+            page.Name = name;
+            PersistRadialSettings(settings);
+            LoadRadialMenuPages();
+            BuildItems((settings.RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
+            UpdateCenterText();
+            ActiveTitle = $"已重命名：{name}";
+        }
+        finally
+        {
+            _isOpeningSubDialog = false;
+            _editInteractionActive = false;
+            if (IsVisible && !_mainWindow.IsRadialPickerMode)
+            {
+                Activate();
+                _selectionTimer.Start();
+            }
+        }
     }
 
     private void UpdateEditModeState()
@@ -1871,16 +1910,21 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void OpenEditMenuForTarget(RadialEditTarget target)
     {
+        EnsureActivatedForEdit();
         _editInteractionActive = true;
         var menu = BuildEditContextMenu(target);
         menu.PlacementTarget = this;
         menu.Closed += (_, _) =>
         {
-            _editInteractionActive = false;
-            if (IsVisible && !_mainWindow.IsRadialPickerMode)
+            HostAssets.AppendLog($"[RadialMenuLog] EditMenu closed: isOpeningSubDialog={_isOpeningSubDialog}");
+            if (!_isOpeningSubDialog)
             {
-                Activate();
-                _selectionTimer.Start();
+                _editInteractionActive = false;
+                if (IsVisible && !_mainWindow.IsRadialPickerMode)
+                {
+                    Activate();
+                    _selectionTimer.Start();
+                }
             }
         };
 
@@ -1920,7 +1964,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         };
         existingExtensionItem.Click += (_, _) =>
         {
-            OpenSearchPickerForTarget(target);
+            _isOpeningSubDialog = true;
+            Dispatcher.BeginInvoke(new Action(() => OpenSearchPickerForTarget(target)));
         };
         parentMenu.Items.Add(existingExtensionItem);
 
@@ -1932,7 +1977,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         };
         createNewExtensionItem.Click += (_, _) =>
         {
-            CreateNewExtensionForTarget(target);
+            _isOpeningSubDialog = true;
+            Dispatcher.BeginInvoke(new Action(() => CreateNewExtensionForTarget(target)));
         };
         parentMenu.Items.Add(createNewExtensionItem);
 
@@ -1944,7 +1990,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         };
         setSimulatedKeyItem.Click += (_, _) =>
         {
-            SetSimulatedKeyForTarget(target);
+            _isOpeningSubDialog = true;
+            Dispatcher.BeginInvoke(new Action(() => SetSimulatedKeyForTarget(target)));
         };
         parentMenu.Items.Add(setSimulatedKeyItem);
 
@@ -1958,7 +2005,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             };
             addChildItem.Click += (_, _) =>
             {
-                AddChildPageToTarget(target);
+                Dispatcher.BeginInvoke(new Action(() => AddChildPageToTarget(target)));
             };
             parentMenu.Items.Add(addChildItem);
         }
@@ -1973,16 +2020,22 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void ShowAddMenuForTarget(RadialEditTarget target)
     {
+        HostAssets.AppendLog($"[RadialMenuLog] ShowAddMenuForTarget: page={target.PageId}, index={target.Index}");
+        EnsureActivatedForEdit();
         _editInteractionActive = true;
         var menu = BuildAddMenu(target);
         menu.PlacementTarget = this;
         menu.Closed += (_, _) =>
         {
-            _editInteractionActive = false;
-            if (IsVisible && !_mainWindow.IsRadialPickerMode)
+            HostAssets.AppendLog($"[RadialMenuLog] Add menu closed: isOpeningSubDialog={_isOpeningSubDialog}");
+            if (!_isOpeningSubDialog)
             {
-                Activate();
-                _selectionTimer.Start();
+                _editInteractionActive = false;
+                if (IsVisible && !_mainWindow.IsRadialPickerMode)
+                {
+                    Activate();
+                    _selectionTimer.Start();
+                }
             }
         };
 
@@ -2009,7 +2062,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 Header = "编辑",
                 Icon = CreateMenuIcon("pencil", normalBrush)
             };
-            editItem.Click += (_, _) => EditSlotContentFromTarget(target);
+            editItem.Click += (_, _) =>
+            {
+                _isOpeningSubDialog = true;
+                Dispatcher.BeginInvoke(new Action(() => EditSlotContentFromTarget(target)));
+            };
             menu.Items.Add(editItem);
 
             var clearItem = new MenuItem
@@ -2017,7 +2074,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 Header = "删除",
                 Icon = CreateMenuIcon("trash", dangerBrush)
             };
-            clearItem.Click += (_, _) => ClearSlotContentFromTarget(target);
+            clearItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => ClearSlotContentFromTarget(target)));
             menu.Items.Add(clearItem);
 
             var cutItem = new MenuItem
@@ -2025,7 +2082,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 Header = "剪切槽位",
                 Icon = CreateMenuIcon("cut", normalBrush)
             };
-            cutItem.Click += (_, _) => CutRadialSlot(target);
+            cutItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => CutRadialSlot(target)));
             menu.Items.Add(cutItem);
 
             if (_cutSlotPayload != null)
@@ -2166,38 +2223,63 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void SetSimulatedKeyForTarget(RadialEditTarget target)
     {
-        const string simulatedPrefix = "keysim::";
-        var currentExtensionId = target.Item.Command?.ExtensionId ?? string.Empty;
-        var initialShortcut = currentExtensionId.StartsWith(simulatedPrefix, StringComparison.OrdinalIgnoreCase)
-            ? currentExtensionId[simulatedPrefix.Length..]
-            : string.Empty;
-        var initialDisplayName = target.Item.Command?.Title ?? string.Empty;
-        var dialog = new HotkeyCaptureWindow(
-            "模拟按键",
-            "录制要在此槽位执行的组合键，并设置轮盘里显示的名称。",
-            initialShortcut,
-            initialDisplayName,
-            allowEmpty: false,
-            allowDoubleTap: false,
-            allowModifierless: true)
+        HostAssets.AppendLog($"[SetSimulatedKeyLog] SetSimulatedKeyForTarget: page={target.PageId}, index={target.Index}");
+        _isOpeningSubDialog = true;
+        _editInteractionActive = true;
+        try
         {
-            Owner = this
-        };
+            const string simulatedPrefix = "keysim::";
+            var currentExtensionId = target.Item.Command?.ExtensionId ?? string.Empty;
+            var initialShortcut = currentExtensionId.StartsWith(simulatedPrefix, StringComparison.OrdinalIgnoreCase)
+                ? currentExtensionId[simulatedPrefix.Length..]
+                : string.Empty;
+            var initialDisplayName = target.Item.Command?.Title ?? string.Empty;
+            var dialog = new HotkeyCaptureWindow(
+                "模拟按键",
+                "录制要在此槽位执行的组合键，并设置轮盘里显示的名称。",
+                initialShortcut,
+                initialDisplayName,
+                allowEmpty: false,
+                allowDoubleTap: false,
+                allowModifierless: true)
+            {
+                Topmost = true,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen
+            };
 
-        if (dialog.ShowDialog() != true)
-        {
-            return;
+            HostAssets.AppendLog($"[SetSimulatedKeyLog] Before ShowDialog: Topmost={dialog.Topmost}");
+            var result = dialog.ShowDialog();
+            HostAssets.AppendLog($"[SetSimulatedKeyLog] After ShowDialog: result={result}, shortcut='{dialog.ShortcutText}'");
+
+            if (result != true)
+            {
+                return;
+            }
+
+            var shortcut = dialog.ShortcutText.Trim();
+            if (string.IsNullOrWhiteSpace(shortcut))
+            {
+                return;
+            }
+
+            var displayTitle = string.IsNullOrWhiteSpace(dialog.DisplayNameText) ? shortcut : dialog.DisplayNameText.Trim();
+            SaveRadialSlotCommand(target.PageId, target.Index, $"{simulatedPrefix}{shortcut}", displayTitle);
+            HostAssets.AppendLog($"Radial edit assigned simulated key: page={target.PageId}, index={target.Index + 1}, shortcut={shortcut}, displayTitle={displayTitle}.");
         }
-
-        var shortcut = dialog.ShortcutText.Trim();
-        if (string.IsNullOrWhiteSpace(shortcut))
+        catch (Exception ex)
         {
-            return;
+            HostAssets.AppendLog($"[SetSimulatedKeyLog] Exception in SetSimulatedKeyForTarget: {ex}");
         }
-
-        var displayTitle = string.IsNullOrWhiteSpace(dialog.DisplayNameText) ? shortcut : dialog.DisplayNameText.Trim();
-        SaveRadialSlotCommand(target.PageId, target.Index, $"{simulatedPrefix}{shortcut}", displayTitle);
-        HostAssets.AppendLog($"Radial edit assigned simulated key: page={target.PageId}, index={target.Index + 1}, shortcut={shortcut}, displayTitle={displayTitle}.");
+        finally
+        {
+            _isOpeningSubDialog = false;
+            _editInteractionActive = false;
+            if (IsVisible && !_mainWindow.IsRadialPickerMode)
+            {
+                Activate();
+                _selectionTimer.Start();
+            }
+        }
     }
 
     private void ClearCommandFromTarget(RadialEditTarget target)
@@ -2533,6 +2615,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return false;
         }
 
+        HostAssets.AppendLog($"[RadialMenuLog] TryHandleEmptySlotRelease on empty slot: page={item.OwnerPageId}, index={item.Index}");
+        EnsureActivatedForEdit();
         _editModeLocked = true;
         LoadRadialMenuPages();
         UpdateEditModeState();
@@ -2583,6 +2667,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         _editModeLocked = !_editModeLocked;
         if (_editModeLocked)
         {
+            EnsureActivatedForEdit();
             LoadRadialMenuPages();
             if (_pages.Count > 0)
             {
@@ -2613,6 +2698,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void ShowAddRadialMenuContextMenu()
     {
+        EnsureActivatedForEdit();
         var contextMenu = new ContextMenu();
 
         var globalItem = new MenuItem { Header = "新建全局轮盘" };
@@ -2748,6 +2834,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void ShowSearchRadialMenuContextMenu()
     {
+        EnsureActivatedForEdit();
         var contextMenu = new ContextMenu();
 
         var allPages = _pages;
@@ -3104,6 +3191,15 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public new void Hide()
     {
+        if (_wasActivatedForEdit && _previousForegroundWindow != IntPtr.Zero)
+        {
+            try
+            {
+                RadialMenuNativeMethods.SetForegroundWindow(_previousForegroundWindow);
+            }
+            catch { }
+        }
+        _wasActivatedForEdit = false;
         _editModeLocked = false;
         _editInteractionActive = false;
         OnPropertyChanged(nameof(EditButtonBrush));
@@ -3128,6 +3224,41 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         base.Hide();
         MemoryOptimizationService.OptimizeMemoryInBackground();
+    }
+
+    private void EnsureNoActivateStyle()
+    {
+        try
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (handle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var style = RadialMenuNativeMethods.GetWindowLongPtr(handle, RadialMenuNativeMethods.GWL_EXSTYLE);
+            RadialMenuNativeMethods.SetWindowLongPtr(
+                handle,
+                RadialMenuNativeMethods.GWL_EXSTYLE,
+                new IntPtr(style.ToInt64() | RadialMenuNativeMethods.WS_EX_TOOLWINDOW | RadialMenuNativeMethods.WS_EX_NOACTIVATE));
+        }
+        catch
+        {
+            // Best effort
+        }
+    }
+
+    private void EnsureActivatedForEdit()
+    {
+        _wasActivatedForEdit = true;
+        try
+        {
+            Activate();
+        }
+        catch
+        {
+            // Best effort
+        }
     }
 
     private static string? FindExecutablePath(string processName)
@@ -3452,6 +3583,16 @@ internal sealed record RadialSlotPayload(string? ExtensionId, string? DisplayTit
 
 internal static partial class RadialMenuNativeMethods
 {
+    public const int GWL_EXSTYLE = -20;
+    public const long WS_EX_TOOLWINDOW = 0x00000080L;
+    public const long WS_EX_NOACTIVATE = 0x08000000L;
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(IntPtr hWnd);

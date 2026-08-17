@@ -15,7 +15,6 @@ public partial class HotkeyCaptureWindow : Window
     private readonly bool _allowDoubleTap;
     private readonly bool _allowModifierless;
     private HwndSource? _source;
-    private bool _allowWindowClose;
     private Key? _pendingModifierKey;
     private long _lastModifierTapTimestamp;
     private string? _lastModifierShortcut;
@@ -49,8 +48,45 @@ public partial class HotkeyCaptureWindow : Window
         _displayNameManuallyEdited = !string.IsNullOrWhiteSpace(initialDisplayName) &&
             !string.Equals(initialDisplayName?.Trim(), ShortcutText, StringComparison.OrdinalIgnoreCase);
 
-        Loaded += (_, _) => Focus();
-        Closing += HotkeyCaptureWindow_Closing;
+        Loaded += (_, _) =>
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Loaded: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
+            ForceSetForeground(hwnd);
+            Activate();
+            Focus();
+            Keyboard.Focus(this);
+        };
+        ContentRendered += (_, _) =>
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            HostAssets.AppendLog($"[HotkeyCaptureLog] ContentRendered: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
+            ForceSetForeground(hwnd);
+            Activate();
+            Focus();
+            Keyboard.Focus(this);
+        };
+        Activated += (_, _) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Activated: IsFocused={IsFocused}, KeyboardFocus={Keyboard.FocusedElement?.GetType().Name ?? "null"}");
+        };
+        Deactivated += (_, _) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Deactivated: foreHwnd=0x{GetForegroundWindow():X}");
+        };
+        GotKeyboardFocus += (_, e) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] GotKeyboardFocus: source={e.OriginalSource?.GetType().Name ?? "null"}");
+        };
+        LostKeyboardFocus += (_, e) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] LostKeyboardFocus: newFocus={e.NewFocus?.GetType().Name ?? "null"}");
+        };
+        PreviewMouseDown += (_, _) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] PreviewMouseDown: foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}");
+        };
+
         HostAssets.AppendLog($"Hotkey capture dialog opened: title={title}, initialValue={initialValue ?? string.Empty}, initialDisplayName={initialDisplayName ?? string.Empty}, allowEmpty={allowEmpty}, allowDoubleTap={allowDoubleTap}, allowModifierless={allowModifierless}.");
     }
 
@@ -61,6 +97,9 @@ public partial class HotkeyCaptureWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        HostAssets.AppendLog($"[HotkeyCaptureLog] OnSourceInitialized: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}");
+        ForceSetForeground(hwnd);
         _source = (HwndSource?)PresentationSource.FromVisual(this);
         _source?.AddHook(WndProc);
     }
@@ -93,7 +132,7 @@ public partial class HotkeyCaptureWindow : Window
 
         // Use GetKeyState for reliable modifier detection in WndProc
         var modifiers = GetCurrentModifiers();
-        HostAssets.AppendLog($"Hotkey capture WndProc: msg=0x{msg:X}, key={key}, modifiers={modifiers}.");
+        HostAssets.AppendLog($"Hotkey capture WndProc: msg=0x{msg:X}, key={key}, modifiers={modifiers}, foreHwnd=0x{GetForegroundWindow():X}.");
         handled = HandleCapturedKey(key, modifiers);
         return IntPtr.Zero;
     }
@@ -112,6 +151,51 @@ public partial class HotkeyCaptureWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern short GetKeyState(int nVirtKey);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    public static void ForceSetForeground(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return;
+        try
+        {
+            var foreHwnd = GetForegroundWindow();
+            var foreThread = GetWindowThreadProcessId(foreHwnd, out _);
+            var curThread = GetCurrentThreadId();
+            if (foreThread != 0 && foreThread != curThread)
+            {
+                AttachThreadInput(curThread, foreThread, true);
+                BringWindowToTop(hWnd);
+                SetForegroundWindow(hWnd);
+                AttachThreadInput(curThread, foreThread, false);
+            }
+            else
+            {
+                BringWindowToTop(hWnd);
+                SetForegroundWindow(hWnd);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] ForceSetForeground error: {ex.Message}");
+        }
+    }
+
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (IsEditingDisplayName())
@@ -129,7 +213,6 @@ public partial class HotkeyCaptureWindow : Window
         if (key is Key.Escape)
         {
             HostAssets.AppendLog("Hotkey capture cancelled by Escape.");
-            _allowWindowClose = true;
             DialogResult = false;
             return true;
         }
@@ -266,7 +349,6 @@ public partial class HotkeyCaptureWindow : Window
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         HostAssets.AppendLog("Hotkey capture cancelled by button.");
-        _allowWindowClose = true;
         DialogResult = false;
     }
 
@@ -307,7 +389,6 @@ public partial class HotkeyCaptureWindow : Window
             : DisplayNameTextBox.Text.Trim();
 
         HostAssets.AppendLog($"Hotkey capture confirmed: {ShortcutText}, displayName={DisplayNameText}.");
-        _allowWindowClose = true;
         DialogResult = true;
     }
 
@@ -320,19 +401,6 @@ public partial class HotkeyCaptureWindow : Window
 
         DisplayNameText = DisplayNameTextBox.Text.Trim();
         _displayNameManuallyEdited = true;
-    }
-
-    private void HotkeyCaptureWindow_Closing(object? sender, CancelEventArgs e)
-    {
-        if (_allowWindowClose)
-        {
-            return;
-        }
-
-        HostAssets.AppendLog($"Hotkey capture blocked unexpected close: title={Title}, shortcut={ShortcutText}, modifiers={Keyboard.Modifiers}.");
-        e.Cancel = true;
-        Activate();
-        Focus();
     }
 
     private static bool IsModifierKey(Key key)

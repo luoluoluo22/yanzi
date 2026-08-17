@@ -869,8 +869,6 @@ public partial class MainWindow
 
     private static uint SendSimulatedKeystroke(uint modifiers, Key key, out int inputCount, out int lastError)
     {
-        Thread.Sleep(60);
-
         var virtualKeys = new List<ushort>(5);
         if ((modifiers & ModControl) != 0)
         {
@@ -1185,6 +1183,7 @@ public partial class MainWindow
 
     public void HideToTray()
     {
+        _searchPipelineManager.CancelActive();
         if (OwnedWindows.OfType<Window>().Any(static w => w.IsVisible))
         {
             return;

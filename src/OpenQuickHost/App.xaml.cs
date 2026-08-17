@@ -258,7 +258,7 @@ public partial class App : WpfApplication
             // 4. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
             _isAppFullyInitialized = true;
 
-            // 预加载设置窗口以避免第一次打开时解析庞大 XAML 导致 UI 线程和鼠标卡顿
+            // 预加载设置窗口并提前创建 HWND 与 DWM 深色环境，避免第一次打开时因主线程创建句柄和排版引发首屏闪白或卡顿
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (_settingsWindow == null && MainWindow is MainWindow mainWindow)
@@ -266,6 +266,9 @@ public partial class App : WpfApplication
                     try
                     {
                         _settingsWindow = new SettingsWindow(mainWindow);
+                        var helper = new System.Windows.Interop.WindowInteropHelper(_settingsWindow);
+                        helper.EnsureHandle();
+                        UpdateWindowDwmTheme(_settingsWindow);
                     }
                     catch (Exception ex)
                     {
@@ -340,6 +343,8 @@ public partial class App : WpfApplication
     private static extern bool SetWindowPos(IntPtr hwnd, IntPtr hwndInsertAfter, int x, int y, int cx, int cy, uint flags);
 
     private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int DwmwaUseImmersiveDarkModeOld = 19;
+    private const int DwmwaCaptionColor = 35;
     private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOZORDER = 0x0004;
@@ -411,7 +416,17 @@ public partial class App : WpfApplication
         var hBrush = GetStockObject(useDarkMode == 1 ? BLACK_BRUSH : WHITE_BRUSH);
         SetClassLong(handle, GCLP_HBRBACKGROUND, hBrush);
 
-        _ = DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref useDarkMode, sizeof(int));
+        if (DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref useDarkMode, sizeof(int)) != 0)
+        {
+            _ = DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkModeOld, ref useDarkMode, sizeof(int));
+        }
+
+        if (useDarkMode == 1)
+        {
+            // Windows 11 DWM 标题栏背景色 (RGB: 17, 17, 17)
+            int captionColor = 0x00111111;
+            _ = DwmSetWindowAttribute(handle, DwmwaCaptionColor, ref captionColor, sizeof(int));
+        }
         
         // Force the OS to redraw the non-client area immediately
         SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
@@ -1188,6 +1203,9 @@ public partial class App : WpfApplication
             {
                 HostAssets.AppendLog("Settings window not cached, creating new instance.");
                 _settingsWindow = new SettingsWindow(mainWindow);
+                var helper = new System.Windows.Interop.WindowInteropHelper(_settingsWindow);
+                helper.EnsureHandle();
+                UpdateWindowDwmTheme(_settingsWindow);
                 HostAssets.AppendLog("Settings window created.");
             }
             else if (!_settingsWindow.IsLoaded)

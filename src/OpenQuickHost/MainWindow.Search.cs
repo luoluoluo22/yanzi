@@ -48,6 +48,9 @@ public partial class MainWindow
         UpdateSearchScopeCounts(parsed);
         _activeQueryArgument = string.Empty;
 
+        // 响应式会话调度：取消上一轮所有未完成的异步任务，创建本轮唯一 Session
+        var session = _searchPipelineManager.CreateSession(normalizedQueryText, parsed.ScopeKey);
+
         var calculatorCommand = TryBuildCalculatorCommand(query, parsed);
         if (calculatorCommand != null)
         {
@@ -95,7 +98,7 @@ public partial class MainWindow
                 return;
             }
 
-            QueueFileSearchResults(parsed.Term);
+            _ = ApplyFileSearchResultsAsync(session, parsed.Term);
             return;
         }
 
@@ -104,18 +107,15 @@ public partial class MainWindow
         if (TryGetPinnedSearchProviderCommand(parsed.ScopeKey, out var providerCommand))
         {
             var providerTerm = NormalizePinnedSearchProviderInlineQuery(providerCommand, parsed.ScopeKey, parsed.Term);
-            QueueExtensionSearchProviderResults(providerCommand, parsed.ScopeKey, providerTerm);
+            _ = ApplyExtensionSearchProviderResultsAsync(session, providerCommand, parsed.ScopeKey, providerTerm);
             return;
         }
 
         if (TryResolveInlineSearchProviderCommand(parsed, query, out var inlineProviderCommand, out var inlineProviderTerm))
         {
-            QueueExtensionSearchProviderResults(inlineProviderCommand, parsed.ScopeKey, inlineProviderTerm);
+            _ = ApplyExtensionSearchProviderResultsAsync(session, inlineProviderCommand, parsed.ScopeKey, inlineProviderTerm);
             return;
         }
-
-        Interlocked.Increment(ref _fileSearchRequestVersion);
-        _fileSearchDebounceTimer.Stop();
 
         var allowRawQueryArgumentInline = AllowsRawQueryArgument(parsed.ScopeKey);
         var trimmedQuery = parsed.Term ?? string.Empty;
@@ -128,6 +128,7 @@ public partial class MainWindow
             }
         }
 
+        // Tier 1 (极速首帧 Instant Tier，0~20ms)：本地内存匹配即时上屏
         var matches = ComputeFilterMatches(parsed, trimmedQuery, allowRawQueryArgumentInline);
 
         var allowRawQueryArgument = allowRawQueryArgumentInline;
@@ -174,11 +175,12 @@ public partial class MainWindow
         OnPropertyChanged(nameof(IsFileSearchScopeActive));
         OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
 
+        // Tier 2 (异步流式 Async Tier)：全范围 Everything 检索流式追加，增量平滑合并
         if (string.Equals(parsed.ScopeKey, SearchScopeAll, StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(parsed.Term) &&
             _appSettings.EnableEverything)
         {
-            QueueAllScopeFileSearchResults(parsed.Term, matches, preserveSelection, previousSelectedCommand);
+            _ = StreamAllScopeFileResultsAsync(session, parsed.Term, matches, preserveSelection, previousSelectedCommand);
         }
     }
 
@@ -1134,7 +1136,7 @@ public partial class MainWindow
         return Task.CompletedTask;
     }
 
-    private async Task ApplyFileSearchResultsAsync(string query, int requestVersion)
+    private async Task ApplyFileSearchResultsAsync(SearchSession session, string query)
     {
         foreach (var command in _allCommands)
         {
@@ -1147,7 +1149,7 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(query))
         {
             IsFileSearching = false;
-            if (requestVersion != _fileSearchRequestVersion)
+            if (!_searchPipelineManager.IsActive(session))
             {
                 return;
             }
@@ -1162,6 +1164,22 @@ public partial class MainWindow
             return;
         }
 
+        try
+        {
+            // 防抖缓冲：给连续输入/中文拼音组字预留 160ms 缓冲，避免每个拼音字母都发起 Everything IPC
+            await Task.Delay(160, session.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (!_searchPipelineManager.IsActive(session) ||
+            !string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         FileSearchingText = !EverythingSearchService.IsDatabaseLoaded()
             ? "Everything 正在初始化索引，请稍候..."
             : "搜索中...";
@@ -1169,23 +1187,27 @@ public partial class MainWindow
 
         var response = await Task.Run(() =>
         {
+            if (session.Token.IsCancellationRequested)
+            {
+                return new EverythingSearchResponse { Success = false };
+            }
+
             if (!EverythingSearchService.IsIpcReachable())
             {
                 EverythingRuntimeService.EnsureRunning();
             }
             return EverythingSearchService.Search(query, 256);
-        });
+        }, session.Token);
 
-        if (requestVersion != _fileSearchRequestVersion ||
-            !string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(_pendingFileSearchTerm, query, StringComparison.Ordinal))
+        if (!_searchPipelineManager.IsActive(session) ||
+            !string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         IsFileSearching = false;
 
-        if (!response.Success)
+        if (!response.Success || session.Token.IsCancellationRequested)
         {
             if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
             {
@@ -1223,31 +1245,48 @@ public partial class MainWindow
             MaybePromptEverythingManualInitialization(query);
         }
 
-        _ = LoadFileIconsAsync(fileCommands, requestVersion);
+        _ = LoadFileIconsAsync(session, fileCommands);
     }
 
-    private void QueueAllScopeFileSearchResults(string query, IReadOnlyList<CommandItem> baseMatches, bool preserveSelection, CommandItem? previousSelectedCommand)
-    {
-        var requestVersion = _fileSearchRequestVersion;
-        _ = ApplyAllScopeFileSearchResultsAsync(query, requestVersion, baseMatches.ToList(), preserveSelection, previousSelectedCommand);
-    }
-
-    private async Task ApplyAllScopeFileSearchResultsAsync(string query, int requestVersion, List<CommandItem> baseMatches, bool preserveSelection, CommandItem? previousSelectedCommand)
+    private async Task StreamAllScopeFileResultsAsync(
+        SearchSession session,
+        string query,
+        List<CommandItem> baseMatches,
+        bool preserveSelection,
+        CommandItem? previousSelectedCommand)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
             return;
         }
 
-        var response = await Task.Run(() => EverythingSearchService.Search(query, 64));
-        if (requestVersion != _fileSearchRequestVersion ||
-            !string.Equals(_activeFilterScopeKey, SearchScopeAll, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(SearchBox.Text ?? string.Empty, query, StringComparison.Ordinal))
+        try
+        {
+            // 防抖缓冲：全范围模式下给文件检索预留 150ms 缓冲，连续按键时即刻取消不抢占后台锁
+            await Task.Delay(150, session.Token);
+        }
+        catch (OperationCanceledException)
         {
             return;
         }
 
-        if (!response.Success)
+        var response = await Task.Run(() =>
+        {
+            if (session.Token.IsCancellationRequested)
+            {
+                return new EverythingSearchResponse { Success = false };
+            }
+            return EverythingSearchService.Search(query, 64);
+        }, session.Token);
+
+        if (!_searchPipelineManager.IsActive(session) ||
+            !string.Equals(_activeFilterScopeKey, SearchScopeAll, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(SearchBox.Text ?? string.Empty, session.Query, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!response.Success || session.Token.IsCancellationRequested)
         {
             return;
         }
@@ -1284,23 +1323,34 @@ public partial class MainWindow
             merged.Add(mergedScratch[i].Command);
         }
 
+        if (!_searchPipelineManager.IsActive(session))
+        {
+            return;
+        }
+
+        var currentSelectedBeforeMerge = SelectedCommand ?? previousSelectedCommand;
+
         FilteredCommands.ReplaceAll(merged);
 
-        SelectedCommand = preserveSelection
-            ? TryRestoreSelection(previousSelectedCommand, FilteredCommands) ?? TryRestoreSelection(SelectedCommand, FilteredCommands) ?? FilteredCommands.FirstOrDefault()
-            : TryRestoreSelection(SelectedCommand, FilteredCommands) ?? FilteredCommands.FirstOrDefault();
+        SelectedCommand = TryRestoreSelection(currentSelectedBeforeMerge, FilteredCommands) ??
+                          (preserveSelection ? TryRestoreSelection(previousSelectedCommand, FilteredCommands) : null) ??
+                          FilteredCommands.FirstOrDefault();
         CommandList.SelectedItem = SelectedCommand;
         OnPropertyChanged(nameof(VisibleCountText));
         OnPropertyChanged(nameof(FooterHint));
 
         var fileCommands = merged.Where(static item => item.Source == CommandSource.File).ToList();
-        if (fileCommands.Count > 0)
+        if (fileCommands.Count > 0 && !session.Token.IsCancellationRequested)
         {
-            _ = LoadFileIconsAsync(fileCommands, requestVersion);
+            _ = LoadFileIconsAsync(session, fileCommands);
         }
     }
 
-    private async Task ApplyExtensionSearchProviderResultsAsync(CommandItem providerCommand, string scopeKey, string query, int requestVersion)
+    private async Task ApplyExtensionSearchProviderResultsAsync(
+        SearchSession session,
+        CommandItem providerCommand,
+        string scopeKey,
+        string query)
     {
         foreach (var command in _allCommands)
         {
@@ -1313,7 +1363,7 @@ public partial class MainWindow
         var searchProvider = ResolveSearchProviderForCommand(providerCommand);
         if (searchProvider == null)
         {
-            if (requestVersion != _fileSearchRequestVersion)
+            if (!_searchPipelineManager.IsActive(session))
             {
                 return;
             }
@@ -1326,18 +1376,24 @@ public partial class MainWindow
             return;
         }
 
-        var response = await ExtensionSearchProviderService.SearchAsync(providerCommand, searchProvider, query, CancellationToken.None);
-        if (requestVersion != _fileSearchRequestVersion ||
-            !string.Equals(_activeFilterScopeKey, scopeKey, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(_pendingProviderSearchScopeKey, scopeKey, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(_pendingProviderSearchTerm, query, StringComparison.Ordinal) ||
-            _pendingProviderSearchCommand == null ||
-            !_pendingProviderSearchCommand.ExtensionId.Equals(providerCommand.ExtensionId, StringComparison.OrdinalIgnoreCase))
+        try
+        {
+            // 防抖缓冲：扩展提供器预留 150ms 缓冲
+            await Task.Delay(150, session.Token);
+        }
+        catch (OperationCanceledException)
         {
             return;
         }
 
-        if (!response.Success)
+        var response = await ExtensionSearchProviderService.SearchAsync(providerCommand, searchProvider, query, session.Token);
+        if (!_searchPipelineManager.IsActive(session) ||
+            !string.Equals(_activeFilterScopeKey, scopeKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (!response.Success || session.Token.IsCancellationRequested)
         {
             if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
             {
@@ -1373,61 +1429,7 @@ public partial class MainWindow
             SyncStatus = $"{providerCommand.Title} 没有找到匹配结果。";
         }
 
-        _ = LoadFileIconsAsync(resultCommands, requestVersion);
-    }
-
-    private void QueueFileSearchResults(string query)
-    {
-        _pendingFileSearchTerm = query;
-        _pendingProviderSearchTerm = string.Empty;
-        _pendingProviderSearchScopeKey = string.Empty;
-        _pendingProviderSearchCommand = null;
-        _fileSearchDebounceTimer.Stop();
-        var requestVersion = Interlocked.Increment(ref _fileSearchRequestVersion);
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            _ = ApplyFileSearchResultsAsync(string.Empty, requestVersion);
-            return;
-        }
-
-        _fileSearchDebounceTimer.Start();
-    }
-
-    private void QueueExtensionSearchProviderResults(CommandItem providerCommand, string scopeKey, string query)
-    {
-        _pendingProviderSearchCommand = providerCommand;
-        _pendingProviderSearchScopeKey = scopeKey;
-        _pendingProviderSearchTerm = query;
-        _pendingFileSearchTerm = string.Empty;
-        _fileSearchDebounceTimer.Stop();
-        var requestVersion = Interlocked.Increment(ref _fileSearchRequestVersion);
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            _ = ApplyExtensionSearchProviderResultsAsync(providerCommand, scopeKey, string.Empty, requestVersion);
-            return;
-        }
-
-        _fileSearchDebounceTimer.Start();
-    }
-
-    private async void FileSearchDebounceTimer_Tick(object? sender, EventArgs e)
-    {
-        _fileSearchDebounceTimer.Stop();
-        if (!string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase))
-        {
-            if (_pendingProviderSearchCommand == null ||
-                !string.Equals(_activeFilterScopeKey, _pendingProviderSearchScopeKey, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            var providerRequestVersion = _fileSearchRequestVersion;
-            await ApplyExtensionSearchProviderResultsAsync(_pendingProviderSearchCommand, _pendingProviderSearchScopeKey, _pendingProviderSearchTerm, providerRequestVersion);
-            return;
-        }
-
-        var requestVersion = _fileSearchRequestVersion;
-        await ApplyFileSearchResultsAsync(_pendingFileSearchTerm, requestVersion);
+        _ = LoadFileIconsAsync(session, resultCommands);
     }
 
     private static CommandItem BuildCommandFromResultItem(ResultProviderItem result)
@@ -1470,11 +1472,12 @@ public partial class MainWindow
                TryGetPinnedSearchProviderCommand(_activeFilterScopeKey, out _);
     }
 
-    private async Task LoadFileIconsAsync(IReadOnlyList<CommandItem> commands, int requestVersion)
+    private async Task LoadFileIconsAsync(SearchSession session, IReadOnlyList<CommandItem> commands)
     {
         foreach (var command in commands)
         {
-            if (requestVersion != _fileSearchRequestVersion ||
+            if (!_searchPipelineManager.IsActive(session) ||
+                session.Token.IsCancellationRequested ||
                 !IsFileIconLoadScopeActive())
             {
                 return;
@@ -1487,13 +1490,14 @@ public partial class MainWindow
             }
 
             var isFolder = command.ResultKind == ResultItemKind.Folder;
-            var icon = await Task.Run(() => NativeFileIconService.GetIcon(command.OpenTarget, isFolder));
+            var icon = await Task.Run(() => NativeFileIconService.GetIcon(command.OpenTarget, isFolder), session.Token);
             if (icon == null)
             {
                 continue;
             }
 
-            if (requestVersion != _fileSearchRequestVersion ||
+            if (!_searchPipelineManager.IsActive(session) ||
+                session.Token.IsCancellationRequested ||
                 !IsFileIconLoadScopeActive())
             {
                 return;

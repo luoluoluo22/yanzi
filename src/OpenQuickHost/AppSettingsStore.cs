@@ -878,6 +878,8 @@ public sealed record AppSettings
 
     public bool RefreshCloudOnStartup { get; set; } = true;
 
+    public bool ShowBlindOperationGuide { get; set; } = true;
+
     public bool CloseToTray { get; set; } = true;
 
     public bool EnableAutoUpdate { get; set; } = true;

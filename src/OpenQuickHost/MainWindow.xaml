@@ -2334,17 +2334,49 @@ Visibility="{Binding AiChatVisibility}">
                     </StackPanel>
 
 
-                    <!-- 选择模式下的主要蓝色高亮按钮 -->
-                    <Button x:Name="FooterRadialPickerConfirmButton"
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Center"
-                            Content="确认添加"
-                            Style="{StaticResource PrimaryBtn}"
-                            Width="90"
-                            Height="28"
-                            FontSize="{DynamicResource FontSizeSmallPlus}"
-                            Click="RadialPickerConfirmButton_Click"
-                            Visibility="{Binding RadialPickerBarVisibility, FallbackValue=Collapsed}"/>
+                    <!-- 右侧操作区：确认添加按钮 / 盲操指南问号按钮 -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <!-- 选择模式下的主要蓝色高亮按钮 -->
+                        <Button x:Name="FooterRadialPickerConfirmButton"
+                                VerticalAlignment="Center"
+                                Content="确认添加"
+                                Style="{StaticResource PrimaryBtn}"
+                                Width="90"
+                                Height="28"
+                                FontSize="{DynamicResource FontSizeSmallPlus}"
+                                Click="RadialPickerConfirmButton_Click"
+                                Visibility="{Binding RadialPickerBarVisibility, FallbackValue=Collapsed}"/>
+
+                        <!-- 盲操指南快捷开关按钮 (?) -->
+                        <Button x:Name="FooterBlindGuideHelpButton"
+                                Width="28"
+                                Height="28"
+                                Padding="0"
+                                Margin="8,0,0,0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                ToolTip="盲操指南 (点击开启/隐藏快捷键伴随窗)"
+                                Click="FooterBlindGuideHelpButton_Click"
+                                Visibility="{Binding NormalFooterMenuVisibility}"
+                                Style="{DynamicResource GhostButtonStyle}">
+                            <Border Width="20"
+                                    Height="20"
+                                    CornerRadius="10"
+                                    BorderBrush="{DynamicResource BrushBorder}"
+                                    BorderThickness="1"
+                                    Background="Transparent"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="?"
+                                           FontSize="11"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource BrushTextSec}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Margin="0,-1,0,0" />
+                            </Border>
+                        </Button>
+                    </StackPanel>
 
                     <Popup x:Name="FooterQuickMenuPopup"
                            Placement="Top"
@@ -2481,13 +2513,34 @@ Visibility="{Binding AiChatVisibility}">
                                 <DropShadowEffect BlurRadius="22" Direction="0" ShadowDepth="0" Color="#000000" Opacity="0.5"/>
                             </Border.Effect>
                             <StackPanel>
-                                <!-- 顶部标题 -->
-                                <TextBlock Text="盲操指南"
-                                           FontSize="11"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource BrushTextSec}"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,0,0,8" />
+                                <!-- 顶部标题与关闭按钮 -->
+                                <Grid Margin="0,0,0,8">
+                                    <TextBlock Text="盲操指南"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                    <Button HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Width="18"
+                                            Height="18"
+                                            Padding="0"
+                                            Margin="0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            ToolTip="关闭盲操指南 (不再自动弹出)"
+                                            Click="CloseBlindGuide_Click"
+                                            Style="{DynamicResource GhostButtonStyle}">
+                                        <TextBlock Text="✕"
+                                                   FontSize="10"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource BrushTextMuted}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,-1,0,0"/>
+                                    </Button>
+                                </Grid>
 
                                 <!-- 顶部 Caps 状态修饰键帽 (按住 [CAPS] +) -->
                                 <StackPanel Orientation="Horizontal"

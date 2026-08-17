@@ -7902,6 +7902,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private IntPtr SettingsWindowWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        // 彻底拦截 Windows 默认的背景擦除消息，防止 DirectX 绘制首帧前出现系统白色画刷闪烁
+        if (msg == 0x0014 /* WM_ERASEBKGND */)
+        {
+            handled = true;
+            return new IntPtr(1);
+        }
+
         if (!_isRecordingLauncherHotkey)
         {
             return IntPtr.Zero;
