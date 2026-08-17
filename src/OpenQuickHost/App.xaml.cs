@@ -240,8 +240,13 @@ public partial class App : WpfApplication
             MainWindow = window;
             TryRegisterUriProtocol();
             _notifyIcon = BuildNotifyIcon(window);
-            HostAssets.AppendLog($"App startup: version={AppVersionInfo.Version}, build={AppVersionInfo.BuildStamp}, baseDir={AppDomain.CurrentDomain.BaseDirectory}");
-            window.Show();
+            // 确保窗口句柄创建，触发 SourceInitialized 完成热键和监听服务初始化
+            var helper = new System.Windows.Interop.WindowInteropHelper(window);
+            helper.EnsureHandle();
+
+            // 无论前台还是后台启动，都必须初始化后台核心服务（WebDAV、Everything、WindowBinding、鼠标手势等）
+            window.InitializeBackgroundServices();
+
             if (ShouldStartHidden(e.Args))
             {
                 window.HideToTray();

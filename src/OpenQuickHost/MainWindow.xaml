@@ -13,6 +13,8 @@
         MinHeight="450"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
+        ShowInTaskbar="False"
+        Visibility="Hidden"
         ResizeMode="CanResize"
         Background="{DynamicResource BrushBG}"
         UseLayoutRounding="True"

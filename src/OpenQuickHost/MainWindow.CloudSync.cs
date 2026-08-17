@@ -265,6 +265,8 @@ public partial class MainWindow
             await _cloudSyncClient.UploadExtensionArchiveAsync(command, packageBytes, version);
             await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon, hasArchive: true);
             command.MarkAsSynced(version);
+            command.SetPublishedInStore(true);
+            LocalExtensionCatalog.SetExtensionPublishedState(command.ExtensionId, true);
             var storeUrl = BuildExtensionStoreUrl(command.ExtensionId);
             LastRunMessage = $"已发布到扩展商店：{command.Title} (v{version})";
             SyncStatus = $"发布成功：{command.Title}，商店链接：{storeUrl}";
@@ -322,6 +324,8 @@ public partial class MainWindow
             }
 
             await _cloudSyncClient.DeleteExtensionAsync(command.ExtensionId);
+            command.SetPublishedInStore(false);
+            LocalExtensionCatalog.SetExtensionPublishedState(command.ExtensionId, false);
             SyncStatus = $"已下线扩展：{command.Title}";
             LastRunMessage = $"扩展已从商店下线：{command.Title}";
             return (true, SyncStatus);
@@ -364,6 +368,14 @@ public partial class MainWindow
                     item.PublisherUserId.Equals(me.UserId, StringComparison.OrdinalIgnoreCase))
                 .ToDictionary(item => item.ExtensionId, item => item, StringComparer.OrdinalIgnoreCase);
             HostAssets.AppendLog($"Owned published extensions fetched for settings: userId={me.UserId}, count={owned.Count}");
+            
+            // 同步更新主窗口与本地扩展的发布状态
+            foreach (var localCmd in _localExtensionIndex.Values)
+            {
+                var isPub = owned.ContainsKey(localCmd.ExtensionId);
+                localCmd.SetPublishedInStore(isPub);
+            }
+
             return owned;
         }
         catch

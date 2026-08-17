@@ -1192,12 +1192,16 @@ public partial class MainWindow
         if (IsRadialPickerMode)
         {
             SetSearchScopePopupOpen(false);
+            if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
+            if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
             Hide();
             return;
         }
 
         ShowInTaskbar = false;
         SetSearchScopePopupOpen(false);
+        if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
+        if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
         Hide();
     }
 
@@ -1213,16 +1217,30 @@ public partial class MainWindow
         }
     }
 
+    private bool _isHookAdded;
+
     private void MainWindow_SourceInitialized(object? sender, EventArgs e)
     {
         _source = (HwndSource?)PresentationSource.FromVisual(this);
+        if (_source == null)
+        {
+            var helper = new WindowInteropHelper(this);
+            if (helper.Handle != IntPtr.Zero)
+            {
+                _source = HwndSource.FromHwnd(helper.Handle);
+            }
+        }
         if (_source == null)
         {
             return;
         }
 
         _lastKnownWindowDpi = GetCurrentWindowDpi();
-        _source.AddHook(WndProc);
+        if (!_isHookAdded)
+        {
+            _source.AddHook(WndProc);
+            _isHookAdded = true;
+        }
         if (!_listenerServicesPaused)
         {
             StartKeyboardTriggerService();
@@ -1332,6 +1350,11 @@ public partial class MainWindow
     private void MainWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         SetSearchScopePopupOpen(IsVisible && IsActive);
+        if (!IsVisible)
+        {
+            if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
+            if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
+        }
     }
 
     private void MainWindow_PositionChanged(object? sender, EventArgs e)

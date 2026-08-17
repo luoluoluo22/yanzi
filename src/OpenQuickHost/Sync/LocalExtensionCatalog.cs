@@ -184,7 +184,26 @@ public static class LocalExtensionCatalog
             queryPrefixes: manifest.QueryPrefixes,
             queryTargetTemplate: manifest.QueryTargetTemplate,
             startup: manifest.Startup?.ToDefinition(),
-            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget));
+            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
+            isPublishedInStore: manifest.IsPublished == true);
+    }
+
+    public static void SetExtensionPublishedState(string extensionId, bool isPublished)
+    {
+        var entry = LoadEntries().FirstOrDefault(e => string.Equals(e.Manifest.Id, extensionId, StringComparison.OrdinalIgnoreCase));
+        if (entry != null && File.Exists(entry.ManifestPath))
+        {
+            try
+            {
+                var updated = entry.Manifest with { IsPublished = isPublished };
+                var json = JsonSerializer.Serialize(updated, JsonOptions);
+                File.WriteAllText(entry.ManifestPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to persist IsPublished state for {extensionId}: {ex.Message}");
+            }
+        }
     }
 
     private static void EnsureSampleNotesExtension()
@@ -1147,6 +1166,8 @@ public sealed record LocalExtensionManifest
     public LocalExtensionSearchProviderManifest? SearchProvider { get; init; }
 
     public LocalExtensionMouseGestureManifest? MouseGesture { get; init; }
+
+    public bool? IsPublished { get; init; }
 }
 
 public sealed record LocalExtensionCatalogEntry(string ManifestPath, LocalExtensionManifest Manifest);

@@ -1034,10 +1034,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    private bool _isBackgroundServicesInitialized;
+
+    public void InitializeBackgroundServices()
     {
-        SearchBox.Focus();
-        SetSearchScopePopupOpen(true);
+        if (_isBackgroundServicesInitialized) return;
+        _isBackgroundServicesInitialized = true;
+
         StartBackgroundWebDavSync();
         _ = LoadInstalledApplicationsAsync();
         _windowBoundExtensionsService.Start(_appSettings.WindowBindings);
@@ -1051,6 +1054,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StartMousePanelService();
             StartMouseGestureService();
             QueueBackgroundWebDavSync("startup");
+            WarmupChildWindows();
             return;
         }
 
@@ -1060,18 +1064,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             StartMobileMessageBridge("startup-no-cloud-refresh");
             QueueBackgroundWebDavSync("startup");
+            WarmupChildWindows();
             return;
         }
 
-        await RefreshCloudStateAsync(allowLoginPrompt: false);
-        if (_cloudSyncClient != null && _cloudSyncClient.HasCredential)
+        _ = Task.Run(async () =>
         {
-            ScheduleSilentCloudReconnect("startup-post-refresh");
-            StartMobileMessageBridge("startup-post-refresh");
-        }
-        StartStartupExtensions();
+            await RefreshCloudStateAsync(allowLoginPrompt: false);
+            if (_cloudSyncClient != null && _cloudSyncClient.HasCredential)
+            {
+                ScheduleSilentCloudReconnect("startup-post-refresh");
+                StartMobileMessageBridge("startup-post-refresh");
+            }
+            StartStartupExtensions();
+            WarmupChildWindows();
+        });
+    }
 
-        // 异步预热快捷菜单和面板窗口以消除首次显示时的卡顿
+    private void WarmupChildWindows()
+    {
         _ = Dispatcher.BeginInvoke(new Action(() =>
         {
             try
@@ -1133,6 +1144,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 HostAssets.AppendLog($"Error warming up windows: {ex}");
             }
         }), DispatcherPriority.ApplicationIdle);
+    }
+
+    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        InitializeBackgroundServices();
+        SearchBox.Focus();
+        SetSearchScopePopupOpen(true);
     }
 
     private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -2319,10 +2337,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditExtensionMenuItem.Header = isYanyuRule ? "编辑燕语" : "编辑扩展";
         PublishExtensionMenuItem.IsEnabled = canManageLocalExtension && _cloudSyncClient != null;
         PublishExtensionMenuItem.Visibility = isYanyuRule ? Visibility.Collapsed : Visibility.Visible;
+        PublishExtensionMenuItem.Header = (resolved.IsPublishedInStore) ? "更新到商店" : "发布到商店";
         CopyExtensionStoreLinkMenuItem.IsEnabled = canManageLocalExtension;
-        CopyExtensionStoreLinkMenuItem.Visibility = Visibility.Collapsed;
+        CopyExtensionStoreLinkMenuItem.Visibility = (canManageLocalExtension && resolved.IsPublishedInStore) ? Visibility.Visible : Visibility.Collapsed;
         OpenExtensionStoreLinkMenuItem.IsEnabled = canManageLocalExtension;
-        OpenExtensionStoreLinkMenuItem.Visibility = isYanyuRule ? Visibility.Collapsed : Visibility.Visible;
+        OpenExtensionStoreLinkMenuItem.Visibility = (canManageLocalExtension && resolved.IsPublishedInStore && !isYanyuRule) ? Visibility.Visible : Visibility.Collapsed;
         DeleteExtensionMenuItem.IsEnabled = canManageLocalExtension || isYanyuRule;
         DeleteExtensionMenuItem.Header = isYanyuRule ? "删除燕语" : "删除";
         
@@ -2515,15 +2534,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
 
         AddMenuItem(menu, "编辑扩展", "pen", async () => await EditSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
-        AddMenuItem(menu, "发布到商店", "publish", async () =>
+        AddMenuItem(menu, command.IsPublishedInStore ? "更新到商店" : "发布到商店", "publish", async () =>
         {
             var ok = await PublishSelectedExtensionAsync();
             if (!ok)
             {
-                SyncStatus = string.IsNullOrWhiteSpace(SyncStatus) ? "发布到商店失败。" : SyncStatus;
+                SyncStatus = string.IsNullOrWhiteSpace(SyncStatus) ? (command.IsPublishedInStore ? "更新到商店失败。" : "发布到商店失败。") : SyncStatus;
             }
         }, command.Source == CommandSource.LocalExtension && _cloudSyncClient != null);
-        AddMenuItem(menu, "打开商店链接", "link", () => OpenExtensionStoreLinkMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), command.Source == CommandSource.LocalExtension);
+        AddMenuItem(menu, "打开商店链接", "link", () => OpenExtensionStoreLinkMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), command.Source == CommandSource.LocalExtension && command.IsPublishedInStore);
         AddMenuItem(menu, "删除", "delete", async () => await DeleteSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
         menu.Items.Add(new Separator());
         AddMenuItem(menu, "复制扩展", "copy", () => CopyExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
@@ -4182,7 +4201,8 @@ public sealed class CommandItem : INotifyPropertyChanged
         ImageSource? iconSourceOverride = null,
         CommandSearchProviderDefinition? searchProvider = null,
         ResultItemKind resultKind = ResultItemKind.None,
-        string? resultProviderTitle = null)
+        string? resultProviderTitle = null,
+        bool isPublishedInStore = false)
     {
         Glyph = glyph;
         Title = title;
@@ -4230,6 +4250,7 @@ public sealed class CommandItem : INotifyPropertyChanged
         SearchProvider = searchProvider;
         ResultKind = resultKind;
         ResultProviderTitle = resultProviderTitle;
+        IsPublishedInStore = isPublishedInStore;
     }
 
     public string Glyph { get; }
@@ -4402,6 +4423,15 @@ public sealed class CommandItem : INotifyPropertyChanged
     public string? CloudVersion { get; private set; }
 
     public bool ExistsInCloud { get; private set; }
+
+    public bool IsPublishedInStore { get; private set; }
+
+    public void SetPublishedInStore(bool published)
+    {
+        if (IsPublishedInStore == published) return;
+        IsPublishedInStore = published;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPublishedInStore)));
+    }
 
     public bool InstalledForUser { get; private set; }
 

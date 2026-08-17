@@ -93,13 +93,61 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private bool _isFolderPreviewVisible;
     private DateTimeOffset _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.MinValue;
     private DateTimeOffset _suspendOutsideClickHideUntilUtc = DateTimeOffset.MinValue;
+    private bool _wasActivatedForInput;
 
     public static bool HasUnreadMessages { get; set; } = false;
+
+    public void EnsureNoActivateStyle()
+    {
+        try
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            if (handle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var style = NativeMethods.GetWindowLongPtr(handle, NativeMethods.GWL_EXSTYLE);
+            NativeMethods.SetWindowLongPtr(
+                handle,
+                NativeMethods.GWL_EXSTYLE,
+                new IntPtr(style.ToInt64() | NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_NOACTIVATE));
+        }
+        catch
+        {
+            // Best effort
+        }
+    }
+
+    public void EnsureActivatedForInput()
+    {
+        _wasActivatedForInput = true;
+        try
+        {
+            Activate();
+        }
+        catch
+        {
+            // Best effort
+        }
+    }
+
+    private void HubSearchBox_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        EnsureActivatedForInput();
+    }
+
+    private void HubSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        EnsureActivatedForInput();
+    }
 
     public QuickPanelWindow(MainWindow mainWindow)
     {
         InitializeComponent();
         ShowActivated = false;
+        Focusable = false;
+        SourceInitialized += (_, _) => EnsureNoActivateStyle();
         _mainWindow = mainWindow;
         LocationChanged += (_, _) => UpdateGuideBannerPosition();
         _ = new System.Windows.Interop.WindowInteropHelper(this).Handle;
@@ -2339,8 +2387,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             }
 
             HidePanelIfAllowed();
-            await Task.Delay(50);
-            if (_previousForegroundWindow != IntPtr.Zero)
+            if (_wasActivatedForInput && _previousForegroundWindow != IntPtr.Zero)
             {
                 var restored = NativeMethods.SetForegroundWindow(_previousForegroundWindow);
                 HostAssets.AppendLog($"Quick panel execute: restored previous foreground={restored}, {DescribeWindow(_previousForegroundWindow)}.");
@@ -2935,11 +2982,16 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        var isUpdate = vm.IsPublishedInStore;
         var result = await _mainWindow.PublishExtensionFromSettingsAsync(vm.Command!.ExtensionId);
+        if (result.ok)
+        {
+            vm.RefreshViewModelProperties();
+        }
         System.Windows.MessageBox.Show(
             this,
             result.message,
-            result.ok ? "发布到商店" : "发布到商店失败",
+            result.ok ? (isUpdate ? "更新到商店" : "发布到商店") : (isUpdate ? "更新到商店失败" : "发布到商店失败"),
             MessageBoxButton.OK,
             result.ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
     }
@@ -3153,6 +3205,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             HostAssets.AppendLog($"Quick panel showing at ({Left:0},{Top:0}), cursorPixels=({cursorPixels.X:0},{cursorPixels.Y:0}), cursorDips=({cursorDips.X:0},{cursorDips.Y:0}), cursorLocalX={cursorDips.X - Left:0}, topConstrained={topConstrained}, screenDips=({screenBounds.Left:0},{screenBounds.Top:0},{screenBounds.Right:0},{screenBounds.Bottom:0}), occupiedGlobal={occupiedGlobal}, occupiedContext={occupiedContext}, totalGlobal={GlobalSlots.Count}, totalContext={ContextSlots.Count}, previousFocus={DescribeWindow(_previousFocusWindow)}.");
             OnPropertyChanged(nameof(ContextSectionTitle));
             OnPropertyChanged(nameof(ContextHintText));
+            _wasActivatedForInput = false;
+            EnsureNoActivateStyle();
             Topmost = true;
             Show();
             NativeMethods.ShowWithoutActivation(new WindowInteropHelper(this).Handle);
@@ -3405,6 +3459,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         ClearReleaseTarget();
         CloseGuideBannerWindow();
         CloseEditModeHoverDemoWindow();
+        if (_wasActivatedForInput && _previousForegroundWindow != IntPtr.Zero)
+        {
+            try
+            {
+                NativeMethods.SetForegroundWindow(_previousForegroundWindow);
+            }
+            catch { }
+        }
+        _wasActivatedForInput = false;
         Topmost = false;
         Hide();
         MemoryOptimizationService.OptimizeMemoryInBackground();
@@ -4803,6 +4866,9 @@ public class SlotViewModel : INotifyPropertyChanged
     public int SourceFolderItemIndex => _sourceFolderItemIndex;
     public bool CanEdit => !IsFolder && _command?.Source == CommandSource.LocalExtension;
     public bool CanPublish => !IsFolder && _command?.Source == CommandSource.LocalExtension;
+    public bool IsPublishedInStore => !IsFolder && _command?.Source == CommandSource.LocalExtension && (_command?.IsPublishedInStore ?? false);
+    public string PublishMenuHeader => IsPublishedInStore ? "更新到商店" : "发布到商店";
+    public bool CanShowStoreLink => !IsFolder && _command?.Source == CommandSource.LocalExtension && IsPublishedInStore;
     public bool CanOpenDirectory => CanEdit && !string.IsNullOrWhiteSpace(_command?.ExtensionDirectoryPath);
     public bool CanRemoveFromFixedSlots => _item != null;
     public bool CanDeleteExtension => !IsFolder && _command?.Source == CommandSource.LocalExtension;
@@ -4972,7 +5038,9 @@ public class SlotViewModel : INotifyPropertyChanged
             };
     }
 
-    private void NotifyAll()
+    public void RefreshViewModelProperties() => NotifyAll();
+
+    public void NotifyAll()
     {
         OnPropertyChanged(nameof(Item));
         OnPropertyChanged(nameof(Command));
@@ -4996,6 +5064,9 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsContextual));
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(CanPublish));
+        OnPropertyChanged(nameof(IsPublishedInStore));
+        OnPropertyChanged(nameof(PublishMenuHeader));
+        OnPropertyChanged(nameof(CanShowStoreLink));
         OnPropertyChanged(nameof(CanOpenDirectory));
         OnPropertyChanged(nameof(CanRemoveFromFixedSlots));
         OnPropertyChanged(nameof(HasFolderBadge));
@@ -5040,6 +5111,15 @@ public class SlotViewModel : INotifyPropertyChanged
         {
             OnPropertyChanged(nameof(IsCSharpPrebuilding));
             OnPropertyChanged(nameof(DisplayTitle));
+        }
+
+        if (string.IsNullOrWhiteSpace(e.PropertyName) ||
+            string.Equals(e.PropertyName, nameof(CommandItem.IsPublishedInStore), StringComparison.Ordinal) ||
+            string.Equals(e.PropertyName, nameof(CommandItem.ExistsInCloud), StringComparison.Ordinal))
+        {
+            OnPropertyChanged(nameof(IsPublishedInStore));
+            OnPropertyChanged(nameof(PublishMenuHeader));
+            OnPropertyChanged(nameof(CanShowStoreLink));
         }
     }
 
@@ -5271,6 +5351,32 @@ internal static class NativeMethods
             }
         };
     }
+
+    public const int GWL_EXSTYLE = -20;
+    public const long WS_EX_TOOLWINDOW = 0x00000080L;
+    public const long WS_EX_NOACTIVATE = 0x08000000L;
+
+    public static IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex)
+    {
+        return IntPtr.Size == 8 ? GetWindowLongPtr64(hWnd, nIndex) : new IntPtr(GetWindowLong32(hWnd, nIndex));
+    }
+
+    public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
+    {
+        return IntPtr.Size == 8 ? SetWindowLongPtr64(hWnd, nIndex, dwNewLong) : new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong.ToInt32()));
+    }
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+    private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
+    private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+    private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
+    private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
     public static void ShowWithoutActivation(IntPtr hwnd)
     {

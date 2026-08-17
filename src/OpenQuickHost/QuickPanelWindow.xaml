@@ -15,6 +15,9 @@
         TextOptions.TextRenderingMode="ClearType"
         ShowInTaskbar="False"
         WindowStartupLocation="Manual"
+        Topmost="True"
+        Focusable="False"
+        ShowActivated="False"
         Deactivated="Window_Deactivated">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
@@ -469,6 +472,9 @@
                                  VerticalAlignment="Center"
                                  VerticalContentAlignment="Center"
                                  CaretBrush="#FF3B82F6"
+                                 Focusable="True"
+                                 PreviewMouseDown="HubSearchBox_PreviewMouseDown"
+                                 GotKeyboardFocus="HubSearchBox_GotKeyboardFocus"
                                  TextChanged="HubSearchBox_TextChanged"/>
                         <TextBlock Text="搜索..." 
                                    IsHitTestVisible="False"
@@ -574,20 +580,20 @@
                                                         <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="{Binding PublishMenuHeader}" Click="PublishExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry publish}" Fill="#3B82F6" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
-                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                          Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="打开商店链接" Click="OpenStoreLink_Click" CommandParameter="{Binding}"
-                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                          Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
@@ -1111,20 +1117,20 @@
                                                         <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="{Binding PublishMenuHeader}" Click="PublishExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry publish}" Fill="#3B82F6" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
-                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                          Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="打开商店链接" Click="OpenStoreLink_Click" CommandParameter="{Binding}"
-                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                          Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
@@ -1730,20 +1736,20 @@
                                                     <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="{Binding PublishMenuHeader}" Click="PublishExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry publish}" Fill="#3B82F6" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
-                                                      Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                      Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Header="打开商店链接" Click="OpenStoreLink_Click" CommandParameter="{Binding}"
-                                                      Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                      Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
