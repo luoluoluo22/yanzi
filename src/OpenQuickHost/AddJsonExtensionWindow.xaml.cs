@@ -1370,27 +1370,38 @@ public partial class AddJsonExtensionWindow : Window
         {
             ErrorText.Visibility = Visibility.Collapsed;
 
-            var prompt = TryBuildManualCopyPrompt();
-            if (string.IsNullOrWhiteSpace(prompt) && !string.IsNullOrWhiteSpace(_aiGuidePrompt))
-            {
-                prompt = _aiGuidePrompt;
-            }
-
-            if (string.IsNullOrWhiteSpace(prompt))
-            {
-                ShowError("请先填写扩展的需求或关键信息，以便生成对应的 AI 提示词。");
-                return;
-            }
-
             var userInput = (CustomPromptTextBox?.Text ?? string.Empty).Trim();
             if (_currentAiSession == null && AiSessions.Count > 0)
             {
                 _currentAiSession = AiSessions[0];
             }
 
+            bool isNewSession = _currentAiSession == null || !_currentAiSession.HasSentInitialPrompt || string.IsNullOrWhiteSpace(_currentAiSession.CurrentJson);
+
+            string prompt;
+            if (isNewSession)
+            {
+                prompt = TryBuildManualCopyPrompt();
+                if (string.IsNullOrWhiteSpace(prompt) && !string.IsNullOrWhiteSpace(_aiGuidePrompt))
+                {
+                    prompt = _aiGuidePrompt;
+                }
+            }
+            else
+            {
+                var currentJson = _currentAiSession?.CurrentJson ?? ManualJsonInputBox?.Text ?? string.Empty;
+                prompt = BuildFollowUpModifyPrompt(userInput, currentJson);
+            }
+
+            if (string.IsNullOrWhiteSpace(prompt))
+            {
+                ShowError("请先填写扩展的需求或修改指令，以便生成对应的 AI 提示词。");
+                return;
+            }
+
             if (_currentAiSession != null)
             {
-                var promptDisplay = !string.IsNullOrWhiteSpace(userInput) ? userInput : "生成扩展 JSON";
+                var promptDisplay = !string.IsNullOrWhiteSpace(userInput) ? userInput : (isNewSession ? "生成扩展 JSON" : "修改扩展配置");
                 var userMsg = new ExtAiChatMessage
                 {
                     Role = "user",
@@ -1429,7 +1440,7 @@ public partial class AddJsonExtensionWindow : Window
             // 更新 UI 进入生成中状态
             SetAiAutoGeneratingState(true, "正在将提示词传递至 DeepSeek 网页端并自动发送...");
 
-            var (success, jsonResult, error) = await agentServer.RunBrowserAiPromptTransferAsync(prompt, "deepseek", 120);
+            var (success, jsonResult, error) = await agentServer.RunBrowserAiPromptTransferAsync(prompt, "deepseek", 120, isNewSession);
 
             if (!success || string.IsNullOrWhiteSpace(jsonResult))
             {
@@ -1457,6 +1468,7 @@ public partial class AddJsonExtensionWindow : Window
 
             if (_currentAiSession != null)
             {
+                _currentAiSession.HasSentInitialPrompt = true;
                 _currentAiSession.CurrentJson = jsonResult;
                 _currentAiSession.Messages.Add(CreateAssistantVersionMessage(jsonResult, "✅ 已成功生成扩展 JSON 并载入编辑器，正在启动试运行验证..."));
                 _currentAiSession.LastUpdatedAt = DateTime.Now;
@@ -1510,6 +1522,28 @@ public partial class AddJsonExtensionWindow : Window
             HostAssets.AppendLog($"AddJson manual copy json failed: {ex}");
             ShowError($"复制 JSON 失败：{ex.Message}");
         }
+    }
+
+    private string BuildFollowUpModifyPrompt(string userInput, string currentJson)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("请在当前扩展版本的基础上，按照以下最新修改需求进行调整，并输出更新后的完整 JSON 配置：");
+        sb.AppendLine();
+        sb.AppendLine("【最新修改需求】：");
+        sb.AppendLine(string.IsNullOrWhiteSpace(userInput) ? "请检查并优化当前扩展配置。" : userInput.Trim());
+        sb.AppendLine();
+        if (!string.IsNullOrWhiteSpace(currentJson))
+        {
+            sb.AppendLine("【当前最新 JSON 代码】：");
+            sb.AppendLine("```json");
+            sb.AppendLine(currentJson.Trim());
+            sb.AppendLine("```");
+            sb.AppendLine();
+        }
+        sb.AppendLine("【输出要求】：");
+        sb.AppendLine("1. 遵循 Yanzi 扩展 manifest 规范；");
+        sb.AppendLine("2. 仅输出更新后的完整合法 JSON 代码块（包裹在 ```json 与 ``` 中），不要输出多余废话。");
+        return sb.ToString();
     }
 
     private string TryBuildManualCopyPrompt()
@@ -5171,6 +5205,7 @@ public sealed class ExtAiSessionItem : System.ComponentModel.INotifyPropertyChan
     public string TimeText => LastUpdatedAt.ToString("HH:mm");
     public System.Collections.ObjectModel.ObservableCollection<ExtAiChatMessage> Messages { get; set; } = new();
     public string CurrentJson { get; set; } = "";
+    public bool HasSentInitialPrompt { get; set; } = false;
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 }

@@ -39,6 +39,27 @@ async function performAiPromptTransfer(task) {
   }
 
   try {
+    // 0. 若为开启新会话且页面处于旧对话中，优先点击新对话按钮
+    if (task.isNewSession) {
+      console.log("%c[Yanzi AiTransfer] 任务要求开启新会话，正在定位【开启新对话】按钮...", "color: #3b82f6;");
+      try {
+        const newChatButtons = Array.from(document.querySelectorAll("button, div[role='button'], a")).filter(el => {
+          const text = (el.innerText || "").trim();
+          const aria = el.getAttribute("aria-label") || "";
+          return text.includes("开启新对话") || text.includes("新建对话") || text.includes("新对话") || aria.includes("新对话") || aria.includes("New Chat");
+        });
+        if (newChatButtons.length > 0) {
+          newChatButtons[0].click();
+          console.log("%c[Yanzi AiTransfer] 已点击【开启新对话】按钮", "color: #10b981;");
+          await new Promise(r => setTimeout(r, 600));
+        }
+      } catch (e) {
+        console.warn("点击新对话按钮提示:", e);
+      }
+    } else {
+      console.log("%c[Yanzi AiTransfer] 任务为延续对话，将在当前会话中直接追加提示词...", "color: #3b82f6;");
+    }
+
     // 1. 等待并定位输入框
     console.log("%c[Yanzi AiTransfer] 正在定位 DeepSeek 输入框...", "color: #3b82f6;");
     const inputSelector = "textarea#chat-input, textarea[placeholder*='输入'], textarea[placeholder*='DeepSeek'], textarea, div[contenteditable='true']";

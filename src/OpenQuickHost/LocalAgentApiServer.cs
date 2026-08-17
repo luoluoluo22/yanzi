@@ -22,7 +22,11 @@ public sealed class LocalAgentApiServer : IDisposable
 
     private static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingBrowserTasks = new(StringComparer.OrdinalIgnoreCase);
 
-    public async Task<(bool success, string? jsonResult, string? error)> RunBrowserAiPromptTransferAsync(string prompt, string aiSite = "deepseek", int timeoutSeconds = 120)
+    public async Task<(bool success, string? jsonResult, string? error)> RunBrowserAiPromptTransferAsync(
+        string prompt,
+        string aiSite = "deepseek",
+        int timeoutSeconds = 120,
+        bool isNewSession = false)
     {
         if (_activeBrowserSocket == null || _activeBrowserSocket.State != WebSocketState.Open)
         {
@@ -37,7 +41,8 @@ public sealed class LocalAgentApiServer : IDisposable
             ["action"] = "ai_prompt_transfer",
             ["aiSite"] = aiSite,
             ["prompt"] = prompt,
-            ["timeoutSeconds"] = timeoutSeconds
+            ["timeoutSeconds"] = timeoutSeconds,
+            ["isNewSession"] = isNewSession
         };
 
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
