@@ -1018,7 +1018,13 @@ public partial class AddJsonExtensionWindow : Window
             {
                 AiChatColDef.Width = new GridLength(380);
             }
-            // 2. 展开代码区与分割线，折叠外部属性栏
+            // 2. 展开第 3 栏代码区与分割线
+            if (AiCodeSplitterColDef != null) AiCodeSplitterColDef.Width = new GridLength(1);
+            if (AiCodeColDef != null)
+            {
+                AiCodeColDef.MinWidth = 320;
+                AiCodeColDef.Width = new GridLength(1, GridUnitType.Star);
+            }
             if (AiCodeWorkspacePanel != null) AiCodeWorkspacePanel.Visibility = Visibility.Visible;
             if (AiCodeSplitter != null) AiCodeSplitter.Visibility = Visibility.Visible;
             RightPropertiesPanel.Visibility = Visibility.Collapsed;
@@ -1030,15 +1036,22 @@ public partial class AddJsonExtensionWindow : Window
         else
         {
             // 预览模式：
-            // 1. 折叠第 3 栏 Monaco Editor 与分割线
+            // 1. 彻底折叠第 3 栏 Monaco 代码列（Width=0, MinWidth=0）与分割线，彻底消除中间空白占用！
+            if (AiCodeSplitterColDef != null) AiCodeSplitterColDef.Width = new GridLength(0);
+            if (AiCodeColDef != null)
+            {
+                AiCodeColDef.MinWidth = 0;
+                AiCodeColDef.Width = new GridLength(0);
+            }
             if (AiCodeWorkspacePanel != null) AiCodeWorkspacePanel.Visibility = Visibility.Collapsed;
             if (AiCodeSplitter != null) AiCodeSplitter.Visibility = Visibility.Collapsed;
-            // 2. 中间对话区展开占据左侧全部剩余宽度（视野宽阔）
+
+            // 2. 中间对话区展开占据左侧全部剩余宽度（无缝连接右侧预览栏）
             if (AiChatColDef != null)
             {
                 AiChatColDef.Width = new GridLength(1, GridUnitType.Star);
             }
-            // 3. 展开外部属性栏并紧贴窗口最右侧（380px 舒适标准宽度，消除右侧空隙）
+            // 3. 展开外部属性栏并紧贴窗口最右侧（380px 舒适标准宽度）
             RightPropertiesPanel.Visibility = Visibility.Visible;
             if (RightPropertiesColDef != null)
             {

@@ -967,12 +967,12 @@
                     <Grid.ColumnDefinitions>
                         <!-- 栏 1：会话历史 (175px) -->
                         <ColumnDefinition Width="175" MinWidth="140" MaxWidth="240" x:Name="AiHistoryColDef" />
-                        <ColumnDefinition Width="1" />
+                        <ColumnDefinition Width="1" x:Name="AiHistorySplitterColDef" />
                         <!-- 栏 2：对话交互区 (自适应) -->
                         <ColumnDefinition Width="380" MinWidth="280" x:Name="AiChatColDef" />
-                        <ColumnDefinition Width="1" />
+                        <ColumnDefinition Width="1" x:Name="AiCodeSplitterColDef" />
                         <!-- 栏 3：JSON / 代码工作区 (*) -->
-                        <ColumnDefinition Width="*" MinWidth="320" />
+                        <ColumnDefinition Width="*" x:Name="AiCodeColDef" />
                     </Grid.ColumnDefinitions>
 
                     <!-- ==================== 第 1 栏：会话历史 (Col 0) ==================== -->
