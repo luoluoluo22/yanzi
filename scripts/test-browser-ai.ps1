@@ -1,9 +1,11 @@
 ﻿Param(
-    [string]$Prompt = "请帮我写一个燕子效率工具的 JSON 扩展，功能是：点击后打开 Windows 自带的画图工具 (mspaint.exe)，名称叫'打开画图'，分类是'快捷工具'。只需返回 ```json ... ``` 代码块。"
+    [string]$Prompt = "请帮我写一个燕子效率工具的 JSON 扩展，功能是：点击后打开 Windows 自带的画图工具 (mspaint.exe)，名称叫'打开画图'，分类是'快捷工具'。只需返回 ```json ... ``` 代码块。",
+    [switch]$NewSession
 )
 
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host "  Yanzi Browser Helper DeepSeek Test" -ForegroundColor Cyan
+Write-Host "  IsNewSession: $($NewSession.IsPresent)" -ForegroundColor Cyan
 Write-Host "==============================================" -ForegroundColor Cyan
 
 $port = 53919
@@ -22,13 +24,16 @@ try {
 
 Write-Host "`n[2/3] Dispatching DeepSeek task to browser extension..." -ForegroundColor Yellow
 Write-Host "  Prompt: $Prompt" -ForegroundColor Gray
+Write-Host "  IsNewSession: $($NewSession.IsPresent)" -ForegroundColor Gray
 
-$payload = @{
+$payloadObj = @{
     action = "ai_prompt_transfer"
     aiSite = "deepseek"
     prompt = $Prompt
     timeoutSeconds = 120
-} | ConvertTo-Json
+    isNewSession = [bool]$NewSession.IsPresent
+}
+$payload = $payloadObj | ConvertTo-Json
 
 $headers = @{
     "Authorization" = "Bearer $token"
@@ -40,7 +45,8 @@ $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 Write-Host "`n[3/3] Task dispatched. Waiting for DeepSeek response (up to 120s)..." -ForegroundColor Yellow
 
 try {
-    $response = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($payload)) -TimeoutSec 130
+    $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+    $response = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $bodyBytes -TimeoutSec 130
     $stopwatch.Stop()
 
     Write-Host "`nTest Success! Elapsed: $([math]::Round($stopwatch.Elapsed.TotalSeconds, 2)) seconds." -ForegroundColor Green
