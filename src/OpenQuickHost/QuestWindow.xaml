@@ -1,0 +1,477 @@
+<Window x:Class="OpenQuickHost.QuestWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:OpenQuickHost"
+        Title="燕子工坊 · 任务成就系统"
+        Width="620"
+        Height="680"
+        MinWidth="540"
+        MinHeight="580"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <Border Background="#FF16161B"
+            BorderBrush="#33FFFFFF"
+            BorderThickness="1"
+            CornerRadius="16"
+            Padding="22">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="28"
+                              Direction="270"
+                              ShadowDepth="8"
+                              Opacity="0.65"
+                              Color="#000000" />
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 1. Header: 标题与个人成就信息 -->
+            <Grid Grid.Row="0" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Background="#263B82F6"
+                            BorderBrush="#4D3B82F6"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="8,4"
+                            Margin="0,0,10,0">
+                        <TextBlock Text="🎯 任务试炼"
+                                   Foreground="#FF60A5FA"
+                                   FontSize="13"
+                                   FontWeight="Bold" />
+                    </Border>
+
+                    <TextBlock Text="燕子工坊 · 成就之路"
+                               Foreground="#FFF0F0F5"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center" />
+
+                    <!-- 等级称号标签 -->
+                    <Border Background="#1A34D399"
+                            BorderBrush="#4034D399"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="10,2"
+                            Margin="14,0,0,0"
+                            VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="TxtLevelName"
+                                       Text="Lv.1 效率学徒"
+                                       Foreground="#FF34D399"
+                                       FontSize="12"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text=" · "
+                                       Foreground="#8034D399"
+                                       FontSize="12" />
+                            <TextBlock x:Name="TxtPoints"
+                                       Text="0 分"
+                                       Foreground="#FF34D399"
+                                       FontSize="12"
+                                       FontWeight="Bold" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- 关闭按钮 -->
+                <Button Grid.Column="1"
+                        Width="28"
+                        Height="28"
+                        Background="Transparent"
+                        BorderBrush="Transparent"
+                        Foreground="#80A1A1AA"
+                        FontSize="15"
+                        FontWeight="Bold"
+                        Cursor="Hand"
+                        Click="CloseButton_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Border"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="6">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Border" Property="Background" Value="#26FFFFFF" />
+                                    <Setter Property="Foreground" Value="#FFFFFFFF" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <TextBlock Text="✕" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                </Button>
+            </Grid>
+
+            <!-- 2. 中部可滚动内容：主线任务卡片 + 勋章墙 + 关卡地图 -->
+            <ScrollViewer Grid.Row="1"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Margin="0,0,-6,0"
+                          Padding="0,0,6,0">
+                <StackPanel>
+
+                    <!-- 当前主线焦点任务卡片 -->
+                    <Border Background="#FF1E1E26"
+                            BorderBrush="#FF2E303D"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="18"
+                            Margin="0,0,0,16">
+                        <StackPanel>
+                            <!-- 任务标签与状态 -->
+                            <Grid>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Background="#26F59E0B"
+                                            BorderBrush="#4DF59E0B"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="6,2"
+                                            Margin="0,0,8,0">
+                                        <TextBlock Text="主线任务"
+                                                   Foreground="#FFF59E0B"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold" />
+                                    </Border>
+                                    <TextBlock x:Name="TxtQuestTitle"
+                                               Text="【初试身手】将计算器放进鼠标面板"
+                                               Foreground="#FFF0F0F5"
+                                               FontSize="15"
+                                               FontWeight="Bold" />
+                                </StackPanel>
+
+                                <Border x:Name="BadgeCompletedMark"
+                                        HorizontalAlignment="Right"
+                                        Background="#2634D399"
+                                        BorderBrush="#4D34D399"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="8,3"
+                                        Visibility="Collapsed">
+                                    <TextBlock Text="✓ 已通关达成"
+                                               Foreground="#FF34D399"
+                                               FontSize="11"
+                                               FontWeight="Bold" />
+                                </Border>
+                            </Grid>
+
+                            <!-- 痛点描述 -->
+                            <TextBlock x:Name="TxtQuestDesc"
+                                       Text="工作算账、临时算汇率，还要去开始菜单翻找？做一个专属扩展，鼠标一划就能在秒板中秒开计算器！"
+                                       Foreground="#FFA1A1AA"
+                                       FontSize="12"
+                                       LineHeight="18"
+                                       Margin="0,10,0,16"
+                                       TextWrapping="Wrap" />
+
+                            <!-- 步骤检查清单 -->
+                            <Border Background="#FF16161B"
+                                    BorderBrush="#1AFFFFFF"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="14,12">
+                                <StackPanel>
+                                    <!-- 步骤 1 -->
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="IconStep1"
+                                                   Text="⚪"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,10,0" />
+                                        <TextBlock Grid.Column="1"
+                                                   x:Name="TxtStep1"
+                                                   Text="步骤 1：创建计算器扩展 (执行目标设为 calc.exe 或名称含计算器)"
+                                                   Foreground="#FFE5E5E5"
+                                                   FontSize="12"
+                                                   TextWrapping="Wrap" />
+                                    </Grid>
+
+                                    <!-- 步骤 2 -->
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="IconStep2"
+                                                   Text="⚪"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,10,0" />
+                                        <TextBlock Grid.Column="1"
+                                                   x:Name="TxtStep2"
+                                                   Text="步骤 2：将计算器扩展放入鼠标面板 (QuickPanel) 的任意格位"
+                                                   Foreground="#FFE5E5E5"
+                                                   FontSize="12"
+                                                   TextWrapping="Wrap" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 交互引导操作按钮 -->
+                            <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                <Button x:Name="BtnAutoCreate"
+                                        Content="⚡ 帮我预填并创建扩展"
+                                        Background="#FF2563EB"
+                                        Foreground="#FFFFFFFF"
+                                        BorderThickness="0"
+                                        Padding="14,8"
+                                        FontWeight="SemiBold"
+                                        FontSize="12"
+                                        Cursor="Hand"
+                                        Click="BtnAutoCreate_Click">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="Brd"
+                                                    Background="{TemplateBinding Background}"
+                                                    CornerRadius="8"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Brd" Property="Background" Value="#FF1D4ED8" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+
+                                <Button x:Name="BtnOpenPanel"
+                                        Content="🖱️ 打开鼠标面板"
+                                        Background="#FF2D2D38"
+                                        Foreground="#FFE5E5E5"
+                                        BorderBrush="#33FFFFFF"
+                                        BorderThickness="1"
+                                        Margin="10,0,0,0"
+                                        Padding="14,8"
+                                        FontSize="12"
+                                        Cursor="Hand"
+                                        Click="BtnOpenPanel_Click">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="Brd"
+                                                    Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    CornerRadius="8"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Brd" Property="Background" Value="#FF3A3A4A" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </StackPanel>
+
+                            <!-- 动态状态提示横幅 -->
+                            <Border x:Name="FeedbackBorder"
+                                    Background="#1A3B82F6"
+                                    BorderBrush="#333B82F6"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="10,8"
+                                    Margin="0,14,0,0">
+                                <TextBlock x:Name="TxtStatusFeedback"
+                                           Text="👉 点击「帮我预填并创建扩展」，快速生成你的第一个工具！"
+                                           Foreground="#FF93C5FD"
+                                           FontSize="12"
+                                           TextWrapping="Wrap" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 徽章墙与成就概览 -->
+                    <Border Background="#FF1E1E26"
+                            BorderBrush="#FF2E303D"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="16"
+                            Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="🏅 成就徽章墙"
+                                       Foreground="#FFF0F0F5"
+                                       FontSize="13"
+                                       FontWeight="Bold"
+                                       Margin="0,0,0,12" />
+
+                            <UniformGrid Columns="4" Rows="1">
+                                <!-- 徽章 1: 指尖神算 -->
+                                <Border x:Name="BadgeCalcBorder"
+                                        Background="#FF16161B"
+                                        BorderBrush="#1AFFFFFF"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="8,10"
+                                        Margin="0,0,8,0">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="🧮" FontSize="20" HorizontalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtBadgeCalc" Text="指尖神算" Foreground="#66FFFFFF" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 徽章 2: 超光速跳跃 -->
+                                <Border Background="#FF16161B"
+                                        BorderBrush="#1AFFFFFF"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="8,10"
+                                        Margin="0,0,8,0">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="🚀" FontSize="20" HorizontalAlignment="Center" Opacity="0.4"/>
+                                        <TextBlock Text="超光速跳跃" Foreground="#44FFFFFF" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 徽章 3: 系统清道夫 -->
+                                <Border Background="#FF16161B"
+                                        BorderBrush="#1AFFFFFF"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="8,10"
+                                        Margin="0,0,8,0">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="🧹" FontSize="20" HorizontalAlignment="Center" Opacity="0.4"/>
+                                        <TextBlock Text="系统清道夫" Foreground="#44FFFFFF" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 徽章 4: 智械先驱 -->
+                                <Border Background="#FF16161B"
+                                        BorderBrush="#1AFFFFFF"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="8,10">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="🧙" FontSize="20" HorizontalAlignment="Center" Opacity="0.4"/>
+                                        <TextBlock Text="智械先驱" Foreground="#44FFFFFF" FontSize="11" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 关卡成长路线预览 -->
+                    <Border Background="#FF1E1E26"
+                            BorderBrush="#FF2E303D"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="16">
+                        <StackPanel>
+                            <TextBlock Text="🗺️ 后续主线试炼路线"
+                                       Foreground="#FFF0F0F5"
+                                       FontSize="13"
+                                       FontWeight="Bold"
+                                       Margin="0,0,0,10" />
+
+                            <StackPanel>
+                                <Border Background="#FF16161B" CornerRadius="6" Padding="12,8" Margin="0,0,0,8">
+                                    <Grid>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="🔒 2阶 · " Foreground="#66FFFFFF" FontSize="12"/>
+                                            <TextBlock Text="【超光速跳跃】配置带参数的网页直达" Foreground="#88FFFFFF" FontSize="12"/>
+                                        </StackPanel>
+                                        <TextBlock Text="+30分" Foreground="#FF34D399" FontSize="11" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Background="#FF16161B" CornerRadius="6" Padding="12,8" Margin="0,0,0,8">
+                                    <Grid>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="🔒 3阶 · " Foreground="#66FFFFFF" FontSize="12"/>
+                                            <TextBlock Text="【系统清道夫】一键刷新 DNS 缓存脚本" Foreground="#88FFFFFF" FontSize="12"/>
+                                        </StackPanel>
+                                        <TextBlock Text="+40分" Foreground="#FF34D399" FontSize="11" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Background="#FF16161B" CornerRadius="6" Padding="12,8">
+                                    <Grid>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="🔒 4阶 · " Foreground="#66FFFFFF" FontSize="12"/>
+                                            <TextBlock Text="【通天塔工匠】打造划词即时翻译扩展" Foreground="#88FFFFFF" FontSize="12"/>
+                                        </StackPanel>
+                                        <TextBlock Text="+80分" Foreground="#FF34D399" FontSize="11" HorizontalAlignment="Right" FontWeight="SemiBold"/>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 3. Footer: 奖励与检测按钮 -->
+            <Grid Grid.Row="2" Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="本关通关奖励：" Foreground="#FFA1A1AA" FontSize="11"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <TextBlock Text="+50 成就分" Foreground="#FF34D399" FontWeight="Bold" FontSize="13"/>
+                        <TextBlock Text=" · " Foreground="#66FFFFFF" FontSize="13"/>
+                        <TextBlock Text="🏅「指尖神算」徽章" Foreground="#FFF59E0B" FontWeight="SemiBold" FontSize="13"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 检测按钮 -->
+                <Button Grid.Column="1"
+                        x:Name="BtnVerify"
+                        Content="🔍 立即检测完成情况"
+                        Background="#FF059669"
+                        Foreground="#FFFFFFFF"
+                        BorderThickness="0"
+                        Padding="18,10"
+                        FontWeight="Bold"
+                        FontSize="13"
+                        Cursor="Hand"
+                        Click="BtnVerify_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Brd"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="8"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Brd" Property="Background" Value="#FF047857" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

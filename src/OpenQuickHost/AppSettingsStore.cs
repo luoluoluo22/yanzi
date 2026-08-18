@@ -274,6 +274,8 @@ public static class AppSettingsStore
         settings.DisabledExtensionIds ??= [];
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
+        settings.CompletedQuestIds ??= [];
+        settings.UnlockedBadges ??= [];
         settings.YarnSelect ??= new YarnSelectSettings();
         settings.YarnSelect.WhitelistedProcesses ??= [];
         settings.YarnSelect.BlacklistedProcesses ??= [];
@@ -936,6 +938,12 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
     public List<string> RecentlyAddedExtensionIds { get; set; } = new();
 
     public List<string> UnreadNewExtensionIds { get; set; } = new();
+
+    public int AchievementPoints { get; set; } = 0;
+
+    public List<string> CompletedQuestIds { get; set; } = new();
+
+    public List<string> UnlockedBadges { get; set; } = new();
 
     public bool EnableAgentApi { get; set; } = true;
 

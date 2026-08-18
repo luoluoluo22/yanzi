@@ -406,6 +406,11 @@ public partial class MainWindow
         return ShowJsonExtensionEditorForOwner(string.Empty, false, owner ?? this);
     }
 
+    public CommandItem? OpenAddExtensionWithInitialJson(string initialJson, Window? owner = null)
+    {
+        return ShowJsonExtensionEditorForOwner(initialJson, false, owner ?? this);
+    }
+
     public CommandItem CreateQuickOpenExtensionFromPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))

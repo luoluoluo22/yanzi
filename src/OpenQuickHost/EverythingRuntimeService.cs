@@ -11,6 +11,8 @@ public static class EverythingRuntimeService
     private static int? _launchedProcessId;
     private const int ConfigSchemaVersion = 2;
 
+    private static string SchemaVersionFilePath => Path.Combine(HostAssets.EverythingRuntimeDataPath, "schema_version.txt");
+
     public static void EnsureStartedInBackground()
     {
         _ = Task.Run(() => EnsureRunning());
@@ -59,11 +61,18 @@ public static class EverythingRuntimeService
     {
         lock (SyncLock)
         {
+            // 1. 如果系统上已有可用 Everything（如用户已开机运行 Everything 1.5/1.4），直接复用，无需重复拉起
+            if (EverythingSearchService.IsIpcReachable())
+            {
+                return true;
+            }
+
+            // 2. 检查配置是否需要初始化或版本升级（只有真正的升级才返回 true）
             var needsDbRebuild = EnsureOptimizedConfig(HostAssets.EverythingRuntimeConfigPath);
 
             if (needsDbRebuild)
             {
-                HostAssets.AppendLog("Everything config updated, purging database and restarting runtime to apply new exclusions...");
+                HostAssets.AppendLog("Everything config upgraded, purging database and restarting runtime to apply changes...");
                 StopOwnedRuntime();
                 KillAllYanziEverythingProcesses();
                 try
@@ -75,14 +84,11 @@ public static class EverythingRuntimeService
                 }
                 catch { }
             }
-
-            if (EverythingSearchService.IsIpcReachable())
+            else
             {
-                return true;
+                StopOwnedRuntime();
+                KillAllYanziEverythingProcesses();
             }
-
-            StopOwnedRuntime();
-            KillAllYanziEverythingProcesses();
 
             return TryStartRuntime(isRetry: false);
         }
@@ -148,25 +154,10 @@ public static class EverythingRuntimeService
             return false;
         }
 
-        var isReady = WaitForIpcReady(TimeSpan.FromSeconds(5));
-        if (!isReady && !isRetry)
+        var isReady = WaitForIpcReady(TimeSpan.FromSeconds(15));
+        if (!isReady)
         {
-            HostAssets.AppendLog("Everything runtime failed to respond, attempting automatic recovery by resetting database...");
-            StopOwnedRuntime();
-            KillAllYanziEverythingProcesses();
-            try
-            {
-                if (File.Exists(HostAssets.EverythingRuntimeDatabasePath))
-                {
-                    File.Delete(HostAssets.EverythingRuntimeDatabasePath);
-                }
-            }
-            catch (Exception ex)
-            {
-                HostAssets.AppendLog($"Failed to delete corrupted Everything database: {ex.Message}");
-            }
-
-            return TryStartRuntime(isRetry: true);
+            HostAssets.AppendLog("Everything runtime did not respond within timeout, background indexing may still be in progress.");
         }
 
         return isReady;
@@ -293,72 +284,62 @@ public static class EverythingRuntimeService
     {
         try
         {
-            const string defaultExcludes = @"exclude_folders=""C:\Windows\WinSxS"";""*\.git"";""*\.vs"";""*\.vscode"";""*\.idea"";""*\.vs\"";""*node_modules"";""*\.nuget"";""*\.gradle"";""*\.cargo"";""*\.pub-cache"";""*\.cocoapods"";""*\.elm-stuff"";""*vendor\bundle"";""*\.hackage"";""*\.stack-work"";""*\.cargo\registry"";""*__pycache__"";""*\.pytest_cache"";""*\.mypy_cache"";""*\.tox"";""*build\android"";""*build\ios"";""*Pods"";""*DerivedData"";""*~\$*"";""*\.tmp\"";""*\.cache\"";""*AppData\Local\Temp"";""*\node_modules\.*"";""*\.next"";""*\.nuxt"";""*\.output"";""*\.svelte-kit"";""dist\android"";""dist\ios"";""*\.parcel-cache"";""*\.turbo"";""*\.vite\cache"";""*\.eslintcache"";""*\.sass-cache"";""*\.webpack\cache"";""*bower_components"";""*jspm_packages"";""*jspm\"";""*\.yarn\cache"";""*\.pnpm-store"";""*\.bun\cache"";""*\.cache\packages"";""*\.local\share\npm"";""*AppData\Local\npm"";""*AppData\Roaming\npm-cache"";""*\.sdkman\candidates"";""*\.rbenv"";""*\.nvm"";""*\.deno"";""*\.dartTool"";""*\.pub-cache\hosted"";""*\.pub-cache\resolved"";""*packages\terraform-provider"";""*\.terraform\providers"";""*Go\pkg\mod"";""*pkg\mod"";""*vendor\github.com"";""*vendor\golang.org"";""*vendor\gopkg.in"";""*\.gopath\src"";""*vendor\bundle\ruby"";""*vendor\cache"";""*vendor\doc"";""*vendor\paths.rb"";""*Library\Caches\com.apple"";""*Library\Developer"";""*Library\Android\sdk\build-tools"";""*Library\Android\sdk\platform-tools"";""*SDK"";""*build\tools"";""*cmake-build"";""*cmake\"";""*cmake\Debug"";""*cmake\Release"";""*CMakeFiles"";""*CMakeScripts"";""*cmake_install.cmake"";""*Makefile"";""*CMakeCache.txt"";""*.VC.db"";""*\.obj"";""*\.o"";""*\.a"";""*\.lib"";""*\.so"";""*\.dylib"";""*\.dll"";""*\.pdb"";""*\.ilk"";""*\.exp"";""*\.res"";""*\.aps"";""*\.bsc"";""*\.sdf"";""*\.opensdf"";""*\.suo"";""*\.user"";""*Debug\"";""*Release\"";""*RelWithDebInfo\"";""*MinSizeRel\"";""*x64\"";""*x86\"";""*ARM64\"";""*Win32\"";""bin\obj"";""obj\bin"";""obj\x64"";""obj\ARM64"";""*Intermediate\"";""*Generated Files\"";""*ipch\"";""*\.tlog"";""*\.lastbuildstate"";""*\$Recycle.Bin"";""*\System Volume Information""";
-            var content = File.Exists(configPath) ? File.ReadAllText(configPath) : string.Empty;
+            Directory.CreateDirectory(HostAssets.EverythingRuntimeDataPath);
 
             var currentVersion = 0;
-            var versionMatch = System.Text.RegularExpressions.Regex.Match(content, @"^exclude_schema_version=(\d+)", System.Text.RegularExpressions.RegexOptions.Multiline);
-            if (versionMatch.Success)
+            if (File.Exists(SchemaVersionFilePath) && int.TryParse(File.ReadAllText(SchemaVersionFilePath).Trim(), out var parsedVersion))
             {
-                int.TryParse(versionMatch.Groups[1].Value, out currentVersion);
+                currentVersion = parsedVersion;
             }
 
-            var needsUpdate = false;
-
-            // Check if schema version needs update (triggers DB rebuild)
-            if (currentVersion < ConfigSchemaVersion)
+            var fileExists = File.Exists(configPath);
+            if (fileExists && currentVersion == ConfigSchemaVersion)
             {
-                needsUpdate = true;
-                content = System.Text.RegularExpressions.Regex.Replace(
-                    content,
-                    @"(?m)^exclude_schema_version=.*$",
-                    $"exclude_schema_version={ConfigSchemaVersion}");
-                if (!System.Text.RegularExpressions.Regex.IsMatch(content, @"^exclude_schema_version=", System.Text.RegularExpressions.RegexOptions.Multiline))
-                {
-                    content = $"exclude_schema_version={ConfigSchemaVersion}\r\n" + content;
-                }
+                return false;
             }
 
-            // Enable exclude list if not already enabled
-            if (!content.Contains("exclude_list_enabled=1"))
+            var content = fileExists ? File.ReadAllText(configPath) : string.Empty;
+
+            content = SetOrAddIniProperty(content, "run_in_background", "1");
+            content = SetOrAddIniProperty(content, "show_in_taskbar", "0");
+            content = SetOrAddIniProperty(content, "show_tray_icon", "0");
+            content = SetOrAddIniProperty(content, "minimize_to_tray", "0");
+            content = SetOrAddIniProperty(content, "check_for_updates_on_startup", "0");
+            content = SetOrAddIniProperty(content, "allow_multiple_instances", "1");
+
+            // 启用排除列表并排除 Windows WinSxS
+            content = SetOrAddIniProperty(content, "exclude_list_enabled", "1");
+            if (!content.Contains("exclude_folders="))
             {
-                content = System.Text.RegularExpressions.Regex.Replace(
-                    content,
-                    @"(?m)^exclude_list_enabled=.*$",
-                    "exclude_list_enabled=1");
-                if (!content.Contains("exclude_list_enabled=1"))
-                {
-                    content = "exclude_list_enabled=1\r\n" + content;
-                }
-                needsUpdate = true;
+                content = SetOrAddIniProperty(content, "exclude_folders", @"""C:\Windows\WinSxS""");
             }
 
-            // Always update exclude_folders to the latest comprehensive list
-            if (!System.Text.RegularExpressions.Regex.IsMatch(content, @"(?m)^exclude_folders=""C:\\Windows\\WinSxS"""))
-            {
-                content = System.Text.RegularExpressions.Regex.Replace(
-                    content,
-                    @"(?m)^exclude_folders=.*$",
-                    defaultExcludes);
-                if (!System.Text.RegularExpressions.Regex.IsMatch(content, @"(?m)^exclude_folders=""C:\\Windows\\WinSxS"""))
-                {
-                    content = defaultExcludes + "\r\n" + content;
-                }
-                needsUpdate = true;
-            }
+            File.WriteAllText(configPath, content, System.Text.Encoding.UTF8);
+            File.WriteAllText(SchemaVersionFilePath, ConfigSchemaVersion.ToString(), System.Text.Encoding.UTF8);
 
-            if (needsUpdate)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(configPath) ?? AppContext.BaseDirectory);
-                File.WriteAllText(configPath, content, System.Text.Encoding.UTF8);
-                return true;
-            }
+            // 仅在已有旧版本升级时才需要重建数据库，首次初始化直接使用新配置即可
+            return fileExists && currentVersion > 0 && currentVersion < ConfigSchemaVersion;
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore failure to ensure config
+            HostAssets.AppendLog($"EnsureOptimizedConfig error: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static string SetOrAddIniProperty(string content, string key, string value)
+    {
+        var pattern = @"(?m)^" + System.Text.RegularExpressions.Regex.Escape(key) + @"=.*$";
+        if (System.Text.RegularExpressions.Regex.IsMatch(content, pattern))
+        {
+            return System.Text.RegularExpressions.Regex.Replace(content, pattern, $"{key}={value}");
         }
 
-        return false;
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return $"{key}={value}";
+        }
+
+        return $"{content}\r\n{key}={value}";
     }
 }

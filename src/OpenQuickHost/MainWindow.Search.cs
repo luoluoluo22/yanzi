@@ -1138,14 +1138,6 @@ public partial class MainWindow
 
     private async Task ApplyFileSearchResultsAsync(SearchSession session, string query)
     {
-        foreach (var command in _allCommands)
-        {
-            if (command.HasQueryPreview)
-            {
-                command.SetQueryPreview(null, null);
-            }
-        }
-
         if (string.IsNullOrWhiteSpace(query))
         {
             IsFileSearching = false;
@@ -1166,8 +1158,8 @@ public partial class MainWindow
 
         try
         {
-            // 防抖缓冲：给连续输入/中文拼音组字预留 160ms 缓冲，避免每个拼音字母都发起 Everything IPC
-            await Task.Delay(160, session.Token);
+            // 防抖缓冲：给连续输入/中文拼音组字预留 120ms 缓冲，避免每个拼音字母都发起 Everything IPC
+            await Task.Delay(120, session.Token);
         }
         catch (OperationCanceledException)
         {
@@ -1185,18 +1177,30 @@ public partial class MainWindow
             : "搜索中...";
         IsFileSearching = true;
 
-        var response = await Task.Run(() =>
+        var (response, fileCommands) = await Task.Run(() =>
         {
             if (session.Token.IsCancellationRequested)
             {
-                return new EverythingSearchResponse { Success = false };
+                return (new EverythingSearchResponse { Success = false }, (List<CommandItem>)[]);
             }
 
             if (!EverythingSearchService.IsIpcReachable())
             {
                 EverythingRuntimeService.EnsureRunning();
             }
-            return EverythingSearchService.Search(query, 256);
+
+            var resp = EverythingSearchService.Search(query, 64, session.Token);
+            if (!resp.Success || session.Token.IsCancellationRequested)
+            {
+                return (resp, (List<CommandItem>)[]);
+            }
+
+            var commands = resp.Results
+                .Select(BuildResultItemFromEverythingResult)
+                .Select(BuildCommandFromResultItem)
+                .ToList();
+
+            return (resp, commands);
         }, session.Token);
 
         if (!_searchPipelineManager.IsActive(session) ||
@@ -1225,11 +1229,6 @@ public partial class MainWindow
             OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
             return;
         }
-
-        var fileCommands = response.Results
-            .Select(BuildResultItemFromEverythingResult)
-            .Select(BuildCommandFromResultItem)
-            .ToList();
 
         FilteredCommands.ReplaceAll(fileCommands);
 
@@ -1276,7 +1275,7 @@ public partial class MainWindow
             {
                 return new EverythingSearchResponse { Success = false };
             }
-            return EverythingSearchService.Search(query, 64);
+            return EverythingSearchService.Search(query, 64, session.Token);
         }, session.Token);
 
         if (!_searchPipelineManager.IsActive(session) ||
@@ -1474,37 +1473,65 @@ public partial class MainWindow
 
     private async Task LoadFileIconsAsync(SearchSession session, IReadOnlyList<CommandItem> commands)
     {
-        foreach (var command in commands)
+        if (commands.Count == 0) return;
+
+        await Task.Run(() =>
         {
-            if (!_searchPipelineManager.IsActive(session) ||
-                session.Token.IsCancellationRequested ||
-                !IsFileIconLoadScopeActive())
-            {
-                return;
-            }
+            var updates = new List<(CommandItem Command, ImageSource Icon)>();
 
-            if (string.IsNullOrWhiteSpace(command.OpenTarget) || 
-                command.OpenTarget.StartsWith("ms-settings:", StringComparison.OrdinalIgnoreCase))
+            for (var i = 0; i < commands.Count; i++)
             {
-                continue;
-            }
+                if (!_searchPipelineManager.IsActive(session) ||
+                    session.Token.IsCancellationRequested ||
+                    !IsFileIconLoadScopeActive())
+                {
+                    return;
+                }
 
-            var isFolder = command.ResultKind == ResultItemKind.Folder;
-            var icon = await Task.Run(() => NativeFileIconService.GetIcon(command.OpenTarget, isFolder), session.Token);
-            if (icon == null)
-            {
-                continue;
-            }
+                var command = commands[i];
+                if (string.IsNullOrWhiteSpace(command.OpenTarget) ||
+                    command.OpenTarget.StartsWith("ms-settings:", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
 
-            if (!_searchPipelineManager.IsActive(session) ||
-                session.Token.IsCancellationRequested ||
-                !IsFileIconLoadScopeActive())
-            {
-                return;
-            }
+                var isFolder = command.ResultKind == ResultItemKind.Folder;
+                var icon = NativeFileIconService.GetIcon(command.OpenTarget, isFolder);
+                if (icon != null)
+                {
+                    updates.Add((command, icon));
+                }
 
-            await Dispatcher.InvokeAsync(() => command.SetIconSource(icon));
-        }
+                // 前 8 个（首屏可视区）或每 16 个或结束时，批量推送到 UI 一次，使用 Background 优先级不抢占打字输入
+                if (updates.Count > 0 && (i == 7 || updates.Count >= 16 || i == commands.Count - 1))
+                {
+                    var batch = updates.ToArray();
+                    updates.Clear();
+
+                    if (!_searchPipelineManager.IsActive(session) ||
+                        session.Token.IsCancellationRequested ||
+                        !IsFileIconLoadScopeActive())
+                    {
+                        return;
+                    }
+
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        if (!_searchPipelineManager.IsActive(session) ||
+                            session.Token.IsCancellationRequested ||
+                            !IsFileIconLoadScopeActive())
+                        {
+                            return;
+                        }
+
+                        foreach (var (cmd, ic) in batch)
+                        {
+                            cmd.SetIconSource(ic);
+                        }
+                    }, System.Windows.Threading.DispatcherPriority.Background);
+                }
+            }
+        }, session.Token);
     }
 
     private void MaybePromptEverythingManualInitialization(string query)

@@ -49,6 +49,7 @@ public partial class App : WpfApplication
     private SettingsWindow? _settingsWindow;
     private RunningExtensionsWindow? _runningExtensionsWindow;
     private InputStateWindow? _inputStateWindow;
+    private QuestWindow? _questWindow;
     private LocalAgentApiServer? _agentApiServer;
     public LocalAgentApiServer? AgentApiServer => _agentApiServer;
     private LanDiscoveryService? _lanDiscoveryService;
@@ -879,6 +880,18 @@ public partial class App : WpfApplication
     private void TrayMousePanel_Click(object sender, RoutedEventArgs e)
     {
         (MainWindow as MainWindow)?.ShowMousePanel();
+    }
+
+    private void TrayQuestCenter_Click(object sender, RoutedEventArgs e)
+    {
+        if (_questWindow == null || !_questWindow.IsLoaded)
+        {
+            _questWindow = new QuestWindow();
+            _questWindow.Closed += (_, _) => _questWindow = null;
+        }
+        _questWindow.Show();
+        _questWindow.Activate();
+        _questWindow.RefreshStatus();
     }
 
     private void TrayToggleMousePanelService_Click(object sender, RoutedEventArgs e)

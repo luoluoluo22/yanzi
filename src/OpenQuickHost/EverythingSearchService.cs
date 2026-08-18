@@ -39,7 +39,7 @@ public static class EverythingSearchService
     private const uint EverythingErrorIpc = 2;
     private static readonly Lock QueryLock = new();
 
-    public static EverythingSearchResponse Search(string? rawQuery, int maxResults = 256)
+    public static EverythingSearchResponse Search(string? rawQuery, int maxResults = 256, CancellationToken cancellationToken = default)
     {
         var query = (rawQuery ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(query))
@@ -53,8 +53,18 @@ public static class EverythingSearchService
             };
         }
 
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new EverythingSearchResponse { Success = false, IsAvailable = true };
+        }
+
         lock (QueryLock)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return new EverythingSearchResponse { Success = false, IsAvailable = true };
+            }
+
             var attemptedRuntimeStart = false;
 
         retry:
@@ -82,11 +92,21 @@ public static class EverythingSearchService
                     return BuildFailureResponse(errorCode);
                 }
 
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return new EverythingSearchResponse { Success = false, IsAvailable = true };
+                }
+
                 var visibleCount = (int)EverythingApi.Everything_GetNumResults();
                 var totalCount = (int)EverythingApi.Everything_GetTotResults();
                 var results = new List<EverythingSearchResult>(visibleCount);
                 for (uint index = 0; index < visibleCount; index++)
                 {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return new EverythingSearchResponse { Success = false, IsAvailable = true };
+                    }
+
                     var fullPath = GetResultFullPath(index);
                     if (string.IsNullOrWhiteSpace(fullPath))
                     {

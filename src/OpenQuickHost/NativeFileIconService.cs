@@ -85,7 +85,6 @@ public static class NativeFileIconService
         }
 
         var cleanPath = ExtractCleanPath(path);
-        HostAssets.AppendLog($"[IconLog] NativeFileIconService.GetIcon: rawPath='{path}', cleanPath='{cleanPath}', isFolder={isFolder}.");
 
         var cacheKey = !isFolder && (IsShortcutPath(path) || IsShortcutPath(cleanPath)) ? path : BuildCacheKey(cleanPath, isFolder);
         return IconCache.GetOrAdd(cacheKey, _ =>
@@ -96,7 +95,6 @@ public static class NativeFileIconService
                 if (File.Exists(path))
                 {
                     var rawHq = LoadHighQualityIcon(path, 256);
-                    HostAssets.AppendLog($"[IconLog] LoadHighQualityIcon for raw path '{path}' returned {(rawHq != null ? "SUCCESS" : "NULL")}.");
                     if (rawHq != null) return rawHq;
                 }
 
@@ -114,7 +112,6 @@ public static class NativeFileIconService
                 if (!string.IsNullOrWhiteSpace(resolvedTarget) && File.Exists(resolvedTarget))
                 {
                     var targetHq = LoadHighQualityIcon(resolvedTarget, 256);
-                    HostAssets.AppendLog($"[IconLog] LoadHighQualityIcon for resolved target '{resolvedTarget}' returned {(targetHq != null ? "SUCCESS" : "NULL")}.");
                     if (targetHq != null) return targetHq;
                 }
 
@@ -122,7 +119,6 @@ public static class NativeFileIconService
                 if (!string.IsNullOrWhiteSpace(cleanPath) && File.Exists(cleanPath))
                 {
                     var cleanHq = LoadHighQualityIcon(cleanPath, 256);
-                    HostAssets.AppendLog($"[IconLog] LoadHighQualityIcon for cleanPath '{cleanPath}' returned {(cleanHq != null ? "SUCCESS" : "NULL")}.");
                     if (cleanHq != null) return cleanHq;
                 }
             }
@@ -130,12 +126,9 @@ public static class NativeFileIconService
             // 4. 小图标兜底
             var targetToUse = !string.IsNullOrWhiteSpace(cleanPath) ? cleanPath : path;
             var small = LoadSmallIcon(targetToUse, isFolder);
-            HostAssets.AppendLog($"[IconLog] LoadSmallIcon for '{targetToUse}' returned {(small != null ? "SUCCESS" : "NULL")}.");
             if (small == null && IsShortcutPath(path))
             {
-                var rawSmall = LoadSmallIcon(path, isFolder);
-                HostAssets.AppendLog($"[IconLog] Fallback raw LoadSmallIcon for original .lnk '{path}' returned {(rawSmall != null ? "SUCCESS" : "NULL")}.");
-                return rawSmall;
+                return LoadSmallIcon(path, isFolder);
             }
             return small;
         });
@@ -241,7 +234,6 @@ public static class NativeFileIconService
 
             var iconLocation = ((string?)shortcut.IconLocation)?.Trim();
             var iconPath = ParseShortcutIconPath(iconLocation);
-            HostAssets.AppendLog($"[IconLog] TryResolveShortcutIconTarget: shortcutPath='{shortcutPath}', iconLocation='{iconLocation}', parsedIconPath='{iconPath}'.");
             if (!string.IsNullOrWhiteSpace(iconPath) && File.Exists(iconPath))
             {
                 targetPath = iconPath;
@@ -249,7 +241,6 @@ public static class NativeFileIconService
             }
 
             var resolvedTarget = ((string?)shortcut.TargetPath)?.Trim();
-            HostAssets.AppendLog($"[IconLog] TryResolveShortcutIconTarget: resolvedTarget='{resolvedTarget}', targetExists={(File.Exists(resolvedTarget) || Directory.Exists(resolvedTarget))}.");
             if (!string.IsNullOrWhiteSpace(resolvedTarget) &&
                 (File.Exists(resolvedTarget) || Directory.Exists(resolvedTarget)))
             {
