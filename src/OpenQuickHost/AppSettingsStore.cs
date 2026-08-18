@@ -941,6 +941,8 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
 
     public int AchievementPoints { get; set; } = 0;
 
+    public bool HasOpenedBackpack { get; set; } = false;
+
     public List<string> CompletedQuestIds { get; set; } = new();
 
     public List<string> UnlockedBadges { get; set; } = new();

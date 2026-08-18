@@ -3173,6 +3173,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         try
         {
             HostAssets.AppendLog("Quick panel show requested.");
+            QuestService.OnBackpackOpened();
             _previousForegroundWindow = NativeMethods.GetForegroundWindow();
             _previousFocusWindow = NativeMethods.GetForegroundFocusWindow();
             _foregroundAppContext = BuildForegroundAppContext(_previousForegroundWindow);
