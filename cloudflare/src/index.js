@@ -155,7 +155,7 @@ async function handleRequest(request, env) {
       throw new HttpError(400, "verification_required", "Email verification is required");
     }
 
-    if (String(verification.username).toLowerCase() !== username) {
+    if (String(verification.username).trim().toLowerCase() !== username.trim().toLowerCase()) {
       throw new HttpError(400, "verification_mismatch", "Verification code does not match this username");
     }
 
