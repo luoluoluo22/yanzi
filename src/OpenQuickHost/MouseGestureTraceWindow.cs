@@ -69,10 +69,7 @@ internal sealed class MouseGestureTraceWindow : Window
         _hideTimer.Tick += (_, _) =>
         {
             _hideTimer.Stop();
-            Opacity = 0;
-            Clear();
             Hide();
-            ForceDwmRepaint();
         };
 
         SourceInitialized += (_, _) =>
@@ -86,7 +83,13 @@ internal sealed class MouseGestureTraceWindow : Window
     {
         _hideTimer.Stop();
         Opacity = 0;
+        if (_canvas != null)
+        {
+            _canvas.Visibility = Visibility.Hidden;
+        }
         Clear();
+        UpdateLayout();
+
         SyncBounds();
 
         var localPoint = ToLocal(screenPoint);
@@ -169,12 +172,16 @@ internal sealed class MouseGestureTraceWindow : Window
 
         Canvas.SetZIndex(_glowPath, 2);
         Canvas.SetZIndex(_corePath, 3);
-        _canvas.Children.Add(_glowPath);
-        _canvas.Children.Add(_corePath);
+        if (_canvas != null)
+        {
+            _canvas.Children.Add(_glowPath);
+            _canvas.Children.Add(_corePath);
+            _canvas.Visibility = Visibility.Visible;
+            _canvas.UpdateLayout();
+        }
 
         UpdateLayout();
-        _canvas.UpdateLayout();
-        Opacity = 1;
+        Opacity = 1.0;
 
         if (!IsVisible)
         {
@@ -358,13 +365,25 @@ internal sealed class MouseGestureTraceWindow : Window
         _hideTimer.Start();
     }
 
-    public void Cancel()
+    public new void Hide()
     {
         _hideTimer.Stop();
         Opacity = 0;
+        if (_canvas != null)
+        {
+            _canvas.Visibility = Visibility.Hidden;
+        }
         Clear();
-        Hide();
+        UpdateLayout();
+        Left = -32000;
+        Top = -32000;
+        base.Hide();
         ForceDwmRepaint();
+    }
+
+    public void Cancel()
+    {
+        Hide();
     }
 
     private void AddStartIndicator(Point point)
@@ -732,17 +751,16 @@ internal sealed class MouseGestureTraceWindow : Window
 
     public void ShowInstantAction(string title, string detail, Point screenPoint, string glyph = "势")
     {
-        SyncBounds();
-        Clear();
         _hideTimer.Stop();
-
-        if (!IsVisible)
+        Opacity = 0;
+        if (_canvas != null)
         {
-            Show();
+            _canvas.Visibility = Visibility.Hidden;
         }
+        Clear();
+        UpdateLayout();
 
-        AttachHwndHook();
-        EnsureClickThrough();
+        SyncBounds();
 
         var localPoint = ToLocal(screenPoint);
         _lastPoint = localPoint;
@@ -757,6 +775,23 @@ internal sealed class MouseGestureTraceWindow : Window
             Sequence: string.Empty);
 
         AddResultBadge(preview, localPoint);
+
+        if (_canvas != null)
+        {
+            _canvas.Visibility = Visibility.Visible;
+        }
+        UpdateLayout();
+        _canvas?.UpdateLayout();
+        Opacity = 1.0;
+
+        if (!IsVisible)
+        {
+            Show();
+        }
+
+        AttachHwndHook();
+        EnsureClickThrough();
+        ForceDwmRepaint();
 
         _hideTimer.Interval = TimeSpan.FromMilliseconds(450);
         _hideTimer.Stop();
