@@ -194,15 +194,30 @@ public partial class MouseGestureRecorderWindow : Window
     private void AppendStrokePoint(Point point)
     {
         if (_strokeFigure == null) return;
-        if (_path.Count == 1)
+
+        var count = _path.Count;
+        if (count == 1)
         {
             _strokeFigure.Segments.Add(new LineSegment(point, isStroked: true));
         }
+        else if (count == 2)
+        {
+            var p0 = _path[0];
+            var p1 = _path[1];
+            var cp = new Point((p0.X + p1.X) / 2.0, (p0.Y + p1.Y) / 2.0);
+            _strokeFigure.Segments.Add(new QuadraticBezierSegment(cp, point, isStroked: true));
+        }
         else
         {
-            var p1 = _path[^1];
-            var mid = new Point((p1.X + point.X) / 2.0, (p1.Y + point.Y) / 2.0);
-            _strokeFigure.Segments.Add(new QuadraticBezierSegment(p1, mid, isStroked: true));
+            // Catmull-Rom 转换三次贝塞尔，确保切线平滑连接
+            var p0 = _path[^3];
+            var p1 = _path[^2];
+            var p2 = _path[^1];
+            var p3 = point;
+
+            var cp1 = new Point(p1.X + (p2.X - p0.X) / 6.0, p1.Y + (p2.Y - p0.Y) / 6.0);
+            var cp2 = new Point(p2.X - (p3.X - p1.X) / 6.0, p2.Y - (p3.Y - p1.Y) / 6.0);
+            _strokeFigure.Segments.Add(new BezierSegment(cp1, cp2, p2, isStroked: true));
         }
     }
 

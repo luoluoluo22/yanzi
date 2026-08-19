@@ -34,6 +34,7 @@ internal sealed class MouseGestureTraceWindow : Window
     private bool _hasMovedFarFromStart;
     private bool _isCancelled;
     private readonly List<Point> _rawTracePoints = new(capacity: 256);
+    private readonly List<Point> _smoothTracePoints = new(capacity: 256);
 
     public bool IsCancelled => _isCancelled;
 
@@ -49,14 +50,18 @@ internal sealed class MouseGestureTraceWindow : Window
         WindowStartupLocation = WindowStartupLocation.Manual;
         Focusable = false;
         IsHitTestVisible = false;
-        SnapsToDevicePixels = true;
+        SnapsToDevicePixels = false;
+
+        RenderOptions.SetEdgeMode(this, EdgeMode.Unspecified);
+        RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.HighQuality);
 
         _canvas = new Canvas
         {
             Background = Brushes.Transparent,
             IsHitTestVisible = false,
-            SnapsToDevicePixels = true
+            SnapsToDevicePixels = false
         };
+        RenderOptions.SetEdgeMode(_canvas, EdgeMode.Unspecified);
         Content = _canvas;
 
         _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
@@ -86,7 +91,9 @@ internal sealed class MouseGestureTraceWindow : Window
         _hasMovedFarFromStart = false;
         _isCancelled = false;
         _rawTracePoints.Clear();
+        _smoothTracePoints.Clear();
         _rawTracePoints.Add(localPoint);
+        _smoothTracePoints.Add(localPoint);
 
         // 1. 创建起始点同心发光圆点 (白核心 + 翠绿晕圈)
         AddStartIndicator(localPoint);
@@ -212,12 +219,21 @@ internal sealed class MouseGestureTraceWindow : Window
             if (_corePath != null && _coreGradientBrush != null) _corePath.Stroke = _coreGradientBrush;
         }
 
-        if ((point - last).Length < 3.5)
+        if ((point - last).Length < 2.5)
         {
             return;
         }
 
+        // 1. 低通指数加权平滑滤波，彻底熨平人手微抖与阶梯抖动
+        var prevSmooth = _smoothTracePoints[^1];
+        const double alpha = 0.65; // 平滑权重系数：兼顾超丝滑弧度与毫秒级跟手度
+        var smoothedPoint = new Point(
+            prevSmooth.X + alpha * (point.X - prevSmooth.X),
+            prevSmooth.Y + alpha * (point.Y - prevSmooth.Y)
+        );
+
         _rawTracePoints.Add(point);
+        _smoothTracePoints.Add(smoothedPoint);
         _lastPoint = point;
 
         // 实时更新白到绿流光渐变端点
@@ -235,18 +251,38 @@ internal sealed class MouseGestureTraceWindow : Window
         // 响应式自适应更新可用手势看板位置（向下划动时自动避让至上方）
         UpdateCheatsheetPosition(point);
 
-        // 使用中点贝塞尔平滑插值
-        if (_rawTracePoints.Count == 2)
+        // 2. 连续 C1 导数切线平滑三次贝塞尔样条曲线插值（Catmull-Rom Spline to Cubic Bezier）
+        var count = _smoothTracePoints.Count;
+        if (count == 2)
         {
-            _pathFigure.Segments.Add(new LineSegment(point, isStroked: true));
+            _pathFigure.Segments.Add(new LineSegment(_smoothTracePoints[1], isStroked: true));
+        }
+        else if (count == 3)
+        {
+            var p0 = _smoothTracePoints[0];
+            var p1 = _smoothTracePoints[1];
+            var p2 = _smoothTracePoints[2];
+            var cp = new Point((p0.X + p1.X) / 2.0, (p0.Y + p1.Y) / 2.0);
+            _pathFigure.Segments.Add(new QuadraticBezierSegment(cp, p2, isStroked: true));
         }
         else
         {
-            var p0 = _rawTracePoints[^3];
-            var p1 = _rawTracePoints[^2];
-            var p2 = _rawTracePoints[^1];
-            var mid = new Point((p1.X + p2.X) / 2.0, (p1.Y + p2.Y) / 2.0);
-            _pathFigure.Segments.Add(new QuadraticBezierSegment(p1, mid, isStroked: true));
+            // 对于连续 4 点 p0, p1, p2, p3，在 p1 -> p2 之间构造两端切线连续的三次贝塞尔曲线
+            var p0 = _smoothTracePoints[^4];
+            var p1 = _smoothTracePoints[^3];
+            var p2 = _smoothTracePoints[^2];
+            var p3 = _smoothTracePoints[^1];
+
+            var cp1 = new Point(
+                p1.X + (p2.X - p0.X) / 6.0,
+                p1.Y + (p2.Y - p0.Y) / 6.0
+            );
+            var cp2 = new Point(
+                p2.X - (p3.X - p1.X) / 6.0,
+                p2.Y - (p3.Y - p1.Y) / 6.0
+            );
+
+            _pathFigure.Segments.Add(new BezierSegment(cp1, cp2, p2, isStroked: true));
         }
     }
 
@@ -814,6 +850,7 @@ internal sealed class MouseGestureTraceWindow : Window
         _hasMovedFarFromStart = false;
         _isCancelled = false;
         _rawTracePoints.Clear();
+        _smoothTracePoints.Clear();
     }
 
     private Grid CreatePreviewContent(MouseGesturePreviewInfo? preview, string prefix)
