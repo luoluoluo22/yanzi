@@ -163,12 +163,12 @@ if (-not $SkipInstaller) {
         Rename-Item -Path $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
     }
 
-    # 打包并重命名完毕后，删除所有历史下载的、不是当前版本的旧 nupkg 包
-    Write-Host "Cleaning up historical packages in output directory..."
+    # 打包并重命名完毕后，彻底清理所有非当前版本的历史残留安装包与压缩包（.exe, .zip, .nupkg）
+    Write-Host "Cleaning up historical packages and installers in output directory..."
     $cleanVersion = $Version.TrimStart("vV")
     Get-ChildItem -Path $installerOutDir -File | Where-Object {
-        $_.Extension -eq ".nupkg" -and $_.Name -notmatch [regex]::Escape($cleanVersion)
-    } | Remove-Item -Force
+        ($_.Extension -in @(".nupkg", ".exe", ".zip")) -and ($_.Name -notmatch [regex]::Escape($cleanVersion))
+    } | Remove-Item -Force -ErrorAction SilentlyContinue
 
     Write-Host "Velopack packaging completed successfully."
     Write-Host "Installer output directory:"

@@ -340,6 +340,9 @@ public partial class App : WpfApplication
     }
 
     [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
 
     [DllImport("dwmapi.dll")]
@@ -809,9 +812,13 @@ public partial class App : WpfApplication
                 if (WpfApplication.Current.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu menu)
                 {
                     UpdateTrayMenuState(menu);
+                    // 激活托盘宿主句柄以确保菜单失去焦点时能自动关闭，避免调用未显示Window的Activate()
+                    var helper = new System.Windows.Interop.WindowInteropHelper(window);
+                    if (helper.Handle != IntPtr.Zero)
+                    {
+                        SetForegroundWindow(helper.Handle);
+                    }
                     menu.IsOpen = true;
-                    // 激活窗口以确保菜单失去焦点时能自动关闭
-                    window.Activate();
                 }
             }
         };
