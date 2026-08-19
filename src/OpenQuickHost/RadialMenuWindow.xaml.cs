@@ -20,6 +20,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _selectionTimer;
     private System.Drawing.Point _centerPixels;
     private RadialMenuItemViewModel? _selectedItem;
+    private long _shownTimestamp;
 
     private List<RadialMenuPageSettings> _pages = [];
     private List<RadialMenuPageSettings> _topLevelPages = [];
@@ -766,6 +767,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         PageTitle = "燕环";
 
         var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
+        _shownTimestamp = Environment.TickCount64;
         _lastRadiusPixels = settings.RadiusPixels;
         _cachedDeadZonePixels = Math.Max(36, settings.DeadZonePixels);
 
@@ -967,36 +969,57 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        HideIfAllowed();
         if (selectedSubItem?.Command != null)
         {
+            HideIfAllowed();
             _isExecuting = true;
             HostAssets.AppendLog($"Radial menu executing subring item: index={selectedSubItem.Index}, command={selectedSubItem.Command.Title}.");
             _ = ExecuteCommandAfterForegroundRestoreAsync(selectedSubItem.Command, "radial-menu-subring");
             return;
         }
 
-        if (selected == null)
+        if (selected?.Command != null)
         {
-            HostAssets.AppendLog("Radial menu release: no selected command.");
+            if (!string.IsNullOrWhiteSpace(selected.ChildPageId))
+            {
+                HostAssets.AppendLog($"Radial menu release: parent child slot selected without child command, childPage={selected.ChildPageId}.");
+                _selectionTimer.Start();
+                return;
+            }
+
+            HideIfAllowed();
+            _isExecuting = true;
+            HostAssets.AppendLog($"Radial menu executing: index={selected.Index}, command={selected.Command.Title}.");
+            _ = ExecuteCommandAfterForegroundRestoreAsync(selected.Command, "radial-menu");
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(selected.ChildPageId))
+        if (_editModeLocked || _isPinned)
         {
-            HostAssets.AppendLog($"Radial menu release: parent child slot selected without child command, childPage={selected.ChildPageId}.");
+            _selectionTimer.Start();
+            UpdateSelectionFromCursor();
             return;
         }
 
-        if (selected.Command == null)
+        var cursorPoint = GetCursorWindowPoint();
+        var center = GetMenuCenter();
+        var dx = cursorPoint.X - center.X;
+        var dy = cursorPoint.Y - center.Y;
+        var distanceFromCenter = Math.Sqrt(dx * dx + dy * dy);
+        var elapsedMs = Environment.TickCount64 - _shownTimestamp;
+
+        // 极速点按唤出保护：仅在用户瞬间点按（<200ms）且鼠标留在中心死区未移动时，保持轮盘常驻以便鼠标点击操作
+        if (elapsedMs < 200 && distanceFromCenter < _cachedDeadZonePixels && !_isExecuting)
         {
-            HostAssets.AppendLog("Radial menu release: selected empty slot.");
+            HostAssets.AppendLog($"Radial menu release: quick tap detected ({elapsedMs}ms, dist={distanceFromCenter:F1}), keeping wheel open for click.");
+            _selectionTimer.Start();
+            UpdateSelectionFromCursor();
             return;
         }
 
-        _isExecuting = true;
-        HostAssets.AppendLog($"Radial menu executing: index={selected.Index}, command={selected.Command.Title}.");
-        _ = ExecuteCommandAfterForegroundRestoreAsync(selected.Command, "radial-menu");
+        // 其余情况（落位在中心圆取消区、落位在轮盘及编辑菜单外、或手势划动松开取消）：自动消失
+        HostAssets.AppendLog($"Radial menu release: dismissed on center/outside/empty (elapsed={elapsedMs}ms, dist={distanceFromCenter:F1}).");
+        HideIfAllowed();
     }
 
     private async Task ExecuteCommandAfterForegroundRestoreAsync(CommandItem command, string launchSource)

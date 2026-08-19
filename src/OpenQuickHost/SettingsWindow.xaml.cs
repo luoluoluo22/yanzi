@@ -3889,9 +3889,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 SetGestureForPanel(gestureName, true);
                 break;
             case "Radial":
+                _settings.RadialMenu ??= new RadialMenuSettings();
+                _settings.RadialMenu.Enabled = true;
                 SetGestureForRadial(gestureName, true);
                 break;
             case "Yanm":
+                _settings.Yanm ??= new YanmSettings();
+                _settings.Yanm.Enabled = true;
                 SetGestureForYanm(gestureName, true);
                 break;
             case "WindowSnap":

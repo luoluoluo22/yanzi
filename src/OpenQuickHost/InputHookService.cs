@@ -285,11 +285,11 @@ public class InputHookService
             var message = (int)wParam;
 
             // 1. 高频 WM_MOUSEMOVE 1 纳秒极速短路（Fast-Path Short-Circuit）
-            // 当用户未按住触发键、未在长按/拖拽时，1 纳秒内立刻透传放行，避免高回报率电竞鼠标微卡顿
+            // 当用户未按住触发键、未在长按判断、或轮盘/面板已激活呈现时，1 纳秒立刻透传放行，彻底消除电竞鼠标微卡顿
             if (message == WM_MOUSEMOVE &&
-                _trackedButton == TrackedMouseButton.None &&
                 _pendingLongPressTarget == ActiveTriggerTarget.None &&
-                _windowSnapMoveQueued == 0)
+                _windowSnapMoveQueued == 0 &&
+                (_trackedButton == TrackedMouseButton.None || _dragTriggered || _activeTriggerTarget != ActiveTriggerTarget.None))
             {
                 return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
             }
