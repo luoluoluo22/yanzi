@@ -610,7 +610,7 @@
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="编辑小程序" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -634,7 +634,7 @@
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="打开小程序目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -653,7 +653,7 @@
                                                         <Path Data="{local:IconGeometry broom}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="删除扩展" Click="DeleteExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="删除小程序" Click="DeleteExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanDeleteExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
@@ -1186,7 +1186,7 @@
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="编辑小程序" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1210,7 +1210,7 @@
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="打开小程序目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1229,7 +1229,7 @@
                                                         <Path Data="{local:IconGeometry broom}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="删除扩展" Click="DeleteExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="删除小程序" Click="DeleteExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanDeleteExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
@@ -1806,7 +1806,7 @@
                                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="编辑小程序" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1830,7 +1830,7 @@
                                                     <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="打开小程序目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1849,7 +1849,7 @@
                                                     <Path Data="{local:IconGeometry broom}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="删除扩展" Click="DeleteExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="删除小程序" Click="DeleteExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanDeleteExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />

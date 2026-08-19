@@ -1092,7 +1092,7 @@ public partial class MainWindow
         var extension = ResolveRunnableCommand(sourceCommand);
         if (extension.Source != CommandSource.LocalExtension)
         {
-            SyncStatus = "当前选中项不是本地扩展，不能直接设置快捷键。";
+            SyncStatus = "当前选中项不是本地小程序，不能直接设置快捷键。";
             return Task.CompletedTask;
         }
 

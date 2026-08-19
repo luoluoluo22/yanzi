@@ -2368,11 +2368,11 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             LoadSlots();
             BringToFront();
             QuestService.OnFileDroppedToBackpack();
-            _mainWindow.LastRunMessage = $"已拖拽创建扩展并放入槽位：{newCommand.Title}";
+            _mainWindow.LastRunMessage = $"已拖拽创建小程序并放入槽位：{newCommand.Title}";
         }
         catch (Exception ex)
         {
-            _mainWindow.SyncStatus = $"拖拽创建扩展失败：{Path.GetFileName(firstPath)}，{ex.Message}";
+            _mainWindow.SyncStatus = $"拖拽创建小程序失败：{Path.GetFileName(firstPath)}，{ex.Message}";
         }
     }
 
@@ -2798,7 +2798,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 var result = await _mainWindow.DeleteExtensionFromQuickPanelAsync(vm.Command.ExtensionId, this);
                 if (!result.ok && !string.IsNullOrWhiteSpace(result.message))
                 {
-                    System.Windows.MessageBox.Show(this, result.message, "删除扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    System.Windows.MessageBox.Show(this, result.message, "删除小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
                 LoadSlots();
@@ -2978,7 +2978,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         if (string.IsNullOrWhiteSpace(parentCommand.ExtensionDirectoryPath) || !Directory.Exists(parentCommand.ExtensionDirectoryPath))
         {
-            _mainWindow.SyncStatus = "母扩展目录不存在，无法克隆副本。";
+            _mainWindow.SyncStatus = "母小程序目录不存在，无法克隆副本。";
             return;
         }
 
@@ -3021,7 +3021,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 .FirstOrDefault(item => string.Equals(item.ExtensionId, newId, StringComparison.OrdinalIgnoreCase));
             if (newCommand == null)
             {
-                _mainWindow.SyncStatus = "注册新扩展失败。";
+                _mainWindow.SyncStatus = "注册新小程序失败。";
                 return;
             }
 
@@ -3081,7 +3081,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         var result = await _mainWindow.EditExtensionFromQuickPanelAsync(vm.Command!.ExtensionId, this);
         if (!result.ok && !string.IsNullOrWhiteSpace(result.message))
         {
-            System.Windows.MessageBox.Show(this, result.message, "编辑扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(this, result.message, "编辑小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 

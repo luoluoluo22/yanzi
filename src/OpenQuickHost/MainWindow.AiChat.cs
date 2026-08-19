@@ -1049,7 +1049,7 @@ public partial class MainWindow
                     }
                     else
                     {
-                        return $"【系统反馈】执行失败：未能找到启用状态的扩展 ID \"{extId}\"。";
+                        return $"【系统反馈】执行失败：未能找到启用状态的小程序 ID \"{extId}\"。";
                     }
                 }
 
@@ -1107,16 +1107,16 @@ public partial class MainWindow
 
                         if (result.Item1)
                         {
-                            return $"【系统反馈】新建扩展成功，新生成的扩展 ID 为：{result.Item2}，且已自动编译并刷新列表。";
+                            return $"【系统反馈】新建小程序成功，新生成的小程序 ID 为：{result.Item2}，且已自动编译并刷新列表。";
                         }
                         else
                         {
-                            return "【系统反馈】新建扩展失败。";
+                            return "【系统反馈】新建小程序失败。";
                         }
                     }
                     catch (Exception ex)
                     {
-                        return $"【系统反馈】新建扩展失败：{ex.Message}";
+                        return $"【系统反馈】新建小程序失败：{ex.Message}";
                     }
                 }
 
@@ -1155,7 +1155,7 @@ public partial class MainWindow
 
                         if (result)
                         {
-                            return $"【系统反馈】已成功删除扩展 ID: {extIdToDelete} 并刷新列表。";
+                            return $"【系统反馈】已成功删除小程序 ID: {extIdToDelete} 并刷新列表。";
                         }
                         else
                         {
@@ -1164,7 +1164,7 @@ public partial class MainWindow
                     }
                     catch (Exception ex)
                     {
-                        return $"【系统反馈】删除扩展失败：{ex.Message}";
+                        return $"【系统反馈】删除小程序失败：{ex.Message}";
                     }
                 }
 
@@ -1224,7 +1224,7 @@ public partial class MainWindow
                     }
                     catch (Exception ex)
                     {
-                        return $"【系统反馈】运行扩展失败：{ex.Message}";
+                        return $"【系统反馈】运行小程序失败：{ex.Message}";
                     }
                 }
 
@@ -1268,16 +1268,16 @@ public partial class MainWindow
 
                         if (success)
                         {
-                            return $"【系统反馈】已成功停止扩展 ID: {extIdToStop} 的所有运行实例。";
+                            return $"【系统反馈】已成功停止小程序 ID: {extIdToStop} 的所有运行实例。";
                         }
                         else
                         {
-                            return $"【系统反馈】停止失败：未能找到处于运行状态下的扩展 ID \"{extIdToStop}\" 实例。";
+                            return $"【系统反馈】停止失败：未能找到处于运行状态下的小程序 ID \"{extIdToStop}\" 实例。";
                         }
                     }
                     catch (Exception ex)
                     {
-                        return $"【系统反馈】停止扩展失败：{ex.Message}";
+                        return $"【系统反馈】停止小程序失败：{ex.Message}";
                     }
                 }
 
@@ -1409,7 +1409,7 @@ public partial class MainWindow
         "2. 天气助手 (ID: ext_weather)\n" +
         "你可以告诉我你想执行哪一个。\n\n" +
         "【可用工具列表】\n" +
-        "1. query_extensions: 获取可用扩展列表。无参数。\n" +
+        "1. query_extensions: 获取可用小程序列表。无参数。\n" +
         "2. execute_extension: 执行某个扩展. 参数: id (扩展ID)。\n" +
         "3. execute_command: 在电脑端执行命令行命令。参数: command (要执行的命令文本)。【重要】电脑端已默认在 PowerShell 5.1 环境中执行命令，请直接输入 PowerShell 的 Cmdlet 或表达式，严禁外层嵌套调用 powershell、powershell.exe -Command 或 cmd /c，避免转义错误和执行超时。\n\n" +
         "【注意】如果你调用了工具，系统会在后台真实执行，并在执行完成后将真实的结果反馈给你，之后你再根据执行结果来决定是继续调用工具还是输出最终的自然语言回复。";
@@ -1421,7 +1421,7 @@ public partial class MainWindow
             ? DEFAULT_SYSTEM_PROMPT
             : settings.AiSystemPrompt;
 
-        // 获取可用扩展列表
+        // 获取可用小程序列表
         var extList = new List<object>();
         foreach (var cmd in GetExtensionsForSettings())
         {
@@ -1435,7 +1435,7 @@ public partial class MainWindow
         var extListJson = JsonSerializer.Serialize(extList);
 
         var finalPrompt = "【系统指令（严格遵守）】\n" + basePrompt + 
-                          "\n当前可用扩展有:\n" + extListJson;
+                          "\n当前可用小程序有:\n" + extListJson;
 
         var messages = new List<object>
         {

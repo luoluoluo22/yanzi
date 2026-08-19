@@ -730,7 +730,7 @@
                                          Height="160" TextWrapping="Wrap"
                                          TextChanged="PasteTextSimpleBox_TextChanged" />
                                 <TextBlock Style="{StaticResource HintTextStyle}"
-                                           Text="点击扩展时把这段文本写入剪贴板并自动粘贴到当前光标处。" />
+                                           Text="点击小程序时把这段文本写入剪贴板并自动粘贴到当前光标处。" />
                             </StackPanel>
 
                             <StackPanel x:Name="HotkeyForm" Visibility="Collapsed">
@@ -762,7 +762,7 @@
                                             Click="HotkeyCapture_Click" />
                                 </Grid>
                                 <TextBlock Style="{StaticResource HintTextStyle}">
-                                    <Run Text="点击录制后直接按下组合键，扩展运行时会把它发送给当前前台窗口。" />
+                                    <Run Text="点击录制后直接按下组合键，小程序运行时会把它发送给当前前台窗口。" />
                                 </TextBlock>
                                 <TextBlock Text="常用快捷选择" Style="{StaticResource FieldLabelStyle}" Margin="0,18,0,6" />
                                 <WrapPanel>
@@ -927,7 +927,7 @@
                             <StackPanel Margin="6,10,6,4">
                                 <!-- 隐藏的 ID 字段 -->
                                 <StackPanel Visibility="Collapsed">
-                                    <TextBlock Text="扩展 ID（英文小写、短横线）" Style="{StaticResource FieldLabelStyle}" />
+                                    <TextBlock Text="小程序 ID（英文小写、短横线）" Style="{StaticResource FieldLabelStyle}" />
                                     <TextBox x:Name="IdSimpleBox" Style="{StaticResource FormTextBoxStyle}"
                                              TextChanged="IdSimpleBox_TextChanged" />
                                 </StackPanel>
@@ -1171,9 +1171,9 @@
 
                                                                         <!-- 2. 名称与类型 -->
                                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                                            <TextBlock Text="{Binding ExtensionName, FallbackValue='新扩展'}"
+                                                                            <TextBlock Text="{Binding ExtensionName, FallbackValue='新小程序'}"
                                                                                        Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                                            <TextBlock Text="{Binding ExtensionType, FallbackValue='扩展'}"
+                                                                            <TextBlock Text="{Binding ExtensionType, FallbackValue='小程序'}"
                                                                                        Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" Margin="0,2,0,0" />
                                                                         </StackPanel>
 
@@ -1246,7 +1246,7 @@
                                                      TextChanged="CustomPromptTextBox_TextChanged"
                                                      PreviewKeyDown="CustomPromptTextBox_PreviewKeyDown" />
                                             <TextBlock x:Name="CustomPromptPlaceholder"
-                                                       Text="输入扩展功能需求或修改指令（Enter 发送，Shift+Enter 换行）..."
+                                                       Text="输入小程序功能需求或修改指令（Enter 发送，Shift+Enter 换行）..."
                                                        Foreground="{DynamicResource BrushTextSec}"
                                                        FontSize="{DynamicResource FontSizeSmallPlus}"
                                                        IsHitTestVisible="False" Margin="2,1,0,0"
@@ -1484,7 +1484,7 @@
                                                 </Grid>
                                             </Border>
                                             <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                                <TextBox x:Name="PreviewNameText" Text="未命名扩展"
+                                                <TextBox x:Name="PreviewNameText" Text="未命名小程序"
                                                          Foreground="{DynamicResource BrushTextMain}"
                                                          FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"
                                                          Background="Transparent" BorderThickness="0"
@@ -1598,7 +1598,7 @@
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
                                         <TextBlock Text="开机自启" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
-                                        <TextBlock Text="主程序启动后自动运行此扩展"
+                                        <TextBlock Text="主程序启动后自动运行此小程序"
                                                    Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                    Margin="0,2,0,0" TextWrapping="Wrap" />
                                     </StackPanel>

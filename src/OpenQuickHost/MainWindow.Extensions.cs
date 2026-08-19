@@ -75,7 +75,7 @@ public partial class MainWindow
         CommandList.SelectedItem = SelectedCommand;
         LastRunMessage = isEditMode
             ? $"已更新本地 JSON 扩展：{command.Title}"
-            : $"已添加本地 JSON 扩展：{command.Title}";
+            : $"已添加本地 JSON 小程序：{command.Title}";
         HostAssets.AppendLog($"PersistJsonExtensionFromDialog: success, extensionId={command.ExtensionId}.");
         return command;
     }
@@ -83,7 +83,7 @@ public partial class MainWindow
     public void ReloadLocalExtensionsFromExternal()
     {
         LocalExtensionCatalog.EnsureSampleExtension();
-        ReplaceLocalExtensions(LocalExtensionCatalog.LoadEntries(), "已通过外部 Agent API 刷新本地扩展。");
+        ReplaceLocalExtensions(LocalExtensionCatalog.LoadEntries(), "已通过外部 Agent API 刷新本地小程序。");
     }
 
     private void ReloadLocalExtensionsFromWebDav()
@@ -415,7 +415,7 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            throw new InvalidOperationException("路径为空，无法创建扩展。");
+            throw new InvalidOperationException("路径为空，无法创建小程序。");
         }
 
         var fullPath = Path.GetFullPath(path);
@@ -1043,12 +1043,12 @@ public partial class MainWindow
                 item.ExtensionId.Equals(request.ExtensionId ?? string.Empty, StringComparison.OrdinalIgnoreCase));
             if (command == null)
             {
-                LastRunMessage = $"燕选运行扩展失败：没有找到扩展 {request.ExtensionId}";
+                LastRunMessage = $"燕选运行小程序失败：没有找到扩展 {request.ExtensionId}";
                 return;
             }
 
             _ = ExecuteCommandAsync(ResolveRunnableCommand(command), text, "yarnselect");
-            LastRunMessage = $"燕选运行扩展：{command.Title}";
+            LastRunMessage = $"燕选运行小程序：{command.Title}";
         }
     }
 
@@ -1066,7 +1066,7 @@ public partial class MainWindow
         UnregisterYanmHotkey();
         UnregisterWindowSnapAssistHotkey();
         UnregisterExtensionHotkeys();
-        SyncStatus = "已暂停快捷键、扩展快捷键、燕选和鼠标面板监听。";
+        SyncStatus = "已暂停快捷键、小程序快捷键、燕选和鼠标面板监听。";
     }
 
     public void ResumeListenerServices()
@@ -1086,7 +1086,7 @@ public partial class MainWindow
         RefreshRadialHotkeyRegistration();
         RefreshWindowSnapAssistHotkeyRegistration();
         RefreshExtensionHotkeys();
-        SyncStatus = "已恢复快捷键、扩展快捷键、燕选和鼠标面板监听。";
+        SyncStatus = "已恢复快捷键、小程序快捷键、燕选和鼠标面板监听。";
     }
 
     /// <summary>启动全局鼠标手势服务并扫描所有扩展中的 MouseGesture 注册到服务里。</summary>
@@ -2255,7 +2255,7 @@ public partial class MainWindow
         {
             if (!_localExtensionIndex.TryGetValue(extensionId, out var editable))
             {
-                return Task.FromResult((false, "没有找到对应扩展。"));
+                return Task.FromResult((false, "没有找到对应小程序。"));
             }
 
             var manifestJson = LocalExtensionCatalog.LoadManifestJson(editable.ExtensionId);
@@ -2268,7 +2268,7 @@ public partial class MainWindow
             ReplaceEditedExtensionReferences(extensionId, updated.ExtensionId);
             LastRunMessage = $"已更新本地 JSON 扩展：{updated.Title}";
             QueueBackgroundWebDavSync("extension-edit-settings");
-            return Task.FromResult((true, $"已更新扩展：{updated.Title}"));
+            return Task.FromResult((true, $"已更新小程序：{updated.Title}"));
         }
         catch (Exception ex)
         {
@@ -2416,13 +2416,13 @@ public partial class MainWindow
         {
             if (!_localExtensionIndex.TryGetValue(extensionId, out var deletable))
             {
-                return Task.FromResult((false, "没有找到对应扩展。"));
+                return Task.FromResult((false, "没有找到对应小程序。"));
             }
 
             var confirm = System.Windows.MessageBox.Show(
                 owner ?? this,
                 $"确认删除“{deletable.Title}”吗？",
-                "删除扩展",
+                "删除小程序",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
             if (confirm != MessageBoxResult.Yes)
@@ -2595,11 +2595,11 @@ public partial class MainWindow
             ApplyFilter(SearchBox.Text);
             SelectedCommand = FilteredCommands.FirstOrDefault();
             CommandList.SelectedItem = SelectedCommand;
-            LastRunMessage = $"已彻底删除扩展：{deleted.Title}";
-            SyncStatus = $"已彻底删除扩展：{deleted.Title}";
+            LastRunMessage = $"已彻底删除小程序：{deleted.Title}";
+            SyncStatus = $"已彻底删除小程序：{deleted.Title}";
             QueuePrivateExtensionRemovalFromAccount(deleted.ExtensionId);
             QueueBackgroundWebDavSync("extension-purge-settings");
-            return Task.FromResult((true, $"已彻底删除扩展：{deleted.Title}，会同步到其他设备。"));
+            return Task.FromResult((true, $"已彻底删除小程序：{deleted.Title}，会同步到其他设备。"));
         }
         catch (Exception ex)
         {
@@ -2645,7 +2645,7 @@ public partial class MainWindow
             string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
             !Directory.Exists(command.ExtensionDirectoryPath))
         {
-            message = "扩展目录不存在。";
+            message = "小程序目录不存在。";
             return false;
         }
 
@@ -2828,11 +2828,11 @@ public partial class MainWindow
         var extension = ResolveRunnableCommand(sourceCommand);
         if (extension.Source != CommandSource.LocalExtension)
         {
-            SyncStatus = "当前选中项不是本地扩展，不能直接重命名。";
+            SyncStatus = "当前选中项不是本地小程序，不能直接重命名。";
             return Task.CompletedTask;
         }
 
-        var dialog = new SimpleTextInputWindow("重命名扩展", "输入新的扩展名称。", extension.Title)
+        var dialog = new SimpleTextInputWindow("重命名扩展", "输入新的小程序名称。", extension.Title)
         {
             Owner = this
         };

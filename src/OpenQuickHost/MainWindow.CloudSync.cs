@@ -58,24 +58,24 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
-            return (false, "没有可复制的扩展链接。");
+            return (false, "没有可复制的小程序链接。");
         }
 
         var url = BuildExtensionStoreUrl(extensionId);
         ClipboardService.SetText(url);
-        return (true, $"已复制扩展商店链接：{url}");
+        return (true, $"已复制小程序商店链接：{url}");
     }
 
     public (bool ok, string message) OpenExtensionStoreLink(string extensionId)
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
-            return (false, "没有可打开的扩展链接。");
+            return (false, "没有可打开的小程序链接。");
         }
 
         var url = BuildExtensionStoreUrl(extensionId);
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        return (true, $"已打开扩展商店链接：{url}");
+        return (true, $"已打开小程序商店链接：{url}");
     }
 
     private async Task RefreshCloudStateAsync(bool allowLoginPrompt = true)
@@ -106,7 +106,7 @@ public partial class MainWindow
             shouldShowSyncToast = await HasAnyRemoteCloudDataAsync();
             if (shouldShowSyncToast)
             {
-                ShowSettingsCloudSyncProgressToast("正在同步云端配置与扩展...");
+                ShowSettingsCloudSyncProgressToast("正在同步云端配置与小程序...");
                 deferHideSyncToastToPersonalSync = PersonalSyncBackendFactory.IsConfigured(AppSettingsStore.Load());
             }
 
@@ -194,7 +194,7 @@ public partial class MainWindow
 
         if (!SelectedCommand.HasArchive)
         {
-            SyncStatus = "当前命令在云端没有扩展包。";
+            SyncStatus = "当前命令在云端没有小程序包。";
             return;
         }
 
@@ -205,12 +205,12 @@ public partial class MainWindow
                 return;
             }
 
-            SyncStatus = $"正在下载 {SelectedCommand.Title} 的扩展包 ...";
+            SyncStatus = $"正在下载 {SelectedCommand.Title} 的小程序包 ...";
             var packageBytes = await _cloudSyncClient.DownloadExtensionArchiveAsync(SelectedCommand.ExtensionId);
             var version = SelectedCommand.CloudVersion ?? "0.1.0";
             var path = await ExtensionPackageService.SavePackageAsync(SelectedCommand.ExtensionId, version, packageBytes);
             SelectedCommand.SetLocalPackagePath(path);
-            LastRunMessage = $"扩展包已下载到本地：{path}";
+            LastRunMessage = $"小程序包已下载到本地：{path}";
             SyncStatus = $"下载完成：{SelectedCommand.Title}";
         }
         catch (Exception ex)
@@ -238,14 +238,14 @@ public partial class MainWindow
             : _lastActionableCommand;
         if (sourceCommand == null)
         {
-            SyncStatus = "没有可发布的扩展。";
+            SyncStatus = "没有可发布的小程序。";
             return false;
         }
 
         var command = ResolveRunnableCommand(sourceCommand);
         if (command.Source != CommandSource.LocalExtension)
         {
-            SyncStatus = "只有本地扩展才能发布到商店。";
+            SyncStatus = "只有本地小程序才能发布到商店。";
             return false;
         }
 
@@ -257,7 +257,7 @@ public partial class MainWindow
                 return false;
             }
 
-            SyncStatus = $"正在发布扩展：{command.Title} ...";
+            SyncStatus = $"正在发布小程序：{command.Title} ...";
             var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
             var publishedIcon = await _cloudSyncClient.PublishIconAsync(command, version);
             var packageBytes = ExtensionPackageService.BuildPackage(command, version, publishedIcon);
@@ -268,7 +268,7 @@ public partial class MainWindow
             command.SetPublishedInStore(true);
             LocalExtensionCatalog.SetExtensionPublishedState(command.ExtensionId, true);
             var storeUrl = BuildExtensionStoreUrl(command.ExtensionId);
-            LastRunMessage = $"已发布到扩展商店：{command.Title} (v{version})";
+            LastRunMessage = $"已发布到小程序商店：{command.Title} (v{version})";
             SyncStatus = $"发布成功：{command.Title}，商店链接：{storeUrl}";
             return true;
         }
@@ -290,7 +290,7 @@ public partial class MainWindow
         {
             if (!_localExtensionIndex.TryGetValue(extensionId, out var command))
             {
-                return (false, "没有找到对应扩展。");
+                return (false, "没有找到对应小程序。");
             }
 
             SelectedCommand = command;
@@ -310,12 +310,12 @@ public partial class MainWindow
         {
             if (_cloudSyncClient == null)
             {
-                return (false, "云同步未配置，无法下线扩展。");
+                return (false, "云同步未配置，无法下线小程序。");
             }
 
             if (!_localExtensionIndex.TryGetValue(extensionId, out var command))
             {
-                return (false, "没有找到对应扩展。");
+                return (false, "没有找到对应小程序。");
             }
 
             if (!await EnsureAuthenticatedAsync())
@@ -326,8 +326,8 @@ public partial class MainWindow
             await _cloudSyncClient.DeleteExtensionAsync(command.ExtensionId);
             command.SetPublishedInStore(false);
             LocalExtensionCatalog.SetExtensionPublishedState(command.ExtensionId, false);
-            SyncStatus = $"已下线扩展：{command.Title}";
-            LastRunMessage = $"扩展已从商店下线：{command.Title}";
+            SyncStatus = $"已下线小程序：{command.Title}";
+            LastRunMessage = $"小程序已从商店下线：{command.Title}";
             return (true, SyncStatus);
         }
         catch (Exception ex)
@@ -369,7 +369,7 @@ public partial class MainWindow
                 .ToDictionary(item => item.ExtensionId, item => item, StringComparer.OrdinalIgnoreCase);
             HostAssets.AppendLog($"Owned published extensions fetched for settings: userId={me.UserId}, count={owned.Count}");
             
-            // 同步更新主窗口与本地扩展的发布状态
+            // 同步更新主窗口与本地小程序的发布状态
             foreach (var localCmd in _localExtensionIndex.Values)
             {
                 var isPub = owned.ContainsKey(localCmd.ExtensionId);
@@ -410,7 +410,7 @@ public partial class MainWindow
 
         try
         {
-            SyncStatus = "正在通过本地协议下载安装扩展 ...";
+            SyncStatus = "正在通过本地协议下载安装小程序 ...";
             using var httpClient = new HttpClient
             {
                 Timeout = TimeSpan.FromSeconds(30)
@@ -419,11 +419,11 @@ public partial class MainWindow
             var result = await ExtensionInstallService.InstallPackageAsync(packageBytes, extensionId);
             ReloadLocalExtensionsFromExternal();
             RevealInstalledExtension(result.ExtensionId, result.Name);
-            LastRunMessage = $"已安装扩展：{result.Name} ({result.ExtensionId})";
+            LastRunMessage = $"已安装小程序：{result.Name} ({result.ExtensionId})";
             SyncStatus = $"安装成功：{result.Name}";
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("燕子扩展已安装", $"{result.Name} 已安装到本地扩展目录。");
+                app.ShowDesktopNotification("燕子小程序已安装", $"{result.Name} 已安装到本地小程序目录。");
             }
             ShowPanel();
         }
@@ -433,12 +433,12 @@ public partial class MainWindow
             HostAssets.AppendLog($"Protocol install failed: source={source}, extensionId={extensionId}, error={ex}");
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("燕子扩展安装失败", FormatExceptionMessage(ex), Forms.ToolTipIcon.Error);
+                app.ShowDesktopNotification("燕子小程序安装失败", FormatExceptionMessage(ex), Forms.ToolTipIcon.Error);
             }
             System.Windows.MessageBox.Show(
                 this,
-                $"扩展安装失败：{FormatExceptionMessage(ex)}",
-                "燕子扩展安装失败",
+                $"小程序安装失败：{FormatExceptionMessage(ex)}",
+                "燕子小程序安装失败",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             ShowPanel();
@@ -454,7 +454,7 @@ public partial class MainWindow
 
         ShowPanel();
         var displayQuery = string.IsNullOrWhiteSpace(extensionName) ? extensionId : extensionName.Trim();
-        SearchBox.Text = $"@扩展 {displayQuery}";
+        SearchBox.Text = $"@小程序 {displayQuery}";
         SearchBox.CaretIndex = SearchBox.Text.Length;
         ApplyFilter(SearchBox.Text);
 
@@ -488,13 +488,13 @@ public partial class MainWindow
                 return Task.CompletedTask;
             }
 
-            LastRunMessage = $"已添加本地 JSON 扩展：{command.Title}";
+            LastRunMessage = $"已添加本地 JSON 小程序：{command.Title}";
             QueueBackgroundWebDavSync("extension-add");
         }
         catch (Exception ex)
         {
             HostAssets.AppendDevLog($"AddJsonExtensionAsync failed: {ex}");
-            SyncStatus = $"添加扩展失败：{FormatExceptionMessage(ex)}";
+            SyncStatus = $"添加小程序失败：{FormatExceptionMessage(ex)}";
         }
 
         return Task.CompletedTask;
@@ -507,7 +507,7 @@ public partial class MainWindow
             : _lastActionableCommand;
         if (sourceCommand == null)
         {
-            SyncStatus = "没有可编辑的扩展。";
+            SyncStatus = "没有可编辑的小程序。";
             return Task.CompletedTask;
         }
 
@@ -545,7 +545,7 @@ public partial class MainWindow
             : _lastActionableCommand;
         if (sourceCommand == null)
         {
-            SyncStatus = "没有可删除的扩展。";
+            SyncStatus = "没有可删除的小程序。";
             return;
         }
 
@@ -557,7 +557,7 @@ public partial class MainWindow
         }
 
         var confirm = System.Windows.MessageBox.Show(
-            $"确认删除扩展“{deletable.Title}”吗？",
+            $"确认删除小程序“{deletable.Title}”吗？",
             "确认删除",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -6211,7 +6211,7 @@ public partial class MainWindow
                     return (false, result.CloudMessage ?? "本地版本尚未写入个人仓库。");
                 }
                 ExtensionDataSyncStateStore.ClearConflict(extensionId, key);
-                return (true, "已采用本地扩展数据，并作为新的 revision 写入个人仓库。");
+                return (true, "已采用本地小程序数据，并作为新的 revision 写入个人仓库。");
             }
 
             var directory = ExtensionStorageService.GetExtensionStorageDirectoryPath(extensionId);
@@ -6290,11 +6290,11 @@ public partial class MainWindow
             else
             {
                 var packageBytes = ExtensionSyncConflictStore.ReadLocalPackage(extensionId)
-                                   ?? throw new FileNotFoundException("本地扩展冲突包已不存在。");
+                                   ?? throw new FileNotFoundException("本地小程序冲突包已不存在。");
                 var packageHash = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
                 if (!string.Equals(packageHash, conflict.LocalPackageHash, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new InvalidDataException("本地扩展冲突包 SHA-256 校验失败。");
+                    throw new InvalidDataException("本地小程序冲突包 SHA-256 校验失败。");
                 }
                 var installed = await ExtensionInstallService.InstallPackageAsync(packageBytes, extensionId);
                 WebDavSyncService.MarkExtensionRestoredLocally(installed.ExtensionId, installed.Version);
@@ -6304,7 +6304,7 @@ public partial class MainWindow
 
             ExtensionSyncConflictStore.Remove(extensionId);
             QueueBackgroundWebDavSync("extension-conflict-local-selected", forceImmediate: true);
-            return (true, "已采用本地扩展版本，并作为新的 revision 继续同步。");
+            return (true, "已采用本地小程序版本，并作为新的 revision 继续同步。");
         }
         catch (Exception ex)
         {
@@ -6513,7 +6513,7 @@ public partial class MainWindow
                 System.Windows.MessageBox.Show("当前扩展在云端没有上传可下载的安装包归档。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                 return;
             }
-            LastRunMessage = $"正在下载并试运行扩展：{item.Title} ...";
+            LastRunMessage = $"正在下载并试运行小程序：{item.Title} ...";
             SyncStatus = $"正在试运行 {item.Title}...";
             
             // 禁用按钮防重复点击
@@ -6578,7 +6578,7 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
-            return (false, "缺少扩展 ID");
+            return (false, "缺少小程序 ID");
         }
 
         try
@@ -6628,7 +6628,7 @@ public partial class MainWindow
             var entry = new LocalExtensionCatalogEntry(manifestPath, manifest);
             var tempCommand = LocalExtensionCatalog.CreateCommand(entry);
 
-            // 4. 运行扩展
+            // 4. 运行小程序
             await Dispatcher.InvokeAsync(async () =>
             {
                 MarkExtensionAsSeen(tempCommand);

@@ -21,7 +21,7 @@
     <Grid x:Name="RootGrid">
         <!-- 编辑模式下的全屏纯色不透明背景层，彻底遮挡底层桌面与应用 -->
         <Border x:Name="EditModeBackdropOverlay"
-                Background="#FF0F172A"
+                Background="#FF262626"
                 IsHitTestVisible="False"
                 Visibility="{Binding IsEditModeLocked, Converter={StaticResource BooleanToVisibilityConverter}}">
             <Border.Style>

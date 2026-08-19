@@ -38,7 +38,7 @@ public partial class MainWindow
             foreach (var ext in extensions)
             {
                 var installedLocally = _localExtensionIndex.ContainsKey(ext.ExtensionId);
-                var category = string.IsNullOrWhiteSpace(ext.Category) ? "扩展商店" : ext.Category.Trim();
+                var category = string.IsNullOrWhiteSpace(ext.Category) ? "小程序商店" : ext.Category.Trim();
                 var description = string.IsNullOrWhiteSpace(ext.Description) ? "暂无简介" : ext.Description.Trim();
                 var subtitleParts = new List<string>();
                 if (installedLocally)
@@ -54,7 +54,7 @@ public partial class MainWindow
 
                 var command = new CommandItem(
                     glyph: "extension",
-                    title: string.IsNullOrWhiteSpace(ext.DisplayName) ? "未知扩展" : ext.DisplayName,
+                    title: string.IsNullOrWhiteSpace(ext.DisplayName) ? "未知小程序" : ext.DisplayName,
                     subtitle: string.Join(" · ", subtitleParts),
                     category: category,
                     accentHex: string.IsNullOrWhiteSpace(ext.AccentHex) ? "#FF3B82F6" : ext.AccentHex, // 商店颜色
@@ -89,7 +89,7 @@ public partial class MainWindow
         {
             System.Diagnostics.Debug.WriteLine("Failed to load store extensions: " + ex.Message);
             HostAssets.AppendLog("Failed to load store extensions: " + ex.Message);
-            LastRunMessage = "扩展商店加载失败：" + ex.Message;
+            LastRunMessage = "小程序商店加载失败：" + ex.Message;
         }
         finally
         {

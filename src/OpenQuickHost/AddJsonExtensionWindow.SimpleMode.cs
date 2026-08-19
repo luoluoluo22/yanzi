@@ -56,7 +56,7 @@ public partial class AddJsonExtensionWindow
             IdPrefix: "open-target",
             Name: "打开记事本",
             Description: "点击后启动 Windows 记事本。",
-            Category: "扩展",
+            Category: "小程序",
             Keywords: "记事本, notepad, 打开",
             Icon: @"C:\Windows\System32\notepad.exe",
             AccentHex: "#FF3B82F6",
@@ -258,7 +258,7 @@ public partial class AddJsonExtensionWindow
     private void TriggerShortcutEdit_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new HotkeyCaptureWindow(
-            "设置扩展快捷键",
+            "设置小程序快捷键",
             "窗口激活后，按一次组合键即可完成录制。留空可清除快捷键。",
             GlobalShortcutBox.Text ?? string.Empty,
             allowEmpty: true)
@@ -512,12 +512,12 @@ public partial class AddJsonExtensionWindow
         var known = CollectKnownGestures();
         if (known.TryGetValue(key, out var owners) && owners.Count > 0)
         {
-            GestureConflictHintText.Text = $"可能冲突：{string.Join("、", owners)} 已使用同一手势。运行时会进入扩展选择。";
+            GestureConflictHintText.Text = $"可能冲突：{string.Join("、", owners)} 已使用同一手势。运行时会进入小程序选择。";
             GestureConflictHintText.Foreground = new WpfSolidColorBrush(WpfColor.FromRgb(0xFB, 0x92, 0x3C));
             return;
         }
 
-        GestureConflictHintText.Text = "当前序列未与现有扩展冲突。";
+        GestureConflictHintText.Text = "当前序列未与现有小程序冲突。";
         GestureConflictHintText.Foreground = new WpfSolidColorBrush(WpfColor.FromRgb(0x34, 0xD3, 0x99));
     }
 
@@ -1879,7 +1879,7 @@ public partial class AddJsonExtensionWindow
         _suppressPreviewSync = true;
         try
         {
-            var name = string.IsNullOrWhiteSpace(NameBox.Text) ? "未命名扩展" : NameBox.Text;
+            var name = string.IsNullOrWhiteSpace(NameBox.Text) ? "未命名小程序" : NameBox.Text;
             var desc = string.IsNullOrWhiteSpace(DescriptionBox.Text) ? "选择类型并填写信息以预览" : DescriptionBox.Text;
             if (PreviewNameText.Text != name) PreviewNameText.Text = name;
             if (PreviewDescText.Text != desc) PreviewDescText.Text = desc;
@@ -1902,7 +1902,7 @@ public partial class AddJsonExtensionWindow
         if (_isInitializing || _suppressPreviewSync) return;
         var v = PreviewNameText.Text;
         // 用户清空时不要把占位符当成真值
-        if (v == "未命名扩展") return;
+        if (v == "未命名小程序") return;
         NameBox.Text = v;
         // 同步右侧名称输入框
         if (NameSimpleBox.Text != v) NameSimpleBox.Text = v;

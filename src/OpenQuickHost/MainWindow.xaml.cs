@@ -587,7 +587,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         yield return new SearchScopeTab(SearchScopeAi, "AI对话", "切换到 AI 对话模式");
                         break;
                     case SearchScopeStore:
-                        yield return new SearchScopeTab(SearchScopeStore, "扩展商店", "浏览与安装云端扩展");
+                        yield return new SearchScopeTab(SearchScopeStore, "小程序商店", "浏览与安装云端扩展");
                         break;
                 }
             }
@@ -1367,7 +1367,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch (Exception ex)
             {
                 HostAssets.AppendLog($"Create extension from dropped path failed: path={filePath}, error={FormatExceptionMessage(ex)}");
-                SyncStatus = $"拖拽创建扩展失败：{Path.GetFileName(filePath)}，{FormatExceptionMessage(ex)}";
+                SyncStatus = $"拖拽创建小程序失败：{Path.GetFileName(filePath)}，{FormatExceptionMessage(ex)}";
             }
         }
 
@@ -1386,7 +1386,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CommandList.SelectedItem = latestCommand;
         CommandList.ScrollIntoView(latestCommand);
         LastRunMessage = createdCommands.Count == 1
-            ? $"已创建扩展：{latestCommand.Title}"
+            ? $"已创建小程序：{latestCommand.Title}"
             : $"已创建 {createdCommands.Count} 个扩展。";
     }
 
@@ -2386,7 +2386,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RenameCommandMenuItem.IsEnabled = canManageLocalExtension;
         RenameCommandMenuItem.Visibility = Visibility.Collapsed;
         EditExtensionMenuItem.IsEnabled = canManageLocalExtension || isYanyuRule;
-        EditExtensionMenuItem.Header = isYanyuRule ? "编辑燕语" : "编辑扩展";
+        EditExtensionMenuItem.Header = isYanyuRule ? "编辑燕语" : "编辑小程序";
         PublishExtensionMenuItem.IsEnabled = canManageLocalExtension && _cloudSyncClient != null;
         PublishExtensionMenuItem.Visibility = isYanyuRule ? Visibility.Collapsed : Visibility.Visible;
         PublishExtensionMenuItem.Header = (resolved.IsPublishedInStore) ? "更新到商店" : "发布到商店";
@@ -2585,7 +2585,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
         };
 
-        AddMenuItem(menu, "编辑扩展", "pen", async () => await EditSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
+        AddMenuItem(menu, "编辑小程序", "pen", async () => await EditSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
         AddMenuItem(menu, command.IsPublishedInStore ? "更新到商店" : "发布到商店", "publish", async () =>
         {
             var ok = await PublishSelectedExtensionAsync();
@@ -2973,7 +2973,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 if (t.IsCompletedSuccessfully)
                 {
-                    Dispatcher.Invoke(() => LastRunMessage = t.Result.ok ? $"已安装扩展：{runnable.Title}" : $"安装失败：{t.Result.message}");
+                    Dispatcher.Invoke(() => LastRunMessage = t.Result.ok ? $"已安装小程序：{runnable.Title}" : $"安装失败：{t.Result.message}");
                 }
             });
             return;
@@ -3238,7 +3238,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var normalizedJson = ExtractExtensionJsonFromClipboard(clipboardText);
         if (string.IsNullOrWhiteSpace(normalizedJson))
         {
-            message = "系统剪贴板里没有可导入的扩展 JSON。";
+            message = "系统剪贴板里没有可导入的小程序 JSON。";
             return false;
         }
 
@@ -3250,7 +3250,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            message = $"剪贴板里的扩展 JSON 无法导入：{FormatExceptionMessage(ex)}";
+            message = $"剪贴板里的小程序 JSON 无法导入：{FormatExceptionMessage(ex)}";
             return false;
         }
     }
@@ -4551,13 +4551,13 @@ public sealed class CommandItem : INotifyPropertyChanged
     private string SourceLabel => Source switch
     {
         CommandSource.Cloud => "云端",
-        CommandSource.LocalExtension => "本地扩展",
+        CommandSource.LocalExtension => "本地小程序",
         CommandSource.WebSearch => "网页搜索",
         CommandSource.Application => "应用",
         CommandSource.File => !string.IsNullOrWhiteSpace(ResultProviderTitle) ? ResultProviderTitle! : "文件结果",
         _ => "本地"
     };
-    private string ArchiveSummary => HasArchive ? "已包含扩展包。" : "当前还没有扩展包。";
+    private string ArchiveSummary => HasArchive ? "已包含扩展包。" : "当前还没有小程序包。";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

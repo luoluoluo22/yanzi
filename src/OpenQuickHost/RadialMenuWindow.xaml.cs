@@ -1753,7 +1753,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         // 1. 内圈分隔线 (8条) 与 外圈分隔线 (16条)
         BuildSeparators(ring.Separators, cX, cY, 36, 100, RadialMenuSettings.InnerSlotCount);
-        BuildSeparators(ring.OuterSeparators, cX, cY, 100, 165, RadialMenuSettings.OuterSlotCount);
+        BuildSeparators(ring.OuterSeparators, cX, cY, 100, 165, RadialMenuSettings.MiddleSlotCount);
 
         // 2. 内圈 8 个槽位
         const double innerRadius = 72;
@@ -1776,16 +1776,18 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 y,
                 childAngleDegrees,
                 RadialMenuRing.Inner,
-                CreateSectorGeometry(cX, cY, 36, 100, childAngleDegrees - 22.5, childAngleDegrees + 22.5));
+                CreateSectorGeometry(cX, cY, 36, 100, childAngleDegrees - 22.5, childAngleDegrees + 22.5),
+                cX,
+                cY);
             ring.Items.Add(vm);
         }
 
-        // 3. 外圈 8 个槽位
+        // 3. 中间层/外圈 16 个槽位 (半径 100~165)
         const double outerRadius = 132;
-        for (var offset = 0; offset < RadialMenuSettings.OuterSlotCount; offset++)
+        for (var offset = 0; offset < RadialMenuSettings.MiddleSlotCount; offset++)
         {
             var index = RadialMenuSettings.InnerSlotCount + offset;
-            var childAngleDegrees = -90 + offset * 45.0;
+            var childAngleDegrees = -90 + offset * 22.5;
             var childAngle = childAngleDegrees * Math.PI / 180.0;
             var x = cX + Math.Cos(childAngle) * outerRadius - 25;
             var y = cY + Math.Sin(childAngle) * outerRadius - 20;
@@ -1801,8 +1803,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 x,
                 y,
                 childAngleDegrees,
-                RadialMenuRing.Outer,
-                CreateSectorGeometry(cX, cY, 100, 165, childAngleDegrees - 22.5, childAngleDegrees + 22.5));
+                RadialMenuRing.Middle,
+                CreateSectorGeometry(cX, cY, 100, 165, childAngleDegrees - 11.25, childAngleDegrees + 11.25),
+                cX,
+                cY);
             ring.OuterItems.Add(vm);
         }
 
@@ -1812,8 +1816,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var subRingSources = ring.Items.Concat(ring.OuterItems).Where(it => !string.IsNullOrWhiteSpace(it.ChildPageId)).ToList();
         foreach (var childItem in subRingSources)
         {
-            var cSlotCenterX = childItem.X + (childItem.Ring == RadialMenuRing.Outer ? 25 : 32);
-            var cSlotCenterY = childItem.Y + (childItem.Ring == RadialMenuRing.Outer ? 20 : 25);
+            var cSlotCenterX = childItem.X + (childItem.Ring == RadialMenuRing.Inner ? 32 : 25);
+            var cSlotCenterY = childItem.Y + (childItem.Ring == RadialMenuRing.Inner ? 25 : 20);
             RecursivelyBuildSubRings(childItem, cX, cY, cSlotCenterX, cSlotCenterY, childItem.AngleDegrees, 2, visitedPageIds);
         }
     }
@@ -2017,7 +2021,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         if (ring.OuterItems.Count > 0 && distance > 100)
         {
-            var outerIndex = ((int)Math.Round((angle + 90) / 45.0) % RadialMenuSettings.OuterSlotCount + RadialMenuSettings.OuterSlotCount) % RadialMenuSettings.OuterSlotCount;
+            double step = 360.0 / ring.OuterItems.Count;
+            var outerIndex = ((int)Math.Round((angle + 90) / step) % ring.OuterItems.Count + ring.OuterItems.Count) % ring.OuterItems.Count;
             item = ring.OuterItems.ElementAtOrDefault(outerIndex);
         }
         else

@@ -46,12 +46,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _radialMenuSearchText = string.Empty;
     private string _launcherHotkey = "Alt+Space";
     private string _syncStatusText = "同步服务状态未知。";
-    private string _webDavStatusText = "未启用个人扩展同步。";
+    private string _webDavStatusText = "未启用个人小程序同步。";
     private string _syncActivityLogText = "暂无同步记录。";
     private string _personalSyncCommitStatusText = "GitHub 同步启用后可查看最近提交。";
     private string _personalConfigRestoreStatusText = "完成一次个人仓库配置备份后会生成恢复点。";
-    private string _personalExtensionSyncStatusText = "尚未生成扩展同步索引。";
-    private string _extensionDataSyncStatusText = "尚无扩展私有数据同步记录。";
+    private string _personalExtensionSyncStatusText = "尚未生成小程序同步索引。";
+    private string _extensionDataSyncStatusText = "尚无小程序私有数据同步记录。";
     private AccountSyncStatusView _accountSyncStatus = AccountSyncStatusView.Empty;
     private string _aiBaseUrl = string.Empty;
     private string _aiApiKey = string.Empty;
@@ -131,7 +131,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             new SettingsNavigationItem("ai", "mdi:ai", "模型服务", "#FF3B82F6"),
             new SettingsNavigationItem("environment", "mdi:key", "环境变量", "#FF14B8A6"),
             new SettingsNavigationItem("sync", "mdi:sync", "同步与备份", "#FF22C55E"),
-            new SettingsNavigationItem("extensions", "mdi:dashboard", "扩展", "#FFF97316"),
+            new SettingsNavigationItem("extensions", "mdi:dashboard", "小程序", "#FFF97316"),
             new SettingsNavigationItem("quickpanel", "mdi:mouse-panel", "鼠标触发", "#FFEC4899"),
             new SettingsNavigationItem("mousegestures", "mdi:gesture-tap", "鼠标手势", "#FFFB923C"),
             new SettingsNavigationItem("radial", "mdi:circle-outline", "燕环", "#FF3B82F6"),
@@ -284,7 +284,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new(YarnSelectActionTypes.Search, "搜索"),
         new(YarnSelectActionTypes.Run, "运行文本"),
         new(YarnSelectActionTypes.SmartCopyPaste, "智能复制/粘贴"),
-        new(YarnSelectActionTypes.RunExtension, "运行扩展")
+        new(YarnSelectActionTypes.RunExtension, "运行小程序")
     ];
 
     public IReadOnlyList<YanmActivationKeyOption> YanmActivationKeyOptions { get; } =
@@ -377,7 +377,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new("↑↓", "上下往返", "适合回到顶部/底部"),
         new("↓→↑", "U 型", "适合恢复已关闭标签 (Ctrl+Shift+T)"),
         new("→↓←", "C 型", "适合复制、剪贴板动作"),
-        new("↑→↓←", "P 型", "适合打开快捷面板或固定扩展"),
+        new("↑→↓←", "P 型", "适合打开快捷面板或固定小程序"),
         new("→↓←↑", "S 型", "适合全局搜索、选择类动作"),
         new("↓↗↓", "Z 型", "适合窗口置顶/取消置顶"),
         new("↘↗↘↗", "W 型", "适合关闭当前窗口 (Alt+F4)")
@@ -711,7 +711,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (openFileDialog.ShowDialog() == true)
         {
             var result = System.Windows.MessageBox.Show(
-                "导入备份会覆盖您当前所有的配置和扩展插件！此操作无法撤销。\n\n在导入前，我们会自动关闭 Everything 引擎。导入成功后应用将自动重启。\n\n是否确定要导入该备份？",
+                "导入备份会覆盖您当前所有的配置和小程序！此操作无法撤销。\n\n在导入前，我们会自动关闭 Everything 引擎。导入成功后应用将自动重启。\n\n是否确定要导入该备份？",
                 "导入提示",
                 System.Windows.MessageBoxButton.YesNo,
                 System.Windows.MessageBoxImage.Warning);
@@ -2183,7 +2183,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public string RadialMenuSelectedSlotSummary => _selectedRadialMenuSlot == null
         ? "先点击左侧轮盘槽位，再搜索并添加；也可以右键槽位打开菜单。"
-        : $"当前槽位：{_selectedRadialMenuSlot.Label} · 可添加扩展、程序、系统设置项，或右键添加子环。";
+        : $"当前槽位：{_selectedRadialMenuSlot.Label} · 可添加小程序、程序、系统设置项，或右键添加子环。";
 
     public string RecycleBinSearchText
     {
@@ -2814,12 +2814,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         "general" => "控制燕子(Swallow)的基础行为，包括启动同步和托盘停驻策略。",
         "ai" => "配置 AI 对话使用的本地或远程兼容接口，包括地址、Key 和模型名。",
-        "environment" => "配置 Notion、第三方 API 和应用型扩展可读取的用户环境变量。",
+        "environment" => "配置 Notion、第三方 API 和应用型小程序可读取的用户环境变量。",
         "sync" => "管理云账号状态、同步入口和当前服务端连接信息。",
-        "extensions" => "查看本地扩展目录和当前机器已发现的扩展数量。",
-        "recycle" => "查看已删除扩展，支持恢复和彻底删除。",
+        "extensions" => "查看本地小程序目录和当前机器已发现的小程序数量。",
+        "recycle" => "查看已删除小程序，支持恢复和彻底删除。",
         "quickpanel" => "统一分配鼠标动作给面板、燕环、燕幕、窗口排列和鼠标手势，避免触发方式重叠。",
-        "mousegestures" => "管理扩展使用的鼠标轨迹，快速查看冲突并把常用手势绑定到扩展。",
+        "mousegestures" => "管理小程序使用的鼠标轨迹，快速查看冲突并把常用手势绑定到小程序。",
         "radial" => "配置燕环的启用状态、键盘触发和轮盘内容；鼠标触发只在“鼠标触发”页统一分配。",
         "yarnselect" => "按住左键选中文本时，用字母或鼠标键快速复制、搜索、运行或粘贴。",
         "yanm" => "配置全局信息层燕幕，包括启用状态、按住显示和双击固定的触发键；鼠标触发只做只读展示。",
@@ -3088,8 +3088,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         var count = EnvironmentVariables.Count(item => !string.IsNullOrWhiteSpace(item.Name));
         return count == 0
-            ? "尚未配置环境变量。应用扩展和脚本将只能读取系统环境变量。"
-            : $"已配置 {count} 个用户环境变量，脚本运行和应用扩展桥接均可读取。";
+            ? "尚未配置环境变量。应用小程序和脚本将只能读取系统环境变量。"
+            : $"已配置 {count} 个用户环境变量，脚本运行和应用小程序桥接均可读取。";
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -5013,7 +5013,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 : "个人仓库双向同步模式";
             if (!File.Exists(HostAssets.WebDavSyncStatePath))
             {
-                PersonalExtensionSyncStatusText = $"{authority} · 尚未生成本地扩展索引";
+                PersonalExtensionSyncStatusText = $"{authority} · 尚未生成本地小程序索引";
                 return;
             }
 
@@ -5031,11 +5031,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 ? updatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
                 : "尚未同步";
             PersonalExtensionSyncStatusText =
-                $"{authority} · 云端版本 {index.Revision} · 有效扩展 {active} 个 · 已删除 {deleted} 个 · 已彻底删除 {purged} 个 · 待同步 {pending} 个 · 来源设备: {source} · 更新时间: {updated}";
+                $"{authority} · 云端版本 {index.Revision} · 有效小程序 {active} 个 · 已删除 {deleted} 个 · 已彻底删除 {purged} 个 · 待同步 {pending} 个 · 来源设备: {source} · 更新时间: {updated}";
         }
         catch (Exception ex)
         {
-            PersonalExtensionSyncStatusText = $"扩展同步索引无法读取：{ex.Message}";
+            PersonalExtensionSyncStatusText = $"小程序同步索引无法读取：{ex.Message}";
         }
     }
 
@@ -5142,7 +5142,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         var confirmation = System.Windows.MessageBox.Show(
             this,
-            $"将主配置恢复到 {item.CreatedAtText} 的状态？\n\n这会恢复设置、快捷面板、燕环和规则，但不会替换本机密钥、扩展包或燕幕。恢复结果会作为一个新版本继续同步，原恢复点不会删除。",
+            $"将主配置恢复到 {item.CreatedAtText} 的状态？\n\n这会恢复设置、快捷面板、燕环和规则，但不会替换本机密钥、小程序包或燕幕。恢复结果会作为一个新版本继续同步，原恢复点不会删除。",
             "确认恢复个人仓库配置",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
@@ -5238,7 +5238,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         var confirmResult = System.Windows.MessageBox.Show(
             this,
-            "此操作将删除云端的所有扩展和配置数据，且无法恢复！\n\n" +
+            "此操作将删除云端的所有小程序和配置数据，且无法恢复！\n\n" +
             "清空后，下次点击“立即同步”会重新以上传本地内容为准。",
             "清空云端 - 危险操作",
             MessageBoxButton.OKCancel,
@@ -5293,7 +5293,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             RefreshSyncActivityLog();
             System.Windows.MessageBox.Show(
                 this,
-                "云端数据已成功清空。\n\n下次点击\"立即同步\"时将重新上传本地扩展。",
+                "云端数据已成功清空。\n\n下次点击\"立即同步\"时将重新上传本地小程序。",
                 "清空云端成功",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -5350,7 +5350,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         if (!Directory.Exists(item.DirectoryPath))
         {
-            System.Windows.MessageBox.Show(this, "扩展目录不存在。", "打开目录失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(this, "小程序目录不存在。", "打开目录失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             _ = RefreshExtensionsFromDiskAsync();
             return;
         }
@@ -5487,7 +5487,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             if (!string.IsNullOrWhiteSpace(result.message))
             {
-                System.Windows.MessageBox.Show(this, result.message, "编辑扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "编辑小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
             return;
@@ -5517,7 +5517,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             if (!string.IsNullOrWhiteSpace(result.message))
             {
-                System.Windows.MessageBox.Show(this, result.message, "删除扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "删除小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
             return;
@@ -5550,14 +5550,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             if (!result.ok)
             {
-                System.Windows.MessageBox.Show(this, result.message, "恢复扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "恢复小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             await RefreshExtensionsFromDiskAsync();
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("扩展已恢复", $"{item.Title} 已从回收站恢复。");
+                app.ShowDesktopNotification("小程序已恢复", $"{item.Title} 已从回收站恢复。");
             }
         }
         finally
@@ -5576,7 +5576,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var confirm = System.Windows.MessageBox.Show(
             this,
             $"确认彻底删除“{item.Title}”吗？这会清空回收站中的本地副本，无法恢复。",
-            "彻底删除扩展",
+            "彻底删除小程序",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)
@@ -5602,7 +5602,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             await RefreshExtensionsFromDiskAsync();
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("回收站扩展已清理", $"{item.Title} 已从回收站彻底删除。");
+                app.ShowDesktopNotification("回收站小程序已清理", $"{item.Title} 已从回收站彻底删除。");
             }
         }
         finally
@@ -5629,14 +5629,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             if (!result.ok)
             {
-                System.Windows.MessageBox.Show(this, result.message, "发布扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "发布小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             await RefreshExtensionsFromDiskAsync();
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("扩展已发布到商店", $"{item.Title} 已完成发布，可在扩展商店查看。");
+                app.ShowDesktopNotification("小程序已发布到商店", $"{item.Title} 已完成发布，可在小程序商店查看。");
             }
         }
         finally
@@ -5692,8 +5692,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         var confirm = System.Windows.MessageBox.Show(
             this,
-            $"确认下线扩展“{item.Title}”吗？下线后扩展商店将不再展示它。",
-            "确认下线扩展",
+            $"确认下线小程序“{item.Title}”吗？下线后小程序商店将不再展示它。",
+            "确认下线小程序",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)
@@ -5712,14 +5712,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             if (!result.ok)
             {
-                System.Windows.MessageBox.Show(this, result.message, "下线扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "下线小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             await RefreshExtensionsFromDiskAsync();
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("扩展已从商店下线", $"{item.Title} 已从扩展商店移除。");
+                app.ShowDesktopNotification("小程序已从商店下线", $"{item.Title} 已从小程序商店移除。");
             }
         }
         finally
@@ -5743,7 +5743,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var refreshVersion = ++_extensionsRefreshVersion;
         var startedAt = Stopwatch.StartNew();
         IsExtensionsLoading = true;
-        LocalExtensionSummary = "正在后台刷新扩展数据...";
+        LocalExtensionSummary = "正在后台刷新小程序数据...";
         HostAssets.AppendLog($"Settings extensions refresh started: version={refreshVersion}");
 
         try
@@ -5769,7 +5769,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     {
                         entry.Manifest.Id,
                         entry.Manifest.Name,
-                        Category = entry.Manifest.Category ?? "扩展",
+                        Category = entry.Manifest.Category ?? "小程序",
                         entry.Manifest.GlobalShortcut
                     })
                     .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
@@ -5795,7 +5795,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var uiApplyStartedAt = Stopwatch.StartNew();
             await Dispatcher.InvokeAsync(() =>
             {
-                _mainWindow.ReloadLocalExtensionsFromEntries(data.entries, "已刷新本地扩展。");
+                _mainWindow.ReloadLocalExtensionsFromEntries(data.entries, "已刷新本地小程序。");
                 _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), publishedMap);
                 _cachedRecycleBinItems = data.recycleBinItems;
                 if (IsExtensionsSelected)
@@ -5844,7 +5844,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Settings extensions refresh failed: version={refreshVersion}, error={ex.Message}");
-            LocalExtensionSummary = $"刷新扩展失败：{ex.Message}";
+            LocalExtensionSummary = $"刷新小程序失败：{ex.Message}";
         }
         finally
         {
@@ -6170,7 +6170,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         var dialog = new HotkeyCaptureWindow(
-            "设置扩展快捷键",
+            "设置小程序快捷键",
             $"窗口激活后，直接按一次新的组合键即可为 {item.Title} 完成录制。",
             item.ShortcutValue,
             allowEmpty: true)
@@ -6202,7 +6202,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         var dialog = new HotkeyCaptureWindow(
-            "设置扩展快捷键",
+            "设置小程序快捷键",
             $"窗口激活后，直接按一次新的组合键即可为 {item.Title} 完成录制。",
             item.Shortcut,
             allowEmpty: true)
@@ -6775,7 +6775,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var fixedName = objectId switch
         {
             "settings.general" => "通用设置",
-            "settings.runtime" => "运行与扩展环境",
+            "settings.runtime" => "运行与小程序环境",
             "settings.ai" => "AI 服务设置",
             "settings.hotkeys" => "全局快捷键",
             "settings.mouseTriggers" => "鼠标与手势触发",
@@ -6861,7 +6861,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var count = _cachedExtensionItems.Count > 0
             ? _cachedExtensionItems.Count
             : _mainWindow.GetExtensionsForSettings().Count;
-        LocalExtensionSummary = $"当前机器已发现 {count} 个扩展。";
+        LocalExtensionSummary = $"当前机器已发现 {count} 个小程序。";
         OnPropertyChanged(nameof(ExtensionSearchSummary));
     }
 
@@ -6870,7 +6870,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var count = _cachedRecycleBinItems.Count;
         RecycleBinSummary = count == 0
             ? "回收站为空。"
-            : $"当前回收站中有 {count} 个扩展。";
+            : $"当前回收站中有 {count} 个小程序。";
         OnPropertyChanged(nameof(RecycleBinSearchSummary));
     }
 
@@ -6990,7 +6990,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             MouseGestureItems.Add(new SettingsMouseGestureItem(
                 entry.Manifest.Id,
                 entry.Manifest.Name,
-                entry.Manifest.Category ?? command?.Category ?? "扩展",
+                entry.Manifest.Category ?? command?.Category ?? "小程序",
                 BuildGestureTriggerLabel(),
                 sequence,
                 sign,
@@ -7666,7 +7666,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     command.Category,
                     command.DeclaredVersion,
                     command.ExtensionDirectoryPath ?? string.Empty,
-                    command.Category.Contains("网页搜索", StringComparison.OrdinalIgnoreCase) ? "网页搜索扩展" : "本地扩展",
+                    command.Category.Contains("网页搜索", StringComparison.OrdinalIgnoreCase) ? "网页搜索小程序" : "本地小程序",
                     command.Source == CommandSource.LocalExtension,
                     _mainWindow.IsExtensionEnabled(command.ExtensionId),
                     cloudRecord?.IsPublished != 0,
@@ -8262,11 +8262,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ],
         "extensions" =>
         [
-            "扩展", "插件", "目录", "本地", "删除", "编辑", "搜索", "打开目录", "extension", "plugin", "folder", "delete", "edit"
+            "小程序", "插件", "目录", "本地", "删除", "编辑", "搜索", "打开目录", "extension", "plugin", "folder", "delete", "edit"
         ],
         "recycle" =>
         [
-            "回收站", "恢复", "彻底删除", "已删除", "扩展回收站", "recycle", "trash", "restore", "deleted"
+            "回收站", "恢复", "彻底删除", "已删除", "小程序回收站", "recycle", "trash", "restore", "deleted"
         ],
         "shortcuts" =>
         [
@@ -8865,7 +8865,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         YarnSelectExtensionOptions.Clear();
         RadialMenuExtensionOptions.Clear();
-        YarnSelectExtensionOptions.Add(new YarnSelectExtensionOption(string.Empty, "不绑定扩展"));
+        YarnSelectExtensionOptions.Add(new YarnSelectExtensionOption(string.Empty, "不绑定小程序"));
         foreach (var command in _mainWindow.GetLocalExtensionsForSettings())
         {
             var option = new YarnSelectExtensionOption(command);
@@ -10280,7 +10280,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
-            return "拖入扩展";
+            return "拖入小程序";
         }
 
         if (extensionId.StartsWith(RadialSimulatedKeyPrefix, StringComparison.OrdinalIgnoreCase))
@@ -10298,7 +10298,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         return RadialMenuExtensionOptions.FirstOrDefault(option =>
-            option.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase))?.Title ?? "未知扩展";
+            option.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase))?.Title ?? "未知小程序";
     }
 
 
@@ -10533,7 +10533,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             YarnSelectActionTypes.Search => "搜索",
             YarnSelectActionTypes.Run => "运行",
             YarnSelectActionTypes.SmartCopyPaste => "智能复制/粘贴",
-            YarnSelectActionTypes.RunExtension => "运行扩展",
+            YarnSelectActionTypes.RunExtension => "运行小程序",
             _ => "复制"
         };
     }
@@ -12208,7 +12208,7 @@ public sealed class SettingsExtensionItem : INotifyPropertyChanged
 
     public string PublishedStateLabel => IsPublishedInStore ? "已发布到商店" : "仅本地";
 
-    public string DescriptionOrFallback => string.IsNullOrWhiteSpace(Description) ? "这个扩展没有提供额外说明。" : Description;
+    public string DescriptionOrFallback => string.IsNullOrWhiteSpace(Description) ? "这个小程序没有提供额外说明。" : Description;
 
     public bool IsSelected
     {
@@ -12732,7 +12732,7 @@ public sealed class PersonalSyncCommitItem : INotifyPropertyChanged
         if (normalized.EndsWith("quick-panel-groups.json", StringComparison.OrdinalIgnoreCase))
             return "【设置】快捷面板菜单分组";
         if (normalized.EndsWith("quick-panel-favorites.json", StringComparison.OrdinalIgnoreCase))
-            return "【设置】常用扩展收藏与禁用项";
+            return "【设置】常用小程序收藏与禁用项";
         if (normalized.EndsWith("radial-menu-pages.json", StringComparison.OrdinalIgnoreCase))
             return "【设置】轮盘菜单页面布局";
         if (normalized.EndsWith("yanm-layout.json", StringComparison.OrdinalIgnoreCase))
@@ -12742,9 +12742,9 @@ public sealed class PersonalSyncCommitItem : INotifyPropertyChanged
         if (normalized.EndsWith("window-controls.json", StringComparison.OrdinalIgnoreCase))
             return "【设置】窗口绑定、吸附与切换配置";
         if (normalized.Contains("packages/") && normalized.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-            return "个人备份扩展包";
+            return "个人备份小程序包";
         if (normalized.Contains("appdata/"))
-            return "扩展专属应用数据备份";
+            return "小程序专属应用数据备份";
             
         return path;
     }
@@ -12985,10 +12985,10 @@ public static class SettingsSearchData
         new("sync", "同步与备份 - 备份与恢复操作", "立即备份 立即恢复 上传备份 下载备份 同步数据 restore"),
 
         // 扩展
-        new("extensions", "扩展 - 扩展管理", "扩展 插件 本地扩展 启用扩展 禁用扩展 编辑 搜索 打开目录 扩展根目录 extension plugin folder"),
+        new("extensions", "小程序 - 小程序管理", "小程序 插件 本地小程序 启用小程序 禁用小程序 编辑 搜索 打开目录 小程序根目录 extension plugin folder"),
 
         // 回收站
-        new("recycle", "回收站 - 扩展回收站", "回收站 扩展回收站 恢复 彻底删除 已删除插件 recycle bin trash restore"),
+        new("recycle", "回收站 - 小程序回收站", "回收站 小程序回收站 恢复 彻底删除 已删除插件 recycle bin trash restore"),
 
         // 快捷键
         new("shortcuts", "快捷键 - 快捷键绑定", "快捷键绑定 热键 录制快捷键 全局快捷键 组合键 shortcut hotkey binding"),

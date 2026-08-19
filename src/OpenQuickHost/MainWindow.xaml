@@ -356,7 +356,7 @@
                     
                         <!-- Search Box Placeholder -->
                         <TextBlock IsHitTestVisible="False"
-                                   Text="搜索应用、扩展、系统项，或输入 @应用 / @系统 ..."
+                                   Text="搜索应用、小程序、系统项，或输入 @应用 / @系统 ..."
                                    VerticalAlignment="Center"
                                    Foreground="{DynamicResource BrushTextMuted}"
                                    FontSize="{DynamicResource FontSizeTitle}"
@@ -776,7 +776,7 @@
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="EditExtensionMenuItem"
-                                      Header="编辑扩展"
+                                      Header="编辑小程序"
                                       Click="EditExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -819,7 +819,7 @@
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="OpenExtensionDirectoryMenuItem"
-                                      Header="打开扩展目录"
+                                      Header="打开小程序目录"
                                       Click="OpenExtensionDirectoryMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1288,7 +1288,7 @@
                                      Background="#33FFFFFF"
                                      BorderThickness="0"
                                      HorizontalAlignment="Center" />
-                        <TextBlock Text="正在加载扩展商店..."
+                        <TextBlock Text="正在加载小程序商店..."
                                    Foreground="{DynamicResource BrushTextSec}"
                                    FontSize="{DynamicResource FontSizeNormal}"
                                    Margin="0,12,0,0"
@@ -1327,7 +1327,7 @@
                                     Focusable="False">
                                 <TextBlock Text="←" Foreground="{DynamicResource BrushTextMain}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Button>
-                            <TextBlock Text="扩展详情" Foreground="{DynamicResource BrushTextMain}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock Text="小程序详情" Foreground="{DynamicResource BrushTextMain}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
 
@@ -1382,7 +1382,7 @@
                             </StackPanel>
 
                             <!-- 详细说明 -->
-                            <TextBlock Text="扩展介绍" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <TextBlock Text="小程序介绍" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
                             <Border Background="#10FFFFFF" CornerRadius="8" Padding="12" Margin="0,0,24,0">
                                 <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" TextWrapping="Wrap" LineHeight="18"/>
                             </Border>
@@ -1463,7 +1463,7 @@
                                             </Style.Triggers>
                                         </Style>
                                     </Border.Style>
-                                    <TextBlock Text="已安装此扩展" Foreground="{DynamicResource BrushTextMuted}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <TextBlock Text="已安装此小程序" Foreground="{DynamicResource BrushTextMuted}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                             </Grid>
                         </StackPanel>
@@ -2294,7 +2294,7 @@ Visibility="{Binding AiChatVisibility}">
                                 Margin="0,0,10,0"
                                 Background="Transparent"
                                 BorderThickness="0"
-                                ToolTip="添加扩展"
+                                ToolTip="添加小程序"
                                 AllowDrop="True"
                                 Click="FooterAddExtensionButton_Click"
                                 PreviewDragEnter="FooterAddExtensionButton_DragEnter"
@@ -2444,7 +2444,7 @@ Visibility="{Binding AiChatVisibility}">
                                 </Button>
 
                                 <Button Style="{DynamicResource GhostButtonStyle}"
-                                        ToolTip="强制重新同步当前账户下的云端扩展状态"
+                                        ToolTip="强制重新同步当前账户下的云端小程序状态"
                                         HorizontalContentAlignment="Stretch" Click="QuickMenuRefreshCloud_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -2462,7 +2462,7 @@ Visibility="{Binding AiChatVisibility}">
                                 <Rectangle Height="1" Fill="{DynamicResource BrushSeparator}" Margin="6,10" />
 
                                 <Button Style="{DynamicResource GhostButtonStyle}"
-                                        ToolTip="打开本地使用说明与扩展开发参考文档"
+                                        ToolTip="打开本地使用说明与小程序开发参考文档"
                                         HorizontalContentAlignment="Stretch" Click="QuickMenuOpenDocs_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>

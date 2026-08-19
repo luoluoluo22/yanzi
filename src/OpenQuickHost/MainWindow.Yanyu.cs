@@ -225,7 +225,7 @@ public partial class MainWindow
     private string BuildYanyuActionSummary(YanyuRuleSettings rule)
     {
         return string.Equals(rule.ActionType, YanyuActionTypes.RunExtension, StringComparison.OrdinalIgnoreCase)
-            ? $"运行扩展：{ResolveYanyuRuleExtensionTitle(rule)}"
+            ? $"运行小程序：{ResolveYanyuRuleExtensionTitle(rule)}"
             : $"粘贴文本：{BuildYanyuPreviewText(rule.TextContent)}";
     }
 
@@ -325,7 +325,7 @@ public partial class MainWindow
             Enabled = true,
             ActionType = YanyuActionTypes.PasteText,
             ExtensionId = defaultExtension?.ExtensionId ?? string.Empty,
-            Description = defaultExtension == null ? string.Empty : $"运行扩展：{defaultExtension.Title}"
+            Description = defaultExtension == null ? string.Empty : $"运行小程序：{defaultExtension.Title}"
         };
 
         var edited = ShowYanyuEditor(

@@ -221,14 +221,14 @@ public partial class AddJsonExtensionWindow : Window
 
     private void ConfigureMode(string initialJson)
     {
-        Title = _isEditMode ? "编辑扩展" : "添加新扩展";
+        Title = _isEditMode ? "编辑小程序" : "添加新小程序";
         ManualModeButton.Visibility = Visibility.Collapsed;
         ManualModeButton.Content = "手动编辑";
 
         if (_isEditMode)
         {
             PageHeaderPrefix.Text = "编辑";
-            PageHeaderAccent.Text = "扩展";
+            PageHeaderAccent.Text = "小程序";
             HeaderDescription.Text = "直接修改 JSON，验证通过后可以测试并保存。";
             SaveButton.Content = "保存修改";
             _currentStep = WizardStep.Test;
@@ -236,8 +236,8 @@ public partial class AddJsonExtensionWindow : Window
         else
         {
             PageHeaderPrefix.Text = "添加";
-            PageHeaderAccent.Text = "新扩展";
-            HeaderDescription.Text = "通过表单和手动编写 JSON 来创建扩展。";
+            PageHeaderAccent.Text = "新小程序";
+            HeaderDescription.Text = "通过表单和手动编写 JSON 来创建小程序。";
             SaveButton.Content = "保存并添加";
             _currentStep = WizardStep.Describe;
         }
@@ -428,7 +428,7 @@ public partial class AddJsonExtensionWindow : Window
                 Process.Start("explorer.exe", $"\"{extPath}\"");
             }
 
-            // 2. 唤起默认浏览器打开扩展管理页
+            // 2. 唤起默认浏览器打开小程序管理页
             try
             {
                 Process.Start(new ProcessStartInfo
@@ -452,7 +452,7 @@ public partial class AddJsonExtensionWindow : Window
 
             System.Windows.MessageBox.Show(
                 this,
-                "已为你打开插件目录与浏览器扩展页！\n\n【极速加载步骤】：\n1. 开启浏览器右上角的「开发者模式」；\n2. 将高亮选中的 browser-extension 文件夹直接拖入浏览器即可！\n\n安装完成后燕子将自动感知并就绪。",
+                "已为你打开插件目录与浏览器小程序页！\n\n【极速加载步骤】：\n1. 开启浏览器右上角的「开发者模式」；\n2. 将高亮选中的 browser-extension 文件夹直接拖入浏览器即可！\n\n安装完成后燕子将自动感知并就绪。",
                 "燕子浏览器助手加载指引",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -554,7 +554,7 @@ public partial class AddJsonExtensionWindow : Window
 
             // 构造错误修复专属提示词
             var fixPromptBuilder = new StringBuilder();
-            fixPromptBuilder.AppendLine("刚才生成的 Yanzi 扩展 JSON 在试运行测试时发生错误，请根据以下报错信息进行分析并修复该扩展的 JSON 代码。");
+            fixPromptBuilder.AppendLine("刚才生成的 Yanzi 小程序 JSON 在试运行测试时发生错误，请根据以下报错信息进行分析并修复该小程序的 JSON 代码。");
             fixPromptBuilder.AppendLine();
             fixPromptBuilder.AppendLine("【一、当前出现错误的 JSON 配置】：");
             fixPromptBuilder.AppendLine("```json");
@@ -825,7 +825,7 @@ public partial class AddJsonExtensionWindow : Window
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "选择扩展图标",
+            Title = "选择小程序图标",
             Filter = "图片文件|*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.ico|所有文件|*.*",
             CheckFileExists = true,
             Multiselect = false
@@ -850,7 +850,7 @@ public partial class AddJsonExtensionWindow : Window
     {
         if (AiRequestBox.Text.Trim().Length <= 3)
         {
-            ShowError("先写清楚你想做什么扩展，再进入下一步。");
+            ShowError("先写清楚你想做什么小程序，再进入下一步。");
             return;
         }
 
@@ -1065,13 +1065,13 @@ public partial class AddJsonExtensionWindow : Window
         {
             var defaultSession = new ExtAiSessionItem
             {
-                Title = "新建扩展会话",
+                Title = "新建小程序会话",
                 CurrentJson = ManualJsonInputBox?.Text ?? _initialJson ?? string.Empty
             };
             defaultSession.Messages.Add(new ExtAiChatMessage
             {
                 Role = "assistant",
-                Content = "你好！我是 DeepSeek AI 扩展开发助手。请在下方输入你想要实现的功能需求（例如：打开计算器、清理回收站、翻译选中文本等），我会为你生成完整的扩展 JSON 并自动试运行。"
+                Content = "你好！我是 DeepSeek AI 小程序开发助手。请在下方输入你想要实现的功能需求（例如：打开计算器、清理回收站、翻译选中文本等），我会为你生成完整的小程序 JSON 并自动试运行。"
             });
             AiSessions.Add(defaultSession);
         }
@@ -1125,7 +1125,7 @@ public partial class AddJsonExtensionWindow : Window
         newSession.Messages.Add(new ExtAiChatMessage
         {
             Role = "assistant",
-            Content = "你好！请输入你的新扩展功能需求，我会即时为你构建代码。"
+            Content = "你好！请输入你的新小程序功能需求，我会即时为你构建代码。"
         });
         AiSessions.Insert(0, newSession);
         AiSessionListBox.SelectedItem = newSession;
@@ -1138,8 +1138,8 @@ public partial class AddJsonExtensionWindow : Window
 
     private ExtAiChatMessage CreateAssistantVersionMessage(string jsonResult, string summary)
     {
-        string extName = "自定义扩展";
-        string extType = "扩展";
+        string extName = "自定义小程序";
+        string extType = "小程序";
         string? extIcon = null;
         string? accentHex = "#3B82F6";
         Geometry? vectorGeo = null;
@@ -1163,7 +1163,7 @@ public partial class AddJsonExtensionWindow : Window
                     "system-action" => "系统控制",
                     "shell" => "命令行",
                     "custom-protocol" => "协议交互",
-                    _ => tp.GetString() ?? "扩展"
+                    _ => tp.GetString() ?? "小程序"
                 };
             }
             if (root.TryGetProperty("icon", out var ip) && ip.ValueKind == JsonValueKind.String)
@@ -1395,13 +1395,13 @@ public partial class AddJsonExtensionWindow : Window
 
             if (string.IsNullOrWhiteSpace(prompt))
             {
-                ShowError("请先填写扩展的需求或修改指令，以便生成对应的 AI 提示词。");
+                ShowError("请先填写小程序的需求或修改指令，以便生成对应的 AI 提示词。");
                 return;
             }
 
             if (_currentAiSession != null)
             {
-                var promptDisplay = !string.IsNullOrWhiteSpace(userInput) ? userInput : (isNewSession ? "生成扩展 JSON" : "修改扩展配置");
+                var promptDisplay = !string.IsNullOrWhiteSpace(userInput) ? userInput : (isNewSession ? "生成小程序 JSON" : "修改小程序配置");
                 var userMsg = new ExtAiChatMessage
                 {
                     Role = "user",
@@ -1417,7 +1417,7 @@ public partial class AddJsonExtensionWindow : Window
                     }
                 }
                 _currentAiSession.Messages.Add(userMsg);
-                if (_currentAiSession.Title == "新建扩展会话" || _currentAiSession.Title.StartsWith("会话 "))
+                if (_currentAiSession.Title == "新建小程序会话" || _currentAiSession.Title.StartsWith("会话 "))
                 {
                     _currentAiSession.Title = promptDisplay.Length > 12 ? promptDisplay.Substring(0, 12) + "..." : promptDisplay;
                 }
@@ -1471,7 +1471,7 @@ public partial class AddJsonExtensionWindow : Window
             {
                 _currentAiSession.HasSentInitialPrompt = true;
                 _currentAiSession.CurrentJson = jsonResult;
-                _currentAiSession.Messages.Add(CreateAssistantVersionMessage(jsonResult, "✅ 已成功生成扩展 JSON 并载入编辑器，正在启动试运行验证..."));
+                _currentAiSession.Messages.Add(CreateAssistantVersionMessage(jsonResult, "✅ 已成功生成小程序 JSON 并载入编辑器，正在启动试运行验证..."));
                 _currentAiSession.LastUpdatedAt = DateTime.Now;
                 ScrollAiChatToEnd();
             }
@@ -1528,10 +1528,10 @@ public partial class AddJsonExtensionWindow : Window
     private string BuildFollowUpModifyPrompt(string userInput, string currentJson)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("请在当前扩展版本的基础上，按照以下最新修改需求进行调整，并输出更新后的完整 JSON 配置：");
+        sb.AppendLine("请在当前小程序版本的基础上，按照以下最新修改需求进行调整，并输出更新后的完整 JSON 配置：");
         sb.AppendLine();
         sb.AppendLine("【最新修改需求】：");
-        sb.AppendLine(string.IsNullOrWhiteSpace(userInput) ? "请检查并优化当前扩展配置。" : userInput.Trim());
+        sb.AppendLine(string.IsNullOrWhiteSpace(userInput) ? "请检查并优化当前小程序配置。" : userInput.Trim());
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(currentJson))
         {
@@ -1542,7 +1542,7 @@ public partial class AddJsonExtensionWindow : Window
             sb.AppendLine();
         }
         sb.AppendLine("【输出要求】：");
-        sb.AppendLine("1. 遵循 Yanzi 扩展 manifest 规范；");
+        sb.AppendLine("1. 遵循 Yanzi 小程序 manifest 规范；");
         sb.AppendLine("2. 仅输出更新后的完整合法 JSON 代码块（包裹在 ```json 与 ``` 中），不要输出多余废话。");
         return sb.ToString();
     }
@@ -1597,7 +1597,7 @@ public partial class AddJsonExtensionWindow : Window
 
         if (!string.IsNullOrWhiteSpace(QueryTargetTemplateBox.Text))
         {
-            parts.Add($"这是一个搜索扩展，搜索模板是：{QueryTargetTemplateBox.Text.Trim()}");
+            parts.Add($"这是一个搜索小程序，搜索模板是：{QueryTargetTemplateBox.Text.Trim()}");
         }
 
         if (!string.IsNullOrWhiteSpace(QueryPrefixesBox.Text))
@@ -1651,8 +1651,8 @@ public partial class AddJsonExtensionWindow : Window
         }
 
         return parts.Count == 0
-            ? "创建一个新的 Yanzi 扩展。"
-            : $"创建一个新的 Yanzi 扩展，要求如下：{string.Join("；", parts)}。";
+            ? "创建一个新的 Yanzi 小程序。"
+            : $"创建一个新的 Yanzi 小程序，要求如下：{string.Join("；", parts)}。";
     }
 
     private void AiLinkButton_Click(object sender, RoutedEventArgs e)
@@ -2397,7 +2397,7 @@ public partial class AddJsonExtensionWindow : Window
     {
         if (string.IsNullOrWhiteSpace(NameBox.Text))
         {
-            throw new InvalidOperationException("扩展名称不能为空。");
+            throw new InvalidOperationException("小程序名称不能为空。");
         }
 
         var runtime = NullIfEmpty(RuntimeBox.Text);
@@ -2733,7 +2733,7 @@ public partial class AddJsonExtensionWindow : Window
             ?? throw new InvalidOperationException("JSON 解析失败。");
 
         var logBuilder = new StringBuilder();
-        logBuilder.AppendLine($"扩展：{manifest.Name} ({manifest.Id})");
+        logBuilder.AppendLine($"小程序：{manifest.Name} ({manifest.Id})");
         logBuilder.AppendLine($"时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         logBuilder.AppendLine();
 
@@ -2749,21 +2749,21 @@ public partial class AddJsonExtensionWindow : Window
                 if (mainWindow == null)
                 {
                     logBuilder.AppendLine("未找到主窗口实例，无法预览 hostedView。");
-                    return new TestExecutionResult(false, "没有可用的主窗口来预览该扩展。", logBuilder.ToString());
+                    return new TestExecutionResult(false, "没有可用的主窗口来预览该小程序。", logBuilder.ToString());
                 }
 
                 Hide();
                 await mainWindow.Dispatcher.InvokeAsync(() => mainWindow.PreviewHostedViewForTestAsync(command, editorWindowToRestore: this)).Task.Unwrap();
                 var hostedViewType = manifest.HostedViewXaml?.Type ?? manifest.HostedViewV2?.Type ?? manifest.HostedView?.Type ?? "unknown";
-                logBuilder.AppendLine("类型：宿主内置界面扩展");
+                logBuilder.AppendLine("类型：宿主内置界面小程序");
                 logBuilder.AppendLine($"视图类型：{hostedViewType}");
                 logBuilder.AppendLine($"窗口宽度：{manifest.HostedViewXaml?.Window?.Width?.ToString("0") ?? manifest.HostedViewV2?.Window?.Width?.ToString("0") ?? manifest.HostedView?.WindowWidth?.ToString("0") ?? "默认"}");
                 logBuilder.AppendLine($"窗口高度：{manifest.HostedViewXaml?.Window?.Height?.ToString("0") ?? manifest.HostedViewV2?.Window?.Height?.ToString("0") ?? manifest.HostedView?.WindowHeight?.ToString("0") ?? "默认"}");
-                logBuilder.AppendLine("已拉起主窗口并打开扩展视图。");
+                logBuilder.AppendLine("已拉起主窗口并打开小程序视图。");
                 logBuilder.AppendLine(manifest.HostedViewXaml != null
                     ? "当前 hostedViewXaml 使用动态 XAML 宿主能力。"
                     : "当前 hostedViewV2 使用受限组件协议，不支持直接声明任意 WPF 控件树。");
-                return new TestExecutionResult(true, "测试通过，已在主窗口中打开该扩展界面。", logBuilder.ToString());
+                return new TestExecutionResult(true, "测试通过，已在主窗口中打开该小程序界面。", logBuilder.ToString());
             }
             finally
             {
@@ -2777,8 +2777,8 @@ public partial class AddJsonExtensionWindow : Window
             {
                 return new TestExecutionResult(
                     false,
-                    "当前 JSON 使用的是外部脚本入口，测试前需要先保存脚本文件到扩展目录。",
-                    logBuilder.AppendLine("当前只支持直接测试内联脚本扩展。").ToString());
+                    "当前 JSON 使用的是外部脚本入口，测试前需要先保存脚本文件到小程序目录。",
+                    logBuilder.AppendLine("当前只支持直接测试内联脚本小程序。").ToString());
             }
 
             var tempDirectory = Path.Combine(Path.GetTempPath(), "yanzi-extension-test", Guid.NewGuid().ToString("N"));
@@ -2833,7 +2833,7 @@ public partial class AddJsonExtensionWindow : Window
                 FileName = preview,
                 UseShellExecute = true
             });
-            logBuilder.AppendLine("类型：网页搜索扩展");
+            logBuilder.AppendLine("类型：网页搜索小程序");
             logBuilder.AppendLine($"示例关键词：{sampleQuery}");
             logBuilder.AppendLine($"预览地址：{preview}");
             logBuilder.AppendLine("已实际打开搜索地址。");
@@ -2856,10 +2856,10 @@ public partial class AddJsonExtensionWindow : Window
                 }
 
                 await mainWindow.Dispatcher.InvokeAsync(() => mainWindow.OpenSearchProviderInLauncher(command, string.Empty));
-                logBuilder.AppendLine("类型：扩展搜索提供器");
+                logBuilder.AppendLine("类型：小程序搜索提供器");
                 logBuilder.AppendLine($"提供器：{manifest.SearchProvider.Type}");
                 logBuilder.AppendLine($"搜索目录：{manifest.SearchProvider.Path ?? manifest.OpenTarget ?? "未设置"}");
-                logBuilder.AppendLine("已拉起主窗口并进入该扩展的搜索输入。");
+                logBuilder.AppendLine("已拉起主窗口并进入该小程序的搜索输入。");
                 return new TestExecutionResult(true, "测试通过，已在主窗口中打开搜索入口。", logBuilder.ToString());
             }
             finally
@@ -2881,7 +2881,7 @@ public partial class AddJsonExtensionWindow : Window
                 FileName = target,
                 UseShellExecute = true
             });
-            logBuilder.AppendLine("类型：打开目标扩展");
+            logBuilder.AppendLine("类型：打开目标小程序");
             logBuilder.AppendLine($"目标：{target}");
             logBuilder.AppendLine($"本地存在：{exists}");
             logBuilder.AppendLine($"绝对地址：{isUri}");
@@ -2902,7 +2902,7 @@ public partial class AddJsonExtensionWindow : Window
         }
 
         logBuilder.AppendLine("未检测到 runtime、queryTargetTemplate 或 openTarget。");
-        return new TestExecutionResult(false, "当前扩展缺少可测试的执行入口。", logBuilder.ToString());
+        return new TestExecutionResult(false, "当前小程序缺少可测试的执行入口。", logBuilder.ToString());
     }
 
     private static bool TryResolveExecutableOnPath(string fileName)
@@ -3012,7 +3012,7 @@ public partial class AddJsonExtensionWindow : Window
         finally
         {
             triggerButton.IsEnabled = _lastJsonValid;
-            triggerButton.Content = "测试扩展";
+            triggerButton.Content = "测试小程序";
             RefreshAllState();
         }
     }
@@ -3042,8 +3042,8 @@ public partial class AddJsonExtensionWindow : Window
         return new CommandItem(
             glyph: "E",
             title: manifest.Name,
-            subtitle: manifest.Description ?? "临时测试扩展",
-            category: manifest.Category ?? "扩展",
+            subtitle: manifest.Description ?? "临时测试小程序",
+            category: manifest.Category ?? "小程序",
             accentHex: NormalizeAccentHexOrDefault(manifest.AccentHex),
             openTarget: manifest.OpenTarget,
             keywords: manifest.Keywords ?? [],
@@ -3069,7 +3069,7 @@ public partial class AddJsonExtensionWindow : Window
     private static string BuildGenerationPrompt(string request)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("请生成一个 Yanzi 扩展 manifest JSON。");
+        builder.AppendLine("请生成一个 Yanzi 小程序 manifest JSON。");
         builder.AppendLine();
         builder.AppendLine("需求：");
         builder.AppendLine(request);
@@ -3115,17 +3115,17 @@ public partial class AddJsonExtensionWindow : Window
     private static string BuildDetailedPrompt(string request)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("请帮我生成一个 Yanzi 扩展的完整 JSON 配置。");
+        builder.AppendLine("请帮我生成一个 Yanzi 小程序的完整 JSON 配置。");
         builder.AppendLine();
         builder.AppendLine("一、背景说明");
-        builder.AppendLine("这个产品的设计理念是“万物皆扩展”。用户会在桌面启动器、快捷面板、鼠标呼出面板里运行扩展。");
-        builder.AppendLine("扩展可以是：");
+        builder.AppendLine("这个产品的设计理念是“万物皆小程序”。用户会在桌面启动器、快捷面板、鼠标呼出面板里运行小程序。");
+        builder.AppendLine("小程序可以是：");
         builder.AppendLine("1. 直接打开网页、程序、文件、文件夹");
         builder.AppendLine("2. 做网页搜索");
         builder.AppendLine("3. 运行脚本处理输入内容");
         builder.AppendLine("4. 用 C#/.NET/WPF/Windows 原生能力完成系统操作或独立工具");
         builder.AppendLine("5. 在宿主界面里展示一个简单工作区");
-        builder.AppendLine("宿主的角色是管家：负责搜索框入口、输入传递、扩展状态、本地/云端存储和少量受控宿主视图动作；除这些已声明 API 外，功能实现应优先写原生 C#，不要臆造宿主封装方法。");
+        builder.AppendLine("宿主的角色是管家：负责搜索框入口、输入传递、小程序状态、本地/云端存储和少量受控宿主视图动作；除这些已声明 API 外，功能实现应优先写原生 C#，不要臆造宿主封装方法。");
         builder.AppendLine();
         builder.AppendLine("我的需求是：");
         builder.AppendLine(request);
@@ -3149,7 +3149,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("   - 修改 Windows 个性化、壁纸、系统颜色等设置时，不能只写注册表后直接返回成功；必须调用实际生效 API、检查返回值，必要时生成壁纸文件并调用 SystemParametersInfo(SPI_SETDESKWALLPAPER) 或明确提示需要用户手动刷新/注销");
         builder.AppendLine("   - 脚本测试只能判断代码是否成功执行，不能自动证明桌面背景、系统颜色、网络状态等外部副作用真的生效；这类脚本应自行读取/验证结果后再返回成功");
         builder.AppendLine("   - 宿主会自动引用随应用发布的常用托管 DLL，可直接使用 System.Drawing.Common、System.Management、System.IO.Ports、System.ServiceProcess、System.Diagnostics.EventLog、System.DirectoryServices、System.Security.Cryptography.ProtectedData、System.Text.Encoding.CodePages 等基础库");
-        builder.AppendLine("4.1 如果需要用户在主界面输入“前缀 + 内容”后触发扩展，必须提供 queryPrefixes；脚本或工作区扩展会通过 context.InputText 收到去掉前缀后的内容");
+        builder.AppendLine("4.1 如果需要用户在主界面输入“前缀 + 内容”后触发小程序，必须提供 queryPrefixes；脚本或工作区小程序会通过 context.InputText 收到去掉前缀后的内容");
         builder.AppendLine("5. 如果是 C# 内联脚本，必须严格遵守宿主约定：");
         builder.AppendLine("   - 必须包含 \"runtime\": \"csharp\"");
         builder.AppendLine("   - 必须包含 \"entryMode\": \"inline\"");
@@ -3162,38 +3162,38 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("   - YanziActionContext 只提供宿主管家能力：InputText、LaunchSource、ExtensionDirectory、ExtensionDataDirectory、Now、Permissions、State、SetStateAsync、Storage、ViewState、UpdateView");
         builder.AppendLine("   - 不要发明 context.SetTheme、context.GetTheme、context.OpenFilePicker、context.ShowMessage、context.GetStateAsync<T>() 等不存在的宿主 API；这些需求应优先用原生 C#/.NET/WPF/Windows API 自己实现");
         builder.AppendLine("   - 不要根据旧命名空间推断 pack URI、程序集名或资源路径；当前应用程序集名是 Yanzi，且没有内置主题资源字典");
-        builder.AppendLine("5.1 只有脚本真正创建 WPF 原生窗口时才输出 \"uiMode\": \"native-window\"，典型特征是 new Window、ShowDialog、WindowStartupLocation 或 WindowStyle。仅使用 System.Windows.Clipboard 不属于原生窗口扩展。");
+        builder.AppendLine("5.1 只有脚本真正创建 WPF 原生窗口时才输出 \"uiMode\": \"native-window\"，典型特征是 new Window、ShowDialog、WindowStartupLocation 或 WindowStyle。仅使用 System.Windows.Clipboard 不属于原生窗口小程序。");
         builder.AppendLine("5.2 只要是 native-window 扩展，就不要再同时输出 hostedViewXaml 或 hostedViewV2");
         builder.AppendLine("5.3 如果需求是独立弹窗小工具、原生窗口小应用、独立编辑器，而不是寄生在宿主里的工作区，优先输出 native-window，而不是 hostedViewXaml");
         builder.AppendLine();
         builder.AppendLine("三、字段说明");
-        builder.AppendLine("- id：扩展唯一标识，只能英文小写、数字、短横线，例如 \"open-project-folder\"");
-        builder.AppendLine("- name：扩展显示名称");
+        builder.AppendLine("- id：小程序唯一标识，只能英文小写、数字、短横线，例如 \"open-project-folder\"");
+        builder.AppendLine("- name：小程序显示名称");
         builder.AppendLine("- version：版本号，默认 \"0.1.0\"");
         builder.AppendLine("- category：分类，例如 \"扩展\"、\"网页搜索\"、\"效率工具\"");
-        builder.AppendLine("- description：一句话描述扩展用途");
+        builder.AppendLine("- description：一句话描述小程序用途");
         builder.AppendLine("- keywords：搜索关键词数组");
         builder.AppendLine("- icon：图标，可用 mdi:图标名 或图片地址");
-        builder.AppendLine("- accentHex：可选，扩展按钮 / 卡片底色，支持 #RRGGBB 或 #AARRGGBB，例如 #10B981、#FFF97316；不要所有扩展都用默认蓝色");
+        builder.AppendLine("- accentHex：可选，小程序按钮 / 卡片底色，支持 #RRGGBB 或 #AARRGGBB，例如 #10B981、#FFF97316；不要所有小程序都用默认蓝色");
         builder.AppendLine("- openTarget：点击后直接打开的目标");
-        builder.AppendLine("- queryPrefixes：前缀数组，例如 [\"百度\", \"baidu\"]；搜索扩展会把后面的内容替换进 {query}，脚本 / 工作区扩展会把后面的内容传给 context.InputText");
+        builder.AppendLine("- queryPrefixes：前缀数组，例如 [\"百度\", \"baidu\"]；搜索小程序会把后面的内容替换进 {query}，脚本 / 工作区扩展会把后面的内容传给 context.InputText");
         builder.AppendLine("- queryTargetTemplate：搜索模板，必须包含 {query}");
-        builder.AppendLine("- searchProvider：可选；如果希望某个扩展被固定到顶部后，在主界面继续输入关键词就返回一组列表结果，可输出 searchProvider");
+        builder.AppendLine("- searchProvider：可选；如果希望某个小程序被固定到顶部后，在主界面继续输入关键词就返回一组列表结果，可输出 searchProvider");
         builder.AppendLine("- searchProvider.type：当前支持 \"folder\"，表示在指定目录下搜索文件/文件夹");
-        builder.AppendLine("- searchProvider.type 也支持 \"script\"；这时扩展自己的脚本需要返回 JSON 结果数组");
+        builder.AppendLine("- searchProvider.type 也支持 \"script\"；这时小程序自己的脚本需要返回 JSON 结果数组");
         builder.AppendLine("- searchProvider.path：搜索根目录；如果省略且 openTarget 本身是目录，会自动拿 openTarget 当根目录");
         builder.AppendLine("- searchProvider.aliases：可选；固定到顶部后支持 @别名 关键词，例如 @项目 需求文档");
         builder.AppendLine("- searchProvider.includeSubdirectories / includeFiles / includeDirectories / maxResults：可选，控制搜索范围");
         builder.AppendLine("- script provider 的脚本返回格式建议是 JSON 数组，每项包含 title、subtitle、kind、openTarget、keywords、accentHex；kind 可用 file、folder、record、url、script、api");
         builder.AppendLine("- runtime：脚本运行时，例如 \"csharp\" 或 \"powershell\"");
-        builder.AppendLine("- uiMode：可选；如果希望 C# 扩展自己弹原生窗口而不是寄生在宿主界面中，可写 \"native-window\"");
+        builder.AppendLine("- uiMode：可选；如果希望 C# 小程序自己弹原生窗口而不是寄生在宿主界面中，可写 \"native-window\"");
         builder.AppendLine("- entryMode：如果是内联脚本请写 \"inline\"");
         builder.AppendLine("- entry：如果是外部脚本文件，写入口文件名");
         builder.AppendLine("- permissions：权限数组，例如 [\"clipboard\", \"network\"]");
         builder.AppendLine("- 宿主 API 边界：context 不是万能能力对象，只能使用本文明确列出的成员；其它能力请在 script.source 中直接使用 C# 原生库、WPF、P/Invoke、Process、File、HttpClient 等实现");
         builder.AppendLine("- 命名边界：产品名和应用名是 Yanzi；不要在 C# 脚本里写旧产品名相关命名空间、程序集引用、pack URI、资源路径或品牌文案。hostedViewXaml 的 oqh:HostedViewBridge 命名空间使用模板给出的 Yanzi 命名空间");
-        builder.AppendLine("- 扩展脚本现在支持 context.Storage 本地/云端存储 helper：ReadTextAsync、WriteTextAsync、DeleteTextAsync、ReadJsonAsync<T>、WriteJsonAsync<T>");
-        builder.AppendLine("- context.Storage 默认支持 scope = local、cloud、both；local 写入本地扩展数据目录，cloud / both 会通过宿主 API 写入坚果云 / WebDAV");
+        builder.AppendLine("- 小程序脚本现在支持 context.Storage 本地/云端存储 helper：ReadTextAsync、WriteTextAsync、DeleteTextAsync、ReadJsonAsync<T>、WriteJsonAsync<T>");
+        builder.AppendLine("- context.Storage 默认支持 scope = local、cloud、both；local 写入本地小程序数据目录，cloud / both 会通过宿主 API 写入坚果云 / WebDAV");
         builder.AppendLine("- context.Storage.ReadTextAsync 的可用写法是：await context.Storage.ReadTextAsync(\"note.txt\", scope: \"both\")；不要传 defaultValue 参数");
         builder.AppendLine("- context.Storage.WriteTextAsync 的可用写法是：await context.Storage.WriteTextAsync(\"note.txt\", content, scope: \"both\")");
         builder.AppendLine("- context.Storage.DeleteTextAsync 的可用写法是：await context.Storage.DeleteTextAsync(\"note.txt\", scope: \"both\")；cloud / both 会同步 tombstone");
@@ -3227,7 +3227,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- 组件的 bind 字段用于绑定到 state 路径");
         builder.AppendLine("- button.actions：当前支持 setState、runScript、loadStorage、saveStorage");
         builder.AppendLine("- 如果只是旧版简单双栏工作区，也可以输出 hostedView，但新方案优先用 hostedViewXaml 或 hostedViewV2");
-        builder.AppendLine("- 如果不想寄生在宿主界面中，而是希望扩展自己弹原生 WPF 窗口，可使用 C# 扩展并设置 uiMode = native-window；这类扩展仍然需要用 YanziActionContext 读取输入、状态和存储");
+        builder.AppendLine("- 如果不想寄生在宿主界面中，而是希望小程序自己弹原生 WPF 窗口，可使用 C# 小程序并设置 uiMode = native-window；这类小程序仍然需要用 YanziActionContext 读取输入、状态和存储");
         builder.AppendLine("- native-window 扩展中的 WPF 窗口代码必须在 STA 线程中创建和显示；如果手动 new Window / TextBox / Button，必须显式创建 STA 线程再 ShowDialog，不要直接在 RunAsync 当前线程里 new Window");
         builder.AppendLine("- 如果需求是笔记、便签、编辑器、独立小应用，并且不寄生在宿主界面中，请优先参考模板 5.1 的原生笔记窗口，不要自己改写窗口启动结构");
         builder.AppendLine("- 如果需求是修改宿主自身界面资源，可使用 System.Windows.Application.Current.Dispatcher 和 Application.Current.Resources 等 WPF 原生对象尝试实现，但不要写 context.SetTheme 这类未声明方法");
@@ -3247,7 +3247,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"icon\": \"mdi:folder\"");
         builder.AppendLine("}");
         builder.AppendLine();
-        builder.AppendLine("模板 2：网页搜索扩展");
+        builder.AppendLine("模板 2：网页搜索小程序");
         builder.AppendLine("{");
         builder.AppendLine("  \"id\": \"search-baidu\",");
         builder.AppendLine("  \"name\": \"百度搜索\",");
@@ -3545,7 +3545,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("}");
         builder.AppendLine();
         builder.AppendLine();
-        builder.AppendLine("模板 5：原生窗口扩展（uiMode = native-window）");
+        builder.AppendLine("模板 5：原生窗口小程序（uiMode = native-window）");
         builder.AppendLine("{");
         builder.AppendLine("  \"id\": \"native-window-demo\",");
         builder.AppendLine("  \"name\": \"原生窗口示例\",");
@@ -5190,7 +5190,7 @@ public sealed class ExtAiChatMessage : System.ComponentModel.INotifyPropertyChan
 public sealed class ExtAiSessionItem : System.ComponentModel.INotifyPropertyChanged
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    private string _title = "新建扩展会话";
+    private string _title = "新建小程序会话";
     public string Title
     {
         get => _title;

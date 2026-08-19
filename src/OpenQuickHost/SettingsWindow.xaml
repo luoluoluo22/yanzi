@@ -1040,7 +1040,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
                                             <TextBlock Text="本地 Agent API" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="允许外部 Agent 读取/修改扩展数据及控制启动器。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
+                                            <TextBlock Text="允许外部 Agent 读取/修改小程序数据及控制启动器。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
                                         </StackPanel>
                                         <CheckBox Grid.Column="1" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableAgentApi, Mode=TwoWay}" Click="SaveSettingsToggle_Click" VerticalAlignment="Center"/>
                                     </Grid>
@@ -1085,7 +1085,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
                                             <TextBlock Text="用户环境变量" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="供脚本扩展和 WebView 应用读取。适合保存 NOTION_TOKEN、NOTION_DATABASE_ID 等第三方服务 Key。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                            <TextBlock Text="供脚本小程序和 WebView 应用读取。适合保存 NOTION_TOKEN、NOTION_DATABASE_ID 等第三方服务 Key。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
                                         </StackPanel>
                                         <Button Grid.Column="1" Content="添加变量" Style="{StaticResource SecondaryBtn}" Height="30" Padding="12,0" Click="AddEnvironmentVariableButton_Click"/>
                                     </Grid>
@@ -1187,7 +1187,7 @@
                                 <Border Padding="18,14" Background="#12EF4444" BorderBrush="#55EF4444" BorderThickness="1" CornerRadius="10" Margin="0,0,0,16"
                                         Visibility="{Binding HasExtensionSyncConflicts, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <StackPanel>
-                                        <TextBlock Text="扩展并发冲突需要选择" Foreground="#FFF87171" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="小程序并发冲突需要选择" Foreground="#FFF87171" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
                                         <TextBlock Text="远端版本已安全应用，本地包或删除意图已保存为冲突副本；选择前不会再次自动覆盖。" Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,4,0,8" TextWrapping="Wrap"/>
                                         <ItemsControl ItemsSource="{Binding ExtensionSyncConflictItems}">
                                             <ItemsControl.ItemTemplate>
@@ -1222,7 +1222,7 @@
                                 <Border Padding="18,14" Background="#128B5CF6" BorderBrush="#668B5CF6" BorderThickness="1" CornerRadius="10" Margin="0,0,0,16"
                                         Visibility="{Binding HasExtensionDataConflicts, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <StackPanel>
-                                        <TextBlock Text="扩展数据同步冲突处理" Foreground="#FFC4B5FD" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="小程序数据同步冲突处理" Foreground="#FFC4B5FD" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
                                         <TextBlock Text="检测到本地与云端数据存在冲突。您可以选择“采用本地”保留当前数据并同步，或选择“接受远端”覆写为云端数据。" Foreground="{DynamicResource BrushTextSec}" FontSize="10" Margin="0,4,0,8" TextWrapping="Wrap"/>
                                         <ItemsControl ItemsSource="{Binding ExtensionDataConflictItems}">
                                             <ItemsControl.ItemTemplate>
@@ -1667,7 +1667,7 @@
                                         <Border Padding="20,16" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
                                             <StackPanel>
                                                 <TextBlock Text="本地数据备份与还原" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold"/>
-                                                <TextBlock Text="定期在本地创建完整的配置和扩展快照，无需联网即可随时一键还原。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                                                <TextBlock Text="定期在本地创建完整的配置和小程序快照，无需联网即可随时一键还原。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
                                             </StackPanel>
                                         </Border>
                                         
@@ -1694,7 +1694,7 @@
                                                         </ComboBox>
                                                     </StackPanel>
                                                     <TextBlock Grid.Column="2"
-                                                               Text="开启后，应用将在启动时根据设定的频率自动在后台备份您的完整数据（配置和插件扩展，日志除外）。最多保留 5 个自动备份文件，避免占用过多磁盘空间。"
+                                                               Text="开启后，应用将在启动时根据设定的频率自动在后台备份您的完整数据（配置和小程序，日志除外）。最多保留 5 个自动备份文件，避免占用过多磁盘空间。"
                                                                Foreground="{DynamicResource BrushTextSec}"
                                                                FontSize="{DynamicResource FontSizeSmall}"
                                                                VerticalAlignment="Bottom"
@@ -1754,7 +1754,7 @@
                                             <Grid>
                                                 <StackPanel VerticalAlignment="Center">
                                                     <TextBlock Text="云端同步配置对象明细" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                                    <TextBlock Text="核心设置、扩展列表与扩展数据等项目的底层版本跟踪" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                    <TextBlock Text="核心设置、小程序列表与小程序数据等项目的底层版本跟踪" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
                                                 </StackPanel>
                                                 <Button Content="{Binding AccountSyncObjectsToggleText}" Style="{StaticResource SecondaryBtn}" Height="28" Padding="12,0" HorizontalAlignment="Right" VerticalAlignment="Center" Click="ToggleAccountSyncObjectsButton_Click"/>
                                             </Grid>
@@ -2350,7 +2350,7 @@
                                                     <TextBlock Text="当前状态：" Foreground="#FF94A3B8" FontSize="11" Margin="0,6,0,0"/>
                                                     <TextBlock Text="同步已启用" Foreground="#FF22C55E" FontSize="11" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnablePersonalSync, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                     <TextBlock Text="未启用" Foreground="#FF9CA3AF" FontSize="11" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnablePersonalSync, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
-                                                    <TextBlock Text="说明：多设备偏好同步。基于 WebDav 协议将你的鼠标触控偏好、快捷扩展组、系统偏好设置备份并无缝漫游到你的其他电脑设备上。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                    <TextBlock Text="说明：多设备偏好同步。基于 WebDav 协议将你的鼠标触控偏好、快捷小程序组、系统偏好设置备份并无缝漫游到你的其他电脑设备上。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                                 </StackPanel>
                                             </ToolTip>
                                         </Border.ToolTip>
@@ -2434,7 +2434,7 @@
                                             </StackPanel>
                                             <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableLanSync, Mode=TwoWay}" Click="EnableLanSync_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                         </Grid>
-                                        <TextBlock Text="实现手机与电脑聊天、手机端执行电脑扩展、手机与电脑文件互传，以及在手机上安全运行电脑的命令行指令。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
+                                        <TextBlock Text="实现手机与电脑聊天、手机端执行电脑小程序、手机与电脑文件互传，以及在手机上安全运行电脑的命令行指令。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
                                         <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                             <Ellipse x:Name="MobileStatusDot" Width="6" Height="6" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
@@ -2499,7 +2499,7 @@
                                             </StackPanel>
                                             <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnablePersonalSync, Mode=TwoWay}" Click="SaveWebDavSettingsButton_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                         </Grid>
-                                        <TextBlock Text="利用个人云盘（如 WebDav）在多台电脑之间无缝同步鼠标扩展、面板组与系统偏好设置。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
+                                        <TextBlock Text="利用个人云盘（如 WebDav）在多台电脑之间无缝同步鼠标小程序、面板组与系统偏好设置。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
                                         <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -3365,7 +3365,7 @@
                                 <Grid>
                                     <StackPanel>
                                         <TextBlock Text="在按钮上松开后执行动作" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
-                                        <TextBlock Text="启用后，长按或拖动触发时，移动到扩展上松开即可自动运行。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                        <TextBlock Text="启用后，长按或拖动触发时，移动到小程序上松开即可自动运行。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <CheckBox HorizontalAlignment="Right" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding ExecuteOnButtonRelease, Mode=TwoWay}" Click="SaveQuickPanelTrigger_Click"/>
                                 </Grid>
@@ -3374,17 +3374,17 @@
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15" Margin="0,20,0,0">
                                 <StackPanel>
                                     <TextBlock Text="鼠标触发已统一管理" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="这里用下拉框分配每个鼠标动作给背包、燕环、燕幕、窗口排列或鼠标手势。扩展编辑里只录制手势形状，触发方式由这里全局决定。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="这里用下拉框分配每个鼠标动作给背包、燕环、燕幕、窗口排列或鼠标手势。小程序编辑里只录制手势形状，触发方式由这里全局决定。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
 
                             <TextBlock Text="配置指南" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,20,0,10"/>
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15">
                                 <StackPanel>
-                                    <TextBlock Text="1. 在主界面仓库搜索您需要的扩展。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="1. 在主界面仓库搜索您需要的小程序。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
                                     <TextBlock Text="2. 在搜索结果上点击右键，选择“添加到背包”。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
                                     <TextBlock Text="3. 背包将自动占用第一个可用槽位（共 28 个）。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
-                                    <TextBlock Text="4. 长按或拖动触发时，如果启用“松开后执行”，移动到扩展上松开即可自动运行。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="4. 长按或拖动触发时，如果启用“松开后执行”，移动到小程序上松开即可自动运行。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -4039,7 +4039,7 @@
                                                                     Drop="RadialSlot_Drop">
                                                                 <Border.ContextMenu>
                                                                     <ContextMenu>
-                                                                        <MenuItem Header="添加扩展/应用/系统项" Click="RadialSlotAddCommandMenuItem_Click"/>
+                                                                        <MenuItem Header="添加小程序/应用/系统项" Click="RadialSlotAddCommandMenuItem_Click"/>
                                                                         <MenuItem Header="设置模拟按键" Click="RadialSlotSetSimulatedKeyMenuItem_Click"/>
                                                                         <Separator/>
                                                                         <MenuItem Header="进入子环编辑" Click="RadialSlotEnterChildPageMenuItem_Click"/>
@@ -4084,11 +4084,11 @@
                                                                                            Stretch="UniformToFill"
                                                                                            Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                                                     <Viewbox Width="{Binding VectorIconSize}"
-                                                                                             Height="{Binding VectorIconSize}"
-                                                                                             Stretch="Uniform"
-                                                                                             HorizontalAlignment="Center"
-                                                                                             VerticalAlignment="Center"
-                                                                                             Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                                            Height="{Binding VectorIconSize}"
+                                                                                            Stretch="Uniform"
+                                                                                            HorizontalAlignment="Center"
+                                                                                            VerticalAlignment="Center"
+                                                                                            Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                                                         <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
                                                                                     </Viewbox>
                                                                                     <TextBlock Text="{Binding DisplayGlyph}"
@@ -4104,8 +4104,7 @@
                                                                                        Foreground="{DynamicResource BrushAccent}"
                                                                                        FontWeight="SemiBold"
                                                                                        HorizontalAlignment="Center"
-                                                                                       FontSize="{DynamicResource FontSizeTiny}"
-                                                                                       >
+                                                                                       FontSize="{DynamicResource FontSizeTiny}">
                                                                                 <TextBlock.Style>
                                                                                     <Style TargetType="TextBlock">
                                                                                         <Setter Property="Visibility" Value="Visible"/>
@@ -4124,7 +4123,7 @@
                                                                                        TextAlignment="Center"
                                                                                        Width="{Binding TitleWidth}"
                                                                                        TextTrimming="CharacterEllipsis"
-                                                                                       ToolTip="把右侧扩展拖到这里"/>
+                                                                                       ToolTip="把右侧小程序拖到这里"/>
                                                                             <TextBlock Text="{Binding ChildPageTitle}"
                                                                                        Foreground="{DynamicResource BrushTextSec}"
                                                                                        FontSize="{DynamicResource FontSizeTiny}"
@@ -4158,9 +4157,9 @@
                                                                  Text="{Binding RadialMenuSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                                  Height="30"
                                                                  Padding="10,4"
-                                                                 ToolTip="搜索扩展、应用、系统设置项。按 ↓ 选择，Enter 添加到当前槽位。"
+                                                                 ToolTip="搜索小程序、应用、系统设置项。按 ↓ 选择，Enter 添加到当前槽位。"
                                                                  PreviewKeyDown="RadialMenuSearchBox_PreviewKeyDown"/>
-                                                        <TextBlock Text="扩展、程序、系统设置..."
+                                                        <TextBlock Text="小程序、程序、系统设置..."
                                                                    Foreground="{DynamicResource BrushTextSec}"
                                                                    Opacity="0.5"
                                                                    FontSize="{DynamicResource FontSizeSmallPlus}"
@@ -4485,55 +4484,38 @@
 
                                                                         <TextBlock Text="🖱 鼠标触发键" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold" Margin="0,0,0,6"/>
                                                                         <UniformGrid Columns="3" Margin="0,0,0,10">
-                                                                            <Button Content="右键 (Right)" Tag="Right" Click="YarnSelectKeyOptionButton_Click" Height="30" Margin="2" Style="{StaticResource KeyCapBtn}" ToolTip="按住鼠标左键拖选时，按鼠标右键触发"/>
-                                                                            <Button Content="侧键1 (X1)" Tag="X1" Click="YarnSelectKeyOptionButton_Click" Height="30" Margin="2" Style="{StaticResource KeyCapBtn}" ToolTip="按住鼠标左键拖选时，按鼠标侧键1(后退)触发"/>
-                                                                            <Button Content="侧键2 (X2)" Tag="X2" Click="YarnSelectKeyOptionButton_Click" Height="30" Margin="2" Style="{StaticResource KeyCapBtn}" ToolTip="按住鼠标左键拖选时，按鼠标侧键2(前进)触发"/>
+                                                                            <Button Content="右键 (Right)" Tag="Right" Click="YarnSelectKeyOptionButton_Click" Height="30" Margin="2" Style="{DynamicResource KeyCapBtn}" ToolTip="按住鼠标左键拖选时，按鼠标右键触发"/>
+                                                                            <Button Content="侧键1 (X1)" Tag="X1" Click="YarnSelectKeyOptionButton_Click" Height="30" Margin="2" Style="{DynamicResource KeyCapBtn}" ToolTip="按住鼠标左键拖选时，按鼠标侧键1(后退)触发"/>
+                                                                            <Button Content="侧键2 (X2)" Tag="X2" Click="YarnSelectKeyOptionButton_Click" Height="30" Margin="2" Style="{DynamicResource KeyCapBtn}" ToolTip="按住鼠标左键拖选时，按鼠标侧键2(前进)触发"/>
                                                                         </UniformGrid>
 
                                                                         <TextBlock Text="⌨ 键盘触发键" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold" Margin="0,0,0,6"/>
 
-                                                                        <UniformGrid Columns="10" Margin="0,0,0,4">
-                                                                            <Button Content="1" Tag="1" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="2" Tag="2" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="3" Tag="3" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="4" Tag="4" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="5" Tag="5" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="6" Tag="6" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="7" Tag="7" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="8" Tag="8" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="9" Tag="9" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="0" Tag="0" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                        </UniformGrid>
+                                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
+                                                                            <Button Content="1" Tag="1" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="2" Tag="2" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="3" Tag="3" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="4" Tag="4" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="5" Tag="5" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="6" Tag="6" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="7" Tag="7" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="8" Tag="8" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="9" Tag="9" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="0" Tag="0" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                        </StackPanel>
 
-                                                                        <UniformGrid Columns="10" Margin="0,0,0,4">
-                                                                            <Button Content="Q" Tag="Q" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="W" Tag="W" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="E" Tag="E" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="R" Tag="R" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{StaticResource KeyCapBtn}"/>
-                                                                            <Button Content="1" Tag="1" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="2" Tag="2" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="3" Tag="3" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="4" Tag="4" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="5" Tag="5" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="6" Tag="6" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="7" Tag="7" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="8" Tag="8" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="9" Tag="9" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="0" Tag="0" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                        </UniformGrid>
-
-                                                                        <UniformGrid Columns="10" Margin="0,0,0,4">
-                                                                            <Button Content="Q" Tag="Q" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="W" Tag="W" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="E" Tag="E" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="R" Tag="R" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="T" Tag="T" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="Y" Tag="Y" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="U" Tag="U" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="I" Tag="I" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="O" Tag="O" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                            <Button Content="P" Tag="P" Click="YarnSelectKeyOptionButton_Click" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
-                                                                        </UniformGrid>
+                                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
+                                                                            <Button Content="Q" Tag="Q" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="W" Tag="W" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="E" Tag="E" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="R" Tag="R" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="T" Tag="T" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="Y" Tag="Y" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="U" Tag="U" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="I" Tag="I" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="O" Tag="O" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                            <Button Content="P" Tag="P" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
+                                                                        </StackPanel>
 
                                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
                                                                             <Button Content="A" Tag="A" Click="YarnSelectKeyOptionButton_Click" Width="30" Height="28" Margin="1" Style="{DynamicResource KeyCapBtn}"/>
@@ -4826,7 +4808,7 @@
                                                      Height="34"
                                                      Padding="12,8"
                                                      VerticalContentAlignment="Center"
-                                                     ToolTip="按名称、ID、分类搜索扩展"
+                                                     ToolTip="按名称、ID、分类搜索小程序"
                                                      IsEnabled="{Binding CanRefreshExtensions}" />
                                             <TextBlock Grid.Column="1"
                                                        Text="{Binding ExtensionSearchSummary}"
@@ -4869,14 +4851,14 @@
                                                                 </MenuItem.Icon>
                                                             </MenuItem>
                                                             <Separator/>
-                                                            <MenuItem Header="编辑扩展" Click="EditExtensionButton_Click">
+                                                            <MenuItem Header="编辑小程序" Click="EditExtensionButton_Click">
                                                                 <MenuItem.Icon>
                                                                     <Viewbox Width="14" Height="14">
                                                                         <Path Data="{local:IconGeometry edit}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}" Stretch="Uniform"/>
                                                                     </Viewbox>
                                                                 </MenuItem.Icon>
                                                             </MenuItem>
-                                                            <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectoryButton_Click">
+                                                            <MenuItem Header="打开小程序目录" Click="OpenExtensionDirectoryButton_Click">
                                                                 <MenuItem.Icon>
                                                                     <Viewbox Width="14" Height="14">
                                                                         <Path Data="{local:IconGeometry folder}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}" Stretch="Uniform"/>
@@ -4884,7 +4866,7 @@
                                                                 </MenuItem.Icon>
                                                             </MenuItem>
                                                             <Separator/>
-                                                            <MenuItem Header="删除扩展" Click="DeleteExtensionButton_Click" Foreground="#FFEF4444">
+                                                            <MenuItem Header="删除小程序" Click="DeleteExtensionButton_Click" Foreground="#FFEF4444">
                                                                 <MenuItem.Icon>
                                                                     <Viewbox Width="14" Height="14">
                                                                         <Path Data="{local:IconGeometry trash}" Fill="#FFEF4444" Stretch="Uniform"/>
@@ -5041,9 +5023,9 @@
                                                                             Foreground="#FFEF4444"
                                                                             IsEnabled="{Binding DeleteButtonEnabled}"
                                                                             Click="DeleteExtensionButton_Click"
-                                                                            ToolTip="删除扩展并移入回收站">
+                                                                            ToolTip="删除小程序并移入回收站">
                                                                         <Viewbox Width="12" Height="12">
-                                                                            <Path Data="{local:IconGeometry trash}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform"/>
+                                                                            <Path Data="{local:IconGeometry trash}" Fill="#FFEF4444" Stretch="Uniform"/>
                                                                         </Viewbox>
                                                                     </Button>
                                                                 </StackPanel>
@@ -5197,7 +5179,7 @@
                                                     </Border>
                                                     <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
                                                         <TextBlock Text="开机自启" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                                        <TextBlock Text="主程序启动后自动运行此扩展" Foreground="#FF6B7280" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0"/>
+                                                        <TextBlock Text="主程序启动后自动运行此小程序" Foreground="#FF6B7280" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0"/>
                                                     </StackPanel>
                                                     <CheckBox Grid.Column="2"
                                                               Style="{StaticResource RaycastSwitchStyle}"
