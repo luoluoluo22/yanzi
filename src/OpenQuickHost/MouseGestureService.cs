@@ -447,6 +447,7 @@ public static class MouseGestureService
         _lastPreviewInfo = null;
         _suppressNextRightUp = false;
         _suppressNextMiddleUp = false;
+        CancelTrace();
     }
 
     private static void CancelStrokeForInputTrigger(string trigger)

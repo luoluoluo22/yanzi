@@ -51,6 +51,7 @@ internal sealed class MouseGestureTraceWindow : Window
         Focusable = false;
         IsHitTestVisible = false;
         SnapsToDevicePixels = false;
+        Opacity = 0;
 
         RenderOptions.SetEdgeMode(this, EdgeMode.Unspecified);
         RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.HighQuality);
@@ -68,8 +69,10 @@ internal sealed class MouseGestureTraceWindow : Window
         _hideTimer.Tick += (_, _) =>
         {
             _hideTimer.Stop();
+            Opacity = 0;
             Clear();
             Hide();
+            ForceDwmRepaint();
         };
 
         SourceInitialized += (_, _) =>
@@ -81,9 +84,10 @@ internal sealed class MouseGestureTraceWindow : Window
 
     public void Start(Point screenPoint, IReadOnlyList<MouseGestureCheatItem>? cheatItems = null)
     {
-        SyncBounds();
-        Clear();
         _hideTimer.Stop();
+        Opacity = 0;
+        Clear();
+        SyncBounds();
 
         var localPoint = ToLocal(screenPoint);
         _startPoint = localPoint;
@@ -168,6 +172,10 @@ internal sealed class MouseGestureTraceWindow : Window
         _canvas.Children.Add(_glowPath);
         _canvas.Children.Add(_corePath);
 
+        UpdateLayout();
+        _canvas.UpdateLayout();
+        Opacity = 1;
+
         if (!IsVisible)
         {
             Show();
@@ -175,6 +183,7 @@ internal sealed class MouseGestureTraceWindow : Window
 
         AttachHwndHook();
         EnsureClickThrough();
+        ForceDwmRepaint();
     }
 
     public void AddPoint(Point screenPoint)
@@ -352,8 +361,10 @@ internal sealed class MouseGestureTraceWindow : Window
     public void Cancel()
     {
         _hideTimer.Stop();
+        Opacity = 0;
         Clear();
         Hide();
+        ForceDwmRepaint();
     }
 
     private void AddStartIndicator(Point point)
@@ -1058,6 +1069,27 @@ internal sealed class MouseGestureTraceWindow : Window
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpFrameChanged = 0x0020;
 
+    private void ForceDwmRepaint()
+    {
+        try
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            if (handle != IntPtr.Zero)
+            {
+                RedrawWindow(handle, IntPtr.Zero, IntPtr.Zero, RdwInvalidate | RdwErase | RdwUpdateNow | RdwAllChildren);
+            }
+        }
+        catch
+        {
+            // Best effort
+        }
+    }
+
+    private const uint RdwInvalidate = 0x0001;
+    private const uint RdwErase = 0x0004;
+    private const uint RdwUpdateNow = 0x0100;
+    private const uint RdwAllChildren = 0x0080;
+
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
 
@@ -1066,4 +1098,7 @@ internal sealed class MouseGestureTraceWindow : Window
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    [DllImport("user32.dll")]
+    private static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
 }
