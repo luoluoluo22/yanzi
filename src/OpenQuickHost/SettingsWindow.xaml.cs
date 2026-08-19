@@ -10998,7 +10998,9 @@ public sealed class SettingsMouseGestureItem
         VectorIcon = vectorIcon;
         AccentBrush = accentBrush;
         DisplayGlyph = displayGlyph;
-        PreviewGeometry = MouseGesturePreviewGeometryFactory.Create(sequence, data);
+        var preview = MouseGesturePreviewGeometryFactory.CreatePreview(sequence, data, size: 52, padding: 8);
+        PreviewGeometry = preview.Geometry;
+        PreviewBrush = preview.Brush;
     }
 
     public string ExtensionId { get; }
@@ -11036,6 +11038,8 @@ public sealed class SettingsMouseGestureItem
 
     public Geometry PreviewGeometry { get; }
 
+    public System.Windows.Media.Brush PreviewBrush { get; }
+
     public bool HasImageIcon => IconSource != null;
 
     public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
@@ -11062,7 +11066,9 @@ public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
         Description = description;
         AssignedTitle = assignedTitle ?? string.Empty;
         Data = data;
-        PreviewGeometry = MouseGesturePreviewGeometryFactory.Create(sequence, data);
+        var preview = MouseGesturePreviewGeometryFactory.CreatePreview(sequence, data, size: 48, padding: 6);
+        PreviewGeometry = preview.Geometry;
+        PreviewBrush = preview.Brush;
         RebuildFilteredAppOptionsView();
     }
 
@@ -11077,6 +11083,8 @@ public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
     public string AssignedTitle { get; }
 
     public Geometry PreviewGeometry { get; }
+
+    public System.Windows.Media.Brush PreviewBrush { get; }
 
     public bool IsAssigned => !string.IsNullOrWhiteSpace(AssignedTitle);
 

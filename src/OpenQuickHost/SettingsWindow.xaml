@@ -3391,15 +3391,6 @@
 
                         <!-- Mouse Gestures View -->
                         <StackPanel x:Name="MouseGesturesSectionRoot" Visibility="{Binding IsMouseGesturesSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <StackPanel.Resources>
-                                <LinearGradientBrush x:Key="GestureWhiteToGreenBrush" StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#FFFFFFFF" Offset="0.0"/>
-                                    <GradientStop Color="#FF6EE7B7" Offset="0.35"/>
-                                    <GradientStop Color="#FF10B981" Offset="0.85"/>
-                                    <GradientStop Color="#FF059669" Offset="1.0"/>
-                                </LinearGradientBrush>
-                            </StackPanel.Resources>
-
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,0,0,16">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -3493,7 +3484,7 @@
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <Border Width="58" Height="58" CornerRadius="14" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" VerticalAlignment="Top">
-                                                    <Path Data="{Binding PreviewGeometry}" Stroke="{StaticResource GestureWhiteToGreenBrush}" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Stretch="None"/>
+                                                    <Path Data="{Binding PreviewGeometry}" Stroke="{Binding PreviewBrush}" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Stretch="None"/>
                                                 </Border>
                                                 <StackPanel Grid.Column="1">
                                                     <Grid>
@@ -3506,7 +3497,7 @@
                                                                 <Image Source="{Binding IconSource}" Width="16" Height="16" Stretch="Uniform"
                                                                        Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                                 <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform" Width="14" Height="14"
-                                                                      Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                       Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                                 <TextBlock Text="{Binding DisplayGlyph}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeTiny}" FontWeight="Bold"
                                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                            Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
@@ -3554,7 +3545,7 @@
                                                         <ColumnDefinition Width="*"/>
                                                     </Grid.ColumnDefinitions>
                                                     <Border Width="48" Height="48" CornerRadius="12" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
-                                                        <Path Data="{Binding PreviewGeometry}" Stroke="{StaticResource GestureWhiteToGreenBrush}" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                        <Path Data="{Binding PreviewGeometry}" Stroke="{Binding PreviewBrush}" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                                                     </Border>
                                                     <StackPanel Grid.Column="1">
                                                         <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>

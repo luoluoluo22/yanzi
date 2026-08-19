@@ -720,22 +720,12 @@ internal sealed class MouseGestureTraceWindow : Window
                 ClipToBounds = true
             };
 
-            var gestureGeometry = MouseGesturePreviewGeometryFactory.Create(item.DisplaySequence, item.Data, size: 36, padding: 5);
-            var thumbnailGradient = new LinearGradientBrush
-            {
-                StartPoint = new Point(0, 0),
-                EndPoint = new Point(1, 1),
-                MappingMode = BrushMappingMode.RelativeToBoundingBox
-            };
-            thumbnailGradient.GradientStops.Add(new GradientStop(Color.FromArgb(255, 255, 255, 255), 0.0));
-            thumbnailGradient.GradientStops.Add(new GradientStop(Color.FromArgb(255, 110, 231, 183), 0.35));
-            thumbnailGradient.GradientStops.Add(new GradientStop(Color.FromArgb(255, 16, 185, 129), 0.85));
-            thumbnailGradient.GradientStops.Add(new GradientStop(Color.FromArgb(255, 5, 150, 105), 1.0));
+            var (gestureGeometry, gestureBrush) = MouseGesturePreviewGeometryFactory.CreatePreview(item.DisplaySequence, item.Data, size: 36, padding: 5);
 
             var path = new Path
             {
                 Data = gestureGeometry,
-                Stroke = thumbnailGradient,
+                Stroke = gestureBrush,
                 StrokeThickness = 2.4,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round,
