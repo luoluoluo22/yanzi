@@ -366,14 +366,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private static readonly IReadOnlyList<MouseGestureTemplateDefinition> CommonMouseGestureTemplates =
     [
-        new("↑", "上划", "适合返回顶部、打开常用入口"),
-        new("↓", "下划", "适合关闭、隐藏或最小化"),
-        new("←", "左划", "适合后退、上一项"),
-        new("→", "右划", "适合前进、下一项"),
-        new("↓→", "L", "适合打开目录、窗口操作"),
-        new("→↓←", "C", "适合复制、剪贴板动作"),
-        new("↑→↓←", "P", "适合打开面板或固定扩展"),
-        new("→↓←↑", "S", "适合搜索、选择类动作")
+        new("↑", "上划", "适合返回顶部、上一页或向上滚动"),
+        new("↓", "下划", "适合关闭、隐藏或向下滚动"),
+        new("←", "左划", "适合后退、切换上一标签"),
+        new("→", "右划", "适合前进、切换下一标签"),
+        new("↓→", "L 型", "适合打开目录、窗口最大化/还原"),
+        new("→↓", "倒 L", "适合关闭当前标签页 (Ctrl+W)"),
+        new("↑→", "右上折角", "适合新建标签页 (Ctrl+T)"),
+        new("↓↑", "下上往返", "适合刷新页面 (F5)"),
+        new("↑↓", "上下往返", "适合回到顶部/底部"),
+        new("↓→↑", "U 型", "适合恢复已关闭标签 (Ctrl+Shift+T)"),
+        new("→↓←", "C 型", "适合复制、剪贴板动作"),
+        new("↑→↓←", "P 型", "适合打开快捷面板或固定扩展"),
+        new("→↓←↑", "S 型", "适合全局搜索、选择类动作"),
+        new("↓↗↓", "Z 型", "适合窗口置顶/取消置顶"),
+        new("↘↗↘↗", "W 型", "适合关闭当前窗口 (Alt+F4)")
     ];
 
 
@@ -2700,6 +2707,45 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         get => MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode);
         set => UpdateMouseGestureTriggerMode(value);
+    }
+
+    public bool MouseGestureEnableWheelActions
+    {
+        get => _settings.MouseGestureEnableWheelActions;
+        set
+        {
+            if (_settings.MouseGestureEnableWheelActions == value) return;
+            _settings.MouseGestureEnableWheelActions = value;
+            AppSettingsStore.Save(_settings);
+            OnPropertyChanged(nameof(MouseGestureEnableWheelActions));
+        }
+    }
+
+    public bool MouseGestureEnableRockerActions
+    {
+        get => _settings.MouseGestureEnableRockerActions;
+        set
+        {
+            if (_settings.MouseGestureEnableRockerActions == value) return;
+            _settings.MouseGestureEnableRockerActions = value;
+            AppSettingsStore.Save(_settings);
+            OnPropertyChanged(nameof(MouseGestureEnableRockerActions));
+        }
+    }
+
+    public string MouseGestureBlacklistText
+    {
+        get => string.Join(", ", _settings.MouseGestureBlacklistedProcesses ?? []);
+        set
+        {
+            var list = (value ?? string.Empty)
+                .Split(new[] { ',', '，', ';', '；', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _settings.MouseGestureBlacklistedProcesses = list;
+            AppSettingsStore.Save(_settings);
+            OnPropertyChanged(nameof(MouseGestureBlacklistText));
+        }
     }
 
     public string RadialAssignedMouseTriggerSummary => BuildAssignedMouseTriggerSummary(
@@ -11212,86 +11258,6 @@ public sealed class MouseGestureExtensionOption
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
 
     public override string ToString() => Label;
-}
-
-internal static class MouseGesturePreviewGeometryFactory
-{
-    public static Geometry Create(string? sequence, int[]? data)
-    {
-        var points = MouseGestureTemplateRecognizer.HasTemplateData(data)
-            ? DecodeTemplateData(data!)
-            : BuildSequencePoints(MouseGestureNaming.NormalizeSequence(sequence));
-        return BuildGeometry(ScalePoints(points, 52, 8));
-    }
-
-    private static List<WpfPoint> DecodeTemplateData(int[] data)
-    {
-        var points = new List<WpfPoint>(data.Length / 2);
-        for (var index = 0; index + 1 < data.Length; index += 2)
-        {
-            points.Add(new WpfPoint(data[index], data[index + 1]));
-        }
-
-        return points;
-    }
-
-    private static List<WpfPoint> BuildSequencePoints(string sequence)
-    {
-        var points = new List<WpfPoint> { new(0, 0) };
-        var current = new WpfPoint(0, 0);
-        foreach (var ch in sequence)
-        {
-            var delta = ch switch
-            {
-                '↑' => new WpfVector(0, -1),
-                '↗' => new WpfVector(1, -1),
-                '→' => new WpfVector(1, 0),
-                '↘' => new WpfVector(1, 1),
-                '↓' => new WpfVector(0, 1),
-                '↙' => new WpfVector(-1, 1),
-                '←' => new WpfVector(-1, 0),
-                '↖' => new WpfVector(-1, -1),
-                _ => new WpfVector(0, 0)
-            };
-            current += delta;
-            points.Add(current);
-        }
-
-        return points.Count > 1 ? points : [new WpfPoint(0, 0), new WpfPoint(1, 0)];
-    }
-
-    private static List<WpfPoint> ScalePoints(IReadOnlyList<WpfPoint> points, double size, double padding)
-    {
-        var minX = points.Min(static point => point.X);
-        var maxX = points.Max(static point => point.X);
-        var minY = points.Min(static point => point.Y);
-        var maxY = points.Max(static point => point.Y);
-        var width = Math.Max(1, maxX - minX);
-        var height = Math.Max(1, maxY - minY);
-        var scale = Math.Min((size - (padding * 2)) / width, (size - (padding * 2)) / height);
-        var actualWidth = width * scale;
-        var actualHeight = height * scale;
-        var offsetX = padding + ((size - (padding * 2) - actualWidth) / 2);
-        var offsetY = padding + ((size - (padding * 2) - actualHeight) / 2);
-        return points
-            .Select(point => new WpfPoint(
-                offsetX + ((point.X - minX) * scale),
-                offsetY + ((point.Y - minY) * scale)))
-            .ToList();
-    }
-
-    private static Geometry BuildGeometry(IReadOnlyList<WpfPoint> points)
-    {
-        var geometry = new StreamGeometry();
-        using (var context = geometry.Open())
-        {
-            context.BeginFigure(points[0], isFilled: false, isClosed: false);
-            context.PolyLineTo(points.Skip(1).ToList(), isStroked: true, isSmoothJoin: true);
-        }
-
-        geometry.Freeze();
-        return geometry;
-    }
 }
 
 public class HighlightedTextBlock : TextBlock

@@ -26,6 +26,7 @@ public partial class MouseGestureRecorderWindow : Window
     private readonly List<Point> _path = new();
     private readonly List<UIElement> _strokeElements = new();
     private bool _drawing;
+    private PathFigure? _strokeFigure;
 
     private static readonly string[] Arrows = ["→","↘","↓","↙","←","↖","↑","↗"];
     private const int MinSegmentDistance = 30; // 单段最小像素距离
@@ -122,8 +123,8 @@ public partial class MouseGestureRecorderWindow : Window
         if (_path.Count > 0)
         {
             var last = _path[^1];
-            if ((pt - last).Length < 2) return; // 抖动过滤
-            DrawSegment(last, pt, _path.Count);
+            if ((pt - last).Length < 3.0) return; // 抖动过滤
+            AppendStrokePoint(pt);
         }
         _path.Add(pt);
     }
@@ -136,32 +137,73 @@ public partial class MouseGestureRecorderWindow : Window
         ResultPanel.Visibility = Visibility.Collapsed;
         HintRing.BorderBrush = new SolidColorBrush(Color.FromRgb(0xFB, 0x92, 0x3C));
         HintText.Text = "正在录制… 松开即可识别";
-        // 起点标记
+
+        // 起点发光标记
         var dot = new Ellipse
         {
-            Width = 12, Height = 12,
-            Fill = new SolidColorBrush(Color.FromRgb(0xFB, 0x92, 0x3C))
+            Width = 14, Height = 14,
+            Fill = new SolidColorBrush(Color.FromRgb(0xFB, 0x92, 0x3C)),
+            Stroke = new SolidColorBrush(Color.FromArgb(140, 0, 0, 0)),
+            StrokeThickness = 1.5
         };
-        Canvas.SetLeft(dot, start.X - 6);
-        Canvas.SetTop(dot, start.Y - 6);
+        Canvas.SetLeft(dot, start.X - 7);
+        Canvas.SetTop(dot, start.Y - 7);
         StrokeCanvas.Children.Add(dot);
         _strokeElements.Add(dot);
+
+        _strokeFigure = new PathFigure
+        {
+            StartPoint = start,
+            IsClosed = false,
+            IsFilled = false
+        };
+
+        var pathGeometry = new PathGeometry();
+        pathGeometry.Figures.Add(_strokeFigure);
+
+        // 外层柔光
+        var glowPath = new Path
+        {
+            Data = pathGeometry,
+            Stroke = new SolidColorBrush(Color.FromArgb(90, 0xFB, 0x92, 0x3C)),
+            StrokeThickness = 12,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            IsHitTestVisible = false
+        };
+
+        // 内层高亮核心
+        var corePath = new Path
+        {
+            Data = pathGeometry,
+            Stroke = new SolidColorBrush(Color.FromArgb(240, 0xFB, 0x92, 0x3C)),
+            StrokeThickness = 5,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            IsHitTestVisible = false
+        };
+
+        StrokeCanvas.Children.Add(glowPath);
+        StrokeCanvas.Children.Add(corePath);
+        _strokeElements.Add(glowPath);
+        _strokeElements.Add(corePath);
     }
 
-    private void DrawSegment(Point from, Point to, int idx)
+    private void AppendStrokePoint(Point point)
     {
-        var t = Math.Min(1.0, idx / 60.0);
-        var alpha = (byte)Math.Clamp(64 + 191 * t, 64, 255);
-        var line = new Line
+        if (_strokeFigure == null) return;
+        if (_path.Count == 1)
         {
-            X1 = from.X, Y1 = from.Y, X2 = to.X, Y2 = to.Y,
-            Stroke = new SolidColorBrush(Color.FromArgb(alpha, 0xFB, 0x92, 0x3C)),
-            StrokeThickness = 4 + 2 * t,
-            StrokeStartLineCap = PenLineCap.Round,
-            StrokeEndLineCap = PenLineCap.Round
-        };
-        StrokeCanvas.Children.Add(line);
-        _strokeElements.Add(line);
+            _strokeFigure.Segments.Add(new LineSegment(point, isStroked: true));
+        }
+        else
+        {
+            var p1 = _path[^1];
+            var mid = new Point((p1.X + point.X) / 2.0, (p1.Y + point.Y) / 2.0);
+            _strokeFigure.Segments.Add(new QuadraticBezierSegment(p1, mid, isStroked: true));
+        }
     }
 
     private void FinishStroke()
@@ -176,11 +218,13 @@ public partial class MouseGestureRecorderWindow : Window
             var last = _path[^1];
             var dot = new Ellipse
             {
-                Width = 14, Height = 14,
-                Fill = new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6))
+                Width = 16, Height = 16,
+                Fill = new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6)),
+                Stroke = new SolidColorBrush(Color.FromArgb(140, 0, 0, 0)),
+                StrokeThickness = 1.5
             };
-            Canvas.SetLeft(dot, last.X - 7);
-            Canvas.SetTop(dot, last.Y - 7);
+            Canvas.SetLeft(dot, last.X - 8);
+            Canvas.SetTop(dot, last.Y - 8);
             StrokeCanvas.Children.Add(dot);
             _strokeElements.Add(dot);
         }
@@ -201,7 +245,8 @@ public partial class MouseGestureRecorderWindow : Window
             ResultSequence = sequence;
             ResultSign = MouseGestureNaming.GetDisplayName(sequence, _path);
             ResultTemplateData = MouseGestureTemplateRecognizer.CreateTemplateData(_path);
-            GestureNameText.Text = ResultSign;
+            var builtIn = MouseGestureTemplateRecognizer.RecognizeBuiltInSign(_path);
+            GestureNameText.Text = string.IsNullOrWhiteSpace(builtIn) ? ResultSign : $"{ResultSign} (特征识别)";
             ArrowList.ItemsSource = sequence.ToCharArray();
             RawSeqText.Text = sequence;
             UpdateConflictHint();
@@ -217,6 +262,7 @@ public partial class MouseGestureRecorderWindow : Window
         }
         _strokeElements.Clear();
         _path.Clear();
+        _strokeFigure = null;
     }
 
     private void UpdateConflictHint()
@@ -268,35 +314,9 @@ public partial class MouseGestureRecorderWindow : Window
         DialogResult = true;
     }
 
-    /// <summary>
-    /// 把轨迹点列简化成 8 方向序列。算法：
-    /// 1. 以当前锚点出发，找到下一个距离 ≥ MinSegmentDistance 的点
-    /// 2. 计算两点夹角，量化到 0..7（→ ↘ ↓ ↙ ← ↖ ↑ ↗）
-    /// 3. 与上一段方向不同则入序列；锚点更新到此点
-    /// </summary>
     private static string SimplifyPath(IReadOnlyList<Point> pts)
     {
-        if (pts.Count < 2) return string.Empty;
-        var result = new System.Text.StringBuilder();
-        int lastDir = -1;
-        var anchor = pts[0];
-        for (int i = 1; i < pts.Count; i++)
-        {
-            var dx = pts[i].X - anchor.X;
-            var dy = pts[i].Y - anchor.Y;
-            var dist = Math.Sqrt(dx * dx + dy * dy);
-            if (dist < MinSegmentDistance) continue;
-            var angle = Math.Atan2(dy, dx); // -π..π
-            var normalized = (angle + TwoPi) % TwoPi;
-            var idx = (int)Math.Round(normalized / EightthPi) % 8;
-            if (idx != lastDir)
-            {
-                result.Append(Arrows[idx]);
-                lastDir = idx;
-            }
-            anchor = pts[i];
-        }
-        return result.ToString();
+        return MouseGestureTemplateRecognizer.ExtractSequence(pts, minStepDistance: MinSegmentDistance);
     }
 
     private static string NormalizeTrigger(string? raw)

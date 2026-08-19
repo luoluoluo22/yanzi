@@ -31,8 +31,20 @@ public static class MouseGestureService
     private const int WmMButtonDown = 0x0207;
     private const int WmMButtonUp = 0x0208;
     private const int WmMouseMove = 0x0200;
+    private const int WmMouseWheel = 0x020A;
     private const uint LlInjected = 0x00000001;
     private const uint InputMouse = 0;
+    private const uint InputKeyboard = 1;
+    private const uint KeyeventfExtendedkey = 0x0001;
+    private const uint KeyeventfKeyup = 0x0002;
+    private const ushort VkMenu = 0x12;
+    private const ushort VkControl = 0x11;
+    private const ushort VkShift = 0x10;
+    private const ushort VkTab = 0x09;
+    private const ushort VkLeft = 0x25;
+    private const ushort VkRight = 0x27;
+    private const ushort VkBrowserBack = 0xA6;
+    private const ushort VkBrowserForward = 0xA7;
     private const uint MouseeventfRightDown = 0x0008;
     private const uint MouseeventfRightUp = 0x0010;
     private const uint MouseeventfMiddleDown = 0x0020;
@@ -43,12 +55,15 @@ public static class MouseGestureService
     private static bool _isRunning;
 
     // 当前拖动状态
+    private static bool _leftDown;
     private static bool _rightDown;
     private static bool _middleDown;
     private static Point _downPoint;
     private static readonly List<Point> _path = new(capacity: 256);
     private static bool _suppressNextRightUp;
     private static bool _suppressNextMiddleUp;
+    private static bool _suppressNextLeftUp;
+    private static bool _gestureActionTriggered;
     private static bool _traceActive;
     private static bool _gesturePreviewMatched;
     private static MouseGesturePreviewInfo? _lastPreviewInfo;
@@ -241,11 +256,38 @@ public static class MouseGestureService
         switch (msg)
         {
             case WmLButtonDown:
-                // 按了左键，跟其他服务（YarnSelect）共享时本服务不应在左键按下时尝试手势
+                _leftDown = true;
+                if (_rightDown && AppSettingsStore.Load().MouseGestureEnableRockerActions && !ShouldBypassGesture(data.pt))
+                {
+                    HandleRockerGesture("rocker-right-left", data.pt);
+                    _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                    return (IntPtr)1;
+                }
                 ResetState();
                 break;
 
+            case WmLButtonUp:
+                _leftDown = false;
+                if (_suppressNextLeftUp)
+                {
+                    _suppressNextLeftUp = false;
+                    return (IntPtr)1;
+                }
+                break;
+
             case WmRButtonDown:
+                if (ShouldBypassGesture(data.pt))
+                {
+                    break;
+                }
+
+                if (_leftDown && AppSettingsStore.Load().MouseGestureEnableRockerActions)
+                {
+                    HandleRockerGesture("rocker-left-right", data.pt);
+                    _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                    return (IntPtr)1;
+                }
+
                 if (_registry.ContainsKey("right-drag"))
                 {
                     BeginStroke(new Point(data.pt.x, data.pt.y), isRightButton: true);
@@ -273,13 +315,20 @@ public static class MouseGestureService
                     _path.Clear();
                     if (matched)
                     {
-                        ReleaseMouseButtonAfterHookReturns(MouseeventfRightUp, "right");
                         InputHookService.ResetMouseState("mouse gesture");
                         ExecuteAfterInputSettles(matchedGesture);
                         _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
                         return (IntPtr)1;
                     }
 
+                    if (_gestureActionTriggered)
+                    {
+                        _gestureActionTriggered = false;
+                        _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                        return (IntPtr)1;
+                    }
+
+                    // 仅当用户纯粹在原地极短点击（未进入手势拖拽、位移小于起点距离阈值）时才重放短右击
                     if (!wasDragIntent && !inputTriggerWasActive && !InputHookService.WasMouseTriggerReleasedRecently())
                     {
                         ReplayMouseClickAfterHookReturns(MouseeventfRightDown, MouseeventfRightUp, "right");
@@ -291,11 +340,17 @@ public static class MouseGestureService
                 if (_suppressNextRightUp)
                 {
                     _suppressNextRightUp = false;
+                    _gestureActionTriggered = false;
                     return (IntPtr)1;
                 }
                 break;
 
             case WmMButtonDown:
+                if (ShouldBypassGesture(data.pt))
+                {
+                    break;
+                }
+
                 if (_registry.ContainsKey("middle-drag"))
                 {
                     BeginStroke(new Point(data.pt.x, data.pt.y), isRightButton: false);
@@ -323,9 +378,15 @@ public static class MouseGestureService
                     _path.Clear();
                     if (matched)
                     {
-                        ReleaseMouseButtonAfterHookReturns(MouseeventfMiddleUp, "middle");
                         InputHookService.ResetMouseState("mouse gesture");
                         ExecuteAfterInputSettles(matchedGesture);
+                        _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                        return (IntPtr)1;
+                    }
+
+                    if (_gestureActionTriggered)
+                    {
+                        _gestureActionTriggered = false;
                         _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
                         return (IntPtr)1;
                     }
@@ -341,6 +402,17 @@ public static class MouseGestureService
                 if (_suppressNextMiddleUp)
                 {
                     _suppressNextMiddleUp = false;
+                    _gestureActionTriggered = false;
+                    return (IntPtr)1;
+                }
+                break;
+
+            case WmMouseWheel:
+                if ((_rightDown || _middleDown) && AppSettingsStore.Load().MouseGestureEnableWheelActions && !ShouldBypassGesture(data.pt))
+                {
+                    var delta = (short)((data.mouseData >> 16) & 0xFFFF);
+                    var action = delta > 0 ? "wheel-up" : "wheel-down";
+                    HandleWheelGesture(action, data.pt);
                     return (IntPtr)1;
                 }
                 break;
@@ -391,10 +463,11 @@ public static class MouseGestureService
         }
 
         _path.Add(pt);
+        var trigger = _rightDown ? "right-drag" : "middle-drag";
         if (!_traceActive && (pt - _downPoint).Length >= TraceStartDistance)
         {
             _traceActive = true;
-            StartTrace(_downPoint);
+            StartTrace(_downPoint, trigger);
         }
 
         if (!_traceActive)
@@ -403,7 +476,7 @@ public static class MouseGestureService
         }
 
         AddTracePoint(pt);
-        UpdatePreview(_rightDown ? "right-drag" : "middle-drag", pt);
+        UpdatePreview(trigger, pt);
     }
 
     private static bool IsDragIntent()
@@ -425,6 +498,13 @@ public static class MouseGestureService
     {
         matchedGesture = null;
         previewInfo = null;
+
+        if (_traceWindow != null && _traceWindow.IsCancelled)
+        {
+            Log("info", "gesture was cancelled by user returning to start zone.");
+            return false;
+        }
+
         if (_path.Count < 2) return false;
         var totalDist = (_path[^1] - _path[0]).Length;
         if (totalDist < MinDragDistance) return false;
@@ -437,7 +517,7 @@ public static class MouseGestureService
         var templateMatch = MouseGestureTemplateRecognizer.FindBestMatch(_path, triggerRegistry.Templates);
         if (templateMatch != null)
         {
-            Log("info", $"matched template: trigger={trigger}, sign={templateMatch.Gesture.Sign}, distance={templateMatch.Distance:0.0}, ext={templateMatch.Gesture.ExtensionId}.");
+            Log("info", $"matched template: trigger={trigger}, sign={templateMatch.Gesture.Sign}, distance={templateMatch.Distance:0.0}, score={templateMatch.Score:P0}, angle={templateMatch.RotationAngle * 180 / Math.PI:0.0}°, ext={templateMatch.Gesture.ExtensionId}.");
             matchedGesture = templateMatch.Gesture;
             previewInfo = BuildPreviewInfo(templateMatch.Gesture, sequence);
             return true;
@@ -460,9 +540,8 @@ public static class MouseGestureService
             return;
         }
 
-        _ = Task.Run(async () =>
+        _ = Task.Run(() =>
         {
-            await Task.Delay(35).ConfigureAwait(false);
             try
             {
                 winner.Execute?.Invoke(winner);
@@ -526,27 +605,7 @@ public static class MouseGestureService
 
     private static string SimplifyPath(IReadOnlyList<Point> pts)
     {
-        if (pts.Count < 2) return string.Empty;
-        var sb = new StringBuilder();
-        var lastDir = -1;
-        var anchor = pts[0];
-        for (var i = 1; i < pts.Count; i++)
-        {
-            var dx = pts[i].X - anchor.X;
-            var dy = pts[i].Y - anchor.Y;
-            var dist = Math.Sqrt(dx * dx + dy * dy);
-            if (dist < MinSegmentDistance) continue;
-            var angle = Math.Atan2(dy, dx);
-            var normalized = (angle + TwoPi) % TwoPi;
-            var idx = (int)Math.Round(normalized / EightthPi) % 8;
-            if (idx != lastDir)
-            {
-                sb.Append(Arrows[idx]);
-                lastDir = idx;
-            }
-            anchor = pts[i];
-        }
-        return sb.ToString();
+        return MouseGestureTemplateRecognizer.ExtractSequence(pts, minStepDistance: MinSegmentDistance);
     }
 
     private static string NormalizeTrigger(string? raw)
@@ -554,8 +613,221 @@ public static class MouseGestureService
         return raw == "middle-drag" ? "middle-drag" : "right-drag";
     }
 
+    private static void HandleWheelGesture(string action, POINT pt)
+    {
+        _gestureActionTriggered = true;
+        _suppressNextRightUp = true;
+        _suppressNextMiddleUp = true;
+        CancelTrace();
+
+        var isUp = action == "wheel-up";
+        var title = "滚轮手势";
+        var detail = isUp ? "向上 · 上一标签" : "向下 · 下一标签";
+        var glyph = isUp ? "↑" : "↓";
+
+        DispatchTrace(window => window.ShowInstantAction(title, detail, new Point(pt.x, pt.y), glyph));
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (_registry.TryGetValue(action, out var registry) && registry.Templates.Count > 0)
+                {
+                    registry.Templates[0].Execute?.Invoke(registry.Templates[0]);
+                    return;
+                }
+
+                // 默认行为：Ctrl + Shift + Tab (Prev Tab) / Ctrl + Tab (Next Tab)
+                if (isUp)
+                {
+                    SendKeyboardShortcut([VkControl, VkShift], VkTab);
+                }
+                else
+                {
+                    SendKeyboardShortcut([VkControl], VkTab);
+                }
+                Log("info", $"executed wheel gesture: {action}");
+            }
+            catch (Exception ex)
+            {
+                Log("warn", $"wheel gesture failed: {ex.Message}");
+            }
+        });
+    }
+
+    private static void HandleRockerGesture(string action, POINT pt)
+    {
+        _gestureActionTriggered = true;
+        _suppressNextRightUp = true;
+        if (action == "rocker-right-left")
+        {
+            _suppressNextLeftUp = true;
+        }
+        CancelTrace();
+
+        var isBack = action == "rocker-right-left";
+        var title = "摇杆手势";
+        var detail = isBack ? "按右点左 · 后退" : "按左点右 · 前进";
+        var glyph = isBack ? "←" : "→";
+
+        DispatchTrace(window => window.ShowInstantAction(title, detail, new Point(pt.x, pt.y), glyph));
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (_registry.TryGetValue(action, out var registry) && registry.Templates.Count > 0)
+                {
+                    registry.Templates[0].Execute?.Invoke(registry.Templates[0]);
+                    return;
+                }
+
+                // 默认行为：Alt + Left (后退) / Alt + Right (前进)
+                if (isBack)
+                {
+                    SendKeyboardShortcut([VkMenu], VkLeft);
+                }
+                else
+                {
+                    SendKeyboardShortcut([VkMenu], VkRight);
+                }
+                Log("info", $"executed rocker gesture: {action}");
+            }
+            catch (Exception ex)
+            {
+                Log("warn", $"rocker gesture failed: {ex.Message}");
+            }
+        });
+    }
+
+    private static bool ShouldBypassGesture(POINT pt)
+    {
+        if (IsProcessBlacklisted(pt))
+        {
+            return true;
+        }
+
+        if (IsForegroundWindowFullScreenGame())
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsForegroundWindowFullScreenGame()
+    {
+        try
+        {
+            var hWnd = GetForegroundWindow();
+            if (hWnd == IntPtr.Zero) return false;
+
+            var sb = new StringBuilder(256);
+            _ = GetClassName(hWnd, sb, sb.Capacity);
+            var className = sb.ToString();
+
+            // 排除桌面与系统任务栏
+            if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd")
+            {
+                return false;
+            }
+
+            if (!GetWindowRect(hWnd, out var windowRect)) return false;
+
+            var hMonitor = MonitorFromWindow(hWnd, MonitorDefaultToNearest);
+            if (hMonitor == IntPtr.Zero) return false;
+
+            var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (!GetMonitorInfo(hMonitor, ref mi)) return false;
+
+            // 判断窗口是否占满当前显示器屏幕
+            return windowRect.left <= mi.rcMonitor.left &&
+                   windowRect.top <= mi.rcMonitor.top &&
+                   windowRect.right >= mi.rcMonitor.right &&
+                   windowRect.bottom >= mi.rcMonitor.bottom;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsProcessBlacklisted(POINT pt)
+    {
+        var blacklisted = AppSettingsStore.Load().MouseGestureBlacklistedProcesses;
+        if (blacklisted == null || blacklisted.Count == 0)
+        {
+            return false;
+        }
+
+        var processName = GetProcessNameAtPoint(pt);
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return false;
+        }
+
+        return blacklisted.Any(name =>
+            string.Equals(name.Trim(), processName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(name.Trim() + ".exe", processName + ".exe", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string GetProcessNameAtPoint(POINT pt)
+    {
+        try
+        {
+            var hWnd = WindowFromPoint(pt);
+            if (hWnd == IntPtr.Zero) return string.Empty;
+            _ = GetWindowThreadProcessId(hWnd, out var processId);
+            if (processId == 0) return string.Empty;
+            using var process = Process.GetProcessById((int)processId);
+            return process.ProcessName;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static void SendKeyboardShortcut(ushort[] modifiers, ushort key)
+    {
+        var inputs = new List<INPUT>();
+        foreach (var mod in modifiers)
+        {
+            inputs.Add(KeyboardInput(mod, 0));
+        }
+        inputs.Add(KeyboardInput(key, 0));
+        inputs.Add(KeyboardInput(key, KeyeventfKeyup));
+        for (var i = modifiers.Length - 1; i >= 0; i--)
+        {
+            inputs.Add(KeyboardInput(modifiers[i], KeyeventfKeyup));
+        }
+
+        var array = inputs.ToArray();
+        _ = SendInput((uint)array.Length, array, Marshal.SizeOf<INPUT>());
+    }
+
+    private static INPUT KeyboardInput(ushort vk, uint flags)
+    {
+        return new INPUT
+        {
+            type = InputKeyboard,
+            U = new InputUnion
+            {
+                ki = new KEYBDINPUT
+                {
+                    wVk = vk,
+                    wScan = 0,
+                    dwFlags = flags,
+                    time = 0,
+                    dwExtraInfo = IntPtr.Zero
+                }
+            }
+        };
+    }
+
     private static void ResetState()
     {
+        _leftDown = false;
         _rightDown = false;
         _middleDown = false;
         _path.Clear();
@@ -564,12 +836,65 @@ public static class MouseGestureService
         _lastPreviewInfo = null;
         _suppressNextRightUp = false;
         _suppressNextMiddleUp = false;
+        _suppressNextLeftUp = false;
+        _gestureActionTriggered = false;
         CancelTrace();
     }
 
-    private static void StartTrace(Point screenPoint)
+    private static void StartTrace(Point screenPoint, string trigger)
     {
-        DispatchTrace(window => window.Start(screenPoint));
+        var cheatItems = GetAvailableGestures(trigger);
+        DispatchTrace(window => window.Start(screenPoint, cheatItems));
+    }
+
+    private static IReadOnlyList<MouseGestureCheatItem> GetAvailableGestures(string trigger)
+    {
+        var list = new List<MouseGestureCheatItem>();
+        if (!_registry.TryGetValue(trigger, out var triggerRegistry))
+        {
+            return list;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // 1. 序列映射手势
+        foreach (var (seq, gestures) in triggerRegistry.SequenceMap)
+        {
+            foreach (var g in gestures)
+            {
+                var key = $"{g.Sequence}:{g.ExtensionName}";
+                if (seen.Add(key))
+                {
+                    list.Add(new MouseGestureCheatItem(
+                        DisplaySequence: g.Sequence,
+                        Name: g.ExtensionName,
+                        Sign: g.Sign,
+                        DisplayGlyph: g.DisplayGlyph,
+                        IconReference: g.IconReference,
+                        ExtensionDirectoryPath: g.ExtensionDirectoryPath,
+                        Data: g.Data));
+                }
+            }
+        }
+
+        // 2. 模板手势
+        foreach (var g in triggerRegistry.Templates)
+        {
+            var key = $"{g.Sign}:{g.ExtensionName}";
+            if (seen.Add(key))
+            {
+                list.Add(new MouseGestureCheatItem(
+                    DisplaySequence: g.Sequence,
+                    Name: g.ExtensionName,
+                    Sign: g.Sign,
+                    DisplayGlyph: g.DisplayGlyph,
+                    IconReference: g.IconReference,
+                    ExtensionDirectoryPath: g.ExtensionDirectoryPath,
+                    Data: g.Data));
+            }
+        }
+
+        return list;
     }
 
     private static void AddTracePoint(Point screenPoint)
@@ -721,8 +1046,51 @@ public static class MouseGestureService
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr GetModuleHandle(string lpModuleName);
 
+    private const uint MonitorDefaultToNearest = 2;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(POINT Point);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int left;
+        public int top;
+        public int right;
+        public int bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
@@ -736,6 +1104,18 @@ public static class MouseGestureService
     {
         [FieldOffset(0)]
         public MOUSEINPUT mi;
+        [FieldOffset(0)]
+        public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -791,6 +1171,15 @@ public sealed record MouseGesturePreviewInfo(
     string DisplayGlyph,
     string Sign,
     string Sequence);
+
+public sealed record MouseGestureCheatItem(
+    string DisplaySequence,
+    string Name,
+    string Sign,
+    string DisplayGlyph,
+    string? IconReference,
+    string? ExtensionDirectoryPath,
+    int[]? Data = null);
 
 internal sealed class GestureTriggerRegistry
 {

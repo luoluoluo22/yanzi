@@ -3416,6 +3416,45 @@
                                 </Grid>
                             </Border>
 
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="高级手势与免打扰" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                                    
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="鼠标滚轮手势 (Wheel Gestures)" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="按住手势键时滚动滚轮：向上滚动切换到上一标签页，向下滚动切换到下一标签页。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding MouseGestureEnableWheelActions, Mode=TwoWay}" VerticalAlignment="Center"/>
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="鼠标摇杆手势 (Rocker Gestures)" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="按住右键单击左键（后退），按住左键单击右键（前进）。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1" IsChecked="{Binding MouseGestureEnableRockerActions, Mode=TwoWay}" VerticalAlignment="Center"/>
+                                    </Grid>
+
+                                    <StackPanel Margin="0,4,0,0">
+                                        <TextBlock Text="免打扰应用黑名单 (排除的进程名，逗号分隔)" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="当光标位于这些程序（如游戏或设计软件）窗口上时，自动暂停手势拦截并完全透传原始按键。示例：cs2, photoshop, blender, valorant" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,6"/>
+                                        <TextBox Text="{Binding MouseGestureBlacklistText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                 Style="{DynamicResource GlobalTextBoxStyle}"
+                                                 Height="30"
+                                                 Padding="8,4"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <Grid Margin="0,0,0,10">
                                 <TextBlock Text="已绑定手势" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                 <Button Content="刷新" Style="{StaticResource SecondaryBtn}" Height="28" Padding="12,0" HorizontalAlignment="Right" Click="RefreshMouseGestureManagementButton_Click"/>

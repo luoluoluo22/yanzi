@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -19,9 +19,23 @@ internal sealed class MouseGestureTraceWindow : Window
     private TextBlock? _previewTitleText;
     private TextBlock? _previewDetailText;
     private Border? _previewIconHost;
+    private Border? _cancelZoneHost;
+    private Border? _cheatsheetHost;
     private HwndSource? _source;
+    private Point? _startPoint;
     private Point? _lastPoint;
-    private Polyline? _gestureLine;
+    private PathFigure? _pathFigure;
+    private Path? _glowPath;
+    private Path? _corePath;
+    private LinearGradientBrush? _coreGradientBrush;
+    private LinearGradientBrush? _glowGradientBrush;
+    private double _cheatsheetDesiredWidth;
+    private double _cheatsheetDesiredHeight;
+    private bool _hasMovedFarFromStart;
+    private bool _isCancelled;
+    private readonly List<Point> _rawTracePoints = new(capacity: 256);
+
+    public bool IsCancelled => _isCancelled;
 
     public MouseGestureTraceWindow()
     {
@@ -45,12 +59,12 @@ internal sealed class MouseGestureTraceWindow : Window
         };
         Content = _canvas;
 
-        _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+        _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
         _hideTimer.Tick += (_, _) =>
         {
             _hideTimer.Stop();
-            Hide();
             Clear();
+            Hide();
         };
 
         SourceInitialized += (_, _) =>
@@ -60,11 +74,92 @@ internal sealed class MouseGestureTraceWindow : Window
         };
     }
 
-    public void Start(Point screenPoint)
+    public void Start(Point screenPoint, IReadOnlyList<MouseGestureCheatItem>? cheatItems = null)
     {
         SyncBounds();
         Clear();
         _hideTimer.Stop();
+
+        var localPoint = ToLocal(screenPoint);
+        _startPoint = localPoint;
+        _lastPoint = localPoint;
+        _hasMovedFarFromStart = false;
+        _isCancelled = false;
+        _rawTracePoints.Clear();
+        _rawTracePoints.Add(localPoint);
+
+        // 1. 创建起始点同心发光圆点 (白核心 + 翠绿晕圈)
+        AddStartIndicator(localPoint);
+
+        // 2. 创建起点取消格子
+        CreateCancelZone(localPoint);
+
+        // 3. 创建可用手势速查看板
+        if (cheatItems != null && cheatItems.Count > 0)
+        {
+            CreateCheatsheetHUD(localPoint, cheatItems);
+        }
+
+        // 4. 构建白到绿流光渐变笔刷
+        _coreGradientBrush = new LinearGradientBrush
+        {
+            MappingMode = BrushMappingMode.Absolute,
+            StartPoint = localPoint,
+            EndPoint = localPoint
+        };
+        _coreGradientBrush.GradientStops.Add(new GradientStop(Color.FromArgb(255, 255, 255, 255), 0.0));
+        _coreGradientBrush.GradientStops.Add(new GradientStop(Color.FromArgb(255, 110, 231, 183), 0.3));
+        _coreGradientBrush.GradientStops.Add(new GradientStop(Color.FromArgb(255, 16, 185, 129), 0.8));
+        _coreGradientBrush.GradientStops.Add(new GradientStop(Color.FromArgb(255, 5, 150, 105), 1.0));
+
+        _glowGradientBrush = new LinearGradientBrush
+        {
+            MappingMode = BrushMappingMode.Absolute,
+            StartPoint = localPoint,
+            EndPoint = localPoint
+        };
+        _glowGradientBrush.GradientStops.Add(new GradientStop(Color.FromArgb(120, 255, 255, 255), 0.0));
+        _glowGradientBrush.GradientStops.Add(new GradientStop(Color.FromArgb(90, 16, 185, 129), 0.5));
+        _glowGradientBrush.GradientStops.Add(new GradientStop(Color.FromArgb(120, 5, 150, 105), 1.0));
+
+        _pathFigure = new PathFigure
+        {
+            StartPoint = localPoint,
+            IsClosed = false,
+            IsFilled = false
+        };
+
+        var pathGeometry = new PathGeometry();
+        pathGeometry.Figures.Add(_pathFigure);
+
+        // 外层柔光 (白到绿流光晕)
+        _glowPath = new Path
+        {
+            Data = pathGeometry,
+            Stroke = _glowGradientBrush,
+            StrokeThickness = 12,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            IsHitTestVisible = false
+        };
+
+        // 内层高亮核心 (白到绿亮芯)
+        _corePath = new Path
+        {
+            Data = pathGeometry,
+            Stroke = _coreGradientBrush,
+            StrokeThickness = 5,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            IsHitTestVisible = false
+        };
+
+        Canvas.SetZIndex(_glowPath, 2);
+        Canvas.SetZIndex(_corePath, 3);
+        _canvas.Children.Add(_glowPath);
+        _canvas.Children.Add(_corePath);
 
         if (!IsVisible)
         {
@@ -73,27 +168,11 @@ internal sealed class MouseGestureTraceWindow : Window
 
         AttachHwndHook();
         EnsureClickThrough();
-        var localPoint = ToLocal(screenPoint);
-        _lastPoint = localPoint;
-        AddDot(localPoint, 12, Color.FromRgb(0xFB, 0x92, 0x3C));
-
-        _gestureLine = new Polyline
-        {
-            Stroke = new SolidColorBrush(Color.FromArgb(220, 0xFB, 0x92, 0x3C)),
-            StrokeThickness = 6,
-            StrokeStartLineCap = PenLineCap.Round,
-            StrokeEndLineCap = PenLineCap.Round,
-            StrokeLineJoin = PenLineJoin.Round,
-            IsHitTestVisible = false
-        };
-        Canvas.SetZIndex(_gestureLine, 1);
-        _canvas.Children.Add(_gestureLine);
-        _gestureLine.Points.Add(localPoint);
     }
 
     public void AddPoint(Point screenPoint)
     {
-        if (!IsVisible || _gestureLine == null)
+        if (!IsVisible || _pathFigure == null)
         {
             return;
         }
@@ -102,23 +181,80 @@ internal sealed class MouseGestureTraceWindow : Window
         if (_lastPoint is not { } last)
         {
             _lastPoint = point;
-            _gestureLine.Points.Add(point);
+            _rawTracePoints.Add(point);
             return;
         }
 
-        if ((point - last).Length < 4)
+        var distFromStart = _startPoint.HasValue ? (point - _startPoint.Value).Length : 0;
+        if (distFromStart > 28)
+        {
+            _hasMovedFarFromStart = true;
+        }
+
+        // 检查是否移回起点取消区（距离起点小于 24px）
+        if (_hasMovedFarFromStart && distFromStart < 24)
+        {
+            if (!_isCancelled)
+            {
+                _isCancelled = true;
+                UpdateCancelZoneVisual(isHovered: true);
+                if (_glowPath != null) _glowPath.Stroke = new SolidColorBrush(Color.FromArgb(50, 0xEF, 0x44, 0x44));
+                if (_corePath != null) _corePath.Stroke = new SolidColorBrush(Color.FromArgb(160, 0xEF, 0x44, 0x44));
+                if (_previewBadge != null) _previewBadge.Visibility = Visibility.Collapsed;
+            }
+        }
+        else if (_isCancelled && distFromStart >= 28)
+        {
+            // 移出取消区，恢复白到绿渐变轨迹
+            _isCancelled = false;
+            UpdateCancelZoneVisual(isHovered: false);
+            if (_glowPath != null && _glowGradientBrush != null) _glowPath.Stroke = _glowGradientBrush;
+            if (_corePath != null && _coreGradientBrush != null) _corePath.Stroke = _coreGradientBrush;
+        }
+
+        if ((point - last).Length < 3.5)
         {
             return;
         }
 
-        _gestureLine.Points.Add(point);
+        _rawTracePoints.Add(point);
         _lastPoint = point;
+
+        // 实时更新白到绿流光渐变端点
+        if (_coreGradientBrush != null && _startPoint.HasValue)
+        {
+            _coreGradientBrush.StartPoint = _startPoint.Value;
+            _coreGradientBrush.EndPoint = point;
+        }
+        if (_glowGradientBrush != null && _startPoint.HasValue)
+        {
+            _glowGradientBrush.StartPoint = _startPoint.Value;
+            _glowGradientBrush.EndPoint = point;
+        }
+
+        // 响应式自适应更新可用手势看板位置（向下划动时自动避让至上方）
+        UpdateCheatsheetPosition(point);
+
+        // 使用中点贝塞尔平滑插值
+        if (_rawTracePoints.Count == 2)
+        {
+            _pathFigure.Segments.Add(new LineSegment(point, isStroked: true));
+        }
+        else
+        {
+            var p0 = _rawTracePoints[^3];
+            var p1 = _rawTracePoints[^2];
+            var p2 = _rawTracePoints[^1];
+            var mid = new Point((p1.X + p2.X) / 2.0, (p1.Y + p2.Y) / 2.0);
+            _pathFigure.Segments.Add(new QuadraticBezierSegment(p1, mid, isStroked: true));
+        }
     }
 
     public void UpdatePreview(MouseGesturePreviewInfo? preview, Point screenPoint)
     {
-        if (!IsVisible)
+        if (!IsVisible || _isCancelled)
         {
+            if (_previewBadge != null) _previewBadge.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -151,16 +287,28 @@ internal sealed class MouseGestureTraceWindow : Window
             _previewBadge.Visibility = Visibility.Collapsed;
         }
 
+        if (_cheatsheetHost != null)
+        {
+            _cheatsheetHost.Visibility = Visibility.Collapsed;
+        }
+
         if (_lastPoint is { } last)
         {
-            AddDot(last, 14, matched ? Color.FromRgb(0x3B, 0x82, 0xF6) : Color.FromRgb(0xA1, 0xA1, 0xAA));
-            if (matched && preview != null)
+            if (_isCancelled)
             {
-                AddResultBadge(preview, last);
+                AddCancelBadge(last);
+            }
+            else
+            {
+                AddDot(last, 14, matched ? Color.FromRgb(0x10, 0xB9, 0x81) : Color.FromRgb(0xA1, 0xA1, 0xAA));
+                if (matched && preview != null)
+                {
+                    AddResultBadge(preview, last);
+                }
             }
         }
 
-        _hideTimer.Interval = TimeSpan.FromMilliseconds(matched ? 200 : 90);
+        _hideTimer.Interval = TimeSpan.FromMilliseconds(matched ? 80 : 50);
         _hideTimer.Stop();
         _hideTimer.Start();
     }
@@ -168,8 +316,404 @@ internal sealed class MouseGestureTraceWindow : Window
     public void Cancel()
     {
         _hideTimer.Stop();
-        Hide();
         Clear();
+        Hide();
+    }
+
+    private void AddStartIndicator(Point point)
+    {
+        // 外层柔和翡翠绿光晕
+        var halo = new Ellipse
+        {
+            Width = 22,
+            Height = 22,
+            Fill = new SolidColorBrush(Color.FromArgb(90, 0x10, 0xB9, 0x81)),
+            IsHitTestVisible = false
+        };
+        Canvas.SetZIndex(halo, 1);
+        Canvas.SetLeft(halo, point.X - 11);
+        Canvas.SetTop(halo, point.Y - 11);
+        _canvas.Children.Add(halo);
+
+        // 中层翠绿环
+        var ring = new Ellipse
+        {
+            Width = 12,
+            Height = 12,
+            Fill = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81)),
+            Stroke = new SolidColorBrush(Color.FromRgb(0x05, 0x96, 0x69)),
+            StrokeThickness = 1,
+            IsHitTestVisible = false
+        };
+        Canvas.SetZIndex(ring, 2);
+        Canvas.SetLeft(ring, point.X - 6);
+        Canvas.SetTop(ring, point.Y - 6);
+        _canvas.Children.Add(ring);
+
+        // 内层纯白中心起笔核
+        var core = new Ellipse
+        {
+            Width = 6,
+            Height = 6,
+            Fill = Brushes.White,
+            IsHitTestVisible = false
+        };
+        Canvas.SetZIndex(core, 3);
+        Canvas.SetLeft(core, point.X - 3);
+        Canvas.SetTop(core, point.Y - 3);
+        _canvas.Children.Add(core);
+    }
+
+    private void CreateCancelZone(Point point)
+    {
+        var grid = new Grid
+        {
+            Width = 60,
+            Height = 60,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
+        };
+
+        // 外层脉冲光圈（hover 时显现）
+        var halo = new Ellipse
+        {
+            Width = 48,
+            Height = 48,
+            Fill = new SolidColorBrush(Color.FromArgb(35, 0xEF, 0x44, 0x44)),
+            Stroke = new SolidColorBrush(Color.FromArgb(90, 0xEF, 0x44, 0x44)),
+            StrokeThickness = 1,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed
+        };
+
+        var circle = new Ellipse
+        {
+            Width = 32,
+            Height = 32,
+            Fill = new SolidColorBrush(Color.FromArgb(200, 0x1F, 0x1F, 0x24)),
+            Stroke = new SolidColorBrush(Color.FromArgb(220, 0xEF, 0x44, 0x44)),
+            StrokeThickness = 2,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            IsHitTestVisible = false
+        };
+
+        var icon = new TextBlock
+        {
+            Text = "✕",
+            Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44)),
+            FontSize = 14,
+            FontWeight = FontWeights.Bold,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            IsHitTestVisible = false
+        };
+
+        grid.Children.Add(halo);
+        grid.Children.Add(circle);
+        grid.Children.Add(icon);
+
+        _cancelZoneHost = new Border
+        {
+            Width = 60,
+            Height = 60,
+            Child = grid,
+            IsHitTestVisible = false
+        };
+
+        Canvas.SetZIndex(_cancelZoneHost, 5);
+        Canvas.SetLeft(_cancelZoneHost, point.X - 30);
+        Canvas.SetTop(_cancelZoneHost, point.Y - 30);
+        _canvas.Children.Add(_cancelZoneHost);
+    }
+
+    private void UpdateCancelZoneVisual(bool isHovered)
+    {
+        if (_cancelZoneHost?.Child is not Grid grid) return;
+        if (grid.Children[0] is Ellipse halo)
+        {
+            halo.Visibility = isHovered ? Visibility.Visible : Visibility.Collapsed;
+        }
+        if (grid.Children[1] is Ellipse circle)
+        {
+            circle.Fill = new SolidColorBrush(isHovered ? Color.FromArgb(240, 0xEF, 0x44, 0x44) : Color.FromArgb(200, 0x1F, 0x1F, 0x24));
+            circle.Stroke = new SolidColorBrush(isHovered ? Brushes.White.Color : Color.FromArgb(220, 0xEF, 0x44, 0x44));
+            circle.Width = isHovered ? 40 : 32;
+            circle.Height = isHovered ? 40 : 32;
+        }
+        if (grid.Children[2] is TextBlock icon)
+        {
+            icon.Foreground = isHovered ? Brushes.White : new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+            icon.FontSize = isHovered ? 16 : 14;
+        }
+    }
+
+    private void CreateCheatsheetHUD(Point point, IReadOnlyList<MouseGestureCheatItem> cheatItems)
+    {
+        var rootStack = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Vertical,
+            Margin = new Thickness(10, 8, 10, 8)
+        };
+
+        // 顶部小标题（居中对齐）
+        var header = new TextBlock
+        {
+            Text = "可用手势 · 移回起点 ✕ 取消",
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromArgb(220, 0x10, 0xB9, 0x81)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        rootStack.Children.Add(header);
+
+        var count = Math.Min(cheatItems.Count, 12);
+        // 根据手势数量自适应网格宽度（1-2个单列/双列，3个以上2-3列）
+        var maxWrapWidth = count switch
+        {
+            1 => 170,
+            2 => 350,
+            3 => 520,
+            4 => 350,
+            _ => 520
+        };
+
+        var wrap = new WrapPanel
+        {
+            MaxWidth = maxWrapWidth,
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center
+        };
+
+        foreach (var item in cheatItems.Take(12))
+        {
+            var itemBorder = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(125, 0x18, 0x18, 0x22)), // 高通透磨砂底色
+                BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(6, 4, 10, 4),
+                Margin = new Thickness(0, 0, 6, 6),
+                Width = 164
+            };
+
+            var itemGrid = new Grid();
+            itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            // 左侧：高通透深色圆角完整手势轨迹预览框
+            var previewBox = new Border
+            {
+                Width = 36,
+                Height = 36,
+                CornerRadius = new CornerRadius(7),
+                Background = new SolidColorBrush(Color.FromArgb(150, 0x0A, 0x0A, 0x10)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                Margin = new Thickness(0, 0, 8, 0),
+                ClipToBounds = true
+            };
+
+            var gestureGeometry = MouseGesturePreviewGeometryFactory.Create(item.DisplaySequence, item.Data, size: 36, padding: 5);
+            var thumbnailGradient = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(1, 1),
+                MappingMode = BrushMappingMode.RelativeToBoundingBox
+            };
+            thumbnailGradient.GradientStops.Add(new GradientStop(Color.FromArgb(255, 255, 255, 255), 0.0));
+            thumbnailGradient.GradientStops.Add(new GradientStop(Color.FromArgb(255, 110, 231, 183), 0.35));
+            thumbnailGradient.GradientStops.Add(new GradientStop(Color.FromArgb(255, 16, 185, 129), 0.85));
+            thumbnailGradient.GradientStops.Add(new GradientStop(Color.FromArgb(255, 5, 150, 105), 1.0));
+
+            var path = new Path
+            {
+                Data = gestureGeometry,
+                Stroke = thumbnailGradient,
+                StrokeThickness = 2.4,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                StrokeLineJoin = PenLineJoin.Round,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                IsHitTestVisible = false
+            };
+            previewBox.Child = path;
+            Grid.SetColumn(previewBox, 0);
+            itemGrid.Children.Add(previewBox);
+
+            // 右侧：功能名称 + 纯净手势名
+            var textStack = new StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Vertical,
+                VerticalAlignment = System.Windows.VerticalAlignment.Center
+            };
+            var nameText = new TextBlock
+            {
+                Text = item.Name,
+                FontSize = 11.5,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Brushes.White,
+                MaxWidth = 104,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+            textStack.Children.Add(nameText);
+
+            var isRawSequence = string.IsNullOrWhiteSpace(item.Sign)
+                || item.Sign.Contains('-')
+                || item.Sign.Equals("UP", StringComparison.OrdinalIgnoreCase)
+                || item.Sign.Equals("DOWN", StringComparison.OrdinalIgnoreCase)
+                || item.Sign.Equals("LEFT", StringComparison.OrdinalIgnoreCase)
+                || item.Sign.Equals("RIGHT", StringComparison.OrdinalIgnoreCase)
+                || item.Sign.Any(static ch => ch is '↑' or '↗' or '→' or '↘' or '↓' or '↙' or '←' or '↖');
+            if (!isRawSequence)
+            {
+                var signText = new TextBlock
+                {
+                    Text = item.Sign,
+                    FontSize = 9.5,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF)),
+                    MaxWidth = 104,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Margin = new Thickness(0, 2, 0, 0)
+                };
+                textStack.Children.Add(signText);
+            }
+
+            Grid.SetColumn(textStack, 1);
+            itemGrid.Children.Add(textStack);
+
+            itemBorder.Child = itemGrid;
+            wrap.Children.Add(itemBorder);
+        }
+
+        rootStack.Children.Add(wrap);
+
+        _cheatsheetHost = new Border
+        {
+            Child = rootStack,
+            Background = new SolidColorBrush(Color.FromArgb(145, 0x10, 0x10, 0x16)), // 高通透半透明磨砂背景
+            BorderBrush = new SolidColorBrush(Color.FromArgb(75, 0x10, 0xB9, 0x81)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            IsHitTestVisible = false
+        };
+
+        // 测量尺寸以实现以起点为水平中心的精确对齐
+        _cheatsheetHost.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        _cheatsheetDesiredWidth = _cheatsheetHost.DesiredSize.Width;
+        _cheatsheetDesiredHeight = _cheatsheetHost.DesiredSize.Height;
+
+        Canvas.SetZIndex(_cheatsheetHost, 10);
+        _canvas.Children.Add(_cheatsheetHost);
+
+        UpdateCheatsheetPosition(point);
+    }
+
+    private void UpdateCheatsheetPosition(Point currentPoint)
+    {
+        if (_cheatsheetHost == null || !_startPoint.HasValue || _cheatsheetDesiredWidth <= 0) return;
+
+        var start = _startPoint.Value;
+        var deltaY = currentPoint.Y - start.Y;
+
+        // 水平方向：以激发起点 X 为中心
+        var left = start.X - (_cheatsheetDesiredWidth / 2.0);
+
+        // 垂直方向响应式避让：
+        // 如果手势正在向下划动（deltaY > 12），将看板放到起点上方，腾出下方划线空间；
+        // 如果手势向上划动（deltaY < -12），将看板放到起点下方；
+        // 初始状态（|deltaY| <= 12）：优先放下方（除非贴近屏幕底边）。
+        double top;
+        if (deltaY > 12)
+        {
+            top = start.Y - _cheatsheetDesiredHeight - 36;
+            if (top < 15) top = start.Y + 36;
+        }
+        else if (deltaY < -12)
+        {
+            top = start.Y + 36;
+            if (top + _cheatsheetDesiredHeight > Height - 15) top = start.Y - _cheatsheetDesiredHeight - 36;
+        }
+        else
+        {
+            top = start.Y + 36;
+            if (top + _cheatsheetDesiredHeight > Height - 20)
+            {
+                top = start.Y - _cheatsheetDesiredHeight - 36;
+            }
+        }
+
+        // 边界防溢出保护
+        if (left < 15) left = 15;
+        if (left + _cheatsheetDesiredWidth > Width - 15) left = Width - _cheatsheetDesiredWidth - 15;
+        if (top < 15) top = 15;
+        if (top + _cheatsheetDesiredHeight > Height - 15) top = Height - _cheatsheetDesiredHeight - 15;
+
+        Canvas.SetLeft(_cheatsheetHost, left);
+        Canvas.SetTop(_cheatsheetHost, top);
+    }
+
+    private void AddCancelBadge(Point point)
+    {
+        var text = new TextBlock
+        {
+            Text = "✕ 手势已取消",
+            FontSize = 11,
+            FontWeight = FontWeights.Bold,
+            Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44))
+        };
+        var border = new Border
+        {
+            Child = text,
+            Background = new SolidColorBrush(Color.FromArgb(220, 0x17, 0x17, 0x1F)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(160, 0xEF, 0x44, 0x44)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(8, 5, 8, 5),
+            IsHitTestVisible = false
+        };
+        Canvas.SetZIndex(border, 10);
+        Canvas.SetLeft(border, point.X + 10);
+        Canvas.SetTop(border, point.Y - 14);
+        _canvas.Children.Add(border);
+    }
+
+    public void ShowInstantAction(string title, string detail, Point screenPoint, string glyph = "势")
+    {
+        SyncBounds();
+        Clear();
+        _hideTimer.Stop();
+
+        if (!IsVisible)
+        {
+            Show();
+        }
+
+        AttachHwndHook();
+        EnsureClickThrough();
+
+        var localPoint = ToLocal(screenPoint);
+        _lastPoint = localPoint;
+        AddDot(localPoint, 14, Color.FromRgb(0x3B, 0x82, 0xF6));
+
+        var preview = new MouseGesturePreviewInfo(
+            ExtensionName: title,
+            IconReference: null,
+            ExtensionDirectoryPath: null,
+            DisplayGlyph: glyph,
+            Sign: detail,
+            Sequence: string.Empty);
+
+        AddResultBadge(preview, localPoint);
+
+        _hideTimer.Interval = TimeSpan.FromMilliseconds(450);
+        _hideTimer.Stop();
+        _hideTimer.Start();
     }
 
     private void SyncBounds()
@@ -258,8 +802,18 @@ internal sealed class MouseGestureTraceWindow : Window
         _previewTitleText = null;
         _previewDetailText = null;
         _previewIconHost = null;
+        _cancelZoneHost = null;
+        _cheatsheetHost = null;
+        _startPoint = null;
         _lastPoint = null;
-        _gestureLine = null;
+        _pathFigure = null;
+        _glowPath = null;
+        _corePath = null;
+        _coreGradientBrush = null;
+        _glowGradientBrush = null;
+        _hasMovedFarFromStart = false;
+        _isCancelled = false;
+        _rawTracePoints.Clear();
     }
 
     private Grid CreatePreviewContent(MouseGesturePreviewInfo? preview, string prefix)

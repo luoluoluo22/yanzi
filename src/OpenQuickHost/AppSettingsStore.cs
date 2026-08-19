@@ -918,6 +918,9 @@ public sealed record AppSettings
 public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
 
     public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.None;
+    public bool MouseGestureEnableWheelActions { get; set; } = true;
+    public bool MouseGestureEnableRockerActions { get; set; } = true;
+    public List<string> MouseGestureBlacklistedProcesses { get; set; } = [];
 
     public YarnSelectSettings YarnSelect { get; set; } = new();
 
