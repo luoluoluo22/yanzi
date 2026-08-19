@@ -2739,10 +2739,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         };
         parentMenu.Items.Add(existingExtensionItem);
 
-        // 2. 新建扩展 (一级独立项)
+        // 2. 新建小程序 (一级独立项)
         var createNewExtensionItem = new MenuItem
         {
-            Header = "新建扩展",
+            Header = "新建小程序",
             Icon = CreateMenuIcon("plus", normalBrush)
         };
         createNewExtensionItem.Click += (_, _) =>

@@ -834,21 +834,21 @@
                             </MenuItem>
                             <Separator />
                             <MenuItem x:Name="CopyExtensionMenuItem"
-                                      Header="复制扩展"
+                                      Header="复制小程序"
                                       Click="CopyExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="CutExtensionMenuItem"
-                                      Header="剪切扩展"
+                                      Header="剪切小程序"
                                       Click="CutExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="PasteExtensionMenuItem"
-                                      Header="粘贴扩展"
+                                      Header="粘贴小程序"
                                       Click="PasteExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -856,10 +856,10 @@
                             </MenuItem>
                             <Separator />
                             <MenuItem x:Name="AddToQuickPanelMenuItem"
-                                      Header="添加到鼠标面板"
+                                      Header="添加到背包"
                                       Click="AddToQuickPanelMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry plus}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry backpack}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="CreateDesktopShortcutMenuItem"

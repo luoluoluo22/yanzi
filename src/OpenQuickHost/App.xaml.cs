@@ -890,7 +890,17 @@ public partial class App : WpfApplication
             _questWindow.Closed += (_, _) => _questWindow = null;
         }
         _questWindow.Show();
-        _questWindow.Activate();
+        try
+        {
+            if (_questWindow.IsVisible)
+            {
+                _questWindow.Activate();
+            }
+        }
+        catch
+        {
+            // Ignore Activate exception during early window show phase
+        }
         _questWindow.RefreshStatus();
     }
 
@@ -1088,7 +1098,7 @@ public partial class App : WpfApplication
             }
             else if (Equals(item.Tag, "running-extensions"))
             {
-                item.Header = $"正在运行的扩展 ({RunningExtensionRegistry.GetRunningCount()})";
+                item.Header = $"正在运行的小程序 ({RunningExtensionRegistry.GetRunningCount()})";
             }
         }
     }

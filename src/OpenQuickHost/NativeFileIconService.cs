@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Xml.Linq;
@@ -648,7 +649,25 @@ public static class NativeFileIconService
 
         try
         {
-            return new System.Windows.Media.Imaging.CroppedBitmap(source, new System.Windows.Int32Rect(bounds10.minX, bounds10.minY, cropWidth10, cropHeight10));
+            var cropped = new System.Windows.Media.Imaging.CroppedBitmap(source, new System.Windows.Int32Rect(bounds10.minX, bounds10.minY, cropWidth10, cropHeight10));
+            
+            // 确保裁切后的图标保持 1:1 标准正方形画布（居中），彻底杜绝由于纵向/横向纸张图形在容器中被 UniformToFill 强行拉伸变形的问题
+            int maxDim = Math.Max(cropWidth10, cropHeight10);
+            if (cropWidth10 == maxDim && cropHeight10 == maxDim)
+            {
+                return cropped;
+            }
+
+            var renderTarget = new System.Windows.Media.Imaging.RenderTargetBitmap(maxDim, maxDim, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+            {
+                double offsetX = (maxDim - cropWidth10) / 2.0;
+                double offsetY = (maxDim - cropHeight10) / 2.0;
+                dc.DrawImage(cropped, new Rect(offsetX, offsetY, cropWidth10, cropHeight10));
+            }
+            renderTarget.Render(visual);
+            return renderTarget;
         }
         catch
         {

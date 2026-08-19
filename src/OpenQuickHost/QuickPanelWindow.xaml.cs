@@ -222,11 +222,18 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         AddHandler(ContextMenuService.ContextMenuOpeningEvent, new ContextMenuEventHandler(QuickPanelWindow_ContextMenuOpening));
 
         RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
+        QuestService.QuestStateChanged += OnQuestStateChanged;
         Closed += (s, e) =>
         {
             InputHookService.OnGlobalEscapePressed -= InputHookService_OnGlobalEscapePressed;
             RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
+            QuestService.QuestStateChanged -= OnQuestStateChanged;
         };
+    }
+
+    private void OnQuestStateChanged()
+    {
+        Dispatcher.InvokeAsync(UpdatePinQuestHighlightState);
     }
 
     private void InputHookService_OnGlobalEscapePressed()
@@ -1176,8 +1183,128 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(PinButtonBrush));
         OnPropertyChanged(nameof(PinButtonTooltip));
         HostAssets.AppendLog($"Quick panel pin toggled: pinned={_isPinned}.");
-        Activate();
-        BringToFront();
+        QuestService.OnBackpackPinned(_isPinned);
+        UpdatePinQuestHighlightState();
+        try
+        {
+            if (IsLoaded && IsVisible)
+            {
+                Activate();
+                BringToFront();
+            }
+        }
+        catch
+        {
+            // Ignore Activate exception
+        }
+    }
+
+    private SampleFileGuideOverlayWindow? _sampleFileGuideWindow;
+
+    private void EnsureSampleFileGuideWindow()
+    {
+        try
+        {
+            if (_sampleFileGuideWindow == null)
+            {
+                _sampleFileGuideWindow = new SampleFileGuideOverlayWindow();
+                if (Left > _sampleFileGuideWindow.Width + 24)
+                {
+                    _sampleFileGuideWindow.Left = Left - _sampleFileGuideWindow.Width - 14;
+                }
+                else
+                {
+                    _sampleFileGuideWindow.Left = Left + Width + 14;
+                }
+                _sampleFileGuideWindow.Top = Math.Max(40, Top + 40);
+                _sampleFileGuideWindow.Show();
+                DesktopShellHelper.SelectDesktopFile("示例文件");
+                HostAssets.AppendLog("[Quest] Opened SampleFileGuideOverlayWindow next to backpack and selected desktop file.");
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[Quest] EnsureSampleFileGuideWindow failed: {ex.Message}");
+        }
+    }
+
+    private void CloseSampleFileGuideWindow()
+    {
+        try
+        {
+            if (_sampleFileGuideWindow != null)
+            {
+                _sampleFileGuideWindow.Close();
+                _sampleFileGuideWindow = null;
+                HostAssets.AppendLog("[Quest] Closed SampleFileGuideOverlayWindow.");
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+    }
+
+    public void UpdatePinQuestHighlightState()
+    {
+        try
+        {
+            var isPinTarget = QuestService.IsQuestWindowActive &&
+                              QuestService.ActiveQuestId == QuestService.DragFileQuestId &&
+                              ((!_isPinned && !QuestService.IsWaitingUnpin) || (_isPinned && QuestService.IsWaitingUnpin));
+
+            var isSlotTarget = QuestService.IsQuestWindowActive &&
+                               QuestService.ActiveQuestId == QuestService.DragFileQuestId &&
+                               _isPinned && !QuestService.IsWaitingUnpin;
+
+            var sb = TryFindResource("PinQuestBreatheAnimation") as System.Windows.Media.Animation.Storyboard;
+            if (isPinTarget)
+            {
+                sb?.Begin();
+            }
+            else
+            {
+                sb?.Stop();
+                if (PinQuestHighlightBorder != null) PinQuestHighlightBorder.Opacity = 0;
+                if (PinAutoHideButtonScale != null)
+                {
+                    PinAutoHideButtonScale.ScaleX = 1.0;
+                    PinAutoHideButtonScale.ScaleY = 1.0;
+                }
+            }
+
+            // 联动桌面示例文件金色高亮指示浮层
+            if (isSlotTarget)
+            {
+                EnsureSampleFileGuideWindow();
+            }
+            else
+            {
+                CloseSampleFileGuideWindow();
+            }
+
+            // 仅选中第一个空槽位激活呼吸动画，避免全部亮起
+            var firstEmptySlot = GlobalSlots?.FirstOrDefault(s => s.IsEmpty) ?? ContextSlots?.FirstOrDefault(s => s.IsEmpty);
+
+            if (GlobalSlots != null)
+            {
+                foreach (var slot in GlobalSlots)
+                {
+                    slot.IsQuestHighlight = isSlotTarget && (slot == firstEmptySlot);
+                }
+            }
+            if (ContextSlots != null)
+            {
+                foreach (var slot in ContextSlots)
+                {
+                    slot.IsQuestHighlight = isSlotTarget && (slot == firstEmptySlot);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
     }
 
     private void SlotButton_Click(object sender, RoutedEventArgs e)
@@ -1193,6 +1320,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
             if (vm.Command != null)
             {
+                QuestService.OnBackpackItemClicked(vm.Command.Title ?? vm.Command.OpenTarget ?? string.Empty);
                 _ = ExecuteSlotCommandAsync(vm, "quick-panel-click");
             }
             else if (!vm.IsContextual)
@@ -2239,6 +2367,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             SaveSlots(target.IsContextual);
             LoadSlots();
             BringToFront();
+            QuestService.OnFileDroppedToBackpack();
             _mainWindow.LastRunMessage = $"已拖拽创建扩展并放入槽位：{newCommand.Title}";
         }
         catch (Exception ex)
@@ -2711,7 +2840,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 importedCommand == null)
             {
                 _mainWindow.SyncStatus = string.IsNullOrWhiteSpace(importMessage)
-                    ? "扩展剪贴板为空。先复制扩展，或把扩展 JSON 放进系统剪贴板后再粘贴。"
+                    ? "小程序剪贴板为空。先复制小程序，或把小程序 JSON 放进系统剪贴板后再粘贴。"
                     : importMessage;
                 return;
             }
@@ -2747,7 +2876,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (clipboard == null)
         {
             pasteNormal.Visibility = Visibility.Visible;
-            pasteNormal.Header = "粘贴扩展";
+            pasteNormal.Header = "粘贴小程序";
             if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
             if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
         }
@@ -2916,13 +3045,13 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             RefreshActiveFolderAfterMutation();
             _mainWindow.ClearQuickPanelClipboard();
 
-            _mainWindow.SyncStatus = $"已成功创建并粘贴扩展副本：{newCommand.Title}";
+            _mainWindow.SyncStatus = $"已成功创建并粘贴小程序副本：{newCommand.Title}";
             _mainWindow.LastRunMessage = $"已添加副本到第 {targetSlot.Index + 1} 个槽位。";
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog($"PasteCopy_Click error: {ex}");
-            _mainWindow.SyncStatus = $"克隆扩展副本失败：{ex.Message}";
+            _mainWindow.SyncStatus = $"克隆小程序副本失败：{ex.Message}";
         }
     }
 
@@ -3213,6 +3342,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             NativeMethods.ShowWithoutActivation(new WindowInteropHelper(this).Handle);
             _suspendOutsideClickHideUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(250);
             _releaseTargetTimer.Start();
+            UpdatePinQuestHighlightState();
         }
         catch (Exception ex)
         {
@@ -3460,6 +3590,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         ClearReleaseTarget();
         CloseGuideBannerWindow();
         CloseEditModeHoverDemoWindow();
+        CloseSampleFileGuideWindow();
         if (_wasActivatedForInput && _previousForegroundWindow != IntPtr.Zero)
         {
             try
@@ -4835,6 +4966,20 @@ public class SlotViewModel : INotifyPropertyChanged
             if (_isDragging != value)
             {
                 _isDragging = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private bool _isQuestHighlight;
+    public bool IsQuestHighlight
+    {
+        get => _isQuestHighlight;
+        set
+        {
+            if (_isQuestHighlight != value)
+            {
+                _isQuestHighlight = value;
                 OnPropertyChanged();
             }
         }

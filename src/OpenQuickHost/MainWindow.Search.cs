@@ -902,7 +902,7 @@ public partial class MainWindow
         var command = ResolveRunnableCommand(sourceCommand);
         if (command.IsFileSystemResult)
         {
-            SyncStatus = "文件结果不能加入鼠标面板。";
+            SyncStatus = "文件结果不能加入背包。";
             return;
         }
 
@@ -912,7 +912,7 @@ public partial class MainWindow
             ?? settings.QuickPanelGlobalGroups.FirstOrDefault();
         if (group == null)
         {
-            SyncStatus = "鼠标面板分组未初始化，无法添加。";
+            SyncStatus = "背包分组未初始化，无法添加。";
             return;
         }
 
@@ -927,7 +927,7 @@ public partial class MainWindow
                 ((!slot.IsFolder && string.Equals(slot.ExtensionId, command.ExtensionId, StringComparison.OrdinalIgnoreCase)) ||
                  (slot.IsFolder && slot.FolderExtensionIds.Any(id => string.Equals(id, command.ExtensionId, StringComparison.OrdinalIgnoreCase))))))
         {
-            LastRunMessage = $"鼠标面板中已存在：{command.Title}";
+            LastRunMessage = $"背包中已存在：{command.Title}";
             _quickPanel?.ReloadSlots();
             return;
         }
@@ -947,11 +947,11 @@ public partial class MainWindow
 
             AppSettingsStore.Save(settings);
             _quickPanel?.ReloadSlots();
-            LastRunMessage = $"已添加到鼠标面板「{group.Name}」第 {index + 1} 个槽位：{command.Title}";
+            LastRunMessage = $"已添加到背包「{group.Name}」第 {index + 1} 个槽位：{command.Title}";
         }
         else
         {
-            SyncStatus = $"鼠标面板分组「{group.Name}」已满（12 个槽位），请先移除旧扩展。";
+            SyncStatus = $"背包分组「{group.Name}」已满（12 个槽位），请先移除旧扩展。";
         }
     }
 

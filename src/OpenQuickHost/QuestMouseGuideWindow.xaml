@@ -1,0 +1,97 @@
+<Window x:Class="OpenQuickHost.QuestMouseGuideWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="鼠标右键引导"
+        Width="140"
+        Height="160"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        IsHitTestVisible="False"
+        WindowStartupLocation="Manual"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <Window.Resources>
+        <!-- 鼠标右键长按模拟动画：浅色 -> 持续长按逐渐变深 -> 达到长按阈值触发 -> 瞬间变浅并循环 -->
+        <Storyboard x:Key="RightButtonPressSimulation" RepeatBehavior="Forever">
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="RightButtonHighlight"
+                                           Storyboard.TargetProperty="Opacity">
+                <!-- 0.0s 起始：浅色未按状态 -->
+                <LinearDoubleKeyFrame KeyTime="0:0:0.0" Value="0.2" />
+                <!-- 0.6s 按住蓄力：逐渐加深为饱和金黄色 -->
+                <LinearDoubleKeyFrame KeyTime="0:0:0.6" Value="1.0" />
+                <!-- 0.8s 保持触发状态 -->
+                <DiscreteDoubleKeyFrame KeyTime="0:0:0.8" Value="1.0" />
+                <!-- 0.85s 突然释放：瞬时恢复浅色 -->
+                <DiscreteDoubleKeyFrame KeyTime="0:0:0.85" Value="0.2" />
+                <!-- 1.3s 间隔停顿进入下一轮 -->
+                <LinearDoubleKeyFrame KeyTime="0:0:1.3" Value="0.2" />
+            </DoubleAnimationUsingKeyFrames>
+            <!-- 伴随柔和金色光晕 -->
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="RightButtonGlow"
+                                           Storyboard.TargetProperty="Opacity">
+                <LinearDoubleKeyFrame KeyTime="0:0:0.0" Value="0.1" />
+                <LinearDoubleKeyFrame KeyTime="0:0:0.6" Value="0.85" />
+                <DiscreteDoubleKeyFrame KeyTime="0:0:0.8" Value="0.85" />
+                <DiscreteDoubleKeyFrame KeyTime="0:0:0.85" Value="0.1" />
+                <LinearDoubleKeyFrame KeyTime="0:0:1.3" Value="0.1" />
+            </DoubleAnimationUsingKeyFrames>
+        </Storyboard>
+    </Window.Resources>
+
+    <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+            <!-- 背后金色呼吸发光层 -->
+            <Grid HorizontalAlignment="Center">
+                <Ellipse x:Name="RightButtonGlow"
+                         Width="90"
+                         Height="90"
+                         Fill="#40F59E0B"
+                         Margin="12,-16,0,0"
+                         Opacity="0.2">
+                    <Ellipse.Effect>
+                        <BlurEffect Radius="24" />
+                    </Ellipse.Effect>
+                </Ellipse>
+
+                <!-- 鼠标矢量大图 -->
+                <Viewbox Width="64" Height="80" HorizontalAlignment="Center">
+                    <Canvas Width="48" Height="60">
+                        <!-- 鼠标外壳 -->
+                        <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z" 
+                              Fill="#F0181B24"
+                              Stroke="#80FFFFFF"
+                              StrokeThickness="1.8"/>
+
+                        <!-- 鼠标右键长按模拟区域 -->
+                        <Path x:Name="RightButtonHighlight"
+                              Data="M24,2 L24,20 L38,20 L38,16 C38,8 32,2 24,2 Z" 
+                              Fill="#FFF59E0B"
+                              Opacity="0.2" />
+
+                        <!-- 中间分割线 -->
+                        <Line X1="24" Y1="2" X2="24" Y2="20" Stroke="#80FFFFFF" StrokeThickness="1.5"/>
+
+                        <!-- 滚轮 -->
+                        <Rectangle Canvas.Left="20" Canvas.Top="8" Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="#55FFFFFF"/>
+                    </Canvas>
+                </Viewbox>
+            </Grid>
+
+            <!-- 底部提示文字 -->
+            <Border Background="#66000000" CornerRadius="8" Padding="8,4" Margin="0,10,0,0">
+                <TextBlock Text="长按右键约 0.5s"
+                           Foreground="#CCFFFFFF"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"/>
+            </Border>
+        </StackPanel>
+    </Grid>
+</Window>

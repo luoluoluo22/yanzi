@@ -3374,16 +3374,16 @@
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15" Margin="0,20,0,0">
                                 <StackPanel>
                                     <TextBlock Text="鼠标触发已统一管理" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="这里用下拉框分配每个鼠标动作给鼠标面板、燕环、燕幕、窗口排列或鼠标手势。扩展编辑里只录制手势形状，触发方式由这里全局决定。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="这里用下拉框分配每个鼠标动作给背包、燕环、燕幕、窗口排列或鼠标手势。扩展编辑里只录制手势形状，触发方式由这里全局决定。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
 
                             <TextBlock Text="配置指南" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,20,0,10"/>
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15">
                                 <StackPanel>
-                                    <TextBlock Text="1. 在主界面搜索您需要的扩展。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
-                                    <TextBlock Text="2. 在搜索结果上点击右键，选择“添加到鼠标面板”。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
-                                    <TextBlock Text="3. 面板将自动占用第一个可用槽位（共 28 个）。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="1. 在主界面仓库搜索您需要的扩展。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="2. 在搜索结果上点击右键，选择“添加到背包”。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="3. 背包将自动占用第一个可用槽位（共 28 个）。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
                                     <TextBlock Text="4. 长按或拖动触发时，如果启用“松开后执行”，移动到扩展上松开即可自动运行。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                 </StackPanel>
                             </Border>

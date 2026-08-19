@@ -2545,11 +2545,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         AddMenuItem(menu, "打开商店链接", "link", () => OpenExtensionStoreLinkMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), command.Source == CommandSource.LocalExtension && command.IsPublishedInStore);
         AddMenuItem(menu, "删除", "delete", async () => await DeleteSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
         menu.Items.Add(new Separator());
-        AddMenuItem(menu, "复制扩展", "copy", () => CopyExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
-        AddMenuItem(menu, "剪切扩展", "cut", () => CutExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
-        AddMenuItem(menu, "粘贴扩展", "paste", () => PasteExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+        AddMenuItem(menu, "复制小程序", "copy", () => CopyExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+        AddMenuItem(menu, "剪切小程序", "cut", () => CutExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+        AddMenuItem(menu, "粘贴小程序", "paste", () => PasteExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
         menu.Items.Add(new Separator());
-        AddMenuItem(menu, "添加到鼠标面板", "plus", () => AddCurrentCommandToQuickPanel(), true);
+        AddMenuItem(menu, "添加到背包", "backpack", () => AddCurrentCommandToQuickPanel(), true);
         menu.Items.Add(new Separator());
         var hoverModeEnabled = IsWindowBindingHoverMode(bindingRuleId);
         AddMenuItem(menu, hoverModeEnabled ? "始终显示" : "悬停时显示", "pin", () => ToggleWindowBindingHoverMode(bindingRuleId), true);
@@ -3157,8 +3157,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _quickPanelClipboard = new QuickPanelClipboardItem(command.ExtensionId, command.Title, isCut, sourceSlot);
         var action = isCut ? "剪切" : "复制";
         LastRunMessage = sourceSlot == null
-            ? $"已{action}扩展：{command.Title}。现在可以在鼠标面板槽位右键粘贴。"
-            : $"已{action}鼠标面板中的扩展：{command.Title}。";
+            ? $"已{action}小程序：{command.Title}。现在可以在背包槽位右键粘贴。"
+            : $"已{action}背包中的小程序：{command.Title}。";
     }
 
     public bool TryImportExtensionFromSystemClipboard(out CommandItem? command, out string message)

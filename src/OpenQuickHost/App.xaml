@@ -371,9 +371,9 @@
 
             <!-- Tray Context Menu Resource -->
             <ContextMenu x:Key="TrayContextMenu" x:Shared="False">
-                <MenuItem Header="显示搜索框" Tag="show-searchbox" Click="TrayShow_Click">
+                <MenuItem Header="仓库" Tag="show-searchbox" Click="TrayShow_Click">
                     <MenuItem.Icon>
-                        <Path Data="{local:IconGeometry show-main}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                        <Path Data="{local:IconGeometry search}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="手机" Tag="mobile-chat" Click="TrayMobileInbox_Click">
@@ -381,14 +381,14 @@
                         <Path Data="{local:IconGeometry mobile}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="显示鼠标面板" Tag="mouse-panel" Click="TrayMousePanel_Click">
+                <MenuItem Header="背包" Tag="mouse-panel" Click="TrayMousePanel_Click">
                     <MenuItem.Icon>
-                        <Path Data="{local:IconGeometry mouse-panel}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                        <Path Data="{local:IconGeometry backpack}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="任务与成就" Tag="quest-center" Click="TrayQuestCenter_Click">
                     <MenuItem.Icon>
-                        <Path Data="{local:IconGeometry star}" Fill="#FFF59E0B" Stretch="Uniform" />
+                        <Path Data="{local:IconGeometry trophy}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="隐藏主面板" Click="TrayHide_Click" Visibility="Collapsed">
@@ -396,7 +396,7 @@
                         <Path Data="{local:IconGeometry pin-off}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Opacity="0.6"/>
                     </MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="正在运行的扩展" Tag="running-extensions" Click="TrayRunningExtensions_Click">
+                <MenuItem Header="正在运行的小程序" Tag="running-extensions" Click="TrayRunningExtensions_Click">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry running}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>

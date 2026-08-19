@@ -86,13 +86,13 @@ public partial class AddJsonExtensionWindow : Window
             // 依据编辑状态动态展示窗口标题
             if (_isEditMode)
             {
-                HeaderTitleText.Text = "编辑扩展";
-                this.Title = "编辑扩展";
+                HeaderTitleText.Text = "编辑小程序";
+                this.Title = "编辑小程序";
             }
             else
             {
-                HeaderTitleText.Text = "新建扩展";
-                this.Title = "新建扩展";
+                HeaderTitleText.Text = "新建小程序";
+                this.Title = "新建小程序";
             }
 
             // 初始化加载持久化记住的测试输入参数，若为空则显示默认值

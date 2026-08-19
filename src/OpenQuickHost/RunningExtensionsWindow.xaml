@@ -1,7 +1,7 @@
 <Window x:Class="OpenQuickHost.RunningExtensionsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="正在运行的扩展"
+        Title="正在运行的小程序"
         Width="880"
         Height="520"
         MinWidth="720"
@@ -21,7 +21,7 @@
 
         <DockPanel Grid.Row="0" Margin="0,0,0,12">
             <StackPanel DockPanel.Dock="Left">
-                <TextBlock Text="正在运行的扩展" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" />
+                <TextBlock Text="正在运行的小程序" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" />
                 <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="#FF9CA3AF" />
             </StackPanel>
             <Button DockPanel.Dock="Right"

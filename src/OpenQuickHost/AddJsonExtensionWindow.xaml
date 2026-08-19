@@ -436,7 +436,7 @@
                                          Checked="SimpleModeTab_Checked">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="✨" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" />
-                                    <TextBlock Text="简单扩展" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="简单小程序" Margin="6,0,0,0" VerticalAlignment="Center" />
                                 </StackPanel>
                             </RadioButton>
                             <RadioButton x:Name="AdvancedModeTab" Style="{StaticResource ModeTabStyle}"
@@ -451,7 +451,7 @@
                     </Border>
 
                     <!-- 原标题 TextBlock，隐藏以避免界面重复，但保留供cs后台动态赋值以防止异常 -->
-                    <TextBlock x:Name="HeaderTitleText" Grid.Column="1" Text="新建扩展" Visibility="Collapsed" />
+                    <TextBlock x:Name="HeaderTitleText" Grid.Column="1" Text="新建小程序" Visibility="Collapsed" />
                 </Grid>
             </Border>
 
@@ -469,7 +469,7 @@
                     <StackPanel HorizontalAlignment="Stretch">
 
                         <StackPanel Margin="0,0,0,18">
-                            <TextBlock Text="这个扩展要做什么？" Foreground="{DynamicResource BrushTextMain}"
+                            <TextBlock Text="这个小程序要做什么？" Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="{DynamicResource FontSizeLarge}" FontWeight="SemiBold" />
                             <TextBlock Text="选一个最匹配的类型，下面的表单会跟着变。"
                                        Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}"

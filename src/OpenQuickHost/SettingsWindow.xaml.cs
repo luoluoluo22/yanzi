@@ -349,7 +349,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private static readonly IReadOnlyList<MouseTriggerOption> StandardMouseTriggerTargetOptions =
     [
         new("None", "禁用"),
-        new("Panel", "鼠标面板"),
+        new("Panel", "背包"),
         new("Radial", "燕环"),
         new("Yanm", "燕幕")
     ];
@@ -357,7 +357,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private static readonly IReadOnlyList<MouseTriggerOption> GestureMouseTriggerTargetOptions =
     [
         new("None", "禁用"),
-        new("Panel", "鼠标面板"),
+        new("Panel", "背包"),
         new("Radial", "燕环"),
         new("Yanm", "燕幕"),
         new("WindowSnap", "窗口排列"),
@@ -8429,7 +8429,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
         _mainWindow.NotifyQuickPanelSettingsChanged("quickpanel-trigger-settings-saved");
-        SyncStatusText = $"鼠标面板触发已保存：{QuickPanelTriggerSummary}";
+        SyncStatusText = $"背包触发已保存：{QuickPanelTriggerSummary}";
         _quickPanelStatusHideTimer = ShowSaveStatusTemporarily(_quickPanelStatusHideTimer, visible => IsQuickPanelSaveStatusVisible = visible);
         OnPropertyChanged(nameof(MouseGestureTriggerSummary));
         OnPropertyChanged(nameof(MouseGestureTriggerMode));
@@ -12932,7 +12932,7 @@ public static class SettingsSearchData
         new("shortcuts", "快捷键 - 快捷键绑定", "快捷键绑定 热键 录制快捷键 全局快捷键 组合键 shortcut hotkey binding"),
 
         // 鼠标触发
-        new("quickpanel", "鼠标触发 - 面板触发方式", "面板触发 鼠标触发 鼠标面板 快捷面板 右键 中键 X1键 X2键 长按 滚轮 trigger mouse right click"),
+        new("quickpanel", "鼠标触发 - 背包触发方式", "背包 随身背包 面板触发 鼠标触发 快捷面板 右键 中键 X1键 X2键 长按 滚轮 trigger mouse right click"),
 
         // 鼠标手势
         new("mousegestures", "鼠标手势 - 手势绑定", "鼠标手势 手势绑定 绘制手势 轨迹 常用手势 gesture mouse draw"),

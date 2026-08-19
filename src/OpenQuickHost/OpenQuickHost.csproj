@@ -3,10 +3,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <Version>0.2.30</Version>
-    <FileVersion>0.2.30.0</FileVersion>
-    <AssemblyVersion>0.2.30.0</AssemblyVersion>
-    <InformationalVersion>0.2.30</InformationalVersion>
+    <Version>0.2.31</Version>
+    <FileVersion>0.2.31.0</FileVersion>
+    <AssemblyVersion>0.2.31.0</AssemblyVersion>
+    <InformationalVersion>0.2.31</InformationalVersion>
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);1701;1603</NoWarn>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -56,6 +56,7 @@
     </Content>
     <Resource Include="Assets\Icons\*.svg" />
     <Resource Include="Assets\mdi-icons.json" />
+    <Resource Include="Assets\yanzi_mascot.png" />
     <None Include="..\..\third_party\everything-sdk\Everything64.dll" Link="Everything64.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
