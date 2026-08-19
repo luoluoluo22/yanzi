@@ -845,7 +845,7 @@ public static class MouseGestureService
     private static void StartTrace(Point screenPoint, string trigger)
     {
         var cheatItems = GetAvailableGestures(trigger);
-        DispatchTrace(window => window.Start(screenPoint, cheatItems));
+        DispatchTrace(window => window.Start(screenPoint, cheatItems), forceNew: true);
     }
 
     private static IReadOnlyList<MouseGestureCheatItem> GetAvailableGestures(string trigger)
@@ -980,10 +980,15 @@ public static class MouseGestureService
             return;
         }
 
-        DispatchTrace(window => window.Cancel());
+        var window = _traceWindow;
+        _traceWindow = null;
+        DispatchTrace(_ =>
+        {
+            try { window.Cancel(); } catch { }
+        });
     }
 
-    private static void DispatchTrace(Action<MouseGestureTraceWindow> action)
+    private static void DispatchTrace(Action<MouseGestureTraceWindow> action, bool forceNew = false)
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher == null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
@@ -993,7 +998,18 @@ public static class MouseGestureService
 
         void Invoke()
         {
-            _traceWindow ??= new MouseGestureTraceWindow();
+            if (forceNew && _traceWindow != null)
+            {
+                try { _traceWindow.Close(); } catch { }
+                _traceWindow = null;
+            }
+
+            if (_traceWindow == null)
+            {
+                _traceWindow = new MouseGestureTraceWindow();
+                _traceWindow.Closed += (_, _) => _traceWindow = null;
+            }
+
             action(_traceWindow);
         }
 

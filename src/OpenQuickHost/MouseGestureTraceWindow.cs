@@ -374,11 +374,11 @@ internal sealed class MouseGestureTraceWindow : Window
             _canvas.Visibility = Visibility.Hidden;
         }
         Clear();
-        UpdateLayout();
-        Left = -32000;
-        Top = -32000;
-        base.Hide();
-        ForceDwmRepaint();
+        try
+        {
+            Close();
+        }
+        catch { }
     }
 
     public void Cancel()
