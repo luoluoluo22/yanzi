@@ -2695,8 +2695,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var count = MouseGestureItems?.Count ?? 0;
             var trigger = MouseGestureTriggerSummary;
             return count == 0
-                ? $"当前没有扩展绑定鼠标手势。全局触发方式：{trigger}。"
-                : $"当前有 {count} 个扩展绑定鼠标手势。全局触发方式：{trigger}。";
+                ? $"当前没有小程序绑定鼠标手势。全局触发方式：{trigger}。"
+                : $"当前有 {count} 个小程序绑定鼠标手势。全局触发方式：{trigger}。";
         }
     }
 
@@ -7063,7 +7063,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         if (string.IsNullOrWhiteSpace(item.ExtensionId))
         {
-            SyncStatusText = "当前手势没有可解绑的扩展。";
+            SyncStatusText = "当前手势没有可解绑的小程序。";
             return;
         }
 
@@ -7174,7 +7174,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             item.SelectedExtension == null ||
             string.IsNullOrWhiteSpace(item.SelectedExtension.ExtensionId))
         {
-            SyncStatusText = "请选择一个扩展后再绑定常用手势。";
+            SyncStatusText = "请选择一个想要绑定的小程序。";
             return;
         }
 
@@ -7184,6 +7184,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             Trigger = string.IsNullOrWhiteSpace(runtimeTrigger) ? "right-drag" : runtimeTrigger,
             Sequence = item.Sequence,
             Sign = item.DisplayName,
+            Data = item.Data,
             MinDistance = 30
         };
 
@@ -7451,6 +7452,43 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         item.AppSearchText = option.AppName;
         item.FilteredAppOptions = [];
         item.IsAppPopupOpen = false;
+    }
+
+    private void AddNewMouseGestureButton_Click(object sender, RoutedEventArgs e)
+    {
+        var trigger = MouseGestureTriggerMode ?? "right-drag";
+        if (trigger == MouseGestureTriggerModes.None)
+        {
+            trigger = "right-drag";
+        }
+
+        var recorder = new MouseGestureRecorderWindow(trigger, initialSequence: null)
+        {
+            Owner = this
+        };
+
+        if (recorder.ShowDialog() == true && recorder.WasAccepted && (!string.IsNullOrWhiteSpace(recorder.ResultSequence) || recorder.ResultTemplateData != null))
+        {
+            var seq = recorder.ResultSequence;
+            var sign = recorder.ResultSign;
+            var data = recorder.ResultTemplateData;
+
+            // 检查常用手势列表中是否已有该手势
+            var existing = MouseGestureQuickBindItems.FirstOrDefault(x => string.Equals(x.Sequence, seq, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                existing.IsExtensionPopupOpen = true;
+                SyncStatusText = $"已录制手势 [{existing.DisplayName}]，请在列表中选择小程序完成绑定。";
+            }
+            else
+            {
+                var displayName = string.IsNullOrWhiteSpace(sign) ? MouseGestureNaming.GetDisplayName(seq) : sign;
+                var newItem = new MouseGestureQuickBindItem(seq, displayName, "自定义手势", assignedTitle: null, data: data);
+                MouseGestureQuickBindItems.Insert(0, newItem);
+                newItem.IsExtensionPopupOpen = true;
+                SyncStatusText = $"已录制新手势 [{displayName}]，请选择小程序完成绑定。";
+            }
+        }
     }
 
     private void RefreshMouseGestureManagementButton_Click(object sender, RoutedEventArgs e)
@@ -11017,17 +11055,20 @@ public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
     private bool _isExtensionPopupOpen;
     private bool _isAppPopupOpen;
 
-    public MouseGestureQuickBindItem(string sequence, string displayName, string description, string? assignedTitle)
+    public MouseGestureQuickBindItem(string sequence, string displayName, string description, string? assignedTitle, int[]? data = null)
     {
         Sequence = sequence;
         DisplayName = displayName;
         Description = description;
         AssignedTitle = assignedTitle ?? string.Empty;
-        PreviewGeometry = MouseGesturePreviewGeometryFactory.Create(sequence, data: null);
+        Data = data;
+        PreviewGeometry = MouseGesturePreviewGeometryFactory.Create(sequence, data);
         RebuildFilteredAppOptionsView();
     }
 
     public string Sequence { get; }
+
+    public int[]? Data { get; }
 
     public string DisplayName { get; }
 

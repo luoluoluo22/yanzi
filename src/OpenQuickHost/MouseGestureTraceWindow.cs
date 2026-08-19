@@ -11,6 +11,14 @@ using Point = System.Windows.Point;
 
 namespace OpenQuickHost;
 
+public enum OriginActionState
+{
+    None,
+    Cancel,
+    Edit,
+    Pin
+}
+
 internal sealed class MouseGestureTraceWindow : Window
 {
     private readonly Canvas _canvas;
@@ -19,7 +27,14 @@ internal sealed class MouseGestureTraceWindow : Window
     private TextBlock? _previewTitleText;
     private TextBlock? _previewDetailText;
     private Border? _previewIconHost;
-    private Border? _cancelZoneHost;
+    private Border? _originActionBarHost;
+    private Border? _editButtonBorder;
+    private Border? _pinButtonBorder;
+    private Ellipse? _cancelCircle;
+    private Ellipse? _cancelHalo;
+    private TextBlock? _cancelIcon;
+    private TextBlock? _editButtonText;
+    private TextBlock? _pinButtonText;
     private Border? _cheatsheetHost;
     private HwndSource? _source;
     private Point? _startPoint;
@@ -32,11 +47,12 @@ internal sealed class MouseGestureTraceWindow : Window
     private double _cheatsheetDesiredWidth;
     private double _cheatsheetDesiredHeight;
     private bool _hasMovedFarFromStart;
-    private bool _isCancelled;
+    private OriginActionState _currentOriginAction = OriginActionState.None;
     private readonly List<Point> _rawTracePoints = new(capacity: 256);
     private readonly List<Point> _smoothTracePoints = new(capacity: 256);
 
-    public bool IsCancelled => _isCancelled;
+    public OriginActionState CurrentOriginAction => _currentOriginAction;
+    public bool IsCancelled => _currentOriginAction == OriginActionState.Cancel;
 
     public MouseGestureTraceWindow()
     {
@@ -96,7 +112,7 @@ internal sealed class MouseGestureTraceWindow : Window
         _startPoint = localPoint;
         _lastPoint = localPoint;
         _hasMovedFarFromStart = false;
-        _isCancelled = false;
+        _currentOriginAction = OriginActionState.None;
         _rawTracePoints.Clear();
         _smoothTracePoints.Clear();
         _rawTracePoints.Add(localPoint);
@@ -105,8 +121,8 @@ internal sealed class MouseGestureTraceWindow : Window
         // 1. 创建起始点同心发光圆点 (白核心 + 翠绿晕圈)
         AddStartIndicator(localPoint);
 
-        // 2. 创建起点取消格子
-        CreateCancelZone(localPoint);
+        // 2. 创建起点动作栏 (取消 + 下一行编辑与置顶)
+        CreateOriginActionBar(localPoint);
 
         // 3. 创建可用手势速查看板
         if (cheatItems != null && cheatItems.Count > 0)
@@ -209,30 +225,39 @@ internal sealed class MouseGestureTraceWindow : Window
         }
 
         var distFromStart = _startPoint.HasValue ? (point - _startPoint.Value).Length : 0;
-        if (distFromStart > 28)
+        if (distFromStart > 26)
         {
             _hasMovedFarFromStart = true;
         }
 
-        // 检查是否移回起点取消区（距离起点小于 24px）
-        if (_hasMovedFarFromStart && distFromStart < 24)
+        // 检查是否移回起点动作栏（取消 / 编辑 / 置顶）
+        if (_hasMovedFarFromStart && _startPoint.HasValue)
         {
-            if (!_isCancelled)
+            var start = _startPoint.Value;
+            var dx = point.X - start.X;
+            var dy = point.Y - start.Y;
+
+            OriginActionState hoveredAction = OriginActionState.None;
+            if (dy >= 10 && dy <= 42 && dx >= -52 && dx <= -2)
             {
-                _isCancelled = true;
-                UpdateCancelZoneVisual(isHovered: true);
-                if (_glowPath != null) _glowPath.Stroke = new SolidColorBrush(Color.FromArgb(50, 0xEF, 0x44, 0x44));
-                if (_corePath != null) _corePath.Stroke = new SolidColorBrush(Color.FromArgb(160, 0xEF, 0x44, 0x44));
-                if (_previewBadge != null) _previewBadge.Visibility = Visibility.Collapsed;
+                // 编辑按钮区域
+                hoveredAction = OriginActionState.Edit;
             }
-        }
-        else if (_isCancelled && distFromStart >= 28)
-        {
-            // 移出取消区，恢复白到绿渐变轨迹
-            _isCancelled = false;
-            UpdateCancelZoneVisual(isHovered: false);
-            if (_glowPath != null && _glowGradientBrush != null) _glowPath.Stroke = _glowGradientBrush;
-            if (_corePath != null && _coreGradientBrush != null) _corePath.Stroke = _coreGradientBrush;
+            else if (dy >= 10 && dy <= 42 && dx >= 2 && dx <= 52)
+            {
+                // 置顶按钮区域
+                hoveredAction = OriginActionState.Pin;
+            }
+            else if (distFromStart < 22 || (Math.Abs(dx) < 22 && dy >= -22 && dy <= 12))
+            {
+                // 上方取消按钮区域
+                hoveredAction = OriginActionState.Cancel;
+            }
+
+            if (hoveredAction != _currentOriginAction)
+            {
+                UpdateOriginActionVisual(hoveredAction);
+            }
         }
 
         if ((point - last).Length < 2.5)
@@ -304,7 +329,7 @@ internal sealed class MouseGestureTraceWindow : Window
 
     public void UpdatePreview(MouseGesturePreviewInfo? preview, Point screenPoint)
     {
-        if (!IsVisible || _isCancelled)
+        if (!IsVisible || IsCancelled)
         {
             if (_previewBadge != null) _previewBadge.Visibility = Visibility.Collapsed;
             return;
@@ -346,7 +371,7 @@ internal sealed class MouseGestureTraceWindow : Window
 
         if (_lastPoint is { } last)
         {
-            if (_isCancelled)
+            if (IsCancelled)
             {
                 AddCancelBadge(last);
             }
@@ -430,21 +455,27 @@ internal sealed class MouseGestureTraceWindow : Window
         _canvas.Children.Add(core);
     }
 
-    private void CreateCancelZone(Point point)
+    private void CreateOriginActionBar(Point point)
     {
-        var grid = new Grid
+        var mainStack = new StackPanel
         {
-            Width = 60,
-            Height = 60,
+            Orientation = System.Windows.Controls.Orientation.Vertical,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             VerticalAlignment = System.Windows.VerticalAlignment.Center
         };
 
-        // 外层脉冲光圈（hover 时显现）
-        var halo = new Ellipse
+        // 上行：取消区域
+        var cancelGrid = new Grid
         {
-            Width = 48,
-            Height = 48,
+            Width = 44,
+            Height = 44,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center
+        };
+
+        _cancelHalo = new Ellipse
+        {
+            Width = 44,
+            Height = 44,
             Fill = new SolidColorBrush(Color.FromArgb(35, 0xEF, 0x44, 0x44)),
             Stroke = new SolidColorBrush(Color.FromArgb(90, 0xEF, 0x44, 0x44)),
             StrokeThickness = 1,
@@ -454,10 +485,10 @@ internal sealed class MouseGestureTraceWindow : Window
             Visibility = Visibility.Collapsed
         };
 
-        var circle = new Ellipse
+        _cancelCircle = new Ellipse
         {
-            Width = 32,
-            Height = 32,
+            Width = 30,
+            Height = 30,
             Fill = new SolidColorBrush(Color.FromArgb(200, 0x1F, 0x1F, 0x24)),
             Stroke = new SolidColorBrush(Color.FromArgb(220, 0xEF, 0x44, 0x44)),
             StrokeThickness = 2,
@@ -466,53 +497,158 @@ internal sealed class MouseGestureTraceWindow : Window
             IsHitTestVisible = false
         };
 
-        var icon = new TextBlock
+        _cancelIcon = new TextBlock
         {
             Text = "✕",
             Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44)),
-            FontSize = 14,
+            FontSize = 13,
             FontWeight = FontWeights.Bold,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             IsHitTestVisible = false
         };
 
-        grid.Children.Add(halo);
-        grid.Children.Add(circle);
-        grid.Children.Add(icon);
+        cancelGrid.Children.Add(_cancelHalo);
+        cancelGrid.Children.Add(_cancelCircle);
+        cancelGrid.Children.Add(_cancelIcon);
+        mainStack.Children.Add(cancelGrid);
 
-        _cancelZoneHost = new Border
+        // 下行：【编辑】与【置顶】胶囊按钮行
+        var actionRow = new StackPanel
         {
-            Width = 60,
-            Height = 60,
-            Child = grid,
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+
+        _editButtonText = new TextBlock
+        {
+            Text = "✏️ 编辑",
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromArgb(220, 0x10, 0xB9, 0x81)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
+        };
+        _editButtonBorder = new Border
+        {
+            Child = _editButtonText,
+            Background = new SolidColorBrush(Color.FromArgb(180, 0x12, 0x16, 0x15)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(100, 0x10, 0xB9, 0x81)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(7, 3, 7, 3),
+            Margin = new Thickness(0, 0, 6, 0),
             IsHitTestVisible = false
         };
 
-        Canvas.SetZIndex(_cancelZoneHost, 5);
-        Canvas.SetLeft(_cancelZoneHost, point.X - 30);
-        Canvas.SetTop(_cancelZoneHost, point.Y - 30);
-        _canvas.Children.Add(_cancelZoneHost);
+        _pinButtonText = new TextBlock
+        {
+            Text = "📌 置顶",
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromArgb(220, 0x38, 0xBD, 0xF8)),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
+        };
+        _pinButtonBorder = new Border
+        {
+            Child = _pinButtonText,
+            Background = new SolidColorBrush(Color.FromArgb(180, 0x12, 0x14, 0x1C)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(100, 0x38, 0xBD, 0xF8)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(7, 3, 7, 3),
+            IsHitTestVisible = false
+        };
+
+        actionRow.Children.Add(_editButtonBorder);
+        actionRow.Children.Add(_pinButtonBorder);
+        mainStack.Children.Add(actionRow);
+
+        _originActionBarHost = new Border
+        {
+            Child = mainStack,
+            IsHitTestVisible = false
+        };
+
+        Canvas.SetZIndex(_originActionBarHost, 5);
+        _canvas.Children.Add(_originActionBarHost);
+
+        // 测量并居中对齐在 point 处（取消按钮正中心对齐 point）
+        _originActionBarHost.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var hostW = _originActionBarHost.DesiredSize.Width;
+        Canvas.SetLeft(_originActionBarHost, point.X - (hostW / 2.0));
+        Canvas.SetTop(_originActionBarHost, point.Y - 22);
     }
 
-    private void UpdateCancelZoneVisual(bool isHovered)
+    private void UpdateOriginActionVisual(OriginActionState state)
     {
-        if (_cancelZoneHost?.Child is not Grid grid) return;
-        if (grid.Children[0] is Ellipse halo)
+        _currentOriginAction = state;
+
+        // 1. 取消按钮反馈
+        var isCancelHovered = state == OriginActionState.Cancel;
+        if (_cancelHalo != null) _cancelHalo.Visibility = isCancelHovered ? Visibility.Visible : Visibility.Collapsed;
+        if (_cancelCircle != null)
         {
-            halo.Visibility = isHovered ? Visibility.Visible : Visibility.Collapsed;
+            _cancelCircle.Fill = new SolidColorBrush(isCancelHovered ? Color.FromArgb(240, 0xEF, 0x44, 0x44) : Color.FromArgb(200, 0x1F, 0x1F, 0x24));
+            _cancelCircle.Stroke = new SolidColorBrush(isCancelHovered ? Brushes.White.Color : Color.FromArgb(220, 0xEF, 0x44, 0x44));
+            _cancelCircle.Width = isCancelHovered ? 38 : 30;
+            _cancelCircle.Height = isCancelHovered ? 38 : 30;
         }
-        if (grid.Children[1] is Ellipse circle)
+        if (_cancelIcon != null)
         {
-            circle.Fill = new SolidColorBrush(isHovered ? Color.FromArgb(240, 0xEF, 0x44, 0x44) : Color.FromArgb(200, 0x1F, 0x1F, 0x24));
-            circle.Stroke = new SolidColorBrush(isHovered ? Brushes.White.Color : Color.FromArgb(220, 0xEF, 0x44, 0x44));
-            circle.Width = isHovered ? 40 : 32;
-            circle.Height = isHovered ? 40 : 32;
+            _cancelIcon.Foreground = isCancelHovered ? Brushes.White : new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+            _cancelIcon.FontSize = isCancelHovered ? 15 : 13;
         }
-        if (grid.Children[2] is TextBlock icon)
+
+        // 2. 编辑按钮反馈
+        var isEditHovered = state == OriginActionState.Edit;
+        if (_editButtonBorder != null)
         {
-            icon.Foreground = isHovered ? Brushes.White : new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
-            icon.FontSize = isHovered ? 16 : 14;
+            _editButtonBorder.Background = new SolidColorBrush(isEditHovered ? Color.FromArgb(240, 0x10, 0xB9, 0x81) : Color.FromArgb(180, 0x12, 0x16, 0x15));
+            _editButtonBorder.BorderBrush = new SolidColorBrush(isEditHovered ? Brushes.White.Color : Color.FromArgb(100, 0x10, 0xB9, 0x81));
+        }
+        if (_editButtonText != null)
+        {
+            _editButtonText.Foreground = isEditHovered ? Brushes.White : new SolidColorBrush(Color.FromArgb(220, 0x10, 0xB9, 0x81));
+        }
+
+        // 3. 置顶按钮反馈
+        var isPinHovered = state == OriginActionState.Pin;
+        if (_pinButtonBorder != null)
+        {
+            _pinButtonBorder.Background = new SolidColorBrush(isPinHovered ? Color.FromArgb(240, 0x02, 0x84, 0xC7) : Color.FromArgb(180, 0x12, 0x14, 0x1C));
+            _pinButtonBorder.BorderBrush = new SolidColorBrush(isPinHovered ? Brushes.White.Color : Color.FromArgb(100, 0x38, 0xBD, 0xF8));
+        }
+        if (_pinButtonText != null)
+        {
+            _pinButtonText.Foreground = isPinHovered ? Brushes.White : new SolidColorBrush(Color.FromArgb(220, 0x38, 0xBD, 0xF8));
+        }
+
+        // 4. 轨迹画笔色调联动与匹配徽标联动
+        if (isCancelHovered)
+        {
+            if (_glowPath != null) _glowPath.Stroke = new SolidColorBrush(Color.FromArgb(50, 0xEF, 0x44, 0x44));
+            if (_corePath != null) _corePath.Stroke = new SolidColorBrush(Color.FromArgb(160, 0xEF, 0x44, 0x44));
+            if (_previewBadge != null) _previewBadge.Visibility = Visibility.Collapsed;
+        }
+        else if (isEditHovered)
+        {
+            if (_glowPath != null) _glowPath.Stroke = new SolidColorBrush(Color.FromArgb(80, 0x10, 0xB9, 0x81));
+            if (_corePath != null) _corePath.Stroke = new SolidColorBrush(Color.FromArgb(200, 0x10, 0xB9, 0x81));
+            if (_previewBadge != null) _previewBadge.Visibility = Visibility.Collapsed;
+        }
+        else if (isPinHovered)
+        {
+            if (_glowPath != null) _glowPath.Stroke = new SolidColorBrush(Color.FromArgb(80, 0x02, 0x84, 0xC7));
+            if (_corePath != null) _corePath.Stroke = new SolidColorBrush(Color.FromArgb(200, 0x38, 0xBD, 0xF8));
+            if (_previewBadge != null) _previewBadge.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            if (_glowPath != null && _glowGradientBrush != null) _glowPath.Stroke = _glowGradientBrush;
+            if (_corePath != null && _coreGradientBrush != null) _corePath.Stroke = _coreGradientBrush;
         }
     }
 
@@ -884,7 +1020,14 @@ internal sealed class MouseGestureTraceWindow : Window
         _previewTitleText = null;
         _previewDetailText = null;
         _previewIconHost = null;
-        _cancelZoneHost = null;
+        _originActionBarHost = null;
+        _editButtonBorder = null;
+        _pinButtonBorder = null;
+        _cancelCircle = null;
+        _cancelHalo = null;
+        _cancelIcon = null;
+        _editButtonText = null;
+        _pinButtonText = null;
         _cheatsheetHost = null;
         _startPoint = null;
         _lastPoint = null;
@@ -894,7 +1037,7 @@ internal sealed class MouseGestureTraceWindow : Window
         _coreGradientBrush = null;
         _glowGradientBrush = null;
         _hasMovedFarFromStart = false;
-        _isCancelled = false;
+        _currentOriginAction = OriginActionState.None;
         _rawTracePoints.Clear();
         _smoothTracePoints.Clear();
     }

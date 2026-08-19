@@ -500,10 +500,26 @@ public static class MouseGestureService
         matchedGesture = null;
         previewInfo = null;
 
-        if (_traceWindow != null && _traceWindow.IsCancelled)
+        if (_traceWindow != null)
         {
-            Log("info", "gesture was cancelled by user returning to start zone.");
-            return false;
+            var originAction = _traceWindow.CurrentOriginAction;
+            if (originAction == OriginActionState.Cancel)
+            {
+                Log("info", "gesture was cancelled by user returning to cancel zone.");
+                return false;
+            }
+            if (originAction == OriginActionState.Edit)
+            {
+                Log("info", "gesture triggered origin action: Open Settings (mousegestures).");
+                ExecuteOriginEditAction();
+                return false;
+            }
+            if (originAction == OriginActionState.Pin)
+            {
+                Log("info", "gesture triggered origin action: Toggle Topmost.");
+                ExecuteOriginToggleTopmostAction();
+                return false;
+            }
         }
 
         if (_path.Count < 2) return false;
@@ -1030,6 +1046,52 @@ public static class MouseGestureService
         }
     }
 
+    private static void ExecuteOriginEditAction()
+    {
+        System.Windows.Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+        {
+            if (System.Windows.Application.Current is App app)
+            {
+                app.OpenSettingsWindow("mousegestures");
+            }
+        }));
+    }
+
+    private static void ExecuteOriginToggleTopmostAction()
+    {
+        if (_path.Count == 0) return;
+        var lastPt = _path[^1];
+        var pt = new POINT { x = (int)lastPt.X, y = (int)lastPt.Y };
+        var hwnd = WindowFromPoint(pt);
+        if (hwnd == IntPtr.Zero) return;
+        var targetHwnd = GetAncestor(hwnd, GaRoot);
+        if (targetHwnd == IntPtr.Zero) targetHwnd = hwnd;
+
+        try
+        {
+            var exStyle = GetWindowLongPtr(targetHwnd, GwlExstyle).ToInt64();
+            bool isTopmost = (exStyle & WsExTopmost) != 0;
+            SetWindowPos(targetHwnd, isTopmost ? HwndNoTopmost : HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+
+            var sb = new System.Text.StringBuilder(256);
+            _ = GetWindowText(targetHwnd, sb, sb.Capacity);
+            var title = sb.ToString();
+            if (string.IsNullOrWhiteSpace(title)) title = "目标窗口";
+
+            var badgeTitle = isTopmost ? "取消置顶" : "窗口置顶";
+            DispatchTrace(window =>
+            {
+                window.ShowInstantAction(badgeTitle, title, lastPt, "📌");
+            });
+
+            Log("info", $"ToggleTopmost on hwnd={targetHwnd}: isTopmost={!isTopmost}, title={title}");
+        }
+        catch (Exception ex)
+        {
+            Log("warn", $"ToggleTopmost failed: {ex.Message}");
+        }
+    }
+
     private static void Log(string level, string message)
     {
         try
@@ -1162,6 +1224,27 @@ public static class MouseGestureService
         public uint time;
         public IntPtr dwExtraInfo;
     }
+
+    private const int GwlExstyle = -20;
+    private const long WsExTopmost = 0x00000008L;
+    private static readonly IntPtr HwndTopmost = new IntPtr(-1);
+    private static readonly IntPtr HwndNoTopmost = new IntPtr(-2);
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoActivate = 0x0010;
+    private const uint GaRoot = 2;
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
 }
 
 /// <summary>

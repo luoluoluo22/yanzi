@@ -12,6 +12,7 @@ using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using Key = System.Windows.Input.Key;
 using Point = System.Windows.Point;
 using Color = System.Windows.Media.Color;
+using Brushes = System.Windows.Media.Brushes;
 using Canvas = System.Windows.Controls.Canvas;
 
 namespace OpenQuickHost;
@@ -27,6 +28,8 @@ public partial class MouseGestureRecorderWindow : Window
     private readonly List<UIElement> _strokeElements = new();
     private bool _drawing;
     private PathFigure? _strokeFigure;
+    private LinearGradientBrush? _coreBrush;
+    private LinearGradientBrush? _glowBrush;
 
     private static readonly string[] Arrows = ["→","↘","↓","↙","←","↖","↑","↗"];
     private const int MinSegmentDistance = 30; // 单段最小像素距离
@@ -135,19 +138,31 @@ public partial class MouseGestureRecorderWindow : Window
         _drawing = true;
         _path.Add(start);
         ResultPanel.Visibility = Visibility.Collapsed;
-        HintRing.BorderBrush = new SolidColorBrush(Color.FromRgb(0xFB, 0x92, 0x3C));
+        HintRing.BorderBrush = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
         HintText.Text = "正在录制… 松开即可识别";
 
-        // 起点发光标记
+        // 起点发光标记 (白绿翡翠)
+        var halo = new Ellipse
+        {
+            Width = 22,
+            Height = 22,
+            Fill = new SolidColorBrush(Color.FromArgb(90, 0x10, 0xB9, 0x81)),
+            IsHitTestVisible = false
+        };
+        Canvas.SetLeft(halo, start.X - 11);
+        Canvas.SetTop(halo, start.Y - 11);
+        StrokeCanvas.Children.Add(halo);
+        _strokeElements.Add(halo);
+
         var dot = new Ellipse
         {
-            Width = 14, Height = 14,
-            Fill = new SolidColorBrush(Color.FromRgb(0xFB, 0x92, 0x3C)),
-            Stroke = new SolidColorBrush(Color.FromArgb(140, 0, 0, 0)),
+            Width = 12, Height = 12,
+            Fill = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81)),
+            Stroke = Brushes.White,
             StrokeThickness = 1.5
         };
-        Canvas.SetLeft(dot, start.X - 7);
-        Canvas.SetTop(dot, start.Y - 7);
+        Canvas.SetLeft(dot, start.X - 6);
+        Canvas.SetTop(dot, start.Y - 6);
         StrokeCanvas.Children.Add(dot);
         _strokeElements.Add(dot);
 
@@ -161,11 +176,32 @@ public partial class MouseGestureRecorderWindow : Window
         var pathGeometry = new PathGeometry();
         pathGeometry.Figures.Add(_strokeFigure);
 
-        // 外层柔光
+        _coreBrush = new LinearGradientBrush
+        {
+            MappingMode = BrushMappingMode.Absolute,
+            StartPoint = start,
+            EndPoint = start
+        };
+        _coreBrush.GradientStops.Add(new GradientStop(Color.FromArgb(255, 255, 255, 255), 0.0));
+        _coreBrush.GradientStops.Add(new GradientStop(Color.FromArgb(255, 110, 231, 183), 0.3));
+        _coreBrush.GradientStops.Add(new GradientStop(Color.FromArgb(255, 16, 185, 129), 0.8));
+        _coreBrush.GradientStops.Add(new GradientStop(Color.FromArgb(255, 5, 150, 105), 1.0));
+
+        _glowBrush = new LinearGradientBrush
+        {
+            MappingMode = BrushMappingMode.Absolute,
+            StartPoint = start,
+            EndPoint = start
+        };
+        _glowBrush.GradientStops.Add(new GradientStop(Color.FromArgb(120, 255, 255, 255), 0.0));
+        _glowBrush.GradientStops.Add(new GradientStop(Color.FromArgb(90, 16, 185, 129), 0.5));
+        _glowBrush.GradientStops.Add(new GradientStop(Color.FromArgb(120, 5, 150, 105), 1.0));
+
+        // 外层柔光 (白到绿流光晕)
         var glowPath = new Path
         {
             Data = pathGeometry,
-            Stroke = new SolidColorBrush(Color.FromArgb(90, 0xFB, 0x92, 0x3C)),
+            Stroke = _glowBrush,
             StrokeThickness = 12,
             StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round,
@@ -173,11 +209,11 @@ public partial class MouseGestureRecorderWindow : Window
             IsHitTestVisible = false
         };
 
-        // 内层高亮核心
+        // 内层高亮核心 (白到绿亮芯)
         var corePath = new Path
         {
             Data = pathGeometry,
-            Stroke = new SolidColorBrush(Color.FromArgb(240, 0xFB, 0x92, 0x3C)),
+            Stroke = _coreBrush,
             StrokeThickness = 5,
             StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round,
@@ -194,6 +230,9 @@ public partial class MouseGestureRecorderWindow : Window
     private void AppendStrokePoint(Point point)
     {
         if (_strokeFigure == null) return;
+
+        if (_coreBrush != null) _coreBrush.EndPoint = point;
+        if (_glowBrush != null) _glowBrush.EndPoint = point;
 
         var count = _path.Count;
         if (count == 1)
@@ -225,7 +264,7 @@ public partial class MouseGestureRecorderWindow : Window
     {
         if (!_drawing) return;
         _drawing = false;
-        HintRing.BorderBrush = new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6));
+        HintRing.BorderBrush = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
         HintText.Text = "可以重新录制 · 也可保存";
         // 终点标记
         if (_path.Count > 0)
@@ -233,13 +272,13 @@ public partial class MouseGestureRecorderWindow : Window
             var last = _path[^1];
             var dot = new Ellipse
             {
-                Width = 16, Height = 16,
-                Fill = new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6)),
-                Stroke = new SolidColorBrush(Color.FromArgb(140, 0, 0, 0)),
+                Width = 14, Height = 14,
+                Fill = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81)),
+                Stroke = Brushes.White,
                 StrokeThickness = 1.5
             };
-            Canvas.SetLeft(dot, last.X - 8);
-            Canvas.SetTop(dot, last.Y - 8);
+            Canvas.SetLeft(dot, last.X - 7);
+            Canvas.SetTop(dot, last.Y - 7);
             StrokeCanvas.Children.Add(dot);
             _strokeElements.Add(dot);
         }

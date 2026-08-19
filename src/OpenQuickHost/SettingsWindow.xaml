@@ -3391,7 +3391,14 @@
 
                         <!-- Mouse Gestures View -->
                         <StackPanel x:Name="MouseGesturesSectionRoot" Visibility="{Binding IsMouseGesturesSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
-
+                            <StackPanel.Resources>
+                                <LinearGradientBrush x:Key="GestureWhiteToGreenBrush" StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#FFFFFFFF" Offset="0.0"/>
+                                    <GradientStop Color="#FF6EE7B7" Offset="0.35"/>
+                                    <GradientStop Color="#FF10B981" Offset="0.85"/>
+                                    <GradientStop Color="#FF059669" Offset="1.0"/>
+                                </LinearGradientBrush>
+                            </StackPanel.Resources>
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16" Margin="0,0,0,16">
                                 <Grid>
@@ -3400,9 +3407,9 @@
                                         <ColumnDefinition Width="260"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock Text="扩展鼠标手势管理" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeLarge}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="鼠标手势管理" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeLarge}" FontWeight="SemiBold"/>
                                         <TextBlock Text="{Binding MouseGestureManagementSummary}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,6,18,0" TextWrapping="Wrap"/>
-                                        <TextBlock Text="扩展编辑里负责录制具体轨迹；这里用于查看、清除和快速绑定常用手势。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,18,0" TextWrapping="Wrap"/>
+                                        <TextBlock Text="支持录制绘制自定义手势轨迹，或为常用手势一键绑定小程序及应用程序。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,18,0" TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock Text="全局触发方式" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,0,0,6"/>
@@ -3457,14 +3464,17 @@
 
                             <Grid Margin="0,0,0,10">
                                 <TextBlock Text="已绑定手势" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                <Button Content="刷新" Style="{StaticResource SecondaryBtn}" Height="28" Padding="12,0" HorizontalAlignment="Right" Click="RefreshMouseGestureManagementButton_Click"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button Content="+ 添加手势" Style="{StaticResource PrimaryBtn}" Height="28" Padding="14,0" Margin="0,0,8,0" Click="AddNewMouseGestureButton_Click"/>
+                                    <Button Content="刷新" Style="{StaticResource SecondaryBtn}" Height="28" Padding="12,0" Click="RefreshMouseGestureManagementButton_Click"/>
+                                </StackPanel>
                             </Grid>
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="18" Margin="0,0,0,14"
                                     Visibility="{Binding MouseGestureEmptyVisibility}">
                                 <StackPanel HorizontalAlignment="Center">
-                                    <TextBlock Text="暂无扩展绑定鼠标手势" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                    <TextBlock Text="可以在下方常用手势里选择扩展快速绑定，也可以进入扩展编辑录制完整轨迹。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,6,0,0" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="暂无小程序绑定鼠标手势" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="可以点击右上角“+ 添加手势”录制全新轨迹，或在下方常用手势里选择小程序快速绑定。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,6,0,0" HorizontalAlignment="Center"/>
                                 </StackPanel>
                             </Border>
 
@@ -3483,7 +3493,7 @@
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <Border Width="58" Height="58" CornerRadius="14" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" VerticalAlignment="Top">
-                                                    <Path Data="{Binding PreviewGeometry}" Stroke="#FFFB923C" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Stretch="None"/>
+                                                    <Path Data="{Binding PreviewGeometry}" Stroke="{StaticResource GestureWhiteToGreenBrush}" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Stretch="None"/>
                                                 </Border>
                                                 <StackPanel Grid.Column="1">
                                                     <Grid>
@@ -3508,8 +3518,8 @@
                                                         </StackPanel>
                                                     </Grid>
                                                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                                        <Border Background="#22FB923C" BorderBrush="#88FB923C" BorderThickness="1" CornerRadius="6" Padding="7,3" Margin="0,0,6,0">
-                                                            <TextBlock Text="{Binding DisplayName}" Foreground="#FFFFD7AA" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold"/>
+                                                        <Border Background="#2210B981" BorderBrush="#8810B981" BorderThickness="1" CornerRadius="6" Padding="7,3" Margin="0,0,6,0">
+                                                            <TextBlock Text="{Binding DisplayName}" Foreground="#FF6EE7B7" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold"/>
                                                         </Border>
                                                         <Border Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="7,3">
                                                             <TextBlock Text="{Binding TriggerLabel}" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmall}"/>
@@ -3544,12 +3554,12 @@
                                                         <ColumnDefinition Width="*"/>
                                                     </Grid.ColumnDefinitions>
                                                     <Border Width="48" Height="48" CornerRadius="12" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
-                                                        <Path Data="{Binding PreviewGeometry}" Stroke="#FFFB923C" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                        <Path Data="{Binding PreviewGeometry}" Stroke="{StaticResource GestureWhiteToGreenBrush}" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                                                     </Border>
                                                     <StackPanel Grid.Column="1">
                                                         <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
                                                         <TextBlock Text="{Binding Description}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                                                        <TextBlock Text="{Binding StatusText}" Foreground="#FFFB923C" FontSize="{DynamicResource FontSizeTiny}" Margin="0,5,0,0"/>
+                                                        <TextBlock Text="{Binding StatusText}" Foreground="#FF10B981" FontSize="{DynamicResource FontSizeTiny}" Margin="0,5,0,0"/>
                                                     </StackPanel>
                                                 </Grid>
                                                 <Grid Margin="0,10,0,0">
@@ -3581,12 +3591,12 @@
                                                                          Foreground="{DynamicResource BrushTextMain}"
                                                                          CaretBrush="White"
                                                                          VerticalContentAlignment="Center"
-                                                                         ToolTip="搜索扩展；不输入时显示全部扩展"
+                                                                         ToolTip="搜索小程序；不输入时显示全部小程序"
                                                                          GotKeyboardFocus="MouseGestureExtensionSearchBox_GotKeyboardFocus"
                                                                          TextChanged="MouseGestureExtensionSearchBox_TextChanged"
                                                                          PreviewKeyDown="MouseGestureExtensionSearchBox_PreviewKeyDown"/>
                                                                 <TextBlock Grid.Column="1"
-                                                                           Text="搜索扩展..."
+                                                                           Text="搜索小程序..."
                                                                            Foreground="#FF555555"
                                                                            VerticalAlignment="Center"
                                                                            IsHitTestVisible="False"
@@ -3611,7 +3621,7 @@
                                                                         HorizontalAlignment="Stretch"
                                                                         VerticalAlignment="Stretch"
                                                                         Cursor="Hand"
-                                                                        ToolTip="展开扩展列表">
+                                                                        ToolTip="展开小程序列表">
                                                                     <Path Data="M 0 0 L 4 4 L 8 0 Z" Fill="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                                 </Button>
                                                             </Grid>
@@ -3647,7 +3657,7 @@
                                                             </Border>
                                                         </Popup>
                                                     </Grid>
-                                                    <Button Grid.Column="1" Content="绑定扩展" Style="{StaticResource SecondaryBtn}" Height="32" Padding="10,0" Click="BindCommonMouseGestureButton_Click"/>
+                                                    <Button Grid.Column="1" Content="绑定小程序" Style="{StaticResource SecondaryBtn}" Height="32" Padding="10,0" Click="BindCommonMouseGestureButton_Click"/>
                                                 </Grid>
                                                 <Grid Margin="0,8,0,0">
                                                     <Grid.ColumnDefinitions>
