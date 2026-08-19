@@ -908,7 +908,7 @@ public partial class App : WpfApplication
         {
             // Ignore Activate exception during early window show phase
         }
-        _questWindow.RefreshStatus();
+        _questWindow.ResetExplicitSelectionAndRefresh();
     }
 
     private void TrayToggleMousePanelService_Click(object sender, RoutedEventArgs e)

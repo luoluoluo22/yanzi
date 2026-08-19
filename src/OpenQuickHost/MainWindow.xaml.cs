@@ -67,7 +67,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public Visibility NormalFooterMenuVisibility => IsRadialPickerMode ? Visibility.Collapsed : Visibility.Visible;
 
-    public Task<RadialPickerResult?> ShowForRadialPickerAsync(bool allowAddChildPage)
+    public Task<RadialPickerResult?> ShowForRadialPickerAsync(bool allowAddChildPage, RadialMenuWindow? radialWindow = null)
     {
         HostAssets.AppendLog($"[PickerLog] MainWindow.ShowForRadialPickerAsync: allowAddChild={allowAddChildPage}.");
         if (_radialPickerTcs != null && !_radialPickerTcs.Task.IsCompleted)
@@ -81,7 +81,59 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         ShowPanel();
 
+        // 调整位置：左侧仓库，右侧轮盘，两者水平并排不重叠
+        PositionPickerSideBySide(radialWindow);
+
         return _radialPickerTcs.Task;
+    }
+
+    private void PositionPickerSideBySide(RadialMenuWindow? radialWindow)
+    {
+        try
+        {
+            var mousePt = System.Windows.Forms.Cursor.Position;
+            var screen = System.Windows.Forms.Screen.FromPoint(mousePt);
+            var workArea = screen.WorkingArea;
+
+            var source = PresentationSource.FromVisual(this);
+            double dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+            double dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+
+            double workLeft = workArea.Left / dpiX;
+            double workTop = workArea.Top / dpiY;
+            double workWidth = workArea.Width / dpiX;
+            double workHeight = workArea.Height / dpiY;
+
+            double pickerWidth = Width > 100 ? Width : 680;
+            double pickerHeight = Height > 100 ? Height : 560;
+            double gap = 30.0;
+            double wheelVisualRadius = 280.0;
+            double wheelVisualDiameter = wheelVisualRadius * 2.0;
+
+            double totalWidth = pickerWidth + gap + wheelVisualDiameter;
+            double startX = workLeft + Math.Max(20.0, (workWidth - totalWidth) / 2.0);
+
+            // 1. 左侧仓库窗口位置
+            Left = startX;
+            Top = workTop + Math.Max(20.0, (workHeight - pickerHeight) / 2.0);
+
+            // 2. 右侧轮盘位置
+            if (radialWindow != null)
+            {
+                double wheelCenterScreenX = startX + pickerWidth + gap + wheelVisualRadius;
+                double wheelCenterScreenY = workTop + (workHeight / 2.0);
+
+                radialWindow.Left = wheelCenterScreenX - 700.0;
+                radialWindow.Top = wheelCenterScreenY - 700.0;
+                radialWindow.ActivateForEditInteraction();
+            }
+
+            HostAssets.AppendLog($"[PickerLog] PositionPickerSideBySide: pickerPos=({Left:0.#},{Top:0.#}), totalWidth={totalWidth:0.#}, screen=({workWidth:0.#}x{workHeight:0.#}).");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[PickerLog] PositionPickerSideBySide exception: {ex.Message}");
+        }
     }
 
     private void RadialPickerConfirmButton_Click(object sender, RoutedEventArgs e)

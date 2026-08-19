@@ -19,9 +19,80 @@
     </Window.Resources>
 
     <Grid x:Name="RootGrid">
+        <!-- 编辑模式下的全屏纯色不透明背景层，彻底遮挡底层桌面与应用 -->
+        <Border x:Name="EditModeBackdropOverlay"
+                Background="#FF0F172A"
+                IsHitTestVisible="False"
+                Visibility="{Binding IsEditModeLocked, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Opacity" Value="0"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsEditModeLocked}" Value="True">
+                            <DataTrigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1.0" Duration="0:0:0.25"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.EnterActions>
+                            <DataTrigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.0" Duration="0:0:0.2"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.ExitActions>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+        </Border>
+
         <Grid x:Name="CenterMainWheelContainer"
               Visibility="{Binding IsCenterWheelVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Ellipse Width="330"
+        <!-- 第 3 层：最外圈 8 方向扩展容器 (半径 165~280，默认隐藏，有配置或鼠标划入时显现) -->
+        <Grid x:Name="OuterWheelLayer"
+              Width="1400"
+              Height="1400"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Visibility="{Binding IsOuterWheelVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <!-- 开放式最外圈：无封闭圆弧边框，向外开放 -->
+
+            <ItemsControl ItemsSource="{Binding OuterItems}"
+                          IsHitTestVisible="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <Canvas Width="1400" Height="1400"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Path Data="{Binding SectorGeometry}"
+                              Fill="{Binding SectorBrush}"
+                              Opacity="{Binding SectorOpacity}"
+                              Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <ItemsControl ItemsSource="{Binding OuterSeparators}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <Canvas Width="1400" Height="1400"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{Binding StrokeBrush}" StrokeThickness="1"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+
+        <!-- 第 2 层：中间层 16 槽位底板与扇区 (半径 100~165) -->
+        <Ellipse Width="330"
                  Height="330"
                  Fill="{DynamicResource BrushRadialOuterBG}"
                  Stroke="{DynamicResource BrushRadialBorder}"
@@ -29,22 +100,7 @@
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
 
-        <!-- 主轮盘编辑模式激活高亮蓝边 -->
-        <Ellipse Width="332"
-                 Height="332"
-                 Fill="Transparent"
-                 Stroke="{Binding MainRadialBorderBrush}"
-                 StrokeThickness="{Binding MainRadialBorderThickness}"
-                 HorizontalAlignment="Center"
-                 VerticalAlignment="Center"
-                 IsHitTestVisible="False"
-                 Visibility="{Binding IsEditModeLocked, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Ellipse.Effect>
-                <DropShadowEffect Color="#3B82F6" BlurRadius="12" ShadowDepth="0" Opacity="0.75"/>
-            </Ellipse.Effect>
-        </Ellipse>
-
-        <ItemsControl ItemsSource="{Binding OuterItems}"
+        <ItemsControl ItemsSource="{Binding MiddleItems}"
                       IsHitTestVisible="False">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -61,7 +117,7 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <ItemsControl ItemsSource="{Binding OuterSeparators}">
+        <ItemsControl ItemsSource="{Binding MiddleSeparators}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <Canvas/>
@@ -74,8 +130,7 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-
-
+        <!-- 第 1 层：内圈 8 方向扇区与分隔线 (半径 36~100) -->
         <ItemsControl ItemsSource="{Binding Items}"
                       IsHitTestVisible="False">
             <ItemsControl.ItemsPanel>
@@ -213,299 +268,97 @@
             </TextBlock.RenderTransform>
         </TextBlock>
 
-        <Border x:Name="EditToolBar"
-                HorizontalAlignment="Center"
-                Background="{DynamicResource BrushRadialCenterBG}"
-                BorderBrush="{DynamicResource BrushRadialBorder}"
-                BorderThickness="1"
-                CornerRadius="18"
-                Padding="6,3"
-                SnapsToDevicePixels="True">
-            <Border.Style>
-                <Style TargetType="Border">
-                    <Setter Property="Opacity" Value="0.28"/>
-                    <Setter Property="VerticalAlignment" Value="Center"/>
-                    <Setter Property="RenderTransform">
-                        <Setter.Value>
-                            <TranslateTransform Y="270" />
-                        </Setter.Value>
-                    </Setter>
-                    <Style.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1.0" Duration="0:0:0.18"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.28" Duration="0:0:0.25"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
-                        </Trigger>
-                        <DataTrigger Binding="{Binding IsEditModeLocked}" Value="True">
-                            <Setter Property="Opacity" Value="1.0"/>
-                            <Setter Property="VerticalAlignment" Value="Bottom"/>
-                            <Setter Property="Margin" Value="0,0,0,36"/>
-                            <Setter Property="RenderTransform">
-                                <Setter.Value>
-                                    <TranslateTransform Y="0" />
-                                </Setter.Value>
-                            </Setter>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding IsPinned}" Value="True">
-                            <Setter Property="Opacity" Value="1.0"/>
-                        </DataTrigger>
-                    </Style.Triggers>
+        <ItemsControl ItemsSource="{Binding OuterItems}"
+                      Visibility="{Binding IsOuterWheelVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerStyle>
+                <Style TargetType="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                    <Setter Property="Canvas.Top" Value="{Binding Y}"/>
                 </Style>
-            </Border.Style>
-            <Border.Effect>
-                <DropShadowEffect BlurRadius="16" Color="#000000" Opacity="0.28" ShadowDepth="3" Direction="270"/>
-            </Border.Effect>
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Border Width="16" Height="28" Margin="4,0,4,0" VerticalAlignment="Center" Opacity="0.4" IsHitTestVisible="False">
-                    <Viewbox Width="10" Height="14" Stretch="Uniform">
-                        <Path Data="M3,3 A1.5,1.5 0 1,0 3,6 A1.5,1.5 0 1,0 3,3 M9,3 A1.5,1.5 0 1,0 9,6 A1.5,1.5 0 1,0 9,3 M3,9 A1.5,1.5 0 1,0 3,12 A1.5,1.5 0 1,0 3,9 M9,9 A1.5,1.5 0 1,0 9,12 A1.5,1.5 0 1,0 9,9 M3,15 A1.5,1.5 0 1,0 3,18 A1.5,1.5 0 1,0 3,15 M9,15 A1.5,1.5 0 1,0 9,18 A1.5,1.5 0 1,0 9,15" Fill="{DynamicResource BrushRadialTextMuted}"/>
-                    </Viewbox>
-                </Border>
+            </ItemsControl.ItemContainerStyle>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Width="50"
+                            Height="40"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            AllowDrop="True"
+                            MouseLeftButtonDown="RadialSlot_MouseLeftButtonDown"
+                            MouseMove="RadialSlot_MouseMove"
+                            MouseRightButtonDown="RadialSlot_MouseRightButtonDown"
+                            DragOver="RadialSlot_DragOver"
+                            Drop="RadialSlot_Drop"
+                            DragEnter="RadialSlot_DragEnter"
+                            DragLeave="RadialSlot_DragLeave"
+                            Cursor="Hand"
+                            RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
+                        </Border.RenderTransform>
+                        <Grid>
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="➕" 
+                                           Foreground="#E2E8F0" 
+                                           FontSize="{DynamicResource FontSizeTitle}" 
+                                           HorizontalAlignment="Center" 
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                                       <!-- Show normal content for filled slots -->
+                                <Grid Width="26" Height="26" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Border Width="26" Height="26" CornerRadius="6" Background="{Binding AccentBrush}">
+                                        <Grid ClipToBounds="True">
+                                            <Image Source="{Binding IconSource}" Stretch="UniformToFill" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Viewbox Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                            </Viewbox>
+                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Running indicator (Green Dot) -->
+                                    <Border Width="8"
+                                            Height="8"
+                                            CornerRadius="4"
+                                            Background="#FF10B981"
+                                            BorderBrush="#CCFFFFFF"
+                                            BorderThickness="0.8"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Bottom"
+                                            Margin="-2,0,0,-2"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                </Grid>
+                                <TextBlock Text="{Binding Title}"
+                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           Width="50"
+                                           TextAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,4,0,0"
+                                           Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
 
-                <Rectangle Width="1" Height="16" Fill="{DynamicResource BrushRadialBorder}" Margin="0,0,4,0"/>
-
-                <Button x:Name="EditButton"
-                        Width="32"
-                        Height="32"
-                        Margin="2,0"
-                        Padding="0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        ToolTip="进入编辑模式"
-                        Click="EditButton_Click"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Cursor="Hand">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsEditHoverActive}" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <Viewbox Width="16" Height="16" Stretch="Uniform">
-                        <Path Data="{local:IconGeometry pen}" Fill="{Binding EditButtonBrush}" />
-                    </Viewbox>
-                </Button>
-
-                <Button x:Name="PinButton"
-                        Width="32"
-                        Height="32"
-                        Margin="2,0"
-                        Padding="0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        ToolTip="{Binding PinButtonTooltip}"
-                        Click="PinButton_Click"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Cursor="Hand">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsPinHoverActive}" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <Viewbox Width="16" Height="16" Stretch="Uniform">
-                        <Path Data="{local:IconGeometry pin}" Fill="{Binding PinButtonBrush}" />
-                    </Viewbox>
-                </Button>
-
-                <Button x:Name="AddButton"
-                        Width="32"
-                        Height="32"
-                        Margin="2,0"
-                        Padding="0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        ToolTip="添加轮盘"
-                        Click="AddButton_Click"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Cursor="Hand">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsAddHoverActive}" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <Viewbox Width="16" Height="16" Stretch="Uniform">
-                        <Path Data="{local:IconGeometry plus}" Fill="{Binding AddButtonBrush}" />
-                    </Viewbox>
-                </Button>
-
-                <Button x:Name="DeleteButton"
-                        Width="32"
-                        Height="32"
-                        Margin="2,0"
-                        Padding="0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        ToolTip="删除当前轮盘"
-                        Click="DeleteButton_Click"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Cursor="Hand">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsDeleteHoverActive}" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <Viewbox Width="16" Height="16" Stretch="Uniform">
-                        <Path Data="{local:IconGeometry delete}" Fill="{Binding DeleteButtonBrush}" />
-                    </Viewbox>
-                </Button>
-
-                <Button x:Name="SearchButton"
-                        Width="32"
-                        Height="32"
-                        Margin="2,0"
-                        Padding="0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        ToolTip="查询轮盘"
-                        Click="SearchButton_Click"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Cursor="Hand">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsSearchHoverActive}" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <Viewbox Width="16" Height="16" Stretch="Uniform">
-                        <Path Data="{local:IconGeometry search}" Fill="{Binding SearchButtonBrush}" />
-                    </Viewbox>
-                </Button>
-
-                <Button x:Name="CloseButton"
-                        Width="32"
-                        Height="32"
-                        Margin="2,0"
-                        Padding="0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        ToolTip="关闭整个燕环"
-                        Click="CloseButton_Click"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Cursor="Hand">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsCloseHoverActive}" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <Viewbox Width="16" Height="16" Stretch="Uniform">
-                        <Path Data="{local:IconGeometry close}" Fill="{Binding CloseButtonBrush}" />
-                    </Viewbox>
-                </Button>
-            </StackPanel>
-        </Border>
-
-        <ItemsControl ItemsSource="{Binding OuterItems}">
+        <!-- 第 2 层：中间层 16 槽位项 (50x40，半径 132) -->
+        <ItemsControl ItemsSource="{Binding MiddleItems}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <Canvas/>
@@ -554,7 +407,6 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                                       <!-- Show normal content for filled slots -->
                                 <Grid Width="26" Height="26" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <Border Width="26" Height="26" CornerRadius="6" Background="{Binding AccentBrush}">
                                         <Grid ClipToBounds="True">
@@ -1025,6 +877,287 @@
             </ItemsControl>
         </Canvas>
         </Grid>
+
+        <!-- 顶级独立工具栏：在普通模式下跟随中心下方，在全屏编辑模式下常驻屏幕正下方中央，永不消失 -->
+        <Border x:Name="EditToolBar"
+                HorizontalAlignment="Center"
+                Background="{DynamicResource BrushRadialCenterBG}"
+                BorderBrush="{DynamicResource BrushRadialBorder}"
+                BorderThickness="1"
+                CornerRadius="18"
+                Padding="6,3"
+                Panel.ZIndex="9999"
+                SnapsToDevicePixels="True">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Opacity" Value="0.45"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="270" />
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Opacity" Value="1.0"/>
+                        </Trigger>
+                        <DataTrigger Binding="{Binding IsEditModeLocked}" Value="True">
+                            <Setter Property="Opacity" Value="1.0"/>
+                            <Setter Property="VerticalAlignment" Value="Bottom"/>
+                            <Setter Property="Margin" Value="0,0,0,32"/>
+                            <Setter Property="RenderTransform">
+                                <Setter.Value>
+                                    <TranslateTransform Y="0" />
+                                </Setter.Value>
+                            </Setter>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                            <Setter Property="Opacity" Value="1.0"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="16" Color="#000000" Opacity="0.28" ShadowDepth="3" Direction="270"/>
+            </Border.Effect>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Border Width="16" Height="28" Margin="4,0,4,0" VerticalAlignment="Center" Opacity="0.4" IsHitTestVisible="False">
+                    <Viewbox Width="10" Height="14" Stretch="Uniform">
+                        <Path Data="M3,3 A1.5,1.5 0 1,0 3,6 A1.5,1.5 0 1,0 3,3 M9,3 A1.5,1.5 0 1,0 9,6 A1.5,1.5 0 1,0 9,3 M3,9 A1.5,1.5 0 1,0 3,12 A1.5,1.5 0 1,0 3,9 M9,9 A1.5,1.5 0 1,0 9,12 A1.5,1.5 0 1,0 9,9 M3,15 A1.5,1.5 0 1,0 3,18 A1.5,1.5 0 1,0 3,15 M9,15 A1.5,1.5 0 1,0 9,18 A1.5,1.5 0 1,0 9,15" Fill="{DynamicResource BrushRadialTextMuted}"/>
+                    </Viewbox>
+                </Border>
+
+                <Rectangle Width="1" Height="16" Fill="{DynamicResource BrushRadialBorder}" Margin="0,0,4,0"/>
+
+                <Button x:Name="EditButton"
+                        Width="32"
+                        Height="32"
+                        Margin="2,0"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ToolTip="进入编辑模式"
+                        Click="EditButton_Click"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsEditHoverActive}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <Viewbox Width="16" Height="16" Stretch="Uniform">
+                        <Path Data="{local:IconGeometry pen}" Fill="{Binding EditButtonBrush}" />
+                    </Viewbox>
+                </Button>
+
+                <Button x:Name="PinButton"
+                        Width="32"
+                        Height="32"
+                        Margin="2,0"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ToolTip="{Binding PinButtonTooltip}"
+                        Click="PinButton_Click"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPinHoverActive}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <Viewbox Width="16" Height="16" Stretch="Uniform">
+                        <Path Data="{local:IconGeometry pin}" Fill="{Binding PinButtonBrush}" />
+                    </Viewbox>
+                </Button>
+
+                <Button x:Name="AddButton"
+                        Width="32"
+                        Height="32"
+                        Margin="2,0"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ToolTip="添加轮盘"
+                        Click="AddButton_Click"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsAddHoverActive}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <Viewbox Width="16" Height="16" Stretch="Uniform">
+                        <Path Data="{local:IconGeometry plus}" Fill="{Binding AddButtonBrush}" />
+                    </Viewbox>
+                </Button>
+
+                <Button x:Name="DeleteButton"
+                        Width="32"
+                        Height="32"
+                        Margin="2,0"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ToolTip="删除当前轮盘"
+                        Click="DeleteButton_Click"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDeleteHoverActive}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <Viewbox Width="16" Height="16" Stretch="Uniform">
+                        <Path Data="{local:IconGeometry delete}" Fill="{Binding DeleteButtonBrush}" />
+                    </Viewbox>
+                </Button>
+
+                <Button x:Name="SearchButton"
+                        Width="32"
+                        Height="32"
+                        Margin="2,0"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ToolTip="查询轮盘"
+                        Click="SearchButton_Click"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsSearchHoverActive}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <Viewbox Width="16" Height="16" Stretch="Uniform">
+                        <Path Data="{local:IconGeometry search}" Fill="{Binding SearchButtonBrush}" />
+                    </Viewbox>
+                </Button>
+
+                <Button x:Name="CloseButton"
+                        Width="32"
+                        Height="32"
+                        Margin="2,0"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ToolTip="关闭整个燕环"
+                        Click="CloseButton_Click"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource BrushRadialSlotHover}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsCloseHoverActive}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushRadialSlotHover}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <Viewbox Width="16" Height="16" Stretch="Uniform">
+                        <Path Data="{local:IconGeometry close}" Fill="{Binding CloseButtonBrush}" />
+                    </Viewbox>
+                </Button>
+            </StackPanel>
+        </Border>
 
         <ItemsControl ItemsSource="{Binding SubRings}"
                       Visibility="{Binding HasSubRings, Converter={StaticResource BooleanToVisibilityConverter}}">

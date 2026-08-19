@@ -322,7 +322,10 @@ public partial class QuestWindow : Window
                 SuccessCheckBadge.Visibility = Visibility.Collapsed;
                 BtnNextQuest.Visibility = Visibility.Collapsed;
 
-                SetHighlightedPrompt(("👑 全部主线试炼已达成！", "#FFFFFFFF", true));
+                SetHighlightedPrompt(
+                    ("👑 全部试炼已通关！", "#FFFFFFFF", true),
+                    (" 荣获称号：", "#FFF0F0F5", false),
+                    ("【🎒 随身行者】", "#FFFDE047", true));
 
                 CardBorder.Background = new SolidColorBrush(MediaColor.FromRgb(0x05, 0x96, 0x69));
                 CardBorder.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(0x34, 0xD3, 0x99));
@@ -400,6 +403,13 @@ public partial class QuestWindow : Window
         if (_isDrawerOpen) UpdateDrawerContent();
     }
 
+    public void ResetExplicitSelectionAndRefresh()
+    {
+        _explicitQuestIndex = null;
+        _isCompleting = false;
+        RefreshStatus();
+    }
+
     /// <summary>
     /// 设置带有黄色高亮强调的富文本提示
     /// </summary>
@@ -424,17 +434,11 @@ public partial class QuestWindow : Window
     {
         var settings = AppSettingsStore.Load();
         var totalPoints = settings.AchievementPoints;
-        const int maxPoints = 320;
+        const int maxPoints = QuestService.TotalMaxPoints;
 
-        // 1. 等级称号计算
-        var levelTitle = totalPoints switch
-        {
-            >= 250 => "Lv.5 燕子传奇宗师",
-            >= 170 => "Lv.4 极客先锋",
-            >= 100 => "Lv.3 效率大师",
-            >= 50 => "Lv.2 随身行者",
-            _ => "Lv.1 探索学徒"
-        };
+        // 1. 等级称号计算 (前3关全部完成才晋升 Lv.2 随身行者)
+        var allCompleted = QuestService.AllQuests.All(q => settings.CompletedQuestIds?.Contains(q.Id) == true);
+        var levelTitle = allCompleted ? "Lv.2 随身行者" : "Lv.1 探索学徒";
 
         TxtUserLevelTitle.Text = levelTitle;
         TxtTotalScoreSummary.Text = $"🌟 {totalPoints} / {maxPoints} 分";
@@ -502,11 +506,11 @@ public partial class QuestWindow : Window
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // 左侧：序号 + 徽章称号 + 任务简述
+            // 左侧：序号 + 关卡名称 + 任务简述
             var leftStack = new StackPanel { Orientation = WpfOrientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             leftStack.Children.Add(new TextBlock
             {
-                Text = $"{i + 1}. {quest.RewardBadge}",
+                Text = $"第 {i + 1} 关 · {quest.Title}",
                 Foreground = isCurrent ? new SolidColorBrush(MediaColor.FromRgb(0xFD, 0xE0, 0x47)) : (isCompleted ? new SolidColorBrush(MediaColor.FromRgb(0x34, 0xD3, 0x99)) : new SolidColorBrush(MediaColor.FromRgb(0xD0, 0xD0, 0xDF))),
                 FontWeight = FontWeights.Bold,
                 FontSize = 13,
@@ -569,7 +573,7 @@ public partial class QuestWindow : Window
     {
         try
         {
-            if (_mouseGuideWindow == null)
+            if (_mouseGuideWindow == null || !_mouseGuideWindow.IsLoaded)
             {
                 _mouseGuideWindow = new QuestMouseGuideWindow();
                 _mouseGuideWindow.Show();
@@ -595,7 +599,7 @@ public partial class QuestWindow : Window
         }
         catch
         {
-            // Ignore
+            // Ignore close exceptions
         }
     }
 
@@ -607,8 +611,8 @@ public partial class QuestWindow : Window
             var shellType = Type.GetTypeFromProgID("Shell.Application");
             if (shellType != null)
             {
-                dynamic? shell = Activator.CreateInstance(shellType);
-                shell?.MinimizeAll();
+                dynamic shell = Activator.CreateInstance(shellType)!;
+                shell.MinimizeAll();
             }
         }
         catch (Exception ex)
@@ -649,25 +653,43 @@ public partial class QuestWindow : Window
             settings.AchievementPoints += quest.RewardPoints;
         }
 
-        settings.UnlockedBadges ??= [];
-        if (!settings.UnlockedBadges.Contains(quest.RewardBadge))
+        // 检查前3关是否全部完成，全部完成才发放升级与称号
+        var allThreeCompleted = QuestService.AllQuests.All(q => settings.CompletedQuestIds.Contains(q.Id));
+        if (allThreeCompleted)
         {
-            settings.UnlockedBadges.Add(quest.RewardBadge);
+            settings.UnlockedBadges ??= [];
+            if (!settings.UnlockedBadges.Contains(QuestService.MasterRewardBadge))
+            {
+                settings.UnlockedBadges.Add(QuestService.MasterRewardBadge);
+            }
         }
 
         AppSettingsStore.Save(settings);
 
-        // 2. 视觉通关动效：关闭中央鼠标引导 + 绿底白字 + 打勾徽标内置 + 下一关按钮显现
+        // 2. 视觉通关动效：关闭中央鼠标引导 + 绿底白字 + 打勾徽标内置
         CloseMouseGuideWindow();
 
         ImgYanziMascot.Visibility = Visibility.Collapsed;
         SuccessCheckBadge.Visibility = Visibility.Visible;
-        BtnNextQuest.Visibility = Visibility.Visible;
 
-        // 纯正文本：任务完成！ (白色) + +30分 (亮黄色高亮)，无多余勾
-        SetHighlightedPrompt(
-            ("任务完成！", "#FFFFFFFF", true),
-            ($" +{quest.RewardPoints}分", "#FFFDE047", true));
+        if (allThreeCompleted)
+        {
+            // 全部通关升级：不显示下一关按钮，展示升级大满贯称号
+            BtnNextQuest.Visibility = Visibility.Collapsed;
+            SetHighlightedPrompt(
+                ("🎉 恭喜达成全套试炼！晋升 ", "#FFFFFFFF", true),
+                ("Lv.2 随身行者", "#FFFDE047", true),
+                (" 获得称号：", "#FFFFFFFF", false),
+                ("【🎒 随身行者】", "#FFFDE047", true));
+        }
+        else
+        {
+            // 单关完成：展示“下一关”按钮
+            BtnNextQuest.Visibility = Visibility.Visible;
+            SetHighlightedPrompt(
+                ("任务完成！", "#FFFFFFFF", true),
+                ($" +{quest.RewardPoints}分", "#FFFDE047", true));
+        }
 
         CardBorder.Background = new SolidColorBrush(MediaColor.FromRgb(0x05, 0x96, 0x69));
         CardBorder.BorderBrush = new SolidColorBrush(MediaColor.FromRgb(0x34, 0xD3, 0x99));

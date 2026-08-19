@@ -8897,17 +8897,47 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             RadialMenuSlots.Clear();
             BuildRadialPreviewSeparators();
             var center = 180.0;
-            var innerRadius = 78.0;
-            var outerRadius = 142.0;
             var runtimeItems = _mainWindow.GetRadialMenuItems(selectedPage.Id);
             for (var index = 0; index < RadialMenuSettings.TotalSlotCount; index++)
             {
-                var isOuter = index >= RadialMenuSettings.InnerSlotCount;
-                var offset = isOuter ? index - RadialMenuSettings.InnerSlotCount : index;
-                var step = isOuter ? 22.5 : 45.0;
+                double step, offset, radius, innerR, outerR, startAngleDegrees;
+                bool isOuter;
+
+                if (index < RadialMenuSettings.InnerSlotCount)
+                {
+                    // 第 1 层：内圈 8 方向
+                    step = 45.0;
+                    offset = index;
+                    radius = 58.0;
+                    innerR = 35.0;
+                    outerR = 85.0;
+                    startAngleDegrees = -112.5 + offset * step;
+                    isOuter = false;
+                }
+                else if (index < RadialMenuSettings.InnerSlotCount + RadialMenuSettings.MiddleSlotCount)
+                {
+                    // 第 2 层：中圈 16 槽位
+                    step = 22.5;
+                    offset = index - RadialMenuSettings.InnerSlotCount;
+                    radius = 110.0;
+                    innerR = 85.0;
+                    outerR = 135.0;
+                    startAngleDegrees = -101.25 + offset * step;
+                    isOuter = true;
+                }
+                else
+                {
+                    // 第 3 层：最外圈 8 方向
+                    step = 45.0;
+                    offset = index - (RadialMenuSettings.InnerSlotCount + RadialMenuSettings.MiddleSlotCount);
+                    radius = 158.0;
+                    innerR = 135.0;
+                    outerR = 180.0;
+                    startAngleDegrees = -112.5 + offset * step;
+                    isOuter = true;
+                }
+
                 var angle = (-90 + offset * step) * Math.PI / 180.0;
-                var radius = isOuter ? outerRadius : innerRadius;
-                var startAngleDegrees = isOuter ? -101.25 + offset * step : -112.5 + offset * step;
                 var runtimeItem = runtimeItems.ElementAtOrDefault(index);
                 var runtimeCommand = runtimeItem?.Command;
                 var childPageId = selectedPage.ChildPageIds.ElementAtOrDefault(index) ?? string.Empty;
@@ -8924,10 +8954,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     childPageId,
                     extTitle,
                     ResolveRadialChildPageTitle(childPageId),
-                    center + Math.Cos(angle) * radius - (isOuter ? 31 : 38),
-                    center + Math.Sin(angle) * radius - (isOuter ? 25 : 30),
+                    center + Math.Cos(angle) * radius - (isOuter ? 26 : 32),
+                    center + Math.Sin(angle) * radius - (isOuter ? 20 : 25),
                     isOuter,
-                    BuildRadialSectorGeometry(center, center, isOuter ? 113.0 : 35.0, isOuter ? 180.0 : 113.0, startAngleDegrees, step),
+                    BuildRadialSectorGeometry(center, center, innerR, outerR, startAngleDegrees, step),
                     runtimeCommand?.IconSource,
                     runtimeCommand?.VectorIcon,
                     runtimeCommand?.AccentBrush ?? (hasChildPage ? ResolveRadialChildPageAccentBrush() : System.Windows.Media.Brushes.Transparent),
@@ -9114,22 +9144,35 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         RadialMenuPreviewSeparators.Clear();
         const double center = 180.0;
+        // 第 1 层：内圈 8 条
         for (var index = 0; index < RadialMenuSettings.InnerSlotCount; index++)
         {
-            var angle = (-112.5 + index * 45) * Math.PI / 180.0;
+            var angle = (-112.5 + index * 45.0) * Math.PI / 180.0;
             RadialMenuPreviewSeparators.Add(new RadialSeparatorViewModel(
                 center + Math.Cos(angle) * 35.0,
                 center + Math.Sin(angle) * 35.0,
-                center + Math.Cos(angle) * 113,
-                center + Math.Sin(angle) * 113));
+                center + Math.Cos(angle) * 85.0,
+                center + Math.Sin(angle) * 85.0));
         }
 
-        for (var index = 0; index < RadialMenuSettings.OuterSlotCount; index++)
+        // 第 2 层：中圈 16 条
+        for (var index = 0; index < RadialMenuSettings.MiddleSlotCount; index++)
         {
             var angle = (-101.25 + index * 22.5) * Math.PI / 180.0;
             RadialMenuPreviewSeparators.Add(new RadialSeparatorViewModel(
-                center + Math.Cos(angle) * 113,
-                center + Math.Sin(angle) * 113,
+                center + Math.Cos(angle) * 85.0,
+                center + Math.Sin(angle) * 85.0,
+                center + Math.Cos(angle) * 135.0,
+                center + Math.Sin(angle) * 135.0));
+        }
+
+        // 第 3 层：外圈 8 条
+        for (var index = 0; index < RadialMenuSettings.OuterSlotCount; index++)
+        {
+            var angle = (-112.5 + index * 45.0) * Math.PI / 180.0;
+            RadialMenuPreviewSeparators.Add(new RadialSeparatorViewModel(
+                center + Math.Cos(angle) * 135.0,
+                center + Math.Sin(angle) * 135.0,
                 center + Math.Cos(angle) * 180.0,
                 center + Math.Sin(angle) * 180.0));
         }

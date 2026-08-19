@@ -36,6 +36,8 @@ public class InputHookService
     private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
     private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
     private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+    private const uint MOUSEEVENTF_XDOWN = 0x0080;
+    private const uint MOUSEEVENTF_XUP = 0x0100;
 
     private static LowLevelMouseProc _mouseProc = MouseHookCallback;
     private static LowLevelKeyboardProc _keyboardProc = KeyboardHookCallback;
@@ -64,6 +66,8 @@ public class InputHookService
     private static bool _releaseShouldExecute;
     private static bool _rightButtonDownSwallowed;
     private static bool _middleButtonDownSwallowed;
+    private static bool _x1ButtonDownSwallowed;
+    private static bool _x2ButtonDownSwallowed;
     private static ActiveTriggerTarget _activeTriggerTarget = ActiveTriggerTarget.None;
     private static ActiveTriggerTarget _pendingLongPressTarget = ActiveTriggerTarget.None;
     private static bool _capsRadialActive;
@@ -405,34 +409,22 @@ public class InputHookService
                 if (xButton == XBUTTON1)
                 {
                     _x1ButtonDown = true;
-                    BeginTracking(TrackedMouseButton.X1, mouse.pt);
-                    if (_settings.X1ButtonDown)
+                    if (IsX1TriggerActive())
                     {
-                        _releaseShouldExecute = true;
-                        _activeTriggerTarget = ActiveTriggerTarget.Panel;
-                        HostAssets.AppendLog("Input hook: X1 button down triggered.");
-                        InvokeShowPanel();
-                        return (IntPtr)1;
-                    }
-                    else if (TryTriggerMouseMode(MouseTriggerModes.X1Down, mouse.pt))
-                    {
+                        _x1ButtonDownSwallowed = true;
+                        BeginTracking(TrackedMouseButton.X1, mouse.pt);
+                        HostAssets.AppendLog($"Input hook: X1 button down tracked for drag/move gesture, pt=({mouse.pt.x},{mouse.pt.y}).");
                         return (IntPtr)1;
                     }
                 }
                 else if (xButton == XBUTTON2)
                 {
                     _x2ButtonDown = true;
-                    BeginTracking(TrackedMouseButton.X2, mouse.pt);
-                    if (_settings.X2ButtonDown)
+                    if (IsX2TriggerActive())
                     {
-                        _releaseShouldExecute = true;
-                        _activeTriggerTarget = ActiveTriggerTarget.Panel;
-                        HostAssets.AppendLog("Input hook: X2 button down triggered.");
-                        InvokeShowPanel();
-                        return (IntPtr)1;
-                    }
-                    else if (TryTriggerMouseMode(MouseTriggerModes.X2Down, mouse.pt))
-                    {
+                        _x2ButtonDownSwallowed = true;
+                        BeginTracking(TrackedMouseButton.X2, mouse.pt);
+                        HostAssets.AppendLog($"Input hook: X2 button down tracked for drag/move gesture, pt=({mouse.pt.x},{mouse.pt.y}).");
                         return (IntPtr)1;
                     }
                 }
@@ -475,7 +467,8 @@ public class InputHookService
             else if (message == WM_XBUTTONUP)
             {
                 var xButton = GetXButton(mouse.mouseData);
-                if (xButton == XBUTTON1)
+                var isX1 = xButton == XBUTTON1;
+                if (isX1)
                 {
                     _x1ButtonDown = false;
                 }
@@ -484,8 +477,22 @@ public class InputHookService
                     _x2ButtonDown = false;
                 }
 
-                if (EndTracking(xButton == XBUTTON1 ? TrackedMouseButton.X1 : TrackedMouseButton.X2))
+                var wasSwallowed = isX1 ? _x1ButtonDownSwallowed : _x2ButtonDownSwallowed;
+                var button = isX1 ? TrackedMouseButton.X1 : TrackedMouseButton.X2;
+                var triggered = _dragTriggered || _releaseShouldExecute;
+
+                HostAssets.AppendLog($"Input hook: X{(isX1 ? "1" : "2")} button up, tracked={_trackedButton}, triggered={triggered}, wasSwallowed={wasSwallowed}.");
+
+                if (triggered)
                 {
+                    EndTracking(button);
+                    return (IntPtr)1;
+                }
+
+                if (wasSwallowed)
+                {
+                    EndTracking(button);
+                    ReplayShortXButtonClickAfterHookReturns(xButton);
                     return (IntPtr)1;
                 }
             }
@@ -707,26 +714,45 @@ public class InputHookService
             return;
         }
 
-        if (_trackedButton is not (TrackedMouseButton.Right or TrackedMouseButton.Middle) ||
+        if (_trackedButton is not (TrackedMouseButton.Right or TrackedMouseButton.Middle or TrackedMouseButton.X1 or TrackedMouseButton.X2) ||
             _dragTriggered ||
             _activeTriggerTarget != ActiveTriggerTarget.None)
         {
             return;
         }
 
-        var mode = _trackedButton == TrackedMouseButton.Middle
-            ? MouseTriggerModes.MiddleDrag
-            : MouseTriggerModes.RightDrag;
+        var mode = _trackedButton switch
+        {
+            TrackedMouseButton.Middle => MouseTriggerModes.MiddleDrag,
+            TrackedMouseButton.X1 => MouseTriggerModes.X1Down,
+            TrackedMouseButton.X2 => MouseTriggerModes.X2Down,
+            _ => MouseTriggerModes.RightDrag
+        };
 
-        var panelDrag = mode == MouseTriggerModes.MiddleDrag ? _settings.MiddleButtonDrag : _settings.RightButtonDrag;
-        var yanmDrag = (mode == MouseTriggerModes.MiddleDrag
-                ? _yanmSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)
-                : _yanmSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) &&
-                       IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm, logBlocked: false);
-        var radialDrag = (mode == MouseTriggerModes.MiddleDrag
-                ? _radialSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)
-                : _radialSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) &&
-                         IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial, logBlocked: false);
+        var panelDrag = _trackedButton switch
+        {
+            TrackedMouseButton.Middle => _settings.MiddleButtonDrag,
+            TrackedMouseButton.X1 => _settings.X1ButtonDown,
+            TrackedMouseButton.X2 => _settings.X2ButtonDown,
+            _ => _settings.RightButtonDrag
+        };
+
+        var yanmDrag = (_trackedButton switch
+        {
+            TrackedMouseButton.Middle => _yanmSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
+            TrackedMouseButton.X1 => _yanmSettings.TriggerX1ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X1Down, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
+            TrackedMouseButton.X2 => _yanmSettings.TriggerX2ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X2Down, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
+            _ => _yanmSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)
+        }) && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm, logBlocked: false);
+
+        var radialDrag = (_trackedButton switch
+        {
+            TrackedMouseButton.Middle => _radialSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
+            TrackedMouseButton.X1 => _radialSettings.TriggerX1ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X1Down, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
+            TrackedMouseButton.X2 => _radialSettings.TriggerX2ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X2Down, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
+            _ => _radialSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)
+        }) && IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial, logBlocked: false);
+
         var windowSnapDrag = _windowSnapAssistEnabled &&
                              _onShowWindowSnap != null &&
                              string.Equals(_windowSnapAssistMouseTriggerMode, mode, StringComparison.OrdinalIgnoreCase);
@@ -742,7 +768,6 @@ public class InputHookService
                 : Math.Clamp(_settings.DragThresholdPixels, 8, 120);
         var dx = point.x - _downPoint.x;
         var dy = point.y - _downPoint.y;
-        var distanceSquared = (dx * dx) + (dy * dy);
 
         if ((dx * dx) + (dy * dy) < threshold * threshold)
         {
@@ -755,28 +780,28 @@ public class InputHookService
         {
             _releaseShouldExecute = true;
             _activeTriggerTarget = ActiveTriggerTarget.Panel;
-            HostAssets.AppendLog($"Input hook: {mode} triggered for mouse panel.");
+            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for mouse panel.");
             InvokeShowPanel();
         }
         else if (radialDrag && IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial))
         {
             _releaseShouldExecute = true;
             _activeTriggerTarget = ActiveTriggerTarget.Radial;
-            HostAssets.AppendLog($"Input hook: radial {mode} triggered.");
+            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for radial.");
             InvokeShowRadial();
         }
         else if (yanmDrag && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm))
         {
             _releaseShouldExecute = true;
             _activeTriggerTarget = ActiveTriggerTarget.Yanm;
-            HostAssets.AppendLog($"Input hook: Yanm {mode} triggered.");
+            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for Yanm.");
             InvokeShowYanm();
         }
         else if (windowSnapDrag && InvokeShowWindowSnap())
         {
             _releaseShouldExecute = true;
             _activeTriggerTarget = ActiveTriggerTarget.WindowSnap;
-            HostAssets.AppendLog($"Input hook: window snap {mode} triggered.");
+            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for window snap.");
             InvokeWindowSnapMove();
         }
     }
@@ -848,6 +873,14 @@ public class InputHookService
         else if (button == TrackedMouseButton.Middle)
         {
             _middleButtonDownSwallowed = false;
+        }
+        else if (button == TrackedMouseButton.X1)
+        {
+            _x1ButtonDownSwallowed = false;
+        }
+        else if (button == TrackedMouseButton.X2)
+        {
+            _x2ButtonDownSwallowed = false;
         }
 
         _trackedButton = TrackedMouseButton.None;
@@ -927,6 +960,60 @@ public class InputHookService
             var sent = SendInput(1, [MouseInput(flags, SYNTHETIC_EXTRA_INFO)], Marshal.SizeOf<INPUT>());
             HostAssets.AppendLog($"Input hook: replayed {button} button up after swallowed release, SendInput sent={sent}/1.");
         });
+    }
+
+    private static void ReplayShortXButtonClickAfterHookReturns(int xButton)
+    {
+        var downPt = _downPoint;
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            SendSyntheticXButtonClick(xButton, downPt);
+        });
+    }
+
+    private static void SendSyntheticXButtonClick(int xButton, POINT downPt)
+    {
+        GetCursorPos(out var currentPt);
+        var dx = currentPt.x - downPt.x;
+        var dy = currentPt.y - downPt.y;
+        bool needRestoreCursor = (dx * dx + dy * dy) > 4;
+
+        if (needRestoreCursor)
+        {
+            SetCursorPos(downPt.x, downPt.y);
+        }
+
+        var inputs = new[]
+        {
+            XButtonInput(MOUSEEVENTF_XDOWN, xButton, SYNTHETIC_EXTRA_INFO),
+            XButtonInput(MOUSEEVENTF_XUP, xButton, SYNTHETIC_EXTRA_INFO)
+        };
+        var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+
+        if (needRestoreCursor)
+        {
+            Thread.Sleep(1);
+            SetCursorPos(currentPt.x, currentPt.y);
+        }
+
+        HostAssets.AppendLog($"Input hook: replayed short X{(xButton == XBUTTON1 ? "1" : "2")} click at ({downPt.x},{downPt.y}), SendInput sent={sent}/2.");
+    }
+
+    private static INPUT XButtonInput(uint flags, int xButton, IntPtr extraInfo = default)
+    {
+        return new INPUT
+        {
+            type = INPUT_MOUSE,
+            U = new InputUnion
+            {
+                mi = new MOUSEINPUT
+                {
+                    mouseData = (uint)xButton,
+                    dwFlags = flags,
+                    dwExtraInfo = extraInfo
+                }
+            }
+        };
     }
 
     private static INPUT MouseInput(uint flags, IntPtr extraInfo = default)
@@ -1183,6 +1270,24 @@ public class InputHookService
 
     private static bool IsYanmRightDragEnabled() =>
         (_yanmSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) && _onShowYanm != null;
+
+    private static bool IsX1TriggerActive()
+    {
+        var panel = _settings.X1ButtonDown;
+        var radial = (_radialSettings.TriggerX1ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X1Down, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) && _onShowRadial != null;
+        var yanm = (_yanmSettings.TriggerX1ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X1Down, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) && _onShowYanm != null;
+        var windowSnap = _windowSnapAssistEnabled && _onShowWindowSnap != null && string.Equals(_windowSnapAssistMouseTriggerMode, MouseTriggerModes.X1Down, StringComparison.OrdinalIgnoreCase);
+        return panel || radial || yanm || windowSnap;
+    }
+
+    private static bool IsX2TriggerActive()
+    {
+        var panel = _settings.X2ButtonDown;
+        var radial = (_radialSettings.TriggerX2ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X2Down, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) && _onShowRadial != null;
+        var yanm = (_yanmSettings.TriggerX2ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X2Down, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) && _onShowYanm != null;
+        var windowSnap = _windowSnapAssistEnabled && _onShowWindowSnap != null && string.Equals(_windowSnapAssistMouseTriggerMode, MouseTriggerModes.X2Down, StringComparison.OrdinalIgnoreCase);
+        return panel || radial || yanm || windowSnap;
+    }
 
     private static bool TryTriggerMouseMode(string mode, POINT point)
     {

@@ -1209,9 +1209,11 @@ public sealed class RadialMenuSettings
 {
     public const int InnerSlotCount = 8;
 
-    public const int OuterSlotCount = 16;
+    public const int MiddleSlotCount = 16;
 
-    public const int TotalSlotCount = InnerSlotCount + OuterSlotCount;
+    public const int OuterSlotCount = 8;
+
+    public const int TotalSlotCount = InnerSlotCount + MiddleSlotCount + OuterSlotCount;
 
     public bool Enabled { get; set; } = true;
 
