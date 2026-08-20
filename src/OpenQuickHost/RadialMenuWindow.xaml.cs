@@ -3642,20 +3642,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             }
 
             // 编辑模式全屏覆盖当前屏幕工作区，实现以屏幕左上角为原点的整齐网格排布
-            var screen = System.Windows.Forms.Screen.FromPoint(Forms.Cursor.Position);
-            double dpiScaleX = 1.0;
-            double dpiScaleY = 1.0;
-            try
-            {
-                var dpi = VisualTreeHelper.GetDpi(this);
-                dpiScaleX = dpi.DpiScaleX;
-                dpiScaleY = dpi.DpiScaleY;
-            }
-            catch { }
-            Left = screen.WorkingArea.Left / dpiScaleX;
-            Top = screen.WorkingArea.Top / dpiScaleY;
-            Width = screen.WorkingArea.Width / dpiScaleX;
-            Height = screen.WorkingArea.Height / dpiScaleY;
+            OverlayWindowManager.CoverActiveScreen(this, new System.Windows.Point(Forms.Cursor.Position.X, Forms.Cursor.Position.Y));
         }
         else
         {
@@ -4235,35 +4222,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         UpdateEditModeState();
         UpdateLayout();
 
-        // 将窗口移到屏幕外，彻底阻断 DWM 缓存残影闪烁
-        Left = -32000;
-        Top = -32000;
-
-        base.Hide();
+        OverlayWindowManager.SafeHideAndPark(this);
         MemoryOptimizationService.OptimizeMemoryInBackground();
         HostAssets.AppendLog($"[RadialResidualDebug] Hide finished: Left={Left}, Top={Top}, SubRings.Count={SubRings.Count}.");
     }
 
     private void EnsureNoActivateStyle()
     {
-        try
-        {
-            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            if (handle == IntPtr.Zero)
-            {
-                return;
-            }
-
-            var style = RadialMenuNativeMethods.GetWindowLongPtr(handle, RadialMenuNativeMethods.GWL_EXSTYLE);
-            RadialMenuNativeMethods.SetWindowLongPtr(
-                handle,
-                RadialMenuNativeMethods.GWL_EXSTYLE,
-                new IntPtr(style.ToInt64() | RadialMenuNativeMethods.WS_EX_TOOLWINDOW | RadialMenuNativeMethods.WS_EX_NOACTIVATE));
-        }
-        catch
-        {
-            // Best effort
-        }
+        this.ApplyNoActivateToolWindowStyle();
     }
 
     private void EnsureActivatedForEdit()
@@ -4329,20 +4295,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var path = FindExecutablePath(processName);
             if (!string.IsNullOrEmpty(path) && File.Exists(path))
             {
-                using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
-                if (icon != null)
-                {
-                    var bitmapSource = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
-                        icon.Handle,
-                        System.Windows.Int32Rect.Empty,
-                        System.Windows.Media.Imaging.BitmapSizeOptions.FromWidthAndHeight(32, 32));
-                    if (bitmapSource.CanFreeze)
-                    {
-                        bitmapSource.Freeze();
-                    }
-                    RadialMenuNativeMethods.DestroyIcon(icon.Handle);
-                    return bitmapSource;
-                }
+                return ExtensionIconLibrary.TryExtractAssociatedIcon(path);
             }
         }
         catch { }

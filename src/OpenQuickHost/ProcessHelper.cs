@@ -139,6 +139,47 @@ namespace OpenQuickHost
                 : value;
         }
 
+        /// <summary>
+        /// 统一判定目标进程是否被允许通过黑白名单校验。
+        /// 规则：
+        /// 1. 若配置了白名单且非空：必须命中白名单中的任意一项才允许通过；
+        /// 2. 若命中黑名单中的任意一项：直接拦截（不允许通过）；
+        /// 3. 其他情况默认允许通过。
+        /// </summary>
+        public static bool IsProcessAllowed(string? processName, IEnumerable<string>? whitelist, IEnumerable<string>? blacklist)
+        {
+            if (string.IsNullOrWhiteSpace(processName)) return true;
+
+            if (whitelist != null)
+            {
+                var whiteListItems = whitelist.Where(w => !string.IsNullOrWhiteSpace(w)).ToList();
+                if (whiteListItems.Count > 0 && !whiteListItems.Any(item => ProcessNameMatches(processName, item)))
+                {
+                    return false;
+                }
+            }
+
+            if (blacklist != null)
+            {
+                var blackListItems = blacklist.Where(b => !string.IsNullOrWhiteSpace(b)).ToList();
+                if (blackListItems.Count > 0 && blackListItems.Any(item => ProcessNameMatches(processName, item)))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 判定目标进程是否命中给定的进程列表（如黑名单或白名单）
+        /// </summary>
+        public static bool IsProcessInList(string? processName, IEnumerable<string>? list)
+        {
+            if (string.IsNullOrWhiteSpace(processName) || list == null) return false;
+            return list.Any(item => !string.IsNullOrWhiteSpace(item) && ProcessNameMatches(processName, item));
+        }
+
         private static bool FilePatternMatches(string filename, string pattern)
         {
             var parts = pattern.Split(['*', '?'], StringSplitOptions.RemoveEmptyEntries);

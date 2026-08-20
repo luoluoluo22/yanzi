@@ -975,8 +975,8 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
-                                            <TextBlock Text="主程序快捷键" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="用于呼出或隐藏启动器。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
+                                            <TextBlock Text="{local:Term Warehouse, Suffix='快捷键'}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{local:TermFormat '用于呼出或隐藏[Warehouse]。'}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
                                         </StackPanel>
                                         <Border x:Name="LauncherHotkeyRecorderBorder"
                                                 Grid.Column="1"
@@ -1027,7 +1027,7 @@
                                             </Grid>
                                         </Border>
                                     </Grid>
-                                    <TextBlock Text="主程序快捷键修改后会立即重新注册。支持常规组合键，也支持录制 DoubleCtrl / DoubleAlt。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                                    <TextBlock Text="{local:TermFormat '[Warehouse]快捷键修改后会立即重新注册。支持常规组合键，也支持录制 DoubleCtrl / DoubleAlt。'}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,12,0,0"/>
                                 </StackPanel>
                             </Border>
 
@@ -1040,7 +1040,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel>
                                             <TextBlock Text="本地 Agent API" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="允许外部 Agent 读取/修改小程序数据及控制启动器。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
+                                            <TextBlock Text="{local:TermFormat '允许外部 Agent 读取/修改[MiniApp]数据及控制[Warehouse]。'}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
                                         </StackPanel>
                                         <CheckBox Grid.Column="1" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableAgentApi, Mode=TwoWay}" Click="SaveSettingsToggle_Click" VerticalAlignment="Center"/>
                                     </Grid>
@@ -1989,8 +1989,8 @@
                                 <StackPanel>
                                     <Grid Margin="0,0,0,12">
                                         <StackPanel>
-                                            <TextBlock Text="启用燕幕" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
-                                            <TextBlock Text="启用后可按住触发键临时显示信息层，或双击触发键固定进入燕幕。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{local:Term YanScreen, Prefix='启用'}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
+                                            <TextBlock Text="{local:TermFormat '启用后可按住触发键临时显示信息层，或双击触发键固定进入[YanScreen]。'}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                         </StackPanel>
                                         <CheckBox HorizontalAlignment="Right" Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableYanm, Mode=TwoWay}" Click="SaveYanmSettings_Click"/>
                                     </Grid>
@@ -2518,7 +2518,7 @@
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="14" Margin="0,2,0,20">
                                 <StackPanel>
                                     <TextBlock Text="说明" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="手机端与浏览器均通过 PC 主程序 53919 统一进行消息中转，交互动作完全在本地加密处理，保证安全。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <TextBlock Text="{local:TermFormat '手机端与浏览器均通过 PC 端 [AppName] 53919 统一进行消息中转，交互动作完全在本地加密处理，保证安全。'}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -3563,17 +3563,17 @@
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15" Margin="0,20,0,0">
                                 <StackPanel>
                                     <TextBlock Text="鼠标触发已统一管理" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="这里用下拉框分配每个鼠标动作给背包、燕环、燕幕、窗口排列或鼠标手势。小程序编辑里只录制手势形状，触发方式由这里全局决定。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{local:TermFormat '这里用下拉框分配每个鼠标动作给[Backpack]、[YanRing]、[YanScreen]、窗口排列或[MouseGesture]。[MiniApp]编辑里只录制手势形状，触发方式由这里全局决定。'}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
 
                             <TextBlock Text="配置指南" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,20,0,10"/>
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15">
                                 <StackPanel>
-                                    <TextBlock Text="1. 在主界面仓库搜索您需要的小程序。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
-                                    <TextBlock Text="2. 在搜索结果上点击右键，选择“添加到背包”。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
-                                    <TextBlock Text="3. 背包将自动占用第一个可用槽位（共 28 个）。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
-                                    <TextBlock Text="4. 长按或拖动触发时，如果启用“松开后执行”，移动到小程序上松开即可自动运行。" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="{local:TermFormat '1. 在主界面[Warehouse]搜索您需要的[MiniApp]。'}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="{local:TermFormat '2. 在搜索结果上点击右键，选择“添加到[Backpack]”。'}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="{local:TermFormat '3. [Backpack]将自动占用第一个可用槽位（共 28 个）。'}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,0,8"/>
+                                    <TextBlock Text="{local:TermFormat '4. 长按或拖动触发时，如果启用“松开后执行”，移动到[MiniApp]上松开即可自动运行。'}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -3972,7 +3972,7 @@
 
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="15">
                                 <StackPanel>
-                                    <TextBlock Text="启用燕环" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="{local:Term YanRing, Prefix='启用'}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                         <TextBlock Text="键盘触发" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,10,0"/>
                                         <ComboBox ItemsSource="{Binding RadialActivationKeyOptions}"
@@ -5368,7 +5368,7 @@
                                                     </Border>
                                                     <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
                                                         <TextBlock Text="开机自启" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                                        <TextBlock Text="主程序启动后自动运行此小程序" Foreground="#FF6B7280" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0"/>
+                                                        <TextBlock Text="{local:TermFormat '[AppName]启动后自动运行此[MiniApp]'}" Foreground="#FF6B7280" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0"/>
                                                     </StackPanel>
                                                     <CheckBox Grid.Column="2"
                                                               Style="{StaticResource RaycastSwitchStyle}"

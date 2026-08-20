@@ -406,17 +406,14 @@ internal sealed class MouseGestureTraceWindow : Window
     public new void Hide()
     {
         _hideTimer.Stop();
-        Opacity = 0;
-        if (_canvas != null)
+        OverlayWindowManager.SafeHideAndPark(this, () =>
         {
-            _canvas.Visibility = Visibility.Hidden;
-        }
-        Clear();
-        try
-        {
-            base.Hide();
-        }
-        catch { }
+            if (_canvas != null)
+            {
+                _canvas.Visibility = Visibility.Hidden;
+            }
+            Clear();
+        });
     }
 
     public void Cancel()
@@ -685,15 +682,21 @@ internal sealed class MouseGestureTraceWindow : Window
         };
         rootStack.Children.Add(header);
 
-        var count = Math.Min(cheatItems.Count, 12);
-        // 根据手势数量自适应网格宽度（1-2个单列/双列，3个以上2-3列）
+        var uniqueItems = cheatItems
+            .DistinctBy(x => $"{x.Name}:{x.Sign ?? x.DisplaySequence}")
+            .Take(12)
+            .ToList();
+
+        var count = uniqueItems.Count;
+        // 根据手势数量自适应紧凑网格宽度（1-4个单行，5个以上多行）
         var maxWrapWidth = count switch
         {
-            1 => 170,
-            2 => 350,
-            3 => 520,
-            4 => 350,
-            _ => 520
+            1 => 86,
+            2 => 166,
+            3 => 246,
+            4 => 326,
+            5 or 6 => 246,
+            _ => 326
         };
 
         var wrap = new WrapPanel
@@ -703,43 +706,47 @@ internal sealed class MouseGestureTraceWindow : Window
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center
         };
 
-        foreach (var item in cheatItems.Take(12))
+        foreach (var item in uniqueItems)
         {
             var itemBorder = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(125, 0x18, 0x18, 0x22)), // 高通透磨砂底色
+                Background = new SolidColorBrush(Color.FromArgb(135, 0x18, 0x18, 0x22)), // 高通透磨砂底色
                 BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(6, 4, 10, 4),
+                Padding = new Thickness(4, 5, 4, 5),
                 Margin = new Thickness(0, 0, 6, 6),
-                Width = 164
+                Width = 74,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center
             };
 
-            var itemGrid = new Grid();
-            itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var itemStack = new StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Vertical,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center
+            };
 
-            // 左侧：高通透深色圆角完整手势轨迹预览框
+            // 上部分：高通透深色圆角手势轨迹预览框
             var previewBox = new Border
             {
-                Width = 36,
-                Height = 36,
-                CornerRadius = new CornerRadius(7),
-                Background = new SolidColorBrush(Color.FromArgb(150, 0x0A, 0x0A, 0x10)),
+                Width = 34,
+                Height = 34,
+                CornerRadius = new CornerRadius(6),
+                Background = new SolidColorBrush(Color.FromArgb(160, 0x0A, 0x0A, 0x10)),
                 BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
-                Margin = new Thickness(0, 0, 8, 0),
+                Margin = new Thickness(0, 0, 0, 4),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
                 ClipToBounds = true
             };
 
-            var (gestureGeometry, gestureBrush) = MouseGesturePreviewGeometryFactory.CreatePreview(item.DisplaySequence, item.Data, size: 36, padding: 5);
+            var (gestureGeometry, gestureBrush) = MouseGesturePreviewGeometryFactory.CreatePreview(item.DisplaySequence, item.Data, size: 34, padding: 4);
 
             var path = new Path
             {
                 Data = gestureGeometry,
                 Stroke = gestureBrush,
-                StrokeThickness = 2.4,
+                StrokeThickness = 2.2,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round,
                 StrokeLineJoin = PenLineJoin.Round,
@@ -748,25 +755,21 @@ internal sealed class MouseGestureTraceWindow : Window
                 IsHitTestVisible = false
             };
             previewBox.Child = path;
-            Grid.SetColumn(previewBox, 0);
-            itemGrid.Children.Add(previewBox);
+            itemStack.Children.Add(previewBox);
 
-            // 右侧：功能名称 + 纯净手势名
-            var textStack = new StackPanel
-            {
-                Orientation = System.Windows.Controls.Orientation.Vertical,
-                VerticalAlignment = System.Windows.VerticalAlignment.Center
-            };
+            // 下部分：功能名称 + 手势名
             var nameText = new TextBlock
             {
                 Text = item.Name,
-                FontSize = 11.5,
+                FontSize = 10.5,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = Brushes.White,
-                MaxWidth = 104,
+                MaxWidth = 66,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
-            textStack.Children.Add(nameText);
+            itemStack.Children.Add(nameText);
 
             var isRawSequence = string.IsNullOrWhiteSpace(item.Sign)
                 || item.Sign.Contains('-')
@@ -780,19 +783,18 @@ internal sealed class MouseGestureTraceWindow : Window
                 var signText = new TextBlock
                 {
                     Text = item.Sign,
-                    FontSize = 9.5,
+                    FontSize = 9,
                     Foreground = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF)),
-                    MaxWidth = 104,
+                    MaxWidth = 66,
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
-                    Margin = new Thickness(0, 2, 0, 0)
+                    Margin = new Thickness(0, 1, 0, 0)
                 };
-                textStack.Children.Add(signText);
+                itemStack.Children.Add(signText);
             }
 
-            Grid.SetColumn(textStack, 1);
-            itemGrid.Children.Add(textStack);
-
-            itemBorder.Child = itemGrid;
+            itemBorder.Child = itemStack;
             wrap.Children.Add(itemBorder);
         }
 
@@ -829,27 +831,27 @@ internal sealed class MouseGestureTraceWindow : Window
         // 水平方向：以激发起点 X 为中心
         var left = start.X - (_cheatsheetDesiredWidth / 2.0);
 
-        // 垂直方向响应式避让：
+        // 垂直方向响应式避让（预留避开【编辑/置顶】按钮的安全距离）：
         // 如果手势正在向下划动（deltaY > 12），将看板放到起点上方，腾出下方划线空间；
         // 如果手势向上划动（deltaY < -12），将看板放到起点下方；
-        // 初始状态（|deltaY| <= 12）：优先放下方（除非贴近屏幕底边）。
+        // 初始状态（|deltaY| <= 12）：优先放下方（距离起点 +54px 彻底避开起点按钮组）。
         double top;
         if (deltaY > 12)
         {
-            top = start.Y - _cheatsheetDesiredHeight - 36;
-            if (top < 15) top = start.Y + 36;
+            top = start.Y - _cheatsheetDesiredHeight - 42;
+            if (top < 15) top = start.Y + 54;
         }
         else if (deltaY < -12)
         {
-            top = start.Y + 36;
-            if (top + _cheatsheetDesiredHeight > Height - 15) top = start.Y - _cheatsheetDesiredHeight - 36;
+            top = start.Y + 54;
+            if (top + _cheatsheetDesiredHeight > Height - 15) top = start.Y - _cheatsheetDesiredHeight - 42;
         }
         else
         {
-            top = start.Y + 36;
+            top = start.Y + 54;
             if (top + _cheatsheetDesiredHeight > Height - 20)
             {
-                top = start.Y - _cheatsheetDesiredHeight - 36;
+                top = start.Y - _cheatsheetDesiredHeight - 42;
             }
         }
 
@@ -934,32 +936,19 @@ internal sealed class MouseGestureTraceWindow : Window
     {
         try
         {
-            var pt = new POINT { x = (int)Math.Round(screenPoint.X), y = (int)Math.Round(screenPoint.Y) };
-            var monitor = MonitorFromPoint(pt, MonitorDefaultToNearest);
-            if (monitor != IntPtr.Zero)
+            var screenCtx = ScreenHelper.GetScreenContextAtPoint(screenPoint);
+            var monLeft = screenCtx.DipBounds.Left;
+            var monTop = screenCtx.DipBounds.Top;
+            var monWidth = screenCtx.DipBounds.Width;
+            var monHeight = screenCtx.DipBounds.Height;
+
+            if (Math.Abs(Left - monLeft) > 1 || Math.Abs(Top - monTop) > 1 ||
+                Math.Abs(Width - monWidth) > 1 || Math.Abs(Height - monHeight) > 1)
             {
-                var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-                if (GetMonitorInfo(monitor, ref mi))
-                {
-                    var dpi = VisualTreeHelper.GetDpi(this);
-                    var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
-                    var scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
-
-                    var monLeft = mi.rcMonitor.left / scaleX;
-                    var monTop = mi.rcMonitor.top / scaleY;
-                    var monWidth = (mi.rcMonitor.right - mi.rcMonitor.left) / scaleX;
-                    var monHeight = (mi.rcMonitor.bottom - mi.rcMonitor.top) / scaleY;
-
-                    if (Math.Abs(Left - monLeft) > 1 || Math.Abs(Top - monTop) > 1 ||
-                        Math.Abs(Width - monWidth) > 1 || Math.Abs(Height - monHeight) > 1)
-                    {
-                        Left = monLeft;
-                        Top = monTop;
-                        Width = monWidth;
-                        Height = monHeight;
-                    }
-                    return;
-                }
+                Left = monLeft;
+                Top = monTop;
+                Width = monWidth;
+                Height = monHeight;
             }
         }
         catch

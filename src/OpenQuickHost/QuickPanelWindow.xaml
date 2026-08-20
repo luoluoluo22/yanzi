@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:OpenQuickHost"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
-        Title="背包" Width="284"
+        Title="{local:Term Backpack}" Width="284"
         WindowStyle="None"
         Background="Transparent"
         UseLayoutRounding="True"
@@ -583,19 +583,19 @@
                                                         <Path Data="{local:IconGeometry star}" Fill="#FBBF24" Stretch="Uniform" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="复制小程序" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="复制" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="剪切小程序" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="剪切" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Tag="PasteNormal" Header="粘贴小程序" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                                <MenuItem Tag="PasteNormal" Header="粘贴" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
@@ -610,7 +610,7 @@
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="编辑小程序" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="编辑" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -634,7 +634,7 @@
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="打开小程序目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="打开目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -647,13 +647,13 @@
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <Separator Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                <MenuItem Header="移除扩展" Click="RemoveExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="移除" Click="RemoveExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry broom}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="删除小程序" Click="DeleteExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="删除" Click="DeleteExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanDeleteExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
@@ -716,9 +716,22 @@
                                                                 <DataTrigger Binding="{Binding IsQuestHighlight}" Value="True">
                                                                     <Setter Property="Background" Value="#26F59E0B"/>
                                                                 </DataTrigger>
-                                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                <!-- 空格子：仅当鼠标真正移入该 40x40 方块自身时才高亮变蓝 -->
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsEmpty}" Value="True"/>
+                                                                        <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                                                    </MultiDataTrigger.Conditions>
                                                                     <Setter Property="Background" Value="#FF3B82F6"/>
-                                                                </DataTrigger>
+                                                                </MultiDataTrigger>
+                                                                <!-- 非空格子：鼠标移入整个 Button 卡片区域高亮 -->
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsEmpty}" Value="False"/>
+                                                                        <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True"/>
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Background" Value="#FF3B82F6"/>
+                                                                </MultiDataTrigger>
                                                                 <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
                                                                     <Setter Property="Background" Value="#503B82F6"/>
                                                                     <Setter Property="BorderBrush" Value="#FF3B82F6"/>
@@ -781,7 +794,7 @@
                                                                                 <Setter Property="Opacity" Value="0.95"/>
                                                                                 <Setter Property="Fill" Value="#FFF59E0B"/>
                                                                             </DataTrigger>
-                                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
                                                                                 <Setter Property="Opacity" Value="1"/>
                                                                                 <Setter Property="Fill" Value="White"/>
                                                                             </DataTrigger>
@@ -1159,19 +1172,19 @@
                                                         <Path Data="{local:IconGeometry star}" Fill="#FBBF24" Stretch="Uniform" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="复制小程序" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="复制" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="剪切小程序" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="剪切" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Tag="PasteNormal" Header="粘贴小程序" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                                <MenuItem Tag="PasteNormal" Header="粘贴" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
@@ -1186,7 +1199,7 @@
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="编辑小程序" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="编辑" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1210,7 +1223,7 @@
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="打开小程序目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="打开目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1223,13 +1236,13 @@
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <Separator Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                <MenuItem Header="移除扩展" Click="RemoveExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="移除" Click="RemoveExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry broom}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="删除小程序" Click="DeleteExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="删除" Click="DeleteExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanDeleteExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
@@ -1289,9 +1302,22 @@
                                                             <DataTrigger Binding="{Binding IsEmpty}" Value="True">
                                                                 <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
                                                             </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                            <!-- 空格子：仅当鼠标真正移入该 40x40 方块自身时才高亮变蓝 -->
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsEmpty}" Value="True"/>
+                                                                    <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                                                </MultiDataTrigger.Conditions>
                                                                 <Setter Property="Background" Value="#FF3B82F6"/>
-                                                            </DataTrigger>
+                                                            </MultiDataTrigger>
+                                                            <!-- 非空格子：鼠标移入整个 Button 卡片区域高亮 -->
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsEmpty}" Value="False"/>
+                                                                    <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Background" Value="#FF3B82F6"/>
+                                                            </MultiDataTrigger>
                                                             <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
                                                                 <Setter Property="Background" Value="#503B82F6"/>
                                                                 <Setter Property="BorderBrush" Value="#FF3B82F6"/>
@@ -1318,7 +1344,7 @@
                                                                     <Setter Property="Fill" Value="{DynamicResource BrushTextSec}"/>
                                                                     <Setter Property="Opacity" Value="0"/>
                                                                     <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
                                                                             <Setter Property="Opacity" Value="1"/>
                                                                             <Setter Property="Fill" Value="White"/>
                                                                         </DataTrigger>
@@ -1779,19 +1805,19 @@
                                                     <Path Data="{local:IconGeometry star}" Fill="#FBBF24" Stretch="Uniform" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="复制小程序" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="复制" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="剪切小程序" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="剪切" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Tag="PasteNormal" Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                            <MenuItem Tag="PasteNormal" Header="粘贴" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
@@ -1806,7 +1832,7 @@
                                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="编辑小程序" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="编辑" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1830,7 +1856,7 @@
                                                     <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="打开小程序目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="打开目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1843,13 +1869,13 @@
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <MenuItem Header="移除扩展" Click="RemoveExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="移除" Click="RemoveExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry broom}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="删除小程序" Click="DeleteExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="删除" Click="DeleteExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanDeleteExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />

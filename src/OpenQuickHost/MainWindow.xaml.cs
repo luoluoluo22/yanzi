@@ -3215,6 +3215,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : $"已{action}背包中的小程序：{command.Title}。";
     }
 
+    public bool HasExtensionInClipboard()
+    {
+        if (GetQuickPanelClipboard() != null)
+        {
+            return true;
+        }
+
+        try
+        {
+            if (System.Windows.Clipboard.ContainsText())
+            {
+                var text = System.Windows.Clipboard.GetText();
+                var json = ExtractExtensionJsonFromClipboard(text);
+                return !string.IsNullOrWhiteSpace(json);
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
     public bool TryImportExtensionFromSystemClipboard(out CommandItem? command, out string message)
     {
         command = null;

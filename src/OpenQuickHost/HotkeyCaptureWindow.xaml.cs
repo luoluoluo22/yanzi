@@ -139,17 +139,8 @@ public partial class HotkeyCaptureWindow : Window
 
     private static ModifierKeys GetCurrentModifiers()
     {
-        var mods = ModifierKeys.None;
-        if ((GetKeyState(0x11) & 0x8000) != 0) mods |= ModifierKeys.Control; // VK_CONTROL
-        if ((GetKeyState(0x12) & 0x8000) != 0) mods |= ModifierKeys.Alt;     // VK_MENU
-        if ((GetKeyState(0x10) & 0x8000) != 0) mods |= ModifierKeys.Shift;   // VK_SHIFT
-        if ((GetKeyState(0x5B) & 0x8000) != 0 || (GetKeyState(0x5C) & 0x8000) != 0)
-            mods |= ModifierKeys.Windows; // VK_LWIN / VK_RWIN
-        return mods;
+        return HotkeyHelper.GetCurrentPhysicalModifiers();
     }
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern short GetKeyState(int nVirtKey);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -433,29 +424,7 @@ public partial class HotkeyCaptureWindow : Window
 
     private static string BuildShortcutText(ModifierKeys modifiers, Key key)
     {
-        var parts = new List<string>(4);
-        if (modifiers.HasFlag(ModifierKeys.Control))
-        {
-            parts.Add("Ctrl");
-        }
-
-        if (modifiers.HasFlag(ModifierKeys.Alt))
-        {
-            parts.Add("Alt");
-        }
-
-        if (modifiers.HasFlag(ModifierKeys.Shift))
-        {
-            parts.Add("Shift");
-        }
-
-        if (modifiers.HasFlag(ModifierKeys.Windows))
-        {
-            parts.Add("Win");
-        }
-
-        parts.Add(FormatKey(key));
-        return parts.Count == 1 ? parts[0] : string.Join("+", parts);
+        return HotkeyHelper.FormatHotkey(modifiers, key) ?? string.Empty;
     }
 
     private void SyncDisplayNameFromShortcut()

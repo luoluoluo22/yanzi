@@ -701,7 +701,7 @@
                                 <TextBlock Style="{StaticResource HintTextStyle}">
                                     <Run Text="必须包含 " />
                                     <Run Text="{}{query}" Foreground="{DynamicResource BrushAccent}" />
-                                    <Run Text="，启动器输入的内容会替换进去。" />
+                                    <Run Text="{local:TermFormat '，[Warehouse]输入的内容会替换进去。'}" />
                                 </TextBlock>
                                 <TextBlock Text="触发前缀（多个用逗号分隔，如 b, baidu）"
                                            Style="{StaticResource FieldLabelStyle}" Margin="0,18,0,6" />
@@ -931,7 +931,7 @@
                                     <TextBox x:Name="IdSimpleBox" Style="{StaticResource FormTextBoxStyle}"
                                              TextChanged="IdSimpleBox_TextChanged" />
                                 </StackPanel>
-                                <TextBlock Text="关键词（逗号分隔，启动器搜索时用到）"
+                                <TextBlock Text="{local:TermFormat '关键词（逗号分隔，[Warehouse]搜索时用到）'}"
                                            Style="{StaticResource FieldLabelStyle}" />
                                 <TextBox x:Name="KeywordsSimpleBox" Style="{StaticResource FormTextBoxStyle}"
                                          Margin="0,0,0,12"
@@ -1447,12 +1447,12 @@
 
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,18">
                             <StackPanel HorizontalAlignment="Stretch">
-                            <TextBlock Text="在启动器中显示为" Style="{StaticResource SectionTitleStyle}" />
+                            <TextBlock Text="{local:TermFormat '在[Warehouse]中显示为'}" Style="{StaticResource SectionTitleStyle}" />
                             <Border Background="{DynamicResource BrushSecondaryBtnBG}"
                                     BorderBrush="{DynamicResource BrushBorder}"
                                     BorderThickness="1" CornerRadius="12" Padding="12">
                                 <StackPanel>
-                                    <TextBlock Text="在启动器中显示为"
+                                    <TextBlock Text="{local:TermFormat '在[Warehouse]中显示为'}"
                                                Visibility="Collapsed"
                                                Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="{DynamicResource FontSizeTiny}" Margin="2,0,0,8" />
@@ -1598,7 +1598,7 @@
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
                                         <TextBlock Text="开机自启" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
-                                        <TextBlock Text="主程序启动后自动运行此小程序"
+                                        <TextBlock Text="{local:TermFormat '[AppName]启动后自动运行此[MiniApp]'}"
                                                    Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
                                                    Margin="0,2,0,0" TextWrapping="Wrap" />
                                     </StackPanel>

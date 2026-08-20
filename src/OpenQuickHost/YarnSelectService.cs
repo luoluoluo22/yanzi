@@ -436,25 +436,13 @@ public static class YarnSelectService
             return false;
         }
 
-        var whitelist = _settings.WhitelistedProcesses ?? [];
-        if (whitelist.Count > 0)
+        var allowed = ProcessHelper.IsProcessAllowed(processName, _settings.WhitelistedProcesses, _settings.BlacklistedProcesses);
+        if (!allowed && logBlocked)
         {
-            var allowedByWhitelist = whitelist.Any(item => ProcessNameMatches(processName, item));
-            if (!allowedByWhitelist && logBlocked)
-            {
-                LogBlockedForegroundProcess(processName, "not-in-whitelist");
-            }
-
-            return allowedByWhitelist;
+            LogBlockedForegroundProcess(processName, "process-filter");
         }
 
-        var blockedByBlacklist = _settings.BlacklistedProcesses.Any(item => ProcessNameMatches(processName, item));
-        if (blockedByBlacklist && logBlocked)
-        {
-            LogBlockedForegroundProcess(processName, "blacklist");
-        }
-
-        return !blockedByBlacklist;
+        return allowed;
     }
 
     public static string GetForegroundProcessName()
@@ -487,11 +475,6 @@ public static class YarnSelectService
         {
             return string.Empty;
         }
-    }
-
-    private static bool ProcessNameMatches(string processName, string pattern)
-    {
-        return ProcessHelper.ProcessNameMatches(processName, pattern);
     }
 
     private static void LogBlockedForegroundProcess(string processName, string reason)

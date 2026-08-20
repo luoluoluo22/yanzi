@@ -199,23 +199,9 @@ public sealed class LocalAgentApiServer : IDisposable
         }
     }
 
-    private static string ResolveFsPath(string path)
+    private static string ResolveFsPath(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path) || string.Equals(path, "Desktop", StringComparison.OrdinalIgnoreCase))
-        {
-            return Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-        }
-        if (path.StartsWith("Desktop\\", StringComparison.OrdinalIgnoreCase))
-        {
-            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            return Path.Combine(desktopPath, path.Substring(8));
-        }
-        if (path.StartsWith("Desktop/", StringComparison.OrdinalIgnoreCase))
-        {
-            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            return Path.Combine(desktopPath, path.Substring(8));
-        }
-        return path;
+        return PathHelper.ResolveFsPath(path);
     }
 
     private async Task HandleRequestAsync(HttpListenerContext context)

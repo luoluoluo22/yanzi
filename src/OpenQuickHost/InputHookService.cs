@@ -185,6 +185,7 @@ public class InputHookService
         _releaseShouldExecute = true;
         _activeTriggerTarget = target;
         _pendingLongPressTarget = ActiveTriggerTarget.None;
+        OverlayWindowManager.SuppressConflictingOverlays();
         HostAssets.AppendLog($"Input hook: {_trackedButton} long press triggered for {_activeTriggerTarget}.");
         
         // Invoke the appropriate show method based on the target
@@ -716,22 +717,14 @@ public class InputHookService
         }
 
         // 2. 如果当前进程在黑名单中，我们不需要拦截它的右键去判断手势，因为即便触发也会被拦截
-        if (_radialSettings != null)
+        if (_radialSettings != null && ProcessHelper.IsProcessInList(processName, _radialSettings.BlacklistedProcesses))
         {
-            var radialBlacklist = _radialSettings.BlacklistedProcesses ?? [];
-            if (radialBlacklist.Any(p => ProcessNameMatches(processName, p)))
-            {
-                return false;
-            }
+            return false;
         }
 
-        if (_yanmSettings != null)
+        if (_yanmSettings != null && ProcessHelper.IsProcessInList(processName, _yanmSettings.BlacklistedProcesses))
         {
-            var yanmBlacklist = _yanmSettings.BlacklistedProcesses ?? [];
-            if (yanmBlacklist.Any(p => ProcessNameMatches(processName, p)))
-            {
-                return false;
-            }
+            return false;
         }
 
         return _settings.RightButtonLongPress ||
@@ -1152,16 +1145,19 @@ public class InputHookService
 
     private static void InvokeShowPanel()
     {
+        OverlayWindowManager.SuppressConflictingOverlays();
         DispatchToUi(() => _onShowPanel?.Invoke());
     }
 
     private static void InvokeShowRadial()
     {
+        OverlayWindowManager.SuppressConflictingOverlays();
         DispatchToUi(() => _onShowRadial?.Invoke());
     }
 
     private static void InvokeShowYanm()
     {
+        OverlayWindowManager.SuppressConflictingOverlays();
         DispatchToUi(() => _onShowYanm?.Invoke());
     }
 
@@ -1300,39 +1296,13 @@ public class InputHookService
             _ => (new List<string>(), new List<string>())
         };
 
-        if (whitelist.Count == 0 && blacklist.Count == 0)
+        var allowed = ProcessHelper.IsProcessAllowed(processName, whitelist, blacklist);
+        if (!allowed && logBlocked)
         {
-            return true;
+            HostAssets.AppendLog($"Input hook: {target} trigger blocked by process filter, process={processName}.");
         }
 
-        if (string.IsNullOrWhiteSpace(processName))
-        {
-            return whitelist.Count == 0;
-        }
-
-        if (whitelist.Count > 0)
-        {
-            var allowed = whitelist.Any(item => ProcessNameMatches(processName, item));
-            if (!allowed && logBlocked)
-            {
-                HostAssets.AppendLog($"Input hook: {target} trigger blocked by whitelist, process={processName}.");
-            }
-
-            return allowed;
-        }
-
-        var blocked = blacklist.Any(item => ProcessNameMatches(processName, item));
-        if (blocked && logBlocked)
-        {
-            HostAssets.AppendLog($"Input hook: {target} trigger blocked by blacklist, process={processName}.");
-        }
-
-        return !blocked;
-    }
-
-    private static bool ProcessNameMatches(string processName, string pattern)
-    {
-        return ProcessHelper.ProcessNameMatches(processName, pattern);
+        return allowed;
     }
 
     private static string GetForegroundProcessName()

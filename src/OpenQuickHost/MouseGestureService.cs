@@ -115,12 +115,21 @@ public static class MouseGestureService
     }
 
     /// <summary>
+    /// 取消当前活跃的手势识别与画线轨迹（用于背包、燕环、燕幕长按或浮窗激活时的互斥抢占）
+    /// </summary>
+    public static void CancelActiveGesture()
+    {
+        ResetState();
+    }
+
+    /// <summary>
     /// 启动全局 hook。<paramref name="logger"/> 用于把 (level, message) 输出到调用方日志（一般是 HostAssets）。
     /// </summary>
     public static void Start(Action<string, string>? logger = null)
     {
         if (_isRunning) return;
         _onLog = logger;
+        OverlayWindowManager.RegisterSuppressionHandler(CancelActiveGesture);
         _hookId = SetMouseHook(MouseProc);
         if (_hookId == IntPtr.Zero)
         {
@@ -496,6 +505,12 @@ public static class MouseGestureService
 
     private static void BeginStroke(Point point, bool isRightButton, bool isCtrlLeft = false)
     {
+        if (InputHookService.HasActiveMouseTrigger)
+        {
+            Log("info", "BeginStroke skipped because an active overlay/mouse trigger (Backpack/Radial/Yanm) is present.");
+            return;
+        }
+
         _rightDown = isRightButton && !isCtrlLeft;
         _middleDown = !isRightButton && !isCtrlLeft;
         _ctrlLeftDown = isCtrlLeft;
@@ -523,6 +538,12 @@ public static class MouseGestureService
 
     private static void AppendPathPoint(Point pt)
     {
+        if (InputHookService.HasActiveMouseTrigger)
+        {
+            CancelStrokeForInputTrigger(_rightDown ? "right-drag" : (_middleDown ? "middle-drag" : "ctrl-left-drag"));
+            return;
+        }
+
         if (_path.Count > 0 && (pt - _path[^1]).Length < 2)
         {
             return;
@@ -965,30 +986,13 @@ public static class MouseGestureService
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // 1. 序列映射手势
-        foreach (var (seq, gestures) in triggerRegistry.SequenceMap)
+        void TryAddGesture(RegisteredGesture g)
         {
-            foreach (var g in gestures)
-            {
-                var key = $"{g.Sequence}:{g.ExtensionName}";
-                if (seen.Add(key))
-                {
-                    list.Add(new MouseGestureCheatItem(
-                        DisplaySequence: g.Sequence,
-                        Name: g.ExtensionName,
-                        Sign: g.Sign,
-                        DisplayGlyph: g.DisplayGlyph,
-                        IconReference: g.IconReference,
-                        ExtensionDirectoryPath: g.ExtensionDirectoryPath,
-                        Data: g.Data));
-                }
-            }
-        }
+            var gestureSign = !string.IsNullOrWhiteSpace(g.Sign) ? g.Sign : g.Sequence;
+            var key = !string.IsNullOrWhiteSpace(g.ExtensionId)
+                ? $"{g.ExtensionId}:{g.ExtensionName}:{gestureSign}"
+                : $"{g.ExtensionName}:{gestureSign}";
 
-        // 2. 模板手势
-        foreach (var g in triggerRegistry.Templates)
-        {
-            var key = $"{g.Sign}:{g.ExtensionName}";
             if (seen.Add(key))
             {
                 list.Add(new MouseGestureCheatItem(
@@ -1000,6 +1004,21 @@ public static class MouseGestureService
                     ExtensionDirectoryPath: g.ExtensionDirectoryPath,
                     Data: g.Data));
             }
+        }
+
+        // 1. 序列映射手势
+        foreach (var (_, gestures) in triggerRegistry.SequenceMap)
+        {
+            foreach (var g in gestures)
+            {
+                TryAddGesture(g);
+            }
+        }
+
+        // 2. 模板手势
+        foreach (var g in triggerRegistry.Templates)
+        {
+            TryAddGesture(g);
         }
 
         return list;

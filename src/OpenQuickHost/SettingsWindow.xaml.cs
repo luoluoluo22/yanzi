@@ -129,13 +129,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             new SettingsNavigationItem("ai", "mdi:ai", "模型服务", "#FF3B82F6"),
             new SettingsNavigationItem("environment", "mdi:key", "环境变量", "#FF14B8A6"),
             new SettingsNavigationItem("sync", "mdi:sync", "同步与备份", "#FF22C55E"),
-            new SettingsNavigationItem("extensions", "mdi:dashboard", "小程序", "#FFF97316"),
+            new SettingsNavigationItem("extensions", "mdi:dashboard", BrandTerms.TermMiniApp, "#FFF97316"),
             new SettingsNavigationItem("quickpanel", "mdi:mouse-panel", "鼠标触发", "#FFEC4899"),
-            new SettingsNavigationItem("mousegestures", "mdi:gesture-tap", "鼠标手势", "#FFFB923C"),
-            new SettingsNavigationItem("radial", "mdi:circle-outline", "燕环", "#FF3B82F6"),
-            new SettingsNavigationItem("yarnselect", "mdi:shortcut", "燕选", "#FF14B8A6"),
-            new SettingsNavigationItem("yanm", "mdi:monitor-dashboard", "燕幕", "#FF60A5FA"),
-            new SettingsNavigationItem("yanwo", "mdi:home-group", "燕窝", "#FFA855F7"),
+            new SettingsNavigationItem("mousegestures", "mdi:gesture-tap", BrandTerms.TermMouseGesture, "#FFFB923C"),
+            new SettingsNavigationItem("radial", "mdi:circle-outline", BrandTerms.TermYanRing, "#FF3B82F6"),
+            new SettingsNavigationItem("yarnselect", "mdi:shortcut", BrandTerms.TermYanSelect, "#FF14B8A6"),
+            new SettingsNavigationItem("yanm", "mdi:monitor-dashboard", BrandTerms.TermYanScreen, "#FF60A5FA"),
+            new SettingsNavigationItem("yanwo", "mdi:home-group", BrandTerms.TermYanNest, "#FFA855F7"),
             new SettingsNavigationItem("about", "mdi:about", "关于", "#FF3B82F6")
         ];
         _selectedNavigation = NavigationItems.First();
@@ -6205,8 +6205,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void EditLauncherHotkeyButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new HotkeyCaptureWindow(
-            "设置主程序快捷键",
-            "窗口激活后，直接按一次新的组合键即可完成录制。也支持全局双击 Ctrl 或双击 Alt 呼出主界面。",
+            BrandTerms.Format("设置{Warehouse}快捷键"),
+            BrandTerms.Format("窗口激活后，直接按一次新的组合键即可完成录制。也支持全局双击 Ctrl 或双击 Alt 呼出{Warehouse}。"),
             LauncherHotkey,
             allowDoubleTap: true)
         {
@@ -7950,33 +7950,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private static string? BuildStandardHotkeyString(System.Windows.Input.Key key, ModifierKeys? activeModifiers = null)
     {
-        if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
-            key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
-            key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
-            key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
-        {
-            return null;
-        }
-
         var currentModifiers = activeModifiers ?? System.Windows.Input.Keyboard.Modifiers;
-        var modifiers = new List<string>();
-        if (currentModifiers.HasFlag(System.Windows.Input.ModifierKeys.Control)) modifiers.Add("Ctrl");
-        if (currentModifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift)) modifiers.Add("Shift");
-        if (currentModifiers.HasFlag(System.Windows.Input.ModifierKeys.Alt)) modifiers.Add("Alt");
-        if (currentModifiers.HasFlag(System.Windows.Input.ModifierKeys.Windows)) modifiers.Add("Win");
-
-        var keyStr = key.ToString();
-        if (key >= System.Windows.Input.Key.D0 && key <= System.Windows.Input.Key.D9)
-        {
-            keyStr = (key - System.Windows.Input.Key.D0).ToString();
-        }
-        else if (key >= System.Windows.Input.Key.NumPad0 && key <= System.Windows.Input.Key.NumPad9)
-        {
-            keyStr = "Num" + (key - System.Windows.Input.Key.NumPad0).ToString();
-        }
-
-        modifiers.Add(keyStr);
-        return string.Join("+", modifiers);
+        return HotkeyHelper.FormatHotkey(currentModifiers, key);
     }
 
     private void SettingsSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -8181,16 +8156,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private static ModifierKeys GetCurrentModifiers()
     {
-        var mods = ModifierKeys.None;
-        if ((GetKeyState(0x11) & 0x8000) != 0) mods |= ModifierKeys.Control;
-        if ((GetKeyState(0x12) & 0x8000) != 0) mods |= ModifierKeys.Alt;
-        if ((GetKeyState(0x10) & 0x8000) != 0) mods |= ModifierKeys.Shift;
-        if ((GetKeyState(0x5B) & 0x8000) != 0 || (GetKeyState(0x5C) & 0x8000) != 0) mods |= ModifierKeys.Windows;
-        return mods;
+        return HotkeyHelper.GetCurrentPhysicalModifiers();
     }
-
-    [DllImport("user32.dll")]
-    private static extern short GetKeyState(int nVirtKey);
 
     private void RebuildDynamicSettingsSearchItems()
     {
@@ -9371,20 +9338,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var path = FindExecutablePath(processName);
             if (!string.IsNullOrEmpty(path) && File.Exists(path))
             {
-                using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
-                if (icon != null)
-                {
-                    var bitmapSource = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
-                        icon.Handle,
-                        System.Windows.Int32Rect.Empty,
-                        System.Windows.Media.Imaging.BitmapSizeOptions.FromWidthAndHeight(16, 16));
-                    if (bitmapSource.CanFreeze)
-                    {
-                        bitmapSource.Freeze();
-                    }
-                    DestroyIcon(icon.Handle);
-                    return bitmapSource;
-                }
+                return ExtensionIconLibrary.TryExtractAssociatedIcon(path);
             }
         }
         catch { }

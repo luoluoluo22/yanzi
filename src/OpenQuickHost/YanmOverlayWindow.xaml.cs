@@ -404,20 +404,9 @@ public partial class YanmOverlayWindow : Window
 
     private void ApplyScreenBounds()
     {
-        var helper = new WindowInteropHelper(this);
-        var handle = helper.Handle == IntPtr.Zero ? helper.EnsureHandle() : helper.Handle;
-        var source = HwndSource.FromHwnd(handle) ?? PresentationSource.FromVisual(this) as HwndSource;
-        var transform = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-        var target = GetTargetScreenBounds();
-        var topLeft = transform.Transform(new WpfPoint(target.Left, target.Top));
-        var bottomRight = transform.Transform(new WpfPoint(target.Right, target.Bottom));
-
-        Left = topLeft.X;
-        Top = topLeft.Y;
-        Width = Math.Max(1, bottomRight.X - topLeft.X);
-        Height = Math.Max(1, bottomRight.Y - topLeft.Y);
+        OverlayWindowManager.CoverActiveScreen(this);
         HostAssets.AppendLog(
-            $"Yanm: screen bounds applied, target={DescribeScreen(target)}, all={DescribeAllScreens()}, dip=({Left:0},{Top:0},{Width:0},{Height:0}), m11={transform.M11:0.###}, m22={transform.M22:0.###}, hwnd=0x{handle.ToInt64():X}.");
+            $"Yanm: screen bounds applied via OverlayWindowManager, dip=({Left:0},{Top:0},{Width:0},{Height:0}).");
     }
 
     private static System.Drawing.Rectangle GetTargetScreenBounds()
@@ -2249,7 +2238,7 @@ public partial class YanmOverlayWindow : Window
         _isPinned = false;
         _isInteractiveHoldPinned = false;
         ResetInteractionState(clearEditMode: true);
-        Hide();
+        OverlayWindowManager.SafeHideAndPark(this);
     }
 
     private void UpdateSelectionBox(WpfPoint a, WpfPoint b, bool snap)

@@ -819,14 +819,14 @@
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="OpenExtensionDirectoryMenuItem"
-                                      Header="打开小程序目录"
+                                      Header="{local:Term MiniApp, Prefix='打开', Suffix='目录'}"
                                       Click="OpenExtensionDirectoryMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="ToggleYanyuEnabledMenuItem"
-                                      Header="启用燕语"
+                                      Header="{local:Term YanVoice, Prefix='启用'}"
                                       Click="ToggleYanyuEnabledMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry power}" Fill="#22C55E" Stretch="Uniform" Width="16" Height="16" />
@@ -834,21 +834,21 @@
                             </MenuItem>
                             <Separator />
                             <MenuItem x:Name="CopyExtensionMenuItem"
-                                      Header="复制小程序"
+                                      Header="{local:Term MiniApp, Prefix='复制'}"
                                       Click="CopyExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="CutExtensionMenuItem"
-                                      Header="剪切小程序"
+                                      Header="{local:Term MiniApp, Prefix='剪切'}"
                                       Click="CutExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="PasteExtensionMenuItem"
-                                      Header="粘贴小程序"
+                                      Header="{local:Term MiniApp, Prefix='粘贴'}"
                                       Click="PasteExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -856,7 +856,7 @@
                             </MenuItem>
                             <Separator />
                             <MenuItem x:Name="AddToQuickPanelMenuItem"
-                                      Header="添加到背包"
+                                      Header="{local:Term Backpack, Prefix='添加到'}"
                                       Click="AddToQuickPanelMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry backpack}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />

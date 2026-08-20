@@ -1344,23 +1344,9 @@ public partial class MainWindow
         }
     }
 
-    private static string ResolveFsPath(string path)
+    private static string ResolveFsPath(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path) || string.Equals(path, "Desktop", StringComparison.OrdinalIgnoreCase))
-        {
-            return Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-        }
-        if (path.StartsWith("Desktop\\", StringComparison.OrdinalIgnoreCase))
-        {
-            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            return Path.Combine(desktopPath, path.Substring(8));
-        }
-        if (path.StartsWith("Desktop/", StringComparison.OrdinalIgnoreCase))
-        {
-            var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            return Path.Combine(desktopPath, path.Substring(8));
-        }
-        return path;
+        return PathHelper.ResolveFsPath(path);
     }
 
     private static (bool success, string jsonOutput) ExecuteMobileFsOperation(string kind, JsonElement payload)
@@ -6403,13 +6389,13 @@ public partial class MainWindow
             settings.LauncherHotkey = previous;
             AppSettingsStore.Save(settings);
             RefreshLauncherHotkeyRegistration();
-            message = "主程序快捷键注册失败，可能与系统或其他程序冲突。";
+            message = BrandTerms.Format("{Warehouse}快捷键注册失败，可能与系统或其他程序冲突。");
             return false;
         }
 
         message = string.IsNullOrWhiteSpace(settings.LauncherHotkey)
-            ? "已清除主程序快捷键。"
-            : $"主程序快捷键已更新为 {FormatLauncherHotkeyLabel(settings.LauncherHotkey)}";
+            ? BrandTerms.Format("已清除{Warehouse}快捷键。")
+            : BrandTerms.Format($"{{Warehouse}}快捷键已更新为 {FormatLauncherHotkeyLabel(settings.LauncherHotkey)}");
         return true;
     }
 

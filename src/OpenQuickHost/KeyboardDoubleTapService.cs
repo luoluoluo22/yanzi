@@ -544,75 +544,14 @@ public static class KeyboardDoubleTapService
     private static bool IsYanmAllowedForForegroundProcess()
     {
         var settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
-        var whitelist = settings.WhitelistedProcesses ?? [];
-        var blacklist = settings.BlacklistedProcesses ?? [];
-        if (whitelist.Count == 0 && blacklist.Count == 0)
-        {
-            return true;
-        }
-
         var processName = GetForegroundProcessName();
-        if (string.IsNullOrWhiteSpace(processName))
+        var allowed = ProcessHelper.IsProcessAllowed(processName, settings.WhitelistedProcesses, settings.BlacklistedProcesses);
+        if (!allowed)
         {
-            return whitelist.Count == 0;
+            HostAssets.AppendLog($"Keyboard Yanm trigger blocked by process filter, process={processName}.");
         }
 
-        if (whitelist.Count > 0)
-        {
-            var allowed = whitelist.Any(item => ProcessNameMatches(processName, item));
-            if (!allowed)
-            {
-                HostAssets.AppendLog($"Keyboard Yanm trigger blocked by whitelist, process={processName}.");
-            }
-
-            return allowed;
-        }
-
-        var blocked = blacklist.Any(item => ProcessNameMatches(processName, item));
-        if (blocked)
-        {
-            HostAssets.AppendLog($"Keyboard Yanm trigger blocked by blacklist, process={processName}.");
-        }
-
-        return !blocked;
-    }
-
-    private static bool ProcessNameMatches(string processName, string pattern)
-    {
-        var normalizedProcess = NormalizeProcessName(processName);
-        var normalizedPattern = NormalizeProcessName(pattern);
-        if (string.IsNullOrWhiteSpace(normalizedPattern))
-        {
-            return false;
-        }
-
-        if (normalizedPattern.Contains('*', StringComparison.Ordinal))
-        {
-            var parts = normalizedPattern.Split('*', StringSplitOptions.RemoveEmptyEntries);
-            var index = 0;
-            foreach (var part in parts)
-            {
-                var found = normalizedProcess.IndexOf(part, index, StringComparison.OrdinalIgnoreCase);
-                if (found < 0)
-                {
-                    return false;
-                }
-
-                index = found + part.Length;
-            }
-
-            return true;
-        }
-
-        return normalizedProcess.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeProcessName(string value)
-    {
-        value = (value ?? string.Empty).Trim();
-        return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? value[..^4]
-            : value;
+        return allowed;
     }
 
     private static string GetForegroundProcessName()
