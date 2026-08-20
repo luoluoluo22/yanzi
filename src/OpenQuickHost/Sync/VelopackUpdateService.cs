@@ -65,7 +65,7 @@ public sealed class VelopackUpdateService
             }
 
             var source = new SimpleWebSource(_resolvedUpdateUrl);
-            _updateManager = new UpdateManager(source, null, new HostVelopackLogger());
+            _updateManager = new UpdateManager(source, null, null);
             
             // 记录完整的诊断启动信息
             var isInstalled = _updateManager.IsInstalled;

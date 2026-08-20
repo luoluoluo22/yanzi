@@ -83,7 +83,8 @@ public partial class App : WpfApplication
 
         // 1. 必须最先执行，拦截 Velopack 的命令行钩子（如快捷方式生成、升级更新等）
         Velopack.VelopackApp.Build()
-            .WithAfterInstallFastCallback(v =>
+            .SetLogger(new OpenQuickHost.Sync.HostVelopackLogger())
+            .OnAfterInstallFastCallback(v =>
             {
                 try
                 {
@@ -106,7 +107,7 @@ public partial class App : WpfApplication
                     HostAssets.AppendLog($"Velopack AfterInstall Hook error: {ex.Message}");
                 }
             })
-            .WithBeforeUninstallFastCallback(v =>
+            .OnBeforeUninstallFastCallback(v =>
             {
                 try
                 {
@@ -146,7 +147,7 @@ public partial class App : WpfApplication
                 }
                 System.Environment.Exit(0);
             })
-            .WithBeforeUpdateFastCallback(v =>
+            .OnBeforeUpdateFastCallback(v =>
             {
                 try
                 {
@@ -158,7 +159,7 @@ public partial class App : WpfApplication
                     HostAssets.AppendLog($"Velopack BeforeUpdate Hook error: {ex.Message}");
                 }
             })
-            .WithAfterUpdateFastCallback(v =>
+            .OnAfterUpdateFastCallback(v =>
             {
                 try
                 {
