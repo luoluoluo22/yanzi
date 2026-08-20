@@ -2805,13 +2805,13 @@
                                     </Grid.ColumnDefinitions>
 
                                     <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="系统运行日志 (host.log)" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                        <TextBlock Text="记录了鼠标手势触发坐标、DPI 缩放比、快捷键及系统运行详情。遇到异常时可打开并发送给开发者协助定位问题。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                        <TextBlock Text="日志" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="遇到问题打开目录复制该文件到QQ群" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                     </StackPanel>
 
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                                        <Button Content="打开日志目录" Style="{StaticResource NormalBtn}" Height="30" Padding="12,0" Margin="0,0,8,0" Click="OpenHostLogDirectory_Click" ToolTip="在文件资源管理器中打开日志文件夹并定位 host.log"/>
-                                        <Button Content="打开日志文件" Style="{StaticResource PrimaryBtn}" Height="30" Padding="14,0" Click="OpenHostLogFile_Click" ToolTip="使用默认文本编辑器直接打开 host.log 查看详细日志"/>
+                                        <Button Content="目录" Style="{StaticResource SecondaryBtn}" Height="30" Padding="14,0" Margin="0,0,8,0" Click="OpenHostLogDirectory_Click" ToolTip="在文件资源管理器中打开日志文件夹并定位 host.log"/>
+                                        <Button Content="打开日志" Style="{StaticResource SecondaryBtn}" Height="30" Padding="14,0" Click="OpenHostLogFile_Click" ToolTip="使用默认文本编辑器直接打开 host.log 查看详细日志"/>
                                     </StackPanel>
                                 </Grid>
                             </Border>
