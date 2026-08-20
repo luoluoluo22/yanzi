@@ -22,6 +22,16 @@ public static class ReleaseHistoryProvider
         {
             new()
             {
+                Version = "v0.3.12",
+                ReleaseDate = "2026-08-20",
+                Highlights = new List<string>
+                {
+                    "【起步 0 毫秒零延迟预热】彻底修复手势画布 Hide 时误调用 Close 导致每次起步都要重新 new 窗口的严重性能缺陷，改为常驻单例热备 + 启动后台预热，起步 0.01ms 极致跟手！",
+                    "【双屏新建手势单屏对齐】新建手势录制器重构为单屏精准覆盖，提示文案、中央星星、绿色流光轨迹与保存手势弹窗 100% 居中展现在当前操作屏幕，彻底根除双屏分开显示与弹窗丢失缺陷。"
+                }
+            },
+            new()
+            {
                 Version = "v0.3.11",
                 ReleaseDate = "2026-08-20",
                 Highlights = new List<string>

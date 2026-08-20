@@ -61,11 +61,8 @@ public partial class MouseGestureRecorderWindow : Window
             _ => "鼠标右键"
         };
 
-        // 占满所有显示器（跨多屏虚拟桌面）
-        Left = SystemParameters.VirtualScreenLeft;
-        Top = SystemParameters.VirtualScreenTop;
-        Width = SystemParameters.VirtualScreenWidth;
-        Height = SystemParameters.VirtualScreenHeight;
+        // 精准对齐当前操作的单台物理显示器，绝不跨屏拉伸导致错位
+        SyncBoundsToActiveMonitor();
 
         if (!string.IsNullOrWhiteSpace(initialSequence))
         {
@@ -83,9 +80,6 @@ public partial class MouseGestureRecorderWindow : Window
 
         // ContextMenu 默认会在右键弹出，这里抑制
         StrokeCanvas.MouseRightButtonUp += (_, e) => e.Handled = true;
-
-        Loaded += (_, _) => RepositionOverlaysToMonitor();
-        SourceInitialized += (_, _) => RepositionOverlaysToMonitor();
     }
 
     private void OnKeyDownAny(object? sender, KeyEventArgs e)
@@ -157,7 +151,6 @@ public partial class MouseGestureRecorderWindow : Window
         ClearStroke();
         _drawing = true;
         _path.Add(start);
-        RepositionOverlaysToMonitor(start);
         ResultPanel.Visibility = Visibility.Collapsed;
         HintRing.BorderBrush = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
         HintText.Text = "正在录制… 松开即可识别";
@@ -326,7 +319,6 @@ public partial class MouseGestureRecorderWindow : Window
             RawSeqText.Text = sequence;
             UpdateConflictHint();
         }
-        RepositionOverlaysToMonitor(_path.Count > 0 ? _path[^1] : null);
         ResultPanel.Visibility = Visibility.Visible;
     }
 
@@ -371,7 +363,6 @@ public partial class MouseGestureRecorderWindow : Window
         ResultPanel.Visibility = Visibility.Collapsed;
         HintRing.BorderBrush = new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6));
         HintText.Text = "准备就绪 · 按住右键开始";
-        RepositionOverlaysToMonitor();
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
@@ -406,79 +397,35 @@ public partial class MouseGestureRecorderWindow : Window
         };
     }
 
-    private void RepositionOverlaysToMonitor(Point? localAnchorPoint = null)
+    private void SyncBoundsToActiveMonitor()
     {
         try
         {
-            var helper = new WindowInteropHelper(this);
-            POINT physicalPoint;
-            if (localAnchorPoint.HasValue && helper.Handle != IntPtr.Zero)
-            {
-                var pt = new POINT { x = (int)Math.Round(localAnchorPoint.Value.X), y = (int)Math.Round(localAnchorPoint.Value.Y) };
-                if (ClientToScreen(helper.Handle, ref pt))
-                {
-                    physicalPoint = pt;
-                }
-                else
-                {
-                    GetCursorPos(out physicalPoint);
-                }
-            }
-            else
-            {
-                GetCursorPos(out physicalPoint);
-            }
-
-            var monitor = MonitorFromPoint(physicalPoint, MonitorDefaultToNearest);
+            GetCursorPos(out var pt);
+            var monitor = MonitorFromPoint(pt, MonitorDefaultToNearest);
             if (monitor != IntPtr.Zero)
             {
                 var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
                 if (GetMonitorInfo(monitor, ref mi))
                 {
-                    var topLeft = ToLocal(new Point(mi.rcMonitor.left, mi.rcMonitor.top));
-                    var bottomRight = ToLocal(new Point(mi.rcMonitor.right, mi.rcMonitor.bottom));
-                    var monWidth = Math.Max(100, Math.Abs(bottomRight.X - topLeft.X));
-                    var monHeight = Math.Max(100, Math.Abs(bottomRight.Y - topLeft.Y));
-                    var monRect = new Rect(topLeft.X, topLeft.Y, monWidth, monHeight);
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
+                    var scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
 
-                    // 1. 顶部提示居中在当前屏幕
-                    if (TopHintPanel != null)
-                    {
-                        TopHintPanel.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
-                        TopHintPanel.VerticalAlignment = VerticalAlignment.Top;
-                        TopHintPanel.Width = monWidth;
-                        TopHintPanel.Margin = new Thickness(monRect.Left, monRect.Top + 40, 0, 0);
-                    }
-
-                    // 2. 中央指示居中在当前屏幕
-                    if (CenterHint != null)
-                    {
-                        CenterHint.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
-                        CenterHint.VerticalAlignment = VerticalAlignment.Top;
-                        CenterHint.Width = monWidth;
-                        var centerY = monRect.Top + (monHeight / 2.0) - 70;
-                        CenterHint.Margin = new Thickness(monRect.Left, centerY, 0, 0);
-                    }
-
-                    // 3. 底部结果面板居中在当前屏幕下方
-                    if (ResultPanel != null)
-                    {
-                        ResultPanel.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
-                        ResultPanel.VerticalAlignment = VerticalAlignment.Top;
-                        ResultPanel.Measure(new System.Windows.Size(monWidth, monHeight));
-                        var panelWidth = ResultPanel.DesiredSize.Width > 0 ? ResultPanel.DesiredSize.Width : (ResultPanel.ActualWidth > 0 ? ResultPanel.ActualWidth : 480);
-                        var panelLeft = monRect.Left + Math.Max(0, (monWidth - panelWidth) / 2.0);
-                        var panelHeight = ResultPanel.DesiredSize.Height > 0 ? ResultPanel.DesiredSize.Height : (ResultPanel.ActualHeight > 0 ? ResultPanel.ActualHeight : 220);
-                        var panelTop = monRect.Bottom - panelHeight - 40;
-                        ResultPanel.Margin = new Thickness(panelLeft, panelTop, 0, 0);
-                    }
+                    Left = mi.rcMonitor.left / scaleX;
+                    Top = mi.rcMonitor.top / scaleY;
+                    Width = (mi.rcMonitor.right - mi.rcMonitor.left) / scaleX;
+                    Height = (mi.rcMonitor.bottom - mi.rcMonitor.top) / scaleY;
+                    return;
                 }
             }
         }
-        catch
-        {
-            // 忽略异常并使用默认对齐
-        }
+        catch { }
+
+        Left = 0;
+        Top = 0;
+        Width = SystemParameters.PrimaryScreenWidth;
+        Height = SystemParameters.PrimaryScreenHeight;
     }
 
     private Point ToLocal(Point screenPoint)

@@ -1190,6 +1190,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     _yanmOverlay?.QueueWebDavStateRefresh("startup-preload", force: true);
                 }
+
+                MouseGestureService.WarmUp();
             }
             catch (Exception ex)
             {

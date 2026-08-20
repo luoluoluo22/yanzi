@@ -1081,6 +1081,22 @@ public static class MouseGestureService
         };
     }
 
+    public static void WarmUp()
+    {
+        System.Windows.Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+        {
+            try
+            {
+                if (_traceWindow == null)
+                {
+                    _traceWindow = new MouseGestureTraceWindow();
+                    _traceWindow.Closed += (_, _) => _traceWindow = null;
+                }
+            }
+            catch { }
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
     private static void CancelTrace()
     {
         if (_traceWindow == null)
@@ -1088,9 +1104,7 @@ public static class MouseGestureService
             return;
         }
 
-        var window = _traceWindow;
-        _traceWindow = null;
-        DispatchTrace(_ =>
+        DispatchTrace(window =>
         {
             try { window.Cancel(); } catch { }
         });

@@ -94,6 +94,12 @@ internal sealed class MouseGestureTraceWindow : Window
             EnsureClickThrough();
         };
 
+        Closing += (_, e) =>
+        {
+            e.Cancel = true;
+            Hide();
+        };
+
         try
         {
             var helper = new WindowInteropHelper(this);
@@ -408,7 +414,7 @@ internal sealed class MouseGestureTraceWindow : Window
         Clear();
         try
         {
-            Close();
+            base.Hide();
         }
         catch { }
     }
