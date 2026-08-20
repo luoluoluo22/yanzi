@@ -309,6 +309,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new(MouseTriggerModes.X1Down, "按下 X1 键"),
         new(MouseTriggerModes.X2Down, "按下 X2 键"),
         new(MouseTriggerModes.CtrlLeftClick, "Ctrl+左键单击"),
+        new(MouseTriggerModes.CtrlLeftDrag, "Ctrl+左键移动"),
         new(MouseTriggerModes.CtrlRightClick, "Ctrl+右键单击"),
         new(MouseTriggerModes.MiddleLongPress, "长按中键"),
         new(MouseTriggerModes.RightLongPress, "长按右键"),
@@ -320,7 +321,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     [
         new(MouseGestureTriggerModes.None, "不启用鼠标手势"),
         new(MouseGestureTriggerModes.RightDrag, "按住右键移动"),
-        new(MouseGestureTriggerModes.MiddleDrag, "按住中键移动")
+        new(MouseGestureTriggerModes.MiddleDrag, "按住中键移动"),
+        new(MouseGestureTriggerModes.CtrlLeftDrag, "Ctrl+左键移动")
     ];
 
     public IReadOnlyList<SyncProviderOption> PersonalSyncProviderOptions { get; } =
@@ -444,6 +446,22 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (_updateEventsSubscribed) return;
         _updateEventsSubscribed = true;
 
+        if (VelopackUpdateService.Instance.IsDownloading)
+        {
+            IsDownloadingUpdate = true;
+            UpdateProgressValue = VelopackUpdateService.Instance.CurrentProgress;
+        }
+
+        if (VelopackUpdateService.Instance.IsUpdateReady)
+        {
+            UpdateDownloaded = true;
+            _newVersionUpdateInfo = VelopackUpdateService.Instance.ReadyUpdateInfo;
+            if (_newVersionUpdateInfo != null)
+            {
+                NewVersionInfo = _newVersionUpdateInfo.TargetFullRelease.Version.ToString();
+            }
+        }
+
         VelopackUpdateService.Instance.UpdateStatusChanged += status =>
         {
             Dispatcher.Invoke(() =>
@@ -456,6 +474,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             Dispatcher.Invoke(() =>
             {
+                IsDownloadingUpdate = progress < 100;
                 UpdateProgressValue = progress;
                 if (progress >= 100)
                 {
@@ -506,17 +525,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async void CheckForUpdatesManualButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    private async void UpdateMainButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
-        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Official);
+        // 默认使用镜像更新并自动下载
+        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Mirror, autoDownload: true);
     }
 
-    private async void CheckForUpdatesMirrorButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    private void UpdateDropDownButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
-        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Mirror);
+        if (UpdateDropDownButton.ContextMenu != null)
+        {
+            UpdateDropDownButton.ContextMenu.PlacementTarget = UpdateDropDownButton;
+            UpdateDropDownButton.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            UpdateDropDownButton.ContextMenu.IsOpen = true;
+        }
     }
 
-    private async Task PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode mode)
+    private async void UpdateMirrorMenuItem_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Mirror, autoDownload: true);
+    }
+
+    private async void UpdateOfficialMenuItem_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Official, autoDownload: true);
+    }
+
+    private async Task PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode mode, bool autoDownload = true)
     {
         SubscribeUpdateEvents();
 
@@ -535,6 +570,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 _newVersionUpdateInfo = updateInfo;
                 NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
                 HasNewVersion = true;
+
+                if (autoDownload)
+                {
+                    await DownloadUpdatesCoreAsync(updateInfo);
+                }
             }
             else
             {
@@ -559,17 +599,22 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private async void DownloadUpdatesButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
         if (_newVersionUpdateInfo == null) return;
-        
+        await DownloadUpdatesCoreAsync(_newVersionUpdateInfo);
+    }
+
+    private async Task DownloadUpdatesCoreAsync(Velopack.UpdateInfo updateInfo)
+    {
         IsDownloadingUpdate = true;
         UpdateProgressValue = 0;
         UpdateDownloaded = false;
 
         try
         {
-            var success = await VelopackUpdateService.Instance.DownloadUpdatesAsync(_newVersionUpdateInfo);
+            var success = await VelopackUpdateService.Instance.DownloadUpdatesAsync(updateInfo);
             if (success)
             {
                 UpdateDownloaded = true;
+                IsDownloadingUpdate = false;
             }
             else
             {
@@ -2281,6 +2326,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.CtrlLeftClick = value);
     }
 
+    public bool TriggerCtrlLeftDrag
+    {
+        get => _settings.QuickPanelMouseTriggers.CtrlLeftDrag;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.CtrlLeftDrag = value);
+    }
+
     public bool TriggerCtrlRightClick
     {
         get => _settings.QuickPanelMouseTriggers.CtrlRightClick;
@@ -2681,6 +2732,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (trigger.X1ButtonDown) labels.Add("按下 X1 键");
             if (trigger.X2ButtonDown) labels.Add("按下 X2 键");
             if (trigger.CtrlLeftClick) labels.Add("Ctrl+左键单击");
+            if (trigger.CtrlLeftDrag) labels.Add("Ctrl+左键移动");
             if (trigger.CtrlRightClick) labels.Add("Ctrl+右键单击");
             if (trigger.MiddleButtonLongPress) labels.Add("长按中键");
             if (trigger.RightButtonLongPress) labels.Add("长按右键");
@@ -2696,6 +2748,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         MouseGestureTriggerModes.RightDrag => "按住右键移动",
         MouseGestureTriggerModes.MiddleDrag => "按住中键移动",
+        MouseGestureTriggerModes.CtrlLeftDrag => "Ctrl+左键移动",
         _ => "未启用"
     };
 
@@ -2765,6 +2818,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         (_settings.RadialMenu.TriggerX1ButtonDown, "按下 X1 键"),
         (_settings.RadialMenu.TriggerX2ButtonDown, "按下 X2 键"),
         (_settings.RadialMenu.TriggerCtrlLeftClick, "Ctrl+左键单击"),
+        (_settings.RadialMenu.TriggerCtrlLeftDrag, "Ctrl+左键移动"),
         (_settings.RadialMenu.TriggerCtrlRightClick, "Ctrl+右键单击"),
         (_settings.RadialMenu.TriggerCtrlMiddleClick, "Ctrl+中键单击"),
         (_settings.RadialMenu.TriggerMiddleButtonLongPress, "长按中键"),
@@ -2780,6 +2834,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         (_settings.Yanm.TriggerX1ButtonDown, "按下 X1 键"),
         (_settings.Yanm.TriggerX2ButtonDown, "按下 X2 键"),
         (_settings.Yanm.TriggerCtrlLeftClick, "Ctrl+左键单击"),
+        (_settings.Yanm.TriggerCtrlLeftDrag, "Ctrl+左键移动"),
         (_settings.Yanm.TriggerCtrlRightClick, "Ctrl+右键单击"),
         (_settings.Yanm.TriggerCtrlMiddleClick, "Ctrl+中键单击"),
         (_settings.Yanm.TriggerMiddleButtonLongPress, "长按中键"),
@@ -3705,6 +3760,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         "RightButtonDrag" => GestureMouseTriggerTargetOptions,
         "MiddleButtonDrag" => GestureMouseTriggerTargetOptions,
+        "CtrlLeftDrag" => GestureMouseTriggerTargetOptions,
         _ => StandardMouseTriggerTargetOptions
     };
 
@@ -3750,6 +3806,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             ClearGestureFromAllTargets("MiddleButtonDrag");
         }
+        else if (normalized == MouseGestureTriggerModes.CtrlLeftDrag)
+        {
+            ClearGestureFromAllTargets("CtrlLeftDrag");
+        }
 
         _settings.MouseGestureTriggerMode = normalized;
         UpdateAllGestureCardColors();
@@ -3794,6 +3854,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MouseTriggerModes.X2Down => "X2ButtonDown",
         MouseTriggerModes.HorizontalWheel => "HorizontalWheel",
         MouseTriggerModes.CtrlLeftClick => "CtrlLeftClick",
+        MouseTriggerModes.CtrlLeftDrag => "CtrlLeftDrag",
         MouseTriggerModes.CtrlRightClick => "CtrlRightClick",
         MouseTriggerModes.CtrlMiddleClick => "CtrlMiddleClick",
         _ => string.Empty
@@ -3810,6 +3871,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MouseTriggerModes.X2Down => "按下 X2 键",
         MouseTriggerModes.HorizontalWheel => "滚轮左右",
         MouseTriggerModes.CtrlLeftClick => "Ctrl+左键单击",
+        MouseTriggerModes.CtrlLeftDrag => "Ctrl+左键移动",
         MouseTriggerModes.CtrlRightClick => "Ctrl+右键单击",
         MouseTriggerModes.CtrlMiddleClick => "Ctrl+中键单击",
         _ => "未知触发"
@@ -3880,6 +3942,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 radial.TriggerCtrlLeftClick = false;
                 yanm.TriggerCtrlLeftClick = false;
                 break;
+            case "CtrlLeftDrag":
+                trigger.CtrlLeftDrag = false;
+                radial.TriggerCtrlLeftDrag = false;
+                yanm.TriggerCtrlLeftDrag = false;
+                break;
             case "CtrlRightClick":
                 trigger.CtrlRightClick = false;
                 radial.TriggerCtrlRightClick = false;
@@ -3895,7 +3962,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if ((gestureName == "RightButtonDrag" &&
              string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.RightDrag, StringComparison.Ordinal)) ||
             (gestureName == "MiddleButtonDrag" &&
-             string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.MiddleDrag, StringComparison.Ordinal)))
+             string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.MiddleDrag, StringComparison.Ordinal)) ||
+            (gestureName == "CtrlLeftDrag" &&
+             string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.CtrlLeftDrag, StringComparison.Ordinal)))
         {
             _settings.MouseGestureTriggerMode = MouseGestureTriggerModes.None;
         }
@@ -3930,6 +3999,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         "X2ButtonDown" => MouseTriggerModes.X2Down,
         "HorizontalWheel" => MouseTriggerModes.HorizontalWheel,
         "CtrlLeftClick" => MouseTriggerModes.CtrlLeftClick,
+        "CtrlLeftDrag" => MouseTriggerModes.CtrlLeftDrag,
         "CtrlRightClick" => MouseTriggerModes.CtrlRightClick,
         "CtrlMiddleClick" => MouseTriggerModes.CtrlMiddleClick,
         _ => MouseTriggerModes.None
@@ -3970,6 +4040,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 {
                     _settings.MouseGestureTriggerMode = MouseGestureTriggerModes.MiddleDrag;
                 }
+                else if (gestureName == "CtrlLeftDrag")
+                {
+                    _settings.MouseGestureTriggerMode = MouseGestureTriggerModes.CtrlLeftDrag;
+                }
                 break;
         }
     }
@@ -3988,6 +4062,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             case "X2ButtonDown": trigger.X2ButtonDown = value; break;
             case "HorizontalWheel": trigger.HorizontalWheel = value; break;
             case "CtrlLeftClick": trigger.CtrlLeftClick = value; break;
+            case "CtrlLeftDrag": trigger.CtrlLeftDrag = value; break;
             case "CtrlRightClick": trigger.CtrlRightClick = value; break;
             case "CtrlMiddleClick": trigger.CtrlMiddleClick = value; break;
         }
@@ -4007,6 +4082,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             case "X2ButtonDown": radial.TriggerX2ButtonDown = value; break;
             case "HorizontalWheel": radial.TriggerHorizontalWheel = value; break;
             case "CtrlLeftClick": radial.TriggerCtrlLeftClick = value; break;
+            case "CtrlLeftDrag": radial.TriggerCtrlLeftDrag = value; break;
             case "CtrlRightClick": radial.TriggerCtrlRightClick = value; break;
             case "CtrlMiddleClick": radial.TriggerCtrlMiddleClick = value; break;
         }
@@ -4026,6 +4102,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             case "X2ButtonDown": yanm.TriggerX2ButtonDown = value; break;
             case "HorizontalWheel": yanm.TriggerHorizontalWheel = value; break;
             case "CtrlLeftClick": yanm.TriggerCtrlLeftClick = value; break;
+            case "CtrlLeftDrag": yanm.TriggerCtrlLeftDrag = value; break;
             case "CtrlRightClick": yanm.TriggerCtrlRightClick = value; break;
             case "CtrlMiddleClick": yanm.TriggerCtrlMiddleClick = value; break;
         }
@@ -4087,6 +4164,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 radialValue = radial.TriggerCtrlLeftClick;
                 yanmValue = yanm.TriggerCtrlLeftClick;
                 break;
+            case "CtrlLeftDrag":
+                panelValue = trigger.CtrlLeftDrag;
+                radialValue = radial.TriggerCtrlLeftDrag;
+                yanmValue = yanm.TriggerCtrlLeftDrag;
+                break;
             case "CtrlRightClick":
                 panelValue = trigger.CtrlRightClick;
                 radialValue = radial.TriggerCtrlRightClick;
@@ -4107,6 +4189,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         if (gestureName == "MiddleButtonDrag" &&
             string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.MiddleDrag, StringComparison.Ordinal))
+        {
+            return "Gesture";
+        }
+
+        if (gestureName == "CtrlLeftDrag" &&
+            string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.CtrlLeftDrag, StringComparison.Ordinal))
         {
             return "Gesture";
         }
@@ -4138,7 +4226,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     [
         "RightButtonLongPress", "MiddleButtonLongPress", "RightButtonDrag", "MiddleButtonDrag",
         "MiddleButtonDown", "X1ButtonDown", "X2ButtonDown", "HorizontalWheel",
-        "CtrlLeftClick", "CtrlRightClick", "CtrlMiddleClick"
+        "CtrlLeftClick", "CtrlLeftDrag", "CtrlRightClick", "CtrlMiddleClick"
     ];
 
     private void UpdateGestureCardColors(string gestureName, string target)
@@ -7467,11 +7555,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void AddNewMouseGestureButton_Click(object sender, RoutedEventArgs e)
     {
-        var trigger = MouseGestureTriggerMode ?? "right-drag";
-        if (trigger == MouseGestureTriggerModes.None)
-        {
-            trigger = "right-drag";
-        }
+        var runtimeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(MouseGestureTriggerMode);
+        var trigger = string.IsNullOrWhiteSpace(runtimeTrigger) ? "right-drag" : runtimeTrigger;
 
         var recorder = new MouseGestureRecorderWindow(trigger, initialSequence: null)
         {
@@ -8373,6 +8458,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             case MouseTriggerModes.CtrlLeftClick:
                 radial.TriggerCtrlLeftClick = true;
                 break;
+            case MouseTriggerModes.CtrlLeftDrag:
+                radial.TriggerCtrlLeftDrag = true;
+                break;
             case MouseTriggerModes.CtrlRightClick:
                 radial.TriggerCtrlRightClick = true;
                 break;
@@ -8424,6 +8512,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             radial.TriggerX2ButtonDown ? MouseTriggerModes.X2Down :
             radial.TriggerHorizontalWheel ? MouseTriggerModes.HorizontalWheel :
             radial.TriggerCtrlLeftClick ? MouseTriggerModes.CtrlLeftClick :
+            radial.TriggerCtrlLeftDrag ? MouseTriggerModes.CtrlLeftDrag :
             radial.TriggerCtrlRightClick ? MouseTriggerModes.CtrlRightClick :
             radial.TriggerCtrlMiddleClick ? MouseTriggerModes.CtrlMiddleClick :
             MouseTriggerModes.None;
@@ -8445,6 +8534,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 break;
             case MouseTriggerModes.CtrlLeftClick:
                 yanm.TriggerCtrlLeftClick = true;
+                break;
+            case MouseTriggerModes.CtrlLeftDrag:
+                yanm.TriggerCtrlLeftDrag = true;
                 break;
             case MouseTriggerModes.CtrlRightClick:
                 yanm.TriggerCtrlRightClick = true;
@@ -8482,6 +8574,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             yanm.TriggerX2ButtonDown ? MouseTriggerModes.X2Down :
             yanm.TriggerHorizontalWheel ? MouseTriggerModes.HorizontalWheel :
             yanm.TriggerCtrlLeftClick ? MouseTriggerModes.CtrlLeftClick :
+            yanm.TriggerCtrlLeftDrag ? MouseTriggerModes.CtrlLeftDrag :
             yanm.TriggerCtrlRightClick ? MouseTriggerModes.CtrlRightClick :
             yanm.TriggerCtrlMiddleClick ? MouseTriggerModes.CtrlMiddleClick :
             MouseTriggerModes.None;

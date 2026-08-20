@@ -1098,6 +1098,8 @@ public sealed record QuickPanelMouseTriggerSettings
 
     public bool CtrlLeftClick { get; set; } = false;
 
+    public bool CtrlLeftDrag { get; set; } = false;
+
     public bool CtrlRightClick { get; set; } = false;
     
     public bool CtrlMiddleClick { get; set; } = false;
@@ -1238,6 +1240,8 @@ public sealed class RadialMenuSettings
     
     public bool TriggerCtrlLeftClick { get; set; } = false;
     
+    public bool TriggerCtrlLeftDrag { get; set; } = false;
+    
     public bool TriggerCtrlRightClick { get; set; } = false;
     
     public bool TriggerCtrlMiddleClick { get; set; } = false;
@@ -1357,6 +1361,8 @@ public sealed class YanmSettings
     public bool TriggerHorizontalWheel { get; set; } = false;
     
     public bool TriggerCtrlLeftClick { get; set; } = false;
+
+    public bool TriggerCtrlLeftDrag { get; set; } = false;
     
     public bool TriggerCtrlRightClick { get; set; } = false;
     
@@ -1407,6 +1413,7 @@ public static class MouseTriggerModes
     public const string X1Down = "X1Down";
     public const string X2Down = "X2Down";
     public const string CtrlLeftClick = "CtrlLeftClick";
+    public const string CtrlLeftDrag = "CtrlLeftDrag";
     public const string CtrlRightClick = "CtrlRightClick";
     public const string CtrlMiddleClick = "CtrlMiddleClick";
     public const string MiddleLongPress = "MiddleLongPress";
@@ -1423,6 +1430,7 @@ public static class MouseTriggerModes
             X1Down => X1Down,
             X2Down => X2Down,
             CtrlLeftClick => CtrlLeftClick,
+            CtrlLeftDrag => CtrlLeftDrag,
             CtrlRightClick => CtrlRightClick,
             CtrlMiddleClick => CtrlMiddleClick,
             MiddleLongPress => MiddleLongPress,
@@ -1440,6 +1448,7 @@ public static class MouseGestureTriggerModes
     public const string None = "None";
     public const string RightDrag = "RightDrag";
     public const string MiddleDrag = "MiddleDrag";
+    public const string CtrlLeftDrag = "CtrlLeftDrag";
 
     public static string Normalize(string? value)
     {
@@ -1447,8 +1456,10 @@ public static class MouseGestureTriggerModes
         {
             RightDrag => RightDrag,
             MiddleDrag => MiddleDrag,
+            CtrlLeftDrag => CtrlLeftDrag,
             "right-drag" => RightDrag,
             "middle-drag" => MiddleDrag,
+            "ctrl-left-drag" => CtrlLeftDrag,
             _ => None
         };
     }
@@ -1459,15 +1470,23 @@ public static class MouseGestureTriggerModes
         {
             MiddleDrag => "middle-drag",
             RightDrag => "right-drag",
+            CtrlLeftDrag => "ctrl-left-drag",
             _ => string.Empty
         };
     }
 
     public static string FromRuntimeTrigger(string? value)
     {
-        return (value ?? string.Empty).Trim().Equals("middle-drag", StringComparison.OrdinalIgnoreCase)
-            ? MiddleDrag
-            : RightDrag;
+        var trimmed = (value ?? string.Empty).Trim();
+        if (trimmed.Equals("middle-drag", StringComparison.OrdinalIgnoreCase))
+        {
+            return MiddleDrag;
+        }
+        if (trimmed.Equals("ctrl-left-drag", StringComparison.OrdinalIgnoreCase))
+        {
+            return CtrlLeftDrag;
+        }
+        return RightDrag;
     }
 }
 

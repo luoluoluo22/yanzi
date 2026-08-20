@@ -4577,6 +4577,7 @@ public partial class MainWindow
         if (left.TriggerX2ButtonDown != right.TriggerX2ButtonDown) return false;
         if (left.TriggerHorizontalWheel != right.TriggerHorizontalWheel) return false;
         if (left.TriggerCtrlLeftClick != right.TriggerCtrlLeftClick) return false;
+        if (left.TriggerCtrlLeftDrag != right.TriggerCtrlLeftDrag) return false;
         if (left.TriggerCtrlRightClick != right.TriggerCtrlRightClick) return false;
         if (left.TriggerCtrlMiddleClick != right.TriggerCtrlMiddleClick) return false;
         if (left.MouseTriggerMode != right.MouseTriggerMode) return false;
@@ -4759,6 +4760,7 @@ public partial class MainWindow
                left.X1ButtonDown == right.X1ButtonDown &&
                left.X2ButtonDown == right.X2ButtonDown &&
                left.CtrlLeftClick == right.CtrlLeftClick &&
+               left.CtrlLeftDrag == right.CtrlLeftDrag &&
                left.CtrlRightClick == right.CtrlRightClick &&
                left.MiddleButtonLongPress == right.MiddleButtonLongPress &&
                left.RightButtonLongPress == right.RightButtonLongPress &&

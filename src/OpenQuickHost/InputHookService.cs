@@ -33,6 +33,8 @@ public class InputHookService
     private const uint LLMHF_INJECTED = 0x00000001;
     private const uint LLKHF_INJECTED = 0x00000010;
     private const uint INPUT_MOUSE = 0;
+    private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    private const uint MOUSEEVENTF_LEFTUP = 0x0004;
     private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
     private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
     private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
@@ -64,6 +66,7 @@ public class InputHookService
     private static bool _isEnabled;
     private static bool _dragTriggered;
     private static bool _releaseShouldExecute;
+    private static bool _leftButtonDownSwallowed;
     private static bool _rightButtonDownSwallowed;
     private static bool _middleButtonDownSwallowed;
     private static bool _x1ButtonDownSwallowed;
@@ -71,6 +74,7 @@ public class InputHookService
     private static ActiveTriggerTarget _activeTriggerTarget = ActiveTriggerTarget.None;
     private static ActiveTriggerTarget _pendingLongPressTarget = ActiveTriggerTarget.None;
     private static bool _capsRadialActive;
+    private static bool _leftButtonDown;
     private static bool _rightButtonDown;
     private static bool _middleButtonDown;
     private static bool _x1ButtonDown;
@@ -104,6 +108,7 @@ public class InputHookService
     public static string GetMouseStateSummary()
     {
         var pressed = new List<string>();
+        if (_leftButtonDown) pressed.Add("左键");
         if (_rightButtonDown) pressed.Add("右键");
         if (_middleButtonDown) pressed.Add("中键");
         if (_x1ButtonDown) pressed.Add("侧键1");
@@ -265,7 +270,9 @@ public class InputHookService
         if (_settings.X1ButtonDown) enabled.Add("X1Down");
         if (_settings.X2ButtonDown) enabled.Add("X2Down");
         if (_settings.CtrlLeftClick) enabled.Add("CtrlLeft");
+        if (_settings.CtrlLeftDrag) enabled.Add($"CtrlLeftDrag:{_settings.DragThresholdPixels}px");
         if (_settings.CtrlRightClick) enabled.Add("CtrlRight");
+        if (_settings.CtrlMiddleClick) enabled.Add("CtrlMiddle");
         if (_settings.MiddleButtonLongPress) enabled.Add($"MiddleLong:{_settings.LongPressMilliseconds}ms");
         if (_settings.RightButtonLongPress) enabled.Add($"RightLong:{_settings.LongPressMilliseconds}ms");
         if (_settings.RightButtonDrag) enabled.Add($"RightDrag:{_settings.DragThresholdPixels}px");
@@ -322,15 +329,69 @@ public class InputHookService
 
             if (message == WM_LBUTTONDOWN)
             {
-                if (_settings.CtrlLeftClick && IsControlDown())
+                _leftButtonDown = true;
+                if (IsControlDown())
                 {
-                    HostAssets.AppendLog("Input hook: Ctrl+left click triggered.");
-                    InvokeShowPanel();
-                    return (IntPtr)1;
+                    if (MouseGestureService.HasCtrlLeftDragRegistrations)
+                    {
+                        // 放行给手势服务处理
+                    }
+                    else if (IsCtrlLeftDragConfigured())
+                    {
+                        BeginTracking(TrackedMouseButton.CtrlLeft, mouse.pt);
+                        _leftButtonDownSwallowed = true;
+                        HostAssets.AppendLog($"Input hook: Ctrl+left button down tracked for drag, pt=({mouse.pt.x},{mouse.pt.y}).");
+                        return (IntPtr)1;
+                    }
+                    else if (_settings.CtrlLeftClick)
+                    {
+                        HostAssets.AppendLog("Input hook: Ctrl+left click triggered.");
+                        InvokeShowPanel();
+                        return (IntPtr)1;
+                    }
+                    else if (TryTriggerMouseMode(MouseTriggerModes.CtrlLeftClick, mouse.pt))
+                    {
+                        return (IntPtr)1;
+                    }
                 }
-                else if (IsControlDown() && TryTriggerMouseMode(MouseTriggerModes.CtrlLeftClick, mouse.pt))
+            }
+            else if (message == WM_LBUTTONUP)
+            {
+                _leftButtonDown = false;
+                if (_trackedButton == TrackedMouseButton.CtrlLeft)
                 {
-                    return (IntPtr)1;
+                    var wasSwallowed = _leftButtonDownSwallowed;
+                    var triggered = _dragTriggered || _releaseShouldExecute;
+                    HostAssets.AppendLog($"Input hook: Ctrl+left button up, triggered={triggered}, wasSwallowed={wasSwallowed}.");
+
+                    if (EndTracking(TrackedMouseButton.CtrlLeft))
+                    {
+                        return (IntPtr)1;
+                    }
+
+                    if (triggered)
+                    {
+                        return (IntPtr)1;
+                    }
+
+                    if (wasSwallowed)
+                    {
+                        if (_settings.CtrlLeftClick)
+                        {
+                            HostAssets.AppendLog("Input hook: Ctrl+left click triggered on release after no drag.");
+                            InvokeShowPanel();
+                            return (IntPtr)1;
+                        }
+                        else if (TryTriggerMouseMode(MouseTriggerModes.CtrlLeftClick, mouse.pt))
+                        {
+                            return (IntPtr)1;
+                        }
+                        else
+                        {
+                            ReplayShortLeftClickAfterHookReturns();
+                            return (IntPtr)1;
+                        }
+                    }
                 }
             }
             else if (message == WM_RBUTTONDOWN)
@@ -714,7 +775,12 @@ public class InputHookService
             return;
         }
 
-        if (_trackedButton is not (TrackedMouseButton.Right or TrackedMouseButton.Middle or TrackedMouseButton.X1 or TrackedMouseButton.X2) ||
+        if (MouseGestureService.HasCtrlLeftDragRegistrations && _trackedButton == TrackedMouseButton.CtrlLeft)
+        {
+            return;
+        }
+
+        if (_trackedButton is not (TrackedMouseButton.Right or TrackedMouseButton.Middle or TrackedMouseButton.X1 or TrackedMouseButton.X2 or TrackedMouseButton.CtrlLeft) ||
             _dragTriggered ||
             _activeTriggerTarget != ActiveTriggerTarget.None)
         {
@@ -726,6 +792,7 @@ public class InputHookService
             TrackedMouseButton.Middle => MouseTriggerModes.MiddleDrag,
             TrackedMouseButton.X1 => MouseTriggerModes.X1Down,
             TrackedMouseButton.X2 => MouseTriggerModes.X2Down,
+            TrackedMouseButton.CtrlLeft => MouseTriggerModes.CtrlLeftDrag,
             _ => MouseTriggerModes.RightDrag
         };
 
@@ -734,6 +801,7 @@ public class InputHookService
             TrackedMouseButton.Middle => _settings.MiddleButtonDrag,
             TrackedMouseButton.X1 => _settings.X1ButtonDown,
             TrackedMouseButton.X2 => _settings.X2ButtonDown,
+            TrackedMouseButton.CtrlLeft => _settings.CtrlLeftDrag,
             _ => _settings.RightButtonDrag
         };
 
@@ -742,6 +810,7 @@ public class InputHookService
             TrackedMouseButton.Middle => _yanmSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
             TrackedMouseButton.X1 => _yanmSettings.TriggerX1ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X1Down, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
             TrackedMouseButton.X2 => _yanmSettings.TriggerX2ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X2Down, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
+            TrackedMouseButton.CtrlLeft => _yanmSettings.TriggerCtrlLeftDrag || IsMouseTriggerModeActive(MouseTriggerModes.CtrlLeftDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
             _ => _yanmSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)
         }) && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm, logBlocked: false);
 
@@ -750,6 +819,7 @@ public class InputHookService
             TrackedMouseButton.Middle => _radialSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
             TrackedMouseButton.X1 => _radialSettings.TriggerX1ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X1Down, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
             TrackedMouseButton.X2 => _radialSettings.TriggerX2ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X2Down, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
+            TrackedMouseButton.CtrlLeft => _radialSettings.TriggerCtrlLeftDrag || IsMouseTriggerModeActive(MouseTriggerModes.CtrlLeftDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
             _ => _radialSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)
         }) && IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial, logBlocked: false);
 
@@ -834,11 +904,12 @@ public class InputHookService
         }
 
         _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-        var swallowRelease = (button is TrackedMouseButton.Right or TrackedMouseButton.Middle or TrackedMouseButton.X1 or TrackedMouseButton.X2) && _releaseShouldExecute;
+        var swallowRelease = (button is TrackedMouseButton.Right or TrackedMouseButton.Middle or TrackedMouseButton.X1 or TrackedMouseButton.X2 or TrackedMouseButton.CtrlLeft) && _releaseShouldExecute;
         var downSwallowedByMouseGesture = button switch
         {
             TrackedMouseButton.Right => MouseGestureService.HasRightDragRegistrations,
             TrackedMouseButton.Middle => MouseGestureService.HasMiddleDragRegistrations,
+            TrackedMouseButton.CtrlLeft => MouseGestureService.HasCtrlLeftDragRegistrations,
             _ => false
         };
         var shouldReplaySwallowedRelease = swallowRelease &&
@@ -882,6 +953,10 @@ public class InputHookService
         {
             _x2ButtonDownSwallowed = false;
         }
+        else if (button == TrackedMouseButton.CtrlLeft)
+        {
+            _leftButtonDownSwallowed = false;
+        }
 
         _trackedButton = TrackedMouseButton.None;
         return swallowRelease;
@@ -892,17 +967,58 @@ public class InputHookService
         _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _dragTriggered = false;
         _releaseShouldExecute = false;
+        _leftButtonDownSwallowed = false;
         _rightButtonDownSwallowed = false;
         _middleButtonDownSwallowed = false;
+        _x1ButtonDownSwallowed = false;
+        _x2ButtonDownSwallowed = false;
         _activeTriggerTarget = ActiveTriggerTarget.None;
         _pendingLongPressTarget = ActiveTriggerTarget.None;
         _capsRadialActive = false;
+        _leftButtonDown = false;
         _rightButtonDown = false;
         _middleButtonDown = false;
         _x1ButtonDown = false;
         _x2ButtonDown = false;
         _trackedButton = TrackedMouseButton.None;
         _downPoint = default;
+    }
+
+    private static void ReplayShortLeftClickAfterHookReturns()
+    {
+        var downPt = _downPoint;
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            SendSyntheticLeftClick(downPt);
+        });
+    }
+
+    private static void SendSyntheticLeftClick(POINT downPt)
+    {
+        GetCursorPos(out var currentPt);
+        var dx = currentPt.x - downPt.x;
+        var dy = currentPt.y - downPt.y;
+        bool needRestoreCursor = (dx * dx + dy * dy) > 4;
+
+        if (needRestoreCursor)
+        {
+            SetCursorPos(downPt.x, downPt.y);
+        }
+
+        var inputs = new[]
+        {
+            MouseInput(MOUSEEVENTF_LEFTDOWN, SYNTHETIC_EXTRA_INFO),
+            MouseInput(MOUSEEVENTF_LEFTUP, SYNTHETIC_EXTRA_INFO)
+        };
+        var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+
+        if (needRestoreCursor)
+        {
+            Thread.Sleep(1);
+            SetCursorPos(currentPt.x, currentPt.y);
+        }
+
+        HostAssets.AppendLog($"Input hook: replayed short left click at ({downPt.x},{downPt.y}), SendInput sent={sent}/2.");
     }
 
     private static void ReplayShortRightClickAfterHookReturns()
@@ -946,6 +1062,7 @@ public class InputHookService
     {
         var flags = button switch
         {
+            TrackedMouseButton.CtrlLeft => MOUSEEVENTF_LEFTUP,
             TrackedMouseButton.Right => MOUSEEVENTF_RIGHTUP,
             TrackedMouseButton.Middle => MOUSEEVENTF_MIDDLEUP,
             _ => 0u
@@ -1289,6 +1406,15 @@ public class InputHookService
         return panel || radial || yanm || windowSnap;
     }
 
+    private static bool IsCtrlLeftDragConfigured()
+    {
+        if (_settings.CtrlLeftDrag) return true;
+        if (_radialSettings.Enabled && (_radialSettings.TriggerCtrlLeftDrag || IsMouseTriggerModeActive(MouseTriggerModes.CtrlLeftDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)) && _onShowRadial != null) return true;
+        if (_yanmSettings.Enabled && (_yanmSettings.TriggerCtrlLeftDrag || IsMouseTriggerModeActive(MouseTriggerModes.CtrlLeftDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)) && _onShowYanm != null) return true;
+        if (_windowSnapAssistEnabled && _onShowWindowSnap != null && string.Equals(_windowSnapAssistMouseTriggerMode, MouseTriggerModes.CtrlLeftDrag, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
     private static bool TryTriggerMouseMode(string mode, POINT point)
     {
         // Check radial menu triggers (both old MouseTriggerMode and new boolean properties)
@@ -1300,6 +1426,7 @@ public class InputHookService
                                   (mode == MouseTriggerModes.X2Down && _radialSettings.TriggerX2ButtonDown) ||
                                   (mode == MouseTriggerModes.HorizontalWheel && _radialSettings.TriggerHorizontalWheel) ||
                                   (mode == MouseTriggerModes.CtrlLeftClick && _radialSettings.TriggerCtrlLeftClick) ||
+                                  (mode == MouseTriggerModes.CtrlLeftDrag && _radialSettings.TriggerCtrlLeftDrag) ||
                                   (mode == MouseTriggerModes.CtrlRightClick && _radialSettings.TriggerCtrlRightClick) ||
                                   (mode == MouseTriggerModes.MiddleLongPress && _radialSettings.TriggerMiddleButtonLongPress) ||
                                   (mode == MouseTriggerModes.RightLongPress && _radialSettings.TriggerRightButtonLongPress) ||
@@ -1325,6 +1452,7 @@ public class InputHookService
                                 (mode == MouseTriggerModes.X2Down && _yanmSettings.TriggerX2ButtonDown) ||
                                 (mode == MouseTriggerModes.HorizontalWheel && _yanmSettings.TriggerHorizontalWheel) ||
                                 (mode == MouseTriggerModes.CtrlLeftClick && _yanmSettings.TriggerCtrlLeftClick) ||
+                                (mode == MouseTriggerModes.CtrlLeftDrag && _yanmSettings.TriggerCtrlLeftDrag) ||
                                 (mode == MouseTriggerModes.CtrlRightClick && _yanmSettings.TriggerCtrlRightClick) ||
                                 (mode == MouseTriggerModes.MiddleLongPress && _yanmSettings.TriggerMiddleButtonLongPress) ||
                                 (mode == MouseTriggerModes.RightLongPress && _yanmSettings.TriggerRightButtonLongPress) ||
@@ -1445,7 +1573,8 @@ public class InputHookService
         Right,
         Middle,
         X1,
-        X2
+        X2,
+        CtrlLeft
     }
 
     private enum ActiveTriggerTarget

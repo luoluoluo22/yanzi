@@ -52,7 +52,12 @@ public partial class MouseGestureRecorderWindow : Window
         InitializeComponent();
         _trigger = NormalizeTrigger(trigger);
         ResultTrigger = _trigger;
-        TriggerLabelRun.Text = _trigger == "middle-drag" ? "鼠标中键" : "鼠标右键";
+        TriggerLabelRun.Text = _trigger switch
+        {
+            "middle-drag" => "鼠标中键",
+            "ctrl-left-drag" => "Ctrl+左键",
+            _ => "鼠标右键"
+        };
 
         // 占满主屏（用 SystemParameters，避免多屏问题）
         Left = SystemParameters.VirtualScreenLeft;
@@ -108,11 +113,21 @@ public partial class MouseGestureRecorderWindow : Window
             StartStroke(e.GetPosition(this));
             e.Handled = true;
         }
+        else if (_trigger == "ctrl-left-drag" && e.ChangedButton == MouseButton.Left && (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0)
+        {
+            StartStroke(e.GetPosition(this));
+            e.Handled = true;
+        }
     }
 
     private void OnMouseUpAny(object? sender, MouseButtonEventArgs e)
     {
         if (_trigger == "middle-drag" && e.ChangedButton == MouseButton.Middle)
+        {
+            FinishStroke();
+            e.Handled = true;
+        }
+        else if (_trigger == "ctrl-left-drag" && e.ChangedButton == MouseButton.Left)
         {
             FinishStroke();
             e.Handled = true;
@@ -378,6 +393,7 @@ public partial class MouseGestureRecorderWindow : Window
         return raw switch
         {
             "middle-drag" => "middle-drag",
+            "ctrl-left-drag" => "ctrl-left-drag",
             _ => "right-drag"
         };
     }

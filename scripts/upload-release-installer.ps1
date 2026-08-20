@@ -1,11 +1,12 @@
-﻿param(
+param(
     [string]$Version = "0.1.0",
     [string]$Platform = "windows", # windows 或 android
     [string]$Repo = "luoluoluo22/yanzi",
     [string]$Target = "main",
     [string]$InstallerPath = "",
     [switch]$Draft,
-    [switch]$KeepProxy
+    [switch]$KeepProxy,
+    [string]$GithubToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,7 +30,6 @@ if ($Platform -eq "android") {
     $fileName = "yanzi-mobile-$plainVersion.apk"
     $installerSetupPath = if ($InstallerPath) { Resolve-Path $InstallerPath } else { Join-Path $installerOutDir $fileName }
     if (!(Test-Path -LiteralPath $installerSetupPath)) {
-        # 后备方案：去 Gradle 默认输出目录寻找并复制过来
         $gradleReleaseApk = Join-Path $root "mobile\android\app\build\outputs\apk\release\app-release.apk"
         $mvpApk = Join-Path $root "mobile\android\app\build\manual-release\yanzi-mobile-release.apk"
         $mvpDebugApk = Join-Path $root "mobile\android\app\build\manual-debug\yanzi-mobile-debug.apk"
@@ -45,7 +45,6 @@ if ($Platform -eq "android") {
         }
     }
 
-    # 确保文件拷贝到了输出目录中且重命名为标准的包名
     $targetApkPath = Join-Path $installerOutDir $fileName
     if ((Resolve-Path $installerSetupPath) -ne (Resolve-Path $targetApkPath -ErrorAction SilentlyContinue)) {
         if (!(Test-Path $installerOutDir)) { New-Item -ItemType Directory -Path $installerOutDir -Force | Out-Null }
@@ -80,48 +79,15 @@ if (-not $KeepProxy) {
     $env:NO_PROXY = ""
 }
 
+$env:GODEBUG = "http2client=0"
+
 $gh = Get-Command gh -ErrorAction SilentlyContinue
 if (-not $gh) {
     throw "GitHub CLI was not found. Install gh first: https://cli.github.com/"
 }
 
-gh api user --jq .login | Out-Host
-
 $hash = (Get-FileHash -LiteralPath $installerSetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $notesPath = Join-Path ([IO.Path]::GetTempPath()) "yanzi-release-$plainVersion.md"
-
-$notesContent = if ($Platform -eq "android") {
-@"
-# 燕子 Yanzi for Android v$plainVersion 更新内容
-
-**✨ 移动端优化**
-- 手机端自动检查更新功能上线。
-- 优化了燕幕同步机制与运行日志显示。
-- 修复了已知的部分闪退问题。
-
----
-安装包：$fileName
-
-SHA256: $hash
-"@
-} else {
-@"
-# 燕子 Yanzi v$plainVersion 更新内容
-
-**✨ 界面与交互优化**
-- 【修复】设置界面第二次打开时无响应或报错退出的问题。
-- 【修复】初次呼出设置面板瞬间出现的白屏/闪屏问题，改为全局底色提前渲染。
-- 【性能】彻底重构了设置面板的生命周期为“后台常驻”，首次加载后每次打开均为秒级展现，不再有由于大量数据加载带来的鼠标卡顿感。
-
-**🎛️ 轮盘功能升级**
-- 【增强】调整了燕环（轮盘）的“目标应用”智能判定逻辑。过去仅依赖“前台激活窗口”；现在已支持自动嗅探并提取**鼠标指针悬停位置**下的窗口进程。即使它处于后台非激活状态，依然能精准唤出针对该应用的专属轮盘工具。
-
----
-一键安装包：$fileName
-
-SHA256: $hash
-"@
-}
 $notesContent = "Yanzi Release v$plainVersion"
 [System.IO.File]::WriteAllText($notesPath, $notesContent, [System.Text.Encoding]::UTF8)
 
@@ -155,6 +121,7 @@ $filesToUpload = if ($Platform -eq "android") {
 } else {
     Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -or $_.Name -match "releases\.win\.json|RELEASES" }
 }
+
 foreach ($file in $filesToUpload) {
     $maxRetries = 5
     $retryCount = 0
@@ -189,8 +156,7 @@ foreach ($file in $filesToUpload) {
     }
 }
 
-# 1. 尝试使用 GitHub API PATCH 更新中文的 Release Notes (防止 gh 命令行临时文件乱码)
-$token = $env:GITHUB_TOKEN
+$token = if ($GithubToken) { $GithubToken } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { "" }
 if (-not [string]::IsNullOrEmpty($token)) {
     try {
         Write-Host "Updating release notes to Chinese via GitHub API to prevent encoding issues..."
@@ -200,24 +166,11 @@ if (-not [string]::IsNullOrEmpty($token)) {
             "User-Agent"    = "PowerShell"
         }
         
-        # 抓取 Release 以便拿到 id
         $tagUrl = "https://api.github.com/repos/$Repo/releases/tags/$tag"
         $releaseObj = Invoke-RestMethod -Uri $tagUrl -Headers $headers -Method Get
         $releaseId = $releaseObj.id
         
-        # 优先读取根目录下的 RELEASE_NOTES.md 文件作为中文更新说明
-        $localNotesFile = Join-Path $root "RELEASE_NOTES.md"
-        $chineseBody = ""
-        if (Test-Path $localNotesFile) {
-            $rawNotes = (Get-Content $localNotesFile -Raw).Trim()
-            if (-not [string]::IsNullOrEmpty($rawNotes)) {
-                $chineseBody = $rawNotes
-                Write-Host "Loaded release notes from $localNotesFile"
-            }
-        }
-
-        if ([string]::IsNullOrEmpty($chineseBody)) {
-            $chineseBody = if ($Platform -eq "android") {
+        $chineseBody = if ($Platform -eq "android") {
 @"
 # 燕子 Yanzi for Android v$plainVersion 更新内容
 
@@ -230,28 +183,29 @@ if (-not [string]::IsNullOrEmpty($token)) {
 安装包：$fileName
 SHA256: $hash
 "@
-            } else {
+        } else {
 @"
 # 燕子 Yanzi v$plainVersion 更新内容
 
-**✨ 新建扩展体验重构**
-- 【高清晰图标】记事本程序默认不再使用矢量图标替代，而是通过新增 Windows 原生的 `IShellItemImageFactory` COM 接口，直接从系统提取 256x256 分辨率的现代高清晰 Fluent 原生记事本图标（包括其他系统自带或第三方 EXE 程序的高清图标）。
-- 【输入高亮可见】修复了全选文本框内容时蓝色选中高亮几乎看不清的对比度问题，将文本选择笔刷升级为 100% 不透明的主题亮蓝色，确保在深色模式下文字极易阅读。
-- 【高级选项优化】重构了“更多高级选项”中的表单布局，将之前折叠在最底部的“关键词”输入框移至最上方全宽显示，使得分类、版本和关键词的填写更加直观和方便。
+**✨ 自动更新体验全面升级**
+- 【极速镜像通道】自动更新重构为 SplitButton 分裂按钮设计，默认点击即可使用高速镜像源（ghfast.top）极速检测并自动启动下载，告别 GitHub 官方直连由于网络波动导致的下载失败或卡顿。
+- 【灵活源切换】在更新按钮右侧提供下拉菜单，可在“镜像更新 (默认推荐)”与“GitHub更新 (官方直连)”之间自由按需切换。
+- 【实时下载进度条】新增自动更新下载进度条与百分比数值反馈，后台增量包下载与组装过程一目了然。
+
+**🖱️ 鼠标手势与快捷触发增强**
+- 【新增 Ctrl+左键移动】在设置界面的鼠标触发选项中，新增“Ctrl+左键移动”键盘组合支持，下拉选项与中键移动保持完全一致（包含：禁用、背包、燕环、燕幕、窗口排列、鼠标手势）。
+- 【手势底层调度修复】修复了底层手势服务在非标准触发键下的注册归一化与物理按键状态判定问题，确保 Ctrl+左键移动绘制鼠标手势百分百稳定响应与识别。
 
 ---
 一键安装包：$fileName
 SHA256: $hash
 "@
-            }
-        }
 
         $payload = @{
             "name" = if ($Platform -eq "android") { "Yanzi for Android $plainVersion" } else { "燕子 Yanzi v$plainVersion" }
             "body" = $chineseBody
         } | ConvertTo-Json -Depth 10
 
-        # 转成 UTF-8 字节，100% 安全
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
         $patchUrl = "https://api.github.com/repos/$Repo/releases/$releaseId"
         

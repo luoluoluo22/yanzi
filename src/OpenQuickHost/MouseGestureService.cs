@@ -45,6 +45,8 @@ public static class MouseGestureService
     private const ushort VkRight = 0x27;
     private const ushort VkBrowserBack = 0xA6;
     private const ushort VkBrowserForward = 0xA7;
+    private const uint MouseeventfLeftDown = 0x0002;
+    private const uint MouseeventfLeftUp = 0x0004;
     private const uint MouseeventfRightDown = 0x0008;
     private const uint MouseeventfRightUp = 0x0010;
     private const uint MouseeventfMiddleDown = 0x0020;
@@ -58,6 +60,7 @@ public static class MouseGestureService
     private static bool _leftDown;
     private static bool _rightDown;
     private static bool _middleDown;
+    private static bool _ctrlLeftDown;
     private static Point _downPoint;
     private static readonly List<Point> _path = new(capacity: 256);
     private static bool _suppressNextRightUp;
@@ -98,6 +101,15 @@ public static class MouseGestureService
         {
             var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.Load().MouseGestureTriggerMode);
             return string.Equals(activeTrigger, "middle-drag", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    public static bool HasCtrlLeftDragRegistrations
+    {
+        get
+        {
+            var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.Load().MouseGestureTriggerMode);
+            return string.Equals(activeTrigger, "ctrl-left-drag", StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -241,7 +253,7 @@ public static class MouseGestureService
         var msg = (int)wParam;
 
         // 1. WM_MOUSEMOVE 极速短路：未在画手势时，1 纳秒内放行
-        if (msg == WmMouseMove && !_rightDown && !_middleDown)
+        if (msg == WmMouseMove && !_rightDown && !_middleDown && !_ctrlLeftDown)
         {
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
@@ -263,11 +275,56 @@ public static class MouseGestureService
                     _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
                     return (IntPtr)1;
                 }
+                if (IsControlDown() && _registry.ContainsKey("ctrl-left-drag") && !ShouldBypassGesture(data.pt))
+                {
+                    BeginStroke(new Point(data.pt.x, data.pt.y), isRightButton: false, isCtrlLeft: true);
+                    _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                    return (IntPtr)1;
+                }
                 ResetState();
                 break;
 
             case WmLButtonUp:
                 _leftDown = false;
+                if (_ctrlLeftDown)
+                {
+                    var inputTriggerWasActive = InputHookService.HasActiveMouseTrigger;
+                    var wasDragIntent = IsDragIntent();
+                    if (inputTriggerWasActive)
+                    {
+                        CancelStrokeForInputTrigger("ctrl-left-drag");
+                        _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                        return (IntPtr)1;
+                    }
+
+                    AppendPathPoint(new Point(data.pt.x, data.pt.y));
+                    _ctrlLeftDown = false;
+                    var matched = TryFinishStroke("ctrl-left-drag", out var matchedGesture, out var previewInfo);
+                    FinishTrace(previewInfo, matched);
+                    _path.Clear();
+                    if (matched)
+                    {
+                        InputHookService.ResetMouseState("mouse gesture");
+                        ExecuteAfterInputSettles(matchedGesture);
+                        _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                        return (IntPtr)1;
+                    }
+
+                    if (_gestureActionTriggered)
+                    {
+                        _gestureActionTriggered = false;
+                        _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                        return (IntPtr)1;
+                    }
+
+                    if (!wasDragIntent && !inputTriggerWasActive && !InputHookService.WasMouseTriggerReleasedRecently())
+                    {
+                        ReplayMouseClickAfterHookReturns(MouseeventfLeftDown, MouseeventfLeftUp, "left");
+                    }
+
+                    _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                    return (IntPtr)1;
+                }
                 if (_suppressNextLeftUp)
                 {
                     _suppressNextLeftUp = false;
@@ -408,7 +465,7 @@ public static class MouseGestureService
                 break;
 
             case WmMouseWheel:
-                if ((_rightDown || _middleDown) && AppSettingsStore.Load().MouseGestureEnableWheelActions && !ShouldBypassGesture(data.pt))
+                if ((_rightDown || _middleDown || _ctrlLeftDown) && AppSettingsStore.Load().MouseGestureEnableWheelActions && !ShouldBypassGesture(data.pt))
                 {
                     var delta = (short)((data.mouseData >> 16) & 0xFFFF);
                     var action = delta > 0 ? "wheel-up" : "wheel-down";
@@ -418,11 +475,11 @@ public static class MouseGestureService
                 break;
 
             case WmMouseMove:
-                if (_rightDown || _middleDown)
+                if (_rightDown || _middleDown || _ctrlLeftDown)
                 {
                     if (InputHookService.HasActiveMouseTrigger)
                     {
-                        CancelStrokeForInputTrigger(_rightDown ? "right-drag" : "middle-drag");
+                        CancelStrokeForInputTrigger(_rightDown ? "right-drag" : (_middleDown ? "middle-drag" : "ctrl-left-drag"));
                         break;
                     }
 
@@ -435,10 +492,11 @@ public static class MouseGestureService
         return CallNextHookEx(_hookId, nCode, wParam, lParam);
     }
 
-    private static void BeginStroke(Point point, bool isRightButton)
+    private static void BeginStroke(Point point, bool isRightButton, bool isCtrlLeft = false)
     {
-        _rightDown = isRightButton;
-        _middleDown = !isRightButton;
+        _rightDown = isRightButton && !isCtrlLeft;
+        _middleDown = !isRightButton && !isCtrlLeft;
+        _ctrlLeftDown = isCtrlLeft;
         _downPoint = point;
         _path.Clear();
         _path.Add(_downPoint);
@@ -447,6 +505,7 @@ public static class MouseGestureService
         _lastPreviewInfo = null;
         _suppressNextRightUp = false;
         _suppressNextMiddleUp = false;
+        _suppressNextLeftUp = false;
         CancelTrace();
     }
 
@@ -464,7 +523,7 @@ public static class MouseGestureService
         }
 
         _path.Add(pt);
-        var trigger = _rightDown ? "right-drag" : "middle-drag";
+        var trigger = _rightDown ? "right-drag" : (_middleDown ? "middle-drag" : "ctrl-left-drag");
         if (!_traceActive && (pt - _downPoint).Length >= TraceStartDistance)
         {
             _traceActive = true;
@@ -627,7 +686,12 @@ public static class MouseGestureService
 
     private static string NormalizeTrigger(string? raw)
     {
-        return raw == "middle-drag" ? "middle-drag" : "right-drag";
+        return raw switch
+        {
+            "middle-drag" => "middle-drag",
+            "ctrl-left-drag" => "ctrl-left-drag",
+            _ => "right-drag"
+        };
     }
 
     private static void HandleWheelGesture(string action, POINT pt)
@@ -847,6 +911,7 @@ public static class MouseGestureService
         _leftDown = false;
         _rightDown = false;
         _middleDown = false;
+        _ctrlLeftDown = false;
         _path.Clear();
         _traceActive = false;
         _gesturePreviewMatched = false;
@@ -1245,6 +1310,11 @@ public static class MouseGestureService
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    private static bool IsControlDown() => (GetAsyncKeyState(0x11) & 0x8000) != 0;
 }
 
 /// <summary>

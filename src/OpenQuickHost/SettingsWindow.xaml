@@ -2551,7 +2551,7 @@
                                         
                                         <StackPanel VerticalAlignment="Center">
                                             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                                <TextBlock Text="自动更新服务" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                                <TextBlock Text="自动更新" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
                                                 <!-- 小红点，当有新版本且还没下载时显示 -->
                                                 <Border Width="6" Height="6" CornerRadius="3" Background="#FFE11D48" Margin="8,0,0,0" VerticalAlignment="Center">
                                                     <Border.Style>
@@ -2573,41 +2573,102 @@
                                             <TextBlock Text="{Binding UpdateCheckStatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap"/>
                                         </StackPanel>
 
-                                        <!-- 右侧操作按钮（默认/检查更新状态） -->
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <!-- “官方检查更新” 按钮 -->
-                                            <Button Content="官方更新" Height="30" Padding="12,0" Margin="0,0,8,0" Click="CheckForUpdatesManualButton_Click" ToolTip="通过 GitHub 官方直连通道检查更新">
-                                                <Button.Style>
-                                                    <Style TargetType="Button" BasedOn="{StaticResource SecondaryBtn}">
-                                                        <Setter Property="IsEnabled" Value="True"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
-                                                                <Setter Property="IsEnabled" Value="False"/>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
-                                                                <Setter Property="IsEnabled" Value="False"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Button.Style>
-                                            </Button>
-                                            <!-- “镜像加速更新” 按钮 -->
-                                            <Button Content="镜像更新" Height="30" Padding="12,0" Click="CheckForUpdatesMirrorButton_Click" ToolTip="使用网页端同款镜像 (ghfast.top) 极速拉取并检测更新">
-                                                <Button.Style>
-                                                    <Style TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
-                                                        <Setter Property="IsEnabled" Value="True"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
-                                                                <Setter Property="IsEnabled" Value="False"/>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
-                                                                <Setter Property="IsEnabled" Value="False"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Button.Style>
-                                            </Button>
-                                        </StackPanel>
+                                        <!-- 右侧操作按钮（带向下箭头的 SplitButton 组合更新按钮） -->
+                                        <Border Grid.Column="1" Height="30" CornerRadius="4" Background="{DynamicResource PrimaryBrush}" VerticalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Opacity" Value="1.0"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
+                                                            <Setter Property="Opacity" Value="0.6"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
+                                                            <Setter Property="Opacity" Value="0.6"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="1"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- 左侧“更新”主按钮（默认镜像加速更新） -->
+                                                <Button x:Name="UpdateMainButton" Grid.Column="0" Content="更新" Foreground="#FFFFFFFF" FontWeight="Medium" FontSize="{DynamicResource FontSizeSmallPlus}" Background="Transparent" BorderThickness="0" Padding="14,0" Cursor="Hand" Click="UpdateMainButton_Click" ToolTip="默认使用镜像源 (ghfast.top) 极速检测并下载更新">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button">
+                                                            <Setter Property="IsEnabled" Value="True"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
+                                                                    <Setter Property="IsEnabled" Value="False"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
+                                                                    <Setter Property="IsEnabled" Value="False"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="btnBorder" Background="Transparent" CornerRadius="4,0,0,4" Padding="{TemplateBinding Padding}">
+                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="btnBorder" Property="Background" Value="#26FFFFFF"/>
+                                                                </Trigger>
+                                                                <Trigger Property="IsPressed" Value="True">
+                                                                    <Setter TargetName="btnBorder" Property="Background" Value="#40FFFFFF"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                </Button>
+
+                                                <!-- 中间细分割线 -->
+                                                <Rectangle Grid.Column="1" Fill="#33FFFFFF" Margin="0,5"/>
+
+                                                <!-- 右侧向下箭头按钮，点击弹出下拉菜单选择镜像或官方源 -->
+                                                <Button x:Name="UpdateDropDownButton" Grid.Column="2" Width="26" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="UpdateDropDownButton_Click" ToolTip="选择更新通道 (默认镜像更新)">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button">
+                                                            <Setter Property="IsEnabled" Value="True"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
+                                                                    <Setter Property="IsEnabled" Value="False"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
+                                                                    <Setter Property="IsEnabled" Value="False"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="arrowBorder" Background="Transparent" CornerRadius="0,4,4,0">
+                                                                <Path Data="M0,0 L3.5,3.5 L7,0" Stroke="#FFFFFFFF" StrokeThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="arrowBorder" Property="Background" Value="#26FFFFFF"/>
+                                                                </Trigger>
+                                                                <Trigger Property="IsPressed" Value="True">
+                                                                    <Setter TargetName="arrowBorder" Property="Background" Value="#40FFFFFF"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                    <Button.ContextMenu>
+                                                        <ContextMenu x:Name="UpdateChannelMenu">
+                                                            <MenuItem Header="🚀 镜像更新 (默认推荐)" Click="UpdateMirrorMenuItem_Click" ToolTip="使用网页端同款镜像 (ghfast.top) 极速检测与下载"/>
+                                                            <MenuItem Header="🌐 GitHub 更新 (官方直连)" Click="UpdateOfficialMenuItem_Click" ToolTip="通过 GitHub 官方源直连检测与下载"/>
+                                                        </ContextMenu>
+                                                    </Button.ContextMenu>
+                                                </Button>
+                                            </Grid>
+                                        </Border>
                                     </Grid>
 
                                     <!-- 下方交互面板：包含下载或重启按钮，以及进度条 -->
@@ -3200,6 +3261,7 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 
                                 <!-- Ctrl+左键单击 -->
@@ -3253,9 +3315,56 @@
                                         </Border>
                                     </Grid>
                                 </Border>
+
+                                <!-- Ctrl+左键移动 -->
+                                <Border Grid.Column="1" x:Name="CtrlLeftDragCard" Background="{DynamicResource BrushBG}" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource BrushBorder}" Padding="16,20,16,0" Margin="0,0,8,0">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        
+                                        <StackPanel Grid.Row="0" HorizontalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
+                                                <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="4" Padding="6,4" Margin="0,0,4,0">
+                                                    <TextBlock Text="Ctrl" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold"/>
+                                                </Border>
+                                                <TextBlock Text="+" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <Viewbox Width="24" Height="30">
+                                                    <Canvas Width="48" Height="60">
+                                                        <Path Data="M24,0 C15,0 8,7 8,16 L8,44 C8,52 15,60 24,60 C33,60 40,52 40,44 L40,16 C40,7 33,0 24,0 Z" 
+                                                              Fill="{DynamicResource BrushTextMain}" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                        <Path x:Name="CtrlLeftDragHighlight" Data="M10,2 C10,8 10,20 10,20 L24,20 L24,2 C17,2 10,7 10,2 Z" 
+                                                              Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                        <Line X1="24" Y1="2" X2="24" Y2="20" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5"/>
+                                                        <Rectangle Canvas.Left="20" Canvas.Top="8" Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{DynamicResource BrushTextSec}"/>
+                                                        <Path x:Name="CtrlLeftDragArrows" Data="M24,28 L20.5,33 L27.5,33 Z M24,52 L20.5,47 L27.5,47 Z M12,40 L17,36.5 L17,43.5 Z M36,40 L31,36.5 L31,43.5 Z" Fill="{DynamicResource BrushTextSec}" Opacity="0.9"/>
+                                                    </Canvas>
+                                                </Viewbox>
+                                            </StackPanel>
+                                            <TextBlock Text="Ctrl+左键移动" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+                                        </StackPanel>
+                                        
+                                        <Border Grid.Row="1" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0" Padding="6" Margin="-16,0,-16,0">
+                                            <Border Background="{DynamicResource BrushBG}" CornerRadius="6" Padding="2">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    
+                                                    <Button Grid.Column="0" Content="禁用" Style="{StaticResource GestureAssignBtn}" Height="24" Margin="0,0,1,0" FontSize="{DynamicResource FontSizeSmall}" Padding="6,0"
+                                                            Click="AssignGesture_Click" Tag="CtrlLeftDrag:None" x:Name="CtrlLeftDrag_None"/>
+                                                    <Button Grid.Column="1" Content="鼠标手势" Style="{StaticResource GestureAssignBtn}" Height="24" FontSize="{DynamicResource FontSizeSmall}" Padding="6,0"
+                                                            Click="AssignGesture_Click" Tag="CtrlLeftDrag:Gesture" x:Name="CtrlLeftDrag_Gesture"/>
+                                                </Grid>
+                                            </Border>
+                                        </Border>
+                                    </Grid>
+                                </Border>
                                 
                                 <!-- Ctrl+右键单击 -->
-                                <Border Grid.Column="1" x:Name="CtrlRightClickCard" Background="{DynamicResource BrushBG}" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource BrushBorder}" Padding="16,20,16,0" Margin="0,0,8,0">
+                                <Border Grid.Column="2" x:Name="CtrlRightClickCard" Background="{DynamicResource BrushBG}" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource BrushBorder}" Padding="16,20,16,0" Margin="0,0,8,0">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="*"/>
@@ -3307,7 +3416,7 @@
                                 </Border>
                                 
                                 <!-- Ctrl+中键单击 -->
-                                <Border Grid.Column="2" x:Name="CtrlMiddleClickCard" Background="{DynamicResource BrushBG}" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource BrushBorder}" Padding="16,20,16,0">
+                                <Border Grid.Column="3" x:Name="CtrlMiddleClickCard" Background="{DynamicResource BrushBG}" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource BrushBorder}" Padding="16,20,16,0">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="*"/>

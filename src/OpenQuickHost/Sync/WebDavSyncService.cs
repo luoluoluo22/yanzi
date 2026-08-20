@@ -1022,6 +1022,7 @@ public sealed class WebDavSyncService
         if (left.TriggerX2ButtonDown != right.TriggerX2ButtonDown) return false;
         if (left.TriggerHorizontalWheel != right.TriggerHorizontalWheel) return false;
         if (left.TriggerCtrlLeftClick != right.TriggerCtrlLeftClick) return false;
+        if (left.TriggerCtrlLeftDrag != right.TriggerCtrlLeftDrag) return false;
         if (left.TriggerCtrlRightClick != right.TriggerCtrlRightClick) return false;
         if (left.TriggerCtrlMiddleClick != right.TriggerCtrlMiddleClick) return false;
         if (left.MouseTriggerMode != right.MouseTriggerMode) return false;

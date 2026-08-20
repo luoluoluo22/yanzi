@@ -30,6 +30,9 @@ public sealed class VelopackUpdateService
     private bool _isDownloading;
     private string _resolvedUpdateUrl = "";
 
+    public bool IsDownloading => _isDownloading;
+    public int CurrentProgress { get; private set; } = 0;
+
     public event Action<int>? DownloadProgressChanged;
     public event Action<string>? UpdateStatusChanged;
 
@@ -174,14 +177,17 @@ public sealed class VelopackUpdateService
             var targetVer = updateInfo.TargetFullRelease.Version.ToString();
             HostAssets.AppendLog($"VelopackUpdateService: DownloadUpdatesAsync starting for v{targetVer} via {channelName}");
             UpdateStatusChanged?.Invoke($"[{channelName}] 正在后台下载增量更新...");
+            CurrentProgress = 0;
             DownloadProgressChanged?.Invoke(0);
 
             // 传入进度回调，Velopack 自动异步调用
             await _updateManager.DownloadUpdatesAsync(updateInfo, (progress) =>
             {
+                CurrentProgress = progress;
                 DownloadProgressChanged?.Invoke(progress);
             });
 
+            CurrentProgress = 100;
             DownloadProgressChanged?.Invoke(100);
             HostAssets.AppendLog($"VelopackUpdateService: download completed for v{targetVer} via {channelName}");
             UpdateStatusChanged?.Invoke($"[{channelName}] 更新包已下载完成，重启即可生效！");
