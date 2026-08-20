@@ -1,9 +1,10 @@
-param(
+﻿param(
     [string]$Version = "0.1.0",
     [string]$Platform = "windows", # windows 或 android
     [string]$Repo = "luoluoluo22/yanzi",
     [string]$Target = "main",
     [string]$InstallerPath = "",
+    [string]$Notes = "",
     [switch]$Draft,
     [switch]$KeepProxy,
     [string]$GithubToken = ""
@@ -170,11 +171,21 @@ if (-not [string]::IsNullOrEmpty($token)) {
         $releaseObj = Invoke-RestMethod -Uri $tagUrl -Headers $headers -Method Get
         $releaseId = $releaseObj.id
         
-        $chineseBody = if ($Platform -eq "android") {
-            "# 燕子 Yanzi for Android v$plainVersion 更新内容`n`n**✨ 移动端优化**`n- 手机端自动检查更新功能上线。`n- 优化了燕幕同步机制与运行日志显示。`n- 修复了已知的部分闪退问题。`n`n---`n安装包：$fileName`nSHA256: $hash"
-        } else {
-            "# 燕子 Yanzi v$plainVersion 更新内容`n`n**✨ 自动更新体验全面升级**`n- 【极速镜像通道】自动更新重构为 SplitButton 分裂按钮设计，默认点击即可使用高速镜像源（ghfast.top）极速检测并自动启动下载，告别 GitHub 官方直连由于网络波动导致的下载失败或卡顿。`n- 【灵活源切换】在更新按钮右侧提供下拉菜单，可在“镜像更新 (默认推荐)”与“GitHub更新 (官方直连)”之间自由按需切换。`n- 【实时下载进度条】新增自动更新下载进度条与百分比数值反馈，后台增量包下载与组装过程一目了然。`n`n**🖱️ 鼠标手势与快捷触发增强**`n- 【新增 Ctrl+左键移动】在设置界面的鼠标触发选项中，新增“Ctrl+左键移动”键盘组合支持，下拉选项与中键移动保持完全一致（包含：禁用、背包、燕环、燕幕、窗口排列、鼠标手势）。`n- 【手势底层调度修复】修复了底层手势服务在非标准触发键下的注册归一化与物理按键状态判定问题，确保 Ctrl+左键移动绘制鼠标手势百分百稳定响应与识别。`n`n---`n一键安装包：$fileName`nSHA256: $hash"
-        } 
+        $chineseBody = ""
+        if (-not [string]::IsNullOrWhiteSpace($Notes)) {
+            $chineseBody = $Notes.Trim()
+        } elseif (Test-Path (Join-Path $root "RELEASE_NOTES.md")) {
+            $chineseBody = (Get-Content (Join-Path $root "RELEASE_NOTES.md") -Raw).Trim()
+        }
+
+        if ([string]::IsNullOrWhiteSpace($chineseBody)) {
+            $chineseBody = if ($Platform -eq "android") {
+                "# 燕子 Yanzi for Android v$plainVersion 更新内容`n`n**✨ 移动端优化**`n- 优化移动端运行稳定性与同步体验。`n`n---`n安装包：$fileName`nSHA256: $hash"
+            } else {
+                "# 燕子 Yanzi v$plainVersion 更新内容`n`n**✨ 版本更新与优化**`n- 优化交互体验并修复已知问题。`n`n---`n一键安装包：$fileName`nSHA256: $hash"
+            }
+        }
+
         $payload = @{
             "name" = if ($Platform -eq "android") { "Yanzi for Android $plainVersion" } else { "燕子 Yanzi v$plainVersion" }
             "body" = $chineseBody

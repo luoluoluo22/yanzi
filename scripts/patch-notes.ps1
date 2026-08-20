@@ -1,4 +1,4 @@
-$token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { "" }
+﻿$token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { "" }
 $headers = @{
     "Authorization" = "token $token"
     "Accept"        = "application/vnd.github.v3+json"

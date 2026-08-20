@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$Version = "0.1.0",
@@ -110,22 +110,33 @@ if (-not $SkipInstaller) {
         $vpkPath = $vpk.Source
     }
 
-    Write-Host "Downloading previous releases from GitHub for delta generation..."
-    $downloadArgs = @("download", "github", "--repoUrl", "https://github.com/luoluoluo22/yanzi", "--outputDir", $installerOutDir)
-    if ($GithubToken) {
-        $downloadArgs += @("--token", $GithubToken)
-    }
-
-    try {
-        & $vpkPath $downloadArgs
-        Write-Host "Successfully downloaded previous releases."
-    } catch {
-        Write-Warning "Could not download previous releases (this is normal for the very first release or offline builds): $_"
-    }
-
     $cleanVer = $Version.TrimStart("vV")
-    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match [regex]::Escape($cleanVer) } | Remove-Item -Force -ErrorAction SilentlyContinue
+    $hasLocalPreviousReleases = $false
     $releasesFile = Join-Path $installerOutDir "RELEASES"
+    if (Test-Path $releasesFile) {
+        $existingFullNupkg = Get-ChildItem -Path $installerOutDir -File -Filter "*-full.nupkg" | Where-Object { $_.Name -notmatch [regex]::Escape($cleanVer) }
+        if ($existingFullNupkg.Count -gt 0) {
+            $hasLocalPreviousReleases = $true
+            Write-Host "Found local baseline release package: $($existingFullNupkg[0].Name). Skipping remote download!" -ForegroundColor Green
+        }
+    }
+
+    if (-not $hasLocalPreviousReleases) {
+        Write-Host "No local previous releases found. Downloading from GitHub for delta generation..."
+        $downloadArgs = @("download", "github", "--repoUrl", "https://github.com/luoluoluo22/yanzi", "--outputDir", $installerOutDir)
+        if ($GithubToken) {
+            $downloadArgs += @("--token", $GithubToken)
+        }
+
+        try {
+            & $vpkPath $downloadArgs
+            Write-Host "Successfully downloaded previous releases."
+        } catch {
+            Write-Warning "Could not download previous releases (this is normal for the very first release or offline builds): $_"
+        }
+    }
+
+    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match [regex]::Escape($cleanVer) } | Remove-Item -Force -ErrorAction SilentlyContinue
     if (Test-Path $releasesFile) {
         $lines = Get-Content $releasesFile | Where-Object { $_ -notmatch [regex]::Escape($cleanVer) }
         Set-Content -Path $releasesFile -Value $lines
@@ -163,12 +174,24 @@ if (-not $SkipInstaller) {
         Rename-Item -Path $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
     }
 
-    # 打包并重命名完毕后，彻底清理所有非当前版本的历史残留安装包与压缩包（.exe, .zip, .nupkg）
-    Write-Host "Cleaning up historical packages and installers in output directory..."
+    # 智能保留最近 2 个版本的 full.nupkg 作为下次本地增量基准，仅清理历史旧 exe/zip 和过期 delta 包
+    Write-Host "Cleaning up historical packages in output directory..."
     $cleanVersion = $Version.TrimStart("vV")
     Get-ChildItem -Path $installerOutDir -File | Where-Object {
-        ($_.Extension -in @(".nupkg", ".exe", ".zip")) -and ($_.Name -notmatch [regex]::Escape($cleanVersion))
+        ($_.Extension -in @(".exe", ".zip")) -and ($_.Name -notmatch [regex]::Escape($cleanVersion))
     } | Remove-Item -Force -ErrorAction SilentlyContinue
+
+    Get-ChildItem -Path $installerOutDir -File -Filter "*-delta.nupkg" | Where-Object {
+        $_.Name -notmatch [regex]::Escape($cleanVersion)
+    } | Remove-Item -Force -ErrorAction SilentlyContinue
+
+    $fullPackages = Get-ChildItem -Path $installerOutDir -File -Filter "*-full.nupkg" | Sort-Object LastWriteTime -Descending
+    if ($fullPackages.Count -gt 2) {
+        $fullPackages | Select-Object -Skip 2 | ForEach-Object {
+            Write-Host "Pruning aged baseline full package: $($_.Name)"
+            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     Write-Host "Velopack packaging completed successfully."
     Write-Host "Installer output directory:"
