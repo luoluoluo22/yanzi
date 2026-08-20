@@ -1,4 +1,4 @@
-﻿﻿param(
+﻿param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$Version = "0.1.0",
@@ -21,9 +21,6 @@ if ([string]::IsNullOrEmpty($Version) -or $Version -eq "0.1.0") {
 
 $publishDir = Join-Path $root ".artifacts\publish\$Runtime"
 $installerOutDir = Join-Path $root ".artifacts\installer"
-$issPath = Join-Path $root "installer\yanzi.iss"
-$installerFileName = "YanziSetup.exe"
-$installerPath = Join-Path $installerOutDir $installerFileName
 
 function Assert-PayloadFile {
     param(
@@ -52,28 +49,30 @@ function Assert-PayloadDirectory {
 if (Test-Path $publishDir) {
     Remove-Item -Path $publishDir -Recurse -Force
 }
-# 不再清空 installerOutDir，保留之前的完整包以便 Velopack 生成增量包 (Delta)
 if (-not (Test-Path $installerOutDir)) {
     New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
 }
 
 New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
 
-dotnet publish $project `
-    -c $Configuration `
-    -r $Runtime `
-    --self-contained true `
-    --source https://repo.huaweicloud.com/repository/nuget/v3/index.json `
-    -p:Version=$Version `
-    -p:InformationalVersion=$Version `
-    -p:FileVersion="$Version.0" `
-    -p:AssemblyVersion="$Version.0" `
-    -p:PublishSingleFile=false `
-    -p:SatelliteResourceLanguages=zh-Hans `
-    -p:DebugType=None `
-    -p:DebugSymbols=false `
-    -p:CETCompat=false `
-    -o $publishDir
+$publishArgs = @(
+    "publish", $project,
+    "-c", $Configuration,
+    "-r", $Runtime,
+    "--self-contained", "true",
+    "--source", "https://repo.huaweicloud.com/repository/nuget/v3/index.json",
+    "-p:Version=$Version",
+    "-p:InformationalVersion=$Version",
+    "-p:FileVersion=$Version.0",
+    "-p:AssemblyVersion=$Version.0",
+    "-p:PublishSingleFile=false",
+    "-p:SatelliteResourceLanguages=zh-Hans",
+    "-p:DebugType=None",
+    "-p:DebugSymbols=false",
+    "-p:CETCompat=false",
+    "-o", $publishDir
+)
+dotnet @publishArgs
 
 Write-Host "Verifying installer payload..."
 Assert-PayloadFile "Yanzi.exe"
@@ -103,6 +102,24 @@ Write-Host "Published installer payload:"
 Write-Host "  $publishDir"
 
 if (-not $SkipInstaller) {
+    # 自动解析 csproj 中锁定的 Velopack NuGet 包版本，并强行自动对齐全局 vpk 打包工具版本
+    [xml]$xml = Get-Content $project
+    $expectedVelopackVer = ($xml.Project.ItemGroup.PackageReference | Where-Object { $_.Include -eq "Velopack" -or $_.Include -eq "velopack" }).Version
+    if (-not [string]::IsNullOrWhiteSpace($expectedVelopackVer)) {
+        $vpkToolList = dotnet tool list -g 2>$null | Out-String
+        if ($vpkToolList -match 'vpk\s+([0-9a-zA-Z\.\-]+)') {
+            $installedVpkVer = $matches[1].Trim()
+            if ($installedVpkVer -ne $expectedVelopackVer) {
+                Write-Host "检测到打包工具与项目 SDK 版本不同步 ($installedVpkVer != $expectedVelopackVer)，正在自动强行对齐..." -ForegroundColor Yellow
+                dotnet tool update -g vpk --version $expectedVelopackVer | Out-Null
+                Write-Host "打包工具已自动对齐为 $expectedVelopackVer。" -ForegroundColor Green
+            }
+        } else {
+            Write-Host "未检测到全局 vpk 工具，正在自动安装指定版本 $expectedVelopackVer ..." -ForegroundColor Yellow
+            dotnet tool install -g vpk --version $expectedVelopackVer | Out-Null
+        }
+    }
+
     $vpk = Get-Command vpk -ErrorAction SilentlyContinue
     if (-not $vpk) {
         $vpkPath = "vpk"
@@ -143,15 +160,18 @@ if (-not $SkipInstaller) {
     }
 
     Write-Host "Building Velopack installer package..."
-    & $vpkPath pack `
-        --packId "Yanzi" `
-        --packTitle "Yanzi" `
-        --packVersion $Version `
-        --packDir $publishDir `
-        --mainExe "Yanzi.exe" `
-        --icon "$root\src\OpenQuickHost\yanzi.ico" `
-        --outputDir $installerOutDir `
-        --shortcuts "Desktop,StartMenuRoot"
+    $packArgs = @(
+        "pack",
+        "--packId", "Yanzi",
+        "--packTitle", "Yanzi",
+        "--packVersion", $Version,
+        "--packDir", $publishDir,
+        "--mainExe", "Yanzi.exe",
+        "--icon", "$root\src\OpenQuickHost\yanzi.ico",
+        "--outputDir", $installerOutDir,
+        "--shortcuts", "Desktop,StartMenuRoot"
+    )
+    & $vpkPath @packArgs
 
     if ($LASTEXITCODE -ne 0) {
         throw "Velopack pack failed to build the installer."
