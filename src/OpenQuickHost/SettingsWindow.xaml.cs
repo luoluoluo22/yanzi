@@ -484,7 +484,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         IsCheckingUpdate = true;
         try
         {
-            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync();
+            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Mirror);
             if (updateInfo != null)
             {
                 _newVersionUpdateInfo = updateInfo;
@@ -508,6 +508,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private async void CheckForUpdatesManualButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
+        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Official);
+    }
+
+    private async void CheckForUpdatesMirrorButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Mirror);
+    }
+
+    private async Task PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode mode)
+    {
         SubscribeUpdateEvents();
 
         if (IsCheckingUpdate || IsDownloadingUpdate) return;
@@ -515,10 +525,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         UpdateDownloaded = false;
         HasNewVersion = false;
         IsCheckingUpdate = true;
+        var channelName = mode == OpenQuickHost.Sync.UpdateChannelMode.Mirror ? "镜像加速源 (ghfast.top)" : "官方直连源 (GitHub)";
         
         try
         {
-            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync();
+            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync(mode);
             if (updateInfo != null)
             {
                 _newVersionUpdateInfo = updateInfo;
@@ -532,9 +543,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"SettingsWindow: ManualCheckForUpdates failed: {ex}");
+            HostAssets.AppendLog($"SettingsWindow: PerformCheckForUpdates failed ({channelName}): {ex}");
             System.Windows.MessageBox.Show(
-                $"检测更新发生异常: {ex.Message}\n\n详细诊断日志已记录至:\n{HostAssets.HostLogPath}\n\n如需反馈，请将该日志文件一并发送给开发者。",
+                $"通过 [{channelName}] 检测更新发生异常: {ex.Message}\n\n详细诊断日志已记录至:\n{HostAssets.HostLogPath}\n\n如需反馈，请将该日志文件一并发送给开发者。",
                 "更新提示",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Warning);

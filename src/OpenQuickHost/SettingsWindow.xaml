@@ -2575,10 +2575,26 @@
 
                                         <!-- 右侧操作按钮（默认/检查更新状态） -->
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <!-- “手动检查更新” 按钮 -->
-                                            <Button Content="检查更新" Height="30" Padding="15,0" Click="CheckForUpdatesManualButton_Click">
+                                            <!-- “官方检查更新” 按钮 -->
+                                            <Button Content="官方更新" Height="30" Padding="12,0" Margin="0,0,8,0" Click="CheckForUpdatesManualButton_Click" ToolTip="通过 GitHub 官方直连通道检查更新">
                                                 <Button.Style>
                                                     <Style TargetType="Button" BasedOn="{StaticResource SecondaryBtn}">
+                                                        <Setter Property="IsEnabled" Value="True"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
+                                                                <Setter Property="IsEnabled" Value="False"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
+                                                                <Setter Property="IsEnabled" Value="False"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                            <!-- “镜像加速更新” 按钮 -->
+                                            <Button Content="镜像更新" Height="30" Padding="12,0" Click="CheckForUpdatesMirrorButton_Click" ToolTip="使用网页端同款镜像 (ghfast.top) 极速拉取并检测更新">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
                                                         <Setter Property="IsEnabled" Value="True"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">

@@ -687,15 +687,15 @@ async function handleRequest(request, env) {
       // 容错：如果 GitHub 接口报错，返回一个兜底的 0.2.15 配置
       return withCors(json({
         channel: "stable",
-        version: "0.2.15",
-        title: "燕子启动器 v0.2.15",
+        version: "0.3.5",
+        title: "燕子启动器 v0.3.5",
         notes: "从 GitHub 抓取最新版失败，已启用本地缓存兜底",
-        download_url: "https://github.com/luoluoluo22/yanzi/releases/download/v0.2.15/Yanzi-win-Setup-0.2.15.exe",
-        file_name: "Yanzi-win-Setup-0.2.15.exe",
+        download_url: "https://github.com/luoluoluo22/yanzi/releases/download/v0.3.5/Yanzi-win-Setup-0.3.5.exe",
+        file_name: "Yanzi-win-Setup-0.3.5.exe",
         download_code: "",
         provider: "github",
         sha256: "",
-        published_at: "2026-07-04T02:00:00Z"
+        published_at: "2026-08-20T02:00:00Z"
       }));
     }
   }
