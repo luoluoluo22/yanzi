@@ -507,6 +507,10 @@ public static class MouseGestureService
         _suppressNextMiddleUp = false;
         _suppressNextLeftUp = false;
         CancelTrace();
+
+        var trigger = _rightDown ? "right-drag" : (_middleDown ? "middle-drag" : "ctrl-left-drag");
+        var ruleCount = _registry.TryGetValue(trigger, out var reg) ? (reg.Templates.Count + reg.SequenceMap.Count) : 0;
+        Log("info", $"BeginStroke: trigger={trigger}, physicalPoint=({point.X:F0}, {point.Y:F0}), activeRules={ruleCount}");
     }
 
     private static void CancelStrokeForInputTrigger(string trigger)
@@ -564,49 +568,69 @@ public static class MouseGestureService
             var originAction = _traceWindow.CurrentOriginAction;
             if (originAction == OriginActionState.Cancel)
             {
-                Log("info", "gesture was cancelled by user returning to cancel zone.");
+                Log("info", $"FinishStroke: cancelled by user returning to cancel zone at ({_path.LastOrDefault().X:F0}, {_path.LastOrDefault().Y:F0}).");
                 return false;
             }
             if (originAction == OriginActionState.Edit)
             {
-                Log("info", "gesture triggered origin action: Open Settings (mousegestures).");
+                Log("info", "FinishStroke: triggered origin action: Open Settings (mousegestures).");
                 ExecuteOriginEditAction();
                 return false;
             }
             if (originAction == OriginActionState.Pin)
             {
-                Log("info", "gesture triggered origin action: Toggle Topmost.");
+                Log("info", "FinishStroke: triggered origin action: Toggle Topmost.");
                 ExecuteOriginToggleTopmostAction();
                 return false;
             }
         }
 
-        if (_path.Count < 2) return false;
+        if (_path.Count < 2)
+        {
+            Log("info", $"FinishStroke: ignored because path point count is too small ({_path.Count}).");
+            return false;
+        }
+
         var totalDist = (_path[^1] - _path[0]).Length;
-        if (totalDist < MinDragDistance) return false;
+        if (totalDist < MinDragDistance)
+        {
+            Log("info", $"FinishStroke: ignored because total displacement ({totalDist:F1}px) < MinDragDistance ({MinDragDistance}px).");
+            return false;
+        }
 
         var sequence = SimplifyPath(_path);
-        if (string.IsNullOrEmpty(sequence)) return false;
+        if (string.IsNullOrEmpty(sequence))
+        {
+            Log("info", $"FinishStroke: ignored because direction sequence could not be extracted from {_path.Count} points.");
+            return false;
+        }
 
-        if (!_registry.TryGetValue(trigger, out var triggerRegistry)) return false;
+        if (!_registry.TryGetValue(trigger, out var triggerRegistry))
+        {
+            Log("warn", $"FinishStroke: no registered rules found for trigger '{trigger}'.");
+            return false;
+        }
 
         var templateMatch = MouseGestureTemplateRecognizer.FindBestMatch(_path, triggerRegistry.Templates);
         if (templateMatch != null)
         {
-            Log("info", $"matched template: trigger={trigger}, sign={templateMatch.Gesture.Sign}, distance={templateMatch.Distance:0.0}, score={templateMatch.Score:P0}, angle={templateMatch.RotationAngle * 180 / Math.PI:0.0}°, ext={templateMatch.Gesture.ExtensionId}.");
+            Log("info", $"FinishStroke (MATCHED_TEMPLATE): trigger={trigger}, points={_path.Count}, sign={templateMatch.Gesture.Sign}, score={templateMatch.Score:P0}, name='{templateMatch.Gesture.ExtensionName}', extId={templateMatch.Gesture.ExtensionId}.");
             matchedGesture = templateMatch.Gesture;
             previewInfo = BuildPreviewInfo(templateMatch.Gesture, sequence);
             return true;
         }
 
-        if (!triggerRegistry.SequenceMap.TryGetValue(sequence, out var owners) || owners.Count == 0) return false;
+        if (triggerRegistry.SequenceMap.TryGetValue(sequence, out var owners) && owners.Count > 0)
+        {
+            var winner = owners[0];
+            Log("info", $"FinishStroke (MATCHED_SEQUENCE): trigger={trigger}, points={_path.Count}, sequence='{sequence}', name='{winner.ExtensionName}', extId={winner.ExtensionId}, candidates={owners.Count}.");
+            matchedGesture = winner;
+            previewInfo = BuildPreviewInfo(winner, sequence);
+            return true;
+        }
 
-        // 多个扩展共用同一手势：暂取首个；后续可改为弹气泡选择
-        var winner = owners[0];
-        Log("info", $"matched: trigger={trigger}, sequence={sequence}, ext={winner.ExtensionId}, candidates={owners.Count}.");
-        matchedGesture = winner;
-        previewInfo = BuildPreviewInfo(winner, sequence);
-        return true;
+        Log("info", $"FinishStroke (UNMATCHED): trigger={trigger}, points={_path.Count}, totalDist={totalDist:F1}px, sequence='{sequence}', templatesChecked={triggerRegistry.Templates.Count}, sequencesChecked={triggerRegistry.SequenceMap.Count}.");
+        return false;
     }
 
     private static void ExecuteAfterInputSettles(RegisteredGesture? winner)
@@ -1161,7 +1185,14 @@ public static class MouseGestureService
     {
         try
         {
-            _onLog?.Invoke(level, $"MouseGesture: {message}");
+            if (_onLog != null)
+            {
+                _onLog.Invoke(level, $"MouseGesture: {message}");
+            }
+            else
+            {
+                HostAssets.AppendLog($"[MouseGesture {level.ToUpperInvariant()}] {message}");
+            }
         }
         catch { /* ignore */ }
     }

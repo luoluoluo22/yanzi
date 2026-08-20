@@ -5488,6 +5488,63 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void OpenHostLogFile_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var logPath = HostAssets.HostLogPath;
+            var dir = Path.GetDirectoryName(logPath);
+            if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            if (!File.Exists(logPath))
+            {
+                File.WriteAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [System] Yanzi host log created.{Environment.NewLine}", System.Text.Encoding.UTF8);
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = logPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, $"打开运行日志文件失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OpenHostLogDirectory_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var logPath = HostAssets.HostLogPath;
+            var dir = Path.GetDirectoryName(logPath);
+            if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            if (!File.Exists(logPath))
+            {
+                File.WriteAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [System] Yanzi host log created.{Environment.NewLine}", System.Text.Encoding.UTF8);
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{logPath}\"",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, $"打开日志目录失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private void ExtensionCard_Click(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is DependencyObject source &&

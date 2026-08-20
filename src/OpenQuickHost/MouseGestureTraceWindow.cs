@@ -109,6 +109,13 @@ internal sealed class MouseGestureTraceWindow : Window
         SyncBounds();
 
         var localPoint = ToLocal(screenPoint);
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            HostAssets.AppendLog($"[MouseGestureTraceWindow] Start: screenPoint=({screenPoint.X:F0}, {screenPoint.Y:F0}) -> localPoint=({localPoint.X:F1}, {localPoint.Y:F1}), WindowBounds=({Left:F0}, {Top:F0}, {Width:F0}, {Height:F0}), dpiScale=({dpi.DpiScaleX:F2}, {dpi.DpiScaleY:F2})");
+        }
+        catch { /* ignore */ }
+
         _startPoint = localPoint;
         _lastPoint = localPoint;
         _hasMovedFarFromStart = false;
@@ -940,7 +947,18 @@ internal sealed class MouseGestureTraceWindow : Window
             var logicalPoint = source.CompositionTarget.TransformFromDevice.Transform(screenPoint);
             return new Point(logicalPoint.X - Left, logicalPoint.Y - Top);
         }
-        return new Point(screenPoint.X - Left, screenPoint.Y - Top);
+
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
+            var scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
+            return new Point((screenPoint.X / scaleX) - Left, (screenPoint.Y / scaleY) - Top);
+        }
+        catch
+        {
+            return new Point(screenPoint.X - Left, screenPoint.Y - Top);
+        }
     }
 
 

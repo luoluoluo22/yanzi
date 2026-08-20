@@ -1,9 +1,4 @@
-﻿﻿# 燕子 (Yanzi) 一键全自动编译与极简发布总控脚本
-# 用法:
-#   1. 全自动非交互: .\scripts\release.ps1 -Version "0.3.7" -Notes "更新说明..."
-#   2. 交互式向导:   .\scripts\release.ps1
-
-param(
+﻿param(
     [string]$Version = "",
     [string]$Notes = "",
     [string]$Platform = "windows",
@@ -118,3 +113,11 @@ Write-Host "`n========================================================" -Foregro
 Write-Host "  🎉 恭喜！Yanzi v$plainVersion 已成功发布上线！" -ForegroundColor Green
 Write-Host "  🔗 发布地址: https://github.com/luoluoluo22/yanzi/releases/tag/v$plainVersion" -ForegroundColor Green
 Write-Host "========================================================" -ForegroundColor Green
+
+
+<#
+﻿# 燕子 (Yanzi) 一键全自动编译与极简发布总控脚本
+# 用法:
+#   1. 全自动非交互: .\scripts\release.ps1 -Version "0.3.7" -Notes "更新说明..."
+#   2. 交互式向导:   .\scripts\release.ps1
+#>
