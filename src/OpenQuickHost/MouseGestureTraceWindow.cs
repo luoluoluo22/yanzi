@@ -111,9 +111,8 @@ internal sealed class MouseGestureTraceWindow : Window
             _canvas.Visibility = Visibility.Hidden;
         }
         Clear();
-        UpdateLayout();
 
-        SyncBounds();
+        SyncBounds(screenPoint);
 
         var localPoint = ToLocal(screenPoint);
         try
@@ -207,20 +206,14 @@ internal sealed class MouseGestureTraceWindow : Window
             _canvas.Children.Add(_glowPath);
             _canvas.Children.Add(_corePath);
             _canvas.Visibility = Visibility.Visible;
-            _canvas.UpdateLayout();
         }
 
-        UpdateLayout();
         Opacity = 1.0;
 
         if (!IsVisible)
         {
             Show();
         }
-
-        AttachHwndHook();
-        EnsureClickThrough();
-        ForceDwmRepaint();
     }
 
     public void AddPoint(Point screenPoint)
@@ -898,9 +891,8 @@ internal sealed class MouseGestureTraceWindow : Window
             _canvas.Visibility = Visibility.Hidden;
         }
         Clear();
-        UpdateLayout();
 
-        SyncBounds();
+        SyncBounds(screenPoint);
 
         var localPoint = ToLocal(screenPoint);
         _lastPoint = localPoint;
@@ -920,8 +912,6 @@ internal sealed class MouseGestureTraceWindow : Window
         {
             _canvas.Visibility = Visibility.Visible;
         }
-        UpdateLayout();
-        _canvas?.UpdateLayout();
         Opacity = 1.0;
 
         if (!IsVisible)
@@ -929,17 +919,48 @@ internal sealed class MouseGestureTraceWindow : Window
             Show();
         }
 
-        AttachHwndHook();
-        EnsureClickThrough();
-        ForceDwmRepaint();
-
         _hideTimer.Interval = TimeSpan.FromMilliseconds(450);
         _hideTimer.Stop();
         _hideTimer.Start();
     }
 
-    private void SyncBounds()
+    private void SyncBounds(Point screenPoint)
     {
+        try
+        {
+            var pt = new POINT { x = (int)Math.Round(screenPoint.X), y = (int)Math.Round(screenPoint.Y) };
+            var monitor = MonitorFromPoint(pt, MonitorDefaultToNearest);
+            if (monitor != IntPtr.Zero)
+            {
+                var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+                if (GetMonitorInfo(monitor, ref mi))
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
+                    var scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
+
+                    var monLeft = mi.rcMonitor.left / scaleX;
+                    var monTop = mi.rcMonitor.top / scaleY;
+                    var monWidth = (mi.rcMonitor.right - mi.rcMonitor.left) / scaleX;
+                    var monHeight = (mi.rcMonitor.bottom - mi.rcMonitor.top) / scaleY;
+
+                    if (Math.Abs(Left - monLeft) > 1 || Math.Abs(Top - monTop) > 1 ||
+                        Math.Abs(Width - monWidth) > 1 || Math.Abs(Height - monHeight) > 1)
+                    {
+                        Left = monLeft;
+                        Top = monTop;
+                        Width = monWidth;
+                        Height = monHeight;
+                    }
+                    return;
+                }
+            }
+        }
+        catch
+        {
+            // fallback
+        }
+
         Left = SystemParameters.VirtualScreenLeft;
         Top = SystemParameters.VirtualScreenTop;
         Width = SystemParameters.VirtualScreenWidth;
@@ -1279,26 +1300,32 @@ internal sealed class MouseGestureTraceWindow : Window
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpFrameChanged = 0x0020;
 
-    private void ForceDwmRepaint()
+    private const uint MonitorDefaultToNearest = 2;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct RECT
     {
-        try
-        {
-            var handle = new WindowInteropHelper(this).Handle;
-            if (handle != IntPtr.Zero)
-            {
-                RedrawWindow(handle, IntPtr.Zero, IntPtr.Zero, RdwInvalidate | RdwErase | RdwUpdateNow | RdwAllChildren);
-            }
-        }
-        catch
-        {
-            // Best effort
-        }
+        public int left;
+        public int top;
+        public int right;
+        public int bottom;
     }
 
-    private const uint RdwInvalidate = 0x0001;
-    private const uint RdwErase = 0x0004;
-    private const uint RdwUpdateNow = 0x0100;
-    private const uint RdwAllChildren = 0x0080;
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
@@ -1308,9 +1335,6 @@ internal sealed class MouseGestureTraceWindow : Window
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
-
-    [DllImport("user32.dll")]
-    private static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT

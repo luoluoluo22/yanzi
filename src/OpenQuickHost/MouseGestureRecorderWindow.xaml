@@ -13,7 +13,7 @@
         <Canvas x:Name="StrokeCanvas" Background="Transparent" />
 
         <!-- 顶部提示 -->
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,40,0,0" IsHitTestVisible="False">
+        <StackPanel x:Name="TopHintPanel" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,40,0,0" IsHitTestVisible="False">
             <TextBlock Text="录制鼠标手势"
                        FontSize="{DynamicResource FontSizeHeader}" FontWeight="Bold"
                        Foreground="#FFF0F0F5"

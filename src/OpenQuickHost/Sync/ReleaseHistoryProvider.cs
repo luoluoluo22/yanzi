@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 
@@ -20,6 +20,17 @@ public static class ReleaseHistoryProvider
 
         var list = new List<ReleaseNoteEntry>
         {
+            new()
+            {
+                Version = "v0.3.11",
+                ReleaseDate = "2026-08-20",
+                Highlights = new List<string>
+                {
+                    "【双屏起步性能暴增】重构手势全透明画布为单屏动态自适应 Bounds，显存开销暴降 75%，杜绝 DWM 跨显示器 Blit 拷贝卡顿，双屏下起步与单屏一样 0 毫秒丝滑秒开。",
+                    "【彻底消除强同步阻塞】剔除手势起步时的同步布局遍历与系统强刷新，释放主线程渲染压力。",
+                    "【双屏手势录制与弹窗吸附】引入多显示器智能吸附算法，无论在主屏还是副屏绘制手势，录制提示、中间指示与保存手势弹窗 100% 精确居中呈现在当前操作屏幕下方，彻底解决跨屏看不见弹窗的问题。"
+                }
+            },
             new()
             {
                 Version = "v0.3.10",
