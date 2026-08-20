@@ -2795,6 +2795,49 @@
                                 </Grid>
                             </Border>
 
+                            <!-- 历史更新日志卡片 -->
+                            <TextBlock Text="更新日志" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                            <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="16,14,8,14" Margin="0,0,0,20">
+                                <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,8,0">
+                                    <ItemsControl ItemsSource="{Binding ReleaseNotes}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Padding="2,8,2,12" Margin="0,0,0,6">
+                                                    <StackPanel>
+                                                        <!-- 头部：版本号 + 当前版本标签 + 发布日期 -->
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,6">
+                                                            <Border Background="#1A3B82F6" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                                <TextBlock Text="{Binding Version}" Foreground="#FF60A5FA" FontWeight="Bold" FontSize="{DynamicResource FontSizeSmallPlus}"/>
+                                                            </Border>
+                                                            <Border Background="#1A10B981" CornerRadius="4" Padding="6,2" Margin="0,0,8,0" Visibility="{Binding IsCurrentVersion, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <TextBlock Text="当前版本" Foreground="#FF34D399" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeSmall}"/>
+                                                            </Border>
+                                                            <TextBlock Text="{Binding ReleaseDate}" Foreground="#FF777777" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+
+                                                        <!-- 变更项列表 -->
+                                                        <ItemsControl ItemsSource="{Binding Highlights}" Margin="2,0,0,0">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid Margin="0,2,0,2">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                            <ColumnDefinition Width="*"/>
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <TextBlock Text="•" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,0,6,0" VerticalAlignment="Top"/>
+                                                                        <TextBlock Grid.Column="1" Text="{Binding}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" LineHeight="18"/>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+
                             <!-- 故障排查与运行日志卡片 -->
                             <TextBlock Text="故障排查与诊断" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" Margin="0,10,0,10"/>
                             <Border Background="{DynamicResource BrushBG}" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="18" Margin="0,0,0,20">

@@ -93,6 +93,13 @@ internal sealed class MouseGestureTraceWindow : Window
             AttachHwndHook();
             EnsureClickThrough();
         };
+
+        try
+        {
+            var helper = new WindowInteropHelper(this);
+            helper.EnsureHandle();
+        }
+        catch { /* best effort */ }
     }
 
     public void Start(Point screenPoint, IReadOnlyList<MouseGestureCheatItem>? cheatItems = null)
@@ -941,15 +948,32 @@ internal sealed class MouseGestureTraceWindow : Window
 
     private Point ToLocal(Point screenPoint)
     {
-        var source = PresentationSource.FromVisual(this);
-        if (source?.CompositionTarget != null)
+        try
         {
-            var logicalPoint = source.CompositionTarget.TransformFromDevice.Transform(screenPoint);
-            return new Point(logicalPoint.X - Left, logicalPoint.Y - Top);
+            var helper = new WindowInteropHelper(this);
+            if (helper.Handle != IntPtr.Zero)
+            {
+                var pt = new POINT { x = (int)Math.Round(screenPoint.X), y = (int)Math.Round(screenPoint.Y) };
+                if (ScreenToClient(helper.Handle, ref pt))
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
+                    var scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
+                    return new Point(pt.x / scaleX, pt.y / scaleY);
+                }
+            }
         }
+        catch { /* fallback below */ }
 
         try
         {
+            var source = PresentationSource.FromVisual(this);
+            if (source?.CompositionTarget != null)
+            {
+                var logicalPoint = source.CompositionTarget.TransformFromDevice.Transform(screenPoint);
+                return new Point(logicalPoint.X - Left, logicalPoint.Y - Top);
+            }
+
             var dpi = VisualTreeHelper.GetDpi(this);
             var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
             var scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
@@ -1287,4 +1311,14 @@ internal sealed class MouseGestureTraceWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int x;
+        public int y;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
 }

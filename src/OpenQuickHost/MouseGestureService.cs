@@ -52,6 +52,7 @@ public static class MouseGestureService
     private const uint MouseeventfMiddleDown = 0x0020;
     private const uint MouseeventfMiddleUp = 0x0040;
 
+    private static readonly IntPtr SyntheticExtraInfo = (IntPtr)0x59414E5A; // "YANZ"
     private static readonly LowLevelMouseProc MouseProc = HookCallback;
     private static IntPtr _hookId;
     private static bool _isRunning;
@@ -260,7 +261,8 @@ public static class MouseGestureService
 
         // 2. Unsafe 零分配指针读取
         var data = *(MSLLHOOKSTRUCT*)lParam;
-        if ((data.flags & LlInjected) != 0)
+        // 仅过滤燕子自身重放的模拟事件，允许 ToDesk、向日葵等远程控制软件注入的真实用户鼠标事件
+        if (data.dwExtraInfo == SyntheticExtraInfo)
         {
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
@@ -1072,7 +1074,8 @@ public static class MouseGestureService
             {
                 mi = new MOUSEINPUT
                 {
-                    dwFlags = flags
+                    dwFlags = flags,
+                    dwExtraInfo = SyntheticExtraInfo
                 }
             }
         };

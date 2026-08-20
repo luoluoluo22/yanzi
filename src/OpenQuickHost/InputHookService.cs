@@ -307,7 +307,8 @@ public class InputHookService
 
             // 2. Unsafe 零分配指针读取（消除堆内存 GC 停顿）
             var mouse = *(MSLLHOOKSTRUCT*)lParam;
-            if ((mouse.flags & LLMHF_INJECTED) != 0 || mouse.dwExtraInfo == SYNTHETIC_EXTRA_INFO)
+            // 仅过滤自身重放的事件，允许 ToDesk、向日葵等远程桌面模拟发送的真实鼠标事件
+            if (mouse.dwExtraInfo == SYNTHETIC_EXTRA_INFO)
             {
                 return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
             }
@@ -579,7 +580,7 @@ public class InputHookService
         {
             var message = (int)wParam;
             var keyboard = *(KBDLLHOOKSTRUCT*)lParam;
-            if ((keyboard.flags & LLKHF_INJECTED) != 0)
+            if (keyboard.dwExtraInfo == SYNTHETIC_EXTRA_INFO)
             {
                 return CallNextHookEx(_keyboardHookID, nCode, wParam, lParam);
             }

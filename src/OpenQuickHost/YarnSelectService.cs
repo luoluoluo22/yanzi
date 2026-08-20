@@ -29,7 +29,7 @@ public static class YarnSelectService
     private const int VkRWin = 0x5C;
     private const int XButton1 = 1;
     private const int XButton2 = 2;
-    private const uint LlInjected = 0x00000001;
+    private static readonly IntPtr SyntheticExtraInfo = (IntPtr)0x59414E5A; // "YANZ"
     private const uint InputKeyboard = 1;
     private const uint KeyEventFKeyUp = 0x0002;
 
@@ -181,7 +181,7 @@ public static class YarnSelectService
         }
 
         var mouse = *(MSLLHOOKSTRUCT*)lParam;
-        if ((mouse.flags & LlInjected) != 0)
+        if (mouse.dwExtraInfo == SyntheticExtraInfo)
         {
             return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
         }
@@ -244,7 +244,7 @@ public static class YarnSelectService
         }
 
         var keyboard = *(KBDLLHOOKSTRUCT*)lParam;
-        if ((keyboard.flags & LlInjected) != 0 || HasModifierDown() || !CanTrigger())
+        if (keyboard.dwExtraInfo == SyntheticExtraInfo || HasModifierDown() || !CanTrigger())
         {
             return CallNextHookEx(_keyboardHookId, nCode, wParam, lParam);
         }

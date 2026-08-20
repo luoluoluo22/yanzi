@@ -163,6 +163,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         BaseUrl = _mainWindow.SyncBaseUrl;
         ExtensionsRootPath = LocalExtensionCatalog.CatalogRootPath;
         AppVersionText = AppVersionInfo.DisplayText;
+        ReleaseNotes = ReleaseHistoryProvider.GetHistory(AppVersionInfo.Version);
         ShortcutItems = new ObservableCollection<SettingsShortcutItem>();
         ExtensionItems = new ObservableCollection<SettingsExtensionItem>();
         RecycleBinItems = new ObservableCollection<SettingsRecycleBinItem>();
@@ -437,6 +438,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         get => _newVersionInfo;
         set { _newVersionInfo = value; OnPropertyChanged(); }
+    }
+
+    private ObservableCollection<ReleaseNoteEntry> _releaseNotes = new();
+    public ObservableCollection<ReleaseNoteEntry> ReleaseNotes
+    {
+        get => _releaseNotes;
+        set { _releaseNotes = value; OnPropertyChanged(); }
     }
 
     private void SubscribeUpdateEvents()
