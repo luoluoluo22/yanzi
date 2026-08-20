@@ -1,4 +1,4 @@
-﻿# 燕子 (Yanzi) 一键全自动编译与极简发布总控脚本
+﻿﻿# 燕子 (Yanzi) 一键全自动编译与极简发布总控脚本
 # 用法:
 #   1. 全自动非交互: .\scripts\release.ps1 -Version "0.3.7" -Notes "更新说明..."
 #   2. 交互式向导:   .\scripts\release.ps1

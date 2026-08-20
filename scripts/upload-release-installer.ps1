@@ -157,6 +157,10 @@ foreach ($file in $filesToUpload) {
     }
 }
 
+if (-not $Draft) {
+    gh release edit $tag --repo $Repo --draft=false | Out-Host
+}
+
 $token = if ($GithubToken) { $GithubToken } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { "" }
 if (-not [string]::IsNullOrEmpty($token)) {
     try {
@@ -199,10 +203,6 @@ if (-not [string]::IsNullOrEmpty($token)) {
     } catch {
         Write-Warning "Could not patch release notes to Chinese via API: $_"
     }
-}
-
-if (-not $Draft) {
-    gh release edit $tag --repo $Repo --draft=false | Out-Host
 }
 
 gh release view $tag --repo $Repo --json tagName,name,isDraft,url,assets | Out-Host
