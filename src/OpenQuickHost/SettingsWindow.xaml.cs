@@ -371,17 +371,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new("↓", "下划", "适合关闭、隐藏或向下滚动"),
         new("←", "左划", "适合后退、切换上一标签"),
         new("→", "右划", "适合前进、切换下一标签"),
+        new("CHECKMARK", "✔ 打勾", "打勾手势：短线右下+长线右上，适合确认/保存/执行"),
+        new("CIRCLE", "⭕ 画圆", "闭合圆圈：适合刷新、旋转、重新加载或清空"),
+        new("HEART", "♥ 心形", "心形手势：双弧圆顶+尖底，适合收藏或关注"),
+        new("ALPHA", "α 鱼形", "Alpha 鱼形：适合特定工具或扩展脚本"),
         new("↓→", "L 型", "适合打开目录、窗口最大化/还原"),
         new("→↓", "倒 L", "适合关闭当前标签页 (Ctrl+W)"),
         new("↑→", "右上折角", "适合新建标签页 (Ctrl+T)"),
         new("↓↑", "下上往返", "适合刷新页面 (F5)"),
         new("↑↓", "上下往返", "适合回到顶部/底部"),
-        new("↓→↑", "U 型", "适合恢复已关闭标签 (Ctrl+Shift+T)"),
-        new("→↓←", "C 型", "适合复制、剪贴板动作"),
-        new("↑→↓←", "P 型", "适合打开快捷面板或固定小程序"),
-        new("→↓←↑", "S 型", "适合全局搜索、选择类动作"),
-        new("↓↗↓", "Z 型", "适合窗口置顶/取消置顶"),
-        new("↘↗↘↗", "W 型", "适合关闭当前窗口 (Alt+F4)")
+        new("U", "U 型", "适合恢复已关闭标签 (Ctrl+Shift+T)"),
+        new("C", "C 型", "适合复制、剪贴板动作"),
+        new("P", "P 型", "适合打开快捷面板或固定小程序"),
+        new("S", "S 型", "适合全局搜索、选择类动作"),
+        new("Z", "Z 型", "适合窗口置顶/取消置顶"),
+        new("W", "W 型", "适合关闭当前窗口 (Alt+F4)")
     ];
 
 
@@ -7128,12 +7132,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             MouseGestureExtensionOptions.Add(new MouseGestureExtensionOption(command));
         }
 
+        var whitelistAppsBySeq = _settings.MouseGestureAppBindings
+            .Where(b => !b.IsBlacklist && !string.IsNullOrWhiteSpace(b.Sequence) && !string.IsNullOrWhiteSpace(b.AppPath))
+            .GroupBy(b => MouseGestureNaming.NormalizeSequence(b.Sequence), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var blacklistAppsBySeq = _settings.MouseGestureAppBindings
+            .Where(b => b.IsBlacklist && !string.IsNullOrWhiteSpace(b.Sequence) && !string.IsNullOrWhiteSpace(b.AppPath))
+            .GroupBy(b => MouseGestureNaming.NormalizeSequence(b.Sequence), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
         var assignedBySequence = new Dictionary<string, string>(StringComparer.Ordinal);
+        var handledAppSequences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var entry in LocalExtensionCatalog.LoadEntries())
         {
             var gesture = entry.Manifest.MouseGesture;
-            if (gesture == null ||
-                string.IsNullOrWhiteSpace(gesture.Sequence) && !MouseGestureTemplateRecognizer.HasTemplateData(gesture.Data))
+            if (gesture == null || (string.IsNullOrWhiteSpace(gesture.Sequence) && !MouseGestureTemplateRecognizer.HasTemplateData(gesture.Data)))
             {
                 continue;
             }
@@ -7149,6 +7164,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 assignedBySequence[sequence] = entry.Manifest.Name;
             }
 
+            var boundW = whitelistAppsBySeq.TryGetValue(sequence, out var wl) ? wl.Select(x => x.AppPath).ToList() : null;
+            var boundB = blacklistAppsBySeq.TryGetValue(sequence, out var bl) ? bl.Select(x => x.AppPath).ToList() : null;
+            handledAppSequences.Add(sequence);
+
             MouseGestureItems.Add(new SettingsMouseGestureItem(
                 entry.Manifest.Id,
                 entry.Manifest.Name,
@@ -7162,20 +7181,28 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 command?.IconSource ?? ExtensionIconLibrary.ResolveImageSource(entry.Manifest.Icon, directory),
                 command?.VectorIcon ?? ExtensionIconLibrary.ResolveVectorIcon(entry.Manifest.Icon),
                 command?.AccentBrush ?? CreateAccentBrush(entry.Manifest.AccentHex),
-                command?.DisplayGlyph ?? BuildFallbackGlyph(entry.Manifest.Name)));
+                command?.DisplayGlyph ?? BuildFallbackGlyph(entry.Manifest.Name),
+                boundW,
+                boundB));
         }
 
-        foreach (var appBind in _settings.MouseGestureAppBindings)
+        foreach (var appGroup in whitelistAppsBySeq)
         {
-            if (string.IsNullOrWhiteSpace(appBind.Sequence)) continue;
-            var seq = MouseGestureNaming.NormalizeSequence(appBind.Sequence);
-            var appName = string.IsNullOrWhiteSpace(appBind.AppName) ? "应用程序" : appBind.AppName;
+            if (handledAppSequences.Contains(appGroup.Key)) continue;
+
+            var first = appGroup.Value[0];
+            var seq = appGroup.Key;
+            var appName = string.IsNullOrWhiteSpace(first.AppName) ? "应用程序" : first.AppName;
             if (!assignedBySequence.ContainsKey(seq))
             {
                 assignedBySequence[seq] = appName;
             }
+
+            var boundW = appGroup.Value.Select(x => x.AppPath).ToList();
+            var boundB = blacklistAppsBySeq.TryGetValue(seq, out var bl) ? bl.Select(x => x.AppPath).ToList() : null;
+
             MouseGestureItems.Add(new SettingsMouseGestureItem(
-                "app:" + appBind.AppPath,
+                "app:" + first.AppPath,
                 appName,
                 "应用程序",
                 BuildGestureTriggerLabel(),
@@ -7184,20 +7211,76 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 null,
                 30,
                 null,
-                null,
+                ExtensionIconLibrary.TryExtractAssociatedIcon(first.AppPath),
                 null,
                 CreateAccentBrush("#3B82F6"),
-                BuildFallbackGlyph(appName)));
+                BuildFallbackGlyph(appName),
+                boundW,
+                boundB));
+        }
+
+        var extBySeq = new Dictionary<string, (string ExtId, string Name)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in LocalExtensionCatalog.LoadEntries())
+        {
+            var g = entry.Manifest.MouseGesture;
+            if (g == null || (string.IsNullOrWhiteSpace(g.Sequence) && !MouseGestureTemplateRecognizer.HasTemplateData(g.Data))) continue;
+            var norm = MouseGestureNaming.NormalizeSequence(g.Sequence);
+            if (!string.IsNullOrWhiteSpace(norm))
+            {
+                extBySeq[norm] = (entry.Manifest.Id, entry.Manifest.Name);
+            }
         }
 
         foreach (var template in CommonMouseGestureTemplates)
         {
-            assignedBySequence.TryGetValue(template.Sequence, out var assignedTitle);
+            var normSeq = MouseGestureNaming.NormalizeSequence(template.Sequence);
+            string? extId = null;
+            string? assignedTitle = null;
+            var boundWhitelist = new List<string>();
+            var boundBlacklist = new List<string>();
+
+            if (extBySeq.TryGetValue(normSeq, out var extInfo))
+            {
+                extId = extInfo.ExtId;
+                assignedTitle = extInfo.Name;
+            }
+
+            if (whitelistAppsBySeq.TryGetValue(normSeq, out var wApps) && wApps.Count > 0)
+            {
+                boundWhitelist = wApps.Select(a => a.AppPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            if (blacklistAppsBySeq.TryGetValue(normSeq, out var bApps) && bApps.Count > 0)
+            {
+                boundBlacklist = bApps.Select(a => a.AppPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            if (boundWhitelist.Count > 0 || boundBlacklist.Count > 0)
+            {
+                var tagList = new List<string>();
+                if (boundWhitelist.Count > 0) tagList.Add($"限定 {boundWhitelist.Count} 个应用");
+                if (boundBlacklist.Count > 0) tagList.Add($"禁用 {boundBlacklist.Count} 个应用");
+                var appTag = string.Join(", ", tagList);
+
+                if (string.IsNullOrWhiteSpace(assignedTitle))
+                {
+                    assignedTitle = appTag;
+                }
+                else
+                {
+                    assignedTitle = $"{assignedTitle} ({appTag})";
+                }
+            }
+
             MouseGestureQuickBindItems.Add(new MouseGestureQuickBindItem(
                 template.Sequence,
                 template.Name,
                 template.Description,
-                assignedTitle));
+                assignedTitle,
+                null,
+                extId,
+                boundWhitelist,
+                boundBlacklist));
         }
 
         OnPropertyChanged(nameof(MouseGestureManagementSummary));
@@ -7233,30 +7316,113 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         await HandleMouseGestureUpdateResultAsync(result);
     }
 
-    private async void EditMouseGestureExtensionButton_Click(object sender, RoutedEventArgs e)
+    private async void ChangeBoundGestureButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: SettingsMouseGestureItem item })
         {
             return;
         }
 
-        var extensionItem = _cachedExtensionItems.FirstOrDefault(x =>
-            x.ExtensionId.Equals(item.ExtensionId, StringComparison.OrdinalIgnoreCase));
-        if (extensionItem == null)
+        var triggerLabel = BuildGestureTriggerLabel();
+        var dlg = new MouseGestureBindingDialog(
+            item.Sequence,
+            item.DisplayName,
+            item.DetailText,
+            triggerLabel,
+            item.Data,
+            item.ExtensionId,
+            item.BoundWhitelistAppPaths,
+            item.BoundBlacklistAppPaths,
+            MouseGestureExtensionOptions,
+            MouseGestureAppOptions)
         {
-            RefreshExtensionCacheFromMainWindow();
-            extensionItem = _cachedExtensionItems.FirstOrDefault(x =>
-                x.ExtensionId.Equals(item.ExtensionId, StringComparison.OrdinalIgnoreCase));
-        }
+            Owner = this
+        };
 
-        if (extensionItem != null)
+        if (dlg.ShowDialog() == true)
         {
-            await EditExtensionItemAsync(extensionItem);
-            RefreshMouseGestureManagement();
+            if (dlg.WasUnbound)
+            {
+                await UnbindGestureAsync(item.Sequence);
+                RefreshMouseGestureManagement();
+                SyncStatusText = $"已解绑手势 [{item.DisplayName}]。";
+            }
+            else if (dlg.WasSaved)
+            {
+                // 1. 如果选择了新小程序，绑定小程序手势
+                if (dlg.SelectedExtension != null)
+                {
+                    // 若原先绑定的是不同的小程序，先解绑旧的小程序
+                    if (!string.IsNullOrWhiteSpace(item.ExtensionId) &&
+                        !item.ExtensionId.StartsWith("app:", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(item.ExtensionId, dlg.SelectedExtension.ExtensionId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(item.ExtensionId, null);
+                    }
+
+                    var runtimeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(_settings.MouseGestureTriggerMode);
+                    var gesture = new LocalExtensionMouseGestureManifest
+                    {
+                        Trigger = string.IsNullOrWhiteSpace(runtimeTrigger) ? "right-drag" : runtimeTrigger,
+                        Sequence = item.Sequence,
+                        Sign = item.DisplayName,
+                        Data = item.Data,
+                        MinDistance = item.MinDistance > 0 ? item.MinDistance : 30
+                    };
+                    var result = await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(dlg.SelectedExtension.ExtensionId, gesture);
+                    await HandleMouseGestureUpdateResultAsync(result);
+                }
+
+                // 2. 更新应用白名单与黑名单绑定列表
+                _settings.MouseGestureAppBindings.RemoveAll(x =>
+                    string.Equals(MouseGestureNaming.NormalizeSequence(x.Sequence), MouseGestureNaming.NormalizeSequence(item.Sequence), StringComparison.OrdinalIgnoreCase));
+
+                foreach (var app in dlg.SelectedWhitelistApps)
+                {
+                    _settings.MouseGestureAppBindings.Add(new MouseGestureAppBinding
+                    {
+                        AppPath = app.AppPath,
+                        AppName = app.AppName,
+                        Sequence = item.Sequence,
+                        ExtensionId = dlg.SelectedExtension?.ExtensionId ?? item.ExtensionId,
+                        IsBlacklist = false
+                    });
+                }
+
+                foreach (var app in dlg.SelectedBlacklistApps)
+                {
+                    _settings.MouseGestureAppBindings.Add(new MouseGestureAppBinding
+                    {
+                        AppPath = app.AppPath,
+                        AppName = app.AppName,
+                        Sequence = item.Sequence,
+                        ExtensionId = dlg.SelectedExtension?.ExtensionId ?? item.ExtensionId,
+                        IsBlacklist = true
+                    });
+                }
+
+                AppSettingsStore.Save(_settings);
+                _mainWindow.ReloadMouseGestureRegistrations();
+                RefreshMouseGestureManagement();
+
+                var tagList = new List<string>();
+                if (dlg.SelectedWhitelistApps.Count > 0) tagList.Add($"限定 {dlg.SelectedWhitelistApps.Count} 个应用生效");
+                else tagList.Add("全局所有应用生效");
+                if (dlg.SelectedBlacklistApps.Count > 0) tagList.Add($"禁用 {dlg.SelectedBlacklistApps.Count} 个应用");
+
+                var appSummary = "（" + string.Join("，", tagList) + "）";
+                var actionName = dlg.SelectedExtension?.Label ?? (dlg.SelectedWhitelistApps.Count > 0 ? dlg.SelectedWhitelistApps[0].AppName : item.DisplayName);
+                SyncStatusText = $"手势 [{item.DisplayName}] 已更新至 [{actionName}] {appSummary}";
+            }
         }
     }
 
-        private List<MouseGestureAppOption> ScanAppOptions()
+    private void BoundGestureCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        ChangeBoundGestureButton_Click(sender, e);
+    }
+
+    private List<MouseGestureAppOption> ScanAppOptions()
     {
         var list = new List<MouseGestureAppOption>();
         var addedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -7328,6 +7494,122 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _mainWindow.ReloadMouseGestureRegistrations();
         RefreshMouseGestureManagement();
         SyncStatusText = $"已将手势 [{item.DisplayName}] 成功绑定到应用 [{item.SelectedApp.AppName}]！";
+    }
+
+    private async void QuickBindOpenDialogButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item }) return;
+
+        var triggerLabel = BuildGestureTriggerLabel();
+        var dlg = new MouseGestureBindingDialog(
+            item.Sequence,
+            item.DisplayName,
+            item.Description,
+            triggerLabel,
+            item.Data,
+            item.AssignedExtensionId,
+            item.BoundWhitelistAppPaths,
+            item.BoundBlacklistAppPaths,
+            MouseGestureExtensionOptions,
+            MouseGestureAppOptions)
+        {
+            Owner = this
+        };
+
+        if (dlg.ShowDialog() == true)
+        {
+            if (dlg.WasUnbound)
+            {
+                await UnbindGestureAsync(item.Sequence);
+                RefreshMouseGestureManagement();
+                SyncStatusText = $"已解绑手势 [{item.DisplayName}]。";
+            }
+            else if (dlg.WasSaved)
+            {
+                // 1. 如果选择了小程序，绑定小程序手势
+                if (dlg.SelectedExtension != null)
+                {
+                    var runtimeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(_settings.MouseGestureTriggerMode);
+                    var gesture = new LocalExtensionMouseGestureManifest
+                    {
+                        Trigger = string.IsNullOrWhiteSpace(runtimeTrigger) ? "right-drag" : runtimeTrigger,
+                        Sequence = item.Sequence,
+                        Sign = item.DisplayName,
+                        Data = item.Data,
+                        MinDistance = 30
+                    };
+                    var result = await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(dlg.SelectedExtension.ExtensionId, gesture);
+                    await HandleMouseGestureUpdateResultAsync(result);
+                }
+
+                // 2. 更新应用白名单与黑名单绑定列表
+                _settings.MouseGestureAppBindings.RemoveAll(x =>
+                    string.Equals(MouseGestureNaming.NormalizeSequence(x.Sequence), MouseGestureNaming.NormalizeSequence(item.Sequence), StringComparison.OrdinalIgnoreCase));
+
+                foreach (var app in dlg.SelectedWhitelistApps)
+                {
+                    _settings.MouseGestureAppBindings.Add(new MouseGestureAppBinding
+                    {
+                        AppPath = app.AppPath,
+                        AppName = app.AppName,
+                        Sequence = item.Sequence,
+                        ExtensionId = dlg.SelectedExtension?.ExtensionId,
+                        IsBlacklist = false
+                    });
+                }
+
+                foreach (var app in dlg.SelectedBlacklistApps)
+                {
+                    _settings.MouseGestureAppBindings.Add(new MouseGestureAppBinding
+                    {
+                        AppPath = app.AppPath,
+                        AppName = app.AppName,
+                        Sequence = item.Sequence,
+                        ExtensionId = dlg.SelectedExtension?.ExtensionId,
+                        IsBlacklist = true
+                    });
+                }
+
+                AppSettingsStore.Save(_settings);
+                _mainWindow.ReloadMouseGestureRegistrations();
+                RefreshMouseGestureManagement();
+
+                var tagList = new List<string>();
+                if (dlg.SelectedWhitelistApps.Count > 0) tagList.Add($"限定 {dlg.SelectedWhitelistApps.Count} 个应用生效");
+                else tagList.Add("全局所有应用生效");
+                if (dlg.SelectedBlacklistApps.Count > 0) tagList.Add($"禁用 {dlg.SelectedBlacklistApps.Count} 个应用");
+
+                var appSummary = "（" + string.Join("，", tagList) + "）";
+                var actionName = dlg.SelectedExtension?.Label ?? (dlg.SelectedWhitelistApps.Count > 0 ? dlg.SelectedWhitelistApps[0].AppName : item.DisplayName);
+                SyncStatusText = $"手势 [{item.DisplayName}] 已配置至 [{actionName}] {appSummary}";
+            }
+        }
+    }
+
+    private async void QuickBindUnbindButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item }) return;
+        await UnbindGestureAsync(item.Sequence);
+        RefreshMouseGestureManagement();
+        SyncStatusText = $"已解绑手势 [{item.DisplayName}]。";
+    }
+
+    private async Task UnbindGestureAsync(string sequence)
+    {
+        // 1. 解除小程序手势绑定
+        foreach (var entry in LocalExtensionCatalog.LoadEntries())
+        {
+            if (entry.Manifest.MouseGesture != null &&
+                string.Equals(entry.Manifest.MouseGesture.Sequence, sequence, StringComparison.OrdinalIgnoreCase))
+            {
+                await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(entry.Manifest.Id, null);
+            }
+        }
+
+        // 2. 解除应用手势绑定
+        _settings.MouseGestureAppBindings.RemoveAll(x =>
+            string.Equals(x.Sequence, sequence, StringComparison.OrdinalIgnoreCase));
+        AppSettingsStore.Save(_settings);
     }
 
     private async void BindCommonMouseGestureButton_Click(object sender, RoutedEventArgs e)
@@ -11105,7 +11387,9 @@ public sealed class SettingsMouseGestureItem
         ImageSource? iconSource,
         Geometry? vectorIcon,
         System.Windows.Media.Brush accentBrush,
-        string displayGlyph)
+        string displayGlyph,
+        IReadOnlyList<string>? boundWhitelistAppPaths = null,
+        IReadOnlyList<string>? boundBlacklistAppPaths = null)
     {
         ExtensionId = extensionId;
         Title = title;
@@ -11113,13 +11397,16 @@ public sealed class SettingsMouseGestureItem
         TriggerLabel = triggerLabel;
         Sequence = sequence;
         DisplayName = string.IsNullOrWhiteSpace(displayName) ? MouseGestureNaming.GetDisplayName(sequence) : displayName;
+        Data = data;
         MinDistance = minDistance;
         Tolerance = tolerance;
         IconSource = iconSource;
         VectorIcon = vectorIcon;
         AccentBrush = accentBrush;
         DisplayGlyph = displayGlyph;
-        var preview = MouseGesturePreviewGeometryFactory.CreatePreview(sequence, data, size: 52, padding: 8);
+        BoundWhitelistAppPaths = boundWhitelistAppPaths ?? [];
+        BoundBlacklistAppPaths = boundBlacklistAppPaths ?? [];
+        var preview = MouseGesturePreviewGeometryFactory.CreatePreview(sequence, data, size: 44, padding: 5);
         PreviewGeometry = preview.Geometry;
         PreviewBrush = preview.Brush;
     }
@@ -11136,9 +11423,26 @@ public sealed class SettingsMouseGestureItem
 
     public string DisplayName { get; }
 
+    public int[]? Data { get; }
+
+    public IReadOnlyList<string> BoundWhitelistAppPaths { get; }
+
+    public IReadOnlyList<string> BoundBlacklistAppPaths { get; }
+
     public int MinDistance { get; }
 
     public int? Tolerance { get; }
+
+    public string ScopeSummaryText
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (BoundWhitelistAppPaths.Count > 0) parts.Add($"限定 {BoundWhitelistAppPaths.Count} 个应用");
+            if (BoundBlacklistAppPaths.Count > 0) parts.Add($"禁用 {BoundBlacklistAppPaths.Count} 个应用");
+            return parts.Count > 0 ? string.Join(", ", parts) : "全局生效";
+        }
+    }
 
     public string DetailText
     {
@@ -11180,13 +11484,24 @@ public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
     private bool _isExtensionPopupOpen;
     private bool _isAppPopupOpen;
 
-    public MouseGestureQuickBindItem(string sequence, string displayName, string description, string? assignedTitle, int[]? data = null)
+    public MouseGestureQuickBindItem(
+        string sequence,
+        string displayName,
+        string description,
+        string? assignedTitle,
+        int[]? data = null,
+        string? assignedExtensionId = null,
+        IReadOnlyList<string>? boundWhitelistAppPaths = null,
+        IReadOnlyList<string>? boundBlacklistAppPaths = null)
     {
         Sequence = sequence;
         DisplayName = displayName;
         Description = description;
         AssignedTitle = assignedTitle ?? string.Empty;
         Data = data;
+        AssignedExtensionId = assignedExtensionId;
+        BoundWhitelistAppPaths = boundWhitelistAppPaths ?? [];
+        BoundBlacklistAppPaths = boundBlacklistAppPaths ?? [];
         var preview = MouseGesturePreviewGeometryFactory.CreatePreview(sequence, data, size: 48, padding: 6);
         PreviewGeometry = preview.Geometry;
         PreviewBrush = preview.Brush;
@@ -11203,13 +11518,19 @@ public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
 
     public string AssignedTitle { get; }
 
+    public string? AssignedExtensionId { get; }
+
+    public IReadOnlyList<string> BoundWhitelistAppPaths { get; }
+
+    public IReadOnlyList<string> BoundBlacklistAppPaths { get; }
+
     public Geometry PreviewGeometry { get; }
 
     public System.Windows.Media.Brush PreviewBrush { get; }
 
     public bool IsAssigned => !string.IsNullOrWhiteSpace(AssignedTitle);
 
-    public string StatusText => IsAssigned ? $"已被 {AssignedTitle} 使用" : "未绑定";
+    public string StatusText => IsAssigned ? $"已配置: {AssignedTitle}" : "未绑定";
 
     public string ExtensionSearchText
     {
@@ -11373,8 +11694,11 @@ public MouseGestureExtensionOption? SelectedExtension
     }
 }
 
-public sealed class MouseGestureAppOption
+public sealed class MouseGestureAppOption : INotifyPropertyChanged
 {
+    private bool _isWhitelistSelected;
+    private bool _isBlacklistSelected;
+
     public MouseGestureAppOption(string appName, string appPath, string category, bool isRunning)
     {
         AppName = appName;
@@ -11382,14 +11706,53 @@ public sealed class MouseGestureAppOption
         Category = category;
         IsRunning = isRunning;
         DisplayLabel = isRunning ? $"🟢 [运行中] {appName}" : $"💻 {appName}";
+        IconSource = ExtensionIconLibrary.TryExtractAssociatedIcon(appPath);
     }
 
     public string AppName { get; }
     public string AppPath { get; }
     public string Category { get; }
     public bool IsRunning { get; }
+    public ImageSource? IconSource { get; }
+    public bool HasIcon => IconSource != null;
     public string DisplayLabel { get; }
     public string GroupTitle => IsRunning ? "运行中的应用" : "全部应用";
+
+    public bool IsWhitelistSelected
+    {
+        get => _isWhitelistSelected;
+        set
+        {
+            if (_isWhitelistSelected != value)
+            {
+                _isWhitelistSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsWhitelistSelected)));
+                if (value && _isBlacklistSelected)
+                {
+                    IsBlacklistSelected = false;
+                }
+            }
+        }
+    }
+
+    public bool IsBlacklistSelected
+    {
+        get => _isBlacklistSelected;
+        set
+        {
+            if (_isBlacklistSelected != value)
+            {
+                _isBlacklistSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBlacklistSelected)));
+                if (value && _isWhitelistSelected)
+                {
+                    IsWhitelistSelected = false;
+                }
+            }
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public override string ToString() => DisplayLabel;
 }

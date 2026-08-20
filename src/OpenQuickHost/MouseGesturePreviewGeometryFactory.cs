@@ -31,10 +31,238 @@ internal static class MouseGesturePreviewGeometryFactory
 
     private static List<WpfPoint> GetScaledPoints(string? sequence, int[]? data, double size, double padding)
     {
-        var points = MouseGestureTemplateRecognizer.HasTemplateData(data)
-            ? DecodeTemplateData(data!)
-            : BuildSequencePoints(MouseGestureNaming.NormalizeSequence(sequence));
+        if (MouseGestureTemplateRecognizer.HasTemplateData(data))
+        {
+            return ScalePoints(DecodeTemplateData(data!), size, padding);
+        }
+
+        var specialPoints = TryGetSpecialShapePoints(sequence);
+        if (specialPoints != null && specialPoints.Count > 1)
+        {
+            return ScalePoints(specialPoints, size, padding);
+        }
+
+        var points = BuildSequencePoints(MouseGestureNaming.NormalizeSequence(sequence));
         return ScalePoints(points, size, padding);
+    }
+
+    private static List<WpfPoint>? TryGetSpecialShapePoints(string? sequence)
+    {
+        if (string.IsNullOrWhiteSpace(sequence)) return null;
+        var s = sequence.Trim().ToUpperInvariant();
+
+        // 1. 心形手势 (♥ / HEART)
+        if (s is "HEART" or "♥" or "↘↓↙↑" or "↙↓↘↑")
+        {
+            return
+            [
+                new WpfPoint(500, 260),
+                new WpfPoint(420, 140),
+                new WpfPoint(300, 60),
+                new WpfPoint(140, 60),
+                new WpfPoint(40, 180),
+                new WpfPoint(30, 350),
+                new WpfPoint(120, 530),
+                new WpfPoint(280, 720),
+                new WpfPoint(500, 940), // 底部心尖
+                new WpfPoint(720, 720),
+                new WpfPoint(880, 530),
+                new WpfPoint(970, 350),
+                new WpfPoint(960, 180),
+                new WpfPoint(860, 60),
+                new WpfPoint(700, 60),
+                new WpfPoint(580, 140),
+                new WpfPoint(500, 260)
+            ];
+        }
+
+        // 2. Alpha 鱼形手势 (α / ALPHA)
+        if (s is "ALPHA" or "α" or "↘↗↘" or "ALPHA 鱼形")
+        {
+            return
+            [
+                new WpfPoint(920, 140),
+                new WpfPoint(760, 290),
+                new WpfPoint(560, 480),
+                new WpfPoint(360, 680),
+                new WpfPoint(180, 780),
+                new WpfPoint(70, 660),
+                new WpfPoint(50, 480),
+                new WpfPoint(90, 300),
+                new WpfPoint(210, 180),
+                new WpfPoint(370, 180),
+                new WpfPoint(550, 360),
+                new WpfPoint(750, 680),
+                new WpfPoint(920, 860)
+            ];
+        }
+
+        // 3. 打勾手势 (✔ / CHECKMARK)
+        if (s is "CHECKMARK" or "✔" or "CHECK" or "↘↗")
+        {
+            return
+            [
+                new WpfPoint(100, 520),
+                new WpfPoint(240, 660),
+                new WpfPoint(380, 880), // 底部转折
+                new WpfPoint(540, 660),
+                new WpfPoint(720, 420),
+                new WpfPoint(880, 200),
+                new WpfPoint(960, 80)
+            ];
+        }
+
+        // 4. 画圆手势 (⭕ / CIRCLE / LOOP)
+        if (s is "CIRCLE" or "LOOP" or "⭕" or "O" or "画圆")
+        {
+            var circlePoints = new List<WpfPoint>(17);
+            for (var i = 0; i <= 16; i++)
+            {
+                var rad = i * (Math.PI * 2.0 / 16.0);
+                circlePoints.Add(new WpfPoint(500 + (420 * Math.Cos(rad)), 500 + (420 * Math.Sin(rad))));
+            }
+            return circlePoints;
+        }
+
+        // 5. S 字形手势 (S / S-SHAPE)
+        if (s is "S" or "S 型" or "S-SHAPE")
+        {
+            return
+            [
+                new WpfPoint(820, 160),
+                new WpfPoint(650, 80),
+                new WpfPoint(400, 80),
+                new WpfPoint(220, 200),
+                new WpfPoint(220, 360),
+                new WpfPoint(360, 480),
+                new WpfPoint(640, 560),
+                new WpfPoint(780, 680),
+                new WpfPoint(780, 840),
+                new WpfPoint(600, 940),
+                new WpfPoint(360, 940),
+                new WpfPoint(180, 840)
+            ];
+        }
+
+        // 6. Z 字形手势 (Z / Z-SHAPE)
+        if (s is "Z" or "Z 型" or "Z-SHAPE" or "→↙→" or "↓↗↓")
+        {
+            return
+            [
+                new WpfPoint(150, 150),
+                new WpfPoint(850, 150),
+                new WpfPoint(150, 850),
+                new WpfPoint(850, 850)
+            ];
+        }
+
+        // 7. W 字形手势 (W / W-SHAPE)
+        if (s is "W" or "W 型" or "W-SHAPE" or "↓↗↓↗" or "↘↗↘↗")
+        {
+            return
+            [
+                new WpfPoint(150, 150),
+                new WpfPoint(350, 850),
+                new WpfPoint(500, 420),
+                new WpfPoint(650, 850),
+                new WpfPoint(850, 150)
+            ];
+        }
+
+        // 8. P 字形手势 (P / P-SHAPE)
+        if (s is "P" or "P 型" or "P-SHAPE" or "↑→↓←")
+        {
+            return
+            [
+                new WpfPoint(250, 900),
+                new WpfPoint(250, 100),
+                new WpfPoint(650, 100),
+                new WpfPoint(780, 280),
+                new WpfPoint(650, 480),
+                new WpfPoint(250, 480)
+            ];
+        }
+
+        // 9. C 字形手势 (C / C-SHAPE)
+        if (s is "C" or "C 型" or "C-SHAPE" or "←↓→" or "→↓←")
+        {
+            return
+            [
+                new WpfPoint(800, 180),
+                new WpfPoint(600, 90),
+                new WpfPoint(350, 90),
+                new WpfPoint(150, 280),
+                new WpfPoint(150, 720),
+                new WpfPoint(350, 910),
+                new WpfPoint(600, 910),
+                new WpfPoint(800, 820)
+            ];
+        }
+
+        // 10. U 字形手势 (U / U-SHAPE)
+        if (s is "U" or "U 型" or "U-SHAPE" or "↓→↑")
+        {
+            return
+            [
+                new WpfPoint(200, 150),
+                new WpfPoint(200, 680),
+                new WpfPoint(320, 880),
+                new WpfPoint(680, 880),
+                new WpfPoint(800, 680),
+                new WpfPoint(800, 150)
+            ];
+        }
+
+        // 11. 上下往返 (↑↓)
+        if (s is "↑↓" or "上下往返")
+        {
+            return
+            [
+                new WpfPoint(380, 850),
+                new WpfPoint(380, 150),
+                new WpfPoint(620, 150),
+                new WpfPoint(620, 850)
+            ];
+        }
+
+        // 12. 下上往返 (↓↑)
+        if (s is "↓↑" or "下上往返")
+        {
+            return
+            [
+                new WpfPoint(380, 150),
+                new WpfPoint(380, 850),
+                new WpfPoint(620, 850),
+                new WpfPoint(620, 150)
+            ];
+        }
+
+        // 13. 三角形 (▲ / TRIANGLE)
+        if (s is "TRIANGLE" or "▲")
+        {
+            return
+            [
+                new WpfPoint(500, 80),
+                new WpfPoint(940, 920),
+                new WpfPoint(60, 920),
+                new WpfPoint(500, 80)
+            ];
+        }
+
+        // 14. 矩形 (■ / RECTANGLE)
+        if (s is "RECTANGLE" or "■")
+        {
+            return
+            [
+                new WpfPoint(100, 100),
+                new WpfPoint(900, 100),
+                new WpfPoint(900, 900),
+                new WpfPoint(100, 900),
+                new WpfPoint(100, 100)
+            ];
+        }
+
+        return null;
     }
 
     private static WpfBrush BuildBrush(IReadOnlyList<WpfPoint> points, double size)

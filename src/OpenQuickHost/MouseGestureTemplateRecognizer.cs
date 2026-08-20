@@ -130,8 +130,61 @@ public static class MouseGestureTemplateRecognizer
     }
 
     /// <summary>
+    /// Chaikin 割角平滑算法：消除物理采样的锯齿毛刺，同时保留大折角几何拓扑
+    /// </summary>
+    public static List<Point> ChaikinSmooth(IReadOnlyList<Point> points, int iterations = 1)
+    {
+        if (points == null || points.Count < 3) return points?.ToList() ?? [];
+
+        var current = points.ToList();
+        for (var it = 0; it < iterations; it++)
+        {
+            var smoothed = new List<Point>(current.Count * 2) { current[0] };
+            for (var i = 0; i < current.Count - 1; i++)
+            {
+                var p0 = current[i];
+                var p1 = current[i + 1];
+                var q = new Point((0.75 * p0.X) + (0.25 * p1.X), (0.75 * p0.Y) + (0.25 * p1.Y));
+                var r = new Point((0.25 * p0.X) + (0.75 * p1.X), (0.25 * p0.Y) + (0.75 * p1.Y));
+                smoothed.Add(q);
+                smoothed.Add(r);
+            }
+            smoothed.Add(current[^1]);
+            current = smoothed;
+        }
+        return current;
+    }
+
+    /// <summary>
+    /// 自适应主轴吸附：对水平/垂直 4 主轴（→, ↓, ←, ↑）赋予更宽的容差扇区，消除生理手腕倾斜误差
+    /// </summary>
+    private static int AngleToDirectionWithAxisSnapping(double angle)
+    {
+        angle = ((angle % TwoPi) + TwoPi) % TwoPi;
+
+        // 8 个方向中心角度：0(→), 1(↘), 2(↓), 3(↙), 4(←), 5(↖), 6(↑), 7(↗)
+        // 主轴：0, 2, 4, 6 给予 ±26° (0.453 rad) 宽容度
+        const double mainAxisHalfWidth = 26.0 * (Math.PI / 180.0); // ~0.453 rad
+
+        // 检查 0 (→, 0 rad)
+        if (angle <= mainAxisHalfWidth || angle >= TwoPi - mainAxisHalfWidth) return 0;
+
+        // 检查 2 (↓, PI/2)
+        if (Math.Abs(angle - (Math.PI * 0.5)) <= mainAxisHalfWidth) return 2;
+
+        // 检查 4 (←, PI)
+        if (Math.Abs(angle - Math.PI) <= mainAxisHalfWidth) return 4;
+
+        // 检查 6 (↑, 3*PI/2)
+        if (Math.Abs(angle - (Math.PI * 1.5)) <= mainAxisHalfWidth) return 6;
+
+        // 斜角方向判定
+        return (int)Math.Round(angle / EighthPi) % 8;
+    }
+
+    /// <summary>
     /// 高抗噪 8 方向序列提取算法。
-    /// 采用步长积累 + 滞后死区（Hysteresis）+ 瞬态去抖（Debounce）过滤手抖尖峰。
+    /// 采用 Chaikin 平滑预处理 + 自适应主轴吸附 + 步长积累 + 滞后死区（Hysteresis）+ 瞬态去抖（Debounce）。
     /// </summary>
     public static string ExtractSequence(IReadOnlyList<Point> rawPoints, double minStepDistance = 24.0)
     {
@@ -140,7 +193,7 @@ public static class MouseGestureTemplateRecognizer
             return string.Empty;
         }
 
-        // 1. 过滤无效点与过近距离抖动
+        // 1. 过滤无效点与过近距离抖动，并进行 Chaikin 曲线抗抖平滑
         var cleanPoints = new List<Point>(rawPoints.Count);
         foreach (var pt in rawPoints)
         {
@@ -153,6 +206,9 @@ public static class MouseGestureTemplateRecognizer
         {
             return string.Empty;
         }
+
+        // 应用轻量 Chaikin 平滑割角
+        cleanPoints = ChaikinSmooth(cleanPoints, 1);
 
         var rawDirections = new List<(int Direction, double Length)>();
         var anchor = cleanPoints[0];
@@ -172,7 +228,7 @@ public static class MouseGestureTemplateRecognizer
             }
 
             var angle = (Math.Atan2(dy, dx) + TwoPi) % TwoPi;
-            var rawDir = (int)Math.Round(angle / EighthPi) % 8;
+            var rawDir = AngleToDirectionWithAxisSnapping(angle);
 
             if (currentDir == -1)
             {
@@ -186,8 +242,8 @@ public static class MouseGestureTemplateRecognizer
                 var angleDiff = Math.Abs(angle - baseAngle);
                 if (angleDiff > Math.PI) angleDiff = TwoPi - angleDiff;
 
-                // 只有当偏角大于 36 度 (~0.63 rad) 时，才确认为新拐向
-                if (angleDiff > 0.628 || dist >= minStepDistance * 1.5)
+                // 只有当偏角大于 38 度 (~0.66 rad) 时，才确认为新拐向
+                if (angleDiff > 0.663 || dist >= minStepDistance * 1.5)
                 {
                     rawDirections.Add((currentDir, accumulatedLength));
                     currentDir = rawDir;
@@ -216,7 +272,7 @@ public static class MouseGestureTemplateRecognizer
             return string.Empty;
         }
 
-        // 2. 瞬态抖动过滤（例如 A -> B -> A 且 B 极短时，消除 B）
+        // 2. 瞬态抖动过滤与反向回弹吸收（例如 A -> B -> A 且 B 极短时，消除 B）
         var filteredDirs = new List<(int Direction, double Length)>();
         for (var i = 0; i < rawDirections.Count; i++)
         {
@@ -227,14 +283,15 @@ public static class MouseGestureTemplateRecognizer
                 continue;
             }
 
-            // 检查是否是微小尖峰震荡
+            // 检查是否是微小尖峰震荡或 180 度刹车回弹
             if (i > 0 && i < rawDirections.Count - 1)
             {
                 var prev = filteredDirs.Count > 0 ? filteredDirs[^1] : rawDirections[i - 1];
                 var next = rawDirections[i + 1];
-                if (prev.Direction == next.Direction && item.Length < minStepDistance * 0.85)
+                var isOpposite = Math.Abs(item.Direction - prev.Direction) == 4;
+                if ((prev.Direction == next.Direction || isOpposite) && item.Length < minStepDistance * 0.9)
                 {
-                    // 忽略当前的微小突变
+                    // 忽略当前的微小突变/回弹
                     continue;
                 }
             }
@@ -253,7 +310,7 @@ public static class MouseGestureTemplateRecognizer
     }
 
     /// <summary>
-    /// 标准化点集：重采样 -> 居中平移 -> 缩放至标准正方形。
+    /// 标准化点集：Chaikin 平滑 -> 重采样 -> 居中平移 -> 缩放至标准正方形。
     /// </summary>
     public static IReadOnlyList<Point> Normalize(IReadOnlyList<Point> rawPath)
     {
@@ -265,7 +322,9 @@ public static class MouseGestureTemplateRecognizer
             return [];
         }
 
-        var resampled = Resample(points, PointCount);
+        // 先执行 Chaikin 割角平滑降噪
+        var smoothed = ChaikinSmooth(points, 1);
+        var resampled = Resample(smoothed, PointCount);
         if (resampled.Count != PointCount)
         {
             return [];
@@ -462,7 +521,11 @@ public static class MouseGestureTemplateRecognizer
             BuiltIn("W", (0, 0), (0, 1000), (500, 450), (1000, 1000), (1000, 0)),
             BuiltIn("L", (0, 0), (0, 1000), (850, 1000)),
             BuiltIn("L", (0, 1000), (0, 0), (850, 0)),
+            BuiltIn("CHECKMARK", (0, 500), (350, 1000), (1000, 0)),
+            BuiltIn("HEART", (500, 250), (350, 0), (0, 0), (0, 450), (500, 1000), (1000, 450), (1000, 0), (650, 0), (500, 250)),
+            BuiltIn("ALPHA", (1000, 0), (0, 1000), (500, 1000), (1000, 500), (500, 0), (0, 0), (1000, 1000)),
             BuiltIn("CIRCLE", (500, 0), (1000, 500), (500, 1000), (0, 500), (500, 0)),
+            BuiltIn("CIRCLE", (500, 0), (0, 500), (500, 1000), (1000, 500), (500, 0)),
             BuiltIn("TRIANGLE", (500, 0), (1000, 1000), (0, 1000), (500, 0)),
             BuiltIn("RECTANGLE", (0, 0), (1000, 0), (1000, 1000), (0, 1000), (0, 0))
         ];

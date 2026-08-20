@@ -433,12 +433,49 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
+        RegisterSystemPowerAndSessionWatchdog();
 
         RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
         Closed += (s, e) =>
         {
             RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
         };
+    }
+
+    private void RegisterSystemPowerAndSessionWatchdog()
+    {
+        try
+        {
+            Microsoft.Win32.SystemEvents.PowerModeChanged += (_, e) =>
+            {
+                if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+                {
+                    HostAssets.AppendLog("System power event: Resume detected, executing hook self-healing watchdog.");
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        InputHookService.RestartHooks("power-resume");
+                        MouseGestureService.RestartHook("power-resume");
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
+            };
+
+            Microsoft.Win32.SystemEvents.SessionSwitch += (_, e) =>
+            {
+                if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionUnlock)
+                {
+                    HostAssets.AppendLog("System session event: SessionUnlock detected, executing hook self-healing watchdog.");
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        InputHookService.RestartHooks("session-unlock");
+                        MouseGestureService.RestartHook("session-unlock");
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to register system power/session watchdog: {ex.Message}");
+        }
     }
 
     private void RunningExtensionRegistry_Changed(object? sender, EventArgs e)

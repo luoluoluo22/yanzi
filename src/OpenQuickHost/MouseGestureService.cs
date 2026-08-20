@@ -153,6 +153,50 @@ public static class MouseGestureService
     }
 
     /// <summary>
+    /// 无感重装/自愈鼠标手势底层钩子（在系统休眠唤醒、锁屏解锁或看门狗触发时调用）
+    /// </summary>
+    public static void RestartHook(string reason = "watchdog")
+    {
+        try
+        {
+            if (!_isRunning) return;
+            if (_hookId != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_hookId);
+                _hookId = IntPtr.Zero;
+            }
+            ResetState();
+            _hookId = SetMouseHook(MouseProc);
+            Log("info", $"Mouse gesture hook auto-reinstalled successfully due to {reason}. hookId=0x{_hookId.ToInt64():X}");
+        }
+        catch (Exception ex)
+        {
+            Log("warn", $"failed to restart mouse gesture hook on {reason}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 立即取消当前正在进行的手势画线或捕获状态（Rocker 取消或 ESC 键触发）
+    /// </summary>
+    public static void CancelCurrentGesture(string reason = "escape")
+    {
+        if (_rightDown || _middleDown || _ctrlLeftDown || _traceActive)
+        {
+            _gestureActionTriggered = true;
+            _suppressNextRightUp = true;
+            _suppressNextMiddleUp = true;
+            _suppressNextLeftUp = true;
+            _rightDown = false;
+            _middleDown = false;
+            _ctrlLeftDown = false;
+            _path.Clear();
+            _traceActive = false;
+            CancelTrace();
+            Log("info", $"Gesture cancelled due to {reason}.");
+        }
+    }
+
+    /// <summary>
     /// 重新构建注册表。<paramref name="gestures"/> 来自所有扩展 manifest 的 MouseGesture 字段。
     /// </summary>
     public static void ReloadRegistrations(IEnumerable<RegisteredGesture> gestures)
@@ -210,12 +254,30 @@ public static class MouseGestureService
         }
 
         var entries = LocalExtensionCatalog.LoadEntries();
+        var appBindings = AppSettingsStore.Load().MouseGestureAppBindings;
+
+        // 按手势 sequence 组织白名单（限定应用）与黑名单（禁用应用）
+        var whitelistBySeq = appBindings
+            .Where(b => !b.IsBlacklist && !string.IsNullOrWhiteSpace(b.Sequence) && !string.IsNullOrWhiteSpace(b.AppPath))
+            .GroupBy(b => MouseGestureNaming.NormalizeSequence(b.Sequence), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.AppPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var blacklistBySeq = appBindings
+            .Where(b => b.IsBlacklist && !string.IsNullOrWhiteSpace(b.Sequence) && !string.IsNullOrWhiteSpace(b.AppPath))
+            .GroupBy(b => MouseGestureNaming.NormalizeSequence(b.Sequence), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.AppPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList(), StringComparer.OrdinalIgnoreCase);
+
         var registrations = new List<RegisteredGesture>();
         foreach (var entry in entries)
         {
             var m = entry.Manifest;
             var g = m.MouseGesture;
             if (g == null || (string.IsNullOrWhiteSpace(g.Sequence) && !MouseGestureTemplateRecognizer.HasTemplateData(g.Data))) continue;
+
+            var normSeq = MouseGestureNaming.NormalizeSequence(g.Sequence);
+            IReadOnlyList<string>? targetApps = whitelistBySeq.TryGetValue(normSeq, out var w) && w.Count > 0 ? w : null;
+            IReadOnlyList<string>? excludedApps = blacklistBySeq.TryGetValue(normSeq, out var b) && b.Count > 0 ? b : null;
+
             registrations.Add(new RegisteredGesture(
                 ExtensionId: m.Id,
                 ExtensionName: m.Name,
@@ -228,25 +290,38 @@ public static class MouseGestureService
                 Data: g.Data,
                 Tolerance: g.Tolerance,
                 MinDistance: Math.Max(8, g.MinDistance ?? MinSegmentDistance),
-                Execute: onExecute));
+                Execute: onExecute,
+                TargetAppPaths: targetApps,
+                ExcludedAppPaths: excludedApps));
         }
-        var appBindings = AppSettingsStore.Load().MouseGestureAppBindings;
-        foreach (var b in appBindings)
+
+        // 针对未绑定小程序、仅绑定了应用的手势进行注册
+        foreach (var group in whitelistBySeq)
         {
-            if (string.IsNullOrWhiteSpace(b.Sequence) || string.IsNullOrWhiteSpace(b.AppPath)) continue;
+            if (registrations.Any(r => string.Equals(MouseGestureNaming.NormalizeSequence(r.Sequence), group.Key, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var firstBind = appBindings.FirstOrDefault(b => !b.IsBlacklist && string.Equals(MouseGestureNaming.NormalizeSequence(b.Sequence), group.Key, StringComparison.OrdinalIgnoreCase));
+            var appName = firstBind?.AppName ?? "App";
+            IReadOnlyList<string>? excludedApps = blacklistBySeq.TryGetValue(group.Key, out var b) && b.Count > 0 ? b : null;
+
             registrations.Add(new RegisteredGesture(
-                ExtensionId: "app:" + b.AppPath,
-                ExtensionName: string.IsNullOrWhiteSpace(b.AppName) ? System.IO.Path.GetFileNameWithoutExtension(b.AppPath) : b.AppName,
+                ExtensionId: "app:" + (firstBind?.AppPath ?? string.Empty),
+                ExtensionName: appName,
                 Trigger: runtimeTrigger,
-                Sequence: b.Sequence,
-                Sign: b.Sequence,
-                IconReference: b.AppPath,
+                Sequence: group.Key,
+                Sign: group.Key,
+                IconReference: firstBind?.AppPath,
                 ExtensionDirectoryPath: null,
-                DisplayGlyph: BuildFallbackGlyph(string.IsNullOrWhiteSpace(b.AppName) ? "App" : b.AppName),
+                DisplayGlyph: BuildFallbackGlyph(appName),
                 Data: null,
                 Tolerance: null,
                 MinDistance: MinSegmentDistance,
-                Execute: onExecute));
+                Execute: onExecute,
+                TargetAppPaths: group.Value,
+                ExcludedAppPaths: excludedApps));
         }
 
         ReloadRegistrations(registrations);
@@ -280,11 +355,22 @@ public static class MouseGestureService
         {
             case WmLButtonDown:
                 _leftDown = true;
-                if (_rightDown && AppSettingsStore.Load().MouseGestureEnableRockerActions && !ShouldBypassGesture(data.pt))
+                if (_rightDown)
                 {
-                    HandleRockerGesture("rocker-right-left", data.pt);
-                    _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
-                    return (IntPtr)1;
+                    if (AppSettingsStore.Load().MouseGestureEnableRockerActions && !ShouldBypassGesture(data.pt))
+                    {
+                        HandleRockerGesture("rocker-right-left", data.pt);
+                        _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
+                        return (IntPtr)1;
+                    }
+                    else
+                    {
+                        // 摇摆取消（Rocker Escape）：按住右键时点击左键，立即安全撤销手势画线！
+                        CancelCurrentGesture("rocker-left-click");
+                        _suppressNextLeftUp = true;
+                        _suppressNextRightUp = true;
+                        return (IntPtr)1;
+                    }
                 }
                 if (IsControlDown() && _registry.ContainsKey("ctrl-left-drag") && !ShouldBypassGesture(data.pt))
                 {
@@ -635,7 +721,7 @@ public static class MouseGestureService
         }
 
         var templateMatch = MouseGestureTemplateRecognizer.FindBestMatch(_path, triggerRegistry.Templates);
-        if (templateMatch != null)
+        if (templateMatch != null && IsGestureAllowedInForeground(templateMatch.Gesture))
         {
             Log("info", $"FinishStroke (MATCHED_TEMPLATE): trigger={trigger}, points={_path.Count}, sign={templateMatch.Gesture.Sign}, score={templateMatch.Score:P0}, name='{templateMatch.Gesture.ExtensionName}', extId={templateMatch.Gesture.ExtensionId}.");
             matchedGesture = templateMatch.Gesture;
@@ -645,15 +731,82 @@ public static class MouseGestureService
 
         if (triggerRegistry.SequenceMap.TryGetValue(sequence, out var owners) && owners.Count > 0)
         {
-            var winner = owners[0];
-            Log("info", $"FinishStroke (MATCHED_SEQUENCE): trigger={trigger}, points={_path.Count}, sequence='{sequence}', name='{winner.ExtensionName}', extId={winner.ExtensionId}, candidates={owners.Count}.");
-            matchedGesture = winner;
-            previewInfo = BuildPreviewInfo(winner, sequence);
-            return true;
+            var winner = SelectBestMatchingGesture(owners);
+            if (winner != null)
+            {
+                Log("info", $"FinishStroke (MATCHED_SEQUENCE): trigger={trigger}, points={_path.Count}, sequence='{sequence}', name='{winner.ExtensionName}', extId={winner.ExtensionId}, candidates={owners.Count}.");
+                matchedGesture = winner;
+                previewInfo = BuildPreviewInfo(winner, sequence);
+                return true;
+            }
         }
 
         Log("info", $"FinishStroke (UNMATCHED): trigger={trigger}, points={_path.Count}, totalDist={totalDist:F1}px, sequence='{sequence}', templatesChecked={triggerRegistry.Templates.Count}, sequencesChecked={triggerRegistry.SequenceMap.Count}.");
         return false;
+    }
+
+    private static bool IsGestureAllowedInForeground(RegisteredGesture gesture)
+    {
+        // 1. 黑名单检查：若当前前台应用在黑名单中，坚决禁用
+        if (gesture.ExcludedAppPaths != null && gesture.ExcludedAppPaths.Count > 0)
+        {
+            if (WindowSensorHelper.IsForegroundProcessMatch(gesture.ExcludedAppPaths))
+            {
+                return false;
+            }
+        }
+
+        // 2. 白名单检查：若设置了白名单，必须匹配其中之一
+        if (gesture.TargetAppPaths != null && gesture.TargetAppPaths.Count > 0)
+        {
+            return WindowSensorHelper.IsForegroundProcessMatch(gesture.TargetAppPaths);
+        }
+
+        return true;
+    }
+
+    private static RegisteredGesture? SelectBestMatchingGesture(IEnumerable<RegisteredGesture> candidates)
+    {
+        var list = candidates.ToList();
+        if (list.Count == 0) return null;
+
+        // 1. 过滤掉被黑名单禁用的手势
+        var activeList = list.Where(g =>
+        {
+            if (g.ExcludedAppPaths != null && g.ExcludedAppPaths.Count > 0)
+            {
+                if (WindowSensorHelper.IsForegroundProcessMatch(g.ExcludedAppPaths))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }).ToList();
+
+        if (activeList.Count == 0) return null;
+
+        // 2. 优先匹配限定了当前前台应用的手势（应用专属白名单手势）
+        foreach (var g in activeList)
+        {
+            if (g.TargetAppPaths != null && g.TargetAppPaths.Count > 0)
+            {
+                if (WindowSensorHelper.IsForegroundProcessMatch(g.TargetAppPaths))
+                {
+                    return g;
+                }
+            }
+        }
+
+        // 3. 如果前台应用没有专属白名单手势，回退匹配全局未限定手势
+        foreach (var g in activeList)
+        {
+            if (g.TargetAppPaths == null || g.TargetAppPaths.Count == 0)
+            {
+                return g;
+            }
+        }
+
+        return null;
     }
 
     private static void ExecuteAfterInputSettles(RegisteredGesture? winner)
@@ -692,12 +845,16 @@ public static class MouseGestureService
 
         if (triggerRegistry.SequenceMap.TryGetValue(sequence, out var owners) && owners.Count > 0)
         {
-            previewInfo = BuildPreviewInfo(owners[0], sequence);
-            return true;
+            var best = SelectBestMatchingGesture(owners);
+            if (best != null)
+            {
+                previewInfo = BuildPreviewInfo(best, sequence);
+                return true;
+            }
         }
 
         var templateMatch = MouseGestureTemplateRecognizer.FindBestMatch(_path, triggerRegistry.Templates);
-        if (templateMatch == null)
+        if (templateMatch == null || !IsGestureAllowedInForeground(templateMatch.Gesture))
         {
             return false;
         }
@@ -1399,7 +1556,9 @@ public sealed record RegisteredGesture(
     int[]? Data,
     int? Tolerance,
     int MinDistance,
-    Action<RegisteredGesture>? Execute);
+    Action<RegisteredGesture>? Execute,
+    IReadOnlyList<string>? TargetAppPaths = null,
+    IReadOnlyList<string>? ExcludedAppPaths = null);
 
 public sealed record MouseGesturePreviewInfo(
     string ExtensionName,

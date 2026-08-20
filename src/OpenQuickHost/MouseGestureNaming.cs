@@ -16,11 +16,38 @@ public static class MouseGestureNaming
         var builtInName = MouseGestureTemplateRecognizer.RecognizeBuiltInSign(path);
         if (!string.IsNullOrWhiteSpace(builtInName))
         {
-            return builtInName;
+            return TranslateSignToFriendlyName(builtInName);
         }
 
         var templateName = TryGetTemplateName(normalized, path);
-        return templateName ?? BuildDirectionalName(normalized);
+        return templateName != null ? TranslateSignToFriendlyName(templateName) : BuildDirectionalName(normalized);
+    }
+
+    public static string TranslateSignToFriendlyName(string? sign)
+    {
+        if (string.IsNullOrWhiteSpace(sign)) return string.Empty;
+        return sign.Trim().ToUpperInvariant() switch
+        {
+            "CHECKMARK" => "✔ 打勾",
+            "HEART" => "♥ 心形",
+            "CIRCLE" or "LOOP" => "⭕ 画圆",
+            "ALPHA" => "α 鱼形/Alpha",
+            "TRIANGLE" => "▲ 三角形",
+            "RECTANGLE" => "■ 矩形",
+            "V" => "V 字形",
+            "INVERTED-V" => "倒 V 字形",
+            "U" => "U 字形",
+            "C" => "C 字形",
+            "Z" => "Z 字形",
+            "S" => "S 字形",
+            "N" => "N 字形",
+            "M" => "M 字形",
+            "W" => "W 字形",
+            "L" => "L 字形",
+            "P" => "P 字形",
+            "P-REV" => "反向 P",
+            _ => sign
+        };
     }
 
     public static string NormalizeSequence(string? sequence)
@@ -78,7 +105,7 @@ public static class MouseGestureNaming
 
         if (closingDistance <= Math.Min(width, height) * 0.35 && sequence.Length >= 4)
         {
-            return "LOOP";
+            return "CIRCLE";
         }
 
         var verticalDominant = height > width * 1.15;
@@ -94,21 +121,21 @@ public static class MouseGestureNaming
 
     private static string BuildDirectionalName(string sequence)
     {
-        return string.Join("-", sequence.Select(GetDirectionName));
+        return string.Join(" ", sequence.Select(GetDirectionName));
     }
 
     private static string GetDirectionName(char direction)
     {
         return direction switch
         {
-            '↑' => "UP",
-            '↗' => "UP-RIGHT",
-            '→' => "RIGHT",
-            '↘' => "DOWN-RIGHT",
-            '↓' => "DOWN",
-            '↙' => "DOWN-LEFT",
-            '←' => "LEFT",
-            '↖' => "UP-LEFT",
+            '↑' => "上",
+            '↗' => "右上",
+            '→' => "右",
+            '↘' => "右下",
+            '↓' => "下",
+            '↙' => "左下",
+            '←' => "左",
+            '↖' => "左上",
             _ => direction.ToString()
         };
     }

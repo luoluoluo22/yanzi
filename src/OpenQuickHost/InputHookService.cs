@@ -124,6 +124,39 @@ public class InputHookService
         HostAssets.AppendLog($"Input hook: mouse state reset requested from {reason}.");
     }
 
+    /// <summary>
+    /// 无感热重启/自愈重装底层钩子（在系统休眠唤醒、锁屏解锁或健康看门狗触发时调用）
+    /// </summary>
+    public static void RestartHooks(string reason = "watchdog")
+    {
+        try
+        {
+            if (!_isEnabled) return;
+            
+            if (_mouseHookID != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_mouseHookID);
+                _mouseHookID = IntPtr.Zero;
+            }
+            if (_keyboardHookID != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_keyboardHookID);
+                _keyboardHookID = IntPtr.Zero;
+            }
+
+            ResetTransientMouseState();
+
+            _mouseHookID = SetMouseHook(_mouseProc);
+            _keyboardHookID = SetKeyboardHook(_keyboardProc);
+            
+            HostAssets.AppendLog($"Input hook: auto-reinstalled successfully due to {reason}. mouseHook=0x{_mouseHookID.ToInt64():X}, keyboardHook=0x{_keyboardHookID.ToInt64():X}.");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Input hook: failed to restart hooks on {reason}: {ex.Message}");
+        }
+    }
+
     public static void Start(
         Action onLongPress,
         Action? onLongPressRelease = null,
@@ -332,6 +365,22 @@ public class InputHookService
             if (message == WM_LBUTTONDOWN)
             {
                 _leftButtonDown = true;
+
+                // 摇摆取消 (Rocker Cancel)：当右键正在被跟踪长按或手势划线时，点击左键立即安全熔断取消！
+                if (_rightButtonDown && (_pendingLongPressTarget != ActiveTriggerTarget.None || _trackedButton == TrackedMouseButton.Right))
+                {
+                    _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                    _pendingLongPressTarget = ActiveTriggerTarget.None;
+                    _dragTriggered = false;
+                    _releaseShouldExecute = false;
+                    _rightButtonDownSwallowed = true; // 确保右键松开时不弹系统菜单
+                    _leftButtonDownSwallowed = true;
+                    _activeTriggerTarget = ActiveTriggerTarget.None;
+                    MouseGestureService.CancelCurrentGesture("rocker-left-click");
+                    HostAssets.AppendLog("Input hook: Rocker Escape triggered (right hold + left click), cancelled long press & gesture.");
+                    return (IntPtr)1;
+                }
+
                 if (IsControlDown())
                 {
                     if (MouseGestureService.HasCtrlLeftDragRegistrations)
@@ -589,6 +638,19 @@ public class InputHookService
             if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) && keyboard.vkCode == 0x1B)
             {
                 OnGlobalEscapePressed?.Invoke();
+
+                // ESC 键逃生熔断：若正在手势划线或长按等待，立即重置长按状态并取消手势
+                if (_pendingLongPressTarget != ActiveTriggerTarget.None || _trackedButton != TrackedMouseButton.None)
+                {
+                    _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                    _pendingLongPressTarget = ActiveTriggerTarget.None;
+                    _dragTriggered = false;
+                    _releaseShouldExecute = false;
+                    _rightButtonDownSwallowed = true;
+                    _activeTriggerTarget = ActiveTriggerTarget.None;
+                    HostAssets.AppendLog("Input hook: Escape key pressed, aborted long press tracking.");
+                }
+                MouseGestureService.CancelCurrentGesture("escape-key");
             }
 
             if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
