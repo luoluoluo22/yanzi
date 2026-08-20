@@ -127,6 +127,8 @@ public class RadialMenuNestedRingViewModel : INotifyPropertyChanged
     public ObservableCollection<RadialSeparatorViewModel> Separators { get; } = new();
     public ObservableCollection<RadialMenuItemViewModel> OuterItems { get; } = new();
     public ObservableCollection<RadialSeparatorViewModel> OuterSeparators { get; } = new();
+    public ObservableCollection<RadialMenuItemViewModel> MostOuterItems { get; } = new();
+    public ObservableCollection<RadialSeparatorViewModel> MostOuterSeparators { get; } = new();
 
     public double OuterEllipseX => CenterX - 165;
     public double OuterEllipseY => CenterY - 165;

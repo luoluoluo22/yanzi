@@ -22,34 +22,15 @@
         <!-- 编辑模式下的全屏纯色不透明背景层，彻底遮挡底层桌面与应用 -->
         <Border x:Name="EditModeBackdropOverlay"
                 Background="#FF262626"
+                Opacity="1.0"
                 IsHitTestVisible="False"
-                Visibility="{Binding IsEditModeLocked, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border.Style>
-                <Style TargetType="Border">
-                    <Setter Property="Opacity" Value="0"/>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsEditModeLocked}" Value="True">
-                            <DataTrigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1.0" Duration="0:0:0.25"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </DataTrigger.EnterActions>
-                            <DataTrigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.0" Duration="0:0:0.2"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </DataTrigger.ExitActions>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Border.Style>
-        </Border>
+                Visibility="{Binding IsEditModeLocked, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
         <Grid x:Name="CenterMainWheelContainer"
+              Width="1400"
+              Height="1400"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
               Visibility="{Binding IsCenterWheelVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <!-- 第 3 层：最外圈 8 方向扩展容器 (半径 165~280，默认隐藏，有配置或鼠标划入时显现) -->
         <Grid x:Name="OuterWheelLayer"
@@ -223,7 +204,7 @@
                    TextAlignment="Center"
                    TextTrimming="CharacterEllipsis">
             <TextBlock.RenderTransform>
-                <TranslateTransform Y="205"/>
+                <TranslateTransform Y="314"/>
             </TextBlock.RenderTransform>
         </TextBlock>
  
@@ -231,7 +212,7 @@
                       HorizontalAlignment="Center"
                       VerticalAlignment="Center">
             <ItemsControl.RenderTransform>
-                <TranslateTransform Y="185"/>
+                <TranslateTransform Y="295"/>
             </ItemsControl.RenderTransform>
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -264,7 +245,7 @@
                    VerticalAlignment="Center"
                    TextAlignment="Center">
             <TextBlock.RenderTransform>
-                <TranslateTransform Y="225"/>
+                <TranslateTransform Y="336"/>
             </TextBlock.RenderTransform>
         </TextBlock>
 
@@ -894,7 +875,7 @@
                     <Setter Property="VerticalAlignment" Value="Center"/>
                     <Setter Property="RenderTransform">
                         <Setter.Value>
-                            <TranslateTransform Y="270" />
+                            <TranslateTransform Y="375" />
                         </Setter.Value>
                     </Setter>
                     <Style.Triggers>
@@ -962,9 +943,40 @@
                             </Style.Triggers>
                         </Style>
                     </Button.Style>
-                    <Viewbox Width="16" Height="16" Stretch="Uniform">
-                        <Path Data="{local:IconGeometry pen}" Fill="{Binding EditButtonBrush}" />
-                    </Viewbox>
+                    <Grid Width="16" Height="16">
+                        <!-- 正常状态下的铅笔图标 -->
+                        <Viewbox Width="16" Height="16" Stretch="Uniform"
+                                 Visibility="{Binding IsEditIconVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Path Data="{local:IconGeometry pen}" Fill="{Binding EditButtonBrush}" />
+                        </Viewbox>
+
+                        <!-- 加载中的旋转小圆环 -->
+                        <Viewbox Width="16" Height="16" Stretch="Uniform"
+                                 Visibility="{Binding IsEditLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Canvas Width="16" Height="16" RenderTransformOrigin="0.5,0.5">
+                                <Canvas.RenderTransform>
+                                    <RotateTransform x:Name="EditLoadingSpinnerRotation" Angle="0"/>
+                                </Canvas.RenderTransform>
+                                <Canvas.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever">
+                                                <DoubleAnimation Storyboard.TargetName="EditLoadingSpinnerRotation"
+                                                                 Storyboard.TargetProperty="Angle"
+                                                                 From="0" To="360" Duration="0:0:0.8"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Canvas.Triggers>
+                                <Path Stroke="{DynamicResource BrushAccent}"
+                                      StrokeThickness="2"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      StrokeDashArray="18 10"
+                                      Data="M 8,1 A 7,7 0 1 1 1,8" />
+                            </Canvas>
+                        </Viewbox>
+                    </Grid>
                 </Button>
 
                 <Button x:Name="PinButton"
@@ -1161,6 +1173,9 @@
 
         <ItemsControl ItemsSource="{Binding SubRings}"
                       Visibility="{Binding HasSubRings, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <ItemsControl.RenderTransform>
+                <TranslateTransform Y="{Binding EditContentTranslateY}"/>
+            </ItemsControl.RenderTransform>
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <Canvas />
@@ -1309,7 +1324,9 @@
                                  Canvas.Top="{Binding CenterEllipseY}"
                                  Fill="{DynamicResource BrushRadialCenterBG}"
                                  Stroke="{DynamicResource BrushRadialBorderActive}"
-                                 StrokeThickness="1"/>
+                                 StrokeThickness="1"
+                                 Cursor="Hand"
+                                 MouseLeftButtonDown="RadialSubRingCenter_MouseLeftButtonDown"/>
 
                         <!-- 8. 中心轮盘/子环名称文字 (纯净居中，无多余图标遮挡) -->
                         <Grid Canvas.Left="{Binding CenterEllipseX}"
@@ -1328,8 +1345,147 @@
                                        Margin="4"/>
                         </Grid>
                         
-                        <!-- 9. 独立双层轮盘外圈槽位文字与图标渲染 -->
+                        <!-- 9. 独立双层轮盘中间层槽位文字与图标渲染 -->
                         <ItemsControl ItemsSource="{Binding OuterItems}"
+                                      Visibility="{Binding IsStandaloneRadial, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemContainerStyle>
+                                <Style TargetType="ContentPresenter">
+                                    <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                                    <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                                </Style>
+                            </ItemsControl.ItemContainerStyle>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="50"
+                                            Height="40"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            AllowDrop="True"
+                                            MouseLeftButtonDown="RadialSlot_MouseLeftButtonDown"
+                                            MouseMove="RadialSlot_MouseMove"
+                                            MouseRightButtonDown="RadialSlot_MouseRightButtonDown"
+                                            DragOver="RadialSlot_DragOver"
+                                            Drop="RadialSlot_Drop"
+                                            DragEnter="RadialSlot_DragEnter"
+                                            DragLeave="RadialSlot_DragLeave"
+                                            Cursor="Hand"
+                                            RenderTransformOrigin="0.5,0.5">
+                                        <Border.RenderTransform>
+                                            <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
+                                        </Border.RenderTransform>
+                                        <Grid>
+                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <TextBlock Text="➕" 
+                                                           Foreground="{DynamicResource BrushRadialTextMuted}" 
+                                                           FontSize="{DynamicResource FontSizeNormal}" 
+                                                           HorizontalAlignment="Center" 
+                                                           VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                
+                                                <Grid Width="22"
+                                                      Height="22"
+                                                      HorizontalAlignment="Center"
+                                                      Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Border Width="22" Height="22" CornerRadius="5" Background="{Binding AccentBrush}">
+                                                        <Grid ClipToBounds="True">
+                                                            <Image Source="{Binding IconSource}"
+                                                                   Stretch="UniformToFill"
+                                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Viewbox Width="13"
+                                                                     Height="13"
+                                                                     Stretch="Uniform"
+                                                                     HorizontalAlignment="Center"
+                                                                     VerticalAlignment="Center"
+                                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Viewbox>
+                                                            <TextBlock Text="{Binding DisplayGlyph}"
+                                                                       Foreground="White"
+                                                                       FontSize="{DynamicResource FontSizeSmall}"
+                                                                       FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"
+                                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        </Grid>
+                                                    </Border>
+                                                    <Border Width="7"
+                                                            Height="7"
+                                                            CornerRadius="3.5"
+                                                            Background="#FF10B981"
+                                                            BorderBrush="#CCFFFFFF"
+                                                            BorderThickness="0.6"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Bottom"
+                                                            Margin="-2,0,0,-2"
+                                                            IsHitTestVisible="False"
+                                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                </Grid>
+                                                <TextBlock Text="{Binding Title}"
+                                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
+                                                           FontSize="9"
+                                                           Width="48"
+                                                           TextAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Margin="0,2,0,0"
+                                                           Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- 9.1 独立双层轮盘最外层扇区 (半径 165~280) -->
+                        <ItemsControl ItemsSource="{Binding MostOuterItems}"
+                                      IsHitTestVisible="False"
+                                      Visibility="{Binding IsStandaloneRadial, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Path Data="{Binding SectorGeometry}"
+                                          Fill="{Binding SectorBrush}"
+                                          Opacity="{Binding SectorOpacity}"
+                                          Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- 9.2 独立双层轮盘最外层分隔线 -->
+                        <ItemsControl ItemsSource="{Binding MostOuterSeparators}"
+                                      Visibility="{Binding IsStandaloneRadial, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorder}" StrokeThickness="1"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- 9.3 独立双层轮盘最外层槽位文字与图标渲染 -->
+                        <ItemsControl ItemsSource="{Binding MostOuterItems}"
                                       Visibility="{Binding IsStandaloneRadial, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -1592,43 +1748,18 @@
             </Ellipse>
         </Canvas>
 
-        <!-- 编辑模式末尾：新增轮盘圆形按钮 -->
-        <Canvas Visibility="{Binding IsEditModeLocked, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Width="180"
-                    Height="180"
-                    Canvas.Left="{Binding AddPageButtonLeft}"
-                    Canvas.Top="{Binding AddPageButtonTop}"
-                    CornerRadius="90"
-                    Background="#14FFFFFF"
-                    BorderBrush="{DynamicResource BrushAccent}"
-                    BorderThickness="1.8"
-                    Cursor="Hand"
-                    MouseLeftButtonDown="AddPageCircle_MouseLeftButtonDown">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="Opacity" Value="0.65"/>
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Opacity" Value="1.0"/>
-                                <Setter Property="Background" Value="#2AFFFFFF"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <Border.Effect>
-                    <DropShadowEffect Color="#3B82F6" BlurRadius="12" ShadowDepth="0" Opacity="0.45"/>
-                </Border.Effect>
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                    <Viewbox Width="32" Height="32" Margin="0,0,0,8">
-                        <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushAccent}"/>
-                    </Viewbox>
-                    <TextBlock Text="新建轮盘"
-                               FontSize="13"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource BrushTextPrimary}"
-                               HorizontalAlignment="Center"/>
-                </StackPanel>
-            </Border>
-        </Canvas>
+        <!-- 编辑模式下的极简半透明垂直滚动条 -->
+        <ScrollBar Orientation="Vertical"
+                   HorizontalAlignment="Right"
+                   VerticalAlignment="Stretch"
+                   Width="8"
+                   Margin="0,30,10,70"
+                   Minimum="0"
+                   Maximum="{Binding EditMaxScrollOffset}"
+                   Value="{Binding EditScrollOffsetY, Mode=TwoWay}"
+                   ViewportSize="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Window}}"
+                   Visibility="{Binding IsScrollBarVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
+                   Opacity="0.55"/>
+
     </Grid>
 </Window>

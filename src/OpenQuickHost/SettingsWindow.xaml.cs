@@ -9481,53 +9481,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     /// </summary>
     private void SyncRadialMenuPageComboBoxSelection()
     {
-        if (RadialMenuPageComboBox == null)
-        {
-            return;
-        }
-
-        var targetId = _settings.RadialMenu?.SelectedPageId ?? string.Empty;
-        var targetIndex = -1;
-        for (var i = 0; i < RadialMenuPages.Count; i++)
-        {
-            if (string.Equals(RadialMenuPages[i].Id, targetId, StringComparison.OrdinalIgnoreCase))
-            {
-                targetIndex = i;
-                break;
-            }
-        }
-
-        if (targetIndex < 0 && RadialMenuPages.Count > 0)
-        {
-            targetIndex = 0;
-        }
-
-        _isRefreshingRadialMenu = true;
-        try
-        {
-            RadialMenuPageComboBox.SelectedIndex = targetIndex;
-        }
-        finally
-        {
-            _isRefreshingRadialMenu = false;
-        }
     }
 
-    /// <summary>
-    /// ComboBox选择变化事件处理，替代SelectedValue的TwoWay绑定。
-    /// </summary>
     private void RadialMenuPageComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        if (_isRefreshingRadialMenu)
-        {
-            return;
-        }
-
-        if (RadialMenuPageComboBox.SelectedItem is RadialMenuPageEditorItem selected &&
-            !string.IsNullOrWhiteSpace(selected.Id))
-        {
-            SelectedRadialMenuPageId = selected.Id;
-        }
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
@@ -9988,13 +9945,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var removedId = removePageId;
         var parentPageId = _settings.RadialMenu.Pages.FirstOrDefault(page =>
             page.ChildPageIds?.Any(id => string.Equals(id, removedId, StringComparison.OrdinalIgnoreCase)) == true)?.Id;
-        _settings.RadialMenu.Pages.RemoveAll(page => page.Id.Equals(removedId, StringComparison.OrdinalIgnoreCase));
-        foreach (var page in _settings.RadialMenu.Pages)
-        {
-            page.ChildPageIds = (page.ChildPageIds ?? [])
-                .Select(id => string.Equals(id, removedId, StringComparison.OrdinalIgnoreCase) ? null : id)
-                .ToList();
-        }
+        _settings.RadialMenu.CascadeDeletePages([removedId]);
 
         var remainingChildIds = _settings.RadialMenu.GetChildPageIdsSet();
         var fallbackPage =
@@ -10017,12 +9968,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private string ResolveSelectedRadialMenuPageIdFromEditor()
     {
-        if (RadialMenuPageComboBox?.SelectedItem is RadialMenuPageEditorItem selected &&
-            !string.IsNullOrWhiteSpace(selected.Id))
-        {
-            return selected.Id;
-        }
-
         return SelectedRadialMenuPageId;
     }
 
@@ -10455,8 +10400,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void RadialSlotDeleteMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var slot = ResolveRadialSlotFromMenuSender(sender);
-        var comboPage = RadialMenuPageComboBox?.SelectedItem as RadialMenuPageEditorItem;
-        HostAssets.AppendLog($"Settings radial delete menu clicked: comboPage={FormatRadialTraceValue(comboPage?.Id)}, selectedPage={FormatRadialTraceValue(_settings.RadialMenu?.SelectedPageId)}, resolvedSlot={DescribeRadialTraceSlot(slot)}.");
+        HostAssets.AppendLog($"Settings radial delete menu clicked: selectedPage={FormatRadialTraceValue(_settings.RadialMenu?.SelectedPageId)}, resolvedSlot={DescribeRadialTraceSlot(slot)}.");
         if (slot == null)
         {
             return;

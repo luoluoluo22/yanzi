@@ -1289,6 +1289,97 @@ public sealed class RadialMenuSettings
         }
         return set;
     }
+
+    /// <summary>
+    /// 递归收集指定根页面及其所有层级的后代子环页面 ID
+    /// </summary>
+    public HashSet<string> CollectPageAndDescendantIds(string rootPageId)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(rootPageId) || Pages == null)
+        {
+            return result;
+        }
+
+        var stack = new Stack<string>();
+        stack.Push(rootPageId.Trim());
+        while (stack.Count > 0)
+        {
+            var pageId = stack.Pop();
+            if (!result.Add(pageId))
+            {
+                continue;
+            }
+
+            var page = Pages.FirstOrDefault(p => p.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
+            if (page?.ChildPageIds == null)
+            {
+                continue;
+            }
+
+            foreach (var childId in page.ChildPageIds)
+            {
+                if (!string.IsNullOrWhiteSpace(childId) && !string.Equals(childId, page.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    stack.Push(childId.Trim());
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 级联删除页面及其所有后代子环，并清理剩余所有槽位中的子环引用
+    /// </summary>
+    public HashSet<string> CascadeDeletePages(IEnumerable<string> rootPageIdsToDelete)
+    {
+        var allIdsToDelete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Pages == null)
+        {
+            return allIdsToDelete;
+        }
+
+        foreach (var rootId in rootPageIdsToDelete)
+        {
+            var tree = CollectPageAndDescendantIds(rootId);
+            foreach (var id in tree)
+            {
+                allIdsToDelete.Add(id);
+            }
+        }
+
+        if (allIdsToDelete.Count == 0)
+        {
+            return allIdsToDelete;
+        }
+
+        // 1. 批量移除所有目标页面与其深层子环页面
+        Pages.RemoveAll(p => allIdsToDelete.Contains(p.Id));
+
+        // 2. 清理剩余页面槽位中对已删除页面的子环引用
+        foreach (var page in Pages)
+        {
+            if (page.ChildPageIds == null) continue;
+            for (int i = 0; i < page.ChildPageIds.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(page.ChildPageIds[i]) && allIdsToDelete.Contains(page.ChildPageIds[i]!))
+                {
+                    page.ChildPageIds[i] = null;
+                }
+            }
+        }
+
+        // 3. 如果当前选中的页面被删除了，重新选定一个合法的顶层页面
+        if (allIdsToDelete.Contains(SelectedPageId))
+        {
+            var childPageIdsSet = GetChildPageIdsSet();
+            var topLevelPages = Pages.Where(p => !childPageIdsSet.Contains(p.Id)).ToList();
+            SelectedPageId = topLevelPages.FirstOrDefault()?.Id ?? Pages.FirstOrDefault()?.Id ?? "default";
+        }
+
+        return allIdsToDelete;
+    }
 }
 
 public static class RadialActivationKeys
