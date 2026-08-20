@@ -115,8 +115,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         HostAssets.AppendLog($"SettingsWindow InitializeComponent completed. Content={Content?.GetType().Name ?? "null"}, width={Width}, height={Height}.");
         Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(17, 17, 17));
         Opacity = 1;
-        App.EnableSilentLoading(this);
-        HostAssets.AppendLog($"SettingsWindow silent loading attached. opacity={Opacity}, showActivated={ShowActivated}, background={Background}.");
         _mainWindow = mainWindow;
         _settings = AppSettingsStore.Load();
         _personalSyncSettings = ClonePersonalSyncSettings(_settings.PersonalSync);

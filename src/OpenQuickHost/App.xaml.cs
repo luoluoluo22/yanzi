@@ -1162,7 +1162,6 @@ public partial class App : WpfApplication
         var originalSizeToContent = window.SizeToContent;
         var originalShowInTaskbar = window.ShowInTaskbar;
         var originalResizeMode = window.ResizeMode;
-        var originalAllowsTransparency = window.AllowsTransparency;
         var isFirstRender = true;
 
         window.ShowInTaskbar = false;
@@ -1178,47 +1177,50 @@ public partial class App : WpfApplication
 
             isFirstRender = false;
 
-            var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
-            if (handle != IntPtr.Zero)
+            try
             {
-                int disableTransitions = 1;
-                DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
+                var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                if (handle != IntPtr.Zero)
+                {
+                    int disableTransitions = 1;
+                    DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
+                }
+
+                window.SizeToContent = originalSizeToContent;
+                if (!double.IsNaN(originalWidth)) window.Width = originalWidth;
+                if (!double.IsNaN(originalHeight)) window.Height = originalHeight;
+
+                if (startupLocation == WindowStartupLocation.CenterOwner && window.Owner != null)
+                {
+                    window.Left = window.Owner.Left + (window.Owner.Width - window.Width) / 2;
+                    window.Top = window.Owner.Top + (window.Owner.Height - window.Height) / 2;
+                }
+                else if (startupLocation == WindowStartupLocation.CenterScreen)
+                {
+                    var screenWidth = SystemParameters.PrimaryScreenWidth;
+                    var screenHeight = SystemParameters.PrimaryScreenHeight;
+                    window.Left = (screenWidth - window.Width) / 2;
+                    window.Top = (screenHeight - window.Height) / 2;
+                }
+
+                window.ShowInTaskbar = originalShowInTaskbar;
+                window.ResizeMode = originalResizeMode;
+                window.Opacity = 1;
+
+                if (handle != IntPtr.Zero)
+                {
+                    int disableTransitions = 0;
+                    DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
+                }
             }
-
-            window.SizeToContent = originalSizeToContent;
-            if (!double.IsNaN(originalWidth)) window.Width = originalWidth;
-            if (!double.IsNaN(originalHeight)) window.Height = originalHeight;
-
-            if (startupLocation == WindowStartupLocation.CenterOwner && window.Owner != null)
+            catch (Exception ex)
             {
-                window.Left = window.Owner.Left + (window.Owner.Width - window.Width) / 2;
-                window.Top = window.Owner.Top + (window.Owner.Height - window.Height) / 2;
-            }
-            else if (startupLocation == WindowStartupLocation.CenterScreen)
-            {
-                var screenWidth = SystemParameters.PrimaryScreenWidth;
-                var screenHeight = SystemParameters.PrimaryScreenHeight;
-                window.Left = (screenWidth - window.Width) / 2;
-                window.Top = (screenHeight - window.Height) / 2;
-            }
-
-            window.ShowInTaskbar = originalShowInTaskbar;
-            window.ResizeMode = originalResizeMode;
-            window.AllowsTransparency = originalAllowsTransparency;
-            window.Opacity = 1;
-            window.Activate();
-            window.Focus();
-
-            if (handle != IntPtr.Zero)
-            {
-                int disableTransitions = 0;
-                DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
+                HostAssets.AppendLog($"EnableSilentLoading.RevealWindow error: {ex.Message}");
             }
         }
 
         window.Loaded += (_, _) => window.Dispatcher.BeginInvoke((Action)RevealWindow, DispatcherPriority.Loaded);
         window.ContentRendered += (_, _) => window.Dispatcher.BeginInvoke((Action)RevealWindow, DispatcherPriority.Render);
-        window.Dispatcher.BeginInvoke((Action)RevealWindow, DispatcherPriority.Background);
     }
 
     public new static App? Current => System.Windows.Application.Current as App;
@@ -1262,6 +1264,7 @@ public partial class App : WpfApplication
                 HostAssets.AppendLog($"Settings window shown. opacity={_settingsWindow.Opacity}, visibility={_settingsWindow.Visibility}.");
             }
 
+            _settingsWindow.Opacity = 1;
             _settingsWindow.NavigateTo(sectionKey);
             _settingsWindow.Activate();
             _settingsWindow.Focus();
@@ -1270,6 +1273,18 @@ public partial class App : WpfApplication
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Settings window open failed: {ex}");
+            try
+            {
+                _settingsWindow = new SettingsWindow(mainWindow);
+                _settingsWindow.Show();
+                _settingsWindow.NavigateTo(sectionKey);
+                _settingsWindow.Activate();
+                _settingsWindow.Focus();
+            }
+            catch (Exception ex2)
+            {
+                HostAssets.AppendLog($"Settings window fallback recreation failed: {ex2}");
+            }
         }
     }
 
