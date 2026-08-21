@@ -2573,225 +2573,208 @@
                                             <TextBlock Text="{Binding UpdateCheckStatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap"/>
                                         </StackPanel>
 
-                                        <!-- 右侧操作按钮（带向下箭头的 SplitButton 组合更新按钮） -->
-                                        <Border Grid.Column="1" Height="30" CornerRadius="4" Background="{DynamicResource PrimaryBrush}" VerticalAlignment="Center">
-                                            <Border.Style>
-                                                <Style TargetType="Border">
-                                                    <Setter Property="Opacity" Value="1.0"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
-                                                            <Setter Property="Opacity" Value="0.6"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
-                                                            <Setter Property="Opacity" Value="0.6"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Border.Style>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="1"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
+                                         <!-- 右侧多态操作按钮区 -->
+                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                             <!-- 状态 A: 更新已下载就绪，展示醒目的绿色“立即重启生效”按钮 -->
+                                             <Button Content="立即重启生效"
+                                                     Height="30"
+                                                     Padding="14,0"
+                                                     Background="#FF22C55E"
+                                                     BorderBrush="#FF22C55E"
+                                                     Foreground="#FFFFFFFF"
+                                                     FontWeight="SemiBold"
+                                                     FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                     Cursor="Hand"
+                                                     Click="ApplyUpdatesAndRestartButton_Click">
+                                                 <Button.Style>
+                                                     <Style TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
+                                                         <Setter Property="Visibility" Value="Collapsed"/>
+                                                         <Style.Triggers>
+                                                             <DataTrigger Binding="{Binding UpdateDownloaded}" Value="True">
+                                                                 <Setter Property="Visibility" Value="Visible"/>
+                                                             </DataTrigger>
+                                                             <Trigger Property="IsMouseOver" Value="True">
+                                                                 <Setter Property="Background" Value="#FF16A34A"/>
+                                                                 <Setter Property="BorderBrush" Value="#FF16A34A"/>
+                                                             </Trigger>
+                                                         </Style.Triggers>
+                                                     </Style>
+                                                 </Button.Style>
+                                             </Button>
 
-                                                <!-- 左侧“更新”主按钮（默认镜像加速更新） -->
-                                                <Button x:Name="UpdateMainButton" Grid.Column="0" Content="更新" Foreground="#FFFFFFFF" FontWeight="Medium" FontSize="{DynamicResource FontSizeSmallPlus}" Background="Transparent" BorderThickness="0" Padding="14,0" Cursor="Hand" Click="UpdateMainButton_Click" ToolTip="默认使用镜像源 (ghfast.top) 极速检测并下载更新">
-                                                    <Button.Style>
-                                                        <Style TargetType="Button">
-                                                            <Setter Property="IsEnabled" Value="True"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
-                                                                    <Setter Property="IsEnabled" Value="False"/>
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
-                                                                    <Setter Property="IsEnabled" Value="False"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Button.Style>
-                                                    <Button.Template>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border x:Name="btnBorder" Background="Transparent" CornerRadius="4,0,0,4" Padding="{TemplateBinding Padding}">
-                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter TargetName="btnBorder" Property="Background" Value="#26FFFFFF"/>
-                                                                </Trigger>
-                                                                <Trigger Property="IsPressed" Value="True">
-                                                                    <Setter TargetName="btnBorder" Property="Background" Value="#40FFFFFF"/>
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Button.Template>
-                                                </Button>
+                                             <!-- 状态 B: 未下载就绪时，展示组合更新按钮（支持切换镜像/官方通道） -->
+                                             <Border Height="30" CornerRadius="4" Background="{DynamicResource PrimaryBrush}" VerticalAlignment="Center">
+                                                 <Border.Style>
+                                                     <Style TargetType="Border">
+                                                         <Setter Property="Visibility" Value="Visible"/>
+                                                         <Setter Property="Opacity" Value="1.0"/>
+                                                         <Style.Triggers>
+                                                             <DataTrigger Binding="{Binding UpdateDownloaded}" Value="True">
+                                                                 <Setter Property="Visibility" Value="Collapsed"/>
+                                                             </DataTrigger>
+                                                             <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
+                                                                 <Setter Property="Opacity" Value="0.6"/>
+                                                             </DataTrigger>
+                                                             <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
+                                                                 <Setter Property="Opacity" Value="0.7"/>
+                                                             </DataTrigger>
+                                                         </Style.Triggers>
+                                                     </Style>
+                                                 </Border.Style>
+                                                 <Grid>
+                                                     <Grid.ColumnDefinitions>
+                                                         <ColumnDefinition Width="Auto"/>
+                                                         <ColumnDefinition Width="1"/>
+                                                         <ColumnDefinition Width="Auto"/>
+                                                     </Grid.ColumnDefinitions>
 
-                                                <!-- 中间细分割线 -->
-                                                <Rectangle Grid.Column="1" Fill="#33FFFFFF" Margin="0,5"/>
+                                                     <!-- 左侧主按钮 -->
+                                                     <Button x:Name="UpdateMainButton" Grid.Column="0" Content="{Binding UpdateMainButtonText}" Foreground="#FFFFFFFF" FontWeight="Medium" FontSize="{DynamicResource FontSizeSmallPlus}" Background="Transparent" BorderThickness="0" Padding="14,0" Cursor="Hand" Click="UpdateMainButton_Click" ToolTip="检测并自动下载更新">
+                                                         <Button.Style>
+                                                             <Style TargetType="Button">
+                                                                 <Setter Property="IsEnabled" Value="True"/>
+                                                                 <Style.Triggers>
+                                                                     <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
+                                                                         <Setter Property="IsEnabled" Value="False"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
+                                                                         <Setter Property="IsEnabled" Value="False"/>
+                                                                     </DataTrigger>
+                                                                 </Style.Triggers>
+                                                             </Style>
+                                                         </Button.Style>
+                                                         <Button.Template>
+                                                             <ControlTemplate TargetType="Button">
+                                                                 <Border x:Name="btnBorder" Background="Transparent" CornerRadius="4,0,0,4" Padding="{TemplateBinding Padding}">
+                                                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                 </Border>
+                                                                 <ControlTemplate.Triggers>
+                                                                     <Trigger Property="IsMouseOver" Value="True">
+                                                                         <Setter TargetName="btnBorder" Property="Background" Value="#26FFFFFF"/>
+                                                                     </Trigger>
+                                                                     <Trigger Property="IsPressed" Value="True">
+                                                                         <Setter TargetName="btnBorder" Property="Background" Value="#40FFFFFF"/>
+                                                                     </Trigger>
+                                                                 </ControlTemplate.Triggers>
+                                                             </ControlTemplate>
+                                                         </Button.Template>
+                                                     </Button>
 
-                                                <!-- 右侧向下箭头按钮，点击弹出下拉菜单选择镜像或官方源 -->
-                                                <Button x:Name="UpdateDropDownButton" Grid.Column="2" Width="26" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="UpdateDropDownButton_Click" ToolTip="选择更新通道 (默认镜像更新)">
-                                                    <Button.Style>
-                                                        <Style TargetType="Button">
-                                                            <Setter Property="IsEnabled" Value="True"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
-                                                                    <Setter Property="IsEnabled" Value="False"/>
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
-                                                                    <Setter Property="IsEnabled" Value="False"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Button.Style>
-                                                    <Button.Template>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border x:Name="arrowBorder" Background="Transparent" CornerRadius="0,4,4,0">
-                                                                <Path Data="M0,0 L3.5,3.5 L7,0" Stroke="#FFFFFFFF" StrokeThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter TargetName="arrowBorder" Property="Background" Value="#26FFFFFF"/>
-                                                                </Trigger>
-                                                                <Trigger Property="IsPressed" Value="True">
-                                                                    <Setter TargetName="arrowBorder" Property="Background" Value="#40FFFFFF"/>
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Button.Template>
-                                                    <Button.ContextMenu>
-                                                        <ContextMenu x:Name="UpdateChannelMenu">
-                                                            <MenuItem Header="🚀 镜像更新 (默认推荐)" Click="UpdateMirrorMenuItem_Click" ToolTip="使用网页端同款镜像 (ghfast.top) 极速检测与下载"/>
-                                                            <MenuItem Header="🌐 GitHub 更新 (官方直连)" Click="UpdateOfficialMenuItem_Click" ToolTip="通过 GitHub 官方源直连检测与下载"/>
-                                                        </ContextMenu>
-                                                    </Button.ContextMenu>
-                                                </Button>
-                                            </Grid>
-                                        </Border>
-                                    </Grid>
+                                                     <!-- 中间细分割线 -->
+                                                     <Rectangle Grid.Column="1" Fill="#33FFFFFF" Margin="0,5"/>
 
-                                    <!-- 下方交互面板：包含下载或重启按钮，以及进度条 -->
-                                    <StackPanel Grid.Row="1" Margin="0,12,0,0">
-                                        <!-- 样式触发器，控制本面板只在“有新版本”或“下载中”或“已下载”时显示 -->
-                                        <StackPanel.Style>
-                                            <Style TargetType="StackPanel">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding HasNewVersion}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding UpdateDownloaded}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </StackPanel.Style>
+                                                     <!-- 右侧向下箭头按钮 -->
+                                                     <Button x:Name="UpdateDropDownButton" Grid.Column="2" Width="26" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="UpdateDropDownButton_Click" ToolTip="选择更新通道 (默认镜像更新)">
+                                                         <Button.Style>
+                                                             <Style TargetType="Button">
+                                                                 <Setter Property="IsEnabled" Value="True"/>
+                                                                 <Style.Triggers>
+                                                                     <DataTrigger Binding="{Binding IsCheckingUpdate}" Value="True">
+                                                                         <Setter Property="IsEnabled" Value="False"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
+                                                                         <Setter Property="IsEnabled" Value="False"/>
+                                                                     </DataTrigger>
+                                                                 </Style.Triggers>
+                                                             </Style>
+                                                         </Button.Style>
+                                                         <Button.Template>
+                                                             <ControlTemplate TargetType="Button">
+                                                                 <Border x:Name="arrowBorder" Background="Transparent" CornerRadius="0,4,4,0">
+                                                                     <Path Data="M0,0 L3.5,3.5 L7,0" Stroke="#FFFFFFFF" StrokeThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                 </Border>
+                                                                 <ControlTemplate.Triggers>
+                                                                     <Trigger Property="IsMouseOver" Value="True">
+                                                                         <Setter TargetName="arrowBorder" Property="Background" Value="#26FFFFFF"/>
+                                                                     </Trigger>
+                                                                     <Trigger Property="IsPressed" Value="True">
+                                                                         <Setter TargetName="arrowBorder" Property="Background" Value="#40FFFFFF"/>
+                                                                     </Trigger>
+                                                                 </ControlTemplate.Triggers>
+                                                             </ControlTemplate>
+                                                         </Button.Template>
+                                                         <Button.ContextMenu>
+                                                             <ContextMenu x:Name="UpdateChannelMenu">
+                                                                 <MenuItem Header="🚀 镜像更新 (默认推荐)" Click="UpdateMirrorMenuItem_Click" ToolTip="使用网页端同款镜像 (ghfast.top) 极速检测与下载"/>
+                                                                 <MenuItem Header="🌐 GitHub 更新 (官方直连)" Click="UpdateOfficialMenuItem_Click" ToolTip="通过 GitHub 官方源直连检测与下载"/>
+                                                             </ContextMenu>
+                                                         </Button.ContextMenu>
+                                                     </Button>
+                                                 </Grid>
+                                             </Border>
+                                         </StackPanel>
+                                     </Grid>
 
-                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
+                                     <!-- 下方交互面板：下载进度条与就绪提示 -->
+                                     <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                                         <!-- 样式触发器，控制本面板只在“下载中”或“已下载”时显示 -->
+                                         <StackPanel.Style>
+                                             <Style TargetType="StackPanel">
+                                                 <Setter Property="Visibility" Value="Collapsed"/>
+                                                 <Style.Triggers>
+                                                     <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
+                                                         <Setter Property="Visibility" Value="Visible"/>
+                                                     </DataTrigger>
+                                                     <DataTrigger Binding="{Binding UpdateDownloaded}" Value="True">
+                                                         <Setter Property="Visibility" Value="Visible"/>
+                                                     </DataTrigger>
+                                                 </Style.Triggers>
+                                             </Style>
+                                         </StackPanel.Style>
 
-                                        <!-- 状态 1: 发现新版本但未下载且不处于下载中 -->
-                                        <Grid Margin="0,4,0,8">
-                                            <Grid.Style>
-                                                <Style TargetType="Grid">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <MultiDataTrigger>
-                                                            <MultiDataTrigger.Conditions>
-                                                                <Condition Binding="{Binding HasNewVersion}" Value="True"/>
-                                                                <Condition Binding="{Binding IsDownloadingUpdate}" Value="False"/>
-                                                                <Condition Binding="{Binding UpdateDownloaded}" Value="False"/>
-                                                            </MultiDataTrigger.Conditions>
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </MultiDataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Grid.Style>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}">
-                                                    <Run Text="新版资源已发布：" FontWeight="SemiBold"/>
-                                                    <Run Text="v" Foreground="#FF3B82F6" FontWeight="SemiBold"/>
-                                                    <Run Text="{Binding NewVersionInfo}" Foreground="#FF3B82F6" FontWeight="SemiBold"/>
-                                                </TextBlock>
-                                                <TextBlock Text="为您在后台静默拉取并组装增量升级文件，期间不影响正常操作。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="1" Content="下载增量更新" Style="{StaticResource PrimaryBtn}" Height="30" Padding="14,0" VerticalAlignment="Center" Click="DownloadUpdatesButton_Click"/>
-                                        </Grid>
+                                         <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,10"/>
 
-                                        <!-- 状态 2: 正在下载中，显示进度条 -->
-                                        <StackPanel Margin="0,4,0,8">
-                                            <StackPanel.Style>
-                                                <Style TargetType="StackPanel">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </StackPanel.Style>
-                                            
-                                            <Grid Margin="0,0,0,6">
-                                                <TextBlock Text="正在接收更新资源..." Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}"/>
-                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                    <TextBlock Text="{Binding UpdateProgressValue}" Foreground="#FF3B82F6" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
-                                                    <TextBlock Text="%" Foreground="#FF3B82F6" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
-                                                </StackPanel>
-                                            </Grid>
-                                            
-                                            <ProgressBar Value="{Binding UpdateProgressValue}" Height="6" Minimum="0" Maximum="100" BorderThickness="0" Background="#1A3B82F6" Foreground="#FF3B82F6" Margin="0,2,0,0">
-                                                <ProgressBar.Template>
-                                                    <ControlTemplate TargetType="ProgressBar">
-                                                        <Grid>
-                                                            <Border CornerRadius="3" Background="{TemplateBinding Background}"/>
-                                                            <Border x:Name="PART_Indicator" CornerRadius="3" Background="{TemplateBinding Foreground}" HorizontalAlignment="Left"/>
-                                                        </Grid>
-                                                    </ControlTemplate>
-                                                </ProgressBar.Template>
-                                            </ProgressBar>
-                                        </StackPanel>
+                                         <!-- 状态 1: 正在下载中，显示进度条 -->
+                                         <StackPanel Margin="0,2,0,4">
+                                             <StackPanel.Style>
+                                                 <Style TargetType="StackPanel">
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding IsDownloadingUpdate}" Value="True">
+                                                             <Setter Property="Visibility" Value="Visible"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </StackPanel.Style>
+                                             
+                                             <Grid Margin="0,0,0,6">
+                                                 <TextBlock Text="正在静默拉取并组装增量更新资源..." Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}"/>
+                                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                     <TextBlock Text="{Binding UpdateProgressValue}" Foreground="#FF3B82F6" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                     <TextBlock Text="%" Foreground="#FF3B82F6" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                 </StackPanel>
+                                             </Grid>
+                                             
+                                             <ProgressBar Value="{Binding UpdateProgressValue}" Height="6" Minimum="0" Maximum="100" BorderThickness="0" Background="#1A3B82F6" Foreground="#FF3B82F6" Margin="0,2,0,0">
+                                                 <ProgressBar.Template>
+                                                     <ControlTemplate TargetType="ProgressBar">
+                                                         <Grid>
+                                                             <Border CornerRadius="3" Background="{TemplateBinding Background}"/>
+                                                             <Border x:Name="PART_Indicator" CornerRadius="3" Background="{TemplateBinding Foreground}" HorizontalAlignment="Left"/>
+                                                         </Grid>
+                                                     </ControlTemplate>
+                                                 </ProgressBar.Template>
+                                             </ProgressBar>
+                                         </StackPanel>
 
-                                        <!-- 状态 3: 下载完成，提示重启 -->
-                                        <Grid Margin="0,4,0,4">
-                                            <Grid.Style>
-                                                <Style TargetType="Grid">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding UpdateDownloaded}" Value="True">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Grid.Style>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="新版就绪，重启生效！" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
-                                                <TextBlock Text="更新包已在本地合并完成。点击右侧按钮，一键闪瞬应用更新。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="1" Content="立即重启并应用" Height="30" Padding="14,0" Background="#FF22C55E" BorderBrush="#FF22C55E" VerticalAlignment="Center" Click="ApplyUpdatesAndRestartButton_Click">
-                                                <Button.Style>
-                                                    <Style TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
-                                                        <Style.Triggers>
-                                                            <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter Property="Background" Value="#FF16A34A"/>
-                                                                <Setter Property="BorderBrush" Value="#FF16A34A"/>
-                                                            </Trigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Button.Style>
-                                            </Button>
-                                        </Grid>
-                                    </StackPanel>
+                                         <!-- 状态 2: 下载完成，提示重启 -->
+                                         <Grid Margin="0,2,0,2">
+                                             <Grid.Style>
+                                                 <Style TargetType="Grid">
+                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                     <Style.Triggers>
+                                                         <DataTrigger Binding="{Binding UpdateDownloaded}" Value="True">
+                                                             <Setter Property="Visibility" Value="Visible"/>
+                                                         </DataTrigger>
+                                                     </Style.Triggers>
+                                                 </Style>
+                                             </Grid.Style>
+                                             <StackPanel VerticalAlignment="Center">
+                                                 <TextBlock Text="新版本已就绪，随时点击右侧按钮重启生效！" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                 <TextBlock Text="增量更新包已在本地合并完成，下次启动或点击右上角按钮即可闪瞬应用。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                             </StackPanel>
+                                         </Grid>
+                                     </StackPanel>
                                 </Grid>
                             </Border>
 

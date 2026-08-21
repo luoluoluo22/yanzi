@@ -411,31 +411,68 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool HasNewVersion
     {
         get => _hasNewVersion;
-        set { _hasNewVersion = value; OnPropertyChanged(); }
+        set 
+        { 
+            _hasNewVersion = value; 
+            OnPropertyChanged(); 
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+        }
     }
 
     public bool IsCheckingUpdate
     {
         get => _isCheckingUpdate;
-        set { _isCheckingUpdate = value; OnPropertyChanged(); }
+        set 
+        { 
+            _isCheckingUpdate = value; 
+            OnPropertyChanged(); 
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+        }
     }
 
     public bool IsDownloadingUpdate
     {
         get => _isDownloadingUpdate;
-        set { _isDownloadingUpdate = value; OnPropertyChanged(); }
+        set 
+        { 
+            _isDownloadingUpdate = value; 
+            OnPropertyChanged(); 
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+        }
     }
 
     public int UpdateProgressValue
     {
         get => _updateProgressValue;
-        set { _updateProgressValue = value; OnPropertyChanged(); }
+        set 
+        { 
+            _updateProgressValue = value; 
+            OnPropertyChanged(); 
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+        }
     }
 
     public bool UpdateDownloaded
     {
         get => _updateDownloaded;
-        set { _updateDownloaded = value; OnPropertyChanged(); }
+        set 
+        { 
+            _updateDownloaded = value; 
+            OnPropertyChanged(); 
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+            OnPropertyChanged(nameof(IsUpdateReadyToRestart));
+        }
+    }
+
+    public string UpdateMainButtonText
+    {
+        get
+        {
+            if (IsCheckingUpdate) return "检测中...";
+            if (IsDownloadingUpdate) return $"下载中 {UpdateProgressValue}%";
+            if (HasNewVersion) return "下载增量更新";
+            return "更新";
+        }
     }
 
     public string NewVersionInfo
@@ -506,6 +543,26 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private async Task AutoCheckUpdateOnAboutOpenAsync()
     {
         SubscribeUpdateEvents();
+
+        // 1. 异步拉取线上最新 Release 历史更新说明
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var onlineNotes = await ReleaseHistoryProvider.FetchOnlineHistoryAsync(AppVersionInfo.Version);
+                if (onlineNotes != null && onlineNotes.Count > 0)
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        ReleaseNotes = onlineNotes;
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"SettingsWindow: FetchOnlineHistoryAsync error: {ex.Message}");
+            }
+        });
         
         if (UpdateDownloaded) return;
         if (IsCheckingUpdate || IsDownloadingUpdate) return;
@@ -519,6 +576,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 _newVersionUpdateInfo = updateInfo;
                 NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
                 HasNewVersion = true;
+
+                // 2. 发现新版本时，自动激活后台增量下载与组装！
+                _ = DownloadUpdatesCoreAsync(updateInfo);
             }
             else
             {

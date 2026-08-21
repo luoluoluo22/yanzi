@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace OpenQuickHost.Sync;
 
@@ -14,12 +17,123 @@ public sealed class ReleaseNoteEntry
 
 public static class ReleaseHistoryProvider
 {
+    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
+
+    public static async Task<ObservableCollection<ReleaseNoteEntry>?> FetchOnlineHistoryAsync(string? currentVersion)
+    {
+        var cleanCurrent = (currentVersion ?? string.Empty).TrimStart('v', 'V').Trim();
+        var urls = new[]
+        {
+            "https://api.github.com/repos/luoluoluo22/yanzi/releases?per_page=15",
+            "https://ghfast.top/https://api.github.com/repos/luoluoluo22/yanzi/releases?per_page=15"
+        };
+
+        foreach (var url in urls)
+        {
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.Add("User-Agent", "Yanzi-Launcher");
+                req.Headers.Add("Accept", "application/vnd.github.v3+json");
+
+                using var resp = await _httpClient.SendAsync(req);
+                if (!resp.IsSuccessStatusCode) continue;
+
+                var json = await resp.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Array) continue;
+
+                var list = new List<ReleaseNoteEntry>();
+                foreach (var el in root.EnumerateArray())
+                {
+                    var tagName = el.TryGetProperty("tag_name", out var tagProp) ? tagProp.GetString() ?? "" : "";
+                    if (string.IsNullOrWhiteSpace(tagName) || tagName.StartsWith("android", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    var pubAt = el.TryGetProperty("published_at", out var pubProp) ? pubProp.GetString() ?? "" : "";
+                    var releaseDate = pubAt.Length >= 10 ? pubAt.Substring(0, 10) : "";
+
+                    var body = el.TryGetProperty("body", out var bodyProp) ? bodyProp.GetString() ?? "" : "";
+                    var highlights = new List<string>();
+
+                    var lines = body.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var rawLine in lines)
+                    {
+                        var line = rawLine.Trim();
+                        if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#") || line.StartsWith("---") || line.StartsWith("安装包") || line.StartsWith("一键安装包") || line.StartsWith("SHA256"))
+                        {
+                            continue;
+                        }
+
+                        if (line.StartsWith("-") || line.StartsWith("*"))
+                        {
+                            line = line.TrimStart('-', '*', ' ').Trim();
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(line))
+                        {
+                            highlights.Add(line);
+                        }
+                    }
+
+                    if (highlights.Count == 0)
+                    {
+                        highlights.Add("系统常规性能优化与稳定性提升。");
+                    }
+
+                    var cleanTag = tagName.TrimStart('v', 'V').Trim();
+                    list.Add(new ReleaseNoteEntry
+                    {
+                        Version = tagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? tagName : $"v{tagName}",
+                        ReleaseDate = releaseDate,
+                        IsCurrentVersion = !string.IsNullOrWhiteSpace(cleanCurrent) && string.Equals(cleanTag, cleanCurrent, StringComparison.OrdinalIgnoreCase),
+                        Highlights = highlights
+                    });
+                }
+
+                if (list.Count > 0)
+                {
+                    return new ObservableCollection<ReleaseNoteEntry>(list);
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"[ReleaseHistoryProvider] Failed to fetch online releases from {url}: {ex.Message}");
+            }
+        }
+
+        return null;
+    }
+
     public static ObservableCollection<ReleaseNoteEntry> GetHistory(string? currentVersion)
     {
         var cleanCurrent = (currentVersion ?? string.Empty).TrimStart('v', 'V').Trim();
 
         var list = new List<ReleaseNoteEntry>
         {
+            new()
+            {
+                Version = "v0.3.14",
+                ReleaseDate = "2026-08-21",
+                Highlights = new List<string>
+                {
+                    "【轮盘编辑即时响应】点击编辑按钮瞬间原本轮盘立即隐去，深色遮罩 0ms 覆盖，按钮呈现圆环加载动效，异步秒级呈现全景轮盘。",
+                    "【多轮盘垂直向下滚动】全景编辑模式支持滚轮垂直向下滚动浏览视口，右侧浮现沉浸式极简滚动条，全屏操作精准映射。",
+                    "【轮盘主体及中心圆选中】点击任意轮盘中心大圆或背景主体区域，即可立即选中激活该轮盘（点亮外发光蓝边并置顶）。",
+                    "【性能极致优化与 UI 精简】停用后台高频定时器轮询，引入 AABB 空间快速裁剪，CPU 占用直接降为 0%，去除右上角冗余大圆圈。"
+                }
+            },
+            new()
+            {
+                Version = "v0.3.13",
+                ReleaseDate = "2026-08-20",
+                Highlights = new List<string>
+                {
+                    "【前台应用感知】鼠标手势支持多应用白名单绑定，新增【黑名单应用 (禁用手势)】Tab，处于黑名单时静默放行杜绝冲突。",
+                    "【EXE 真实高清图标】应用列表完整接入系统真实应用程序图标提取，高清渲染各类已安装及运行中的 EXE 图标。",
+                    "【手势卡片轻量化】重构为单行 3 列紧凑内嵌式布局（高度仅 74px），点击卡片直接唤起配置弹窗，Hover 平滑浮现更换与解绑操作。"
+                }
+            },
             new()
             {
                 Version = "v0.3.12",
