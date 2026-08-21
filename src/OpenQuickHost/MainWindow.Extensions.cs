@@ -614,7 +614,7 @@ public partial class MainWindow
         InputHookService.Start(
             () => _quickPanel?.ShowAtMouse(),
             () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease(),
-            () => _radialMenu?.ShowAtMouse(),
+            pt => _radialMenu?.ShowAtMouse(pt),
             () => _radialMenu?.ExecuteSelectedFromHoldRelease(),
             () => _yanmOverlay?.ShowTemporary(),
             () => _yanmOverlay?.HideTemporary(),

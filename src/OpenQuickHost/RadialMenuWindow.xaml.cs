@@ -797,12 +797,13 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public void ShowAtMouse()
+    public void ShowAtMouse(System.Drawing.Point? anchorPoint = null)
     {
-        HostAssets.AppendLog($"[RadialResidualDebug] ShowAtMouse start: isVisible={IsVisible}, _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}.");
+        HostAssets.AppendLog($"[RadialResidualDebug] ShowAtMouse start: isVisible={IsVisible}, _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, anchor={anchorPoint}.");
 
         Width = NormalWindowSize;
         Height = NormalWindowSize;
+        UpdateLayout();
 
         _isExecuting = false;
         _wasActivatedForEdit = false;
@@ -888,7 +889,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             }
         }
         _pageStack.Clear();
-        _centerPixels = Forms.Cursor.Position;
+        _centerPixels = anchorPoint ?? Forms.Cursor.Position;
 
         BuildItems(_lastRadiusPixels);
         UpdateCenterText();
@@ -1540,9 +1541,22 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private System.Windows.Point GetCursorWindowPoint()
     {
-        var cursor = Forms.Cursor.Position;
-        var screenCtx = ScreenHelper.GetScreenContextAtPoint(new System.Windows.Point(cursor.X, cursor.Y));
-        var screenDips = ScreenHelper.PhysicalToDip(new System.Windows.Point(cursor.X, cursor.Y), screenCtx.DpiScale);
+        try
+        {
+            if (IsVisible && PresentationSource.FromVisual(this) != null)
+            {
+                var cursor = Forms.Cursor.Position;
+                return PointFromScreen(new System.Windows.Point(cursor.X, cursor.Y));
+            }
+        }
+        catch
+        {
+            // 异常时降级至屏幕上下文换算
+        }
+
+        var cursorFallback = Forms.Cursor.Position;
+        var screenCtx = ScreenHelper.GetScreenContextAtPoint(new System.Windows.Point(cursorFallback.X, cursorFallback.Y));
+        var screenDips = ScreenHelper.PhysicalToDip(new System.Windows.Point(cursorFallback.X, cursorFallback.Y), screenCtx.DpiScale);
         return new System.Windows.Point(screenDips.X - Left, screenDips.Y - Top);
     }
 
@@ -3855,6 +3869,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             IsEditLoading = false;
             Width = NormalWindowSize;
             Height = NormalWindowSize;
+            UpdateLayout();
             LoadRadialMenuPages();
             SubRings.Clear();
             PositionAroundCursor();

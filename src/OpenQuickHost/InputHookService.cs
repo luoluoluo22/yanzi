@@ -51,7 +51,7 @@ public class InputHookService
     private static Action? _onRadialRelease;
     public static event Action? OnGlobalMouseDown;
     private static Action? _onShowPanel;
-    private static Action? _onShowRadial;
+    private static Action<System.Drawing.Point?>? _onShowRadial;
     private static Action? _onShowYanm;
     private static Action? _onYanmRelease;
     private static Func<bool>? _onShowWindowSnap;
@@ -160,7 +160,7 @@ public class InputHookService
     public static void Start(
         Action onLongPress,
         Action? onLongPressRelease = null,
-        Action? onRadial = null,
+        Action<System.Drawing.Point?>? onRadial = null,
         Action? onRadialRelease = null,
         Action? onShowYanm = null,
         Action? onYanmRelease = null,
@@ -224,7 +224,7 @@ public class InputHookService
         // Invoke the appropriate show method based on the target
         if (target == ActiveTriggerTarget.Radial)
         {
-            InvokeShowRadial();
+            InvokeShowRadial(_downPoint);
         }
         else if (target == ActiveTriggerTarget.Yanm)
         {
@@ -913,8 +913,8 @@ public class InputHookService
         {
             _releaseShouldExecute = true;
             _activeTriggerTarget = ActiveTriggerTarget.Radial;
-            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for radial.");
-            InvokeShowRadial();
+            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for radial, downPt=({_downPoint.x},{_downPoint.y}), currPt=({point.x},{point.y}).");
+            InvokeShowRadial(_downPoint);
         }
         else if (yanmDrag && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm))
         {
@@ -1211,10 +1211,13 @@ public class InputHookService
         DispatchToUi(() => _onShowPanel?.Invoke());
     }
 
-    private static void InvokeShowRadial()
+    private static void InvokeShowRadial(POINT? anchorPoint = null)
     {
         OverlayWindowManager.SuppressConflictingOverlays();
-        DispatchToUi(() => _onShowRadial?.Invoke());
+        System.Drawing.Point? drawingPoint = anchorPoint.HasValue
+            ? new System.Drawing.Point(anchorPoint.Value.x, anchorPoint.Value.y)
+            : null;
+        DispatchToUi(() => _onShowRadial?.Invoke(drawingPoint));
     }
 
     private static void InvokeShowYanm()
@@ -1471,7 +1474,7 @@ public class InputHookService
                 _releaseShouldExecute = true;
                 _activeTriggerTarget = ActiveTriggerTarget.Radial;
                 HostAssets.AppendLog($"Input hook: radial mouse mode triggered: {mode}, pt=({point.x},{point.y}).");
-                InvokeShowRadial();
+                InvokeShowRadial(point);
                 return true;
             }
         }
