@@ -44,3 +44,8 @@ publish/
 
 # Temporary release notes drafts
 RELEASE_NOTES.md
+
+# 软著与专利申报材料
+软著申报材料_*
+*申报材料*
+*.pdf
