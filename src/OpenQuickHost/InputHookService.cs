@@ -914,7 +914,7 @@ public class InputHookService
             _releaseShouldExecute = true;
             _activeTriggerTarget = ActiveTriggerTarget.Radial;
             HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for radial, downPt=({_downPoint.x},{_downPoint.y}), currPt=({point.x},{point.y}).");
-            InvokeShowRadial(_downPoint);
+            InvokeShowRadial(point);
         }
         else if (yanmDrag && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm))
         {
