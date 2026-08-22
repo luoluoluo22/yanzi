@@ -1543,10 +1543,17 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            if (IsVisible && PresentationSource.FromVisual(this) != null)
+            var helper = new System.Windows.Interop.WindowInteropHelper(this);
+            var hwnd = helper.Handle;
+            if (hwnd != IntPtr.Zero && RadialMenuNativeMethods.GetCursorPos(out var pt))
             {
-                var cursor = Forms.Cursor.Position;
-                return PointFromScreen(new System.Windows.Point(cursor.X, cursor.Y));
+                if (RadialMenuNativeMethods.ScreenToClient(hwnd, ref pt))
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
+                    var scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
+                    return new System.Windows.Point(pt.X / scaleX, pt.Y / scaleY);
+                }
             }
         }
         catch
@@ -4901,6 +4908,10 @@ internal static partial class RadialMenuNativeMethods
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
 
     [DllImport("user32.dll")]
     public static extern IntPtr WindowFromPoint(POINT Point);
