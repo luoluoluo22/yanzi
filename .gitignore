@@ -39,6 +39,7 @@ publish/
 *.dmg
 *.pkg
 *.msi
+*.zip
 *Setup*.exe
 .DS_Store
 
@@ -51,3 +52,10 @@ RELEASE_NOTES.md
 燕子Logo_*
 *申报材料*
 *.pdf
+
+# 环境变量与机密文件
+env.md
+环境变量.md
+*环境变量*
+*.token*
+*.secret*
