@@ -1,15 +1,17 @@
 /**
- * 燕子启动器 (Yanzi) - 官网心愿墙 (Wish Wall) 与 积分共建互动模块
+ * 燕子启动器 (Yanzi) - 心愿墙 (Wish Wall) 与 星辰大海 (Starry Wish Galaxy) 交互引擎
  */
 (function () {
   const API_BASE = "https://sync.luoluoluo.cc.cd";
 
   let currentStatus = "all";
   let currentCategory = "all";
+  let currentSearch = "";
   let currentPage = 1;
   let activeWishId = null;
+  let allWishesCache = [];
 
-  // DOM 挂载初始化
+  // 初始化
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initWishWall);
   } else {
@@ -17,12 +19,13 @@
   }
 
   function initWishWall() {
+    initGalaxyCanvas();
     bindTabs();
+    bindSearch();
     bindActions();
     loadWishes();
     loadLeaderboard();
 
-    // 监听登录态变化，自动重新拉取与刷新权限
     window.addEventListener("yanzi-auth-changed", () => {
       loadWishes();
       loadLeaderboard();
@@ -32,7 +35,123 @@
     });
   }
 
-  // 绑定分类与状态 Tab
+  // 1. 宇宙星尘 Canvas 粒子背景引擎
+  function initGalaxyCanvas() {
+    const canvas = document.getElementById("galaxy-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let width = (canvas.width = canvas.parentElement.offsetWidth || window.innerWidth);
+    let height = (canvas.height = canvas.parentElement.offsetHeight || 440);
+
+    const stars = [];
+    const numStars = Math.min(80, Math.floor(width / 15));
+
+    for (let i = 0; i < numStars; i++) {
+      stars.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        radius: Math.random() * 1.5 + 0.5,
+        alpha: Math.random() * 0.8 + 0.2,
+        speedX: (Math.random() - 0.5) * 0.3,
+        speedY: (Math.random() - 0.5) * 0.3
+      });
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, width, height);
+
+      // 绘制星辰微粒
+      for (let i = 0; i < stars.length; i++) {
+        const s = stars[i];
+        s.x += s.speedX;
+        s.y += s.speedY;
+
+        if (s.x < 0) s.x = width;
+        if (s.x > width) s.x = 0;
+        if (s.y < 0) s.y = height;
+        if (s.y > height) s.y = 0;
+
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(186, 230, 253, ${s.alpha})`;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = "#38bdf8";
+        ctx.fill();
+
+        // 邻近粒子微弱连线
+        for (let j = i + 1; j < stars.length; j++) {
+          const s2 = stars[j];
+          const dist = Math.hypot(s.x - s2.x, s.y - s2.y);
+          if (dist < 90) {
+            ctx.beginPath();
+            ctx.moveTo(s.x, s.y);
+            ctx.lineTo(s2.x, s2.y);
+            ctx.strokeStyle = `rgba(59, 130, 246, ${0.15 * (1 - dist / 90)})`;
+            ctx.stroke();
+          }
+        }
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    window.addEventListener("resize", () => {
+      width = canvas.width = canvas.parentElement.offsetWidth || window.innerWidth;
+      height = canvas.height = canvas.parentElement.offsetHeight || 440;
+    });
+
+    animate();
+  }
+
+  // 2. 渲染顶部星辰大海胶囊轨道流
+  function renderGalaxyOrbitStream(wishes) {
+    const orbitContainer = document.getElementById("galaxy-orbit-stream");
+    if (!orbitContainer || !wishes || wishes.length === 0) return;
+
+    const row1 = wishes.slice(0, Math.ceil(wishes.length / 2));
+    const row2 = wishes.slice(Math.ceil(wishes.length / 2));
+
+    function makeNodes(list) {
+      // 循环两次以实现 CSS 无缝平滑循环漂移
+      const fullList = [...list, ...list, ...list];
+      return fullList.map((item) => {
+        const isAccepted = item.status === "accepted";
+        const isAnswered = item.status === "answered";
+        const stateClass = isAccepted ? "is-accepted" : isAnswered ? "is-answered" : "is-open";
+        const badgeText = isAccepted ? "🏆 已采纳" : isAnswered ? `💡 ${item.reply_count}方案` : "✨ 征集中";
+
+        return `
+          <div class="galaxy-star-node ${stateClass} js-galaxy-node" data-wish-id="${item.id}" title="${escapeHtml(item.title)}">
+            <span class="star-dot"></span>
+            <span class="star-title">${escapeHtml(item.title)}</span>
+            <span class="star-badge">${badgeText}</span>
+            <span style="color:#facc15; font-size:0.75rem;">+${item.reward_points || 50}分</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    orbitContainer.innerHTML = `
+      <div class="wish-orbit-row">
+        ${makeNodes(row1.length ? row1 : wishes)}
+      </div>
+      <div class="wish-orbit-row reverse">
+        ${makeNodes(row2.length ? row2 : wishes)}
+      </div>
+    `;
+
+    // 绑定星辰微粒点击直接打开心愿详情与代码
+    orbitContainer.querySelectorAll(".js-galaxy-node").forEach((node) => {
+      node.addEventListener("click", () => {
+        const id = node.dataset.wishId;
+        if (id) openWishDetailModal(id);
+      });
+    });
+  }
+
+  // 绑定状态 Tabs
   function bindTabs() {
     const tabBtns = document.querySelectorAll(".wish-tab-btn");
     tabBtns.forEach((btn) => {
@@ -44,9 +163,34 @@
         loadWishes();
       });
     });
+
+    const categorySelect = document.getElementById("wish-category-filter");
+    if (categorySelect) {
+      categorySelect.addEventListener("change", () => {
+        currentCategory = categorySelect.value || "all";
+        currentPage = 1;
+        loadWishes();
+      });
+    }
   }
 
-  // 绑定发布与弹窗事件
+  // 绑定搜索框
+  function bindSearch() {
+    const searchInput = document.getElementById("wish-search-input");
+    if (!searchInput) return;
+
+    let debounceTimer = null;
+    searchInput.addEventListener("input", (e) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        currentSearch = e.target.value.trim();
+        currentPage = 1;
+        loadWishes();
+      }, 350);
+    });
+  }
+
+  // 绑定弹窗与提交动作
   function bindActions() {
     const publishBtn = document.getElementById("wish-publish-btn");
     if (publishBtn) {
@@ -56,13 +200,11 @@
     // 关闭模态弹窗点击背景
     document.querySelectorAll(".wish-modal-backdrop").forEach((backdrop) => {
       backdrop.addEventListener("click", (e) => {
-        if (e.target === backdrop) {
-          closeAllModals();
-        }
+        if (e.target === backdrop) closeAllModals();
       });
     });
 
-    // 弹窗右上角关闭按钮
+    // 弹窗关闭按钮
     document.querySelectorAll(".wish-modal-close").forEach((btn) => {
       btn.addEventListener("click", closeAllModals);
     });
@@ -73,7 +215,7 @@
       submitWishBtn.addEventListener("click", handleCreateWishSubmit);
     }
 
-    // 提交代码回复表单提交
+    // 提交代码回复方案表单提交
     const submitReplyBtn = document.getElementById("wish-submit-reply-btn");
     if (submitReplyBtn) {
       submitReplyBtn.addEventListener("click", handleCreateReplySubmit);
@@ -86,22 +228,22 @@
     if (!container) return;
 
     container.innerHTML = `
-      <div style="text-align:center; padding: 3rem; color: #94a3b8;">
-        <span style="display:inline-block; animation: spin 1s linear infinite;">⏳</span> 正在加载心愿列表...
+      <div style="text-align:center; padding: 3rem; color: #94a3b8; grid-column: 1 / -1;">
+        <span style="display:inline-block; animation: spin 1s linear infinite;">⏳</span> 正在探索心愿星海...
       </div>
     `;
 
     try {
-      const url = `${API_BASE}/v1/wishes?status=${currentStatus}&category=${currentCategory}&page=${currentPage}&limit=12`;
+      const url = `${API_BASE}/v1/wishes?status=${currentStatus}&category=${currentCategory}&search=${encodeURIComponent(currentSearch)}&page=${currentPage}&limit=18`;
       const res = await fetch(url);
       const data = await res.json();
 
       if (!data.ok || !data.wishes || data.wishes.length === 0) {
         container.innerHTML = `
-          <div class="wish-empty-state">
-            <p style="font-size: 1.8rem; margin-bottom: 0.5rem;">🎋</p>
-            <h4 style="color:#e2e8f0; margin-bottom: 0.5rem;">暂无该分类的心愿</h4>
-            <p>成为第一个提出小程序开发心愿的人，发布即可获得 +5 积分奖励！</p>
+          <div class="wish-empty-state" style="grid-column: 1 / -1;">
+            <p style="font-size: 2rem; margin-bottom: 0.5rem;">🎋</p>
+            <h4 style="color:#e2e8f0; margin-bottom: 0.5rem;">暂无匹配的心愿需求</h4>
+            <p>成为第一个提出该分类小程序心愿的人，发布即可获得 +5 积分奖励！</p>
             <button class="wish-primary-btn" style="margin-top: 1rem;" onclick="document.getElementById('wish-publish-btn').click()">
               ＋ 发布第一个心愿
             </button>
@@ -110,10 +252,12 @@
         return;
       }
 
+      allWishesCache = data.wishes;
+      renderGalaxyOrbitStream(data.wishes);
       renderWishCards(data.wishes, container);
     } catch (err) {
       container.innerHTML = `
-        <div class="wish-empty-state">
+        <div class="wish-empty-state" style="grid-column: 1 / -1;">
           <p style="color:#ef4444;">❌ 加载心愿列表失败，请稍后重试</p>
         </div>
       `;
@@ -122,8 +266,6 @@
 
   // 渲染心愿卡片列表
   function renderWishCards(wishes, container) {
-    const currentUser = window.YanziAuth ? window.YanziAuth.getUser() : null;
-
     let html = "";
     wishes.forEach((item) => {
       const initial = (item.username || "燕").substring(0, 1).toUpperCase();
@@ -148,12 +290,12 @@
               <div class="wish-avatar">${escapeHtml(initial)}</div>
               <div class="wish-author-meta">
                 <span class="wish-author-name">${escapeHtml(item.username)}</span>
-                <span class="wish-time">${formattedTime} · 分类: ${escapeHtml(item.category || "通用")}</span>
+                <span class="wish-time">${formattedTime} · ${escapeHtml(item.category || "通用")}</span>
               </div>
             </div>
-            <div class="wish-badges">
+            <div style="display:flex; align-items:center; gap:6px;">
               ${statusBadge}
-              <span class="wish-reward-badge">采纳奖 +${item.reward_points || 50} 积分</span>
+              <span class="wish-reward-badge">+${item.reward_points || 50} 积分</span>
             </div>
           </div>
 
@@ -163,11 +305,11 @@
           <div class="wish-card-footer">
             <div class="wish-reply-stat">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              <span>${item.reply_count || 0} 个社区方案</span>
+              <span>${item.reply_count || 0} 个方案</span>
             </div>
-            <div class="wish-card-btns">
+            <div>
               <button class="wish-sec-btn js-view-wish-btn" data-wish-id="${item.id}">
-                ${isAccepted ? "查看采纳方案" : "查看方案 / 提供代码"}
+                ${isAccepted ? "查看采纳方案" : "查看 / 提供方案"}
               </button>
             </div>
           </div>
@@ -177,9 +319,8 @@
 
     container.innerHTML = html;
 
-    // 绑定卡片查看详情点击
     container.querySelectorAll(".js-view-wish-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
+      btn.addEventListener("click", () => {
         const id = btn.dataset.wishId;
         if (id) openWishDetailModal(id);
       });
@@ -214,16 +355,16 @@
     }
   }
 
-  // 渲染心愿详情与回复内容
+  // 渲染心愿详情与方案内容
   function renderWishDetail(wish, replies, container) {
     const currentUser = window.YanziAuth ? window.YanziAuth.getUser() : null;
-    const isOwner = currentUser && currentUser.userId === wish.user_id;
+    const isOwner = currentUser && (currentUser.userId === wish.user_id || currentUser.username === wish.username);
     const isAccepted = wish.status === "accepted";
 
     let repliesHtml = "";
     if (replies.length === 0) {
       repliesHtml = `
-        <div style="text-align:center; padding: 2rem; color: #64748b; background: rgba(0,0,0,0.2); border-radius: 10px;">
+        <div style="text-align:center; padding: 2rem; color: #64748b; background: rgba(0,0,0,0.25); border-radius: 12px; margin-top: 1rem;">
           <p>暂无开发者提供小程序代码，快来成为第一个方案贡献者吧！</p>
         </div>
       `;
@@ -284,11 +425,11 @@
     container.innerHTML = `
       <div style="margin-bottom: 1.5rem;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
-          <span style="font-size: 0.8rem; color: #60a5fa; font-weight: 600;">分类：${escapeHtml(wish.category || "通用")}</span>
+          <span style="font-size: 0.82rem; color: #60a5fa; font-weight: 600;">分类：${escapeHtml(wish.category || "通用")}</span>
           <span class="wish-reward-badge">采纳悬赏 +${wish.reward_points || 50} 积分</span>
         </div>
         <h2 style="font-size: 1.35rem; font-weight: 700; color: #fff; margin: 0 0 0.75rem 0;">${escapeHtml(wish.title)}</h2>
-        <div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); color: #cbd5e1; font-size: 0.94rem; line-height: 1.6; white-space: pre-wrap;">
+        <div style="background: rgba(0,0,0,0.35); padding: 1rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); color: #cbd5e1; font-size: 0.94rem; line-height: 1.6; white-space: pre-wrap;">
           ${escapeHtml(wish.description)}
         </div>
       </div>
@@ -311,7 +452,7 @@
       </div>
     `;
 
-    // 绑定复制代码按钮
+    // 复制代码按钮
     container.querySelectorAll(".js-copy-code-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const code = decodeURIComponent(btn.dataset.code || "");
@@ -325,15 +466,13 @@
       });
     });
 
-    // 绑定提供方案按钮
+    // 提供方案按钮
     const replyBtn = container.querySelector("#wish-detail-reply-btn");
     if (replyBtn) {
-      replyBtn.addEventListener("click", () => {
-        handleOpenReplyModal(wish);
-      });
+      replyBtn.addEventListener("click", () => handleOpenReplyModal(wish));
     }
 
-    // 绑定验收采纳按钮
+    // 验收采纳按钮
     container.querySelectorAll(".js-accept-reply-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const replyId = btn.dataset.replyId;
@@ -346,7 +485,7 @@
         try {
           btn.disabled = true;
           btn.textContent = "正在验收结算...";
-          const res = await window.YanziAuth.api(`/v1/wishes/${wish.id}/accept`, {
+          await window.YanziAuth.api(`/v1/wishes/${wish.id}/accept`, {
             method: "POST",
             body: JSON.stringify({ replyId })
           });
@@ -405,15 +544,14 @@
         submitBtn.textContent = "正在发布...";
       }
 
-      const res = await window.YanziAuth.api("/v1/wishes", {
+      await window.YanziAuth.api("/v1/wishes", {
         method: "POST",
         body: JSON.stringify({ title, description, category })
       });
 
       closeAllModals();
       showPointToast("🎉 心愿发布成功！+5 积分已到账！");
-      
-      // 清空表单
+
       if (document.getElementById("wish-form-title")) document.getElementById("wish-form-title").value = "";
       if (document.getElementById("wish-form-desc")) document.getElementById("wish-form-desc").value = "";
 
@@ -447,7 +585,7 @@
     if (backdrop) backdrop.classList.add("active");
   }
 
-  // 提交代码回复方案
+  // 提交代码方案
   async function handleCreateReplySubmit() {
     if (!activeWishId) return;
     const content = document.getElementById("wish-reply-form-content")?.value?.trim();
@@ -470,17 +608,14 @@
         body: JSON.stringify({ content, codeSnippet })
       });
 
-      // 关闭回复弹窗
       const replyBackdrop = document.getElementById("wish-reply-modal-backdrop");
       if (replyBackdrop) replyBackdrop.classList.remove("active");
 
       showPointToast("🚀 代码方案提交成功！等待心愿发布者验收！");
 
-      // 清空表单
       if (document.getElementById("wish-reply-form-content")) document.getElementById("wish-reply-form-content").value = "";
       if (document.getElementById("wish-reply-form-code")) document.getElementById("wish-reply-form-code").value = "";
 
-      // 刷新详情与列表
       openWishDetailModal(activeWishId);
       loadWishes();
     } catch (err) {
@@ -493,7 +628,7 @@
     }
   }
 
-  // 拉取积分贡献排行榜
+  // 拉取贡献榜
   async function loadLeaderboard() {
     const listEl = document.getElementById("wish-leaderboard-list");
     if (!listEl) return;
@@ -535,12 +670,10 @@
     }
   }
 
-  // 关闭所有弹窗
   function closeAllModals() {
     document.querySelectorAll(".wish-modal-backdrop").forEach((b) => b.classList.remove("active"));
   }
 
-  // 积分 Toast 动态浮显提示
   function showPointToast(msg) {
     let toast = document.getElementById("wish-point-toast");
     if (!toast) {
@@ -551,12 +684,9 @@
     }
     toast.innerHTML = msg;
     toast.classList.add("show");
-    setTimeout(() => {
-      toast.classList.remove("show");
-    }, 4000);
+    setTimeout(() => toast.classList.remove("show"), 4000);
   }
 
-  // 工具辅助函数：时间转为 “几分钟前 / 几天前”
   function formatTimeAgo(isoString) {
     if (!isoString) return "刚刚";
     const date = new Date(isoString);
@@ -569,7 +699,6 @@
     return date.toLocaleDateString("zh-CN");
   }
 
-  // XSS 字符转义
   function escapeHtml(str) {
     if (!str) return "";
     return String(str)

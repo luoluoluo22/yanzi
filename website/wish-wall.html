@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>社区心愿墙 & 小程序共建星海 - 燕子启动器</title>
+  <meta name="description" content="燕子社区心愿墙：提出你的专属小程序开发需求，社区开发者提供代码方案，验收通过双方均可获得丰厚积分奖励。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=20260701-5">
+  <link rel="stylesheet" href="/assets/auth.css">
+  <link rel="stylesheet" href="/assets/wish-wall.css">
+  <script src="/assets/auth.js" defer></script>
+  <script src="/assets/wish-wall.js" defer></script>
+</head>
+
+<body>
+  <div class="noise"></div>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo"
+          style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
+        <span style="font-weight: 600;">燕子启动器</span>
+      </a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/wish-wall.html" class="active">心愿墙</a>
+      <a href="/docs/product-overview.html">文档</a>
+      <a href="/#download">免费下载</a>
+      <span id="global-auth-container" style="margin-left: 16px; display: inline-flex; align-items: center; vertical-align: middle;">
+        <button id="global-login-btn" class="button secondary" style="padding: 0 12px; height: 32px; font-size: 0.85rem; border-radius: 6px; margin: 0; cursor: pointer;">
+          登录
+        </button>
+      </span>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 1. 星辰大海颗粒轨道全景 Hero (Starry Wish Galaxy) -->
+    <section class="wish-galaxy-hero">
+      <canvas id="galaxy-canvas"></canvas>
+      <div class="wish-galaxy-content">
+        <div class="wish-galaxy-tag">
+          <span>✨ 燕子星海 · 需求与代码共建生态</span>
+        </div>
+        <h1>你提需求，社区做工具，<br>验收通过双方得积分。</h1>
+        <p>
+          每一个心愿都是浩瀚星海中的一颗星辰。无论你需要办公转表、日常小工具还是极客脚本，发个心愿告诉大家！开发者贡献代码，发布者满意验收，双方均获积分奖励。
+        </p>
+      </div>
+
+      <!-- 流动的星辰胶囊微粒轨道 -->
+      <div class="wish-particle-orbit-wrapper">
+        <div id="galaxy-orbit-stream">
+          <!-- 由 JS 动态渲染双向滚动的微粒星轨 -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 下方心愿广场列表区 (Wish Square) -->
+    <section class="wish-square-container">
+      <!-- 工具栏与多维检索 -->
+      <div class="wish-wall-toolbar">
+        <div class="wish-filter-tabs">
+          <button class="wish-tab-btn active" data-status="all">全部星愿</button>
+          <button class="wish-tab-btn" data-status="open">✨ 征集中</button>
+          <button class="wish-tab-btn" data-status="answered">💡 已有方案</button>
+          <button class="wish-tab-btn" data-status="accepted">🏆 已验收通过</button>
+        </div>
+
+        <div class="wish-search-group">
+          <select id="wish-category-filter" class="wish-category-select">
+            <option value="all">全部分类</option>
+            <option value="办公提效">办公提效</option>
+            <option value="开发编程">开发编程</option>
+            <option value="文本处理">文本处理</option>
+            <option value="媒体影音">媒体影音</option>
+            <option value="系统工具">系统工具</option>
+            <option value="生活日常">生活日常</option>
+            <option value="通用">通用</option>
+          </select>
+
+          <input type="search" id="wish-search-input" class="wish-search-input" placeholder="搜索心愿需求、关键词或功能..." />
+        </div>
+
+        <div>
+          <button id="wish-publish-btn" class="wish-primary-btn" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            发布小程序心愿 (+5 积分)
+          </button>
+        </div>
+      </div>
+
+      <!-- 广场主栅格 -->
+      <div class="wish-wall-grid">
+        <!-- 左侧：卡片列表 -->
+        <div id="wish-cards-list" class="wish-cards-container">
+          <!-- 由 JS 动态渲染 -->
+        </div>
+
+        <!-- 右侧：贡献榜与规则说明 -->
+        <aside class="wish-sidebar">
+          <!-- 贡献榜 Top 10 -->
+          <div class="wish-side-card">
+            <h4 class="wish-side-title">
+              <span>🏆 社区贡献榜 Top 10</span>
+            </h4>
+            <div id="wish-leaderboard-list" class="wish-leaderboard-list">
+              <!-- 由 JS 动态渲染 -->
+            </div>
+          </div>
+
+          <!-- 积分激励机制 -->
+          <div class="wish-side-card">
+            <h4 class="wish-side-title">
+              <span>✨ 积分与激励规则</span>
+            </h4>
+            <div class="wish-rules-list">
+              <div class="wish-rule-item">
+                <span class="wish-rule-dot"></span>
+                <div><strong>提需求立奖</strong>：登录用户每次发布有效心愿，立即获得 <span class="wish-rule-highlight">+5 积分</span>。</div>
+              </div>
+              <div class="wish-rule-item">
+                <span class="wish-rule-dot"></span>
+                <div><strong>方案被采纳</strong>：提交的小程序代码被发布者验收通过，获赠 <span class="wish-rule-highlight">+50 积分</span> 并在贡献榜展示！</div>
+              </div>
+              <div class="wish-rule-item">
+                <span class="wish-rule-dot"></span>
+                <div><strong>发布者结单回馈</strong>：心愿发布者验收通过方案，结单立得 <span class="wish-rule-highlight">+10 积分</span> 回馈。</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <!-- 弹窗 1：发布心愿模态框 -->
+  <div id="wish-publish-modal-backdrop" class="wish-modal-backdrop">
+    <div class="wish-modal">
+      <div class="wish-modal-header">
+        <h3>🎋 发布小程序开发心愿</h3>
+        <button class="wish-modal-close" type="button">&times;</button>
+      </div>
+      <div class="wish-modal-body">
+        <div class="wish-form-group">
+          <label class="wish-form-label">心愿标题 (一句话描述你想要什么功能)</label>
+          <input type="text" id="wish-form-title" class="wish-form-input" placeholder="例如：一键提取剪贴板文本中的所有邮箱与手机号" maxlength="80" />
+        </div>
+
+        <div class="wish-form-group">
+          <label class="wish-form-label">应用分类</label>
+          <select id="wish-form-category" class="wish-form-select">
+            <option value="办公提效">办公提效</option>
+            <option value="开发编程">开发编程</option>
+            <option value="文本处理">文本处理</option>
+            <option value="媒体影音">媒体影音</option>
+            <option value="系统工具">系统工具</option>
+            <option value="生活日常">生活日常</option>
+            <option value="通用" selected>通用</option>
+          </select>
+        </div>
+
+        <div class="wish-form-group">
+          <label class="wish-form-label">详细需求与期望交互方式</label>
+          <textarea id="wish-form-desc" class="wish-form-textarea" placeholder="请详细描述：&#10;1. 触发方式（如：选中文本后燕选触发、长按右键轮盘点击、或启动器输入前缀）&#10;2. 输入什么内容，期望输出什么结果&#10;3. 是否需要特定快捷键或弹窗展示"></textarea>
+        </div>
+      </div>
+      <div class="wish-modal-footer">
+        <button class="wish-sec-btn wish-modal-close" type="button">取消</button>
+        <button id="wish-submit-create-btn" class="wish-primary-btn" type="button">发布心愿 (+5 积分)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗 2：提交小程序代码方案模态框 -->
+  <div id="wish-reply-modal-backdrop" class="wish-modal-backdrop">
+    <div class="wish-modal">
+      <div class="wish-modal-header">
+        <h3>💡 提供小程序方案 / 代码</h3>
+        <button class="wish-modal-close" type="button">&times;</button>
+      </div>
+      <div class="wish-modal-body">
+        <p style="font-size:0.88rem; color:#94a3b8; margin:0 0 0.75rem 0;">
+          针对心愿：<strong id="wish-reply-target-title" style="color:#60a5fa;"></strong>
+        </p>
+
+        <div class="wish-form-group">
+          <label class="wish-form-label">方案说明 / 使用教程</label>
+          <textarea id="wish-reply-form-content" class="wish-form-textarea" placeholder="简要说明本方案的实现思路、依赖环境以及使用方法..."></textarea>
+        </div>
+
+        <div class="wish-form-group">
+          <label class="wish-form-label">小程序代码 / JSON 配置清单（方便用户一键复制导入）</label>
+          <textarea id="wish-reply-form-code" class="wish-form-textarea wish-code-textarea" placeholder="粘贴可以直接在燕子中运行的 C# / PowerShell 代码或 manifest.json 内容..."></textarea>
+        </div>
+      </div>
+      <div class="wish-modal-footer">
+        <button class="wish-sec-btn wish-modal-close" type="button">取消</button>
+        <button id="wish-submit-reply-btn" class="wish-primary-btn" type="button">提交方案 (期待被采纳 +50 积分)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗 3：心愿详情与所有方案抽屉/模态框 -->
+  <div id="wish-detail-modal-backdrop" class="wish-modal-backdrop">
+    <div class="wish-modal" style="max-width: 780px;">
+      <div class="wish-modal-header">
+        <h3>🎋 心愿详情与社区方案</h3>
+        <button class="wish-modal-close" type="button">&times;</button>
+      </div>
+      <div id="wish-detail-modal-body" class="wish-modal-body">
+        <!-- 由 JS 动态渲染 -->
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer" style="margin-top: 4rem; padding: 3rem 0; border-top: 1px solid rgba(255,255,255,0.06); text-align: center; color: #64748b; font-size: 0.88rem;">
+    <div style="width: min(100% - 3rem, 1200px); margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <img src="/assets/logo-white-transparent.png" width="24" height="24" alt="燕子" />
+        <span>燕子启动器 · 自由 · 高效 · 开源</span>
+      </div>
+      <div>
+        <a href="/" style="color: #94a3b8; text-decoration: none; margin-right: 1.25rem;">首页</a>
+        <a href="/store.html" style="color: #94a3b8; text-decoration: none; margin-right: 1.25rem;">扩展商店</a>
+        <a href="/wish-wall.html" style="color: #94a3b8; text-decoration: none; margin-right: 1.25rem;">心愿墙</a>
+        <a href="/docs/product-overview.html" style="color: #94a3b8; text-decoration: none; margin-right: 1.25rem;">文档</a>
+        <a href="https://github.com/luoluoluo22/yanzi" target="_blank" style="color: #94a3b8; text-decoration: none;">GitHub</a>
+      </div>
+    </div>
+  </footer>
+</body>
+
+</html>

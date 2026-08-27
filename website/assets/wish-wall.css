@@ -1,138 +1,348 @@
-/* ==========================================================================
-   心愿墙 (Wish Wall) 与 积分共建体系样式
-   ========================================================================== */
+/**
+ * 燕子启动器 (Yanzi) - 心愿墙 (Wish Wall) & 星辰大海 (Starry Wish Galaxy) 样式表
+ */
 
-.wish-wall-section {
+/* 全局与心愿墙基础变量 */
+:root {
+  --wish-galaxy-bg: radial-gradient(circle at 50% 20%, rgba(30, 58, 138, 0.45), rgba(15, 23, 42, 0.95) 70%, #030712 100%);
+  --wish-card-bg: rgba(15, 23, 42, 0.65);
+  --wish-card-border: rgba(255, 255, 255, 0.08);
+  --wish-glow-cyan: rgba(56, 189, 248, 0.4);
+  --wish-glow-gold: rgba(250, 204, 21, 0.45);
+  --wish-glow-purple: rgba(192, 132, 252, 0.4);
+}
+
+/* =========================================================
+   1. 星辰大海 (Starry Wish Galaxy) 顶部颗粒粒子与星轨舞台
+   ========================================================= */
+.wish-galaxy-hero {
   position: relative;
-  padding: 5rem 1.5rem;
-  max-width: 1200px;
-  margin: 0 auto;
-  color: var(--text-main, #ffffff);
-}
-
-.wish-wall-header {
+  width: 100%;
+  min-height: 440px;
+  background: var(--wish-galaxy-bg);
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4.5rem 1.5rem 3.5rem;
   text-align: center;
-  margin-bottom: 3rem;
 }
 
-.wish-wall-header .eyebrow {
+/* 宇宙星尘 Canvas 背景层 */
+#galaxy-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.wish-galaxy-content {
+  position: relative;
+  z-index: 2;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.wish-galaxy-tag {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: #60a5fa;
-  font-size: 0.9rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.75rem;
-  background: rgba(59, 130, 246, 0.12);
-  padding: 4px 14px;
+  gap: 8px;
+  padding: 6px 16px;
   border-radius: 999px;
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
 }
 
-.wish-wall-header h2 {
-  font-size: 2.3rem;
+.wish-galaxy-hero h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
   font-weight: 800;
   line-height: 1.25;
-  margin: 0 0 1rem 0;
-  background: linear-gradient(135deg, #ffffff 40%, #93c5fd 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #fff;
+  margin-bottom: 1rem;
+  text-shadow: 0 0 35px rgba(59, 130, 246, 0.4);
 }
 
-.wish-wall-header .section-text {
-  font-size: 1.05rem;
+.wish-galaxy-hero p {
   color: #94a3b8;
-  max-width: 680px;
-  margin: 0 auto;
+  font-size: 1.05rem;
   line-height: 1.6;
+  max-width: 680px;
+  margin: 0 auto 2rem;
 }
 
-/* 顶部操作与筛选工具栏 */
+/* 星辰胶囊颗粒流动轨道 (Star Particle Stream) */
+.wish-particle-orbit-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 1280px;
+  margin: 1.5rem auto 0;
+  overflow: hidden;
+  z-index: 2;
+  mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+}
+
+.wish-orbit-row {
+  display: flex;
+  gap: 1.25rem;
+  width: max-content;
+  padding: 0.5rem 0;
+  animation: orbitScrollLeft 45s linear infinite;
+}
+
+.wish-orbit-row.reverse {
+  animation: orbitScrollRight 50s linear infinite;
+  margin-top: 0.85rem;
+}
+
+.wish-orbit-row:hover {
+  animation-play-state: paused;
+}
+
+@keyframes orbitScrollLeft {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes orbitScrollRight {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+/* 单颗星辰心愿胶囊微粒 */
+.galaxy-star-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  font-size: 0.88rem;
+  white-space: nowrap;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+}
+
+.galaxy-star-node:hover {
+  transform: translateY(-3px) scale(1.04);
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 12px 30px rgba(59, 130, 246, 0.3), 0 0 15px rgba(59, 130, 246, 0.2);
+  color: #fff;
+}
+
+/* 微粒类型发光标志 */
+.star-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.galaxy-star-node.is-accepted {
+  border-color: rgba(234, 179, 8, 0.4);
+  box-shadow: 0 8px 24px rgba(234, 179, 8, 0.12);
+}
+.galaxy-star-node.is-accepted:hover {
+  border-color: #facc15;
+  box-shadow: 0 12px 30px rgba(234, 179, 8, 0.35), 0 0 18px rgba(234, 179, 8, 0.25);
+}
+.galaxy-star-node.is-accepted .star-dot {
+  background: #facc15;
+  box-shadow: 0 0 8px #facc15;
+}
+
+.galaxy-star-node.is-answered {
+  border-color: rgba(168, 85, 247, 0.4);
+}
+.galaxy-star-node.is-answered:hover {
+  border-color: #c084fc;
+  box-shadow: 0 12px 30px rgba(168, 85, 247, 0.35);
+}
+.galaxy-star-node.is-answered .star-dot {
+  background: #c084fc;
+  box-shadow: 0 0 8px #c084fc;
+}
+
+.galaxy-star-node.is-open .star-dot {
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
+.star-title {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.star-badge {
+  font-size: 0.75rem;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+/* =========================================================
+   2. 心愿广场列表区 (Wish Square)
+   ========================================================= */
+.wish-square-container {
+  width: min(100% - 3rem, 1280px);
+  margin: 0 auto;
+  padding: 3rem 0 6rem;
+}
+
 .wish-wall-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
+  justify-content: space-between;
   gap: 1rem;
   margin-bottom: 2rem;
-  padding: 1rem 1.25rem;
-  background: rgba(22, 22, 26, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+  flex-wrap: wrap;
 }
 
 .wish-filter-tabs {
   display: flex;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
 }
 
 .wish-tab-btn {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
-  border: 1px solid transparent;
   color: #94a3b8;
-  padding: 0.45rem 1rem;
-  border-radius: 999px;
   font-size: 0.88rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s ease;
 }
 
 .wish-tab-btn:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .wish-tab-btn.active {
-  color: #ffffff;
-  background: #2563eb;
-  border-color: #3b82f6;
-  box-shadow: 0 0 16px rgba(37, 99, 235, 0.4);
+  color: #fff;
+  background: rgba(59, 130, 246, 0.2);
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);
 }
 
-.wish-action-group {
+.wish-search-group {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex: 1;
+  max-width: 480px;
+}
+
+.wish-search-input {
+  height: 40px;
+  width: 100%;
+  padding: 0 1rem;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.wish-search-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);
+}
+
+.wish-category-select {
+  height: 40px;
+  padding: 0 0.85rem;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 0.88rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.wish-category-select option {
+  background: #0f172a;
+  color: #fff;
 }
 
 .wish-primary-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  padding: 0.55rem 1.35rem;
+  gap: 6px;
+  height: 40px;
+  padding: 0 18px;
   border-radius: 10px;
-  font-size: 0.92rem;
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.25s ease;
-  box-shadow: 0 4px 18px rgba(37, 99, 235, 0.35);
+  transition: all 0.2s ease;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+  white-space: nowrap;
 }
 
 .wish-primary-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 24px rgba(37, 99, 235, 0.5);
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.45);
+  filter: brightness(1.08);
 }
 
-.wish-primary-btn svg {
-  width: 16px;
-  height: 16px;
+.wish-sec-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-/* 栅格主布局：左侧心愿列表 + 右侧积分与贡献榜 */
+.wish-sec-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+/* 主栅格与侧边栏 */
 .wish-wall-grid {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 2rem;
   align-items: start;
 }
@@ -143,62 +353,83 @@
   }
 }
 
-/* 心愿卡片流 */
 .wish-cards-container {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 1.25rem;
 }
 
+/* 心愿单卡片 */
 .wish-card {
-  background: rgba(26, 26, 32, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--wish-card-bg);
+  border: 1px solid var(--wish-card-border);
   border-radius: 16px;
-  padding: 1.5rem;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 1.25rem;
+  backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.85rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
   overflow: hidden;
 }
 
+.wish-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.4), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
 .wish-card:hover {
-  border-color: rgba(96, 165, 250, 0.35);
-  transform: translateY(-2px);
-  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  transform: translateY(-4px);
+  border-color: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4), 0 0 20px rgba(59, 130, 246, 0.12);
+}
+
+.wish-card:hover::before {
+  opacity: 1;
 }
 
 .wish-card.is-accepted {
-  border-color: rgba(234, 179, 8, 0.35);
-  background: linear-gradient(180deg, rgba(30, 27, 20, 0.85) 0%, rgba(20, 20, 26, 0.85) 100%);
+  border-color: rgba(234, 179, 8, 0.25);
+  background: linear-gradient(180deg, rgba(234, 179, 8, 0.05) 0%, rgba(15, 23, 42, 0.7) 100%);
+}
+
+.wish-card.is-accepted::before {
+  background: linear-gradient(90deg, transparent, rgba(234, 179, 8, 0.7), transparent);
+  opacity: 1;
 }
 
 .wish-card-top {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 0.85rem;
+  gap: 8px;
 }
 
 .wish-author-info {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 8px;
 }
 
 .wish-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 0.85rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
   color: #fff;
-  text-transform: uppercase;
+  font-size: 0.85rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
 }
 
 .wish-author-meta {
@@ -207,219 +438,173 @@
 }
 
 .wish-author-name {
+  font-size: 0.88rem;
   font-weight: 600;
-  font-size: 0.92rem;
   color: #f1f5f9;
 }
 
 .wish-time {
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   color: #64748b;
 }
 
-/* 状态与积分徽章 */
-.wish-badges {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
 .wish-status-badge {
-  font-size: 0.76rem;
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  border-radius: 6px;
   font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .wish-status-badge.open {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.25);
 }
 
 .wish-status-badge.answered {
-  background: rgba(168, 85, 247, 0.15);
+  background: rgba(192, 132, 252, 0.12);
   color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.3);
+  border: 1px solid rgba(192, 132, 252, 0.25);
 }
 
 .wish-status-badge.accepted {
-  background: rgba(234, 179, 8, 0.15);
+  background: rgba(250, 204, 21, 0.12);
   color: #facc15;
-  border: 1px solid rgba(234, 179, 8, 0.35);
-  box-shadow: 0 0 12px rgba(234, 179, 8, 0.2);
+  border: 1px solid rgba(250, 204, 21, 0.25);
 }
 
 .wish-reward-badge {
-  font-size: 0.76rem;
-  font-weight: 700;
-  padding: 3px 9px;
+  font-size: 0.75rem;
+  padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(234, 179, 8, 0.12);
+  color: #facc15;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  font-weight: 600;
 }
 
 .wish-title {
-  font-size: 1.18rem;
-  font-weight: 700;
-  margin: 0 0 0.65rem 0;
-  color: #f8fafc;
-  line-height: 1.4;
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: #fff;
+  line-height: 1.45;
+  margin: 0;
 }
 
 .wish-desc {
-  font-size: 0.94rem;
   color: #94a3b8;
+  font-size: 0.88rem;
   line-height: 1.6;
-  margin-bottom: 1.25rem;
-  white-space: pre-wrap;
-  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .wish-card-footer {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding-top: 1rem;
+  justify-content: space-between;
+  padding-top: 0.75rem;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .wish-reply-stat {
-  font-size: 0.85rem;
-  color: #64748b;
   display: flex;
   align-items: center;
   gap: 5px;
+  font-size: 0.8rem;
+  color: #64748b;
 }
 
-.wish-card-btns {
-  display: flex;
-  gap: 0.6rem;
-}
-
-.wish-sec-btn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #cbd5e1;
-  padding: 0.4rem 0.95rem;
-  border-radius: 8px;
-  font-size: 0.84rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.wish-sec-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-}
-
-/* 右侧边栏：积分榜与规则卡片 */
+/* 侧边栏卡片 */
 .wish-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 .wish-side-card {
-  background: rgba(22, 22, 28, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--wish-card-bg);
+  border: 1px solid var(--wish-card-border);
   border-radius: 16px;
-  padding: 1.4rem;
+  padding: 1.25rem;
+  backdrop-filter: blur(20px);
 }
 
 .wish-side-title {
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 700;
+  color: #fff;
   margin: 0 0 1rem 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #f1f5f9;
+  justify-content: space-between;
 }
 
 .wish-leaderboard-list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 
 .wish-rank-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 0.65rem;
+  padding: 6px 10px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
-  transition: background 0.2s ease;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.88rem;
+  transition: background 0.2s;
 }
 
 .wish-rank-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .wish-rank-left {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 10px;
 }
 
 .wish-rank-num {
   width: 22px;
   height: 22px;
+  display: grid;
+  place-items: center;
   border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 700;
   background: rgba(255, 255, 255, 0.08);
   color: #94a3b8;
 }
 
-.wish-rank-num.rank-1 {
-  background: linear-gradient(135deg, #fbbf24, #d97706);
-  color: #000;
-}
-
-.wish-rank-num.rank-2 {
-  background: linear-gradient(135deg, #e2e8f0, #94a3b8);
-  color: #000;
-}
-
-.wish-rank-num.rank-3 {
-  background: linear-gradient(135deg, #fdba74, #ea580c);
-  color: #000;
-}
+.wish-rank-num.rank-1 { background: #eab308; color: #000; box-shadow: 0 0 10px rgba(234, 179, 8, 0.4); }
+.wish-rank-num.rank-2 { background: #94a3b8; color: #000; }
+.wish-rank-num.rank-3 { background: #b45309; color: #fff; }
 
 .wish-rank-user {
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 500;
   color: #e2e8f0;
 }
 
 .wish-rank-points {
-  font-size: 0.84rem;
-  font-weight: 700;
-  color: #4ade80;
+  font-weight: 650;
+  color: #facc15;
+  font-size: 0.85rem;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 
-/* 积分规则列表 */
+/* 积分规则说明 */
 .wish-rules-list {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  font-size: 0.86rem;
+  font-size: 0.85rem;
   color: #94a3b8;
   line-height: 1.5;
 }
@@ -433,7 +618,7 @@
 .wish-rule-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 999px;
   background: #3b82f6;
   margin-top: 6px;
   flex-shrink: 0;
@@ -444,17 +629,18 @@
   font-weight: 600;
 }
 
-/* 模态弹窗通用样式 */
+/* =========================================================
+   3. 模态弹窗与详情抽屉
+   ========================================================= */
 .wish-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(12px);
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
   padding: 1.5rem;
   opacity: 0;
   pointer-events: none;
@@ -467,236 +653,290 @@
 }
 
 .wish-modal {
-  background: #18181f;
+  width: 100%;
+  max-width: 580px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: #0f172a;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 20px;
-  width: 100%;
-  max-width: 640px;
-  max-height: 90vh;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 35px rgba(59, 130, 246, 0.2);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
-  transform: scale(0.95);
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-}
-
-.wish-modal-backdrop.active .wish-modal {
-  transform: scale(1);
 }
 
 .wish-modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .wish-modal-header h3 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 1.15rem;
   color: #fff;
+  font-weight: 700;
 }
 
 .wish-modal-close {
   background: transparent;
   border: 0;
   color: #94a3b8;
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 6px;
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   line-height: 1;
+  cursor: pointer;
+  padding: 4px;
 }
-
-.wish-modal-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
+.wish-modal-close:hover { color: #fff; }
 
 .wish-modal-body {
   padding: 1.5rem;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-}
-
-.wish-form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.wish-form-label {
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: #e2e8f0;
-}
-
-.wish-form-input,
-.wish-form-textarea,
-.wish-form-select {
-  background: rgba(10, 10, 14, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 0.75rem 1rem;
-  color: #fff;
-  font-size: 0.92rem;
-  font-family: inherit;
-  transition: border-color 0.2s ease;
-}
-
-.wish-form-input:focus,
-.wish-form-textarea:focus,
-.wish-form-select:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-.wish-form-textarea {
-  resize: vertical;
-  min-height: 110px;
-}
-
-.wish-code-textarea {
-  font-family: 'Fira Code', 'Consolas', monospace;
-  font-size: 0.86rem;
-  min-height: 150px;
-  background: #0d1117;
-  border-color: #30363d;
+  gap: 1.1rem;
 }
 
 .wish-modal-footer {
   padding: 1rem 1.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.75rem;
-  background: rgba(15, 15, 20, 0.5);
+  background: rgba(0, 0, 0, 0.2);
 }
 
-/* 回复列表与代码块 */
+.wish-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.wish-form-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.wish-form-input,
+.wish-form-select,
+.wish-form-textarea {
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.wish-form-input:focus,
+.wish-form-select:focus,
+.wish-form-textarea:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
+}
+
+.wish-form-textarea {
+  min-height: 100px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.wish-code-textarea {
+  font-family: Consolas, Monaco, "Courier New", monospace;
+  font-size: 0.82rem;
+  background: #020617;
+  min-height: 120px;
+}
+
+/* 回复列表与代码高亮块 */
 .wish-replies-section {
   margin-top: 1.5rem;
-  padding-top: 1.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 1.25rem;
 }
 
 .wish-reply-item {
-  background: rgba(15, 15, 20, 0.7);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
-  padding: 1.25rem;
+  padding: 1rem;
   margin-bottom: 1rem;
-  transition: border-color 0.2s ease;
 }
 
 .wish-reply-item.is-accepted {
-  border-color: rgba(234, 179, 8, 0.4);
+  border-color: rgba(234, 179, 8, 0.35);
   background: rgba(234, 179, 8, 0.04);
 }
 
 .wish-reply-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 0.75rem;
 }
 
 .wish-accepted-ribbon {
-  background: linear-gradient(135deg, #eab308, #ca8a04);
-  color: #000;
-  font-weight: 700;
-  font-size: 0.75rem;
-  padding: 3px 8px;
-  border-radius: 6px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eab308;
+  color: #000;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .wish-code-block-wrapper {
-  position: relative;
-  margin: 0.85rem 0;
+  margin-top: 0.75rem;
+  background: #030712;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #30363d;
-  background: #0d1117;
 }
 
 .wish-code-header {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px 10px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 6px 12px;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
-  font-size: 0.78rem;
-  color: #8b949e;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 .wish-code-copy-btn {
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
   border: 0;
-  color: #c9d1d9;
-  font-size: 0.74rem;
-  padding: 3px 8px;
-  border-radius: 4px;
+  color: #60a5fa;
+  font-size: 0.75rem;
   cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
-
-.wish-code-copy-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-}
+.wish-code-copy-btn:hover { background: rgba(59, 130, 246, 0.2); }
 
 .wish-code-content {
-  padding: 12px;
+  padding: 0.85rem;
   margin: 0;
+  font-family: Consolas, Monaco, "Courier New", monospace;
+  font-size: 0.82rem;
+  color: #93c5fd;
   overflow-x: auto;
-  font-family: 'Fira Code', 'Consolas', monospace;
-  font-size: 0.84rem;
   line-height: 1.5;
-  color: #e6edf3;
-  white-space: pre;
+  white-space: pre-wrap;
 }
 
-/* 动态积分 Toast 飘字动效 */
+/* 积分飘字 Toast 动画 */
 .wish-point-toast {
   position: fixed;
-  bottom: 2rem;
-  right: 2rem;
-  background: linear-gradient(135deg, #10b981, #059669);
-  color: #ffffff;
-  padding: 0.85rem 1.4rem;
-  border-radius: 12px;
-  font-weight: 700;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid #eab308;
+  color: #fef08a;
+  padding: 12px 24px;
+  border-radius: 999px;
+  box-shadow: 0 10px 35px rgba(234, 179, 8, 0.3), 0 0 20px rgba(0, 0, 0, 0.8);
+  font-weight: 600;
   font-size: 0.95rem;
-  box-shadow: 0 10px 30px rgba(16, 185, 129, 0.4);
+  z-index: 100000;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 100000;
-  transform: translateY(100px);
-  opacity: 0;
-  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .wish-point-toast.show {
-  transform: translateY(0);
+  transform: translateX(-50%) translateY(0);
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* 空状态 */
 .wish-empty-state {
   text-align: center;
-  padding: 4rem 2rem;
+  padding: 4rem 1.5rem;
   color: #64748b;
-  background: rgba(22, 22, 28, 0.4);
-  border-radius: 16px;
-  border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+/* =========================================================
+   4. 官网首页「心愿共建入口 CTA」卡片
+   ========================================================= */
+.home-wish-cta-section {
+  padding: 4rem 0;
+  background: radial-gradient(circle at 50% 50%, rgba(30, 58, 138, 0.25), transparent 70%);
+}
+
+.home-wish-cta-card {
+  width: min(100% - 3rem, 1100px);
+  margin: 0 auto;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.7));
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  padding: 3rem 2.5rem;
+  backdrop-filter: blur(24px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(59, 130, 246, 0.15);
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 2.5rem;
+  align-items: center;
+}
+
+@media (max-width: 860px) {
+  .home-wish-cta-card {
+    grid-template-columns: 1fr;
+    padding: 2rem 1.5rem;
+  }
+}
+
+.home-wish-cta-left h2 {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.3;
+  margin-bottom: 0.75rem;
+}
+
+.home-wish-cta-left p {
+  color: #94a3b8;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  margin-bottom: 1.75rem;
+}
+
+.home-wish-preview-stars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.home-star-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.88rem;
+  color: #e2e8f0;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.home-star-pill:hover {
+  transform: translateX(4px);
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(30, 41, 59, 0.7);
 }
