@@ -1386,6 +1386,13 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
 
     private void OnToggleEditorClick(object? sender, RoutedEventArgs e) => ToggleEditor();
 
+    private void OnOpenAddExtensionWindowClick(object? sender, RoutedEventArgs e)
+    {
+        var win = new AddExtensionWindow(_mainWindow);
+        win.Show();
+        win.Activate();
+    }
+
     private void OnExitClick(object? sender, RoutedEventArgs e)
     {
         if (Application.Current?.ApplicationLifetime is global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)

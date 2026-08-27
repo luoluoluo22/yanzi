@@ -207,10 +207,13 @@
                     <!-- 1. DEDICATED GRAPHICAL SNIPPET EDITOR PANEL -->
                     <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding IsSnippetEditor}">
                         <!-- Editor Header -->
-                        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
-                            <TextBlock Text="{Binding EditorTitle}" Foreground="#FF8B5CF6" FontSize="15" FontWeight="Bold"/>
-                            <TextBlock Text="配置您的快捷文本短语和触发简写指令" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
-                        </StackPanel>
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="{Binding EditorTitle}" Foreground="#FF8B5CF6" FontSize="15" FontWeight="Bold"/>
+                                <TextBlock Text="配置您的快捷文本短语和触发简写指令" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="向导模式 ↗" Classes="action-btn cancel" Click="OnOpenAddExtensionWindowClick" VerticalAlignment="Center"/>
+                        </Grid>
 
                         <!-- Form ScrollViewer -->
                         <ScrollViewer Grid.Row="1" Margin="0,0,0,14" VerticalScrollBarVisibility="Auto">
@@ -264,10 +267,13 @@
                     <!-- 2. EXISTING EXTENSION/APPLESCRIPT JSON EDITOR PANEL -->
                     <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding !IsSnippetEditor}">
                         <!-- Editor Header -->
-                        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
-                            <TextBlock Text="{Binding EditorTitle}" Foreground="#FF10B981" FontSize="15" FontWeight="Bold"/>
-                            <TextBlock Text="定义小程序名称、图标和 AppleScript 苹果脚本内容" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
-                        </StackPanel>
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="{Binding EditorTitle}" Foreground="#FF10B981" FontSize="15" FontWeight="Bold"/>
+                                <TextBlock Text="定义小程序名称、图标和 AppleScript 苹果脚本内容" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="向导模式 ↗" Classes="action-btn cancel" Click="OnOpenAddExtensionWindowClick" VerticalAlignment="Center"/>
+                        </Grid>
 
                         <!-- JSON Editor -->
                         <ScrollViewer Grid.Row="1" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,0,0,14">

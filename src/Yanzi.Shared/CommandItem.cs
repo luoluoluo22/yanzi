@@ -8,6 +8,8 @@ public class CommandItem
     public string? VectorIconData { get; set; }
     public string? Glyph { get; set; }
     public string? Description { get; set; }
+    public string? Category { get; set; }
+    public string? Url { get; set; }
     public CommandActionKind ActionKind { get; set; } = CommandActionKind.None;
     public string? ShortcutKey { get; set; }
     public bool ShortcutCommand { get; set; } = true;
@@ -28,7 +30,9 @@ public enum CommandActionKind
     KeyboardShortcut,
     LaunchApplication,
     AppleScript,
-    Snippet
+    Snippet,
+    OpenUrl,
+    ShellScript
 }
 
 public interface ICommandActionExecutor

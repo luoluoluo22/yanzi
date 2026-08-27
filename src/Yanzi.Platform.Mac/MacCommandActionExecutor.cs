@@ -19,6 +19,35 @@ public sealed class MacCommandActionExecutor : ICommandActionExecutor
             case CommandActionKind.AppleScript:
                 RunAppleScript(command.ScriptSource);
                 break;
+            case CommandActionKind.OpenUrl:
+                LaunchApplication(command.Url ?? command.ApplicationName);
+                break;
+            case CommandActionKind.ShellScript:
+                RunShell(command.ScriptSource);
+                break;
+        }
+    }
+
+    private static void RunShell(string? script)
+    {
+        if (string.IsNullOrWhiteSpace(script))
+            return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "/bin/zsh",
+                ArgumentList = { "-c", script },
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to run shell script: {ex}");
         }
     }
 
