@@ -550,6 +550,21 @@ async function handleRequest(request, env) {
     return json({ ok: true, ...result });
   }
 
+  if (wishDetailMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const wishId = decodeURIComponent(wishDetailMatch[1]);
+    const payload = await readJson(request);
+    const result = await updateWish(env, auth, wishId, payload);
+    return json({ ok: true, wish: result.wish });
+  }
+
+  if (wishDetailMatch && request.method === "DELETE") {
+    const auth = await requireAuth(request, env);
+    const wishId = decodeURIComponent(wishDetailMatch[1]);
+    const result = await deleteWish(env, auth, wishId);
+    return json({ ok: true, ...result });
+  }
+
   if (url.pathname === "/v1/sync/capabilities" && request.method === "GET") {
     const auth = await requireAuth(request, env);
     await ensureUser(env, auth.userId);
@@ -5672,15 +5687,51 @@ async function getUserPointsDetail(env, userId) {
       points: userPoints?.points ?? 0,
       wishesCount: userPoints?.wishes_count ?? 0,
       acceptedCount: userPoints?.accepted_count ?? 0,
-      transactions: transactions || []
-    };
-  } catch (err) {
-    console.warn("getUserPointsDetail fallback:", err);
-    return {
-      points: 0,
-      wishesCount: 0,
-      acceptedCount: 0,
-      transactions: []
-    };
+async function updateWish(env, auth, wishId, payload) {
+  await ensureWishWallTables(env);
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在");
   }
+
+  if (wish.user_id !== auth.userId && !isAdminUser(auth, env)) {
+    throw new HttpError(403, "forbidden", "只有心愿发布者本人才能修改该心愿");
+  }
+
+  if (wish.status === "accepted") {
+    throw new HttpError(400, "cannot_edit_accepted_wish", "已验收结单的心愿不可修改");
+  }
+
+  const title = payload.title ? String(payload.title).trim() : wish.title;
+  const description = payload.description ? String(payload.description).trim() : wish.description;
+  const category = payload.category ? String(payload.category).trim() : wish.category;
+  const now = isoNow();
+
+  await env.DB.prepare(`
+    UPDATE wishes
+    SET title = ?, description = ?, category = ?, updated_at = ?
+    WHERE id = ?
+  `).bind(title, description, category, now, wishId).run();
+
+  const updated = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  return { wish: updated };
+}
+
+async function deleteWish(env, auth, wishId) {
+  await ensureWishWallTables(env);
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在");
+  }
+
+  if (wish.user_id !== auth.userId && !isAdminUser(auth, env)) {
+    throw new HttpError(403, "forbidden", "只有心愿发布者本人才能删除该心愿");
+  }
+
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM wish_replies WHERE wish_id = ?").bind(wishId),
+    env.DB.prepare("DELETE FROM wishes WHERE id = ?").bind(wishId)
+  ]);
+
+  return { ok: true, deleted: true, wishId };
 }
