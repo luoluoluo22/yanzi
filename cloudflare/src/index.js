@@ -469,17 +469,29 @@ async function handleRequest(request, env) {
 
   if (url.pathname === "/v1/auth/me" && request.method === "GET") {
     const auth = await requireAuth(request, env);
-    await ensureWishWallTables(env);
-    const userPoints = await env.DB.prepare(
-      "select points, wishes_count, accepted_count from user_points where user_id = ?"
-    ).bind(auth.userId).first();
+    let points = 0;
+    let wishesCount = 0;
+    let acceptedCount = 0;
+    try {
+      await ensureWishWallTables(env);
+      const userPoints = await env.DB.prepare(
+        "select points, wishes_count, accepted_count from user_points where user_id = ?"
+      ).bind(auth.userId).first();
+      if (userPoints) {
+        points = Number(userPoints.points) || 0;
+        wishesCount = Number(userPoints.wishes_count) || 0;
+        acceptedCount = Number(userPoints.accepted_count) || 0;
+      }
+    } catch (e) {
+      console.warn("user_points query fallback:", e);
+    }
     return json({
       userId: auth.userId,
       username: auth.username,
       email: auth.email,
-      points: userPoints?.points ?? 0,
-      wishesCount: userPoints?.wishes_count ?? 0,
-      acceptedCount: userPoints?.accepted_count ?? 0,
+      points,
+      wishesCount,
+      acceptedCount,
       isAdmin: isAdminUser(auth, env)
     });
   }
@@ -5318,7 +5330,7 @@ let _wishWallTablesInitialized = false;
 async function ensureWishWallTables(env) {
   if (_wishWallTablesInitialized) return;
   try {
-    await env.DB.exec(`
+    await env.DB.prepare(`
       CREATE TABLE IF NOT EXISTS wishes (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -5332,8 +5344,10 @@ async function ensureWishWallTables(env) {
         reply_count INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
-      );
+      )
+    `).run();
 
+    await env.DB.prepare(`
       CREATE TABLE IF NOT EXISTS wish_replies (
         id TEXT PRIMARY KEY,
         wish_id TEXT NOT NULL,
@@ -5343,8 +5357,10 @@ async function ensureWishWallTables(env) {
         code_snippet TEXT,
         is_accepted INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
-      );
+      )
+    `).run();
 
+    await env.DB.prepare(`
       CREATE TABLE IF NOT EXISTS user_points (
         user_id TEXT PRIMARY KEY,
         username TEXT NOT NULL,
@@ -5352,8 +5368,10 @@ async function ensureWishWallTables(env) {
         wishes_count INTEGER NOT NULL DEFAULT 0,
         accepted_count INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL
-      );
+      )
+    `).run();
 
+    await env.DB.prepare(`
       CREATE TABLE IF NOT EXISTS point_transactions (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -5362,12 +5380,21 @@ async function ensureWishWallTables(env) {
         description TEXT NOT NULL,
         reference_id TEXT,
         created_at TEXT NOT NULL
-      );
+      )
+    `).run();
 
-      CREATE INDEX IF NOT EXISTS idx_wishes_status_created ON wishes (status, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_wish_replies_wish_id ON wish_replies (wish_id, created_at ASC);
-      CREATE INDEX IF NOT EXISTS idx_user_points_rank ON user_points (points DESC, accepted_count DESC);
-    `);
+    await env.DB.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_wishes_status_created ON wishes (status, created_at DESC)
+    `).run().catch(() => {});
+
+    await env.DB.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_wish_replies_wish_id ON wish_replies (wish_id, created_at ASC)
+    `).run().catch(() => {});
+
+    await env.DB.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_user_points_rank ON user_points (points DESC, accepted_count DESC)
+    `).run().catch(() => {});
+
     _wishWallTablesInitialized = true;
   } catch (err) {
     console.error("Failed to ensure wish wall tables:", err);
@@ -5611,34 +5638,49 @@ async function acceptWishReply(env, auth, wishId, payload) {
 }
 
 async function getWishLeaderboard(env) {
-  await ensureWishWallTables(env);
-  const { results: leaderboard } = await env.DB.prepare(`
-    SELECT user_id, username, points, wishes_count, accepted_count, updated_at
-    FROM user_points
-    ORDER BY points DESC, accepted_count DESC
-    LIMIT 10
-  `).all();
-  return leaderboard || [];
+  try {
+    await ensureWishWallTables(env);
+    const { results: leaderboard } = await env.DB.prepare(`
+      SELECT user_id, username, points, wishes_count, accepted_count, updated_at
+      FROM user_points
+      ORDER BY points DESC, accepted_count DESC
+      LIMIT 10
+    `).all();
+    return leaderboard || [];
+  } catch (err) {
+    console.warn("getWishLeaderboard fallback:", err);
+    return [];
+  }
 }
 
 async function getUserPointsDetail(env, userId) {
-  await ensureWishWallTables(env);
-  const userPoints = await env.DB.prepare(
-    "SELECT points, wishes_count, accepted_count FROM user_points WHERE user_id = ?"
-  ).bind(userId).first();
+  try {
+    await ensureWishWallTables(env);
+    const userPoints = await env.DB.prepare(
+      "SELECT points, wishes_count, accepted_count FROM user_points WHERE user_id = ?"
+    ).bind(userId).first();
 
-  const { results: transactions } = await env.DB.prepare(`
-    SELECT id, amount, action_type, description, reference_id, created_at
-    FROM point_transactions
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-    LIMIT 20
-  `).bind(userId).all();
+    const { results: transactions } = await env.DB.prepare(`
+      SELECT id, amount, action_type, description, reference_id, created_at
+      FROM point_transactions
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT 20
+    `).bind(userId).all();
 
-  return {
-    points: userPoints?.points ?? 0,
-    wishesCount: userPoints?.wishes_count ?? 0,
-    acceptedCount: userPoints?.accepted_count ?? 0,
-    transactions: transactions || []
-  };
+    return {
+      points: userPoints?.points ?? 0,
+      wishesCount: userPoints?.wishes_count ?? 0,
+      acceptedCount: userPoints?.accepted_count ?? 0,
+      transactions: transactions || []
+    };
+  } catch (err) {
+    console.warn("getUserPointsDetail fallback:", err);
+    return {
+      points: 0,
+      wishesCount: 0,
+      acceptedCount: 0,
+      transactions: []
+    };
+  }
 }
