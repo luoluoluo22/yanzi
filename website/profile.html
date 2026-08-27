@@ -691,6 +691,18 @@
               </div>
             </div>
             <div class="profile-grid">
+              <div class="stat-card" style="border-color: rgba(234, 179, 8, 0.3); background: rgba(234, 179, 8, 0.05);">
+                <span class="stat-label" style="color: #facc15;">✨ 社区积分</span>
+                <span class="stat-value" id="stat-points-total" style="color: #facc15;">0</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">提出心愿</span>
+                <span class="stat-value" id="stat-wishes-total">0</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">方案被采纳</span>
+                <span class="stat-value" id="stat-accepted-total">0</span>
+              </div>
               <div class="stat-card">
                 <span class="stat-label">扩展总数</span>
                 <span class="stat-value" id="stat-extension-total">-</span>
@@ -698,10 +710,6 @@
               <div class="stat-card">
                 <span class="stat-label">已启用</span>
                 <span class="stat-value" id="stat-extension-enabled">-</span>
-              </div>
-              <div class="stat-card">
-                <span class="stat-label">配置项</span>
-                <span class="stat-value" id="stat-config-total">-</span>
               </div>
               <div class="stat-card">
                 <span class="stat-label">绑定设备</span>
@@ -1043,6 +1051,16 @@
       document.getElementById("page-profile-email").textContent = email;
       document.getElementById("page-profile-role-value").textContent = role;
       document.getElementById("nav-count-overview").textContent = isAdmin ? "Admin" : "User";
+
+      if (document.getElementById("stat-points-total")) {
+        document.getElementById("stat-points-total").textContent = user.points ?? 0;
+      }
+      if (document.getElementById("stat-wishes-total")) {
+        document.getElementById("stat-wishes-total").textContent = user.wishesCount ?? 0;
+      }
+      if (document.getElementById("stat-accepted-total")) {
+        document.getElementById("stat-accepted-total").textContent = user.acceptedCount ?? 0;
+      }
     }
 
     function renderStats(extensionsResult, devicesResult, webdavResult, yanmResult, storeMeta) {

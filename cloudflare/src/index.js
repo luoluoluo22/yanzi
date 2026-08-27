@@ -469,12 +469,73 @@ async function handleRequest(request, env) {
 
   if (url.pathname === "/v1/auth/me" && request.method === "GET") {
     const auth = await requireAuth(request, env);
+    await ensureWishWallTables(env);
+    const userPoints = await env.DB.prepare(
+      "select points, wishes_count, accepted_count from user_points where user_id = ?"
+    ).bind(auth.userId).first();
     return json({
       userId: auth.userId,
       username: auth.username,
       email: auth.email,
+      points: userPoints?.points ?? 0,
+      wishesCount: userPoints?.wishes_count ?? 0,
+      acceptedCount: userPoints?.accepted_count ?? 0,
       isAdmin: isAdminUser(auth, env)
     });
+  }
+
+  // --- 心愿墙 Wish Wall 相关 API ---
+  if (url.pathname === "/v1/wishes/leaderboard" && request.method === "GET") {
+    const leaderboard = await getWishLeaderboard(env);
+    return json({ ok: true, leaderboard });
+  }
+
+  if (url.pathname === "/v1/user/points" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const details = await getUserPointsDetail(env, auth.userId);
+    return json({ ok: true, userId: auth.userId, ...details });
+  }
+
+  if (url.pathname === "/v1/wishes" && request.method === "GET") {
+    const status = url.searchParams.get("status") || "all";
+    const category = url.searchParams.get("category") || "all";
+    const search = url.searchParams.get("search") || "";
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "12", 10)));
+    const result = await listWishes(env, { status, category, search, page, limit });
+    return json({ ok: true, ...result });
+  }
+
+  if (url.pathname === "/v1/wishes" && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    const result = await createWish(env, auth, payload);
+    return json({ ok: true, wish: result.wish, pointsGained: result.pointsGained });
+  }
+
+  const wishAcceptMatch = url.pathname.match(/^\/v1\/wishes\/([^/]+)\/accept$/);
+  if (wishAcceptMatch && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const wishId = decodeURIComponent(wishAcceptMatch[1]);
+    const payload = await readJson(request);
+    const result = await acceptWishReply(env, auth, wishId, payload);
+    return json({ ok: true, ...result });
+  }
+
+  const wishReplyMatch = url.pathname.match(/^\/v1\/wishes\/([^/]+)\/replies$/);
+  if (wishReplyMatch && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const wishId = decodeURIComponent(wishReplyMatch[1]);
+    const payload = await readJson(request);
+    const result = await createWishReply(env, auth, wishId, payload);
+    return json({ ok: true, reply: result.reply });
+  }
+
+  const wishDetailMatch = url.pathname.match(/^\/v1\/wishes\/([^/]+)$/);
+  if (wishDetailMatch && request.method === "GET") {
+    const wishId = decodeURIComponent(wishDetailMatch[1]);
+    const result = await getWishDetail(env, wishId);
+    return json({ ok: true, ...result });
   }
 
   if (url.pathname === "/v1/sync/capabilities" && request.method === "GET") {
@@ -5246,4 +5307,338 @@ async function getYanmStateViewUrl(env, userId) {
     // ignore
   }
   return null;
+}
+
+// ==========================================
+// 心愿墙 (Wish Wall) 与 积分体系 (Points System)
+// ==========================================
+
+let _wishWallTablesInitialized = false;
+
+async function ensureWishWallTables(env) {
+  if (_wishWallTablesInitialized) return;
+  try {
+    await env.DB.exec(`
+      CREATE TABLE IF NOT EXISTS wishes (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT '通用',
+        status TEXT NOT NULL DEFAULT 'open',
+        accepted_reply_id TEXT,
+        reward_points INTEGER NOT NULL DEFAULT 50,
+        reply_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS wish_replies (
+        id TEXT PRIMARY KEY,
+        wish_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        content TEXT NOT NULL,
+        code_snippet TEXT,
+        is_accepted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS user_points (
+        user_id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        points INTEGER NOT NULL DEFAULT 0,
+        wishes_count INTEGER NOT NULL DEFAULT 0,
+        accepted_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS point_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        action_type TEXT NOT NULL,
+        description TEXT NOT NULL,
+        reference_id TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_wishes_status_created ON wishes (status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_wish_replies_wish_id ON wish_replies (wish_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_user_points_rank ON user_points (points DESC, accepted_count DESC);
+    `);
+    _wishWallTablesInitialized = true;
+  } catch (err) {
+    console.error("Failed to ensure wish wall tables:", err);
+  }
+}
+
+async function addPoints(env, userId, username, amount, actionType, description, referenceId = null) {
+  await ensureWishWallTables(env);
+  const now = isoNow();
+  const txId = `ptx_${randomHex(8)}`;
+
+  const existing = await env.DB.prepare(
+    "SELECT user_id, points, wishes_count, accepted_count FROM user_points WHERE user_id = ?"
+  ).bind(userId).first();
+
+  let newPoints = amount;
+  let wishesCount = 0;
+  let acceptedCount = 0;
+
+  if (existing) {
+    newPoints = (existing.points || 0) + amount;
+    wishesCount = existing.wishes_count || 0;
+    acceptedCount = existing.accepted_count || 0;
+  }
+
+  if (actionType === "publish_wish") {
+    wishesCount += 1;
+  } else if (actionType === "be_accepted") {
+    acceptedCount += 1;
+  }
+
+  await env.DB.batch([
+    env.DB.prepare(`
+      INSERT INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        username = excluded.username,
+        points = excluded.points,
+        wishes_count = excluded.wishes_count,
+        accepted_count = excluded.accepted_count,
+        updated_at = excluded.updated_at
+    `).bind(userId, username, Math.max(0, newPoints), wishesCount, acceptedCount, now),
+
+    env.DB.prepare(`
+      INSERT INTO point_transactions (id, user_id, amount, action_type, description, reference_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(txId, userId, amount, actionType, description, referenceId, now)
+  ]);
+
+  return { points: newPoints, wishesCount, acceptedCount };
+}
+
+async function listWishes(env, { status = "all", category = "all", search = "", page = 1, limit = 12 }) {
+  await ensureWishWallTables(env);
+  const conditions = [];
+  const bindings = [];
+
+  if (status && status !== "all") {
+    conditions.push("status = ?");
+    bindings.push(status);
+  }
+
+  if (category && category !== "all") {
+    conditions.push("category = ?");
+    bindings.push(category);
+  }
+
+  if (search && search.trim()) {
+    conditions.push("(title LIKE ? OR description LIKE ?)");
+    const term = `%${search.trim()}%`;
+    bindings.push(term, term);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const countSql = `SELECT COUNT(*) as total FROM wishes ${whereClause}`;
+  const totalRow = await env.DB.prepare(countSql).bind(...bindings).first();
+  const total = totalRow?.total || 0;
+
+  const offset = (page - 1) * limit;
+  const listSql = `
+    SELECT id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at
+    FROM wishes
+    ${whereClause}
+    ORDER BY
+      CASE status WHEN 'open' THEN 1 WHEN 'answered' THEN 2 ELSE 3 END ASC,
+      created_at DESC
+    LIMIT ? OFFSET ?
+  `;
+  const { results: wishes } = await env.DB.prepare(listSql).bind(...bindings, limit, offset).all();
+
+  return { wishes: wishes || [], total, page, limit };
+}
+
+async function getWishDetail(env, wishId) {
+  await ensureWishWallTables(env);
+  const wish = await env.DB.prepare(
+    "SELECT * FROM wishes WHERE id = ?"
+  ).bind(wishId).first();
+
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在或已被移除");
+  }
+
+  const { results: replies } = await env.DB.prepare(`
+    SELECT id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at
+    FROM wish_replies
+    WHERE wish_id = ?
+    ORDER BY is_accepted DESC, created_at ASC
+  `).bind(wishId).all();
+
+  return { wish, replies: replies || [] };
+}
+
+async function createWish(env, auth, payload) {
+  await ensureWishWallTables(env);
+  const title = String(payload.title || "").trim();
+  const description = String(payload.description || "").trim();
+  const category = String(payload.category || "通用").trim();
+  const rewardPoints = 50;
+
+  if (!title) {
+    throw new HttpError(400, "invalid_title", "请提供心愿标题");
+  }
+  if (title.length < 3 || title.length > 80) {
+    throw new HttpError(400, "invalid_title_length", "标题长度应在 3 到 80 个字符之间");
+  }
+  if (!description || description.length < 5) {
+    throw new HttpError(400, "invalid_description", "请详细描述您希望小程序具备的功能（至少 5 个字符）");
+  }
+
+  const wishId = `wsh_${randomHex(8)}`;
+  const now = isoNow();
+
+  await env.DB.prepare(`
+    INSERT INTO wishes (id, user_id, username, title, description, category, status, reward_points, reply_count, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'open', ?, 0, ?, ?)
+  `).bind(wishId, auth.userId, auth.username, title, description, category, rewardPoints, now, now).run();
+
+  // 发布心愿给发布者奖励 +5 积分
+  const pointResult = await addPoints(env, auth.userId, auth.username, 5, "publish_wish", `发布心愿《${title.substring(0, 20)}》`, wishId);
+
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  return { wish, pointsGained: 5, userPoints: pointResult.points };
+}
+
+async function createWishReply(env, auth, wishId, payload) {
+  await ensureWishWallTables(env);
+  const content = String(payload.content || "").trim();
+  const codeSnippet = String(payload.codeSnippet || "").trim();
+
+  if (!content && !codeSnippet) {
+    throw new HttpError(400, "empty_reply", "请提供方案说明或小程序代码");
+  }
+
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在");
+  }
+
+  const replyId = `wrp_${randomHex(8)}`;
+  const now = isoNow();
+
+  const newStatus = wish.status === "open" ? "answered" : wish.status;
+
+  await env.DB.batch([
+    env.DB.prepare(`
+      INSERT INTO wish_replies (id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+    `).bind(replyId, wishId, auth.userId, auth.username, content, codeSnippet, now),
+
+    env.DB.prepare(`
+      UPDATE wishes
+      SET reply_count = reply_count + 1,
+          status = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).bind(newStatus, now, wishId)
+  ]);
+
+  const reply = await env.DB.prepare("SELECT * FROM wish_replies WHERE id = ?").bind(replyId).first();
+  return { reply };
+}
+
+async function acceptWishReply(env, auth, wishId, payload) {
+  await ensureWishWallTables(env);
+  const replyId = String(payload.replyId || "").trim();
+  if (!replyId) {
+    throw new HttpError(400, "reply_id_required", "请指定要验收采纳的方案 ID");
+  }
+
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在");
+  }
+
+  if (wish.user_id !== auth.userId) {
+    throw new HttpError(403, "forbidden", "只有心愿发布者本人才能验收并采纳方案");
+  }
+
+  if (wish.status === "accepted") {
+    throw new HttpError(400, "already_accepted", "该心愿已验收完成，不可重复验收");
+  }
+
+  const reply = await env.DB.prepare("SELECT * FROM wish_replies WHERE id = ? AND wish_id = ?").bind(replyId, wishId).first();
+  if (!reply) {
+    throw new HttpError(404, "reply_not_found", "指定的方案回复不存在");
+  }
+
+  const now = isoNow();
+
+  await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE wishes
+      SET status = 'accepted',
+          accepted_reply_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).bind(replyId, now, wishId),
+
+    env.DB.prepare(`
+      UPDATE wish_replies
+      SET is_accepted = 1
+      WHERE id = ?
+    `).bind(replyId)
+  ]);
+
+  // 奖励方案提交者 +50 积分
+  await addPoints(env, reply.user_id, reply.username, 50, "be_accepted", `小程序方案被采纳 (心愿: ${wish.title.substring(0, 20)})`, wishId);
+
+  // 奖励验收结单的发布者 +10 积分
+  await addPoints(env, auth.userId, auth.username, 10, "accept_wish", `验收并通过小程序方案 (心愿: ${wish.title.substring(0, 20)})`, wishId);
+
+  const updatedWish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  return {
+    ok: true,
+    wish: updatedWish,
+    developerReward: 50,
+    creatorReward: 10,
+    acceptedReplyId: replyId
+  };
+}
+
+async function getWishLeaderboard(env) {
+  await ensureWishWallTables(env);
+  const { results: leaderboard } = await env.DB.prepare(`
+    SELECT user_id, username, points, wishes_count, accepted_count, updated_at
+    FROM user_points
+    ORDER BY points DESC, accepted_count DESC
+    LIMIT 10
+  `).all();
+  return leaderboard || [];
+}
+
+async function getUserPointsDetail(env, userId) {
+  await ensureWishWallTables(env);
+  const userPoints = await env.DB.prepare(
+    "SELECT points, wishes_count, accepted_count FROM user_points WHERE user_id = ?"
+  ).bind(userId).first();
+
+  const { results: transactions } = await env.DB.prepare(`
+    SELECT id, amount, action_type, description, reference_id, created_at
+    FROM point_transactions
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).bind(userId).all();
+
+  return {
+    points: userPoints?.points ?? 0,
+    wishesCount: userPoints?.wishes_count ?? 0,
+    acceptedCount: userPoints?.accepted_count ?? 0,
+    transactions: transactions || []
+  };
 }
