@@ -4,182 +4,305 @@
         xmlns:shared="clr-namespace:Yanzi.Shared;assembly=Yanzi.Shared"
         x:Class="Yanzi.Avalonia.AddExtensionWindow"
         Title="燕子 - 创建 / 编辑小程序"
-        Width="960"
-        Height="680"
-        MinWidth="880"
-        MinHeight="600"
+        Width="1080"
+        Height="740"
+        MinWidth="960"
+        MinHeight="640"
         SystemDecorations="Full"
         Background="{DynamicResource BrushWindowBG}"
         WindowStartupLocation="CenterScreen"
         CanResize="True">
 
-    <Grid RowDefinitions="Auto,*,Auto" Margin="24,18">
-        <!-- Top Header -->
-        <Grid Grid.Row="0" Margin="0,0,0,16">
-            <StackPanel Spacing="4">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="20,16">
+        <!-- Top Header Bar with Mode Switcher -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+            <StackPanel Grid.Column="0" Spacing="4">
                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                     <Border Width="30" Height="30" CornerRadius="8" Background="{DynamicResource BrushAccent}">
                         <Path Data="{local:VectorIcon dashboard}" Fill="White" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                    <TextBlock Text="新建 / 编辑自定义小程序向导" Foreground="{DynamicResource BrushTextMain}" FontSize="17" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text="新建 / 编辑自定义小程序" Foreground="{DynamicResource BrushTextMain}" FontSize="17" FontWeight="Bold" VerticalAlignment="Center"/>
                 </StackPanel>
-                <TextBlock Text="选择下方小程序类型与预设模板，快速为燕子添加自定义快捷动作、网页直达、AppleScript 或快捷短语" Foreground="{DynamicResource BrushTextSec}" FontSize="12"/>
+                <TextBlock Text="为燕子添加自定义快捷动作、网页直达、AppleScript 脚本或快捷短语" Foreground="{DynamicResource BrushTextSec}" FontSize="12"/>
             </StackPanel>
+
+            <!-- Mode Switcher Tabs (Simple Wizard vs AI Code Generator matching Windows) -->
+            <Border Grid.Column="1" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="9" Padding="3" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton Name="SimpleModeRadio" Content="✨ 简单小程序 (向导)" IsChecked="True" Classes="tabChip" Checked="OnModeRadioChanged"/>
+                    <RadioButton Name="AiCodeModeRadio" Content="🤖 AI 生成 (JSON 源码)" Classes="tabChip" Checked="OnModeRadioChanged"/>
+                </StackPanel>
+            </Border>
         </Grid>
 
-        <!-- Main Content Area: Graphical Wizard -->
-        <Border Grid.Row="1" Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="12" Padding="20,16">
-            <ScrollViewer Name="WizardScrollViewer" VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="18">
-                        <!-- Type Selection Grid (6 Types matching Windows) -->
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="1. 选择小程序类型" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
-                            
-                            <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto">
-                                <!-- Type 1: Open Target / URL -->
-                                <Border Grid.Row="0" Grid.Column="0" Name="CardTypeUrl" Classes="type-card selected" PointerPressed="OnTypeCardClick" Tag="url" Margin="4">
-                                    <StackPanel Spacing="6">
-                                        <Border Width="32" Height="32" CornerRadius="8" Background="#1A3B82F6" HorizontalAlignment="Left">
-                                            <Path Data="{local:VectorIcon global}" Fill="#FF3B82F6" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <TextBlock Text="打开网址 / 程序" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
-                                        <TextBlock Text="一键打开指定网站、文件或 macOS 应用程序" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </Border>
+        <!-- Main Content Area -->
+        <Border Grid.Row="1" Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+            <Panel>
+                <!-- ==================== VIEW 1: 简单小程序 (左侧向导 + 右侧预览/设置区) ==================== -->
+                <Grid Name="SimpleWizardPanel" ColumnDefinitions="*,1,350" IsVisible="True">
+                    <!-- LEFT COLUMN: Type Selection + Parameter Form -->
+                    <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="20,16">
+                        <StackPanel Spacing="16">
+                            <!-- 1. Type Selection Grid -->
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="1. 选择小程序类型" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                
+                                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto">
+                                    <!-- Type 1: Open Target / URL -->
+                                    <Border Grid.Row="0" Grid.Column="0" Name="CardTypeUrl" Classes="type-card selected" PointerPressed="OnTypeCardClick" Tag="url" Margin="3">
+                                        <StackPanel Spacing="6">
+                                            <Border Width="30" Height="30" CornerRadius="8" Background="#1A3B82F6" HorizontalAlignment="Left">
+                                                <Path Data="{local:VectorIcon global}" Fill="#FF3B82F6" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="打开网址 / 程序" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
+                                            <TextBlock Text="一键打开指定网站、文件或 macOS 应用" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
 
-                                <!-- Type 2: Web Search -->
-                                <Border Grid.Row="0" Grid.Column="1" Name="CardTypeSearch" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="search" Margin="4">
-                                    <StackPanel Spacing="6">
-                                        <Border Width="32" Height="32" CornerRadius="8" Background="#1A6366F1" HorizontalAlignment="Left">
-                                            <Path Data="{local:VectorIcon search}" Fill="#FF6366F1" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <TextBlock Text="网页搜索" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
-                                        <TextBlock Text="把搜索关键词自动拼入搜索引擎模板" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </Border>
+                                    <!-- Type 2: Web Search -->
+                                    <Border Grid.Row="0" Grid.Column="1" Name="CardTypeSearch" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="search" Margin="3">
+                                        <StackPanel Spacing="6">
+                                            <Border Width="30" Height="30" CornerRadius="8" Background="#1A6366F1" HorizontalAlignment="Left">
+                                                <Path Data="{local:VectorIcon search}" Fill="#FF6366F1" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="网页搜索" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
+                                            <TextBlock Text="把搜索词自动拼入搜索引擎模板" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
 
-                                <!-- Type 3: Paste Text / Snippet -->
-                                <Border Grid.Row="0" Grid.Column="2" Name="CardTypeSnippet" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="snippet" Margin="4">
-                                    <StackPanel Spacing="6">
-                                        <Border Width="32" Height="32" CornerRadius="8" Background="#1AEC4899" HorizontalAlignment="Left">
-                                            <Path Data="{local:VectorIcon clipboard}" Fill="#FFEC4899" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <TextBlock Text="粘贴文本 / 快捷短语" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
-                                        <TextBlock Text="向当前光标处粘贴固定模板并支持简写触发" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </Border>
+                                    <!-- Type 3: Paste Text / Snippet -->
+                                    <Border Grid.Row="0" Grid.Column="2" Name="CardTypeSnippet" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="snippet" Margin="3">
+                                        <StackPanel Spacing="6">
+                                            <Border Width="30" Height="30" CornerRadius="8" Background="#1AEC4899" HorizontalAlignment="Left">
+                                                <Path Data="{local:VectorIcon clipboard}" Fill="#FFEC4899" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="粘贴文本 / 快捷短语" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
+                                            <TextBlock Text="向光标处粘贴固定模板并支持简写触发" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
 
-                                <!-- Type 4: AppleScript Script -->
-                                <Border Grid.Row="1" Grid.Column="0" Name="CardTypeScript" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="applescript" Margin="4">
-                                    <StackPanel Spacing="6">
-                                        <Border Width="32" Height="32" CornerRadius="8" Background="#1A10B981" HorizontalAlignment="Left">
-                                            <Path Data="{local:VectorIcon apple}" Fill="#FF10B981" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <TextBlock Text="AppleScript 苹果脚本" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
-                                        <TextBlock Text="调用 macOS 系统事件与原生应用自动化操作" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </Border>
+                                    <!-- Type 4: AppleScript Script -->
+                                    <Border Grid.Row="1" Grid.Column="0" Name="CardTypeScript" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="applescript" Margin="3">
+                                        <StackPanel Spacing="6">
+                                            <Border Width="30" Height="30" CornerRadius="8" Background="#1A10B981" HorizontalAlignment="Left">
+                                                <Path Data="{local:VectorIcon apple}" Fill="#FF10B981" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="AppleScript 苹果脚本" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
+                                            <TextBlock Text="调用 macOS 系统事件与原生自动化" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
 
-                                <!-- Type 5: Shell Script -->
-                                <Border Grid.Row="1" Grid.Column="1" Name="CardTypeShell" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="shell" Margin="4">
-                                    <StackPanel Spacing="6">
-                                        <Border Width="32" Height="32" CornerRadius="8" Background="#1AF59E0B" HorizontalAlignment="Left">
-                                            <Path Data="{local:VectorIcon terminal}" Fill="#FFF59E0B" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <TextBlock Text="Shell / 命令行终端" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
-                                        <TextBlock Text="在后台静默执行 Bash / Zsh 脚本并处理输出" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </Border>
+                                    <!-- Type 5: Shell Script -->
+                                    <Border Grid.Row="1" Grid.Column="1" Name="CardTypeShell" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="shell" Margin="3">
+                                        <StackPanel Spacing="6">
+                                            <Border Width="30" Height="30" CornerRadius="8" Background="#1AF59E0B" HorizontalAlignment="Left">
+                                                <Path Data="{local:VectorIcon terminal}" Fill="#FFF59E0B" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="Shell / 命令行终端" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
+                                            <TextBlock Text="在后台静默执行 Bash / Zsh 脚本" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
 
-                                <!-- Type 6: Keyboard Shortcut -->
-                                <Border Grid.Row="1" Grid.Column="2" Name="CardTypeShortcut" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="shortcut" Margin="4">
-                                    <StackPanel Spacing="6">
-                                        <Border Width="32" Height="32" CornerRadius="8" Background="#1A8B5CF6" HorizontalAlignment="Left">
-                                            <Path Data="{local:VectorIcon keyboard}" Fill="#FF8B5CF6" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <TextBlock Text="模拟按键 / 快捷键" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
-                                        <TextBlock Text="向当前获得焦点的应用程序发送按键组合" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </StackPanel>
-
-                        <!-- Dynamic Type Configuration Panel -->
-                        <Border Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="14">
-                            <StackPanel Spacing="12">
-                                <TextBlock Name="ConfigSectionHeader" Text="2. 参数配置" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
-
-                                <!-- Presets Container -->
-                                <StackPanel Name="PresetsContainer" Spacing="6">
-                                    <TextBlock Text="快捷预设模板 (点击快速填入):" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
-                                    <WrapPanel Name="PresetsWrapPanel">
-                                        <!-- Presets injected dynamically in code -->
-                                    </WrapPanel>
-                                </StackPanel>
-
-                                <!-- Main Value Field -->
-                                <StackPanel Spacing="4">
-                                    <TextBlock Name="MainFieldLabel" Text="目标地址 / URL" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBox Name="MainFieldInput" Grid.Column="0" Watermark="例如: https://yanzi.luoluoluo.cc.cd" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
-                                        <Button Name="BrowseBtn" Grid.Column="1" Content="浏览..." Click="OnBrowseClick" Margin="8,0,0,0" Height="34" Padding="14,0"/>
-                                    </Grid>
-                                </StackPanel>
-
-                                <!-- Code/Script Multi-line Area (for AppleScript, Shell, Snippet Text) -->
-                                <StackPanel Name="ScriptFieldContainer" Spacing="4" IsVisible="False">
-                                    <TextBlock Name="ScriptFieldLabel" Text="脚本或文本完整内容" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
-                                    <TextBox Name="ScriptFieldInput" AcceptsReturn="True" TextWrapping="Wrap" Height="110" CornerRadius="8" Padding="10,8" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" FontFamily="Courier New, monospace" FontSize="12"/>
-                                </StackPanel>
-
-                                <!-- Abbreviation Trigger (for Snippets) -->
-                                <StackPanel Name="AbbrevContainer" Spacing="4" IsVisible="False">
-                                    <TextBlock Text="触发缩写 (在任何应用中输入此缩写+空格触发替换)" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
-                                    <TextBox Name="AbbrevInput" Watermark="例如: em, email, addr" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Basic Metadata (Title, Icon, Category) -->
-                        <Border Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="14">
-                            <StackPanel Spacing="12">
-                                <TextBlock Text="3. 展示与基本信息" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
-
-                                <Grid ColumnDefinitions="*,*,*">
-                                    <!-- Title -->
-                                    <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,8,0">
-                                        <TextBlock Text="小程序标题 *" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
-                                        <TextBox Name="TitleInput" Watermark="例如: 打开燕子官网" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
-                                    </StackPanel>
-
-                                    <!-- Icon / Emoji -->
-                                    <StackPanel Grid.Column="1" Spacing="4" Margin="4,0,4,0">
-                                        <TextBlock Text="图标 (Emoji 或矢量关键字)" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
-                                        <TextBox Name="IconInput" Text="🌐" Watermark="例如: 🌐, 🚀, search" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
-                                    </StackPanel>
-
-                                    <!-- Category -->
-                                    <StackPanel Grid.Column="2" Spacing="4" Margin="8,0,0,0">
-                                        <TextBlock Text="所属分类" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
-                                        <TextBox Name="CategoryInput" Text="快捷工具" Watermark="例如: 快捷工具, 常用网址" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
-                                    </StackPanel>
+                                    <!-- Type 6: Keyboard Shortcut -->
+                                    <Border Grid.Row="1" Grid.Column="2" Name="CardTypeShortcut" Classes="type-card" PointerPressed="OnTypeCardClick" Tag="shortcut" Margin="3">
+                                        <StackPanel Spacing="6">
+                                            <Border Width="30" Height="30" CornerRadius="8" Background="#1A8B5CF6" HorizontalAlignment="Left">
+                                                <Path Data="{local:VectorIcon keyboard}" Fill="#FF8B5CF6" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="模拟按键 / 快捷键" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="SemiBold"/>
+                                            <TextBlock Text="向当前获得焦点窗口发送按键组合" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
                                 </Grid>
+                            </StackPanel>
+
+                            <!-- 2. Parameter Configurations & Preset Templates -->
+                            <Border Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="14">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Name="ConfigSectionHeader" Text="2. 参数配置" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+
+                                    <!-- Presets Container -->
+                                    <StackPanel Name="PresetsContainer" Spacing="6">
+                                        <TextBlock Text="快捷预设模板 (点击快速填入):" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                        <WrapPanel Name="PresetsWrapPanel"/>
+                                    </StackPanel>
+
+                                    <!-- Main Value Field -->
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Name="MainFieldLabel" Text="目标地址 / URL" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBox Name="MainFieldInput" Grid.Column="0" Watermark="例如: https://yanzi.luoluoluo.cc.cd" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" TextChanged="OnFormParamChanged"/>
+                                            <Button Name="BrowseBtn" Grid.Column="1" Content="浏览..." Click="OnBrowseClick" Margin="8,0,0,0" Height="34" Padding="14,0"/>
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <!-- Code/Script Multi-line Area -->
+                                    <StackPanel Name="ScriptFieldContainer" Spacing="4" IsVisible="False">
+                                        <TextBlock Name="ScriptFieldLabel" Text="脚本或文本完整内容" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                        <TextBox Name="ScriptFieldInput" AcceptsReturn="True" TextWrapping="Wrap" Height="100" CornerRadius="8" Padding="10,8" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" FontFamily="Courier New, monospace" FontSize="12" TextChanged="OnFormParamChanged"/>
+                                    </StackPanel>
+
+                                    <!-- Abbreviation Trigger -->
+                                    <StackPanel Name="AbbrevContainer" Spacing="4" IsVisible="False">
+                                        <TextBlock Text="触发缩写 (在任何应用中输入此缩写+空格触发替换)" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                        <TextBox Name="AbbrevInput" Watermark="例如: em, email, addr" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" TextChanged="OnFormParamChanged"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Splitter Divider -->
+                    <Border Grid.Column="1" Background="{DynamicResource BrushBorder}"/>
+
+                    <!-- RIGHT COLUMN: Live Appearance Preview & Properties Settings (Matching Windows AddJsonExtensionWindow RightPropertiesPanel) -->
+                    <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="18,16">
+                        <StackPanel Spacing="16">
+                            <!-- Section Title -->
+                            <TextBlock Text="👁 实时外观与属性设置" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+
+                            <!-- Live Appearance Preview Card (In Warehouse & Radial Ring) -->
+                            <Border Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="14">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="在仓库与轮盘中显示为" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    
+                                    <Border Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="12,10">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <!-- Icon preview -->
+                                            <Border Grid.Column="0" Width="40" Height="40" CornerRadius="10" Background="{DynamicResource BrushAccent}" Margin="0,0,10,0">
+                                                <TextBlock Name="PreviewIconText" Text="🌐" FontSize="18" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+
+                                            <!-- Title & Description preview -->
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                                <TextBlock Name="PreviewTitleText" Text="未命名小程序" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Name="PreviewDescText" Text="点击执行对应动作" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+
+                                            <!-- Category Badge -->
+                                            <Border Grid.Column="2" Background="#203B82F6" CornerRadius="6" Padding="6,3" VerticalAlignment="Center">
+                                                <TextBlock Name="PreviewCategoryText" Text="快捷工具" Foreground="{DynamicResource BrushAccent}" FontSize="10.5" FontWeight="SemiBold"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Properties Input Fields -->
+                            <StackPanel Spacing="12">
+                                <!-- Title -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="小程序名称 *" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Name="TitleInput" Watermark="例如: 打开燕子官网" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" TextChanged="OnMetaChanged"/>
+                                </StackPanel>
+
+                                <!-- Icon -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="图标 (Emoji 或矢量名称)" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Name="IconInput" Text="🌐" Watermark="例如: 🌐, 🚀, search" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" TextChanged="OnMetaChanged"/>
+                                </StackPanel>
+
+                                <!-- Category -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="所属分类" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Name="CategoryInput" Text="快捷工具" Watermark="例如: 快捷工具, 常用网址" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" TextChanged="OnMetaChanged"/>
+                                </StackPanel>
 
                                 <!-- Subtitle / Description -->
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="功能描述 / 副标题" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
-                                    <TextBox Name="DescInput" Watermark="在搜索结果中展示的说明文字..." Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
+                                    <TextBlock Text="副标题 / 功能描述" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Name="DescInput" Watermark="在搜索结果中展示的说明文字..." Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" TextChanged="OnMetaChanged"/>
+                                </StackPanel>
+
+                                <!-- Keywords -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="关键词 (逗号分隔，搜索时匹配)" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Name="KeywordsInput" Watermark="例如: web, site, yz" Height="34" CornerRadius="8" Padding="10,6" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}" TextChanged="OnMetaChanged"/>
                                 </StackPanel>
                             </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- ==================== VIEW 2: 🤖 AI 生成 / JSON 源码模式 (左侧 AI 对话/系统提示词 + 右侧 JSON 工作区) ==================== -->
+                <Grid Name="AiCodePanel" ColumnDefinitions="380,1,*" IsVisible="False">
+                    <!-- LEFT COLUMN: AI Assistant Guide & System Prompt Generator -->
+                    <Border Grid.Column="0" Background="{DynamicResource BrushSidebarBG}" Padding="18,16">
+                        <Grid RowDefinitions="Auto,*,Auto">
+                            <!-- Header -->
+                            <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <TextBlock Text="💬" FontSize="15" VerticalAlignment="Center"/>
+                                    <TextBlock Text="AI 助手与系统提示词" Foreground="{DynamicResource BrushTextMain}" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="复制下方生成的系统提示词，发送给 ChatGPT / DeepSeek 生成标准小程序代码" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <!-- Generated System Prompt Box -->
+                            <ScrollViewer Grid.Row="1" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,0,0,12">
+                                <TextBox Name="AiPromptTextBox"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         IsReadOnly="True"
+                                         FontFamily="Courier New, Consolas, monospace"
+                                         FontSize="11.5"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Foreground="{DynamicResource BrushTextMain}"/>
+                            </ScrollViewer>
+
+                            <!-- Copy Prompt Button -->
+                            <Button Grid.Row="2" Content="📋 一键复制系统提示词" Click="OnCopyAiPromptClick" Classes="action-btn cancel" HorizontalAlignment="Stretch" Padding="0,8"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Splitter Divider -->
+                    <Border Grid.Column="1" Background="{DynamicResource BrushBorder}"/>
+
+                    <!-- RIGHT COLUMN: JSON Code Editor Workspace (Matching Windows Toolbar & Validator) -->
+                    <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto" Margin="16,14">
+                        <!-- Toolbar: Format, Copy, Find, Replace -->
+                        <Border Grid.Row="0" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,0,0,10">
+                            <Grid ColumnDefinitions="Auto,6,*,4,*,4,Auto,2,Auto">
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                                    <Button Content="格式化" Classes="action-btn cancel" Padding="8,4" FontSize="11" Click="OnFormatRawJsonClick" ToolTip.Tip="美化并对齐 JSON 缩进"/>
+                                    <Button Content="复制" Classes="action-btn cancel" Padding="8,4" FontSize="11" Click="OnCopyRawJsonClick" ToolTip.Tip="复制全部 JSON 源码"/>
+                                </StackPanel>
+
+                                <TextBox Name="JsonFindBox" Grid.Column="2" Watermark="查找..." FontFamily="Consolas, monospace" FontSize="11" Height="28" MinHeight="0" Padding="6,2" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
+                                <TextBox Name="JsonReplaceBox" Grid.Column="4" Watermark="替换为..." FontFamily="Consolas, monospace" FontSize="11" Height="28" MinHeight="0" Padding="6,2" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
+
+                                <Button Grid.Column="6" Content="替换" Classes="action-btn cancel" Padding="6,4" FontSize="11" Click="OnReplaceRawJsonClick"/>
+                                <Button Grid.Column="8" Content="全换" Classes="action-btn cancel" Padding="6,4" FontSize="11" Click="OnReplaceAllRawJsonClick"/>
+                            </Grid>
                         </Border>
-                    </StackPanel>
-            </ScrollViewer>
+
+                        <!-- Monospace Code Editor -->
+                        <ScrollViewer Grid.Row="1" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="8">
+                            <TextBox Name="RawJsonInput"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     FontFamily="Courier New, Consolas, monospace"
+                                     FontSize="12"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Foreground="{DynamicResource BrushTextMain}"
+                                     TextChanged="OnRawJsonChanged"/>
+                        </ScrollViewer>
+
+                        <!-- Live Syntax Validation Indicator -->
+                        <Grid Grid.Row="2" Margin="0,8,0,0">
+                            <TextBlock Name="JsonValidationText" Text="🟢 JSON 语法有效" Foreground="#FF22C55E" FontSize="11.5" FontWeight="SemiBold"/>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Panel>
         </Border>
 
         <!-- Bottom Action Bar -->
         <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,14,0,0" VerticalAlignment="Center">
             <TextBlock Name="StatusText" Text="" Foreground="#FF22C55E" FontSize="12" VerticalAlignment="Center"/>
-            <Button Grid.Column="1" Content="📋 复制 AI 生成提示词" Click="OnCopyAiPromptClick" Margin="0,0,10,0" Padding="14,8"/>
+            <Button Grid.Column="1" Content="📋 复制系统提示词" Click="OnCopyAiPromptClick" Margin="0,0,10,0" Padding="14,8"/>
             <Button Grid.Column="2" Content="保存并添加到仓库" Click="OnSaveClick" Background="{DynamicResource BrushAccent}" Foreground="White" FontWeight="SemiBold" Margin="0,0,10,0" Padding="20,8"/>
             <Button Grid.Column="3" Content="取消" Click="OnCancelClick" Padding="16,8"/>
         </Grid>
@@ -187,11 +310,10 @@
 
     <Window.Styles>
         <Style Selector="RadioButton.tabChip">
-            <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BrushSecondaryBtnBorder}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="14"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="6"/>
             <Setter Property="Padding" Value="14,6"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -199,7 +321,6 @@
         <Style Selector="RadioButton.tabChip:checked">
             <Setter Property="Background" Value="{DynamicResource BrushAccent}"/>
             <Setter Property="Foreground" Value="{DynamicResource BrushAccentText}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
 

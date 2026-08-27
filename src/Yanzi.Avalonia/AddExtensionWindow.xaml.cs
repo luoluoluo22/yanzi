@@ -15,7 +15,7 @@ public partial class AddExtensionWindow : Window
 {
     private readonly MainWindow? _mainWindow;
     private string _currentType = "url";
-    private bool _isUpdatingFromForm;
+    private bool _isInternalUpdating;
 
     public CommandItem? ResultCommand { get; private set; }
 
@@ -28,11 +28,34 @@ public partial class AddExtensionWindow : Window
 
         SetupPresets();
         SelectType("url");
+        UpdateLivePreview();
+        UpdateSystemPrompt();
+        SyncFormToJson();
     }
 
     private void InitializeComponent()
     {
         AvaloniaXamlLoader.Load(this);
+    }
+
+    private void OnModeRadioChanged(object? sender, RoutedEventArgs e)
+    {
+        var simpleRadio = this.FindControl<RadioButton>("SimpleModeRadio");
+        var simplePanel = this.FindControl<Grid>("SimpleWizardPanel");
+        var aiPanel = this.FindControl<Grid>("AiCodePanel");
+
+        if (simpleRadio != null && simplePanel != null && aiPanel != null)
+        {
+            bool isSimple = simpleRadio.IsChecked == true;
+            simplePanel.IsVisible = isSimple;
+            aiPanel.IsVisible = !isSimple;
+
+            if (!isSimple)
+            {
+                SyncFormToJson();
+                UpdateSystemPrompt();
+            }
+        }
     }
 
     private void OnTypeCardClick(object? sender, PointerPressedEventArgs e)
@@ -73,8 +96,6 @@ public partial class AddExtensionWindow : Window
         if (browseBtn != null) browseBtn.IsVisible = (type == "url");
 
         var iconInput = this.FindControl<TextBox>("IconInput");
-        var titleInput = this.FindControl<TextBox>("TitleInput");
-        var descInput = this.FindControl<TextBox>("DescInput");
 
         switch (type)
         {
@@ -111,6 +132,8 @@ public partial class AddExtensionWindow : Window
         }
 
         UpdatePresetsForType(type);
+        UpdateLivePreview();
+        UpdateSystemPrompt();
     }
 
     private void SetSelectedClass(Border? border, bool selected)
@@ -200,27 +223,232 @@ public partial class AddExtensionWindow : Window
                 if (titleInput != null) titleInput.Text = p.Name;
                 if (iconInput != null) iconInput.Text = p.Icon;
                 if (descInput != null) descInput.Text = p.Desc;
+
+                UpdateLivePreview();
+                UpdateSystemPrompt();
             };
             wrap.Children.Add(btn);
         }
     }
 
+    private void OnMetaChanged(object? sender, TextChangedEventArgs e)
+    {
+        UpdateLivePreview();
+        UpdateSystemPrompt();
+    }
+
+    private void OnFormParamChanged(object? sender, TextChangedEventArgs e)
+    {
+        UpdateSystemPrompt();
+    }
+
+    private void UpdateLivePreview()
+    {
+        var title = this.FindControl<TextBox>("TitleInput")?.Text;
+        var icon = this.FindControl<TextBox>("IconInput")?.Text;
+        var desc = this.FindControl<TextBox>("DescInput")?.Text;
+        var cat = this.FindControl<TextBox>("CategoryInput")?.Text;
+
+        var pTitle = this.FindControl<TextBlock>("PreviewTitleText");
+        var pIcon = this.FindControl<TextBlock>("PreviewIconText");
+        var pDesc = this.FindControl<TextBlock>("PreviewDescText");
+        var pCat = this.FindControl<TextBlock>("PreviewCategoryText");
+
+        if (pTitle != null) pTitle.Text = string.IsNullOrWhiteSpace(title) ? "未命名小程序" : title;
+        if (pIcon != null) pIcon.Text = string.IsNullOrWhiteSpace(icon) ? "🌐" : icon;
+        if (pDesc != null) pDesc.Text = string.IsNullOrWhiteSpace(desc) ? "点击执行对应动作" : desc;
+        if (pCat != null) pCat.Text = string.IsNullOrWhiteSpace(cat) ? "快捷工具" : cat;
+    }
+
+    private void UpdateSystemPrompt()
+    {
+        var title = this.FindControl<TextBox>("TitleInput")?.Text ?? "自定义小程序";
+        var desc = this.FindControl<TextBox>("DescInput")?.Text ?? string.Empty;
+        var target = this.FindControl<TextBox>("MainFieldInput")?.Text ?? string.Empty;
+        var script = this.FindControl<TextBox>("ScriptFieldInput")?.Text ?? string.Empty;
+
+        var prompt = $"# 燕子效率工具 (macOS) 自定义小程序开发系统提示词\n\n" +
+                     $"你是一名高效的 macOS 自动化与效率扩展开发专家。请为燕子生成符合以下标准的小程序 JSON 配置：\n\n" +
+                     $"## 小程序需求规格：\n" +
+                     $"- 扩展类型：{_currentType}\n" +
+                     $"- 小程序名称：{title}\n" +
+                     $"- 功能描述：{desc}\n" +
+                     $"- 目标参数/指令：{target}\n" +
+                     (string.IsNullOrWhiteSpace(script) ? "" : $"- 脚本参考内容：{script}\n") +
+                     $"\n## 输出规范：\n" +
+                     $"请仅输出一段标准的 JSON 代码块，包含 id, type, title, icon, description, category, target, script 等标准属性。";
+
+        var promptBox = this.FindControl<TextBox>("AiPromptTextBox");
+        if (promptBox != null)
+        {
+            promptBox.Text = prompt;
+        }
+    }
+
+    private void SyncFormToJson()
+    {
+        if (_isInternalUpdating) return;
+        _isInternalUpdating = true;
+
+        try
+        {
+            var mainInput = this.FindControl<TextBox>("MainFieldInput")?.Text ?? string.Empty;
+            var scriptInput = this.FindControl<TextBox>("ScriptFieldInput")?.Text ?? string.Empty;
+            var titleInput = this.FindControl<TextBox>("TitleInput")?.Text ?? "未命名小程序";
+            var iconInput = this.FindControl<TextBox>("IconInput")?.Text ?? "🌐";
+            var descInput = this.FindControl<TextBox>("DescInput")?.Text ?? string.Empty;
+            var catInput = this.FindControl<TextBox>("CategoryInput")?.Text ?? "快捷工具";
+            var keywords = this.FindControl<TextBox>("KeywordsInput")?.Text ?? string.Empty;
+            var abbrevInput = this.FindControl<TextBox>("AbbrevInput")?.Text ?? string.Empty;
+
+            var obj = new
+            {
+                id = $"custom-{Guid.NewGuid():N}".Substring(0, 15),
+                type = _currentType,
+                title = titleInput,
+                icon = iconInput,
+                category = catInput,
+                description = descInput,
+                keywords = keywords,
+                target = mainInput,
+                script = scriptInput,
+                abbreviation = abbrevInput
+            };
+
+            var rawInput = this.FindControl<TextBox>("RawJsonInput");
+            if (rawInput != null)
+            {
+                rawInput.Text = JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
+            }
+        }
+        finally
+        {
+            _isInternalUpdating = false;
+        }
+    }
+
+    private void OnRawJsonChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isInternalUpdating) return;
+
+        var rawInput = this.FindControl<TextBox>("RawJsonInput");
+        var valText = this.FindControl<TextBlock>("JsonValidationText");
+        if (rawInput == null || valText == null) return;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(rawInput.Text))
+            {
+                valText.Text = "⚪ 等待输入 JSON 内容";
+                valText.Foreground = Brushes.Gray;
+                return;
+            }
+
+            using var doc = JsonDocument.Parse(rawInput.Text);
+            valText.Text = "🟢 JSON 语法有效";
+            valText.Foreground = new SolidColorBrush(Color.Parse("#FF22C55E"));
+        }
+        catch (JsonException jex)
+        {
+            valText.Text = $"🔴 语法错误: 行 {jex.LineNumber}，{jex.Message}";
+            valText.Foreground = new SolidColorBrush(Color.Parse("#FFEF4444"));
+        }
+    }
+
+    private void OnFormatRawJsonClick(object? sender, RoutedEventArgs e)
+    {
+        var rawInput = this.FindControl<TextBox>("RawJsonInput");
+        if (rawInput == null || string.IsNullOrWhiteSpace(rawInput.Text)) return;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawInput.Text);
+            rawInput.Text = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+            ShowToast("✅ 已完成 JSON 格式化排版");
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"⚠️ 格式化失败: {ex.Message}");
+        }
+    }
+
+    private async void OnCopyRawJsonClick(object? sender, RoutedEventArgs e)
+    {
+        var rawInput = this.FindControl<TextBox>("RawJsonInput");
+        if (rawInput != null && Clipboard != null && !string.IsNullOrEmpty(rawInput.Text))
+        {
+            await Clipboard.SetTextAsync(rawInput.Text);
+            ShowToast("📋 已复制 JSON 源码到剪贴板！");
+        }
+    }
+
+    private void OnReplaceRawJsonClick(object? sender, RoutedEventArgs e)
+    {
+        var findBox = this.FindControl<TextBox>("JsonFindBox");
+        var replaceBox = this.FindControl<TextBox>("JsonReplaceBox");
+        var rawInput = this.FindControl<TextBox>("RawJsonInput");
+
+        var findText = findBox?.Text ?? string.Empty;
+        var replaceText = replaceBox?.Text ?? string.Empty;
+        var content = rawInput?.Text ?? string.Empty;
+
+        if (string.IsNullOrEmpty(findText) || string.IsNullOrEmpty(content) || rawInput == null) return;
+
+        var index = content.IndexOf(findText, StringComparison.Ordinal);
+        if (index >= 0)
+        {
+            rawInput.Text = content.Substring(0, index) + replaceText + content.Substring(index + findText.Length);
+            ShowToast($"✅ 已替换 1 处匹配项");
+        }
+        else
+        {
+            ShowToast($"⚠️ 未找到匹配项: '{findText}'");
+        }
+    }
+
+    private void OnReplaceAllRawJsonClick(object? sender, RoutedEventArgs e)
+    {
+        var findBox = this.FindControl<TextBox>("JsonFindBox");
+        var replaceBox = this.FindControl<TextBox>("JsonReplaceBox");
+        var rawInput = this.FindControl<TextBox>("RawJsonInput");
+
+        var findText = findBox?.Text ?? string.Empty;
+        var replaceText = replaceBox?.Text ?? string.Empty;
+        var content = rawInput?.Text ?? string.Empty;
+
+        if (string.IsNullOrEmpty(findText) || string.IsNullOrEmpty(content) || rawInput == null) return;
+
+        if (content.Contains(findText))
+        {
+            rawInput.Text = content.Replace(findText, replaceText);
+            ShowToast($"✅ 已全部替换 '{findText}'");
+        }
+        else
+        {
+            ShowToast($"⚠️ 未找到匹配项: '{findText}'");
+        }
+    }
+
     private void OnBrowseClick(object? sender, RoutedEventArgs e)
     {
-        // Set sample default or path
         var mainInput = this.FindControl<TextBox>("MainFieldInput");
         if (mainInput != null) mainInput.Text = "/Applications";
     }
 
     private async void OnCopyAiPromptClick(object? sender, RoutedEventArgs e)
     {
-        var title = this.FindControl<TextBox>("TitleInput")?.Text ?? "自定义小程序";
-        var desc = this.FindControl<TextBox>("DescInput")?.Text ?? string.Empty;
-        var prompt = $"请为 macOS 燕子效率工具编写一个 {_currentType} 类型的自定义小程序：\n名称：{title}\n描述：{desc}\n请输出可用的 AppleScript 或 Shell 执行命令与参数。";
-        if (Clipboard != null)
+        var promptBox = this.FindControl<TextBox>("AiPromptTextBox");
+        var text = promptBox?.Text;
+        if (string.IsNullOrWhiteSpace(text))
         {
-            await Clipboard.SetTextAsync(prompt);
-            ShowToast("📋 AI 提示词已复制到剪贴板！");
+            UpdateSystemPrompt();
+            text = this.FindControl<TextBox>("AiPromptTextBox")?.Text;
+        }
+
+        if (Clipboard != null && !string.IsNullOrEmpty(text))
+        {
+            await Clipboard.SetTextAsync(text);
+            ShowToast("📋 系统提示词已复制到剪贴板！");
         }
     }
 
@@ -229,7 +457,7 @@ public partial class AddExtensionWindow : Window
         var titleInput = this.FindControl<TextBox>("TitleInput")?.Text?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(titleInput))
         {
-            ShowToast("⚠️ 请先输入小程序标题");
+            ShowToast("⚠️ 请先输入小程序名称");
             return;
         }
 

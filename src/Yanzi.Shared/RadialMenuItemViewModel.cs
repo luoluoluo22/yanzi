@@ -129,12 +129,27 @@ public partial class RadialMenuItemViewModel : ObservableObject
     {
         get
         {
-            if (IsEmpty) return new SolidColorBrush(Color.Parse("#14FFFFFF"));
+            if (IsEmpty)
+            {
+                if (global::Avalonia.Application.Current != null &&
+                    global::Avalonia.Application.Current.TryGetResource("BrushSecondaryBtnBG", global::Avalonia.Application.Current.ActualThemeVariant, out var emptyBg) &&
+                    emptyBg is IBrush emptyBrush)
+                {
+                    return emptyBrush;
+                }
+                return new SolidColorBrush(Color.Parse("#14FFFFFF"));
+            }
             if (HasRealIcon || HasImageIcon) return new SolidColorBrush(Color.Parse("#00000000"));
             if (!string.IsNullOrWhiteSpace(Command?.AccentColor))
             {
                 if (Color.TryParse(Command.AccentColor, out var col))
                     return new SolidColorBrush(col);
+            }
+            if (global::Avalonia.Application.Current != null &&
+                global::Avalonia.Application.Current.TryGetResource("BrushSecondaryBtnBG", global::Avalonia.Application.Current.ActualThemeVariant, out var cardBg) &&
+                cardBg is IBrush cardBrush)
+            {
+                return cardBrush;
             }
             return new SolidColorBrush(Color.Parse("#FF1E293B"));
         }
