@@ -1,0 +1,85 @@
+<Window x:Class="OpenQuickHost.SampleFileGuideOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="桌面示例文件引导"
+        Width="310"
+        Height="80"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        IsHitTestVisible="False"
+        WindowStartupLocation="Manual"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <Window.Resources>
+        <!-- 金色呼吸脉冲 + 箭头流动动画 -->
+        <Storyboard x:Key="FileGuideBreatheAnimation" RepeatBehavior="Forever">
+            <DoubleAnimation Storyboard.TargetName="GlowBorder"
+                             Storyboard.TargetProperty="Opacity"
+                             From="0.4" To="1.0" Duration="0:0:0.75" AutoReverse="True"/>
+            <DoubleAnimation Storyboard.TargetName="CardScale"
+                             Storyboard.TargetProperty="ScaleX"
+                             From="1.0" To="1.05" Duration="0:0:0.75" AutoReverse="True"/>
+            <DoubleAnimation Storyboard.TargetName="CardScale"
+                             Storyboard.TargetProperty="ScaleY"
+                             From="1.0" To="1.05" Duration="0:0:0.75" AutoReverse="True"/>
+            <DoubleAnimation Storyboard.TargetName="ArrowTranslate"
+                             Storyboard.TargetProperty="X"
+                             From="0" To="8" Duration="0:0:0.75" AutoReverse="True"/>
+        </Storyboard>
+    </Window.Resources>
+
+    <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+        <!-- 示例文件金色高亮指示卡片 (明确提示去桌面上找文件，避免误会) -->
+        <Border x:Name="GlowBorder"
+                Background="#F0181824"
+                BorderBrush="#FFF59E0B"
+                BorderThickness="1.8"
+                CornerRadius="16"
+                Padding="12,10,12,10"
+                RenderTransformOrigin="0.5,0.5">
+            <Border.RenderTransform>
+                <ScaleTransform x:Name="CardScale" ScaleX="1.0" ScaleY="1.0"/>
+            </Border.RenderTransform>
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="20" ShadowDepth="0" Color="#FFF59E0B" Opacity="0.95"/>
+            </Border.Effect>
+
+            <Grid VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 白色搜索/文件图标 -->
+                <TextBlock Grid.Column="0" Text="🔍" Foreground="#FFFFFFFF" FontSize="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
+
+                <!-- 明确指示在桌面上寻找示例文件并拖入背包 -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="在桌面上找到【示例文件】" Foreground="#FFFDE047" FontSize="13" FontWeight="Bold"/>
+                    <TextBlock Text="按住左键将桌面文件拖入背包空格子" Foreground="#E0FFFFFF" FontSize="11" Margin="0,2,0,0"/>
+                </StackPanel>
+
+                <!-- 动态指向背包的白色/金色大箭头 -->
+                <TextBlock Grid.Column="2"
+                           Text="➔"
+                           Foreground="#FFFFFFFF"
+                           FontSize="20"
+                           FontWeight="Bold"
+                           VerticalAlignment="Center"
+                           Margin="8,0,2,0">
+                    <TextBlock.RenderTransform>
+                        <TranslateTransform x:Name="ArrowTranslate" X="0"/>
+                    </TextBlock.RenderTransform>
+                </TextBlock>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

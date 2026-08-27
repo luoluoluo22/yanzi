@@ -1,26 +1,24 @@
 <!doctype html>
 <html lang="zh-CN">
-
 <head>
-  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>开发指南 - 燕子在线文档</title>
-  <meta name="description" content="燕子 Yanzi 扩展开发指南，包含打开目录、网页搜索、C# 动作、PowerShell 自动化和宿主界面扩展示例。">
+  <title>扩展编写指南 - 燕子在线文档</title>
+  <meta name="description" content="燕子 Yanzi 扩展开发指南，包含打开目录、网页搜索、C# 动作、PowerShell 自动化和宿主界面扩展。">
+  <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="../styles.css">
 </head>
-
 <body>
   <div class="noise"></div>
   <header class="site-header">
     <div class="brand">
-      <a href="/" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit;">
-        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo"
-          style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
-        <span style="font-weight: 600;">燕子启动器</span>
+      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));">
+        <span style="font-weight:600;">燕子启动器</span>
       </a>
     </div>
     <nav>
@@ -28,222 +26,452 @@
       <a href="/store.html">扩展商店</a>
       <a href="/yanm.html">燕幕</a>
       <a href="/docs/product-overview.html" class="active">文档</a>
-      <a href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载</a>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>
     </nav>
   </header>
-
-  <!-- Sidebar Expand Hover Button -->
-  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="9 18 15 12 9 6"></polyline>
-    </svg>
-  </button>
-
+  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
   <main class="doc-page">
     <div class="doc-layout">
-      <!-- Left Sidebar Directory -->
       <aside class="doc-sidebar">
-        <div class="sidebar-header">
-          <strong>文档目录</strong>
-          <button id="sidebar-toggle" class="sidebar-toggle-btn" title="折叠侧边栏">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
-          </button>
-        </div>
-
-        <div class="sidebar-search-container">
-          <input type="text" id="directory-search" class="sidebar-search-input" placeholder="搜索目录... (/)">
-          <svg class="sidebar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-        </div>
-
-        <div class="doc-toc-group">
-          <span class="doc-toc-title">用户手册</span>
-          <div class="doc-toc-links">
-            <a href="/docs/product-overview.html">1. 产品说明</a>
-            <a href="/docs/getting-started.html">2. 快速上手</a>
-          </div>
-        </div>
-
-        <div class="doc-toc-group">
-          <span class="doc-toc-title">开发者文档</span>
-          <div class="doc-toc-links">
-            <a href="/docs/extension-authoring-guide.html" class="active">3. 开发指南</a>
-            <a href="/docs/extension-spec.html">4. 扩展规范</a>
-            <a href="/docs/agent-skill-spec.html">5. Agent Skill 规范</a>
-            <a href="/docs/ai-extension-test-set.html">6. AI 扩展测试集</a>
-          </div>
-        </div>
+        <!-- 侧边栏由 docs.js 动态生成 -->
       </aside>
-
-      <!-- Center Reading Area -->
       <div class="guide-stack">
         <div class="doc-content-header" style="margin-bottom: 2rem;">
-          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">开发指南</h1>
-          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">扩展的核心是一个标准 JSON 文件。简单动作直接声明目标，复杂动作使用 C# 或 PowerShell，快捷面板会把选中的文本或文件路径传入动作上下文。</p>
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">扩展编写指南</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">这份指南用于帮助用户和 AI 助手编写燕子扩展。扩展本质上是一个 `manifest.json`，根据任务复杂度选择不同字段。</p>
         </div>
-        <article id="choose" class="guide-card">
-          <h2>如何选择扩展类型</h2>
-          <div class="guide-grid">
-            <div class="guide-mini">
-              <strong>打开文件、目录、网页</strong>
-              <span>使用 <code>openTarget</code>，最稳定，适合常用目录、系统设置和固定网页。</span>
-            </div>
-            <div class="guide-mini">
-              <strong>搜索类命令</strong>
-              <span>使用 <code>queryPrefixes</code> 和 <code>queryTargetTemplate</code>，把用户输入替换到 <code>{query}</code>。</span>
-            </div>
-            <div class="guide-mini">
-              <strong>处理选中文本/文件</strong>
-              <span>优先使用 C#，读取 <code>context.InputText</code>，适合文本处理、API 调用和复杂逻辑。</span>
-            </div>
-            <div class="guide-mini">
-              <strong>Windows 自动化</strong>
-              <span>使用 PowerShell，适合剪贴板、进程、文件系统 and 系统命令。</span>
-            </div>
-          </div>
-        </article>
-
-        <article id="open-target" class="guide-card">
-          <h2>打开目录、网页或系统位置</h2>
-          <p>这是最简单的扩展形式，只需要声明 <code>openTarget</code>。</p>
-          <div class="code-card">
-<pre><code>{
-  "id": "open-downloads",
-  "name": "打开下载目录",
-  "version": "0.1.0",
-  "category": "目录",
-  "description": "打开当前用户的下载目录。",
-  "keywords": ["downloads", "下载", "xiazai"],
-  "icon": "mdi:folder",
-  "openTarget": "C:\\Users\\你的用户名\\Downloads"
-}</code></pre>
-          </div>
-        </article>
-
-        <article id="query" class="guide-card">
-          <h2>带参数网页搜索</h2>
-          <p>当用户输入 <code>谷歌 Yanzi</code> 或 <code>gg Yanzi</code> 时，剩余文本会替换到模板中的 <code>{query}</code>。</p>
-          <div class="code-card">
-<pre><code>{
-  "id": "google-search",
-  "name": "谷歌搜索",
-  "version": "0.1.0",
-  "category": "搜索",
-  "description": "用默认浏览器打开 Google 搜索。",
-  "keywords": ["google", "谷歌", "gg", "guge"],
-  "icon": "mdi:search",
-  "queryPrefixes": ["谷歌", "google", "gg", "guge"],
-  "queryTargetTemplate": "https://www.google.com/search?q={query}"
-}</code></pre>
-          </div>
-        </article>
-
-        <article id="csharp" class="guide-card">
-          <h2>C# 动作：处理选中文本</h2>
-          <p>快捷面板执行扩展时，燕子会在点击扩展后抓取当前选中的文本或文件路径，并写入 <code>context.InputText</code>。</p>
-          <div class="code-card">
-<pre><code>{
-  "id": "csharp-selection-summary",
-  "name": "选中内容摘要",
-  "version": "0.1.0",
-  "category": "C#",
-  "description": "读取快捷面板传入的选中文本。",
-  "keywords": ["csharp", "selection", "选中", "摘要"],
-  "icon": "mdi:code",
-  "runtime": "csharp",
-  "entryMode": "inline",
-  "permissions": ["context.read"],
-  "script": {
-    "source": "using OpenQuickHost.CSharpRuntime;\n\npublic static class YanziAction\n{\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\n    {\n        var text = string.IsNullOrWhiteSpace(context.InputText) ? \"没有收到选中内容。\" : context.InputText.Trim();\n        return Task.FromResult($\"来源: {context.LaunchSource}\\n长度: {text.Length}\\n\\n{text}\");\n    }\n}"
+        <article class="guide-card">
+  <h2>如何选择扩展类型</h2>
+<h3>打开文件、目录、网页或系统设置</h3>
+<p>使用 <code>openTarget</code>，这是最简单、最稳定的扩展。</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;open-downloads&quot;,
+  &quot;name&quot;: &quot;打开下载目录&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;目录&quot;,
+  &quot;description&quot;: &quot;打开当前用户的下载目录。&quot;,
+  &quot;keywords&quot;: [&quot;downloads&quot;, &quot;下载&quot;, &quot;xiazai&quot;],
+  &quot;icon&quot;: &quot;mdi:folder&quot;,
+  &quot;openTarget&quot;: &quot;C:\\Users\\你的用户名\\Downloads&quot;
+}
+</code></pre>
+<h3>搜索或带参数打开网页</h3>
+<p>使用 <code>queryPrefixes</code> 和 <code>queryTargetTemplate</code>。用户输入前缀后，剩余文本会替换 <code>{query}</code>。</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;google-search&quot;,
+  &quot;name&quot;: &quot;谷歌搜索&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;搜索&quot;,
+  &quot;description&quot;: &quot;用默认浏览器打开 Google 搜索。&quot;,
+  &quot;keywords&quot;: [&quot;google&quot;, &quot;谷歌&quot;, &quot;gg&quot;, &quot;guge&quot;],
+  &quot;icon&quot;: &quot;mdi:search&quot;,
+  &quot;queryPrefixes&quot;: [&quot;谷歌&quot;, &quot;google&quot;, &quot;gg&quot;, &quot;guge&quot;],
+  &quot;queryTargetTemplate&quot;: &quot;https://www.google.com/search?q={query}&quot;
+}
+</code></pre>
+<h3>固定到顶部后返回一组列表结果</h3>
+<p>如果想让某个扩展在“固定到顶部”后，像 <code>@文件</code> 一样继续输入关键词并返回多条列表结果，使用 <code>searchProvider</code>。</p>
+<p>当前第一版支持：</p>
+<ul>
+<li><code>searchProvider.type = &quot;folder&quot;</code>：在指定目录下搜索文件或文件夹</li>
+<li><code>searchProvider.type = &quot;script&quot;</code>：运行扩展自己的脚本，并返回一组 JSON 结果项</li>
+<li><code>searchProvider.path</code>：搜索根目录；如果省略且 <code>openTarget</code> 本身是目录，会自动回退到 <code>openTarget</code></li>
+<li><code>searchProvider.aliases</code>：固定到顶部后支持 <code>@别名 关键词</code></li>
+<li><code>searchProvider.includeSubdirectories</code> / <code>includeFiles</code> / <code>includeDirectories</code> / <code>maxResults</code>：控制搜索范围</li>
+</ul>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;download-folder-search&quot;,
+  &quot;name&quot;: &quot;下载&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;目录搜索&quot;,
+  &quot;description&quot;: &quot;固定到顶部后，在下载目录中搜索文件。&quot;,
+  &quot;keywords&quot;: [&quot;下载&quot;, &quot;文件夹&quot;, &quot;folder&quot;, &quot;search&quot;],
+  &quot;icon&quot;: &quot;mdi:folder-search-outline&quot;,
+  &quot;openTarget&quot;: &quot;C:\\Users\\你的用户名\\Downloads&quot;,
+  &quot;searchProvider&quot;: {
+    &quot;type&quot;: &quot;folder&quot;,
+    &quot;aliases&quot;: [&quot;下载&quot;, &quot;downloads&quot;],
+    &quot;includeSubdirectories&quot;: true,
+    &quot;includeFiles&quot;: true,
+    &quot;includeDirectories&quot;: false,
+    &quot;maxResults&quot;: 120
   }
-}</code></pre>
-          </div>
-          <h3>C# 入口要求</h3>
-          <div class="code-card">
-<pre><code>using OpenQuickHost.CSharpRuntime;
-
-public static class YanziAction
+}
+</code></pre>
+<p>使用方式：</p>
+<ul>
+<li>先把这个扩展固定到顶部</li>
+<li>点顶部标签后直接输入关键词</li>
+<li>或直接输入 <code>@下载 关键词</code></li>
+<li>或在 <code>扩展</code> 标签里输入 <code>下载 </code> 显示全部结果，再输入 <code>下载 关键词</code> 显示过滤结果</li>
+</ul>
+<p>当前注意点：</p>
+<ul>
+<li>只有固定到顶部的扩展才支持 <code>@别名 关键词</code> 进入对应 scope</li>
+<li>这是主界面列表搜索，不是运行脚本后自己弹出结果窗</li>
+<li>目前内置了 <code>folder</code> 和 <code>script</code> provider，后续可以再扩展 <code>table</code>、<code>api</code> 等类型</li>
+</ul>
+<h3>通过脚本返回动态结果列表</h3>
+<p>如果目录搜索不够，或者结果来自 API、缓存、数据库、脚本计算，可以用 <code>searchProvider.type = &quot;script&quot;</code>。</p>
+<p>约定：</p>
+<ul>
+<li>扩展本身仍然要提供 <code>runtime</code> 和脚本入口</li>
+<li>宿主会把查询词通过 <code>context.InputText</code> 传给脚本</li>
+<li>脚本返回值必须是 JSON 数组，或 <code>{ success, errorMessage, items }</code> 这种包裹对象</li>
+<li>每个结果项建议包含：<code>id</code>、<code>title</code>、<code>subtitle</code>、<code>kind</code>、<code>openTarget</code>、<code>keywords</code>、<code>accentHex</code></li>
+<li><code>kind</code> 目前支持：<code>file</code>、<code>folder</code>、<code>record</code>、<code>url</code>、<code>script</code>、<code>api</code></li>
+</ul>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;demo-script-search&quot;,
+  &quot;name&quot;: &quot;脚本结果&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;动态结果&quot;,
+  &quot;description&quot;: &quot;通过脚本返回一组动态结果项。&quot;,
+  &quot;keywords&quot;: [&quot;脚本&quot;, &quot;搜索&quot;, &quot;结果&quot;],
+  &quot;icon&quot;: &quot;mdi:code-json&quot;,
+  &quot;runtime&quot;: &quot;csharp&quot;,
+  &quot;entryMode&quot;: &quot;inline&quot;,
+  &quot;searchProvider&quot;: {
+    &quot;type&quot;: &quot;script&quot;,
+    &quot;aliases&quot;: [&quot;脚本结果&quot;, &quot;script&quot;],
+    &quot;maxResults&quot;: 50
+  },
+  &quot;script&quot;: {
+    &quot;source&quot;: &quot;using System.Text.Json;\\npublic static class YanziAction\\n{\\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\\n    {\\n        var q = (context.InputText ?? string.Empty).Trim();\\n        var items = new object[]\\n        {\\n            new { id = \&quot;doc-1\&quot;, title = \&quot;接口文档\&quot;, subtitle = \&quot;脚本生成的示例结果\&quot;, kind = \&quot;record\&quot;, openTarget = \&quot;https://example.com/docs\&quot;, keywords = new[] { \&quot;文档\&quot;, q }, accentHex = \&quot;#FF10B981\&quot; },\\n            new { id = \&quot;tool-1\&quot;, title = \&quot;打开工具页\&quot;, subtitle = \&quot;支持 URL / 文件 / 普通记录\&quot;, kind = \&quot;url\&quot;, openTarget = \&quot;https://example.com/tools?q=\&quot; + System.Uri.EscapeDataString(q), keywords = new[] { \&quot;工具\&quot;, q }, accentHex = \&quot;#FF06B6D4\&quot; }\\n        };\\n        return Task.FromResult(JsonSerializer.Serialize(items));\\n    }\\n}&quot;
+  }
+}
+</code></pre>
+<h3>扩展能力策略</h3>
+<p>按任务选择运行时，不要机械固定用 C#。复杂业务逻辑、JSON/HTTP/文件处理、原生 WPF 窗口、P/Invoke、需要强类型 .NET API 时，优先用 C#；Windows 自动化、注册表、服务、进程、计划任务、系统命令、已有 PowerShell cmdlet 能直接完成的任务，优先用 PowerShell；如果需求本质上是一串 cmd/bat 命令，优先用 PowerShell 包装执行或使用外部脚本入口。</p>
+<p>宿主只做“管家”：负责搜索框入口、<code>context.InputText</code> 输入传递、扩展目录、状态、本地/云端存储，以及 <code>hostedViewXaml</code> 的少量受控动作。不要把 <code>YanziActionContext</code> 当成万能宿主 SDK。只使用文档明确列出的成员；不要发明 <code>context.SetTheme()</code>、<code>context.GetTheme()</code>、<code>context.OpenFilePicker()</code>、<code>context.ShowMessage()</code>、<code>context.GetStateAsync&lt;T&gt;()</code> 这类不存在的方法。需要文件选择、消息框、窗口、系统设置、剪贴板、进程、注册表或 Win32 调用时，优先用 C# / PowerShell / Windows 命令的原生能力。</p>
+<p>编译器会自动导入 <code>YanziActionContext</code> 所在命名空间，C# 扩展源码不需要显式写宿主运行时 using。产品名和应用程序集名是 <code>Yanzi</code>；不要生成旧产品名相关程序集引用、pack URI、资源路径，或假设存在内置主题资源字典。</p>
+<h3>处理选中文本、剪贴板、文件路径或调用 API</h3>
+<p>C# 适合复杂逻辑和原生窗口。快捷面板触发时，宿主会把选中内容传给 <code>context.InputText</code>。</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;csharp-selection-summary&quot;,
+  &quot;name&quot;: &quot;选中内容摘要&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;C#&quot;,
+  &quot;description&quot;: &quot;读取快捷面板传入的选中文本。&quot;,
+  &quot;keywords&quot;: [&quot;csharp&quot;, &quot;selection&quot;, &quot;选中&quot;, &quot;摘要&quot;],
+  &quot;icon&quot;: &quot;mdi:code&quot;,
+  &quot;runtime&quot;: &quot;csharp&quot;,
+  &quot;entryMode&quot;: &quot;inline&quot;,
+  &quot;permissions&quot;: [&quot;context.read&quot;],
+  &quot;script&quot;: {
+    &quot;source&quot;: &quot;public static class YanziAction\\n{\\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\\n    {\\n        var text = string.IsNullOrWhiteSpace(context.InputText) ? \\\&quot;没有收到选中内容。\\\&quot; : context.InputText.Trim();\\n        return Task.FromResult($\\\&quot;来源: {context.LaunchSource}\\\\n长度: {text.Length}\\\\n\\\\n{text}\\\&quot;);\\n    }\\n}&quot;
+  }
+}
+</code></pre>
+<p>C# 入口必须提供：</p>
+<pre><code class="language-csharp">public static class YanziAction
 {
     public static Task&lt;string&gt; RunAsync(YanziActionContext context)
     {
         return Task.FromResult(context.InputText);
     }
-}</code></pre>
-          </div>
-        </article>
-
-        <article id="powershell" class="guide-card">
-          <h2>PowerShell 自动化</h2>
-          <p>PowerShell 适合调用系统命令、读取剪贴板、操作进程和文件。</p>
-          <div class="code-card">
-<pre><code>{
-  "id": "clipboard-read",
-  "name": "读取剪贴板",
-  "version": "0.1.0",
-  "category": "脚本",
-  "description": "读取当前剪贴板文本。",
-  "keywords": ["clipboard", "剪贴板"],
-  "icon": "mdi:clipboard",
-  "runtime": "powershell",
-  "entryMode": "inline",
-  "permissions": ["clipboard.read"],
-  "script": {
-    "source": "param([string]$InputText = \"\", [string]$ContextPath = \"\")\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n$text = Get-Clipboard -Raw\nif ([string]::IsNullOrWhiteSpace($text)) { Write-Output \"当前剪贴板为空。\" } else { Write-Output $text.Trim() }"
+}
+</code></pre>
+<p>常用上下文字段：</p>
+<ul>
+<li><code>context.InputText</code>：启动器或快捷面板传入的文本</li>
+<li><code>context.ExtensionDirectory</code>：当前扩展目录</li>
+<li><code>context.ExtensionDataDirectory</code>：当前扩展的数据目录</li>
+<li><code>context.LaunchSource</code>：触发来源</li>
+<li><code>context.Now</code>：执行时间</li>
+<li><code>context.Permissions</code>：manifest 声明的权限</li>
+<li><code>context.State</code>：宿主视图或扩展状态</li>
+<li><code>await context.SetStateAsync(...)</code>：更新状态</li>
+<li><code>context.Storage</code>：本地/云端存储 helper</li>
+</ul>
+<h3>Windows 自动化</h3>
+<p>PowerShell 适合 Windows 自动化、注册表、服务、进程、计划任务、系统命令、剪贴板、文件自动化，以及已有 cmdlet 能直接完成的任务。不要为了简单 PowerShell/cmd 命令硬套 C#。</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;clipboard-read&quot;,
+  &quot;name&quot;: &quot;读取剪贴板&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;脚本&quot;,
+  &quot;description&quot;: &quot;读取当前剪贴板文本。&quot;,
+  &quot;keywords&quot;: [&quot;clipboard&quot;, &quot;剪贴板&quot;],
+  &quot;icon&quot;: &quot;mdi:clipboard&quot;,
+  &quot;runtime&quot;: &quot;powershell&quot;,
+  &quot;entryMode&quot;: &quot;inline&quot;,
+  &quot;permissions&quot;: [&quot;clipboard.read&quot;],
+  &quot;script&quot;: {
+    &quot;source&quot;: &quot;param([string]$InputText = \\\&quot;\\\&quot;, [string]$ContextPath = \\\&quot;\\\&quot;)\\n[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\\n$text = Get-Clipboard -Raw\\nif ([string]::IsNullOrWhiteSpace($text)) { Write-Output \\\&quot;当前剪贴板为空。\\\&quot; } else { Write-Output $text.Trim() }&quot;
   }
-}</code></pre>
-          </div>
-        </article>
-
-        <article id="hosted-view" class="guide-card">
-          <h2>需要界面的扩展</h2>
-          <p>使用 <code>hostedView</code> 可以让扩展在主窗口中展示输入区、输出区和执行按钮，适合翻译、文本处理和查询类工具。</p>
-          <div class="code-card">
-<pre><code>{
-  "id": "text-workbench",
-  "name": "文本处理台",
-  "version": "0.1.0",
-  "category": "工具",
-  "description": "在宿主窗口中输入文本并执行 C# 动作。",
-  "keywords": ["text", "文本", "workbench"],
-  "icon": "mdi:terminal",
-  "runtime": "csharp",
-  "entryMode": "inline",
-  "hostedView": {
-    "type": "split-workbench",
-    "title": "文本处理台",
-    "description": "左侧输入文本，右侧显示执行结果。",
-    "inputLabel": "输入",
-    "inputPlaceholder": "输入要处理的文本...",
-    "outputLabel": "结果",
-    "actionButtonText": "执行",
-    "actionType": "script",
-    "emptyState": "结果会显示在这里。"
+}
+</code></pre>
+<h3>需要宿主内工作区或自定义界面</h3>
+<p>优先使用 <code>hostedViewXaml</code>。它适合便签、设置页、工作区、仪表盘、预览器、轻量编辑器这类“寄生在宿主里的界面”。</p>
+<p><code>hostedViewXaml</code> 的现实边界要先说清楚：</p>
+<ul>
+<li>它会直接解析 WPF XAML，但更接近“受控宿主视图”，不是完整原生 WPF 应用</li>
+<li>不支持 <code>x:Class</code>、代码隐藏、手写事件处理函数</li>
+<li>按钮动作通过 <code>oqh:HostedViewBridge.Action</code> 声明</li>
+<li>根元素可用 <code>oqh:HostedViewBridge.LoadedAction</code> 做首次加载</li>
+<li>状态通过 <code>hostedViewXaml.state</code> 提供，XAML 中用 <code>{Binding [key]}</code> 访问</li>
+<li>当前更适合扁平状态和轻量交互，不适合复杂列表模板、树结构、原生拖拽和多窗口工具</li>
+</ul>
+<p>当前最常用的宿主动作：</p>
+<ul>
+<li><code>setState</code></li>
+<li><code>runScript</code></li>
+<li><code>loadStorage</code></li>
+<li><code>saveStorage</code></li>
+<li><code>close</code></li>
+</ul>
+<h4>模板 4：双栏编辑器 / 便签工作区</h4>
+<p>适合左编辑右预览、左输入右结果的典型工作区。</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;sticky-note-workbench&quot;,
+  &quot;name&quot;: &quot;简易便签&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;效率工具&quot;,
+  &quot;description&quot;: &quot;在宿主窗口中打开一个便签工作区。&quot;,
+  &quot;keywords&quot;: [&quot;便签&quot;, &quot;记事本&quot;, &quot;note&quot;],
+  &quot;icon&quot;: &quot;mdi:note-text-outline&quot;,
+  &quot;hostedViewXaml&quot;: {
+    &quot;type&quot;: &quot;xaml&quot;,
+    &quot;title&quot;: &quot;简易便签&quot;,
+    &quot;window&quot;: {
+      &quot;width&quot;: 960,
+      &quot;height&quot;: 720,
+      &quot;minWidth&quot;: 760,
+      &quot;minHeight&quot;: 520
+    },
+    &quot;state&quot;: {
+      &quot;note&quot;: &quot;&quot;,
+      &quot;preview&quot;: &quot;先在左侧输入内容，这里会显示便签结果。&quot;
+    },
+    &quot;xaml&quot;: &quot;&lt;Grid xmlns=\&quot;http://schemas.microsoft.com/winfx/2006/xaml/presentation\&quot; xmlns:x=\&quot;http://schemas.microsoft.com/winfx/2006/xaml\&quot; xmlns:oqh=\&quot;clr-namespace:Yanzi\&quot; oqh:HostedViewBridge.PreferredFocus=\&quot;NoteBox\&quot; oqh:HostedViewBridge.LoadedAction=\&quot;loadStorage;path=note;key=note.txt;scope=both;defaultValue=\&quot;&gt;&lt;Grid.ColumnDefinitions&gt;&lt;ColumnDefinition Width=\&quot;*\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;16\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;*\&quot;/&gt;&lt;/Grid.ColumnDefinitions&gt;&lt;StackPanel Grid.Column=\&quot;0\&quot;&gt;&lt;TextBlock Text=\&quot;便签内容\&quot; Foreground=\&quot;White\&quot; FontSize=\&quot;14\&quot; FontWeight=\&quot;SemiBold\&quot; Margin=\&quot;0,0,0,10\&quot;/&gt;&lt;TextBox x:Name=\&quot;NoteBox\&quot; Text=\&quot;{Binding [note], UpdateSourceTrigger=PropertyChanged}\&quot; AcceptsReturn=\&quot;True\&quot; VerticalScrollBarVisibility=\&quot;Auto\&quot; TextWrapping=\&quot;Wrap\&quot; MinHeight=\&quot;320\&quot; Padding=\&quot;12\&quot;/&gt;&lt;Button Content=\&quot;保存便签\&quot; Margin=\&quot;0,12,0,0\&quot; oqh:HostedViewBridge.Action=\&quot;saveStorage;path=note;key=note.txt;scope=both;successMessage=便签已保存。|setState;path=preview;valueFrom=note\&quot;/&gt;&lt;/StackPanel&gt;&lt;Border Grid.Column=\&quot;2\&quot; Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;10\&quot; Padding=\&quot;12\&quot;&gt;&lt;TextBlock Text=\&quot;{Binding [preview]}\&quot; TextWrapping=\&quot;Wrap\&quot; Foreground=\&quot;White\&quot;/&gt;&lt;/Border&gt;&lt;/Grid&gt;&quot;
+  }
+}
+</code></pre>
+<h4>模板 4.1：设置页 / 表单型工作区</h4>
+<p>适合配置保存、路径输入、账号信息、偏好设置。</p>
+<p>设计重点：</p>
+<ul>
+<li>纵向表单布局</li>
+<li><code>loadStorage</code> 回填</li>
+<li><code>saveStorage</code> 保存</li>
+<li>底部状态文案</li>
+</ul>
+<h4>模板 4.2：脚本工具台</h4>
+<p>适合输入内容后执行 C# / PowerShell，再把结果显示在右侧。</p>
+<p>设计重点：</p>
+<ul>
+<li>左侧输入区</li>
+<li>右侧只读输出区</li>
+<li>底部状态栏</li>
+<li><code>runScript;inputFrom=...;outputTo=...</code></li>
+</ul>
+<h4>模板 4.3：仪表盘 / 状态面板</h4>
+<p>适合展示关键状态、日志摘要、快速动作。</p>
+<p>设计重点：</p>
+<ul>
+<li>多卡片布局</li>
+<li>头部摘要</li>
+<li>中部状态卡</li>
+<li>底部操作按钮</li>
+</ul>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;ops-dashboard-demo&quot;,
+  &quot;name&quot;: &quot;状态仪表盘&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;效率工具&quot;,
+  &quot;description&quot;: &quot;在宿主里展示关键状态卡片和快速操作。&quot;,
+  &quot;keywords&quot;: [&quot;仪表盘&quot;, &quot;状态&quot;, &quot;dashboard&quot;],
+  &quot;icon&quot;: &quot;mdi:view-dashboard-outline&quot;,
+  &quot;hostedViewXaml&quot;: {
+    &quot;type&quot;: &quot;xaml&quot;,
+    &quot;title&quot;: &quot;状态仪表盘&quot;,
+    &quot;window&quot;: { &quot;width&quot;: 1100, &quot;height&quot;: 760, &quot;minWidth&quot;: 820, &quot;minHeight&quot;: 560 },
+    &quot;state&quot;: {
+      &quot;summary&quot;: &quot;今日任务 5 项&quot;,
+      &quot;health&quot;: &quot;运行正常&quot;,
+      &quot;recentLog&quot;: &quot;暂无新日志&quot;,
+      &quot;status&quot;: &quot;准备就绪&quot;
+    },
+    &quot;xaml&quot;: &quot;&lt;Grid xmlns=\&quot;http://schemas.microsoft.com/winfx/2006/xaml/presentation\&quot; xmlns:x=\&quot;http://schemas.microsoft.com/winfx/2006/xaml\&quot; xmlns:oqh=\&quot;clr-namespace:Yanzi\&quot;&gt;&lt;Grid.RowDefinitions&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;RowDefinition Height=\&quot;16\&quot;/&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;RowDefinition Height=\&quot;16\&quot;/&gt;&lt;RowDefinition Height=\&quot;*\&quot;/&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;/Grid.RowDefinitions&gt;&lt;StackPanel&gt;&lt;TextBlock Text=\&quot;状态仪表盘\&quot; FontSize=\&quot;24\&quot; FontWeight=\&quot;SemiBold\&quot; Foreground=\&quot;White\&quot;/&gt;&lt;TextBlock Text=\&quot;用多卡片布局展示关键指标和最近状态\&quot; Foreground=\&quot;#FF9CA3AF\&quot; Margin=\&quot;0,6,0,0\&quot;/&gt;&lt;/StackPanel&gt;&lt;Grid Grid.Row=\&quot;2\&quot;&gt;&lt;Grid.ColumnDefinitions&gt;&lt;ColumnDefinition Width=\&quot;*\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;16\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;*\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;16\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;*\&quot;/&gt;&lt;/Grid.ColumnDefinitions&gt;&lt;Border Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;14\&quot; Padding=\&quot;16\&quot;&gt;&lt;StackPanel&gt;&lt;TextBlock Text=\&quot;今日摘要\&quot; Foreground=\&quot;#FF9CA3AF\&quot;/&gt;&lt;TextBlock Text=\&quot;{Binding [summary]}\&quot; Foreground=\&quot;White\&quot; FontSize=\&quot;20\&quot; FontWeight=\&quot;SemiBold\&quot; Margin=\&quot;0,10,0,0\&quot;/&gt;&lt;/StackPanel&gt;&lt;/Border&gt;&lt;Border Grid.Column=\&quot;2\&quot; Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;14\&quot; Padding=\&quot;16\&quot;&gt;&lt;StackPanel&gt;&lt;TextBlock Text=\&quot;运行状态\&quot; Foreground=\&quot;#FF9CA3AF\&quot;/&gt;&lt;TextBlock Text=\&quot;{Binding [health]}\&quot; Foreground=\&quot;#FF34D399\&quot; FontSize=\&quot;20\&quot; FontWeight=\&quot;SemiBold\&quot; Margin=\&quot;0,10,0,0\&quot;/&gt;&lt;/StackPanel&gt;&lt;/Border&gt;&lt;Border Grid.Column=\&quot;4\&quot; Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;14\&quot; Padding=\&quot;16\&quot;&gt;&lt;StackPanel&gt;&lt;TextBlock Text=\&quot;快速动作\&quot; Foreground=\&quot;#FF9CA3AF\&quot;/&gt;&lt;Button Content=\&quot;刷新摘要\&quot; Margin=\&quot;0,12,0,0\&quot; oqh:HostedViewBridge.Action=\&quot;setState;path=status;value=已刷新摘要\&quot;/&gt;&lt;/StackPanel&gt;&lt;/Border&gt;&lt;/Grid&gt;&lt;Border Grid.Row=\&quot;4\&quot; Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;14\&quot; Padding=\&quot;16\&quot;&gt;&lt;StackPanel&gt;&lt;TextBlock Text=\&quot;最近日志\&quot; Foreground=\&quot;White\&quot; FontWeight=\&quot;SemiBold\&quot; Margin=\&quot;0,0,0,10\&quot;/&gt;&lt;TextBox Text=\&quot;{Binding [recentLog]}\&quot; IsReadOnly=\&quot;True\&quot; AcceptsReturn=\&quot;True\&quot; Background=\&quot;Transparent\&quot; BorderThickness=\&quot;0\&quot; Foreground=\&quot;#FFE5E7EB\&quot; TextWrapping=\&quot;Wrap\&quot; VerticalScrollBarVisibility=\&quot;Auto\&quot; MinHeight=\&quot;220\&quot;/&gt;&lt;/StackPanel&gt;&lt;/Border&gt;&lt;DockPanel Grid.Row=\&quot;5\&quot; Margin=\&quot;0,14,0,0\&quot;&gt;&lt;TextBlock Text=\&quot;{Binding [status]}\&quot; Foreground=\&quot;#FF9CA3AF\&quot; VerticalAlignment=\&quot;Center\&quot;/&gt;&lt;/DockPanel&gt;&lt;/Grid&gt;&quot;
+  }
+}
+</code></pre>
+<h4>模板 4.4：路径与文件工具</h4>
+<p>适合文件整理、批量处理、命令封装入口。</p>
+<p>设计重点：</p>
+<ul>
+<li>路径输入框</li>
+<li>参数区</li>
+<li>执行按钮</li>
+<li>日志输出区</li>
+</ul>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;path-tool-demo&quot;,
+  &quot;name&quot;: &quot;路径工具台&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;开发工具&quot;,
+  &quot;description&quot;: &quot;输入目录和规则后执行本地处理脚本。&quot;,
+  &quot;keywords&quot;: [&quot;路径&quot;, &quot;文件&quot;, &quot;folder&quot;],
+  &quot;icon&quot;: &quot;mdi:folder-cog-outline&quot;,
+  &quot;runtime&quot;: &quot;csharp&quot;,
+  &quot;entryMode&quot;: &quot;inline&quot;,
+  &quot;permissions&quot;: [&quot;storage&quot;],
+  &quot;hostedViewXaml&quot;: {
+    &quot;type&quot;: &quot;xaml&quot;,
+    &quot;title&quot;: &quot;路径工具台&quot;,
+    &quot;window&quot;: { &quot;width&quot;: 980, &quot;height&quot;: 720, &quot;minWidth&quot;: 760, &quot;minHeight&quot;: 520 },
+    &quot;state&quot;: { &quot;path&quot;: &quot;F:\\Desktop&quot;, &quot;rule&quot;: &quot;*.txt&quot;, &quot;result&quot;: &quot;等待执行&quot;, &quot;status&quot;: &quot;准备就绪&quot; },
+    &quot;xaml&quot;: &quot;&lt;Grid xmlns=\&quot;http://schemas.microsoft.com/winfx/2006/xaml/presentation\&quot; xmlns:x=\&quot;http://schemas.microsoft.com/winfx/2006/xaml\&quot; xmlns:oqh=\&quot;clr-namespace:Yanzi\&quot;&gt;&lt;Grid.RowDefinitions&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;RowDefinition Height=\&quot;12\&quot;/&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;RowDefinition Height=\&quot;12\&quot;/&gt;&lt;RowDefinition Height=\&quot;*\&quot;/&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;/Grid.RowDefinitions&gt;&lt;TextBlock Text=\&quot;路径工具台\&quot; FontSize=\&quot;22\&quot; FontWeight=\&quot;SemiBold\&quot; Foreground=\&quot;White\&quot;/&gt;&lt;Border Grid.Row=\&quot;2\&quot; Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;12\&quot; Padding=\&quot;18\&quot;&gt;&lt;StackPanel&gt;&lt;TextBlock Text=\&quot;目标目录\&quot; Foreground=\&quot;White\&quot; Margin=\&quot;0,0,0,8\&quot;/&gt;&lt;TextBox Text=\&quot;{Binding [path], UpdateSourceTrigger=PropertyChanged}\&quot; Padding=\&quot;10\&quot;/&gt;&lt;TextBlock Text=\&quot;匹配规则\&quot; Foreground=\&quot;White\&quot; Margin=\&quot;0,16,0,8\&quot;/&gt;&lt;TextBox Text=\&quot;{Binding [rule], UpdateSourceTrigger=PropertyChanged}\&quot; Padding=\&quot;10\&quot;/&gt;&lt;/StackPanel&gt;&lt;/Border&gt;&lt;Border Grid.Row=\&quot;4\&quot; Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;12\&quot; Padding=\&quot;12\&quot;&gt;&lt;TextBox Text=\&quot;{Binding [result]}\&quot; IsReadOnly=\&quot;True\&quot; AcceptsReturn=\&quot;True\&quot; Background=\&quot;Transparent\&quot; BorderThickness=\&quot;0\&quot; Foreground=\&quot;#FFE5E7EB\&quot; TextWrapping=\&quot;Wrap\&quot; VerticalScrollBarVisibility=\&quot;Auto\&quot;/&gt;&lt;/Border&gt;&lt;DockPanel Grid.Row=\&quot;5\&quot; Margin=\&quot;0,14,0,0\&quot;&gt;&lt;TextBlock Text=\&quot;{Binding [status]}\&quot; Foreground=\&quot;#FF9CA3AF\&quot; VerticalAlignment=\&quot;Center\&quot;/&gt;&lt;Button Content=\&quot;执行检查\&quot; DockPanel.Dock=\&quot;Right\&quot; oqh:HostedViewBridge.Action=\&quot;runScript;inputFrom=path;outputTo=result;successMessage=检查完成\&quot;/&gt;&lt;/DockPanel&gt;&lt;/Grid&gt;&quot;
   },
-  "script": {
-    "source": "using OpenQuickHost.CSharpRuntime;\n\npublic static class YanziAction\n{\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\n    {\n        return Task.FromResult(context.InputText.ToUpperInvariant());\n    }\n}"
+  &quot;script&quot;: {
+    &quot;source&quot;: &quot;using System.IO;\\nusing System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\\n    {\\n        var path = context.InputText ?? string.Empty;\\n        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))\\n        {\\n            return Task.FromResult(\\\&quot;目录不存在：\\\&quot; + path);\\n        }\\n\\n        var files = Directory.GetFiles(path);\\n        return Task.FromResult(\\\&quot;目录：\\\&quot; + path + \\\&quot;\\\\n文件数：\\\&quot; + files.Length);\\n    }\\n}&quot;
   }
-}</code></pre>
-          </div>
-        </article>
+}
+</code></pre>
+<h4>模板 4.5：搜索与预览工作区</h4>
+<p>适合左侧查询、右侧结果预览、底部状态反馈。</p>
+<p>设计重点：</p>
+<ul>
+<li>查询框</li>
+<li>操作按钮</li>
+<li>结果展示区</li>
+<li>最近结果或说明区</li>
+</ul>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;search-preview-demo&quot;,
+  &quot;name&quot;: &quot;搜索预览台&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;效率工具&quot;,
+  &quot;description&quot;: &quot;在宿主中输入查询并展示结果预览。&quot;,
+  &quot;keywords&quot;: [&quot;搜索&quot;, &quot;预览&quot;, &quot;preview&quot;],
+  &quot;icon&quot;: &quot;mdi:file-search-outline&quot;,
+  &quot;runtime&quot;: &quot;csharp&quot;,
+  &quot;entryMode&quot;: &quot;inline&quot;,
+  &quot;permissions&quot;: [&quot;network&quot;],
+  &quot;hostedViewXaml&quot;: {
+    &quot;type&quot;: &quot;xaml&quot;,
+    &quot;title&quot;: &quot;搜索预览台&quot;,
+    &quot;window&quot;: { &quot;width&quot;: 1040, &quot;height&quot;: 730, &quot;minWidth&quot;: 780, &quot;minHeight&quot;: 540 },
+    &quot;state&quot;: { &quot;query&quot;: &quot;&quot;, &quot;preview&quot;: &quot;输入关键词后点击搜索&quot;, &quot;status&quot;: &quot;等待查询&quot; },
+    &quot;xaml&quot;: &quot;&lt;Grid xmlns=\&quot;http://schemas.microsoft.com/winfx/2006/xaml/presentation\&quot; xmlns:x=\&quot;http://schemas.microsoft.com/winfx/2006/xaml\&quot; xmlns:oqh=\&quot;clr-namespace:Yanzi\&quot;&gt;&lt;Grid.RowDefinitions&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;RowDefinition Height=\&quot;12\&quot;/&gt;&lt;RowDefinition Height=\&quot;*\&quot;/&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;/Grid.RowDefinitions&gt;&lt;DockPanel&gt;&lt;TextBlock Text=\&quot;搜索预览台\&quot; FontSize=\&quot;22\&quot; FontWeight=\&quot;SemiBold\&quot; Foreground=\&quot;White\&quot;/&gt;&lt;Button Content=\&quot;搜索\&quot; DockPanel.Dock=\&quot;Right\&quot; oqh:HostedViewBridge.Action=\&quot;runScript;inputFrom=query;outputTo=preview;successMessage=搜索完成\&quot;/&gt;&lt;/DockPanel&gt;&lt;Grid Grid.Row=\&quot;2\&quot;&gt;&lt;Grid.ColumnDefinitions&gt;&lt;ColumnDefinition Width=\&quot;340\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;16\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;*\&quot;/&gt;&lt;/Grid.ColumnDefinitions&gt;&lt;StackPanel Grid.Column=\&quot;0\&quot;&gt;&lt;TextBlock Text=\&quot;关键词\&quot; Foreground=\&quot;White\&quot; Margin=\&quot;0,0,0,8\&quot;/&gt;&lt;TextBox Text=\&quot;{Binding [query], UpdateSourceTrigger=PropertyChanged}\&quot; Padding=\&quot;10\&quot;/&gt;&lt;TextBlock Text=\&quot;说明\&quot; Foreground=\&quot;White\&quot; Margin=\&quot;0,18,0,8\&quot;/&gt;&lt;Border Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;12\&quot; Padding=\&quot;12\&quot;&gt;&lt;TextBlock Text=\&quot;可用于搜索文件、接口说明、知识片段等。\&quot; Foreground=\&quot;#FFCBD5E1\&quot; TextWrapping=\&quot;Wrap\&quot;/&gt;&lt;/Border&gt;&lt;/StackPanel&gt;&lt;Border Grid.Column=\&quot;2\&quot; Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;12\&quot; Padding=\&quot;12\&quot;&gt;&lt;TextBox Text=\&quot;{Binding [preview]}\&quot; IsReadOnly=\&quot;True\&quot; AcceptsReturn=\&quot;True\&quot; Background=\&quot;Transparent\&quot; BorderThickness=\&quot;0\&quot; Foreground=\&quot;#FFE5E7EB\&quot; TextWrapping=\&quot;Wrap\&quot; VerticalScrollBarVisibility=\&quot;Auto\&quot;/&gt;&lt;/Border&gt;&lt;/Grid&gt;&lt;TextBlock Grid.Row=\&quot;3\&quot; Text=\&quot;{Binding [status]}\&quot; Foreground=\&quot;#FF9CA3AF\&quot; Margin=\&quot;0,14,0,0\&quot;/&gt;&lt;/Grid&gt;&quot;
+  },
+  &quot;script&quot;: {
+    &quot;source&quot;: &quot;using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task&lt;string&gt; RunAsync(YanziActionContext context)\\n    {\\n        var q = context.InputText ?? string.Empty;\\n        return Task.FromResult(string.IsNullOrWhiteSpace(q) ? \\\&quot;请输入关键词。\\\&quot; : \\\&quot;查询：\\\&quot; + q + \\\&quot;\\\\n\\\\n这里是搜索结果预览占位内容。\\\&quot;);\\n    }\\n}&quot;
+  }
+}
+</code></pre>
+<h4>模板 4.6：多分区编辑器</h4>
+<p>适合 Prompt 编辑、模板拼装、文案编辑工作台。</p>
+<p>设计重点：</p>
+<ul>
+<li>顶部标题与工具按钮</li>
+<li>主编辑区</li>
+<li>辅助说明区</li>
+<li>底部状态栏</li>
+</ul>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;prompt-editor-demo&quot;,
+  &quot;name&quot;: &quot;多分区编辑器&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;创作工具&quot;,
+  &quot;description&quot;: &quot;在宿主里编辑主内容、补充说明和结果草稿。&quot;,
+  &quot;keywords&quot;: [&quot;编辑器&quot;, &quot;prompt&quot;, &quot;writer&quot;],
+  &quot;icon&quot;: &quot;mdi:text-box-edit-outline&quot;,
+  &quot;hostedViewXaml&quot;: {
+    &quot;type&quot;: &quot;xaml&quot;,
+    &quot;title&quot;: &quot;多分区编辑器&quot;,
+    &quot;window&quot;: { &quot;width&quot;: 1120, &quot;height&quot;: 780, &quot;minWidth&quot;: 860, &quot;minHeight&quot;: 580 },
+    &quot;state&quot;: { &quot;title&quot;: &quot;新草稿&quot;, &quot;main&quot;: &quot;&quot;, &quot;notes&quot;: &quot;&quot;, &quot;status&quot;: &quot;准备就绪&quot; },
+    &quot;xaml&quot;: &quot;&lt;Grid xmlns=\&quot;http://schemas.microsoft.com/winfx/2006/xaml/presentation\&quot; xmlns:x=\&quot;http://schemas.microsoft.com/winfx/2006/xaml\&quot; xmlns:oqh=\&quot;clr-namespace:Yanzi\&quot;&gt;&lt;Grid.RowDefinitions&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;RowDefinition Height=\&quot;12\&quot;/&gt;&lt;RowDefinition Height=\&quot;*\&quot;/&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;/Grid.RowDefinitions&gt;&lt;DockPanel&gt;&lt;TextBlock Text=\&quot;多分区编辑器\&quot; FontSize=\&quot;22\&quot; FontWeight=\&quot;SemiBold\&quot; Foreground=\&quot;White\&quot;/&gt;&lt;Button Content=\&quot;同步预览\&quot; DockPanel.Dock=\&quot;Right\&quot; oqh:HostedViewBridge.Action=\&quot;setState;path=status;value=已同步当前内容\&quot;/&gt;&lt;/DockPanel&gt;&lt;Grid Grid.Row=\&quot;2\&quot;&gt;&lt;Grid.ColumnDefinitions&gt;&lt;ColumnDefinition Width=\&quot;2*\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;16\&quot;/&gt;&lt;ColumnDefinition Width=\&quot;*\&quot;/&gt;&lt;/Grid.ColumnDefinitions&gt;&lt;StackPanel Grid.Column=\&quot;0\&quot;&gt;&lt;TextBlock Text=\&quot;标题\&quot; Foreground=\&quot;White\&quot; Margin=\&quot;0,0,0,8\&quot;/&gt;&lt;TextBox Text=\&quot;{Binding [title], UpdateSourceTrigger=PropertyChanged}\&quot; Padding=\&quot;10\&quot;/&gt;&lt;TextBlock Text=\&quot;正文\&quot; Foreground=\&quot;White\&quot; Margin=\&quot;0,16,0,8\&quot;/&gt;&lt;TextBox Text=\&quot;{Binding [main], UpdateSourceTrigger=PropertyChanged}\&quot; AcceptsReturn=\&quot;True\&quot; TextWrapping=\&quot;Wrap\&quot; VerticalScrollBarVisibility=\&quot;Auto\&quot; MinHeight=\&quot;360\&quot; Padding=\&quot;12\&quot;/&gt;&lt;/StackPanel&gt;&lt;StackPanel Grid.Column=\&quot;2\&quot;&gt;&lt;TextBlock Text=\&quot;补充说明\&quot; Foreground=\&quot;White\&quot; Margin=\&quot;0,0,0,8\&quot;/&gt;&lt;TextBox Text=\&quot;{Binding [notes], UpdateSourceTrigger=PropertyChanged}\&quot; AcceptsReturn=\&quot;True\&quot; TextWrapping=\&quot;Wrap\&quot; VerticalScrollBarVisibility=\&quot;Auto\&quot; MinHeight=\&quot;220\&quot; Padding=\&quot;12\&quot;/&gt;&lt;Border Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;12\&quot; Padding=\&quot;12\&quot; Margin=\&quot;0,16,0,0\&quot;&gt;&lt;TextBlock Text=\&quot;这里可以放预览、说明、模板提示等辅助内容。\&quot; Foreground=\&quot;#FFCBD5E1\&quot; TextWrapping=\&quot;Wrap\&quot;/&gt;&lt;/Border&gt;&lt;/StackPanel&gt;&lt;/Grid&gt;&lt;TextBlock Grid.Row=\&quot;3\&quot; Text=\&quot;{Binding [status]}\&quot; Foreground=\&quot;#FF9CA3AF\&quot; Margin=\&quot;0,14,0,0\&quot;/&gt;&lt;/Grid&gt;&quot;
+  }
+}
+</code></pre>
+<h4>模板 4.7：日志与输出查看器</h4>
+<p>适合脚本输出、任务记录、审计面板。</p>
+<p>设计重点：</p>
+<ul>
+<li>只读大文本区</li>
+<li>刷新按钮</li>
+<li>清空按钮</li>
+<li>状态文案</li>
+</ul>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;log-viewer-demo&quot;,
+  &quot;name&quot;: &quot;日志查看器&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;开发工具&quot;,
+  &quot;description&quot;: &quot;在宿主里查看、清空和刷新日志内容。&quot;,
+  &quot;keywords&quot;: [&quot;日志&quot;, &quot;log&quot;, &quot;viewer&quot;],
+  &quot;icon&quot;: &quot;mdi:text-box-search-outline&quot;,
+  &quot;hostedViewXaml&quot;: {
+    &quot;type&quot;: &quot;xaml&quot;,
+    &quot;title&quot;: &quot;日志查看器&quot;,
+    &quot;window&quot;: { &quot;width&quot;: 980, &quot;height&quot;: 700, &quot;minWidth&quot;: 760, &quot;minHeight&quot;: 520 },
+    &quot;state&quot;: { &quot;logText&quot;: &quot;暂无日志内容&quot;, &quot;status&quot;: &quot;准备就绪&quot; },
+    &quot;xaml&quot;: &quot;&lt;Grid xmlns=\&quot;http://schemas.microsoft.com/winfx/2006/xaml/presentation\&quot; xmlns:x=\&quot;http://schemas.microsoft.com/winfx/2006/xaml\&quot; xmlns:oqh=\&quot;clr-namespace:Yanzi\&quot;&gt;&lt;Grid.RowDefinitions&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;RowDefinition Height=\&quot;12\&quot;/&gt;&lt;RowDefinition Height=\&quot;*\&quot;/&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;/Grid.RowDefinitions&gt;&lt;DockPanel&gt;&lt;TextBlock Text=\&quot;日志查看器\&quot; FontSize=\&quot;22\&quot; FontWeight=\&quot;SemiBold\&quot; Foreground=\&quot;White\&quot;/&gt;&lt;StackPanel DockPanel.Dock=\&quot;Right\&quot; Orientation=\&quot;Horizontal\&quot;&gt;&lt;Button Content=\&quot;清空\&quot; Margin=\&quot;0,0,10,0\&quot; oqh:HostedViewBridge.Action=\&quot;setState;path=logText;value=日志已清空|setState;path=status;value=已清空\&quot;/&gt;&lt;Button Content=\&quot;刷新\&quot; oqh:HostedViewBridge.Action=\&quot;setState;path=status;value=已刷新\&quot;/&gt;&lt;/StackPanel&gt;&lt;/DockPanel&gt;&lt;Border Grid.Row=\&quot;2\&quot; Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;12\&quot; Padding=\&quot;12\&quot;&gt;&lt;TextBox Text=\&quot;{Binding [logText]}\&quot; IsReadOnly=\&quot;True\&quot; AcceptsReturn=\&quot;True\&quot; Background=\&quot;Transparent\&quot; BorderThickness=\&quot;0\&quot; Foreground=\&quot;#FFE5E7EB\&quot; TextWrapping=\&quot;Wrap\&quot; VerticalScrollBarVisibility=\&quot;Auto\&quot;/&gt;&lt;/Border&gt;&lt;TextBlock Grid.Row=\&quot;3\&quot; Text=\&quot;{Binding [status]}\&quot; Foreground=\&quot;#FF9CA3AF\&quot; Margin=\&quot;0,14,0,0\&quot;/&gt;&lt;/Grid&gt;&quot;
+  }
+}
+</code></pre>
+<h4>模板 4.8：欢迎页 / 向导型界面</h4>
+<p>适合首次启动引导、配置向导、模板选择。</p>
+<p>设计重点：</p>
+<ul>
+<li>说明区域</li>
+<li>步骤区域</li>
+<li>下一步 / 完成按钮</li>
+<li>本地持久化</li>
+</ul>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;welcome-guide-demo&quot;,
+  &quot;name&quot;: &quot;欢迎向导&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;category&quot;: &quot;效率工具&quot;,
+  &quot;description&quot;: &quot;首次启动时展示说明、步骤和完成状态。&quot;,
+  &quot;keywords&quot;: [&quot;欢迎&quot;, &quot;向导&quot;, &quot;guide&quot;],
+  &quot;icon&quot;: &quot;mdi:compass-outline&quot;,
+  &quot;hostedViewXaml&quot;: {
+    &quot;type&quot;: &quot;xaml&quot;,
+    &quot;title&quot;: &quot;欢迎向导&quot;,
+    &quot;window&quot;: { &quot;width&quot;: 920, &quot;height&quot;: 680, &quot;minWidth&quot;: 720, &quot;minHeight&quot;: 500 },
+    &quot;state&quot;: {
+      &quot;step&quot;: &quot;步骤 1 / 3&quot;,
+      &quot;status&quot;: &quot;欢迎使用燕子工作区&quot;,
+      &quot;summary&quot;: &quot;完成快捷键设置、创建第一个扩展、尝试鼠标面板。&quot;
+    },
+    &quot;xaml&quot;: &quot;&lt;Grid xmlns=\&quot;http://schemas.microsoft.com/winfx/2006/xaml/presentation\&quot; xmlns:x=\&quot;http://schemas.microsoft.com/winfx/2006/xaml\&quot; xmlns:oqh=\&quot;clr-namespace:Yanzi\&quot;&gt;&lt;Grid.RowDefinitions&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;RowDefinition Height=\&quot;16\&quot;/&gt;&lt;RowDefinition Height=\&quot;*\&quot;/&gt;&lt;RowDefinition Height=\&quot;Auto\&quot;/&gt;&lt;/Grid.RowDefinitions&gt;&lt;StackPanel&gt;&lt;TextBlock Text=\&quot;欢迎向导\&quot; FontSize=\&quot;26\&quot; FontWeight=\&quot;SemiBold\&quot; Foreground=\&quot;White\&quot;/&gt;&lt;TextBlock Text=\&quot;{Binding [step]}\&quot; Foreground=\&quot;#FF60A5FA\&quot; Margin=\&quot;0,8,0,0\&quot;/&gt;&lt;/StackPanel&gt;&lt;Border Grid.Row=\&quot;2\&quot; Background=\&quot;#FF171717\&quot; BorderBrush=\&quot;#FF2E2E2E\&quot; BorderThickness=\&quot;1\&quot; CornerRadius=\&quot;16\&quot; Padding=\&quot;20\&quot;&gt;&lt;StackPanel&gt;&lt;TextBlock Text=\&quot;开始之前\&quot; Foreground=\&quot;White\&quot; FontSize=\&quot;18\&quot; FontWeight=\&quot;SemiBold\&quot;/&gt;&lt;TextBlock Text=\&quot;{Binding [summary]}\&quot; Foreground=\&quot;#FFCBD5E1\&quot; TextWrapping=\&quot;Wrap\&quot; Margin=\&quot;0,12,0,0\&quot;/&gt;&lt;Border Background=\&quot;#FF111827\&quot; CornerRadius=\&quot;12\&quot; Padding=\&quot;14\&quot; Margin=\&quot;0,18,0,0\&quot;&gt;&lt;TextBlock Text=\&quot;建议顺序：设置呼出方式 -&gt; 导入模板 -&gt; 测试第一个扩展。\&quot; Foreground=\&quot;#FFE5E7EB\&quot; TextWrapping=\&quot;Wrap\&quot;/&gt;&lt;/Border&gt;&lt;/StackPanel&gt;&lt;/Border&gt;&lt;DockPanel Grid.Row=\&quot;3\&quot; Margin=\&quot;0,14,0,0\&quot;&gt;&lt;TextBlock Text=\&quot;{Binding [status]}\&quot; Foreground=\&quot;#FF9CA3AF\&quot; VerticalAlignment=\&quot;Center\&quot;/&gt;&lt;StackPanel DockPanel.Dock=\&quot;Right\&quot; Orientation=\&quot;Horizontal\&quot;&gt;&lt;Button Content=\&quot;下一步\&quot; Margin=\&quot;0,0,10,0\&quot; oqh:HostedViewBridge.Action=\&quot;setState;path=step;value=步骤 2 / 3|setState;path=status;value=继续查看下一步\&quot;/&gt;&lt;Button Content=\&quot;完成\&quot; oqh:HostedViewBridge.Action=\&quot;setState;path=status;value=向导已完成|close\&quot;/&gt;&lt;/StackPanel&gt;&lt;/DockPanel&gt;&lt;/Grid&gt;&quot;
+  }
+}
+</code></pre>
+<h3>什么时候不要用 hostedViewXaml</h3>
+<p>以下场景直接改用 <code>uiMode = native-window</code>：</p>
+<ul>
+<li>需要独立弹窗或多窗口</li>
+<li>需要原生拖拽、复杂列表、树、表格</li>
+<li>需要系统级悬浮窗</li>
+<li>需要完整 WPF 事件模型</li>
+<li>需要复杂本机交互且不想受宿主视图约束</li>
+</ul>
+</article>
 
-        <article id="icons" class="guide-card">
-          <h2>图标写法</h2>
-          <ul>
-            <li>内置图标：<code>mdi:search</code>、<code>mdi:translate</code>、<code>mdi:folder</code>、<code>mdi:clipboard</code>、<code>mdi:code</code></li>
-            <li>应用别名：<code>app:wechat</code>、<code>app:qq</code>、<code>app:google</code>、<code>app:selection</code></li>
-            <li>图片路径：扩展目录下相对路径，例如 <code>icons/logo.png</code>，也支持绝对路径和 HTTPS 图片地址</li>
-          </ul>
-        </article>
+<article class="guide-card">
+  <h2>图标写法</h2>
+<p><code>icon</code> 支持：</p>
+<ul>
+<li>内置图标：<code>mdi:search</code>、<code>mdi:translate</code>、<code>mdi:folder</code>、<code>mdi:clipboard</code>、<code>mdi:code</code></li>
+<li>应用别名：<code>app:wechat</code>、<code>app:qq</code>、<code>app:google</code>、<code>app:selection</code></li>
+<li>图片路径：扩展目录下相对路径，例如 <code>icons/logo.png</code>，或绝对路径、HTTPS 图片地址</li>
+</ul>
+</article>
 
-        <article id="ai-prompt" class="guide-card">
-          <h2>给 AI 的提示词</h2>
-          <p>复制这段给 AI，可以让它生成能直接导入燕子的扩展 JSON。</p>
-          <div class="code-card">
-<pre><code>请帮我生成一个 Yanzi 扩展的完整 JSON 配置。
+<article class="guide-card">
+  <h2>按钮颜色</h2>
+<p><code>accentHex</code> 控制扩展在启动器、鼠标面板和燕环中的按钮 / 卡片底色。支持 <code>#RRGGBB</code> 或 <code>#AARRGGBB</code>，例如 <code>#10B981</code>、<code>#FFF97316</code>。未填写时使用默认蓝色。</p>
+</article>
+
+<article class="guide-card">
+  <h2>给 AI 的提示词</h2>
+<pre><code class="language-text">请帮我生成一个 Yanzi 扩展的完整 JSON 配置。
 
 一、背景说明
 这个产品的设计理念是“万物皆扩展”。用户会在桌面启动器、快捷面板、鼠标呼出面板里运行扩展。
@@ -949,31 +1177,41 @@ public static class YanziAction
 五、最终要求
 请结合我的需求，只返回一个包含最终 JSON 的 ```json 代码块，不要返回多个方案，不要附加说明。
 如果需求里提到便签、面板、编辑器、工作区、内置界面，请优先使用 hostedViewXaml；如果只是简单表单，再考虑 hostedViewV2。
-如果需求里明确是独立弹窗小工具或原生小应用，并且脚本需要直接 new Window / TextBox / Button，就必须输出 native-window，不要改成 hostedViewXaml。</code></pre>
-          </div>
-        </article>
+如果需求里明确是独立弹窗小工具或原生小应用，并且脚本需要直接 new Window / TextBox / Button，就必须输出 native-window，不要改成 hostedViewXaml。
+</code></pre>
+</article>
 
+<article class="guide-card">
+  <h2>调试建议</h2>
+<ul>
+<li>在扩展编辑器里优先点 <code>测试执行</code></li>
+<li>表单和 JSON 以最后编辑的一侧为准</li>
+<li>C# 编译产物会缓存在扩展目录的 <code>.yanzi-csharp-cache</code></li>
+<li>运行日志在 <code>logs/host.log</code></li>
+<li>开发机调试日志在 <code>logs/dev-debug.log</code></li>
+</ul>
+</article>
+
+
+        
         <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-          <a href="/docs/getting-started.html" class="button secondary" style="gap: 8px; height: 46px;">
+          <a href="getting-started.html" class="button secondary" style="gap: 8px; height: 46px;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-            上一页: 快速上手
+            上一页: 1. 下载与安装
           </a>
-          <a href="/docs/extension-spec.html" class="button primary" style="gap: 8px; height: 46px;">
+          <a href="extension-spec.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
             下一页: 扩展规范
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
           </a>
         </div>
       </div>
-
-      <!-- Right Outline (Dynamic TOC) -->
       <aside class="doc-outline">
-        <strong>当前章节大纲</strong>
+        <strong>本页目录</strong>
         <ul id="outline-list"></ul>
       </aside>
     </div>
   </main>
-  
-  <script src="/assets/docs.js" defer></script>
+  <script src="../assets/docs-data.js"></script>
+  <script src="../assets/docs.js"></script>
 </body>
-
 </html>

@@ -13,6 +13,8 @@
         MinHeight="450"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
+        ShowInTaskbar="False"
+        Visibility="Hidden"
         ResizeMode="CanResize"
         Background="{DynamicResource BrushBG}"
         UseLayoutRounding="True"
@@ -30,6 +32,146 @@
     </shell:WindowChrome.WindowChrome>
     
     <Window.Resources>
+        <Style x:Key="AiModelComboBoxItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="Transparent"
+                                BorderThickness="1"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#FF2F3440" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#443B82F6" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#1F3B82F6" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#803B82F6" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AiModelComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="Background" Value="#FF2D2D30" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#FF434346" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="MaxDropDownHeight" Value="320" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource AiModelComboBoxItemStyle}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          Tag="{Binding SelectedItem, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Root"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="7"
+                                                SnapsToDevicePixels="True">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="30" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Margin="10,0,4,0"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Left"
+                                                           Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                                           Foreground="{TemplateBinding Foreground}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <Path x:Name="Arrow"
+                                                      Grid.Column="1"
+                                                      Width="9"
+                                                      Height="5"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Data="M0,0 L4.5,5 L9,0 Z"
+                                                      Fill="#FF9CA3AF"
+                                                      Stretch="Fill" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="#FF4B5563" />
+                                                <Setter TargetName="Root" Property="Background" Value="#FF3F3F46" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="#FF3B82F6" />
+                                                <Setter TargetName="Root" Property="Background" Value="#FF2D2D30" />
+                                                <Setter TargetName="Arrow" Property="Fill" Value="#FF60A5FA" />
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Border Background="#FF1E1E1E"
+                                        BorderBrush="#FF434346"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Margin="0,5,0,0"
+                                        MinWidth="{TemplateBinding ActualWidth}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <ScrollViewer Padding="3"
+                                                  SnapsToDevicePixels="True"
+                                                  CanContentScroll="True"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter Property="BorderBrush" Value="#FF3B82F6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Colors -->
         <Color x:Key="WindowBackground">#FF1C1C1C</Color>
         <Color x:Key="BorderColor">#FF333333</Color>
@@ -83,6 +225,14 @@
                      Opened="CommandListContextMenu_Opened"
                      Closed="CommandListContextMenu_Closed"
                      PreviewKeyDown="CommandListContextMenu_PreviewKeyDown">
+            <MenuItem Header="返回"
+                      InputGestureText="←"
+                      Click="BackToSearchMenuItem_Click">
+                <MenuItem.Icon>
+                    <Path Data="{local:IconGeometry arrow-left}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform" Width="14" Height="14" />
+                </MenuItem.Icon>
+            </MenuItem>
+            <Separator />
             <MenuItem Header="打开"
                       Click="OpenFileResultMenuItem_Click" />
             <MenuItem Header="打开路径"
@@ -110,6 +260,14 @@
                      Opened="CommandListContextMenu_Opened"
                      Closed="CommandListContextMenu_Closed"
                      PreviewKeyDown="CommandListContextMenu_PreviewKeyDown">
+            <MenuItem Header="返回"
+                      InputGestureText="←"
+                      Click="BackToSearchMenuItem_Click">
+                <MenuItem.Icon>
+                    <Path Data="{local:IconGeometry arrow-left}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform" Width="14" Height="14" />
+                </MenuItem.Icon>
+            </MenuItem>
+            <Separator />
             <MenuItem Header="执行默认动作"
                       Click="OpenGenericResultMenuItem_Click" />
             <MenuItem Header="查看详情"
@@ -124,7 +282,8 @@
         </ContextMenu>
     </Window.Resources>
 
-    <Border Margin="1"
+    <Border x:Name="MainWindowBorder"
+            Margin="1"
             CornerRadius="0"
             Background="{DynamicResource BrushDialogBG}"
             BorderBrush="{DynamicResource BrushBorder}"
@@ -136,6 +295,16 @@
                 <RowDefinition Height="*" />    <!-- List -->
                 <RowDefinition Height="Auto" /> <!-- Footer -->
             </Grid.RowDefinitions>
+
+            <!-- Placement target for search scope popup in AI mode -->
+            <Border x:Name="SearchPopupPlacementTarget"
+                    Grid.Row="0"
+                    Height="1"
+                    Margin="20,15,20,0"
+                    VerticalAlignment="Top"
+                    Visibility="Visible"
+                    Focusable="False"
+                    IsHitTestVisible="False" />
 
             <!-- 1. Search Bar -->
             <StackPanel Grid.Row="0"
@@ -167,16 +336,6 @@
                     </Viewbox>
 
                     <Grid Grid.Column="1">
-                        <TextBlock IsHitTestVisible="False"
-                                   VerticalAlignment="Center"
-                                   FontSize="{DynamicResource FontSizeTitle}"
-                                   Foreground="{DynamicResource BrushTextMuted}"
-                                   Visibility="{Binding SearchInlineCompletionVisibility}"
-                                   Text="{Binding SearchInlineCompletionSuffix}">
-                            <TextBlock.RenderTransform>
-                                <TranslateTransform X="{Binding SearchInlineCompletionPrefixWidth}" />
-                            </TextBlock.RenderTransform>
-                        </TextBlock>
                         <TextBox x:Name="SearchBox"
                                  AllowDrop="True"
                                  FontSize="{DynamicResource FontSizeTitle}"
@@ -197,7 +356,7 @@
                     
                         <!-- Search Box Placeholder -->
                         <TextBlock IsHitTestVisible="False"
-                                   Text="搜索应用、扩展、系统项，或输入 @应用 / @系统 ..."
+                                   Text="搜索应用、小程序、系统项，或输入 @应用 / @系统 ..."
                                    VerticalAlignment="Center"
                                    Foreground="{DynamicResource BrushTextMuted}"
                                    FontSize="{DynamicResource FontSizeTitle}"
@@ -206,9 +365,13 @@
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding Text, ElementName=SearchBox}" Value=""/>
+                                                <Condition Binding="{Binding IsKeyboardFocused, ElementName=SearchBox}" Value="False"/>
+                                            </MultiDataTrigger.Conditions>
                                             <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
+                                        </MultiDataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </TextBlock.Style>
@@ -368,7 +531,7 @@
             </StackPanel>
 
             <Popup x:Name="SearchScopePopup"
-                   PlacementTarget="{Binding ElementName=SearchBarGrid}"
+                   PlacementTarget="{Binding ElementName=SearchPopupPlacementTarget}"
                    Placement="Top"
                    HorizontalOffset="0"
                    VerticalOffset="-20"
@@ -401,6 +564,9 @@
                                                       Tag="{Binding}"
                                                       Click="RemovePinnedSearchScopeMenuItem_Click"
                                                       Visibility="{Binding IsPinnedCommand, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <MenuItem Header="编辑标签..."
+                                                      Tag="{Binding}"
+                                                      Click="EditSearchScopesMenuItem_Click" />
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                     <Button.Style>
@@ -428,8 +594,8 @@
                                                         </Border>
                                                         <ControlTemplate.Triggers>
                                                             <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
-                                                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushTagHoverBG}" />
+                                                                <Setter TargetName="Root" Property="BorderBrush" Value="#403B82F6" />
                                                                 <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                                             </Trigger>
                                                         </ControlTemplate.Triggers>
@@ -438,9 +604,9 @@
                                             </Setter>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource BrushListViewItemSelectedBorder}" />
-                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTagSelectedText}" />
+                                                    <Setter Property="Background" Value="#FF3B82F6" />
+                                                    <Setter Property="BorderBrush" Value="#FF3B82F6" />
+                                                    <Setter Property="Foreground" Value="White" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -510,7 +676,60 @@
             <Grid Grid.Row="1"
                   Margin="10,5,10,5"
                   Visibility="{Binding NormalLauncherVisibility}">
-                <ListBox x:Name="CommandList"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 文件类目置顶第一行：极简 Everything 开关条 -->
+                <Border Grid.Row="0"
+                        Margin="4,2,4,4"
+                        Padding="12,7"
+                        CornerRadius="7"
+                        Background="#0DFFFFFF"
+                        BorderBrush="{DynamicResource BrushBorder}"
+                        BorderThickness="1"
+                        Visibility="{Binding IsFileSearchScopeActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid Width="16" Height="16" VerticalAlignment="Center">
+                            <Image Source="{Binding EverythingIconSource}"
+                                   Width="16"
+                                   Height="16"
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                   SnapsToDevicePixels="True"
+                                   Visibility="{Binding HasEverythingIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            <Path Data="{local:IconGeometry search}"
+                                  Fill="#FF3B82F6"
+                                  Stretch="Uniform"
+                                  Width="15"
+                                  Height="15"
+                                  Visibility="{Binding HasEverythingIcon, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                        </Grid>
+                        <TextBlock Grid.Column="1"
+                                   Text="Everything 引擎"
+                                   Foreground="{DynamicResource BrushTextMain}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
+                                   FontWeight="Medium"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,0,0"/>
+                        <CheckBox Grid.Column="2"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Center"
+                                  Style="{StaticResource RaycastSwitchStyle}"
+                                  IsChecked="{Binding IsFileSearchEnabledInHomeView, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  Click="FileSearchToggle_Click"
+                                  ToolTip="开启或关闭 Everything 引擎"/>
+                    </Grid>
+                </Border>
+
+                <ListBox Grid.Row="1"
+                         x:Name="CommandList"
                          Background="Transparent"
                          BorderThickness="0"
                          ItemsSource="{Binding FilteredCommands}"
@@ -531,6 +750,15 @@
                         <ContextMenu Opened="CommandListContextMenu_Opened"
                                      Closed="CommandListContextMenu_Closed"
                                      PreviewKeyDown="CommandListContextMenu_PreviewKeyDown">
+                            <MenuItem x:Name="BackToSearchMenuItem"
+                                      Header="返回"
+                                      InputGestureText="Caps+A"
+                                      Click="BackToSearchMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry arrow-left}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform" Width="14" Height="14" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator />
                             <MenuItem x:Name="SetCommandShortcutMenuItem"
                                       Header="设置快捷键"
                                       Visibility="Collapsed"
@@ -548,7 +776,7 @@
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="EditExtensionMenuItem"
-                                      Header="编辑扩展"
+                                      Header="编辑小程序"
                                       Click="EditExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -591,14 +819,14 @@
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="OpenExtensionDirectoryMenuItem"
-                                      Header="打开扩展目录"
+                                      Header="{local:Term MiniApp, Prefix='打开', Suffix='目录'}"
                                       Click="OpenExtensionDirectoryMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="ToggleYanyuEnabledMenuItem"
-                                      Header="启用燕语"
+                                      Header="{local:Term YanVoice, Prefix='启用'}"
                                       Click="ToggleYanyuEnabledMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry power}" Fill="#22C55E" Stretch="Uniform" Width="16" Height="16" />
@@ -606,21 +834,21 @@
                             </MenuItem>
                             <Separator />
                             <MenuItem x:Name="CopyExtensionMenuItem"
-                                      Header="复制扩展"
+                                      Header="{local:Term MiniApp, Prefix='复制'}"
                                       Click="CopyExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="CutExtensionMenuItem"
-                                      Header="剪切扩展"
+                                      Header="{local:Term MiniApp, Prefix='剪切'}"
                                       Click="CutExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="PasteExtensionMenuItem"
-                                      Header="粘贴扩展"
+                                      Header="{local:Term MiniApp, Prefix='粘贴'}"
                                       Click="PasteExtensionMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -628,10 +856,10 @@
                             </MenuItem>
                             <Separator />
                             <MenuItem x:Name="AddToQuickPanelMenuItem"
-                                      Header="添加到鼠标面板"
+                                      Header="{local:Term Backpack, Prefix='添加到'}"
                                       Click="AddToQuickPanelMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry plus}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry backpack}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="CreateDesktopShortcutMenuItem"
@@ -687,70 +915,86 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Grid.Style>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
 
-                                <!-- Icon Area -->
-                                <Grid VerticalAlignment="Center" Margin="0,0,12,0">
-                                    <Border Width="32"
-                                            Height="32"
-                                            CornerRadius="8"
-                                            ClipToBounds="True">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="Background" Value="{Binding AccentBrush}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
-                                                        <Setter Property="Background" Value="Transparent" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                        <Grid>
-                                            <Image Source="{Binding IconSource}"
-                                                   Stretch="UniformToFill"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"
-                                                   SnapsToDevicePixels="True"
-                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                            <Viewbox Margin="6"
-                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Path Width="24"
-                                                      Height="24"
-                                                      Data="{Binding VectorIcon}"
-                                                      Fill="White"
-                                                      Stretch="Uniform" />
-                                            </Viewbox>
-                                            <TextBlock Text="{Binding DisplayGlyph}"
-                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
-                                                   Foreground="{DynamicResource BrushTextMain}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   FontWeight="Bold"
-                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                            <Border Width="9"
-                                                    Height="9"
-                                                    CornerRadius="4.5"
-                                                    Background="#FFFF5A7A"
-                                                    BorderBrush="#CCFFFFFF"
-                                                    BorderThickness="1"
-                                                    HorizontalAlignment="Right"
-                                                    VerticalAlignment="Top"
-                                                    Margin="0,1,1,0"
-                                                    Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                            <Border Background="{DynamicResource BrushDialogBG}"
-                                                    Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                            <Viewbox Width="18"
-                                                     Height="18"
-                                                     HorizontalAlignment="Center"
-                                                     VerticalAlignment="Center"
-                                                     Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Path Data="{local:IconGeometry sync}"
-                                                      Fill="{DynamicResource BrushTextMain}"
+                                <!-- 1. 普通扩展/应用/文件布局 (Source != Cloud) -->
+                                <Grid x:Name="NormalExtensionLayout">
+                                    <Grid.Style>
+                                        <Style TargetType="Grid">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Source}" Value="Cloud">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Grid.Style>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Icon Area -->
+                                    <Grid VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <Border Width="32"
+                                                Height="32"
+                                                CornerRadius="8"
+                                                ClipToBounds="True">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{Binding AccentBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                            <Setter Property="Background" Value="Transparent" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Image Source="{Binding IconSource}"
+                                                       Stretch="UniformToFill"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                                       SnapsToDevicePixels="True"
+                                                       Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Viewbox Margin="6"
+                                                         Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Width="24"
+                                                          Height="24"
+                                                          Data="{Binding VectorIcon}"
+                                                          Fill="{Binding VectorIconBrush, FallbackValue=White}"
+                                                          Stretch="Uniform" />
+                                                </Viewbox>
+                                                <TextBlock Text="{Binding DisplayGlyph}"
+                                                       FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                       Foreground="{DynamicResource BrushTextMain}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       FontWeight="Bold"
+                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Border Width="9"
+                                                        Height="9"
+                                                        CornerRadius="4.5"
+                                                        Background="#FFFF5A7A"
+                                                        BorderBrush="#CCFFFFFF"
+                                                        BorderThickness="1"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Top"
+                                                        Margin="0,1,1,0"
+                                                        Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Border Background="{DynamicResource BrushDialogBG}"
+                                                        Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Path Width="14"
+                                                      Height="14"
+                                                      Data="M12,2 A10,10 0 1,1 2,12"
+                                                      Stroke="{DynamicResource BrushTextMain}"
+                                                      StrokeThickness="2"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
                                                       Stretch="Uniform"
-                                                      RenderTransformOrigin="0.5,0.5">
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      RenderTransformOrigin="0.5,0.5"
+                                                      Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <Path.RenderTransform>
                                                         <RotateTransform Angle="0" />
                                                     </Path.RenderTransform>
@@ -761,82 +1005,476 @@
                                                                     <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
                                                                                      From="0"
                                                                                      To="360"
-                                                                                     Duration="0:0:0.9" />
+                                                                                     Duration="0:0:1.0" />
                                                                 </Storyboard>
                                                             </BeginStoryboard>
                                                         </EventTrigger>
                                                     </Path.Triggers>
                                                 </Path>
-                                            </Viewbox>
-                                        </Grid>
-                                    </Border>
-                                    <!-- Running indicator (Green Dot) -->
-                                    <Border Width="9"
-                                            Height="9"
-                                            CornerRadius="4.5"
-                                            Background="#FF10B981"
-                                            BorderBrush="#CCFFFFFF"
-                                            BorderThickness="1"
-                                            HorizontalAlignment="Left"
-                                            VerticalAlignment="Bottom"
-                                            Margin="-2,0,0,-2"
-                                            IsHitTestVisible="False"
-                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                </Grid>
+                                            </Grid>
+                                        </Border>
+                                        <!-- Running indicator (Green Dot) -->
+                                        <Border Width="9"
+                                                Height="9"
+                                                CornerRadius="4.5"
+                                                Background="#FF10B981"
+                                                BorderBrush="#CCFFFFFF"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Bottom"
+                                                Margin="-2,0,0,-2"
+                                                IsHitTestVisible="False"
+                                                Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    </Grid>
 
-                                <!-- Text Area -->
-                                <Grid Grid.Column="1" VerticalAlignment="Center">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Text="{Binding Title}"
-                                               Grid.Row="0"
-                                               FontSize="{DynamicResource FontSizeNormalPlus}"
-                                               FontWeight="Medium"
-                                               Foreground="{DynamicResource BrushTextMain}"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding EffectiveSubtitle}"
-                                               Grid.Row="1"
-                                               Margin="0,2,0,0"
-                                               Foreground="{DynamicResource BrushTextSec}"
-                                               FontSize="{DynamicResource FontSizeSmall}"
-                                               TextTrimming="CharacterEllipsis" />
-                                </Grid>
-
-                                <!-- Action Label -->
-                                <StackPanel Grid.Column="2"
-                                            Orientation="Horizontal"
-                                            VerticalAlignment="Center"
-                                            Margin="8,0,5,0">
-                                    <Border Background="{DynamicResource BrushBG}"
-                                            BorderBrush="{DynamicResource BrushBorderStrong}"
-                                            BorderThickness="1"
-                                            CornerRadius="6"
-                                            Padding="8,4"
-                                            Margin="0,0,8,0"
-                                            Visibility="{Binding HasGlobalShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <TextBlock Text="{Binding ShortcutLabel}"
+                                    <!-- Text Area -->
+                                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="{Binding Title}"
+                                                   Grid.Row="0"
+                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                   FontWeight="Medium"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding EffectiveSubtitle}"
+                                                   Grid.Row="1"
+                                                   Margin="0,2,0,0"
                                                    Foreground="{DynamicResource BrushTextSec}"
-                                                   FontSize="{DynamicResource FontSizeTiny}"
-                                                   FontWeight="SemiBold" />
-                                    </Border>
-                                    <TextBlock Text="{Binding DisplayTypeLabel}" 
-                                               Foreground="{DynamicResource BrushTextSec}" 
-                                               FontSize="{DynamicResource FontSizeSmallPlus}" 
-                                               VerticalAlignment="Center"
-                                               Visibility="{Binding HasDisplayTypeLabel, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                </StackPanel>
+                                                   FontSize="{DynamicResource FontSizeSmall}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+
+                                     <!-- Action Label -->
+                                     <StackPanel Grid.Column="2"
+                                                 Orientation="Horizontal"
+                                                 VerticalAlignment="Center"
+                                                 Margin="8,0,5,0">
+
+                                           <!-- 快捷键徽标 (如果该项配置了快捷键) -->
+                                        <Border Background="{DynamicResource BrushBG}"
+                                                BorderBrush="{DynamicResource BrushBorderStrong}"
+                                                BorderThickness="1"
+                                                CornerRadius="6"
+                                                Padding="8,4"
+                                                Margin="0,0,4,0"
+                                                Visibility="{Binding HasGlobalShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <TextBlock Text="{Binding ShortcutLabel}"
+                                                       Foreground="{DynamicResource BrushTextSec}"
+                                                       FontSize="{DynamicResource FontSizeTiny}"
+                                                       FontWeight="SemiBold" />
+                                        </Border>
+
+                                        <!-- 普通分类标签 (扩展/应用/文件等) -->
+                                        <TextBlock Text="{Binding DisplayTypeLabel}" 
+                                                   Foreground="{DynamicResource BrushTextSec}" 
+                                                   FontSize="{DynamicResource FontSizeSmallPlus}" 
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding HasDisplayTypeLabel, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- 2. 商店扩展专用布局 (Source == Cloud) -->
+                                <Grid x:Name="CloudExtensionLayout">
+                                    <Grid.Style>
+                                        <Style TargetType="Grid">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Source}" Value="Cloud">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Grid.Style>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Icon Area -->
+                                    <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <Border Width="32"
+                                                Height="32"
+                                                CornerRadius="8"
+                                                ClipToBounds="True">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{Binding AccentBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                            <Setter Property="Background" Value="Transparent" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Image Source="{Binding IconSource}"
+                                                       Stretch="UniformToFill"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                                       SnapsToDevicePixels="True"
+                                                       Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Viewbox Margin="6"
+                                                         Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Width="24"
+                                                          Height="24"
+                                                          Data="{Binding VectorIcon}"
+                                                          Fill="{Binding VectorIconBrush, FallbackValue=White}"
+                                                          Stretch="Uniform" />
+                                                </Viewbox>
+                                                <TextBlock Text="{Binding DisplayGlyph}"
+                                                       FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                       Foreground="{DynamicResource BrushTextMain}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       FontWeight="Bold"
+                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- Text Area -->
+                                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="{Binding Title}"
+                                                   Grid.Row="0"
+                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                   FontWeight="Medium"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding EffectiveSubtitle}"
+                                                   Grid.Row="1"
+                                                   Margin="0,2,0,0"
+                                                   Foreground="{DynamicResource BrushTextSec}"
+                                                   FontSize="{DynamicResource FontSizeSmall}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+
+                                    <!-- Action & Stats Area -->
+                                    <StackPanel Grid.Column="2" 
+                                                Orientation="Vertical" 
+                                                VerticalAlignment="Center" 
+                                                HorizontalAlignment="Right" 
+                                                Margin="8,0,5,0">
+                                        <!-- Stats (下载量 & 评分) -->
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,4">
+                                            <!-- 下载量 -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,10,0" VerticalAlignment="Center">
+                                                <TextBlock Text="⤓ " Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <!-- 评分 -->
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="★ " Foreground="#FFFFB000" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- Buttons -->
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <!-- 试运行：始终显示，是否可用由 HasArchive 决定 -->
+                                            <Button Content="试运行"
+                                                    Click="StoreDryRunButton_Click"
+                                                    Tag="{Binding}"
+                                                    IsEnabled="{Binding HasArchive}"
+                                                    Height="22"
+                                                    Padding="8,0"
+                                                    Margin="0,0,6,0"
+                                                    FontSize="11"
+                                                    Background="#20FFFFFF"
+                                                    Foreground="{DynamicResource BrushTextMain}"
+                                                    BorderBrush="#30FFFFFF"
+                                                    BorderThickness="1"
+                                                    Cursor="Hand"
+                                                    Focusable="False">
+                                                <Button.Resources>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="CornerRadius" Value="4"/>
+                                                    </Style>
+                                                </Button.Resources>
+                                            </Button>
+
+                                            <Grid>
+                                                <!-- 未安装时显示：安装按钮 -->
+                                                <Button Content="安装"
+                                                        Click="StoreInstallButton_Click"
+                                                        Tag="{Binding}"
+                                                        IsEnabled="{Binding HasArchive}"
+                                                        Height="22"
+                                                        Padding="10,0"
+                                                        FontSize="11"
+                                                        Background="{DynamicResource BrushAccent}"
+                                                        Foreground="White"
+                                                        BorderThickness="0"
+                                                        Cursor="Hand"
+                                                        Focusable="False">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                    <Button.Resources>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="CornerRadius" Value="4"/>
+                                                        </Style>
+                                                    </Button.Resources>
+                                                </Button>
+
+                                                <!-- 已安装时显示：已安装标签 -->
+                                                <Border Background="#12FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="4" Padding="8,3">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="已安装" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                                                </Border>
+                                            </Grid>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+
+                <!-- 文件搜索中 Loading 动画与文案 -->
+                <Grid Grid.Row="1"
+                      Panel.ZIndex="5"
+                      Visibility="{Binding IsFileSearching, Converter={StaticResource BooleanToVisibilityConverter}}"
+                      Background="Transparent"
+                      IsHitTestVisible="False">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,0,0,30">
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="140"
+                                     Height="4"
+                                     Foreground="#FF3B82F6"
+                                     Background="#22FFFFFF"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding FileSearchingText}"
+                                   Foreground="{DynamicResource BrushTextSec}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
+                                   Margin="0,12,0,0"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- 4. 商店加载中 Loading Overlay -->
+                <Grid x:Name="StoreLoadingOverlay"
+                      Panel.ZIndex="15"
+                      Visibility="Collapsed"
+                      Background="#D518181A">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="160"
+                                     Height="6"
+                                     Foreground="#FF3B82F6"
+                                     Background="#33FFFFFF"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Center" />
+                        <TextBlock Text="正在加载小程序商店..."
+                                   Foreground="{DynamicResource BrushTextSec}"
+                                   FontSize="{DynamicResource FontSizeNormal}"
+                                   Margin="0,12,0,0"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- 3. 商店扩展二级详情 Overlay -->
+                <Grid x:Name="StoreExtensionDetailOverlay"
+                      Panel.ZIndex="20"
+                      Visibility="Collapsed"
+                      Background="#F018181A">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" /> <!-- 顶部导航 -->
+                        <RowDefinition Height="*" />    <!-- 内容区域 -->
+                    </Grid.RowDefinitions>
+                    
+                    <Grid.Style>
+                        <!-- 我们加一个简单的淡入动画或者简单的样式 -->
+                        <Style TargetType="Grid">
+                            <Setter Property="Opacity" Value="1"/>
+                        </Style>
+                    </Grid.Style>
+
+                    <!-- 顶部导航栏 -->
+                    <Border Grid.Row="0" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Padding="15,10">
+                        <Grid>
+                            <Button x:Name="CloseStoreDetailButton"
+                                    Click="CloseStoreDetailButton_Click"
+                                    Width="32" Height="32"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Focusable="False">
+                                <TextBlock Text="←" Foreground="{DynamicResource BrushTextMain}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
+                            <TextBlock Text="小程序详情" Foreground="{DynamicResource BrushTextMain}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- 主体内容 -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="20">
+                        <StackPanel>
+                            <!-- 头部基本信息 (图标 & 标题 & 版本 & 作者) -->
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- 大图标 (48x48) -->
+                                <Border Grid.Column="0" Width="48" Height="48" CornerRadius="10" ClipToBounds="True" Background="{Binding AccentBrush}" Margin="0,0,16,0" VerticalAlignment="Top">
+                                    <Grid>
+                                        <Image Source="{Binding IconSource}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <Viewbox Margin="9" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Path Width="24" Height="24" Data="{Binding VectorIcon}" Fill="{Binding VectorIconBrush, FallbackValue=White}" Stretch="Uniform" />
+                                        </Viewbox>
+                                        <TextBlock Text="{Binding DisplayGlyph}" FontSize="20" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    </Grid>
+                                </Border>
+
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <TextBlock Text="{Binding VersionLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,0,12,0"/>
+                                        <TextBlock Text="{Binding ItemKindLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,0,12,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 统计胶囊 (下载量 & 评分) -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
+                                <!-- 下载量胶囊 -->
+                                <Border Background="#153B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="12" Padding="12,5" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="⤓ " Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text=" 次下载" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="2,1,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                                <!-- 评分星级胶囊 -->
+                                <Border Background="#15FFB000" BorderBrush="#30FFB000" BorderThickness="1" CornerRadius="12" Padding="12,5">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="★ " Foreground="#FFFFB000" FontSize="12"/>
+                                        <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Text=" 评分" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="2,1,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- 详细说明 -->
+                            <TextBlock Text="小程序介绍" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <Border Background="#10FFFFFF" CornerRadius="8" Padding="12" Margin="0,0,24,0">
+                                <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" TextWrapping="Wrap" LineHeight="18"/>
+                            </Border>
+
+                            <!-- 操作大按钮 -->
+                            <Grid Margin="0,24,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Button Grid.Column="0" 
+                                        Content="试运行" 
+                                        Click="StoreDryRunButton_Click" 
+                                        Tag="{Binding}"
+                                         IsEnabled="{Binding HasArchive}" 
+                                        Height="36" 
+                                        Margin="0,0,6,0" 
+                                        Background="#20FFFFFF" 
+                                        Foreground="{DynamicResource BrushTextMain}" 
+                                        BorderBrush="#35FFFFFF" 
+                                        BorderThickness="1" 
+                                        Cursor="Hand"
+                                        Focusable="False">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="6"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                
+                                <Button Grid.Column="1" 
+                                        Content="安装到本机" 
+                                        Click="StoreInstallButton_Click" 
+                                        Tag="{Binding}"
+                                        IsEnabled="{Binding HasArchive}" 
+                                        Height="36" 
+                                        Margin="6,0,0,0" 
+                                        Background="{DynamicResource BrushAccent}" 
+                                        Foreground="White" 
+                                        BorderThickness="0" 
+                                        Cursor="Hand"
+                                        Focusable="False">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="6"/>
+                                        </Style>
+                                    </Button.Resources>
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+
+                                <!-- 已安装置灰状态：只占右侧一列 -->
+                                <Border Grid.Column="1" 
+                                        Background="#15FFFFFF" 
+                                        BorderBrush="#20FFFFFF" 
+                                        BorderThickness="1" 
+                                        CornerRadius="6" 
+                                        Height="36" 
+                                        Margin="6,0,0,0"
+                                        HorizontalAlignment="Stretch"
+                                        VerticalAlignment="Center">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="已安装此小程序" Foreground="{DynamicResource BrushTextMuted}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
 
             <Grid Grid.RowSpan="3"
                   Margin="18,16,18,16"
                   Panel.ZIndex="25"
-                  Visibility="{Binding AiChatVisibility}">
+Visibility="{Binding AiChatVisibility}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="280" />
                     <ColumnDefinition Width="20" />
@@ -864,30 +1502,29 @@
                                 BorderThickness="0,0,0,1">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="对话历史"
-                                               Foreground="{DynamicResource BrushTextMain}"
-                                               FontSize="{DynamicResource FontSizeLargePlus}"
-                                               FontWeight="SemiBold" />
-                                    <TextBlock Text="{Binding AiChatModelDisplayText}"
-                                               Margin="0,5,0,0"
-                                               Foreground="{DynamicResource BrushTextSec}"
-                                               FontSize="{DynamicResource FontSizeSmall}" />
-                                </StackPanel>
-                                <Border Grid.Column="1"
+                                <Border Grid.Column="0"
                                         Background="{DynamicResource BrushSecondaryBtnBG}"
                                         BorderBrush="{DynamicResource BrushBorderStrong}"
                                         BorderThickness="1"
                                         CornerRadius="8"
                                         Padding="10,6"
-                                        VerticalAlignment="Center">
+                                        VerticalAlignment="Center"
+                                        Cursor="Hand"
+                                        MouseLeftButtonUp="EscReturnButton_Click">
                                     <TextBlock Text="Esc 返回"
                                                Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="{DynamicResource FontSizeSmall}" />
                                 </Border>
+                                <TextBlock Grid.Column="2" 
+                                           Text="对话历史"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeLargePlus}"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
                             </Grid>
                         </Border>
 
@@ -908,29 +1545,87 @@
                                                 Cursor="Hand"
                                                 MouseLeftButtonUp="AiChatTopicItem_MouseLeftButtonUp"
                                                 MouseRightButtonUp="AiChatTopicItem_MouseRightButtonUp">
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding Title}"
-                                                           Foreground="{DynamicResource BrushTextMain}"
-                                                           FontSize="{DynamicResource FontSizeNormal}"
-                                                           FontWeight="SemiBold"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding PreviewText}"
-                                                           Margin="0,7,0,0"
-                                                           Foreground="{DynamicResource BrushTextSec}"
-                                                           FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                           TextWrapping="Wrap"
-                                                           MaxHeight="36"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding UpdatedAt, StringFormat={}{0:MM-dd HH:mm}}"
-                                                           Margin="0,8,0,0"
-                                                           Foreground="{DynamicResource BrushTextMuted}"
-                                                           FontSize="{DynamicResource FontSizeSmall}" />
-                                            </StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+ 
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4" 
+                                                                Visibility="{Binding IsPinned, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <TextBlock Text="📌" FontSize="11" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="已置顶" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Foreground="{DynamicResource BrushTextMain}"
+                                                               FontSize="{DynamicResource FontSizeNormal}"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding PreviewText}"
+                                                               Margin="0,7,0,0"
+                                                               Foreground="{DynamicResource BrushTextSec}"
+                                                               FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                               TextWrapping="Wrap"
+                                                               MaxHeight="36"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+ 
+                                                <StackPanel x:Name="ActionPanel" 
+                                                            Grid.Column="1" 
+                                                            Orientation="Vertical" 
+                                                            VerticalAlignment="Center"
+                                                            Visibility="Collapsed">
+                                                    <Button Tag="{Binding}"
+                                                            Click="PinTopicButton_Click"
+                                                            Padding="4"
+                                                            Margin="0,0,0,6"
+                                                            ToolTip="置顶/取消置顶"
+                                                            Style="{DynamicResource GhostButtonStyle}"
+                                                            Focusable="False">
+                                                        <Button.Content>
+                                                            <Path Data="{local:IconGeometry pin}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="14" Height="14" />
+                                                        </Button.Content>
+                                                    </Button>
+                                                    <Button Tag="{Binding}"
+                                                            Click="RenameTopicButton_Click"
+                                                            Padding="4"
+                                                            Margin="0,0,0,6"
+                                                            ToolTip="重命名"
+                                                            Style="{DynamicResource GhostButtonStyle}"
+                                                            Focusable="False">
+                                                        <Button.Content>
+                                                            <Path Data="{local:IconGeometry pen}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="14" Height="14" />
+                                                        </Button.Content>
+                                                    </Button>
+                                                    <Button x:Name="DeleteTopicBtn"
+                                                            Tag="{Binding}"
+                                                            Click="DeleteTopicButton_Click"
+                                                            Padding="4"
+                                                            ToolTip="删除对话"
+                                                            Focusable="False">
+                                                        <Button.Style>
+                                                            <Style TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}">
+                                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsDeleteConfirming}" Value="True">
+                                                                        <Setter Property="Foreground" Value="#FFEF4444" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Button.Style>
+                                                        <Button.Content>
+                                                            <Path Data="{local:IconGeometry delete}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stretch="Uniform" Width="14" Height="14" />
+                                                        </Button.Content>
+                                                    </Button>
+                                                </StackPanel>
+                                            </Grid>
                                         </Border>
                                         <DataTemplate.Triggers>
                                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                 <Setter TargetName="TopicItem" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
                                                 <Setter TargetName="TopicItem" Property="BorderBrush" Value="#FF3B82F6" />
+                                                <Setter TargetName="ActionPanel" Property="Visibility" Value="Visible" />
                                             </DataTrigger>
                                             <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter TargetName="TopicItem" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
@@ -986,10 +1681,13 @@
                                        Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="{DynamicResource FontSizeSubtitle}"
                                        FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding AiChatModelDisplayText}"
-                                       Margin="0,5,0,0"
-                                       Foreground="{DynamicResource BrushTextSec}"
-                                       FontSize="{DynamicResource FontSizeSmall}" />
+                            <ComboBox x:Name="AiModelSelectionComboBox"
+                                      Margin="0,5,0,0"
+                                      Width="240"
+                                      Height="28"
+                                      HorizontalAlignment="Left"
+                                      Style="{StaticResource AiModelComboBoxStyle}"
+                                      SelectionChanged="AiModelSelectionComboBox_SelectionChanged" />
                         </StackPanel>
 
                         <Button Grid.Column="1"
@@ -1054,7 +1752,8 @@
                             <ScrollViewer x:Name="AiChatScrollViewer"
                                           VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled">
-                                <ItemsControl ItemsSource="{Binding AiChatMessages}">
+                                <StackPanel>
+                                    <ItemsControl ItemsSource="{Binding AiChatMessages}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type local:AiChatMessage}">
                                             <StackPanel x:Name="MessageContainer" 
@@ -1067,38 +1766,82 @@
                                                         CornerRadius="14"
                                                         Cursor="Hand"
                                                         MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
-                                                    <StackPanel>
-                                                        <TextBlock Text="{Binding Text}"
-                                                                   Foreground="{DynamicResource BrushTextMain}"
-                                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
-                                                                   LineHeight="22"
-                                                                   TextWrapping="Wrap" />
-                                                        <ItemsControl ItemsSource="{Binding Attachments}"
-                                                                      Visibility="{Binding AttachmentsVisibility}">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate DataType="{x:Type local:AiChatMessageAttachment}">
-                                                                    <Border Margin="0,10,0,0"
-                                                                            Padding="10,8"
-                                                                            Background="{DynamicResource BrushSecondaryBtnBG}"
-                                                                            BorderBrush="#33FFFFFF"
-                                                                            BorderThickness="1"
-                                                                            CornerRadius="10">
-                                                                        <StackPanel>
-                                                                            <TextBlock Text="{Binding FileName}"
-                                                                                       Foreground="{DynamicResource BrushTextMain}"
-                                                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                                                       FontWeight="SemiBold"
-                                                                                       TextTrimming="CharacterEllipsis" />
-                                                                            <TextBlock Text="{Binding FileSizeText}"
-                                                                                       Margin="0,4,0,0"
-                                                                                       Foreground="{DynamicResource BrushTextMain}"
-                                                                                       FontSize="{DynamicResource FontSizeSmall}" />
-                                                                        </StackPanel>
-                                                                    </Border>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                    </StackPanel>
+                                                     <StackPanel>
+                                                         <TextBlock x:Name="NormalTextBlock"
+                                                                    local:MarkdownTextBehavior.MarkdownText="{Binding Text}"
+                                                                    Foreground="{DynamicResource BrushTextMain}"
+                                                                    FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                                    LineHeight="22"
+                                                                    TextWrapping="Wrap" />
+
+                                                         <Expander x:Name="ToolCallExpander" 
+                                                                   IsExpanded="{Binding IsExpanded, Mode=TwoWay}" 
+                                                                   Visibility="Collapsed" 
+                                                                   Background="Transparent" 
+                                                                   BorderThickness="0"
+                                                                   HorizontalAlignment="Stretch">
+                                                             <Expander.Header>
+                                                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                     <TextBlock Text="🔧" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                                     <TextBlock Text="AI 正在使用工具: " Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
+                                                                     <TextBlock Text="{Binding ToolName}" Foreground="#FF3B82F6" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                                                 </StackPanel>
+                                                             </Expander.Header>
+                                                             <StackPanel Margin="24,8,0,0" MinWidth="450" MaxWidth="560">
+                                                                 <TextBlock Text="AI 原始回复" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,2" />
+                                                                 <Border Background="#1AFFFFFF" CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+                                                                     <TextBox Text="{Binding Text, Mode=OneWay}" 
+                                                                              Foreground="{DynamicResource BrushTextSec}" 
+                                                                              FontSize="{DynamicResource FontSizeSmallPlus}" 
+                                                                              FontFamily="Consolas, Courier New"
+                                                                              IsReadOnly="True" 
+                                                                              Background="Transparent" 
+                                                                              BorderThickness="0" 
+                                                                              TextWrapping="Wrap" 
+                                                                              AcceptsReturn="True"/>
+                                                                 </Border>
+
+                                                                 <TextBlock Text="系统执行结果" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,0,0,2" />
+                                                                 <Border Background="#1AFFFFFF" CornerRadius="6" Padding="10,8">
+                                                                     <TextBox Text="{Binding ToolFeedback, Mode=OneWay}" 
+                                                                              Foreground="{DynamicResource BrushTextMain}" 
+                                                                              FontSize="{DynamicResource FontSizeSmallPlus}" 
+                                                                              FontFamily="Consolas, Courier New"
+                                                                              IsReadOnly="True" 
+                                                                              Background="Transparent" 
+                                                                              BorderThickness="0" 
+                                                                              TextWrapping="Wrap" 
+                                                                              AcceptsReturn="True"/>
+                                                                 </Border>
+                                                             </StackPanel>
+                                                         </Expander>
+
+                                                         <ItemsControl ItemsSource="{Binding Attachments}"
+                                                                       Visibility="{Binding AttachmentsVisibility}">
+                                                             <ItemsControl.ItemTemplate>
+                                                                 <DataTemplate DataType="{x:Type local:AiChatMessageAttachment}">
+                                                                     <Border Margin="0,10,0,0"
+                                                                             Padding="10,8"
+                                                                             Background="{DynamicResource BrushSecondaryBtnBG}"
+                                                                             BorderBrush="#33FFFFFF"
+                                                                             BorderThickness="1"
+                                                                             CornerRadius="10">
+                                                                         <StackPanel>
+                                                                             <TextBlock Text="{Binding FileName}"
+                                                                                        Foreground="{DynamicResource BrushTextMain}"
+                                                                                        FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                                                        FontWeight="SemiBold"
+                                                                                        TextTrimming="CharacterEllipsis" />
+                                                                             <TextBlock Text="{Binding FileSizeText}"
+                                                                                        Margin="0,4,0,0"
+                                                                                        Foreground="{DynamicResource BrushTextMain}"
+                                                                                        FontSize="{DynamicResource FontSizeSmall}" />
+                                                                         </StackPanel>
+                                                                     </Border>
+                                                                 </DataTemplate>
+                                                             </ItemsControl.ItemTemplate>
+                                                         </ItemsControl>
+                                                     </StackPanel>
                                                 </Border>
                                                 <TextBlock x:Name="TimeStamp"
                                                            Text="{Binding Timestamp, StringFormat={}{0:HH:mm}}"
@@ -1113,11 +1856,55 @@
                                                     <Setter TargetName="TimeStamp" Property="Margin" Value="0,6,12,0" />
                                                     <Setter TargetName="TimeStamp" Property="TextAlignment" Value="Right" />
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsToolCall}" Value="True">
+                                                    <Setter TargetName="NormalTextBlock" Property="Visibility" Value="Collapsed" />
+                                                    <Setter TargetName="ToolCallExpander" Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                            </ScrollViewer>
+ 
+                                <!-- 等待消息卡片 -->
+                                <Border x:Name="AiThinkingCard"
+                                        Margin="18,12,18,16"
+                                        HorizontalAlignment="Left"
+                                        MaxWidth="600"
+                                        Padding="16,12"
+                                        Background="{DynamicResource BrushSecondaryBtnBG}"
+                                        CornerRadius="14"
+                                        Visibility="{Binding IsAiChatRequestInFlight, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Viewbox Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center">
+                                            <Path Data="{local:IconGeometry sync}"
+                                                  Fill="{DynamicResource BrushTextSec}"
+                                                  Stretch="Uniform"
+                                                  RenderTransformOrigin="0.5,0.5">
+                                                <Path.RenderTransform>
+                                                    <RotateTransform Angle="0" />
+                                                </Path.RenderTransform>
+                                                <Path.Triggers>
+                                                    <EventTrigger RoutedEvent="Loaded">
+                                                        <BeginStoryboard>
+                                                            <Storyboard RepeatBehavior="Forever">
+                                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                 From="0"
+                                                                                 To="360"
+                                                                                 Duration="0:0:1.5" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                </Path.Triggers>
+                                            </Path>
+                                        </Viewbox>
+                                        <TextBlock Text="{Binding AiChatStatusText}"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
 
                             <Grid Visibility="{Binding NoTopicVisibility}">
                                 <TextBlock Text="选择左侧话题，或创建一个新对话。"
@@ -1249,6 +2036,10 @@
                                          CaretBrush="#FF3B82F6"
                                          VerticalAlignment="Center"
                                          Padding="0,5"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         MaxHeight="180"
                                          PreviewKeyDown="AiChatInputBox_PreviewKeyDown" />
                                 <TextBlock IsHitTestVisible="False"
                                            VerticalAlignment="Center"
@@ -1259,8 +2050,8 @@
                             </Grid>
 
                             <Button Grid.Column="2"
-                                    Width="42"
-                                    Height="42"
+                                    Width="36"
+                                    Height="36"
                                     Margin="14,0,0,0"
                                     Background="#FF3B82F6"
                                     BorderBrush="#00000000"
@@ -1286,20 +2077,8 @@
                         </Grid>
                     </Border>
 
-                    <!-- 底部状态栏 -->
                     <Grid Grid.Row="4" Margin="0,14,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
                         <TextBlock Text="Tab 切换标签 · Shift+Enter 换行 · Esc 返回搜索"
-                                   Foreground="{DynamicResource BrushTextMuted}"
-                                   FontSize="{DynamicResource FontSizeSmallPlus}"
-                                   VerticalAlignment="Center" />
-
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding AiChatStatusText}"
                                    Foreground="{DynamicResource BrushTextMuted}"
                                    FontSize="{DynamicResource FontSizeSmallPlus}"
                                    VerticalAlignment="Center" />
@@ -1515,7 +2294,7 @@
                                 Margin="0,0,10,0"
                                 Background="Transparent"
                                 BorderThickness="0"
-                                ToolTip="添加扩展"
+                                ToolTip="添加小程序"
                                 AllowDrop="True"
                                 Click="FooterAddExtensionButton_Click"
                                 PreviewDragEnter="FooterAddExtensionButton_DragEnter"
@@ -1540,27 +2319,65 @@
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Click="FooterQuickMenuButton_Click"
+                                Visibility="{Binding NormalFooterMenuVisibility}"
                                 Style="{DynamicResource GhostButtonStyle}">
                             <Path Data="{local:IconGeometry dots-horizontal}" Fill="{DynamicResource BrushTextMain}" Height="14" Width="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
+                        <Button x:Name="FooterAddChildPageButton"
+                                Height="28"
+                                Padding="12,0"
+                                Margin="0,0,12,0"
+                                Content="添加子环"
+                                FontSize="{DynamicResource FontSizeSmallPlus}"
+                                Click="RadialPickerAddChildButton_Click"
+                                Visibility="{Binding RadialPickerAddChildVisibility, FallbackValue=Collapsed}"
+                                Style="{StaticResource SecondaryBtn}">
+                        </Button>
                     </StackPanel>
-                    
+
+
+                    <!-- 右侧操作区：确认添加按钮 / 盲操指南问号按钮 -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <TextBlock x:Name="FooterMenuHintText"
-                                   Text="右箭头菜单"
-                                   Foreground="{DynamicResource BrushTextSec}"
-                                   FontSize="{DynamicResource FontSizeSmallPlus}"
-                                   VerticalAlignment="Center"/>
-                        <Border Background="{DynamicResource BrushBG}"
-                                CornerRadius="3"
-                                Padding="6,2"
+                        <!-- 选择模式下的主要蓝色高亮按钮 -->
+                        <Button x:Name="FooterRadialPickerConfirmButton"
+                                VerticalAlignment="Center"
+                                Content="确认添加"
+                                Style="{StaticResource PrimaryBtn}"
+                                Width="90"
+                                Height="28"
+                                FontSize="{DynamicResource FontSizeSmallPlus}"
+                                Click="RadialPickerConfirmButton_Click"
+                                Visibility="{Binding RadialPickerBarVisibility, FallbackValue=Collapsed}"/>
+
+                        <!-- 盲操指南快捷开关按钮 (?) -->
+                        <Button x:Name="FooterBlindGuideHelpButton"
+                                Width="28"
+                                Height="28"
+                                Padding="0"
                                 Margin="8,0,0,0"
-                                VerticalAlignment="Center">
-                            <TextBlock x:Name="FooterMenuHintKeyText"
-                                       Text="→"
-                                       Foreground="{DynamicResource BrushTextSec}"
-                                       FontSize="{DynamicResource FontSizeTiny}"/>
-                        </Border>
+                                Background="Transparent"
+                                BorderThickness="0"
+                                ToolTip="盲操指南 (点击开启/隐藏快捷键伴随窗)"
+                                Click="FooterBlindGuideHelpButton_Click"
+                                Visibility="{Binding NormalFooterMenuVisibility}"
+                                Style="{DynamicResource GhostButtonStyle}">
+                            <Border Width="20"
+                                    Height="20"
+                                    CornerRadius="10"
+                                    BorderBrush="{DynamicResource BrushBorder}"
+                                    BorderThickness="1"
+                                    Background="Transparent"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="?"
+                                           FontSize="11"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource BrushTextSec}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Margin="0,-1,0,0" />
+                            </Border>
+                        </Button>
                     </StackPanel>
 
                     <Popup x:Name="FooterQuickMenuPopup"
@@ -1627,7 +2444,7 @@
                                 </Button>
 
                                 <Button Style="{DynamicResource GhostButtonStyle}"
-                                        ToolTip="强制重新同步当前账户下的云端扩展状态"
+                                        ToolTip="强制重新同步当前账户下的云端小程序状态"
                                         HorizontalContentAlignment="Stretch" Click="QuickMenuRefreshCloud_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -1637,7 +2454,7 @@
                                         <Path Data="{local:IconGeometry refresh}" 
                                               Stroke="{DynamicResource BrushTextMain}" StrokeThickness="1.5" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center" Opacity="0.9"/>
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="刷新云端" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
+                                            <TextBlock Text="同步燕子云" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
                                         </StackPanel>
                                     </Grid>
                                 </Button>
@@ -1645,7 +2462,7 @@
                                 <Rectangle Height="1" Fill="{DynamicResource BrushSeparator}" Margin="6,10" />
 
                                 <Button Style="{DynamicResource GhostButtonStyle}"
-                                        ToolTip="打开本地使用说明与扩展开发参考文档"
+                                        ToolTip="打开本地使用说明与小程序开发参考文档"
                                         HorizontalContentAlignment="Stretch" Click="QuickMenuOpenDocs_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -1679,8 +2496,234 @@
                             </StackPanel>
                         </Border>
                     </Popup>
+
+                    <!-- 启动器右侧极客快捷键伴随悬浮窗 -->
+                    <Popup x:Name="CapsGuidePopup"
+                           Placement="Right"
+                           PlacementTarget="{Binding ElementName=MainWindowBorder}"
+                           HorizontalOffset="12"
+                           AllowsTransparency="True"
+                           PopupAnimation="Fade"
+                           Focusable="False">
+                        <Border Background="{DynamicResource BrushDialogBG}"
+                                BorderBrush="{DynamicResource BrushBorderStrong}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="12,12"
+                                Width="146">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="22" Direction="0" ShadowDepth="0" Color="#000000" Opacity="0.5"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <!-- 顶部标题与关闭按钮 -->
+                                <Grid Margin="0,0,0,8">
+                                    <TextBlock Text="盲操指南"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                    <Button HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Width="18"
+                                            Height="18"
+                                            Padding="0"
+                                            Margin="0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            ToolTip="关闭盲操指南 (不再自动弹出)"
+                                            Click="CloseBlindGuide_Click"
+                                            Style="{DynamicResource GhostButtonStyle}">
+                                        <TextBlock Text="✕"
+                                                   FontSize="10"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource BrushTextMuted}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,-1,0,0"/>
+                                    </Button>
+                                </Grid>
+
+                                <!-- 顶部 Caps 状态修饰键帽 (按住 [CAPS] +) -->
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,0,10">
+                                    <TextBlock Text="按住"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,5,0" />
+                                    
+                                    <Border Padding="9,3"
+                                            CornerRadius="5"
+                                            VerticalAlignment="Center">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1AFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsCapsIndicatorActive, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect BlurRadius="12" Color="#3B82F6" Opacity="0.8" ShadowDepth="0"/>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="CAPS"
+                                                   FontSize="10"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource BrushTextMain}"
+                                                   HorizontalAlignment="Center"/>
+                                    </Border>
+
+                                    <TextBlock Text="+"
+                                               FontSize="12"
+                                               FontWeight="Bold"
+                                               Foreground="{DynamicResource BrushTextSec}"
+                                               VerticalAlignment="Center"
+                                               Margin="5,0,0,0" />
+                                </StackPanel>
+
+                                <!-- 上一项: [ W ] -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="7,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeyWFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="W" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="上一项" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
+
+                                <!-- 下一项: [ S ] -->
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="7,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeySFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="S" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="下一项" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
+
+                                <Separator Background="{DynamicResource BrushSeparator}" Margin="0,0,0,8"/>
+
+                                <!-- 返回输入: [ A ] -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="7,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeyAFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="A" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="返回输入" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
+
+                                <!-- 操作菜单: [ D ] -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="7,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeyDFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="D" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="操作菜单" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
+
+                                <!-- 执行: [ 空格 ] -->
+                                <Grid Margin="0,0,0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border CornerRadius="4" Padding="5,2" MinWidth="26">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#1FFFFFFF" />
+                                                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsKeySpaceFlashed, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#FF3B82F6" />
+                                                        <Setter Property="BorderBrush" Value="#FF93C5FD" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="空格" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="直接运行" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                 </Grid>
             </Border>
+
+
         </Grid>
     </Border>
 </Window>

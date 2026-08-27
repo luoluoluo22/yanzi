@@ -1,5 +1,6 @@
 const mobilePollRateLimitMap = new Map();
-const TOKEN_TTL_SECONDS = 60 * 60 * 12;
+const mobilePollRateLimitMaxEntries = 5000;
+const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const PASSWORD_ITERATIONS = 100000;
 const VERIFICATION_CODE_TTL_MINUTES = 10;
 const PUBLIC_SITE_ORIGIN = "https://yanzi.luoluoluo.cc.cd";
@@ -45,121 +46,6 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
   .map((item) => `'${item.extension_id.replace(/'/g, "''")}'`)
   .join(", ");
 
-export class DeviceRelayRoom {
-  constructor(state, env) {
-    this.state = state;
-    this.env = env;
-  }
-
-  async fetch(request) {
-    const url = new URL(request.url);
-
-    if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {
-      if (request.headers.get("Upgrade") !== "websocket") {
-        return json({ error: "upgrade_required", message: "WebSocket upgrade required" }, 426);
-      }
-
-      const auth = await requireAuth(request, this.env);
-      const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-      await ensureUser(this.env, auth.userId);
-      const device = await ensureOwnedDevice(this.env, auth.userId, deviceId);
-      await touchDevice(this.env, auth.userId, deviceId);
-
-      const pair = new WebSocketPair();
-      const [client, server] = Object.values(pair);
-      server.serializeAttachment({
-        userId: auth.userId,
-        deviceId,
-        platform: device.platform,
-        connectedAt: isoNow()
-      });
-      this.state.acceptWebSocket(server);
-
-      server.send(JSON.stringify({
-        type: "connected",
-        deviceId,
-        serverTime: isoNow()
-      }));
-      await this.pushPendingToSocket(server);
-
-      return new Response(null, {
-        status: 101,
-        webSocket: client
-      });
-    }
-
-    if (url.pathname === "/internal/device-relay/notify" && request.method === "POST") {
-      await this.broadcastPending();
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    return new Response("Not found", { status: 404 });
-  }
-
-  async webSocketMessage(ws, message) {
-    if (typeof message !== "string") {
-      return;
-    }
-
-    let payload;
-    try {
-      payload = JSON.parse(message);
-    } catch {
-      return;
-    }
-
-    if (payload.type === "ping") {
-      ws.send(JSON.stringify({ type: "pong", serverTime: isoNow() }));
-      return;
-    }
-
-    if (payload.type === "pull") {
-      await this.pushPendingToSocket(ws);
-    }
-  }
-
-  async webSocketClose(ws, code, reason) {
-    ws.close(code, reason);
-  }
-
-  async webSocketError(ws) {
-    ws.close(1011, "websocket error");
-  }
-
-  async broadcastPending() {
-    const sockets = this.state.getWebSockets();
-    for (const ws of sockets) {
-      await this.pushPendingToSocket(ws);
-    }
-  }
-
-  async pushPendingToSocket(ws) {
-    const attachment = ws.deserializeAttachment();
-    if (!attachment?.userId || !attachment?.deviceId || !attachment?.platform) {
-      return;
-    }
-
-    const items = await getPendingDeviceMessageItems(
-      this.env,
-      attachment.userId,
-      attachment.deviceId,
-      attachment.platform,
-      20
-    );
-    if (items.length === 0) {
-      return;
-    }
-
-    ws.send(JSON.stringify({
-      type: "messages",
-      items,
-      serverTime: isoNow()
-    }));
-    await markDeviceMessagesDelivered(this.env, attachment.userId, items);
-  }
-}
 
 export default {
   async fetch(request, env) {
@@ -167,21 +53,26 @@ export default {
       return await handleRequest(request, env);
     } catch (error) {
       if (error instanceof HttpError) {
-        return json(
-          {
-            error: error.code,
-            message: error.message
-          },
-          error.status
+        return withCors(
+          json(
+            {
+              error: error.code,
+              message: error.message,
+              ...(error.details ? { details: error.details } : {})
+            },
+            error.status
+          )
         );
       }
 
-      return json(
-        {
-          error: "internal_error",
-          message: error instanceof Error ? error.message : "Unknown error"
-        },
-        500
+      return withCors(
+        json(
+          {
+            error: "internal_error",
+            message: error instanceof Error ? error.message : "Unknown error"
+          },
+          500
+        )
       );
     }
   }
@@ -192,6 +83,26 @@ async function handleRequest(request, env) {
 
   if (request.method === "OPTIONS") {
     return withCors(new Response(null, { status: 204 }));
+  }
+
+  if (url.pathname.startsWith("/downloads/") && request.method === "GET") {
+    const key = url.pathname.substring(1);
+    const object = await env.PACKAGES.get(key);
+    if (!object) {
+      return new Response("File not found in storage bucket", { status: 404 });
+    }
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", object.httpEtag || "");
+    headers.set("Content-Type", "application/zip");
+    headers.set("Access-Control-Allow-Origin", "*");
+    return new Response(object.body, { headers });
+  }
+
+  if (url.pathname === "/v1/debug/list-packages" && request.method === "GET") {
+    const list = await env.PACKAGES.list();
+    const keys = list.objects.map(obj => obj.key);
+    return json({ count: keys.length, keys });
   }
 
   if (url.pathname === "/health") {
@@ -244,7 +155,7 @@ async function handleRequest(request, env) {
       throw new HttpError(400, "verification_required", "Email verification is required");
     }
 
-    if (String(verification.username).toLowerCase() !== username) {
+    if (String(verification.username).trim().toLowerCase() !== username.trim().toLowerCase()) {
       throw new HttpError(400, "verification_mismatch", "Verification code does not match this username");
     }
 
@@ -359,6 +270,8 @@ async function handleRequest(request, env) {
     const payload = await readJson(request);
     const email = normalizeEmail(payload.email || payload.username);
     const password = validatePassword(payload.password);
+    const authVersion = payload.authVersion || "";
+    const legacyPassword = payload.legacyPassword ? validatePassword(payload.legacyPassword) : null;
 
     const user = await env.DB.prepare(
       `select
@@ -378,14 +291,50 @@ async function handleRequest(request, env) {
       throw new HttpError(404, "user_not_found", "User does not exist");
     }
 
-    const passwordHash = await hashPassword(
-      password,
-      user.password_salt,
-      Number(user.password_iterations || PASSWORD_ITERATIONS)
-    );
+    const salt = user.password_salt;
+    const iterations = Number(user.password_iterations || PASSWORD_ITERATIONS);
+    let authenticated = false;
+    let silentUpgradeRequired = false;
+    let finalLoginHash = "";
 
-    if (passwordHash !== user.password_hash) {
+    const isLoginHash = typeof password === "string" && /^[0-9a-f]{64}$/i.test(password);
+
+    if (isLoginHash) {
+      const hashAsUpgraded = await hashPassword(password, salt, iterations);
+      if (hashAsUpgraded === user.password_hash) {
+        authenticated = true;
+      } else if (legacyPassword) {
+        const hashAsLegacy = await hashPassword(legacyPassword, salt, iterations);
+        if (hashAsLegacy === user.password_hash) {
+          authenticated = true;
+          silentUpgradeRequired = true;
+          finalLoginHash = password;
+        }
+      }
+    } else {
+      const hashAsLegacy = await hashPassword(password, salt, iterations);
+      if (hashAsLegacy === user.password_hash) {
+        authenticated = true;
+      } else {
+        const serverDerivedLoginHash = await deriveLoginHashInServer(password, email);
+        const hashAsUpgraded = await hashPassword(serverDerivedLoginHash, salt, iterations);
+        if (hashAsUpgraded === user.password_hash) {
+          authenticated = true;
+        }
+      }
+    }
+
+    if (!authenticated) {
       throw new HttpError(401, "invalid_credentials", "Invalid email or password");
+    }
+
+    if (silentUpgradeRequired && finalLoginHash) {
+      const newHash = await hashPassword(finalLoginHash, salt, iterations);
+      await env.DB.prepare(
+        `update auth_users set password_hash = ? where user_id = ?`
+      )
+        .bind(newHash, user.user_id)
+        .run();
     }
 
     await touchUser(env, user.user_id);
@@ -528,6 +477,98 @@ async function handleRequest(request, env) {
     });
   }
 
+  if (url.pathname === "/v1/sync/capabilities" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    await ensureUser(env, auth.userId);
+    const table = await env.DB.prepare(
+      `select name from sqlite_master where type = 'table' and name = 'user_sync_objects'`
+    ).first();
+    const historyTable = await env.DB.prepare(
+      `select name from sqlite_master where type = 'table' and name = 'user_sync_object_history'`
+    ).first();
+    const objectSyncAvailable = Boolean(table?.name);
+    const objectsAuthoritative = objectSyncAvailable &&
+      String(env.SYNC_OBJECTS_AUTHORITATIVE || "").trim().toLowerCase() === "true";
+    return json({
+      ok: true,
+      protocolVersion: 2,
+      objectSyncAvailable,
+      objectHistoryAvailable: Boolean(historyTable?.name),
+      objectsAuthoritative,
+      legacySnapshotReadSupported: true,
+      legacySnapshotWriteRequired: !objectsAuthoritative,
+      maxObjectPayloadBytes: 1024 * 1024
+    });
+  }
+
+  if (url.pathname === "/v1/sync/objects" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const result = await readUserSyncObjects(env, auth.userId, 0, 1000);
+    return json({ ok: true, userId: auth.userId, ...result });
+  }
+
+  if (url.pathname === "/v1/sync/changes" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const sinceRevision = normalizeSyncRevision(url.searchParams.get("since"), "since");
+    const requestedLimit = Number(url.searchParams.get("limit") || 200);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 200;
+    const result = await readUserSyncObjects(env, auth.userId, sinceRevision, limit);
+    return json({ ok: true, userId: auth.userId, sinceRevision, ...result });
+  }
+
+  if (url.pathname === "/v1/sync/history" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const objectId = normalizeSyncObjectId(url.searchParams.get("objectId"));
+    const beforeRevision = normalizeSyncRevision(url.searchParams.get("before"), "before");
+    const requestedLimit = Number(url.searchParams.get("limit") || 50);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 200) : 50;
+    const result = await readUserSyncObjectHistory(env, auth.userId, objectId, beforeRevision, limit);
+    return json({ ok: true, userId: auth.userId, objectId, ...result });
+  }
+
+  const syncObjectRestoreMatch = url.pathname.match(/^\/v1\/sync\/objects\/([^/]+)\/restore$/);
+  if (syncObjectRestoreMatch && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectRestoreMatch[1]));
+    const payload = await readJson(request);
+    const restoreRevision = normalizeSyncRevision(payload.restoreRevision, "restoreRevision");
+    if (restoreRevision <= 0) {
+      throw new HttpError(400, "invalid_restore_revision", "restoreRevision must be a positive revision");
+    }
+    const historical = await env.DB.prepare(
+      `select schema_version, deleted, payload_json
+       from user_sync_object_history
+       where user_id = ? and object_id = ? and revision = ?`
+    ).bind(auth.userId, objectId, restoreRevision).first();
+    if (!historical) {
+      throw new HttpError(404, "sync_history_not_found", "requested sync object version was not found");
+    }
+    let historicalPayload = {};
+    try {
+      historicalPayload = JSON.parse(String(historical.payload_json || "{}"));
+    } catch {
+      historicalPayload = {};
+    }
+    const result = await writeUserSyncObject(env, auth.userId, objectId, {
+      schemaVersion: Number(historical.schema_version || 1),
+      expectedRevision: payload.expectedRevision,
+      deleted: Boolean(historical.deleted),
+      payload: historicalPayload,
+      updatedByDeviceId: payload.updatedByDeviceId,
+      updatedByDeviceName: payload.updatedByDeviceName
+    }, { operation: "restore", restoredFromRevision: restoreRevision });
+    return json({ ok: true, userId: auth.userId, object: result, restoredFromRevision: restoreRevision });
+  }
+
+  const syncObjectMatch = url.pathname.match(/^\/v1\/sync\/objects\/([^/]+)$/);
+  if (syncObjectMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectMatch[1]));
+    const payload = await readJson(request);
+    const result = await writeUserSyncObject(env, auth.userId, objectId, payload);
+    return json({ ok: true, userId: auth.userId, object: result });
+  }
+
   if ((url.pathname === "/v1/me/yanm-state" || url.pathname === "/v1/me/yanm-webdav-state") && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const snapshot = await readYanmStateForUser(env, auth.userId);
@@ -535,15 +576,18 @@ async function handleRequest(request, env) {
       throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in account cloud snapshot");
     }
 
+    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
+
     return json({
       ok: true,
       userId: auth.userId,
-      source: "cloud-config",
-      warning: "",
-      diagnostics: null,
+      source: snapshot.source || "cloud-config",
+      warning: snapshot.warning || "",
+      diagnostics: snapshot.diagnostics || null,
       updatedAtUtc: snapshot.updatedAtUtc || null,
       yanm: snapshot.yanm || null,
-      bytes: snapshot.bytes
+      bytes: snapshot.bytes,
+      viewUrl: viewUrl || null
     });
   }
 
@@ -573,154 +617,87 @@ async function handleRequest(request, env) {
       yanm: payload.yanm
     });
 
+    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
+
     return json({
       ok: true,
       userId: auth.userId,
       source: result.source,
-      updatedAtUtc,
-      bytes: result.bytes
+      updatedAtUtc: result.updatedAtUtc || updatedAtUtc,
+      changed: result.changed !== false,
+      bytes: result.bytes,
+      viewUrl: viewUrl || null
+    });
+  }
+
+  if (url.pathname === "/v1/me/yanm-state/component-state" && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    const componentStatePatch = normalizeYanmComponentStatePatch(payload);
+    // 组件状态是服务端按 key 合并的显式变更，使用服务端时间避免设备时钟漂移
+    // 把一个刚写入的补丁伪装成旧状态。
+    const updatedAtUtc = isoNow();
+    const result = await patchYanmComponentStateForUser(env, auth.userId, componentStatePatch, updatedAtUtc);
+    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      source: result.source,
+      updatedAtUtc: result.updatedAtUtc || updatedAtUtc,
+      changedKeys: result.changedKeys || Object.keys(componentStatePatch),
+      changed: result.changed !== false,
+      bytes: result.bytes,
+      viewUrl: viewUrl || null
     });
   }
 
   if (url.pathname === "/v1/app/update/latest" && request.method === "GET") {
-    const channel = normalizeReleaseChannel(url.searchParams.get("channel"));
-    const row = await env.DB.prepare(
-      `select
-        channel,
-        version,
-        title,
-        notes,
-        download_url,
-        file_name,
-        download_code,
-        provider,
-        sha256,
-        published_at,
-        updated_at,
-        updated_by_user_id,
-        updated_by_username
-      from app_release_channels
-      where channel = ?`
-    )
-      .bind(channel)
-      .first();
-
-    return json(serializeAppRelease(row, channel));
-  }
-
-  if (url.pathname === "/v1/admin/app/update/latest") {
-    const auth = await requireAdmin(request, env);
-    const channel = normalizeReleaseChannel(url.searchParams.get("channel"));
-
-    if (request.method === "GET") {
-      const row = await env.DB.prepare(
-        `select
-          channel,
-          version,
-          title,
-          notes,
-          download_url,
-          file_name,
-          download_code,
-          provider,
-          sha256,
-          published_at,
-          updated_at,
-          updated_by_user_id,
-          updated_by_username
-        from app_release_channels
-        where channel = ?`
-      )
-        .bind(channel)
-        .first();
-
-      return json({
-        ...serializeAppRelease(row, channel),
-        is_admin: true
+    try {
+      const ghResponse = await fetch("https://api.github.com/repos/luoluoluo22/yanzi/releases/latest", {
+        headers: {
+          "User-Agent": "Yanzi-Updater-Worker"
+        }
       });
+      if (!ghResponse.ok) {
+        throw new Error(`GitHub API returned status ${ghResponse.status}`);
+      }
+      const data = await ghResponse.json();
+
+      // 寻找 .exe 结尾的 asset 作为 Windows 的安装包
+      const winAsset = (data.assets || []).find(asset => asset.name.endsWith(".exe"));
+      const version = data.tag_name ? data.tag_name.replace(/^v/, "") : "";
+
+      const payload = {
+        channel: "stable",
+        version: version,
+        title: data.name || `燕子启动器 v${version}`,
+        notes: data.body || "",
+        download_url: winAsset ? winAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/${data.tag_name}/Yanzi-win-Setup-${version}.exe`,
+        file_name: winAsset ? winAsset.name : `Yanzi-win-Setup-${version}.exe`,
+        download_code: "",
+        provider: "github",
+        sha256: "",
+        published_at: data.published_at || new Date().toISOString()
+      };
+
+      return withCors(json(payload));
+    } catch (err) {
+      console.error("Fetch GitHub releases failed:", err);
+      // 容错：如果 GitHub 接口报错，返回一个兜底的 0.2.15 配置
+      return withCors(json({
+        channel: "stable",
+        version: "0.3.5",
+        title: "燕子启动器 v0.3.5",
+        notes: "从 GitHub 抓取最新版失败，已启用本地缓存兜底",
+        download_url: "https://github.com/luoluoluo22/yanzi/releases/download/v0.3.5/Yanzi-win-Setup-0.3.5.exe",
+        file_name: "Yanzi-win-Setup-0.3.5.exe",
+        download_code: "",
+        provider: "github",
+        sha256: "",
+        published_at: "2026-08-20T02:00:00Z"
+      }));
     }
-
-    if (request.method !== "PUT") {
-      return json({ error: "method_not_allowed", message: "Method not allowed" }, 405);
-    }
-
-    const payload = await readJson(request);
-    const release = normalizeAppReleasePayload(payload, channel);
-    const now = isoNow();
-
-    await env.DB.prepare(
-      `insert into app_release_channels (
-        channel,
-        version,
-        title,
-        notes,
-        download_url,
-        file_name,
-        download_code,
-        provider,
-        sha256,
-        published_at,
-        updated_at,
-        updated_by_user_id,
-        updated_by_username
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      on conflict(channel) do update set
-        version = excluded.version,
-        title = excluded.title,
-        notes = excluded.notes,
-        download_url = excluded.download_url,
-        file_name = excluded.file_name,
-        download_code = excluded.download_code,
-        provider = excluded.provider,
-        sha256 = excluded.sha256,
-        published_at = excluded.published_at,
-        updated_at = excluded.updated_at,
-        updated_by_user_id = excluded.updated_by_user_id,
-        updated_by_username = excluded.updated_by_username`
-    )
-      .bind(
-        channel,
-        release.version,
-        release.title,
-        release.notes,
-        release.download_url,
-        release.file_name,
-        release.download_code,
-        release.provider,
-        release.sha256,
-        release.published_at,
-        now,
-        auth.userId,
-        auth.username
-      )
-      .run();
-
-    const saved = await env.DB.prepare(
-      `select
-        channel,
-        version,
-        title,
-        notes,
-        download_url,
-        file_name,
-        download_code,
-        provider,
-        sha256,
-        published_at,
-        updated_at,
-        updated_by_user_id,
-        updated_by_username
-      from app_release_channels
-      where channel = ?`
-    )
-      .bind(channel)
-      .first();
-
-    return json({
-      ok: true,
-      ...serializeAppRelease(saved, channel),
-      is_admin: true
-    });
   }
 
   if (url.pathname === "/v1/extensions" && request.method === "GET") {
@@ -997,7 +974,7 @@ async function handleRequest(request, env) {
         publisher_user_id = coalesce(extensions.publisher_user_id, excluded.publisher_user_id),
         publisher_username = excluded.publisher_username,
         published_at = coalesce(extensions.published_at, excluded.published_at),
-        is_published = 1,
+        is_published = coalesce(extensions.is_published, excluded.is_published),
         updated_at = excluded.updated_at`
     )
       .bind(
@@ -1008,7 +985,7 @@ async function handleRequest(request, env) {
         auth.userId,
         auth.username,
         now,
-        1,
+        0,
         now
       )
       .run();
@@ -1093,12 +1070,16 @@ async function handleRequest(request, env) {
   if (iconDownloadMatch && request.method === "GET") {
     const extensionId = decodeURIComponent(iconDownloadMatch[1]);
     const row = await env.DB.prepare(
-      `select icon_key
+      `select extension_id, manifest_json, icon_key, is_published
        from extensions
        where extension_id = ?`
     )
       .bind(extensionId)
       .first();
+
+    if (row && !isStoreVisibleExtension(row)) {
+      return json({ error: "not_found", message: "Icon not found" }, 404);
+    }
 
     if (!row?.icon_key) {
       return json({ error: "not_found", message: "Icon not found" }, 404);
@@ -1187,28 +1168,46 @@ async function handleRequest(request, env) {
   if (archiveDownloadMatch && request.method === "GET") {
     const extensionId = decodeURIComponent(archiveDownloadMatch[1]);
     const row = await env.DB.prepare(
-      `select archive_key, latest_version, archive_sha256
+      `select extension_id, manifest_json, archive_key, latest_version, archive_sha256, is_published
        from extensions
        where extension_id = ?`
     )
       .bind(extensionId)
       .first();
 
-    if (!row?.archive_key) {
+    let archiveKey = null;
+    let latestVersion = "latest";
+    let sha256 = "";
+
+    if (row?.archive_key && isStoreVisibleExtension(row)) {
+      archiveKey = row.archive_key;
+      latestVersion = row.latest_version || "latest";
+      sha256 = row.archive_sha256 || "";
+    } else {
+      const preset = PUBLIC_STORE_EXTENSION_MAP.get(extensionId);
+      if (preset && preset.package_path) {
+        archiveKey = preset.package_path.startsWith("/") 
+          ? preset.package_path.substring(1) 
+          : preset.package_path;
+        latestVersion = preset.latest_version || "latest";
+      }
+    }
+
+    if (!archiveKey) {
       return json({ error: "not_found", message: "Archive not found" }, 404);
     }
 
-    const object = await env.PACKAGES.get(row.archive_key);
+    const object = await env.PACKAGES.get(archiveKey);
     if (!object) {
-      return json({ error: "not_found", message: "Stored package is missing" }, 404);
+      return json({ error: "not_found", message: `Stored package is missing: ${archiveKey}` }, 404);
     }
 
     const headers = new Headers();
     object.writeHttpMetadata(headers);
-    headers.set("etag", row.archive_sha256 || "");
+    headers.set("etag", sha256 || object.httpEtag || "");
     headers.set(
       "content-disposition",
-      `attachment; filename="${extensionId}-${row.latest_version || "latest"}.zip"`
+      `attachment; filename="${extensionId}-${latestVersion}.zip"`
     );
     return withCors(new Response(object.body, { headers }));
   }
@@ -1219,23 +1218,429 @@ async function handleRequest(request, env) {
 
     const rows = await env.DB.prepare(
       `select
-        user_id,
-        extension_id,
-        installed_version,
-        enabled,
-        settings_json,
-        updated_at
-      from user_extensions
-      where user_id = ?
-      order by updated_at desc`
+        ue.user_id,
+        ue.extension_id,
+        ue.installed_version,
+        ue.enabled,
+        ue.settings_json,
+        ue.updated_at,
+        e.display_name,
+        coalesce(archive_head.version, e.latest_version) as latest_version,
+        e.manifest_json,
+        e.icon_key,
+        coalesce(archive_head.archive_key, e.archive_key) as archive_key,
+        coalesce(archive_head.archive_sha256, e.archive_sha256) as archive_sha256,
+        coalesce(archive_head.revision, 0) as archive_revision,
+        coalesce(archive_head.updated_at, '') as archive_updated_at,
+        coalesce(archive_head.updated_by_device_id, '') as archive_updated_by_device_id,
+        coalesce(archive_head.updated_by_device_name, '') as archive_updated_by_device_name,
+        e.publisher_user_id,
+        e.publisher_username,
+        e.published_at,
+        e.is_published,
+        e.updated_at as extension_updated_at
+      from user_extensions ue
+      left join extensions e on e.extension_id = ue.extension_id
+      left join user_extension_archive_heads archive_head
+        on archive_head.user_id = ue.user_id and archive_head.extension_id = ue.extension_id
+      where ue.user_id = ?
+      order by ue.updated_at desc`
     )
       .bind(auth.userId)
       .all();
 
     return json({
       userId: auth.userId,
+      items: (rows.results ?? []).map((row) => serializeUserExtensionRecord(url, row, auth.userId))
+    });
+  }
+
+  const myPrivateExtensionMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/private$/);
+  if (myPrivateExtensionMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myPrivateExtensionMatch[1]);
+    const payload = await readJson(request);
+    const manifest = payload.manifest ?? payload;
+    await ensureUser(env, auth.userId);
+    await upsertPrivateExtensionMetadata(env, auth, extensionId, manifest);
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      extensionId,
+      latestVersion: String(manifest.version ?? "0.0.0").slice(0, 50)
+    });
+  }
+
+  const myIconMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/icon$/);
+  if (myIconMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myIconMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensurePrivateExtensionWritable(env, auth, extensionId);
+
+    const version = (url.searchParams.get("version") || "0.0.0").slice(0, 50);
+    const filename = String(url.searchParams.get("filename") || "icon.png").slice(0, 200);
+    const bytes = await request.arrayBuffer();
+    if (!bytes || bytes.byteLength === 0) {
+      throw new HttpError(400, "invalid_icon", "Icon payload is empty");
+    }
+
+    const contentType = request.headers.get("content-type") || "application/octet-stream";
+    const extension = resolveIconExtension(filename, contentType);
+    const iconKey = `users/${auth.userId}/extensions/${extensionId}/${version}/icon${extension}`;
+    const now = isoNow();
+
+    await env.PACKAGES.put(iconKey, bytes, {
+      httpMetadata: { contentType },
+      customMetadata: {
+        userId: auth.userId,
+        extensionId,
+        version,
+        private: "true"
+      }
+    });
+
+    await env.DB.prepare(
+      `update extensions
+       set icon_key = ?,
+           latest_version = coalesce(nullif(?, ''), latest_version),
+           updated_at = ?
+       where extension_id = ?`
+    )
+      .bind(iconKey, version, now, extensionId)
+      .run();
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      extensionId,
+      icon_url: buildMyExtensionIconUrl(url, extensionId, Date.now())
+    });
+  }
+
+  if (myIconMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myIconMatch[1]);
+    await ensureUserCanReadExtension(env, auth.userId, extensionId);
+
+    const row = await env.DB.prepare(
+      `select icon_key
+       from extensions
+       where extension_id = ?`
+    )
+      .bind(extensionId)
+      .first();
+
+    if (!row?.icon_key) {
+      return json({ error: "not_found", message: "Icon not found" }, 404);
+    }
+
+    const object = await env.PACKAGES.get(row.icon_key);
+    if (!object) {
+      return json({ error: "not_found", message: "Stored icon is missing" }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("cache-control", "private, max-age=300");
+    return withCors(new Response(object.body, { headers }));
+  }
+
+  const myArchiveHistoryMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive\/history$/);
+  if (myArchiveHistoryMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveHistoryMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensureUserCanReadExtension(env, auth.userId, extensionId);
+    const rows = await env.DB.prepare(
+      `select revision, version, archive_sha256, updated_at,
+              updated_by_device_id, updated_by_device_name,
+              operation, restored_from_revision
+       from user_extension_archive_history
+       where user_id = ? and extension_id = ?
+       order by revision desc limit 100`
+    ).bind(auth.userId, extensionId).all();
+    return json({
+      extensionId,
       items: rows.results ?? []
     });
+  }
+
+  const myArchiveRestoreMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive\/restore$/);
+  if (myArchiveRestoreMatch && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveRestoreMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensurePrivateExtensionWritable(env, auth, extensionId);
+    const payload = await readJson(request);
+    const sourceRevision = Number(payload.revision);
+    const expectedRevision = Number(payload.expectedRevision);
+    if (!Number.isInteger(sourceRevision) || sourceRevision <= 0 ||
+        !Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      throw new HttpError(400, "invalid_revision", "revision must be positive and expectedRevision must be non-negative");
+    }
+
+    const current = await env.DB.prepare(
+      `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
+    ).bind(auth.userId, extensionId).first();
+    const currentRevision = Number(current?.revision || 0);
+    if (currentRevision !== expectedRevision) {
+      const error = new HttpError(409, "archive_revision_conflict", "private archive revision does not match expectedRevision");
+      error.details = { extensionId, expectedRevision, currentRevision };
+      throw error;
+    }
+    const source = await env.DB.prepare(
+      `select version, archive_key, archive_sha256
+       from user_extension_archive_history
+       where user_id = ? and extension_id = ? and revision = ?`
+    ).bind(auth.userId, extensionId, sourceRevision).first();
+    if (!source?.archive_key) {
+      throw new HttpError(404, "not_found", "archive history revision not found");
+    }
+
+    const revision = currentRevision + 1;
+    const now = isoNow();
+    const deviceId = String(payload.updatedByDeviceId || request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
+    const deviceName = String(payload.updatedByDeviceName || request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        `update user_extension_archive_heads
+         set revision = ?, version = ?, archive_key = ?, archive_sha256 = ?,
+             updated_at = ?, updated_by_device_id = ?, updated_by_device_name = ?
+         where user_id = ? and extension_id = ? and revision = ?`
+      ).bind(
+        revision, source.version, source.archive_key, source.archive_sha256,
+        now, deviceId, deviceName, auth.userId, extensionId, expectedRevision
+      ),
+      env.DB.prepare(
+        `insert into user_extension_archive_history (
+           user_id, extension_id, revision, version, archive_key, archive_sha256,
+           updated_at, updated_by_device_id, updated_by_device_name,
+           operation, restored_from_revision
+         )
+         select user_id, extension_id, revision, version, archive_key, archive_sha256,
+                updated_at, updated_by_device_id, updated_by_device_name, 'restore', ?
+         from user_extension_archive_heads
+         where user_id = ? and extension_id = ? and revision = ?`
+      ).bind(sourceRevision, auth.userId, extensionId, revision),
+      env.DB.prepare(
+        `update extensions
+         set latest_version = ?, archive_key = ?, archive_sha256 = ?, updated_at = ?
+         where extension_id = ? and exists (
+           select 1 from user_extension_archive_heads head
+           where head.user_id = ? and head.extension_id = ? and head.revision = ?
+         )`
+      ).bind(source.version, source.archive_key, source.archive_sha256, now,
+             extensionId, auth.userId, extensionId, revision)
+    ]);
+    if (Number(results?.[0]?.meta?.changes || 0) === 0) {
+      const latest = await env.DB.prepare(
+        `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
+      ).bind(auth.userId, extensionId).first();
+      const error = new HttpError(409, "archive_revision_conflict", "private archive changed during restore");
+      error.details = { extensionId, expectedRevision, currentRevision: Number(latest?.revision || 0) };
+      throw error;
+    }
+    return json({
+      ok: true,
+      extensionId,
+      revision,
+      restoredFromRevision: sourceRevision,
+      version: source.version,
+      sha256: source.archive_sha256,
+      updatedAtUtc: now,
+      updatedByDeviceId: deviceId,
+      updatedByDeviceName: deviceName,
+      archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
+    });
+  }
+
+  const myArchiveMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive$/);
+  if (myArchiveMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensurePrivateExtensionWritable(env, auth, extensionId);
+
+    const version = (url.searchParams.get("version") || "0.0.0").slice(0, 50);
+    const bytes = await request.arrayBuffer();
+    if (!bytes || bytes.byteLength === 0) {
+      throw new HttpError(400, "invalid_archive", "Archive payload is empty");
+    }
+
+    const sha256 = await digestHex(bytes);
+    const current = await env.DB.prepare(
+      `select revision, version, archive_key, archive_sha256, updated_at,
+              updated_by_device_id, updated_by_device_name
+       from user_extension_archive_heads
+       where user_id = ? and extension_id = ?`
+    ).bind(auth.userId, extensionId).first();
+    const currentRevision = Number(current?.revision || 0);
+    if (current?.archive_sha256 && String(current.archive_sha256) === sha256) {
+      return json({
+        ok: true,
+        unchanged: true,
+        userId: auth.userId,
+        extensionId,
+        version: current.version || version,
+        archiveKey: current.archive_key,
+        sha256,
+        revision: currentRevision,
+        updatedAtUtc: current.updated_at || "",
+        archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
+      });
+    }
+
+    const expectedRaw = url.searchParams.get("expectedRevision");
+    if (expectedRaw == null && currentRevision > 0) {
+      const error = new HttpError(428, "archive_revision_required", "expectedRevision is required for an existing private archive");
+      error.details = { extensionId, currentRevision };
+      throw error;
+    }
+    const expectedRevision = expectedRaw == null ? 0 : Number(expectedRaw);
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      throw new HttpError(400, "invalid_expected_revision", "expectedRevision must be a non-negative integer");
+    }
+    if (expectedRevision !== currentRevision) {
+      const error = new HttpError(409, "archive_revision_conflict", "private archive revision does not match expectedRevision");
+      error.details = { extensionId, expectedRevision, currentRevision };
+      throw error;
+    }
+
+    const revision = currentRevision + 1;
+    const archiveKey = `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
+    const now = isoNow();
+    const deviceId = String(request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
+    const deviceName = String(request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
+
+    await env.PACKAGES.put(archiveKey, bytes, {
+      httpMetadata: {
+        contentType: request.headers.get("content-type") || "application/zip"
+      },
+      customMetadata: {
+        userId: auth.userId,
+        extensionId,
+        version,
+        sha256,
+        private: "true"
+      }
+    });
+
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        `insert into user_extension_archive_heads (
+           user_id, extension_id, revision, version, archive_key, archive_sha256,
+           updated_at, updated_by_device_id, updated_by_device_name
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         on conflict(user_id, extension_id) do update set
+           revision = excluded.revision,
+           version = excluded.version,
+           archive_key = excluded.archive_key,
+           archive_sha256 = excluded.archive_sha256,
+           updated_at = excluded.updated_at,
+           updated_by_device_id = excluded.updated_by_device_id,
+           updated_by_device_name = excluded.updated_by_device_name
+         where user_extension_archive_heads.revision = ?`
+      ).bind(
+        auth.userId, extensionId, revision, version, archiveKey, sha256,
+        now, deviceId, deviceName, expectedRevision
+      ),
+      env.DB.prepare(
+        `insert into user_extension_archive_history (
+           user_id, extension_id, revision, version, archive_key, archive_sha256,
+           updated_at, updated_by_device_id, updated_by_device_name, operation
+         )
+         select user_id, extension_id, revision, version, archive_key, archive_sha256,
+                updated_at, updated_by_device_id, updated_by_device_name, 'put'
+         from user_extension_archive_heads
+         where user_id = ? and extension_id = ? and revision = ? and archive_key = ?
+         on conflict(user_id, extension_id, revision) do nothing`
+      ).bind(auth.userId, extensionId, revision, archiveKey),
+      env.DB.prepare(
+        `update extensions
+         set latest_version = ?, archive_key = ?, archive_sha256 = ?, updated_at = ?
+         where extension_id = ?
+           and exists (
+             select 1 from user_extension_archive_heads head
+             where head.user_id = ? and head.extension_id = ?
+               and head.revision = ? and head.archive_key = ?
+           )`
+      ).bind(version, archiveKey, sha256, now, extensionId, auth.userId, extensionId, revision, archiveKey)
+    ]);
+
+    if (Number(results?.[0]?.meta?.changes || 0) === 0) {
+      await env.PACKAGES.delete(archiveKey);
+      const latest = await env.DB.prepare(
+        `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
+      ).bind(auth.userId, extensionId).first();
+      const error = new HttpError(409, "archive_revision_conflict", "private archive changed during upload");
+      error.details = { extensionId, expectedRevision, currentRevision: Number(latest?.revision || 0) };
+      throw error;
+    }
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      extensionId,
+      version,
+      archiveKey,
+      sha256,
+      revision,
+      updatedAtUtc: now,
+      updatedByDeviceId: deviceId,
+      updatedByDeviceName: deviceName,
+      archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
+    });
+  }
+
+  if (myArchiveMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensureUserCanReadExtension(env, auth.userId, extensionId);
+
+    const requestedRevision = Number(url.searchParams.get("revision") || 0);
+    if (!Number.isInteger(requestedRevision) || requestedRevision < 0) {
+      throw new HttpError(400, "invalid_revision", "revision must be a non-negative integer");
+    }
+    let row = requestedRevision > 0
+      ? await env.DB.prepare(
+          `select archive_key, version as latest_version, archive_sha256, revision
+           from user_extension_archive_history
+           where user_id = ? and extension_id = ? and revision = ?`
+        ).bind(auth.userId, extensionId, requestedRevision).first()
+      : await env.DB.prepare(
+          `select archive_key, version as latest_version, archive_sha256, revision
+           from user_extension_archive_heads
+           where user_id = ? and extension_id = ?`
+        ).bind(auth.userId, extensionId).first();
+    if (!row && requestedRevision === 0) {
+      row = await env.DB.prepare(
+        `select archive_key, latest_version, archive_sha256, 0 as revision
+         from extensions where extension_id = ?`
+      ).bind(extensionId).first();
+    }
+
+    if (!row?.archive_key) {
+      return json({ error: "not_found", message: "Archive not found" }, 404);
+    }
+
+    const object = await env.PACKAGES.get(row.archive_key);
+    if (!object) {
+      return json({ error: "not_found", message: `Stored package is missing: ${row.archive_key}` }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", row.archive_sha256 || object.httpEtag || "");
+    headers.set("x-yanzi-archive-revision", String(row.revision || 0));
+    headers.set("cache-control", "private, max-age=60");
+    headers.set(
+      "content-disposition",
+      `attachment; filename="${extensionId}-${row.latest_version || "latest"}.zip"`
+    );
+    return withCors(new Response(object.body, { headers }));
   }
 
   if (url.pathname === "/v1/me/devices" && request.method === "GET") {
@@ -1425,11 +1830,16 @@ async function handleRequest(request, env) {
       }
     };
 
+    const pollIntervalMs = 2000;
+    const maxStreamDurationMs = 30 * 60 * 1000;
+    const startedAt = Date.now();
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
     (async () => {
       try {
         await sendSseMessage({ type: "connected" });
 
-        while (!isClosed) {
+        while (!isClosed && Date.now() - startedAt < maxStreamDurationMs) {
           const rows = await env.DB.prepare(
             `select
               message_id,
@@ -1476,11 +1886,16 @@ async function handleRequest(request, env) {
               .run();
           }
 
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          if (isClosed || Date.now() - startedAt >= maxStreamDurationMs) {
+            break;
+          }
+
+          await sleep(pollIntervalMs);
         }
       } catch (err) {
         // SSE loop exception
       } finally {
+        isClosed = true;
         try {
           await writer.close();
         } catch (e) {}
@@ -1505,8 +1920,11 @@ async function handleRequest(request, env) {
     const rateLimitKey = `${auth.userId}:${deviceId}`;
     const lastRequestTime = mobilePollRateLimitMap.get(rateLimitKey) || 0;
     mobilePollRateLimitMap.set(rateLimitKey, now);
-    if (mobilePollRateLimitMap.size > 5000) {
-      mobilePollRateLimitMap.clear();
+    if (mobilePollRateLimitMap.size > mobilePollRateLimitMaxEntries) {
+      const oldestKey = mobilePollRateLimitMap.keys().next().value;
+      if (oldestKey !== undefined) {
+        mobilePollRateLimitMap.delete(oldestKey);
+      }
     }
     if (now - lastRequestTime < 3000) {
       return json({
@@ -1690,6 +2108,38 @@ async function handleRequest(request, env) {
     const payload = await readJson(request);
     await ensureUser(env, auth.userId);
 
+    let settings = payload.settings ?? {};
+    if (extensionId === "yanzi-quickpanel-settings") {
+      const existing = await env.DB.prepare(
+        `select settings_json from user_extensions where user_id = ? and extension_id = ?`
+      )
+        .bind(auth.userId, extensionId)
+        .first();
+      let existingSettings = {};
+      if (existing?.settings_json) {
+        try {
+          existingSettings = JSON.parse(String(existing.settings_json));
+        } catch {
+          existingSettings = {};
+        }
+      }
+
+      const incomingUpdatedAt = Date.parse(String(settings.updatedAtUtc || ""));
+      const existingUpdatedAt = Date.parse(String(existingSettings.updatedAtUtc || ""));
+      const incomingIsStale = Number.isFinite(existingUpdatedAt) &&
+        (!Number.isFinite(incomingUpdatedAt) || incomingUpdatedAt + 1000 < existingUpdatedAt);
+
+      // 主配置和燕幕状态共用兼容存储行。按字段合并可避免任一写入
+      // 把另一条同步链维护的字段整包擦除；过期客户端提交则不覆盖新快照。
+      settings = incomingIsStale ? existingSettings : { ...existingSettings, ...settings };
+    }
+    if (extensionId === "yanzi-quickpanel-settings" || extensionId === "yanzi-ai-settings") {
+      settings = scrubAiSecretsFromValue(settings);
+    }
+    if (extensionId === "yanzi-personal-sync-settings" || extensionId === "yanzi-webdav-settings") {
+      settings = scrubPersonalSyncSecretsFromValue(settings);
+    }
+
     await env.DB.prepare(
       `insert into user_extensions (
         user_id,
@@ -1710,7 +2160,7 @@ async function handleRequest(request, env) {
         extensionId,
         String(payload.installedVersion ?? payload.version ?? "0.0.0").slice(0, 50),
         payload.enabled === false ? 0 : 1,
-        JSON.stringify(payload.settings ?? {}),
+        JSON.stringify(settings),
         isoNow()
       )
       .run();
@@ -1763,22 +2213,74 @@ async function buildAuthResponse(env, user) {
 
 async function requireAuth(request, env) {
   const header = request.headers.get("authorization") || "";
-  const prefix = "Bearer ";
-  if (!header.startsWith(prefix)) {
-    throw new HttpError(401, "unauthorized", "Missing bearer token");
+
+  // 1. 优先尝试以 Bearer Token 进行验证
+  if (header.startsWith("Bearer ")) {
+    const token = header.slice(7).trim();
+    try {
+      const payload = await verifyToken(env, token);
+      if (payload?.sub && payload?.username) {
+        return {
+          userId: String(payload.sub),
+          username: String(payload.username),
+          email: payload.email ? String(payload.email) : null
+        };
+      }
+    } catch (tokenErr) {
+      if (tokenErr.status === 401 && tokenErr.code === "token_expired") {
+        throw tokenErr;
+      }
+    }
   }
 
-  const token = header.slice(prefix.length).trim();
-  const payload = await verifyToken(env, token);
-  if (!payload?.sub || !payload?.username) {
-    throw new HttpError(401, "unauthorized", "Invalid token payload");
+  // 2. 尝试以 Basic Auth 账户密码直接鉴权作为备用
+  if (header.startsWith("Basic ")) {
+    const credentials = header.slice(6).trim();
+    try {
+      const decoded = atob(credentials);
+      const colonIndex = decoded.indexOf(":");
+      if (colonIndex !== -1) {
+        const usernameOrEmail = decoded.substring(0, colonIndex);
+        const password = decoded.substring(colonIndex + 1);
+
+        if (usernameOrEmail && password) {
+          const email = normalizeEmail(usernameOrEmail);
+          const user = await env.DB.prepare(
+            `select
+              user_id,
+              username,
+              email,
+              password_hash,
+              password_salt,
+              password_iterations
+            from auth_users
+            where email = ?`
+          )
+            .bind(email)
+            .first();
+
+          if (user) {
+            const passwordHash = await hashPassword(
+              password,
+              user.password_salt,
+              Number(user.password_iterations || PASSWORD_ITERATIONS)
+          );
+            if (passwordHash === user.password_hash) {
+              return {
+                userId: String(user.user_id),
+                username: String(user.username),
+                email: user.email ? String(user.email) : null
+              };
+            }
+          }
+        }
+      }
+    } catch (basicAuthErr) {
+      // 捕获 Base64 编码或数据库请求异常
+    }
   }
 
-  return {
-    userId: String(payload.sub),
-    username: String(payload.username),
-    email: payload.email ? String(payload.email) : null
-  };
+  throw new HttpError(401, "unauthorized", "Invalid credentials or token");
 }
 
 async function requireAdmin(request, env) {
@@ -1817,7 +2319,7 @@ async function verifyToken(env, token) {
   const [encodedHeader, encodedPayload, signature] = parts;
   const expected = await hmacSha256(env.AUTH_TOKEN_SECRET, `${encodedHeader}.${encodedPayload}`);
   if (signature !== expected) {
-    throw new HttpError(401, "unauthorized", "Invalid token signature");
+    throw new HttpError(401, "invalid_token_signature", "Token signature verification failed");
   }
 
   const payload = JSON.parse(base64UrlDecode(encodedPayload));
@@ -1827,6 +2329,51 @@ async function verifyToken(env, token) {
   }
 
   return payload;
+}
+
+async function deriveLoginHashInServer(password, email) {
+  const enc = new TextEncoder();
+  const passwordBytes = enc.encode(password);
+  const saltBytes = enc.encode(email.trim().toLowerCase());
+
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    passwordBytes,
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+
+  const masterKeyBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: saltBytes,
+      iterations: 50000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    256
+  );
+
+  const hmacKey = await crypto.subtle.importKey(
+    "raw",
+    masterKeyBits,
+    {
+      name: "HMAC",
+      hash: "SHA-256"
+    },
+    false,
+    ["sign"]
+  );
+
+  const messageBytes = enc.encode("login-verification");
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    hmacKey,
+    messageBytes
+  );
+
+  return bytesToHex(new Uint8Array(signature));
 }
 
 async function hashPassword(password, salt, iterations) {
@@ -1869,9 +2416,9 @@ async function hashVerificationCode(email, code, salt) {
 }
 
 function normalizeUsername(value) {
-  const username = String(value || "").trim().toLowerCase();
-  if (!/^[a-z0-9_\-]{3,32}$/.test(username)) {
-    throw new HttpError(400, "invalid_username", "Username must be 3-32 chars: a-z, 0-9, _, -");
+  const username = String(value || "").trim();
+  if (!/^[\p{L}\p{N}_-]{3,32}$/u.test(username)) {
+    throw new HttpError(400, "invalid_username", "Username must be 3-32 chars: letters, numbers, _, -");
   }
 
   return username;
@@ -2238,6 +2785,7 @@ function serializeExtensionRecord(url, row) {
     description: manifest.description || "",
     category: manifest.category || "扩展",
     icon: resolveStoreIcon(url, row, manifest.icon || "", row.extension_id),
+    accent_hex: manifest.accentHex || manifest.accent_hex || "",
     keywords: Array.isArray(manifest.keywords) ? manifest.keywords : [],
     manifest,
     archive_download_url: row.archive_key
@@ -2267,7 +2815,10 @@ function serializeExtensionListItem(url, row, publicDefinition = null) {
       description: full.description,
       category: full.category,
       icon: full.icon,
-      keywords: full.keywords
+      accent_hex: full.accent_hex,
+      keywords: full.keywords,
+      archive_download_url: full.archive_download_url,
+      install_protocol_url: full.install_protocol_url
     };
   }
 
@@ -2284,7 +2835,10 @@ function serializeExtensionListItem(url, row, publicDefinition = null) {
     description: full.description,
     category: full.category,
     icon: full.icon,
-    keywords: full.keywords
+    accent_hex: full.accent_hex,
+    keywords: full.keywords,
+    archive_download_url: full.archive_download_url,
+    install_protocol_url: full.install_protocol_url
   };
 }
 
@@ -2336,10 +2890,53 @@ function serializeStoreExtensionRecord(url, row, definition) {
     description: definition.description,
     category: definition.category,
     icon: resolveStoreIcon(url, row, definition.icon || rowManifest.icon || "", definition.extension_id),
+    accent_hex: manifest.accentHex || manifest.accent_hex || "",
     keywords: definition.keywords,
     manifest,
     archive_download_url: archiveUrl,
     install_protocol_url: buildInstallProtocolUrl(definition.extension_id, archiveUrl)
+  };
+}
+
+function serializeUserExtensionRecord(url, row, userId) {
+  const manifest = parseManifestJson(row.manifest_json);
+  const settings = parseManifestJson(row.settings_json);
+  const extensionId = row.extension_id;
+  const displayName = row.display_name || settings.displayName || settings.title || manifest.displayName || manifest.name || extensionId;
+  const icon = row.icon_key
+    ? buildMyExtensionIconUrl(url, extensionId, row.extension_updated_at || row.updated_at || "")
+    : (manifest.icon || settings.icon || settings.manifest?.icon || "");
+  return {
+    user_id: row.user_id,
+    extension_id: extensionId,
+    installed_version: row.installed_version,
+    enabled: Number(row.enabled ?? 1),
+    settings_json: row.settings_json || "{}",
+    settings,
+    updated_at: row.updated_at,
+    display_name: displayName,
+    latest_version: row.latest_version || row.installed_version,
+    manifest_json: row.manifest_json || "",
+    manifest,
+    icon_key: row.icon_key || "",
+    icon,
+    archive_key: row.archive_key || "",
+    archive_sha256: row.archive_sha256 || "",
+    archive_revision: Number(row.archive_revision || 0),
+    archive_updated_at: row.archive_updated_at || "",
+    archive_updated_by_device_id: row.archive_updated_by_device_id || "",
+    archive_updated_by_device_name: row.archive_updated_by_device_name || "",
+    has_archive: Boolean(row.archive_key),
+    archive_download_url: row.archive_key ? buildMyExtensionArchiveUrl(url, extensionId) : null,
+    publisher_user_id: row.publisher_user_id || "",
+    publisher_username: row.publisher_username || "",
+    published_at: row.published_at || "",
+    is_published: Number(row.is_published ?? 0),
+    is_private: String(row.publisher_user_id || "") === String(userId) && Number(row.is_published ?? 0) === 0,
+    description: manifest.description || settings.description || settings.manifest?.description || "",
+    category: manifest.category || settings.manifest?.category || "扩展",
+    accent_hex: manifest.accentHex || manifest.accent_hex || settings.accentHex || settings.accent_hex || settings.manifest?.accentHex || "",
+    keywords: Array.isArray(manifest.keywords) ? manifest.keywords : []
   };
 }
 
@@ -2395,6 +2992,19 @@ function buildExtensionIconUrl(url, extensionId, cacheBust = "") {
   }
 
   return iconUrl.toString();
+}
+
+function buildMyExtensionIconUrl(url, extensionId, cacheBust = "") {
+  const iconUrl = new URL(`/v1/me/extensions/${encodeURIComponent(extensionId)}/icon`, url.origin);
+  if (cacheBust) {
+    iconUrl.searchParams.set("v", String(cacheBust));
+  }
+
+  return iconUrl.toString();
+}
+
+function buildMyExtensionArchiveUrl(url, extensionId) {
+  return `${url.origin}/v1/me/extensions/${encodeURIComponent(extensionId)}/archive`;
 }
 
 function resolveIconExtension(filename, contentType) {
@@ -2561,6 +3171,323 @@ async function ensureUser(env, userId) {
     .run();
 }
 
+function normalizeSyncObjectId(value) {
+  const objectId = String(value || "").trim();
+  if (!/^[A-Za-z0-9._:-]{1,120}$/.test(objectId)) {
+    throw new HttpError(400, "invalid_sync_object_id", "objectId contains unsupported characters or is too long");
+  }
+  return objectId;
+}
+
+function normalizeSyncRevision(value, fieldName = "revision") {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+  const revision = Number(value);
+  if (!Number.isSafeInteger(revision) || revision < 0) {
+    throw new HttpError(400, "invalid_sync_revision", `${fieldName} must be a non-negative safe integer`);
+  }
+  return revision;
+}
+
+function serializeUserSyncObject(row) {
+  let payload = {};
+  try {
+    payload = JSON.parse(String(row.payload_json || "{}"));
+  } catch {
+    payload = {};
+  }
+  return {
+    objectId: String(row.object_id || ""),
+    schemaVersion: Number(row.schema_version || 1),
+    revision: Number(row.object_revision || 0),
+    updatedAtUtc: String(row.updated_at || ""),
+    updatedByDeviceId: row.updated_by_device_id ? String(row.updated_by_device_id) : null,
+    updatedByDeviceName: row.updated_by_device_name ? String(row.updated_by_device_name) : null,
+    deleted: Boolean(row.deleted),
+    payload
+  };
+}
+
+function serializeUserSyncObjectHistory(row) {
+  return {
+    ...serializeUserSyncObject({ ...row, object_revision: row.revision }),
+    operation: String(row.operation || "update"),
+    restoredFromRevision: row.restored_from_revision == null
+      ? null
+      : Number(row.restored_from_revision)
+  };
+}
+
+async function getUserSyncRevision(env, userId) {
+  const row = await env.DB.prepare(
+    `select revision from user_sync_revisions where user_id = ?`
+  ).bind(userId).first();
+  return Number(row?.revision || 0);
+}
+
+async function readUserSyncObjects(env, userId, sinceRevision, limit) {
+  await ensureUser(env, userId);
+  const rows = await env.DB.prepare(
+    `select object_id, schema_version, object_revision, updated_at,
+            updated_by_device_id, updated_by_device_name, deleted, payload_json
+     from user_sync_objects
+     where user_id = ? and object_revision > ?
+     order by object_revision asc
+     limit ?`
+  ).bind(userId, sinceRevision, limit + 1).all();
+  const allRows = rows.results || [];
+  const hasMore = allRows.length > limit;
+  const selectedRows = hasMore ? allRows.slice(0, limit) : allRows;
+  const objects = selectedRows.map(serializeUserSyncObject);
+  const currentRevision = await getUserSyncRevision(env, userId);
+  const cursorRevision = objects.length > 0
+    ? objects[objects.length - 1].revision
+    : currentRevision;
+  return { currentRevision, cursorRevision, hasMore, objects };
+}
+
+async function readUserSyncObjectHistory(env, userId, objectId, beforeRevision, limit) {
+  await ensureUser(env, userId);
+  const rows = await env.DB.prepare(
+    `select object_id, revision, schema_version, updated_at,
+            updated_by_device_id, updated_by_device_name, deleted, payload_json,
+            operation, restored_from_revision
+     from user_sync_object_history
+     where user_id = ? and object_id = ? and (? = 0 or revision < ?)
+     order by revision desc
+     limit ?`
+  ).bind(userId, objectId, beforeRevision, beforeRevision, limit + 1).all();
+  const allRows = rows.results || [];
+  const hasMore = allRows.length > limit;
+  const selectedRows = hasMore ? allRows.slice(0, limit) : allRows;
+  const versions = selectedRows.map(serializeUserSyncObjectHistory);
+  const currentRevision = await getUserSyncRevision(env, userId);
+  const nextBeforeRevision = versions.length > 0
+    ? versions[versions.length - 1].revision
+    : beforeRevision;
+  return { currentRevision, nextBeforeRevision, hasMore, versions };
+}
+
+async function writeUserSyncObject(env, userId, objectId, input, writeMetadata = {}) {
+  const expectedRevision = normalizeSyncRevision(input.expectedRevision, "expectedRevision");
+  const schemaVersion = Number(input.schemaVersion ?? 1);
+  if (!Number.isInteger(schemaVersion) || schemaVersion < 1 || schemaVersion > 1000) {
+    throw new HttpError(400, "invalid_sync_schema_version", "schemaVersion must be an integer between 1 and 1000");
+  }
+  if (!Object.prototype.hasOwnProperty.call(input, "payload")) {
+    throw new HttpError(400, "sync_payload_required", "payload is required");
+  }
+
+  const deleted = input.deleted === true;
+  const updatedByDeviceId = String(input.updatedByDeviceId || "").trim().slice(0, 200) || null;
+  const updatedByDeviceName = String(input.updatedByDeviceName || "").trim().slice(0, 200) || null;
+  const safePayload = objectId === "settings.ai"
+    ? scrubAiSecretsFromValue(input.payload ?? {})
+    : input.payload ?? {};
+  const payloadJson = JSON.stringify(safePayload);
+  if (textEncoder.encode(payloadJson).length > 1024 * 1024) {
+    throw new HttpError(413, "sync_payload_too_large", "sync object payload exceeds 1 MiB");
+  }
+
+  await ensureUser(env, userId);
+  const now = isoNow();
+  const operation = writeMetadata.operation === "restore"
+    ? "restore"
+    : deleted ? "delete" : expectedRevision === 0 ? "create" : "update";
+  const restoredFromRevision = operation === "restore"
+    ? normalizeSyncRevision(writeMetadata.restoredFromRevision, "restoredFromRevision")
+    : null;
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `insert into user_sync_revisions (user_id, revision, updated_at)
+       values (?, 0, ?)
+       on conflict(user_id) do nothing`
+    ).bind(userId, now),
+    env.DB.prepare(
+      `insert into user_sync_objects (
+         user_id, object_id, schema_version, object_revision, updated_at,
+         updated_by_device_id, updated_by_device_name, deleted, payload_json
+       )
+       select ?, ?, ?, revisions.revision + 1, ?, ?, ?, ?, ?
+       from user_sync_revisions revisions
+       where revisions.user_id = ?
+         and (
+           (? = 0 and not exists (
+             select 1 from user_sync_objects existing
+             where existing.user_id = ? and existing.object_id = ?
+           ))
+           or
+           (? > 0 and exists (
+             select 1 from user_sync_objects existing
+             where existing.user_id = ? and existing.object_id = ? and existing.object_revision = ?
+           ))
+         )
+       on conflict(user_id, object_id) do update set
+         schema_version = excluded.schema_version,
+         object_revision = excluded.object_revision,
+         updated_at = excluded.updated_at,
+         updated_by_device_id = excluded.updated_by_device_id,
+         updated_by_device_name = excluded.updated_by_device_name,
+         deleted = excluded.deleted,
+         payload_json = excluded.payload_json`
+    ).bind(
+      userId, objectId, schemaVersion, now,
+      updatedByDeviceId, updatedByDeviceName, deleted ? 1 : 0, payloadJson,
+      userId,
+      expectedRevision, userId, objectId,
+      expectedRevision, userId, objectId, expectedRevision
+    ),
+    env.DB.prepare(
+      `insert into user_sync_object_history (
+         user_id, object_id, revision, schema_version, updated_at,
+         updated_by_device_id, updated_by_device_name, deleted, payload_json,
+         operation, restored_from_revision
+       )
+       select objects.user_id, objects.object_id, objects.object_revision,
+              objects.schema_version, objects.updated_at, objects.updated_by_device_id,
+              objects.updated_by_device_name, objects.deleted, objects.payload_json, ?, ?
+       from user_sync_objects objects
+       join user_sync_revisions revisions on revisions.user_id = objects.user_id
+       where objects.user_id = ? and objects.object_id = ?
+         and objects.object_revision = revisions.revision + 1`
+    ).bind(operation, restoredFromRevision, userId, objectId),
+    env.DB.prepare(
+      `update user_sync_revisions
+       set revision = revision + 1, updated_at = ?
+       where user_id = ?
+         and exists (
+           select 1 from user_sync_objects objects
+           where objects.user_id = user_sync_revisions.user_id
+             and objects.object_id = ?
+             and objects.object_revision = user_sync_revisions.revision + 1
+         )`
+    ).bind(now, userId, objectId)
+  ]);
+
+  if (Number(results?.[1]?.meta?.changes || 0) === 0) {
+    const current = await env.DB.prepare(
+      `select object_revision from user_sync_objects where user_id = ? and object_id = ?`
+    ).bind(userId, objectId).first();
+    const error = new HttpError(409, "sync_revision_conflict", "sync object revision does not match expectedRevision");
+    error.details = { objectId, expectedRevision, currentRevision: Number(current?.object_revision || 0) };
+    throw error;
+  }
+
+  const row = await env.DB.prepare(
+    `select object_id, schema_version, object_revision, updated_at,
+            updated_by_device_id, updated_by_device_name, deleted, payload_json
+     from user_sync_objects where user_id = ? and object_id = ?`
+  ).bind(userId, objectId).first();
+  return serializeUserSyncObject(row);
+}
+
+async function upsertPrivateExtensionMetadata(env, auth, extensionId, manifest) {
+  const existing = await env.DB.prepare(
+    `select publisher_user_id
+     from extensions
+     where extension_id = ?`
+  )
+    .bind(extensionId)
+    .first();
+
+  if (existing?.publisher_user_id &&
+      String(existing.publisher_user_id) !== auth.userId) {
+    throw new HttpError(403, "forbidden", "Only the owner can update this private extension");
+  }
+
+  const now = isoNow();
+  const displayName = String(manifest.displayName ?? manifest.name ?? extensionId).slice(0, 200);
+  const latestVersion = String(manifest.version ?? "0.0.0").slice(0, 50);
+
+  await env.DB.prepare(
+    `insert into extensions (
+      extension_id,
+      display_name,
+      latest_version,
+      manifest_json,
+      publisher_user_id,
+      publisher_username,
+      published_at,
+      is_published,
+      updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, 0, ?)
+    on conflict(extension_id) do update set
+      display_name = excluded.display_name,
+      latest_version = excluded.latest_version,
+      manifest_json = excluded.manifest_json,
+      publisher_user_id = coalesce(extensions.publisher_user_id, excluded.publisher_user_id),
+      publisher_username = excluded.publisher_username,
+      is_published = extensions.is_published,
+      updated_at = excluded.updated_at`
+  )
+    .bind(
+      extensionId,
+      displayName,
+      latestVersion,
+      JSON.stringify(manifest),
+      auth.userId,
+      auth.username,
+      now,
+      now
+    )
+    .run();
+}
+
+async function ensurePrivateExtensionWritable(env, auth, extensionId) {
+  let row = await env.DB.prepare(
+    `select publisher_user_id, display_name, latest_version
+     from extensions
+     where extension_id = ?`
+  )
+    .bind(extensionId)
+    .first();
+
+  if (!row) {
+    await upsertPrivateExtensionMetadata(env, auth, extensionId, {
+      name: extensionId,
+      displayName: extensionId,
+      version: "0.0.0"
+    });
+    row = await env.DB.prepare(
+      `select publisher_user_id
+       from extensions
+       where extension_id = ?`
+    )
+      .bind(extensionId)
+      .first();
+  }
+
+  if (row?.publisher_user_id && String(row.publisher_user_id) !== auth.userId) {
+    throw new HttpError(403, "forbidden", "Only the owner can update this extension");
+  }
+}
+
+async function ensureUserCanReadExtension(env, userId, extensionId) {
+  const row = await env.DB.prepare(
+    `select e.publisher_user_id, e.is_published, ue.user_id
+     from extensions e
+     left join user_extensions ue
+       on ue.extension_id = e.extension_id
+      and ue.user_id = ?
+     where e.extension_id = ?`
+  )
+    .bind(userId, extensionId)
+    .first();
+
+  if (!row) {
+    throw new HttpError(404, "extension_not_found", "Extension not found");
+  }
+
+  if (Number(row.is_published ?? 0) === 1 ||
+      String(row.publisher_user_id || "") === String(userId) ||
+      String(row.user_id || "") === String(userId)) {
+    return;
+  }
+
+  throw new HttpError(403, "forbidden", "You do not have access to this extension");
+}
+
 async function touchUser(env, userId) {
   await env.DB.prepare(
     "update users set updated_at = ? where user_id = ?"
@@ -2611,6 +3538,9 @@ async function getUserWebDavConfig(env, userId) {
 async function readYanmStateForUser(env, userId) {
   try {
     const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    if (!hasPersonalSyncCredential(syncConfig)) {
+      throw new HttpError(409, "sync_credentials_device_local", "Personal sync credentials are stored on the desktop device");
+    }
     let result;
     const provider = syncConfig.provider;
     if (provider === "github") {
@@ -2650,6 +3580,10 @@ async function readYanmStateForUser(env, userId) {
       };
     }
 
+    if (error instanceof HttpError && error.code === "sync_credentials_device_local") {
+      return null;
+    }
+
     throw error;
   }
 }
@@ -2681,7 +3615,7 @@ async function readYanmStateFromCloudConfig(env, userId) {
 
   const text = JSON.stringify(yanm);
   return {
-    updatedAtUtc: String(row.updated_at || ""),
+    updatedAtUtc: String(settings.yanmUpdatedAtUtc || row.updated_at || ""),
     yanm,
     bytes: textEncoder.encode(text).length
   };
@@ -2708,6 +3642,7 @@ async function writeYanmStateToCloudConfig(env, userId, snapshot) {
   }
 
   settings.yanm = snapshot.yanm;
+  settings.yanmUpdatedAtUtc = snapshot.updatedAtUtc || isoNow();
 
   await ensureSystemConfigExtension(env, "yanzi-quickpanel-settings", {
     displayName: "Yanzi Quick Panel Settings",
@@ -2833,6 +3768,17 @@ function buildLegacyWebDavConfig(syncConfig) {
   };
 }
 
+function hasPersonalSyncCredential(syncConfig) {
+  const secrets = syncConfig?.secrets || {};
+  if (syncConfig?.provider === "github") return Boolean(String(secrets.githubToken || secrets.GitHubToken || "").trim());
+  if (syncConfig?.provider === "gitee") return Boolean(String(secrets.giteeToken || secrets.GiteeToken || "").trim());
+  if (syncConfig?.provider === "gitlab") return Boolean(String(secrets.gitLabToken || secrets.gitlabToken || secrets.GitLabToken || "").trim());
+  if (syncConfig?.provider === "gitea") return Boolean(String(secrets.giteaToken || secrets.GiteaToken || "").trim());
+  if (syncConfig?.provider === "s3") return Boolean(String(secrets.s3SecretAccessKey || secrets.S3SecretAccessKey || "").trim());
+  if (syncConfig?.provider === "webdav") return Boolean(String(secrets.webDavPassword || secrets.WebDavPassword || "").trim());
+  return false;
+}
+
 function base64ToUtf8(str) {
   const binary = atob(str);
   const bytes = new Uint8Array(binary.length);
@@ -2852,23 +3798,7 @@ function utf8ToBase64(str) {
 }
 
 async function readYanmStateFromGitHub(syncConfig) {
-  const github = syncConfig.settings.GitHub || syncConfig.settings.gitHub || {};
-  const token = (syncConfig.secrets.GitHubToken || syncConfig.secrets.gitHubToken || "").trim();
-  const repoRaw = String(github.repo || github.Repo || "yanzi-sync").trim();
-  const branch = String(github.branch || github.Branch || "main").trim();
-  const pathPrefix = String(github.pathPrefix || github.PathPrefix || "").trim();
-
-  let owner = String(github.username || "").trim();
-  let repo = repoRaw;
-  if (repoRaw.includes("/")) {
-    const parts = repoRaw.split("/");
-    owner = parts[0].trim();
-    repo = parts[1].trim();
-  }
-
-  if (!token || !owner || !repo) {
-    throw new HttpError(400, "github_config_incomplete", "GitHub token, owner, or repo is incomplete");
-  }
+  const { token, owner, repo, branch, pathPrefix } = await resolveGitHubRepoTarget(syncConfig);
 
   const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
@@ -2908,14 +3838,14 @@ async function readYanmStateFromGitHub(syncConfig) {
   };
 }
 
-async function writeYanmStateToGitHub(syncConfig, snapshot) {
+async function resolveGitHubRepoTarget(syncConfig) {
   const github = syncConfig.settings.GitHub || syncConfig.settings.gitHub || {};
   const token = (syncConfig.secrets.GitHubToken || syncConfig.secrets.gitHubToken || "").trim();
   const repoRaw = String(github.repo || github.Repo || "yanzi-sync").trim();
   const branch = String(github.branch || github.Branch || "main").trim();
   const pathPrefix = String(github.pathPrefix || github.PathPrefix || "").trim();
 
-  let owner = String(github.username || "").trim();
+  let owner = String(github.username || github.Username || "").trim();
   let repo = repoRaw;
   if (repoRaw.includes("/")) {
     const parts = repoRaw.split("/");
@@ -2923,9 +3853,43 @@ async function writeYanmStateToGitHub(syncConfig, snapshot) {
     repo = parts[1].trim();
   }
 
-  if (!token || !owner || !repo) {
-    throw new HttpError(400, "github_config_incomplete", "GitHub token, owner, or repo is incomplete");
+  if (!token || !repo) {
+    throw new HttpError(400, "github_config_incomplete", "GitHub token or repo is incomplete");
   }
+
+  if (!owner) {
+    owner = await resolveGitHubOwnerFromToken(token);
+  }
+
+  return { token, owner, repo, branch, pathPrefix };
+}
+
+async function resolveGitHubOwnerFromToken(token) {
+  const response = await fetch("https://api.github.com/user", {
+    method: "GET",
+    headers: {
+      "accept": "application/vnd.github+json",
+      "authorization": `Bearer ${token}`,
+      "user-agent": "YanziClient-Web"
+    }
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new HttpError(response.status || 502, "github_owner_resolve_failed", `Failed to resolve GitHub owner from token (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const owner = String(data.login || "").trim();
+  if (!owner) {
+    throw new HttpError(400, "github_owner_missing", "GitHub token did not return an account login");
+  }
+
+  return owner;
+}
+
+async function writeYanmStateToGitHub(syncConfig, snapshot) {
+  const { token, owner, repo, branch, pathPrefix } = await resolveGitHubRepoTarget(syncConfig);
 
   const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
@@ -3561,12 +4525,35 @@ async function writeYanmStateToS3(syncConfig, snapshot) {
 }
 
 async function writeYanmStateForUser(env, userId, snapshot) {
+  let currentSnapshot = null;
+  try {
+    currentSnapshot = await readYanmStateForUser(env, userId);
+    if (currentSnapshot?.yanm && areJsonValuesEquivalent(currentSnapshot.yanm, snapshot.yanm)) {
+      return {
+        source: currentSnapshot.source || "cloud-config",
+        updatedAtUtc: currentSnapshot.updatedAtUtc || null,
+        changed: false,
+        bytes: currentSnapshot.bytes || textEncoder.encode(JSON.stringify(currentSnapshot.yanm)).length
+      };
+    }
+  } catch (error) {
+    if (!(error instanceof HttpError) || (error.status !== 404 && error.status !== 409)) {
+      console.warn("Yanm sync unchanged check failed", {
+        userId,
+        error: error?.message || String(error)
+      });
+    }
+  }
+
   let isSyncWritten = false;
   let syncProvider = "cloud-config";
   let syncError = null;
 
   try {
     const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    if (!hasPersonalSyncCredential(syncConfig)) {
+      throw new HttpError(409, "sync_credentials_device_local", "Personal sync credentials are stored on the desktop device");
+    }
     syncProvider = syncConfig.provider;
     if (syncConfig.provider === "github") {
       await writeYanmStateToGitHub(syncConfig, snapshot);
@@ -3606,7 +4593,143 @@ async function writeYanmStateForUser(env, userId, snapshot) {
 
   return {
     source: isSyncWritten ? syncProvider : "cloud-config",
+    updatedAtUtc: snapshot.updatedAtUtc,
+    changed: true,
     bytes: dbResult.bytes
+  };
+}
+
+function areJsonValuesEquivalent(left, right) {
+  return stableJsonStringify(left) === stableJsonStringify(right);
+}
+
+function stableJsonStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJsonStringify).join(",")}]`;
+  }
+
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableJsonStringify(value[key])}`).join(",")}}`;
+}
+
+function scrubAiSecretsFromValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(scrubAiSecretsFromValue);
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  const sanitized = {};
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+    sanitized[key] = normalizedKey === "apikey" || normalizedKey === "aiapikey"
+      ? ""
+      : scrubAiSecretsFromValue(child);
+  }
+  return sanitized;
+}
+
+function scrubPersonalSyncSecretsFromValue(value) {
+  const sanitized = value && typeof value === "object" && !Array.isArray(value)
+    ? JSON.parse(JSON.stringify(value))
+    : {};
+  sanitized.secrets = {};
+  for (const key of [
+    "webDavPassword",
+    "password",
+    "token",
+    "githubToken",
+    "giteeToken",
+    "gitLabToken",
+    "giteaToken",
+    "s3SecretAccessKey"
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(sanitized, key)) {
+      sanitized[key] = "";
+    }
+  }
+  return sanitized;
+}
+
+function normalizeYanmComponentStatePatch(payload) {
+  const patch = {};
+  const source = payload && typeof payload.componentState === "object" && !Array.isArray(payload.componentState)
+    ? payload.componentState
+    : null;
+
+  if (source) {
+    for (const [key, value] of Object.entries(source)) {
+      const normalizedKey = String(key || "").trim();
+      if (normalizedKey) {
+        patch[normalizedKey] = value == null ? "" : String(value);
+      }
+    }
+  }
+
+  const explicitKey = String(payload?.stateKey || payload?.key || "").trim();
+  if (explicitKey) {
+    patch[explicitKey] = payload.value == null ? "" : String(payload.value);
+  }
+
+  if (Object.keys(patch).length === 0) {
+    throw new HttpError(400, "invalid_component_state", "componentState or stateKey/value is required");
+  }
+
+  return patch;
+}
+
+async function patchYanmComponentStateForUser(env, userId, componentStatePatch, updatedAtUtc) {
+  const current = await readYanmStateForUser(env, userId);
+  if (!current?.yanm || typeof current.yanm !== "object") {
+    throw new HttpError(404, "yanm_state_missing", "Yanm state was not found before componentState patch");
+  }
+
+  const yanm = JSON.parse(JSON.stringify(current.yanm));
+  const stateKey = yanm.componentState && typeof yanm.componentState === "object" && !Array.isArray(yanm.componentState)
+    ? "componentState"
+    : (yanm.ComponentState && typeof yanm.ComponentState === "object" && !Array.isArray(yanm.ComponentState) ? "ComponentState" : "componentState");
+  const state = {
+    ...(yanm[stateKey] && typeof yanm[stateKey] === "object" && !Array.isArray(yanm[stateKey]) ? yanm[stateKey] : {})
+  };
+
+  const changedKeys = [];
+  for (const [key, value] of Object.entries(componentStatePatch)) {
+    const hasExisting = Object.prototype.hasOwnProperty.call(state, key);
+    const existingValue = hasExisting ? String(state[key] ?? "") : null;
+    if (!hasExisting || existingValue !== value) {
+      changedKeys.push(key);
+    }
+
+    state[key] = value;
+  }
+
+  if (changedKeys.length === 0) {
+    return {
+      source: current.source || "cloud-config",
+      updatedAtUtc: current.updatedAtUtc || null,
+      changed: false,
+      changedKeys: [],
+      bytes: current.bytes || textEncoder.encode(JSON.stringify(current.yanm)).length
+    };
+  }
+
+  yanm[stateKey] = state;
+
+  const effectiveUpdatedAtUtc = updatedAtUtc || isoNow();
+  const result = await writeYanmStateForUser(env, userId, {
+    updatedAtUtc: effectiveUpdatedAtUtc,
+    yanm
+  });
+  return {
+    ...result,
+    updatedAtUtc: effectiveUpdatedAtUtc,
+    changed: true,
+    changedKeys
   };
 }
 
@@ -3895,7 +5018,10 @@ function json(data, status = 200) {
 function withCors(response) {
   response.headers.set("access-control-allow-origin", "*");
   response.headers.set("access-control-allow-methods", "GET,POST,PUT,DELETE,OPTIONS");
-  response.headers.set("access-control-allow-headers", "content-type,authorization");
+  response.headers.set(
+    "access-control-allow-headers",
+    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
+  );
   return response;
 }
 
@@ -3963,4 +5089,72 @@ class WebDavHttpError extends HttpError {
     super(status, code, message);
     this.diagnostics = diagnostics;
   }
+}
+
+async function getYanmStateViewUrl(env, userId) {
+  try {
+    const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    const provider = syncConfig.provider;
+    if (provider === "github") {
+      const { owner, repo, branch, pathPrefix } = await resolveGitHubRepoTarget(syncConfig);
+      const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+      return `https://github.com/${owner}/${repo}/blob/${branch}/${path}`;
+    }
+    if (provider === "gitee") {
+      const gitee = syncConfig.settings.Gitee || syncConfig.settings.gitee || {};
+      const repoRaw = String(gitee.repo || gitee.Repo || "yanzi-sync").trim();
+      const branch = String(gitee.branch || gitee.Branch || "master").trim();
+      const pathPrefix = String(gitee.pathPrefix || gitee.PathPrefix || "").trim();
+      let owner = String(gitee.username || gitee.Username || "").trim();
+      let repo = repoRaw;
+      if (repoRaw.includes("/")) {
+        const parts = repoRaw.split("/");
+        owner = parts[0].trim();
+        repo = parts[1].trim();
+      }
+      const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+      return `https://gitee.com/${owner}/${repo}/blob/${branch}/${path}`;
+    }
+    if (provider === "gitlab") {
+      const gitlab = syncConfig.settings.GitLab || syncConfig.settings.gitlab || {};
+      const projectPath = String(gitlab.projectPath || gitlab.ProjectPath || "").trim();
+      const branch = String(gitlab.branch || gitlab.Branch || "main").trim();
+      const pathPrefix = String(gitlab.pathPrefix || gitlab.PathPrefix || "").trim();
+      let baseUrl = String(gitlab.baseUrl || gitlab.BaseUrl || "https://gitlab.com").trim();
+      while (baseUrl.endsWith("/")) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+      }
+      const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+      return `${baseUrl}/${projectPath}/-/blob/${branch}/${path}`;
+    }
+    if (provider === "gitea") {
+      const gitea = syncConfig.settings.Gitea || syncConfig.settings.gitea || {};
+      const repoRaw = String(gitea.repo || gitea.Repo || "yanzi-sync").trim();
+      const branch = String(gitea.branch || gitea.Branch || "main").trim();
+      const pathPrefix = String(gitea.pathPrefix || gitea.PathPrefix || "").trim();
+      let baseUrl = String(gitea.baseUrl || gitea.BaseUrl || "https://gitea.com").trim();
+      while (baseUrl.endsWith("/")) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+      }
+      let owner = String(gitea.username || gitea.Username || "").trim();
+      let repo = repoRaw;
+      if (repoRaw.includes("/")) {
+        const parts = repoRaw.split("/");
+        owner = parts[0].trim();
+        repo = parts[1].trim();
+      }
+      const path = [pathPrefix, "state/yanm-state.json"].filter(Boolean).join("/").replace(/\/+/g, "/").replace(/^\//, "");
+      return `${baseUrl}/${owner}/${repo}/src/branch/${branch}/${path}`;
+    }
+    if (provider === "webdav") {
+      const webdav = syncConfig.settings.WebDAV || syncConfig.settings.webdav || {};
+      let serverUrl = String(webdav.serverUrl || webdav.ServerUrl || "").trim();
+      if (serverUrl) {
+        return serverUrl;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return null;
 }

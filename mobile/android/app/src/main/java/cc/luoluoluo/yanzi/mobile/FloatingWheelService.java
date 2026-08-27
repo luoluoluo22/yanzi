@@ -170,13 +170,24 @@ public class FloatingWheelService extends Service {
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         startNotificationServer();
-        showBubble();
+        boolean enabled = prefs.getBoolean("floatingWheelEnabled", true);
+        if (enabled) {
+            showBubble();
+        }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (bubbleView == null) {
-            showBubble();
+        boolean enabled = prefs.getBoolean("floatingWheelEnabled", true);
+        if (enabled) {
+            if (bubbleView == null) {
+                showBubble();
+            }
+        } else {
+            if (bubbleView != null) {
+                removeView(bubbleView);
+                bubbleView = null;
+            }
         }
         if (intent != null && ACTION_OPEN_WHEEL_FROM_GESTURE.equals(intent.getAction())) {
             openWheelFromGesture();
@@ -559,7 +570,7 @@ public class FloatingWheelService extends Service {
                 "catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}" +
                 "__run();" +
                 "</script></body></html>";
-            runner.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+            runner.loadDataWithBaseURL("http://localhost/", html, "text/html", "UTF-8", null);
             log("手机扩展开始执行。");
         } catch (Exception ex) {
             log("手机扩展执行失败：" + ex.getMessage());
@@ -2012,26 +2023,128 @@ public class FloatingWheelService extends Service {
     private void handleNotificationClient(Socket client) {
         try {
             BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
-            String line = in.readLine();
-            if (line == null) return;
+            String firstLine = in.readLine();
+            if (firstLine == null) return;
+            
+            String method = "";
+            String path = "";
+            String[] parts = firstLine.split(" ");
+            if (parts.length >= 2) {
+                method = parts[0];
+                path = parts[1];
+            }
             
             int contentLength = 0;
+            String line;
             while ((line = in.readLine()) != null && !line.isEmpty()) {
                 if (line.toLowerCase().startsWith("content-length:")) {
                     contentLength = Integer.parseInt(line.substring(15).trim());
                 }
             }
             
+            if ("/v1/shell/run".equals(path) && "POST".equalsIgnoreCase(method)) {
+                JSONObject responseJson = new JSONObject();
+                if (contentLength > 0) {
+                    char[] bodyChars = new char[contentLength];
+                    int totalRead = 0;
+                    while (totalRead < contentLength) {
+                        int read = in.read(bodyChars, totalRead, contentLength - totalRead);
+                        if (read == -1) {
+                            break;
+                        }
+                        totalRead += read;
+                    }
+                    if (totalRead > 0) {
+                        String body = new String(bodyChars, 0, totalRead);
+                        JSONObject json = new JSONObject(body);
+                        String command = json.optString("command", "");
+                        if (!command.isEmpty()) {
+                            int[] exitCodeOut = new int[1];
+                            String output = executeShellCommand(command, exitCodeOut);
+                            responseJson.put("ok", exitCodeOut[0] == 0);
+                            responseJson.put("output", output);
+                            responseJson.put("exitCode", exitCodeOut[0]);
+                        } else {
+                            responseJson.put("ok", false);
+                            responseJson.put("output", "Command is empty");
+                            responseJson.put("exitCode", -1);
+                        }
+                    } else {
+                        responseJson.put("ok", false);
+                        responseJson.put("output", "Body is empty");
+                        responseJson.put("exitCode", -1);
+                    }
+                } else {
+                    responseJson.put("ok", false);
+                    responseJson.put("output", "Content-Length is required");
+                    responseJson.put("exitCode", -1);
+                }
+                
+                String respBody = responseJson.toString();
+                byte[] respBytes = respBody.getBytes(StandardCharsets.UTF_8);
+                client.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: " + respBytes.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                client.getOutputStream().write(respBytes);
+                client.getOutputStream().flush();
+                client.close();
+                return;
+            }
+            
             if (contentLength > 0) {
                 char[] bodyChars = new char[contentLength];
-                int read = in.read(bodyChars, 0, contentLength);
-                if (read > 0) {
-                    String body = new String(bodyChars, 0, read);
+                int totalRead = 0;
+                while (totalRead < contentLength) {
+                    int read = in.read(bodyChars, totalRead, contentLength - totalRead);
+                    if (read == -1) {
+                        break;
+                    }
+                    totalRead += read;
+                }
+                if (totalRead > 0) {
+                    String body = new String(bodyChars, 0, totalRead);
                     JSONObject json = new JSONObject(body);
-                    String title = json.optString("title", "Yanzi 通知");
-                    String text = json.optString("body", "");
+                    String title = json.optString("title", "");
+                    String text = json.optString("message", "");
+                    if (text.isEmpty()) {
+                        text = json.optString("body", "");
+                    }
                     
-                    showNotification(title, text);
+                    if ("YanziSync".equals(title) && "yanm_updated".equals(text)) {
+                        Intent syncIntent = new Intent("cc.luoluoluo.yanzi.mobile.SYNC_YANM");
+                        this.sendBroadcast(syncIntent);
+                    } else if ("YanziChat".equals(title)) {
+                        String kind = json.optString("kind", "text");
+                        String content = text;
+                        if ("photo".equals(kind) && json.has("screenshotDataUrl")) {
+                            String dataUrl = json.optString("screenshotDataUrl", "");
+                            String ext = ".jpg";
+                            if (dataUrl.contains("image/png")) ext = ".png";
+                            else if (dataUrl.contains("image/gif")) ext = ".gif";
+                            content = this.saveBase64ToFile(dataUrl, "chat_received_" + System.currentTimeMillis() + ext);
+                        } else if ("file".equals(kind) && json.has("fileDataUrl")) {
+                            String dataUrl = json.optString("fileDataUrl", "");
+                            String fileName = json.optString("fileName", "file_" + System.currentTimeMillis());
+                            content = this.saveBase64ToFile(dataUrl, fileName);
+                        }
+                        
+                        Log.d(TAG, "Received YanziChat message from PC: " + content + " (kind: " + kind + ")");
+                        Intent chatIntent = new Intent("cc.luoluoluo.yanzi.mobile.CHAT_MESSAGE");
+                        chatIntent.putExtra("message", content);
+                        chatIntent.putExtra("kind", kind);
+                        this.sendBroadcast(chatIntent);
+                        Log.d(TAG, "Sent CHAT_MESSAGE broadcast for: " + content);
+                        this.saveChatMessageToPrefs(kind, content);
+                        Log.d(TAG, "Saved chat message to prefs");
+                        try {
+                            MainActivity.onReceivedChatMessage(kind, content);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to deliver chat message directly", e);
+                        }
+                    } else {
+                        if (title.isEmpty()) {
+                            title = "Yanzi \u901a\u77e5"; // "Yanzi 通知"
+                        }
+                        showNotification(title, text);
+                    }
                 }
             }
             
@@ -2065,5 +2178,156 @@ public class FloatingWheelService extends Service {
                 nm.notify((int) System.currentTimeMillis(), builder.build());
             }
         });
+    }
+
+    private String saveBase64ToFile(String dataUrl, String defaultName) {
+        try {
+            if (dataUrl == null || !dataUrl.contains(",")) {
+                return defaultName;
+            }
+            String base64Data = dataUrl.substring(dataUrl.indexOf(",") + 1);
+            byte[] bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+            
+            java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+            if (!downloadDir.exists()) {
+                downloadDir.mkdirs();
+            }
+            java.io.File outFile = new java.io.File(downloadDir, defaultName);
+            int count = 1;
+            while (outFile.exists()) {
+                String nameWithoutExt = defaultName;
+                String ext = "";
+                int dotIndex = defaultName.lastIndexOf(".");
+                if (dotIndex != -1) {
+                    nameWithoutExt = defaultName.substring(0, dotIndex);
+                    ext = defaultName.substring(dotIndex);
+                }
+                outFile = new java.io.File(downloadDir, nameWithoutExt + "_" + count + ext);
+                count++;
+            }
+            
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
+            fos.write(bytes);
+            fos.close();
+            return "file://" + outFile.getAbsolutePath();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to save base64 to file", e);
+            return defaultName;
+        }
+    }
+
+    private void saveChatMessageToPrefs(String kind, String content) {
+        try {
+            android.content.SharedPreferences prefs = this.getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
+            String historyJson = prefs.getString("desktop_chat_history", "[]");
+            org.json.JSONArray arr = new org.json.JSONArray(historyJson);
+            org.json.JSONObject obj = new org.json.JSONObject();
+            obj.put("role", (Object)"desktop");
+            obj.put("kind", (Object)kind);
+            obj.put("content", (Object)content);
+            obj.put("time", System.currentTimeMillis());
+            arr.put((Object)obj);
+            
+            if (arr.length() > 50) {
+                org.json.JSONArray newArr = new org.json.JSONArray();
+                for (int i = arr.length() - 50; i < arr.length(); ++i) {
+                    newArr.put(arr.get(i));
+                }
+                arr = newArr;
+            }
+            prefs.edit().putString("desktop_chat_history", arr.toString()).apply();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to save chat message to prefs", e);
+        }
+    }
+
+    public static String executeShellCommand(String command, int[] exitCodeOut) {
+        StringBuilder output = new StringBuilder();
+        int exitCode = -1;
+        Process process = null;
+        try {
+            process = Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-c", command});
+            
+            final StringBuilder stdout = new StringBuilder();
+            final StringBuilder stderr = new StringBuilder();
+            
+            final java.io.InputStream is = process.getInputStream();
+            final java.io.InputStream es = process.getErrorStream();
+            
+            Thread outThread = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        synchronized (stdout) {
+                            if (stdout.length() < 65536) {
+                                stdout.append(line).append("\n");
+                            } else if (!stdout.toString().endsWith("[输出过长，已截断]\n")) {
+                                stdout.append("[输出过长，已截断]\n");
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+            
+            Thread errThread = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new java.io.InputStreamReader(es, java.nio.charset.StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        synchronized (stderr) {
+                            if (stderr.length() < 65536) {
+                                stderr.append(line).append("\n");
+                            } else if (!stderr.toString().endsWith("[错误输出过长，已截断]\n")) {
+                                stderr.append("[错误输出过长，已截断]\n");
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+            
+            outThread.start();
+            errThread.start();
+            
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                boolean finished = process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS);
+                if (finished) {
+                    exitCode = process.exitValue();
+                } else {
+                    process.destroyForcibly();
+                    exitCode = -1;
+                    synchronized (stderr) {
+                        stderr.append("\n[错误] 命令执行超时 (15秒)\n");
+                    }
+                }
+            } else {
+                exitCode = process.waitFor();
+            }
+            
+            outThread.join(1000);
+            errThread.join(1000);
+            
+            synchronized (stdout) {
+                output.append(stdout);
+            }
+            synchronized (stderr) {
+                if (stderr.length() > 0) {
+                    if (output.length() > 0) {
+                        output.append("\n");
+                    }
+                    output.append("标准错误输出:\n").append(stderr);
+                }
+            }
+            
+        } catch (Exception e) {
+            output.append("\n[错误] 执行异常: ").append(e.getMessage()).append("\n");
+            exitCode = -1;
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
+        if (exitCodeOut != null && exitCodeOut.length > 0) {
+            exitCodeOut[0] = exitCode;
+        }
+        return output.toString().trim();
     }
 }

@@ -1,15 +1,37 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using Point = System.Windows.Point;
 
 namespace OpenQuickHost;
 
+/// <summary>
+/// 工业级手势识别器。
+/// 基于 $1 Unistroke / Protractor Recognizer 算法思想优化：
+/// - 64 点均匀重采样 + 质心居中平移 + 边界框等比缩放
+/// - 黄金分割搜索（Golden Section Search）最佳旋转对齐角（支持 ±45° 自适应容差）
+/// - 抗噪 8 方向滞后序列提取（Hysteresis Debounce Filter，消除手抖导致的伪方向）
+/// </summary>
 public static class MouseGestureTemplateRecognizer
 {
     public const int PointCount = 64;
-    public const int CoordinateScale = 1000;
+    public const double CoordinateScale = 1000.0;
+    public const double MaxRotationAngle = Math.PI / 4.0; // 允许 ±45 度倾斜自适应
+    private const double DefaultMaxTemplateDistance = 180.0;
+    private const double Diagonal = 1414.21356; // sqrt(1000^2 + 1000^2)
+    private const double HalfDiagonal = Diagonal * 0.5;
 
-    private const double DefaultMaxTemplateDistance = 180;
+    private static readonly double GoldenRatio = (Math.Sqrt(5.0) - 1.0) / 2.0; // 0.6180339887
+    private static readonly char[] Arrows = { '→', '↘', '↓', '↙', '←', '↖', '↑', '↗' };
+    private static readonly double EighthPi = Math.PI / 4.0;
+    private static readonly double TwoPi = Math.PI * 2.0;
+
     private static readonly BuiltInTemplate[] BuiltInTemplates = CreateBuiltInTemplates();
 
+    /// <summary>
+    /// 将原始点轨迹编码为 128 整数的标准模板数组（64点 * (X, Y)），用于跨版本/清单持久化。
+    /// </summary>
     public static int[]? CreateTemplateData(IReadOnlyList<Point> path)
     {
         var normalized = Normalize(path);
@@ -28,11 +50,18 @@ public static class MouseGestureTemplateRecognizer
         return data;
     }
 
+    /// <summary>
+    /// 校验是否是合法的模板数据。
+    /// </summary>
     public static bool HasTemplateData(int[]? data)
     {
         return data is { Length: PointCount * 2 };
     }
 
+    /// <summary>
+    /// 在候选模板集合中搜索最佳匹配。
+    /// 使用黄金分割搜索最佳旋转角，兼顾旋转容差与几何拓扑相似度。
+    /// </summary>
     public static TemplateMatch? FindBestMatch(IReadOnlyList<Point> candidatePath, IEnumerable<RegisteredGesture> templates)
     {
         var candidate = Normalize(candidatePath);
@@ -49,22 +78,28 @@ public static class MouseGestureTemplateRecognizer
                 continue;
             }
 
-            var distance = Distance(candidate, DecodeTemplateData(template.Data!));
+            var templatePoints = DecodeTemplateData(template.Data!);
+            var (distance, bestAngle) = DistanceAtBestAngle(candidate, templatePoints, -MaxRotationAngle, MaxRotationAngle);
             var maxDistance = ResolveMaxDistance(template.Tolerance);
+
             if (distance > maxDistance)
             {
                 continue;
             }
 
+            var score = Math.Clamp(1.0 - (distance / HalfDiagonal), 0.0, 1.0);
             if (best == null || distance < best.Distance)
             {
-                best = new TemplateMatch(template, distance);
+                best = new TemplateMatch(template, distance, score, bestAngle);
             }
         }
 
         return best;
     }
 
+    /// <summary>
+    /// 识别系统预置的几何图形或字母手势。
+    /// </summary>
     public static string? RecognizeBuiltInSign(IReadOnlyList<Point>? path)
     {
         if (path == null || path.Count < 2)
@@ -80,9 +115,10 @@ public static class MouseGestureTemplateRecognizer
 
         BuiltInTemplate? best = null;
         var bestDistance = double.PositiveInfinity;
+
         foreach (var template in BuiltInTemplates)
         {
-            var distance = Distance(candidate, template.Points);
+            var (distance, _) = DistanceAtBestAngle(candidate, template.Points, -MaxRotationAngle, MaxRotationAngle);
             if (distance < bestDistance)
             {
                 best = template;
@@ -90,48 +126,292 @@ public static class MouseGestureTemplateRecognizer
             }
         }
 
-        return best != null && bestDistance <= 230 ? best.Sign : null;
+        return best != null && bestDistance <= 220.0 ? best.Sign : null;
     }
 
-    private static IReadOnlyList<Point> Normalize(IReadOnlyList<Point> rawPath)
+    /// <summary>
+    /// Chaikin 割角平滑算法：消除物理采样的锯齿毛刺，同时保留大折角几何拓扑
+    /// </summary>
+    public static List<Point> ChaikinSmooth(IReadOnlyList<Point> points, int iterations = 1)
+    {
+        if (points == null || points.Count < 3) return points?.ToList() ?? [];
+
+        var current = points.ToList();
+        for (var it = 0; it < iterations; it++)
+        {
+            var smoothed = new List<Point>(current.Count * 2) { current[0] };
+            for (var i = 0; i < current.Count - 1; i++)
+            {
+                var p0 = current[i];
+                var p1 = current[i + 1];
+                var q = new Point((0.75 * p0.X) + (0.25 * p1.X), (0.75 * p0.Y) + (0.25 * p1.Y));
+                var r = new Point((0.25 * p0.X) + (0.75 * p1.X), (0.25 * p0.Y) + (0.75 * p1.Y));
+                smoothed.Add(q);
+                smoothed.Add(r);
+            }
+            smoothed.Add(current[^1]);
+            current = smoothed;
+        }
+        return current;
+    }
+
+    /// <summary>
+    /// 自适应主轴吸附：对水平/垂直 4 主轴（→, ↓, ←, ↑）赋予更宽的容差扇区，消除生理手腕倾斜误差
+    /// </summary>
+    private static int AngleToDirectionWithAxisSnapping(double angle)
+    {
+        angle = ((angle % TwoPi) + TwoPi) % TwoPi;
+
+        // 8 个方向中心角度：0(→), 1(↘), 2(↓), 3(↙), 4(←), 5(↖), 6(↑), 7(↗)
+        // 主轴：0, 2, 4, 6 给予 ±26° (0.453 rad) 宽容度
+        const double mainAxisHalfWidth = 26.0 * (Math.PI / 180.0); // ~0.453 rad
+
+        // 检查 0 (→, 0 rad)
+        if (angle <= mainAxisHalfWidth || angle >= TwoPi - mainAxisHalfWidth) return 0;
+
+        // 检查 2 (↓, PI/2)
+        if (Math.Abs(angle - (Math.PI * 0.5)) <= mainAxisHalfWidth) return 2;
+
+        // 检查 4 (←, PI)
+        if (Math.Abs(angle - Math.PI) <= mainAxisHalfWidth) return 4;
+
+        // 检查 6 (↑, 3*PI/2)
+        if (Math.Abs(angle - (Math.PI * 1.5)) <= mainAxisHalfWidth) return 6;
+
+        // 斜角方向判定
+        return (int)Math.Round(angle / EighthPi) % 8;
+    }
+
+    /// <summary>
+    /// 高抗噪 8 方向序列提取算法。
+    /// 采用 Chaikin 平滑预处理 + 自适应主轴吸附 + 步长积累 + 滞后死区（Hysteresis）+ 瞬态去抖（Debounce）。
+    /// </summary>
+    public static string ExtractSequence(IReadOnlyList<Point> rawPoints, double minStepDistance = 24.0)
+    {
+        if (rawPoints == null || rawPoints.Count < 2)
+        {
+            return string.Empty;
+        }
+
+        // 1. 过滤无效点与过近距离抖动，并进行 Chaikin 曲线抗抖平滑
+        var cleanPoints = new List<Point>(rawPoints.Count);
+        foreach (var pt in rawPoints)
+        {
+            if (double.IsNaN(pt.X) || double.IsNaN(pt.Y)) continue;
+            if (cleanPoints.Count > 0 && (pt - cleanPoints[^1]).Length < 2.0) continue;
+            cleanPoints.Add(pt);
+        }
+
+        if (cleanPoints.Count < 2)
+        {
+            return string.Empty;
+        }
+
+        // 应用轻量 Chaikin 平滑割角
+        cleanPoints = ChaikinSmooth(cleanPoints, 1);
+
+        var rawDirections = new List<(int Direction, double Length)>();
+        var anchor = cleanPoints[0];
+        var currentDir = -1;
+        var accumulatedLength = 0.0;
+
+        for (var i = 1; i < cleanPoints.Count; i++)
+        {
+            var current = cleanPoints[i];
+            var dx = current.X - anchor.X;
+            var dy = current.Y - anchor.Y;
+            var dist = Math.Sqrt((dx * dx) + (dy * dy));
+
+            if (dist < minStepDistance && i < cleanPoints.Count - 1)
+            {
+                continue;
+            }
+
+            var angle = (Math.Atan2(dy, dx) + TwoPi) % TwoPi;
+            var rawDir = AngleToDirectionWithAxisSnapping(angle);
+
+            if (currentDir == -1)
+            {
+                currentDir = rawDir;
+                accumulatedLength = dist;
+            }
+            else if (rawDir != currentDir)
+            {
+                // 滞后判定：计算当前位移角与基准方向角的偏角
+                var baseAngle = currentDir * EighthPi;
+                var angleDiff = Math.Abs(angle - baseAngle);
+                if (angleDiff > Math.PI) angleDiff = TwoPi - angleDiff;
+
+                // 只有当偏角大于 38 度 (~0.66 rad) 时，才确认为新拐向
+                if (angleDiff > 0.663 || dist >= minStepDistance * 1.5)
+                {
+                    rawDirections.Add((currentDir, accumulatedLength));
+                    currentDir = rawDir;
+                    accumulatedLength = dist;
+                }
+                else
+                {
+                    accumulatedLength += dist;
+                }
+            }
+            else
+            {
+                accumulatedLength += dist;
+            }
+
+            anchor = current;
+        }
+
+        if (currentDir != -1)
+        {
+            rawDirections.Add((currentDir, accumulatedLength));
+        }
+
+        if (rawDirections.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        // 2. 瞬态抖动过滤与反向回弹吸收（例如 A -> B -> A 且 B 极短时，消除 B）
+        var filteredDirs = new List<(int Direction, double Length)>();
+        for (var i = 0; i < rawDirections.Count; i++)
+        {
+            var item = rawDirections[i];
+            if (filteredDirs.Count > 0 && item.Direction == filteredDirs[^1].Direction)
+            {
+                filteredDirs[^1] = (filteredDirs[^1].Direction, filteredDirs[^1].Length + item.Length);
+                continue;
+            }
+
+            // 检查是否是微小尖峰震荡或 180 度刹车回弹
+            if (i > 0 && i < rawDirections.Count - 1)
+            {
+                var prev = filteredDirs.Count > 0 ? filteredDirs[^1] : rawDirections[i - 1];
+                var next = rawDirections[i + 1];
+                var isOpposite = Math.Abs(item.Direction - prev.Direction) == 4;
+                if ((prev.Direction == next.Direction || isOpposite) && item.Length < minStepDistance * 0.9)
+                {
+                    // 忽略当前的微小突变/回弹
+                    continue;
+                }
+            }
+
+            filteredDirs.Add(item);
+        }
+
+        // 3. 构建最终箭头序列
+        var sb = new StringBuilder(filteredDirs.Count);
+        foreach (var dir in filteredDirs)
+        {
+            sb.Append(Arrows[dir.Direction]);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 标准化点集：Chaikin 平滑 -> 重采样 -> 居中平移 -> 缩放至标准正方形。
+    /// </summary>
+    public static IReadOnlyList<Point> Normalize(IReadOnlyList<Point> rawPath)
     {
         var points = rawPath
             .Where(static point => !double.IsNaN(point.X) && !double.IsNaN(point.Y))
             .ToList();
-        if (points.Count < 2 || PathLength(points) < 1)
+        if (points.Count < 2 || PathLength(points) < 1.0)
         {
             return [];
         }
 
-        var resampled = Resample(points, PointCount);
+        // 先执行 Chaikin 割角平滑降噪
+        var smoothed = ChaikinSmooth(points, 1);
+        var resampled = Resample(smoothed, PointCount);
         if (resampled.Count != PointCount)
         {
             return [];
         }
 
-        return ScaleToBox(resampled, CoordinateScale);
+        var scaled = ScaleToBox(resampled, CoordinateScale);
+        return TranslateToCentroid(scaled);
+    }
+
+    /// <summary>
+    /// 黄金分割搜索最优旋转角下的点云欧氏距离。
+    /// </summary>
+    private static (double Distance, double BestAngle) DistanceAtBestAngle(
+        IReadOnlyList<Point> points,
+        IReadOnlyList<Point> template,
+        double a,
+        double b,
+        double threshold = 0.035) // ~2度精度
+    {
+        var x1 = b - (GoldenRatio * (b - a));
+        var x2 = a + (GoldenRatio * (b - a));
+        var f1 = DistanceAtAngle(points, template, x1);
+        var f2 = DistanceAtAngle(points, template, x2);
+
+        while (Math.Abs(b - a) > threshold)
+        {
+            if (f1 < f2)
+            {
+                b = x2;
+                x2 = x1;
+                f2 = f1;
+                x1 = b - (GoldenRatio * (b - a));
+                f1 = DistanceAtAngle(points, template, x1);
+            }
+            else
+            {
+                a = x1;
+                x1 = x2;
+                f1 = f2;
+                x2 = a + (GoldenRatio * (b - a));
+                f2 = DistanceAtAngle(points, template, x2);
+            }
+        }
+
+        var bestAngle = (a + b) / 2.0;
+        var minDistance = Math.Min(f1, f2);
+        return (minDistance, bestAngle);
+    }
+
+    private static double DistanceAtAngle(IReadOnlyList<Point> points, IReadOnlyList<Point> template, double radians)
+    {
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+        var total = 0.0;
+
+        for (var i = 0; i < points.Count && i < template.Count; i++)
+        {
+            var p = points[i];
+            var rotatedX = (p.X * cos) - (p.Y * sin);
+            var rotatedY = (p.X * sin) + (p.Y * cos);
+            var t = template[i];
+            var dx = rotatedX - t.X;
+            var dy = rotatedY - t.Y;
+            total += Math.Sqrt((dx * dx) + (dy * dy));
+        }
+
+        return total / points.Count;
     }
 
     private static List<Point> Resample(IReadOnlyList<Point> source, int targetCount)
     {
         var points = source.ToList();
-        var interval = PathLength(points) / (targetCount - 1);
-        if (interval <= 0)
-        {
-            return [];
-        }
+        var totalLength = PathLength(points);
+        if (totalLength <= 0) return [];
+
+        var interval = totalLength / (targetCount - 1);
+        if (interval <= 0) return [];
 
         var resampled = new List<Point>(targetCount) { points[0] };
         var distanceSinceLast = 0.0;
+
         for (var index = 1; index < points.Count; index++)
         {
             var previous = points[index - 1];
             var current = points[index];
             var segmentLength = Distance(previous, current);
-            if (segmentLength <= 0)
-            {
-                continue;
-            }
+            if (segmentLength <= 0) continue;
 
             while (distanceSinceLast + segmentLength >= interval)
             {
@@ -170,13 +450,10 @@ public static class MouseGestureTemplateRecognizer
         var width = maxX - minX;
         var height = maxY - minY;
         var scale = Math.Max(width, height);
-        if (scale <= 0)
-        {
-            return [];
-        }
+        if (scale <= 0) return [];
 
-        var offsetX = (size - (width * size / scale)) / 2;
-        var offsetY = (size - (height * size / scale)) / 2;
+        var offsetX = (size - (width * size / scale)) / 2.0;
+        var offsetY = (size - (height * size / scale)) / 2.0;
         return points
             .Select(point => new Point(
                 ((point.X - minX) * size / scale) + offsetX,
@@ -184,7 +461,15 @@ public static class MouseGestureTemplateRecognizer
             .ToList();
     }
 
-    private static IReadOnlyList<Point> DecodeTemplateData(int[] data)
+    private static IReadOnlyList<Point> TranslateToCentroid(IReadOnlyList<Point> points)
+    {
+        if (points.Count == 0) return points;
+        var cx = points.Average(static p => p.X);
+        var cy = points.Average(static p => p.Y);
+        return points.Select(p => new Point(p.X - cx, p.Y - cy)).ToList();
+    }
+
+    public static IReadOnlyList<Point> DecodeTemplateData(int[] data)
     {
         var points = new List<Point>(PointCount);
         for (var index = 0; index + 1 < data.Length; index += 2)
@@ -192,23 +477,7 @@ public static class MouseGestureTemplateRecognizer
             points.Add(new Point(data[index], data[index + 1]));
         }
 
-        return points;
-    }
-
-    private static double Distance(IReadOnlyList<Point> a, IReadOnlyList<Point> b)
-    {
-        if (a.Count != b.Count || a.Count == 0)
-        {
-            return double.PositiveInfinity;
-        }
-
-        var total = 0.0;
-        for (var index = 0; index < a.Count; index++)
-        {
-            total += Distance(a[index], b[index]);
-        }
-
-        return total / a.Count;
+        return TranslateToCentroid(points);
     }
 
     private static double Distance(Point a, Point b)
@@ -240,16 +509,25 @@ public static class MouseGestureTemplateRecognizer
         [
             BuiltIn("P", (0, 1000), (0, 0), (650, 0), (780, 220), (650, 430), (0, 430)),
             BuiltIn("P", (0, 1000), (0, 0), (700, 0), (700, 420), (0, 420)),
+            BuiltIn("P-REV", (1000, 1000), (1000, 0), (350, 0), (220, 220), (350, 430), (1000, 430)),
             BuiltIn("S", (850, 0), (250, 0), (0, 250), (750, 500), (1000, 750), (250, 1000)),
             BuiltIn("Z", (0, 0), (900, 0), (0, 1000), (900, 1000)),
             BuiltIn("U", (0, 0), (0, 850), (240, 1000), (760, 1000), (1000, 850), (1000, 0)),
             BuiltIn("C", (1000, 100), (350, 0), (0, 500), (350, 1000), (1000, 900)),
             BuiltIn("V", (0, 0), (500, 1000), (1000, 0)),
+            BuiltIn("INVERTED-V", (0, 1000), (500, 0), (1000, 1000)),
             BuiltIn("N", (0, 1000), (0, 0), (1000, 1000), (1000, 0)),
             BuiltIn("M", (0, 1000), (0, 0), (500, 550), (1000, 0), (1000, 1000)),
             BuiltIn("W", (0, 0), (0, 1000), (500, 450), (1000, 1000), (1000, 0)),
             BuiltIn("L", (0, 0), (0, 1000), (850, 1000)),
-            BuiltIn("L", (0, 1000), (0, 0), (850, 0))
+            BuiltIn("L", (0, 1000), (0, 0), (850, 0)),
+            BuiltIn("CHECKMARK", (0, 500), (350, 1000), (1000, 0)),
+            BuiltIn("HEART", (500, 250), (350, 0), (0, 0), (0, 450), (500, 1000), (1000, 450), (1000, 0), (650, 0), (500, 250)),
+            BuiltIn("ALPHA", (1000, 0), (0, 1000), (500, 1000), (1000, 500), (500, 0), (0, 0), (1000, 1000)),
+            BuiltIn("CIRCLE", (500, 0), (1000, 500), (500, 1000), (0, 500), (500, 0)),
+            BuiltIn("CIRCLE", (500, 0), (0, 500), (500, 1000), (1000, 500), (500, 0)),
+            BuiltIn("TRIANGLE", (500, 0), (1000, 1000), (0, 1000), (500, 0)),
+            BuiltIn("RECTANGLE", (0, 0), (1000, 0), (1000, 1000), (0, 1000), (0, 0))
         ];
     }
 
@@ -263,4 +541,8 @@ public static class MouseGestureTemplateRecognizer
     private sealed record BuiltInTemplate(string Sign, IReadOnlyList<Point> Points);
 }
 
-public sealed record TemplateMatch(RegisteredGesture Gesture, double Distance);
+public sealed record TemplateMatch(
+    RegisteredGesture Gesture,
+    double Distance,
+    double Score = 1.0,
+    double RotationAngle = 0.0);

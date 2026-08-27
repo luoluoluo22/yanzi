@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Globalization;
+using System.Threading.Tasks;
 
 namespace OpenQuickHost.Sync;
 
@@ -22,6 +24,8 @@ public static class LocalExtensionCatalog
 
     public static string CatalogRootPath => ExtensionPackageService.ExtensionsRootPath;
 
+    public static string CreateSystemExtensionId() => $"ext_{Guid.NewGuid():N}";
+
     public static void EnsureSampleExtension()
     {
         Directory.CreateDirectory(CatalogRootPath);
@@ -30,10 +34,22 @@ public static class LocalExtensionCatalog
 
     private static void EnsureDefaultWebSearchExtensions()
     {
-        if (Directory.EnumerateFiles(CatalogRootPath, "manifest.json", SearchOption.AllDirectories)
-            .Any(path => Path.GetFileName(Path.GetDirectoryName(path))?.StartsWith("web-search-", StringComparison.OrdinalIgnoreCase) == true))
+        if (Directory.Exists(CatalogRootPath))
         {
-            return;
+            var hasWebSearch = false;
+            foreach (var dir in GetCatalogDirectories())
+            {
+                var dirName = Path.GetFileName(dir);
+                if (dirName != null && dirName.StartsWith("web-search-", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (File.Exists(Path.Combine(dir, "manifest.json")))
+                    {
+                        hasWebSearch = true;
+                        break;
+                    }
+                }
+            }
+            if (hasWebSearch) return;
         }
 
         EnsureWebSearchExtension("web-search-baidu", "百度搜索", "百度网页搜索。", "https://www.baidu.com/s?wd={query}", ["百度", "baidu", "bd"], "https://www.baidu.com/favicon.ico");
@@ -67,21 +83,43 @@ public static class LocalExtensionCatalog
             return [];
         }
 
-        var entries = new List<LocalExtensionCatalogEntry>();
-        foreach (var manifestPath in Directory.EnumerateFiles(CatalogRootPath, "manifest.json", SearchOption.AllDirectories))
+        var candidates = new List<(string ManifestPath, string Directory)>();
+        foreach (var dir in GetCatalogDirectories())
         {
+            var manifestPath = Path.Combine(dir, "manifest.json");
+            if (!File.Exists(manifestPath))
+            {
+                continue;
+            }
+            candidates.Add((manifestPath, dir));
+        }
+
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 4)
+        };
+
+        var entries = new ConcurrentBag<LocalExtensionCatalogEntry>();
+        Parallel.ForEach(candidates, parallelOptions, candidate =>
+        {
+            var manifestPath = candidate.ManifestPath;
             try
             {
                 var json = File.ReadAllText(manifestPath);
                 var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(json, JsonOptions);
                 if (manifest == null || string.IsNullOrWhiteSpace(manifest.Id) || string.IsNullOrWhiteSpace(manifest.Name))
                 {
-                    continue;
+                    return;
                 }
 
                 if (HiddenBuiltInSampleIds.Contains(manifest.Id))
                 {
-                    continue;
+                    return;
                 }
 
                 entries.Add(new LocalExtensionCatalogEntry(manifestPath, manifest));
@@ -91,9 +129,22 @@ public static class LocalExtensionCatalog
                 // Skip invalid manifests so one broken extension does not block the host.
                 HostAssets.AppendLog($"加载本地扩展失败: {manifestPath}, 异常: {ex.Message}");
             }
-        }
+        });
 
-        return entries;
+        return entries.ToList();
+    }
+
+    private static IReadOnlyList<string> GetCatalogDirectories()
+    {
+        try
+        {
+            return Directory.GetDirectories(CatalogRootPath);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"枚举本地扩展目录失败: {CatalogRootPath}, 异常: {ex.Message}");
+            return [];
+        }
     }
 
     public static IReadOnlyList<CommandItem> LoadCommands()
@@ -133,7 +184,26 @@ public static class LocalExtensionCatalog
             queryPrefixes: manifest.QueryPrefixes,
             queryTargetTemplate: manifest.QueryTargetTemplate,
             startup: manifest.Startup?.ToDefinition(),
-            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget));
+            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
+            isPublishedInStore: manifest.IsPublished == true);
+    }
+
+    public static void SetExtensionPublishedState(string extensionId, bool isPublished)
+    {
+        var entry = LoadEntries().FirstOrDefault(e => string.Equals(e.Manifest.Id, extensionId, StringComparison.OrdinalIgnoreCase));
+        if (entry != null && File.Exists(entry.ManifestPath))
+        {
+            try
+            {
+                var updated = entry.Manifest with { IsPublished = isPublished };
+                var json = JsonSerializer.Serialize(updated, JsonOptions);
+                File.WriteAllText(entry.ManifestPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to persist IsPublished state for {extensionId}: {ex.Message}");
+            }
+        }
     }
 
     private static void EnsureSampleNotesExtension()
@@ -587,11 +657,15 @@ public static class YanziAction
             });
     }
 
-    public static CommandItem SaveJsonExtension(string json)
+    public static CommandItem SaveJsonExtension(string json, bool forceNewSystemId = false)
     {
         Directory.CreateDirectory(CatalogRootPath);
 
         var manifest = ParseManifest(json);
+        if (forceNewSystemId || string.IsNullOrWhiteSpace(manifest.Id))
+        {
+            manifest = manifest with { Id = CreateAvailableSystemExtensionId() };
+        }
 
         var extensionDirectory = Path.Combine(CatalogRootPath, manifest.Id);
         Directory.CreateDirectory(extensionDirectory);
@@ -795,7 +869,7 @@ public static class YanziAction
 
         if (string.IsNullOrWhiteSpace(manifest.Id))
         {
-            throw new InvalidOperationException("扩展必须包含 id。");
+            manifest = manifest with { Id = CreateSystemExtensionId() };
         }
 
         if (string.IsNullOrWhiteSpace(manifest.Name))
@@ -817,6 +891,18 @@ public static class YanziAction
         }
 
         return manifest;
+    }
+
+    private static string CreateAvailableSystemExtensionId()
+    {
+        string id;
+        do
+        {
+            id = CreateSystemExtensionId();
+        }
+        while (Directory.Exists(Path.Combine(CatalogRootPath, id)));
+
+        return id;
     }
 
     private static LocalExtensionManifest NormalizeManifestForPersistence(LocalExtensionManifest manifest, string extensionDirectory)
@@ -1080,6 +1166,8 @@ public sealed record LocalExtensionManifest
     public LocalExtensionSearchProviderManifest? SearchProvider { get; init; }
 
     public LocalExtensionMouseGestureManifest? MouseGesture { get; init; }
+
+    public bool? IsPublished { get; init; }
 }
 
 public sealed record LocalExtensionCatalogEntry(string ManifestPath, LocalExtensionManifest Manifest);

@@ -493,7 +493,7 @@ public sealed class WindowBoundExtensionsService : IDisposable
             return false;
         }
 
-        var dpi = GetDpiForWindow(GetForegroundWindow());
+        var dpi = ScreenHelper.GetDpiForWindow(GetForegroundWindow());
         var scale = dpi <= 0 ? 1 : dpi / 96.0;
         var x = point.X / scale;
         var y = point.Y / scale;
@@ -631,7 +631,7 @@ public sealed class WindowBoundExtensionsService : IDisposable
             _ = GetWindowText(hwnd, titleBuilder, titleBuilder.Capacity);
             title = titleBuilder.ToString();
 
-            dpi = GetDpiForWindow(hwnd);
+            dpi = ScreenHelper.GetDpiForWindow(hwnd);
             if (dpi == 0)
             {
                 dpi = 96;
@@ -759,9 +759,6 @@ public sealed class WindowBoundExtensionsService : IDisposable
             return false;
         }
     }
-
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 

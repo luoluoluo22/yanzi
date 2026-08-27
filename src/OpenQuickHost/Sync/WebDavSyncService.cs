@@ -250,6 +250,10 @@ public sealed class WebDavSyncService
 
         var mergedIndex = new WebDavSyncIndex
         {
+            Revision = mergedMap.Values.Select(static item => item.Revision).DefaultIfEmpty().Max(),
+            UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+            UpdatedByDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+            UpdatedByDeviceName = DeviceIdentityStore.GetDesktopDisplayName(),
             Items = mergedMap.Values
                 .OrderBy(item => item.ExtensionId, StringComparer.OrdinalIgnoreCase)
                 .ToList()
@@ -277,7 +281,7 @@ public sealed class WebDavSyncService
         localSettings.Yanm ??= new YanmSettings();
         localSettings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var localYanm = CloneByJson(localSettings.Yanm);
-        var localUpdatedAtUtc = TryParseUtc(localSettings.LauncherConfigUpdatedAtUtc) ?? DateTime.MinValue;
+        var localUpdatedAtUtc = GetLocalYanmUpdatedAtUtc(localSettings);
         var remoteInfo = await TryGetRemoteFileInfoAsync("state/yanm-state.json", cancellationToken);
         if (remoteInfo != null && localUpdatedAtUtc > DateTime.MinValue)
         {
@@ -289,11 +293,12 @@ public sealed class WebDavSyncService
                 return new WebDavYanmStateSyncResult(false, false, SyncRootDisplay, remoteInfo.LastModifiedUtc, (int)Math.Min(remoteInfo.ContentLength, int.MaxValue));
             }
 
-            if (localUpdatedAtUtc > remoteInfo.LastModifiedUtc.AddSeconds(1))
+            if (localUpdatedAtUtc > remoteInfo.LastModifiedUtc.AddSeconds(1) &&
+                HasYanmComponentState(localYanm))
             {
                 var uploadedAtUtc = DateTime.UtcNow;
                 await UploadYanmStateAsync(localYanm, uploadedAtUtc, cancellationToken);
-                SaveLauncherConfigUpdatedAtUtc(uploadedAtUtc);
+                SaveYanmStateUpdatedAtUtc(uploadedAtUtc);
                 var uploadedBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(new WebDavYanmStateSnapshot { UpdatedAtUtc = uploadedAtUtc.ToString("O"), Yanm = localYanm }, JsonOptions));
                 HostAssets.AppendLog(
                     $"WebDAV Yanm state uploaded by metadata: localUpdated={localUpdatedAtUtc:O}, remoteModified={remoteInfo.LastModifiedUtc:O}, bytes={uploadedBytes}.");
@@ -327,7 +332,7 @@ public sealed class WebDavSyncService
 
             var uploadedAtUtc = DateTime.UtcNow;
             await UploadYanmStateAsync(localYanm, uploadedAtUtc, cancellationToken);
-            SaveLauncherConfigUpdatedAtUtc(uploadedAtUtc);
+            SaveYanmStateUpdatedAtUtc(uploadedAtUtc);
             var uploadedBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(new WebDavYanmStateSnapshot { UpdatedAtUtc = uploadedAtUtc.ToString("O"), Yanm = localYanm }, JsonOptions));
             HostAssets.AppendLog($"WebDAV Yanm state uploaded: remote missing, bytes={uploadedBytes}.");
             return new WebDavYanmStateSyncResult(true, false, SyncRootDisplay, uploadedAtUtc, uploadedBytes);
@@ -340,7 +345,7 @@ public sealed class WebDavSyncService
         {
             if (localUpdatedAtUtc == DateTime.MinValue && remoteUpdatedAtUtc > DateTime.MinValue)
             {
-                SaveLauncherConfigUpdatedAtUtc(remoteUpdatedAtUtc);
+                SaveYanmStateUpdatedAtUtc(remoteUpdatedAtUtc);
             }
 
             HostAssets.AppendLog($"WebDAV Yanm state sync: no changes detected, bytes={payloadBytes}.");
@@ -355,9 +360,17 @@ public sealed class WebDavSyncService
             return new WebDavYanmStateSyncResult(false, true, SyncRootDisplay, remoteUpdatedAtUtc, payloadBytes);
         }
 
+        if (!HasYanmComponentState(localYanm) && HasYanmComponentState(remote.Yanm))
+        {
+            ApplyYanmStateSnapshot(remote.Yanm, remoteUpdatedAtUtc);
+            HostAssets.AppendLog(
+                $"WebDAV Yanm state pulled to protect remote component data: remoteUpdated={remoteUpdatedAtUtc:O}, localUpdated={localUpdatedAtUtc:O}, bytes={payloadBytes}.");
+            return new WebDavYanmStateSyncResult(false, true, SyncRootDisplay, remoteUpdatedAtUtc, payloadBytes);
+        }
+
         var updatedAtUtc = DateTime.UtcNow;
         await UploadYanmStateAsync(localYanm, updatedAtUtc, cancellationToken);
-        SaveLauncherConfigUpdatedAtUtc(updatedAtUtc);
+        SaveYanmStateUpdatedAtUtc(updatedAtUtc);
         var uploadBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(new WebDavYanmStateSnapshot { UpdatedAtUtc = updatedAtUtc.ToString("O"), Yanm = localYanm }, JsonOptions));
         HostAssets.AppendLog(
             $"WebDAV Yanm state uploaded: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc:O}, bytes={uploadBytes}.");
@@ -504,20 +517,64 @@ public sealed class WebDavSyncService
         var remote = remoteBytes is { Length: > 0 }
             ? JsonSerializer.Deserialize<WebDavLauncherConfigSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions)
             : null;
+        var hasRemoteObjects = await HasLauncherConfigObjectsAsync(cancellationToken);
+        remote = hasRemoteObjects
+            ? await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken) ?? remote
+            : remote;
+        if (remote?.Config != null)
+        {
+            // 独立 yanm-state 是燕幕的唯一写入权威；旧主快照字段仅供迁移读取。
+            remote.Config.Yanm = null;
+        }
 
         if (remote?.Config == null)
         {
+            if (CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(localConfig))
+            {
+                HostAssets.AppendLog("WebDAV launcher config upload skipped: local snapshot has no user content and remote is missing.");
+                return (false, false);
+            }
+
             var uploadedAtUtc = DateTime.UtcNow;
-            await UploadLauncherConfigAsync(localConfig, uploadedAtUtc, cancellationToken);
+            if (!await UploadLauncherConfigAsync(localConfig, uploadedAtUtc, cancellationToken))
+            {
+                return (false, false);
+            }
+
             SaveLauncherConfigUpdatedAtUtc(uploadedAtUtc);
             HostAssets.AppendLog("WebDAV launcher config uploaded: remote missing.");
             return (true, false);
         }
 
         var remoteUpdatedAtUtc = TryParseUtc(remote.UpdatedAtUtc) ?? DateTime.MinValue;
+        var localTime = localConfig.UpdatedAtUtc;
+        var remoteTime = remote.Config.UpdatedAtUtc;
+        localConfig.UpdatedAtUtc = null;
+        remote.Config.UpdatedAtUtc = null;
+        var localMetadata = CaptureMetadata(localConfig);
+        var remoteMetadata = CaptureMetadata(remote.Config);
+        ClearMetadataForComparison(localConfig);
+        ClearMetadataForComparison(remote.Config);
         var equivalent = AreJsonPayloadsEqual(localConfig, remote.Config);
+        localConfig.UpdatedAtUtc = localTime;
+        remote.Config.UpdatedAtUtc = remoteTime;
+        RestoreMetadata(localConfig, localMetadata);
+        RestoreMetadata(remote.Config, remoteMetadata);
         if (equivalent)
         {
+            if (!hasRemoteObjects && remote?.Config != null)
+            {
+                var backfillUpdatedAtUtc = remoteUpdatedAtUtc == DateTime.MinValue ? DateTime.UtcNow : remoteUpdatedAtUtc;
+                if (!await UploadLauncherConfigAsync(localConfig, backfillUpdatedAtUtc, cancellationToken))
+                {
+                    return (false, false);
+                }
+
+                SaveLauncherConfigUpdatedAtUtc(backfillUpdatedAtUtc);
+                HostAssets.AppendLog("WebDAV launcher config objects backfilled from legacy snapshot.");
+                return (true, false);
+            }
+
             if (explicitLocalUpdatedAtUtc == null && remoteUpdatedAtUtc > DateTime.MinValue)
             {
                 SaveLauncherConfigUpdatedAtUtc(remoteUpdatedAtUtc);
@@ -543,24 +600,105 @@ public sealed class WebDavSyncService
             return (false, true);
         }
 
+        if (IsLikelyFreshLocalLauncherConfig(localConfig) && HasMeaningfulLauncherConfig(remote.Config))
+        {
+            ApplyLauncherConfigSnapshot(remote.Config, remoteUpdatedAtUtc);
+            HostAssets.AppendLog(
+                $"WebDAV launcher config pulled over fresh local config: remoteUpdated={remoteUpdatedAtUtc:O}, localUpdated={localUpdatedAtUtc:O}.");
+            return (false, true);
+        }
+
         var updatedAtUtc = DateTime.UtcNow;
-        await UploadLauncherConfigAsync(localConfig, updatedAtUtc, cancellationToken);
+        if (!await UploadLauncherConfigAsync(localConfig, updatedAtUtc, cancellationToken))
+        {
+            return (false, false);
+        }
+
         SaveLauncherConfigUpdatedAtUtc(updatedAtUtc);
         HostAssets.AppendLog(
             $"WebDAV launcher config uploaded: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc:O}.");
         return (true, false);
     }
 
-    private async Task UploadLauncherConfigAsync(
+    private async Task<bool> UploadLauncherConfigAsync(
         CloudQuickPanelConfigSnapshot config,
         DateTime updatedAtUtc,
         CancellationToken cancellationToken)
     {
+        config.UpdatedAtUtc = updatedAtUtc.ToString("O");
+        config.SourceDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+        config.SourceDeviceName = DeviceIdentityStore.GetDesktopDisplayName();
+        config.HasUserContent = CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(config);
+        config.IsInitialDefaultConfig = !config.HasUserContent;
         var snapshot = new WebDavLauncherConfigSnapshot
         {
             UpdatedAtUtc = updatedAtUtc.ToString("O"),
             Config = config
         };
+        var writes = LauncherConfigObjectStore.PrepareWrites(config, updatedAtUtc);
+        var changedWrites = new List<LauncherConfigObjectWrite>();
+        var effectiveWrites = new List<LauncherConfigObjectWrite>();
+        foreach (var write in writes)
+        {
+            var remoteBytes = await TryGetBytesAsync(write.Path, cancellationToken);
+            var remoteEnvelope = LauncherConfigObjectStore.Deserialize(remoteBytes);
+            if (LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, remoteEnvelope))
+            {
+                effectiveWrites.Add(LauncherConfigObjectStore.CreateWrite(remoteEnvelope!));
+                continue;
+            }
+
+            changedWrites.Add(write);
+            effectiveWrites.Add(write);
+        }
+
+        if (changedWrites.Count == 0)
+        {
+            HostAssets.AppendLog("WebDAV launcher config upload skipped: all object payloads are unchanged.");
+            return false;
+        }
+
+        foreach (var write in changedWrites)
+        {
+            using var objectRequest = CreateRequest(HttpMethod.Put, write.Path);
+            objectRequest.Content = new ByteArrayContent(write.Bytes);
+            objectRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            using var objectResponse = await _httpClient.SendAsync(objectRequest, cancellationToken);
+            if (!objectResponse.IsSuccessStatusCode)
+            {
+                await ThrowWebDavFailureAsync(objectRequest, objectResponse, cancellationToken);
+            }
+        }
+
+        var manifestBytes = LauncherConfigObjectStore.SerializeManifest(
+            LauncherConfigObjectStore.CreateManifest(effectiveWrites, updatedAtUtc));
+        using (var manifestRequest = CreateRequest(HttpMethod.Put, LauncherConfigObjectStore.ManifestPath))
+        {
+            manifestRequest.Content = new ByteArrayContent(manifestBytes);
+            manifestRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            using var manifestResponse = await _httpClient.SendAsync(manifestRequest, cancellationToken);
+            if (!manifestResponse.IsSuccessStatusCode)
+            {
+                await ThrowWebDavFailureAsync(manifestRequest, manifestResponse, cancellationToken);
+            }
+        }
+
+        var changeBytes = LauncherConfigObjectStore.SerializeChangeSet(
+            LauncherConfigObjectStore.CreateChangeSet(changedWrites, updatedAtUtc, "launcher-config-sync"));
+        var changePath = LauncherConfigObjectStore.GetChangePath(updatedAtUtc);
+        using (var changeRequest = CreateRequest(HttpMethod.Put, changePath))
+        {
+            changeRequest.Content = new ByteArrayContent(changeBytes);
+            changeRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            using var changeResponse = await _httpClient.SendAsync(changeRequest, cancellationToken);
+            if (!changeResponse.IsSuccessStatusCode)
+            {
+                await ThrowWebDavFailureAsync(changeRequest, changeResponse, cancellationToken);
+            }
+        }
+
+        await WriteLauncherRestorePointAsync(effectiveWrites, changedWrites, updatedAtUtc, changePath, cancellationToken);
+
         var json = JsonSerializer.Serialize(snapshot, JsonOptions);
         using var request = CreateRequest(HttpMethod.Put, "state/launcher-config.json");
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -568,6 +706,93 @@ public sealed class WebDavSyncService
         if (!response.IsSuccessStatusCode)
         {
             await ThrowWebDavFailureAsync(request, response, cancellationToken);
+        }
+
+        HostAssets.AppendLog($"WebDAV launcher config uploaded: changedObjects={changedWrites.Count}, totalObjects={effectiveWrites.Count}");
+        return true;
+    }
+
+    private async Task WriteLauncherRestorePointAsync(
+        IReadOnlyList<LauncherConfigObjectWrite> effectiveWrites,
+        IReadOnlyList<LauncherConfigObjectWrite> changedWrites,
+        DateTime updatedAtUtc,
+        string changeSetPath,
+        CancellationToken cancellationToken)
+    {
+        var point = LauncherConfigObjectStore.CreateRestorePoint(
+            effectiveWrites,
+            changedWrites,
+            updatedAtUtc,
+            "launcher-config-sync");
+        var pointBytes = LauncherConfigObjectStore.SerializeRestorePoint(point);
+        var pointPath = LauncherConfigObjectStore.GetRestorePointPath(updatedAtUtc);
+        using (var pointRequest = CreateRequest(HttpMethod.Put, pointPath))
+        {
+            pointRequest.Content = new ByteArrayContent(pointBytes);
+            pointRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            using var pointResponse = await _httpClient.SendAsync(pointRequest, cancellationToken);
+            if (!pointResponse.IsSuccessStatusCode)
+            {
+                await ThrowWebDavFailureAsync(pointRequest, pointResponse, cancellationToken);
+            }
+        }
+
+        var indexBytes = await TryGetBytesAsync(LauncherConfigObjectStore.HistoryIndexPath, cancellationToken);
+        LauncherConfigHistoryIndex index;
+        try
+        {
+            index = LauncherConfigObjectStore.DeserializeHistoryIndex(indexBytes);
+        }
+        catch (JsonException ex)
+        {
+            HostAssets.AppendLog($"WebDAV restore index was invalid and will be rebuilt: {ex.Message}");
+            index = new LauncherConfigHistoryIndex();
+        }
+        index.RestorePoints.RemoveAll(item => item.RestorePointId.Equals(point.RestorePointId, StringComparison.Ordinal));
+        index.RestorePoints.Add(new LauncherConfigRestorePointInfo
+        {
+            RestorePointId = point.RestorePointId,
+            Revision = point.Revision,
+            CreatedAtUtc = point.CreatedAtUtc,
+            SourceDeviceId = point.SourceDeviceId,
+            SourceDeviceName = point.SourceDeviceName,
+            Reason = point.Reason,
+            Path = pointPath,
+            ChangeSetPath = changeSetPath,
+            Sha256 = Convert.ToHexString(SHA256.HashData(pointBytes)).ToLowerInvariant(),
+            SizeBytes = pointBytes.Length,
+            ObjectCount = point.Objects.Count,
+            ChangedObjectIds = point.ChangedObjectIds.ToList()
+        });
+        index.RestorePoints = index.RestorePoints.OrderByDescending(static item => item.Revision).ToList();
+        var pruned = index.RestorePoints.Skip(LauncherConfigObjectStore.MaxRestorePointCount).ToArray();
+        index.RestorePoints = index.RestorePoints.Take(LauncherConfigObjectStore.MaxRestorePointCount).ToList();
+        index.UpdatedAtUtc = DateTime.UtcNow.ToString("O");
+        var historyIndexBytes = LauncherConfigObjectStore.SerializeHistoryIndex(index);
+        using (var indexRequest = CreateRequest(HttpMethod.Put, LauncherConfigObjectStore.HistoryIndexPath))
+        {
+            indexRequest.Content = new ByteArrayContent(historyIndexBytes);
+            indexRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            using var indexResponse = await _httpClient.SendAsync(indexRequest, cancellationToken);
+            if (!indexResponse.IsSuccessStatusCode)
+            {
+                await ThrowWebDavFailureAsync(indexRequest, indexResponse, cancellationToken);
+            }
+        }
+        foreach (var stale in pruned)
+        {
+            try
+            {
+                await DeleteRemoteFileAsync(stale.Path, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(stale.ChangeSetPath))
+                {
+                    await DeleteRemoteFileAsync(stale.ChangeSetPath, cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"WebDAV restore point prune deferred: path={stale.Path}, error={ex.Message}");
+            }
         }
     }
 
@@ -577,6 +802,7 @@ public sealed class WebDavSyncService
         var remote = remoteBytes is { Length: > 0 }
             ? JsonSerializer.Deserialize<WebDavLauncherConfigSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions)
             : null;
+        remote = await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken) ?? remote;
         return remote?.Config?.Yanm == null
             ? null
             : new WebDavYanmStateSnapshot
@@ -586,11 +812,71 @@ public sealed class WebDavSyncService
             };
     }
 
+    private async Task<WebDavLauncherConfigSnapshot?> TryLoadLauncherConfigObjectsAsync(
+        CloudQuickPanelConfigSnapshot? baseSnapshot,
+        CancellationToken cancellationToken)
+    {
+        var objects = new List<LauncherConfigObjectEnvelope>();
+        foreach (var definition in LauncherConfigObjectStore.Definitions)
+        {
+            var bytes = await TryGetBytesAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+            var obj = LauncherConfigObjectStore.Deserialize(bytes);
+            if (obj != null && obj.ObjectId.Equals(definition.ObjectId, StringComparison.OrdinalIgnoreCase))
+            {
+                objects.Add(obj);
+            }
+        }
+
+        var snapshot = LauncherConfigObjectStore.Compose(baseSnapshot, objects, out var updatedAtUtc);
+        return snapshot == null
+            ? null
+            : new WebDavLauncherConfigSnapshot
+            {
+                SchemaVersion = 2,
+                UpdatedAtUtc = updatedAtUtc == DateTime.MinValue
+                    ? snapshot.UpdatedAtUtc ?? string.Empty
+                    : updatedAtUtc.ToString("O"),
+                Config = snapshot
+            };
+    }
+
+    private async Task<bool> HasLauncherConfigObjectsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var definition in LauncherConfigObjectStore.Definitions)
+        {
+            var bytes = await TryGetBytesAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+            if (bytes is { Length: > 0 })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private async Task UploadYanmStateAsync(
         YanmSettings yanm,
         DateTime updatedAtUtc,
         CancellationToken cancellationToken)
     {
+        var remoteBytes = await TryGetBytesAsync("state/yanm-state.json", cancellationToken);
+        if (remoteBytes is { Length: > 0 })
+        {
+            try
+            {
+                var remote = JsonSerializer.Deserialize<WebDavYanmStateSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions);
+                if (remote?.Yanm != null && AreJsonPayloadsEqual(yanm, remote.Yanm))
+                {
+                    HostAssets.AppendLog("WebDAV Yanm state upload skipped: remote content is unchanged except metadata.");
+                    return;
+                }
+            }
+            catch (JsonException ex)
+            {
+                HostAssets.AppendLog($"WebDAV Yanm state unchanged check skipped: remote JSON parse failed: {ex.Message}");
+            }
+        }
+
         var snapshot = new WebDavYanmStateSnapshot
         {
             UpdatedAtUtc = updatedAtUtc.ToString("O"),
@@ -610,6 +896,17 @@ public sealed class WebDavSyncService
     {
         var settings = AppSettingsStore.Load();
         var incoming = snapshot.ToAppSettings();
+        settings.ThemeMode = incoming.ThemeMode;
+        if (snapshot.AutoCloseToastEnabled != null) settings.AutoCloseToastEnabled = incoming.AutoCloseToastEnabled;
+        if (snapshot.EnableAutoUpdate != null) settings.EnableAutoUpdate = incoming.EnableAutoUpdate;
+        if (snapshot.EnableBrowserHelper != null) settings.EnableBrowserHelper = incoming.EnableBrowserHelper;
+        if (snapshot.PreferManualExtensionEditor != null) settings.PreferManualExtensionEditor = incoming.PreferManualExtensionEditor;
+        if (snapshot.EnableEverything != null) settings.EnableEverything = incoming.EnableEverything;
+        settings.LauncherHotkey = incoming.LauncherHotkey;
+        settings.LaunchAtStartup = incoming.LaunchAtStartup;
+        settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;
+        settings.CloseToTray = incoming.CloseToTray;
+        settings.QuickPanelTrigger = incoming.QuickPanelTrigger;
         settings.QuickPanelSlots = incoming.QuickPanelSlots;
         settings.QuickPanelGlobalGroups = incoming.QuickPanelGlobalGroups;
         settings.QuickPanelContextGroups = incoming.QuickPanelContextGroups;
@@ -617,7 +914,23 @@ public sealed class WebDavSyncService
         settings.SelectedQuickPanelContextGroupId = incoming.SelectedQuickPanelContextGroupId;
         settings.GlobalFavoriteExtensionIds = incoming.GlobalFavoriteExtensionIds;
         settings.ContextFavoriteExtensionIds = incoming.ContextFavoriteExtensionIds;
+        settings.DisabledExtensionIds = incoming.DisabledExtensionIds;
+        settings.PinnedSearchScopeCommandIds = incoming.PinnedSearchScopeCommandIds;
         settings.QuickPanelMouseTriggers = incoming.QuickPanelMouseTriggers;
+        if (snapshot.MouseGestureAppBindings != null) settings.MouseGestureAppBindings = incoming.MouseGestureAppBindings;
+        if (snapshot.SearchScopeConfigs != null) settings.SearchScopeConfigs = incoming.SearchScopeConfigs;
+        if (snapshot.EnvironmentVariables != null)
+        {
+            settings.EnvironmentVariables = AppEnvironmentVariableStore.PrepareSyncedMetadata(incoming.EnvironmentVariables);
+        }
+        settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(incoming.MouseGestureTriggerMode);
+        settings.WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(incoming.WindowSnapAssistMouseTriggerMode);
+        settings.EnableWindowSnapAssist = incoming.EnableWindowSnapAssist;
+        settings.WindowSnapAssistHotkey = incoming.WindowSnapAssistHotkey;
+        settings.WindowSnapAssistCustomLayouts = incoming.WindowSnapAssistCustomLayouts;
+        settings.WindowBindings = incoming.WindowBindings;
+        settings.EnableAgentApi = incoming.EnableAgentApi;
+        settings.AgentApiPort = incoming.AgentApiPort;
         if (snapshot.YarnSelect != null)
         {
             settings.YarnSelect = incoming.YarnSelect;
@@ -633,13 +946,9 @@ public sealed class WebDavSyncService
             settings.YanyuRules = incoming.YanyuRules;
         }
 
-        if (snapshot.Yanm != null)
-        {
-            settings.Yanm = incoming.Yanm;
-        }
-
         if (HasAiConfigPayload(snapshot))
         {
+            AiCredentialStore.PreserveLocalSecrets(settings, incoming);
             settings.AiBaseUrl = incoming.AiBaseUrl;
             settings.AiApiKey = incoming.AiApiKey;
             settings.AiModel = incoming.AiModel;
@@ -654,7 +963,14 @@ public sealed class WebDavSyncService
     {
         var settings = AppSettingsStore.Load();
         settings.Yanm = CloneByJson(yanm);
-        settings.LauncherConfigUpdatedAtUtc = updatedAtUtc.ToString("O");
+        settings.YanmStateUpdatedAtUtc = updatedAtUtc.ToString("O");
+        AppSettingsStore.Save(settings);
+    }
+
+    private static void SaveYanmStateUpdatedAtUtc(DateTime updatedAtUtc)
+    {
+        var settings = AppSettingsStore.Load();
+        settings.YanmStateUpdatedAtUtc = updatedAtUtc.ToString("O");
         AppSettingsStore.Save(settings);
     }
 
@@ -663,6 +979,11 @@ public sealed class WebDavSyncService
         var settings = AppSettingsStore.Load();
         settings.LauncherConfigUpdatedAtUtc = updatedAtUtc.ToString("O");
         AppSettingsStore.Save(settings);
+    }
+
+    private static DateTime GetLocalYanmUpdatedAtUtc(AppSettings settings)
+    {
+        return TryParseUtc(settings.YanmStateUpdatedAtUtc) ?? DateTime.MinValue;
     }
 
     private static DateTime? TryParseUtc(string? value)
@@ -674,7 +995,90 @@ public sealed class WebDavSyncService
 
     private static bool AreJsonPayloadsEqual<T>(T left, T right)
     {
+        if (ReferenceEquals(left, right)) return true;
+        if (left == null || right == null) return false;
+
+        if (left is YanmSettings leftYanm && right is YanmSettings rightYanm)
+        {
+            return AreYanmSettingsEqual(leftYanm, rightYanm);
+        }
+
         return string.Equals(JsonSerializer.Serialize(left, JsonOptions), JsonSerializer.Serialize(right, JsonOptions), StringComparison.Ordinal);
+    }
+
+    private static bool AreYanmSettingsEqual(YanmSettings left, YanmSettings right)
+    {
+        if (left.Enabled != right.Enabled) return false;
+        if (left.ActivationKey != right.ActivationKey) return false;
+        if (left.CustomShortcut != right.CustomShortcut) return false;
+        if (left.TriggerWinHold != right.TriggerWinHold) return false;
+        if (left.TriggerWinDoubleTap != right.TriggerWinDoubleTap) return false;
+        if (left.TriggerRightButtonDrag != right.TriggerRightButtonDrag) return false;
+        if (left.TriggerMiddleButtonDrag != right.TriggerMiddleButtonDrag) return false;
+        if (left.TriggerRightButtonLongPress != right.TriggerRightButtonLongPress) return false;
+        if (left.TriggerMiddleButtonLongPress != right.TriggerMiddleButtonLongPress) return false;
+        if (left.TriggerMiddleButtonDown != right.TriggerMiddleButtonDown) return false;
+        if (left.TriggerX1ButtonDown != right.TriggerX1ButtonDown) return false;
+        if (left.TriggerX2ButtonDown != right.TriggerX2ButtonDown) return false;
+        if (left.TriggerHorizontalWheel != right.TriggerHorizontalWheel) return false;
+        if (left.TriggerCtrlLeftClick != right.TriggerCtrlLeftClick) return false;
+        if (left.TriggerCtrlLeftDrag != right.TriggerCtrlLeftDrag) return false;
+        if (left.TriggerCtrlRightClick != right.TriggerCtrlRightClick) return false;
+        if (left.TriggerCtrlMiddleClick != right.TriggerCtrlMiddleClick) return false;
+        if (left.MouseTriggerMode != right.MouseTriggerMode) return false;
+        if (left.DragThresholdPixels != right.DragThresholdPixels) return false;
+        if (left.HoldDelayMilliseconds != right.HoldDelayMilliseconds) return false;
+        if (left.GridSizePixels != right.GridSizePixels) return false;
+        if (Math.Abs(left.OverlayOpacity - right.OverlayOpacity) > 0.001) return false;
+        if (left.HasInitializedDefaultComponents != right.HasInitializedDefaultComponents) return false;
+        if (left.DefaultComponentVersion != right.DefaultComponentVersion) return false;
+        if (!AreListsEqual(left.WhitelistedProcesses, right.WhitelistedProcesses)) return false;
+        if (!AreListsEqual(left.BlacklistedProcesses, right.BlacklistedProcesses)) return false;
+        if (!AreComponentsListsEqual(left.Components, right.Components)) return false;
+        if (!AreDictionariesEqual(left.ComponentState, right.ComponentState)) return false;
+        return true;
+    }
+
+    private static bool AreListsEqual(List<string>? left, List<string>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (left[i] != right[i]) return false;
+        }
+        return true;
+    }
+
+    private static bool AreComponentsListsEqual(List<YanmComponentSettings>? left, List<YanmComponentSettings>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (JsonSerializer.Serialize(left[i], JsonOptions) != JsonSerializer.Serialize(right[i], JsonOptions)) return false;
+        }
+        return true;
+    }
+
+    private static bool AreDictionariesEqual(Dictionary<string, string>? left, Dictionary<string, string>? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if ((left == null || left.Count == 0) && (right == null || right.Count == 0)) return true;
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        foreach (var kvp in left)
+        {
+            if (!right.TryGetValue(kvp.Key, out var val) || val != kvp.Value)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static T CloneByJson<T>(T value)
@@ -685,15 +1089,12 @@ public sealed class WebDavSyncService
 
     private static bool HasMeaningfulLauncherConfig(CloudQuickPanelConfigSnapshot config)
     {
-        return config.QuickPanelSlots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
-               HasGroupContent(config.QuickPanelGlobalGroups) ||
-               HasGroupContent(config.QuickPanelContextGroups) ||
-               config.GlobalFavoriteExtensionIds.Count > 0 ||
-               config.ContextFavoriteExtensionIds.Count > 0 ||
-               config.YanyuRules?.Count > 0 ||
-               HasAiSettings(config) ||
-               HasRadialContent(config.RadialMenu) ||
-               HasYanmComponentState(config.Yanm);
+        return CloudQuickPanelConfigSnapshot.HasMeaningfulUserContent(config);
+    }
+
+    private static bool IsLikelyFreshLocalLauncherConfig(CloudQuickPanelConfigSnapshot config)
+    {
+        return CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(config);
     }
 
     private static bool HasAiSettings(CloudQuickPanelConfigSnapshot snapshot)
@@ -729,8 +1130,36 @@ public sealed class WebDavSyncService
 
     private static bool HasYanmComponentState(YanmSettings? settings)
     {
-        return settings?.ComponentState?.Any(static item => !string.IsNullOrEmpty(item.Value)) == true;
+        return settings?.ComponentState?.Count > 0;
     }
+
+    private static SnapshotMetadata CaptureMetadata(CloudQuickPanelConfigSnapshot config) =>
+        new(config.SchemaVersion, config.SourceDeviceId, config.SourceDeviceName, config.IsInitialDefaultConfig, config.HasUserContent);
+
+    private static void ClearMetadataForComparison(CloudQuickPanelConfigSnapshot config)
+    {
+        config.SchemaVersion = 0;
+        config.SourceDeviceId = null;
+        config.SourceDeviceName = null;
+        config.IsInitialDefaultConfig = false;
+        config.HasUserContent = false;
+    }
+
+    private static void RestoreMetadata(CloudQuickPanelConfigSnapshot config, SnapshotMetadata metadata)
+    {
+        config.SchemaVersion = metadata.SchemaVersion;
+        config.SourceDeviceId = metadata.SourceDeviceId;
+        config.SourceDeviceName = metadata.SourceDeviceName;
+        config.IsInitialDefaultConfig = metadata.IsInitialDefaultConfig;
+        config.HasUserContent = metadata.HasUserContent;
+    }
+
+    private sealed record SnapshotMetadata(
+        int SchemaVersion,
+        string? SourceDeviceId,
+        string? SourceDeviceName,
+        bool IsInitialDefaultConfig,
+        bool HasUserContent);
 
     private async Task SyncSearchMemoryAsync(CancellationToken cancellationToken)
     {
@@ -799,10 +1228,15 @@ public sealed class WebDavSyncService
         }
 
         existing.Version = string.IsNullOrWhiteSpace(version) ? existing.Version : version!;
+        CaptureExtensionBaseline(existing);
         existing.Deleted = true;
         existing.Purged = false;
         existing.LocalDeletionPending = true;
-        existing.UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O");
+        ExtensionSyncRevision.Stamp(existing, index.Revision);
+        index.Revision = existing.Revision;
+        index.UpdatedAtUtc = existing.UpdatedAtUtc;
+        index.UpdatedByDeviceId = existing.UpdatedByDeviceId;
+        index.UpdatedByDeviceName = existing.UpdatedByDeviceName;
         SaveLocalIndex(index);
     }
 
@@ -826,10 +1260,15 @@ public sealed class WebDavSyncService
         }
 
         existing.Version = string.IsNullOrWhiteSpace(version) ? existing.Version : version!;
+        CaptureExtensionBaseline(existing);
         existing.Deleted = false;
         existing.Purged = false;
         existing.LocalDeletionPending = false;
-        existing.UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O");
+        ExtensionSyncRevision.Stamp(existing, index.Revision);
+        index.Revision = existing.Revision;
+        index.UpdatedAtUtc = existing.UpdatedAtUtc;
+        index.UpdatedByDeviceId = existing.UpdatedByDeviceId;
+        index.UpdatedByDeviceName = existing.UpdatedByDeviceName;
         SaveLocalIndex(index);
     }
 
@@ -853,11 +1292,25 @@ public sealed class WebDavSyncService
         }
 
         existing.Version = string.IsNullOrWhiteSpace(version) ? existing.Version : version!;
+        CaptureExtensionBaseline(existing);
         existing.Deleted = true;
         existing.Purged = true;
         existing.LocalDeletionPending = true;
-        existing.UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O");
+        ExtensionSyncRevision.Stamp(existing, index.Revision);
+        index.Revision = existing.Revision;
+        index.UpdatedAtUtc = existing.UpdatedAtUtc;
+        index.UpdatedByDeviceId = existing.UpdatedByDeviceId;
+        index.UpdatedByDeviceName = existing.UpdatedByDeviceName;
         SaveLocalIndex(index);
+    }
+
+    private static void CaptureExtensionBaseline(WebDavSyncEntry entry)
+    {
+        if (entry.BaseRevision > 0 || entry.Revision <= 0) return;
+        entry.BaseRevision = entry.Revision;
+        entry.BasePackageHash = entry.PackageHash;
+        entry.BaseDeleted = entry.Deleted;
+        entry.BasePurged = entry.Purged;
     }
 
     private LocalSnapshot BuildLocalSnapshot(WebDavSyncIndex localState)
@@ -885,6 +1338,11 @@ public sealed class WebDavSyncService
                     ? previous.UpdatedAtUtc
                     : DateTimeOffset.UtcNow.ToString("O");
             var packagePath = BuildRemotePackagePath(command.ExtensionId, packageHash);
+            var contentChanged = previous == null || previous.Revision <= 0 || previous.Deleted ||
+                                 !string.Equals(previous.PackageHash, packageHash, StringComparison.OrdinalIgnoreCase) ||
+                                 !string.Equals(previous.Title, command.Title, StringComparison.Ordinal) ||
+                                 !string.Equals(previous.Category, command.Category ?? "扩展", StringComparison.Ordinal) ||
+                                 !string.Equals(previous.Version, command.DeclaredVersion, StringComparison.OrdinalIgnoreCase);
             var entry = new WebDavSyncEntry
             {
                 ExtensionId = command.ExtensionId,
@@ -894,6 +1352,21 @@ public sealed class WebDavSyncService
                 PackageHash = packageHash,
                 PackagePath = packagePath,
                 UpdatedAtUtc = updatedAtUtc,
+                Revision = contentChanged ? ExtensionSyncRevision.Next(previous?.Revision ?? 0) : previous!.Revision,
+                UpdatedByDeviceId = contentChanged ? DeviceIdentityStore.GetOrCreateDesktopDeviceId() : previous!.UpdatedByDeviceId,
+                UpdatedByDeviceName = contentChanged ? DeviceIdentityStore.GetDesktopDisplayName() : previous!.UpdatedByDeviceName,
+                BaseRevision = contentChanged && previous != null
+                    ? (previous.BaseRevision > 0 ? previous.BaseRevision : previous.Revision)
+                    : previous?.BaseRevision ?? 0,
+                BasePackageHash = contentChanged && previous != null
+                    ? (previous.BaseRevision > 0 ? previous.BasePackageHash : previous.PackageHash)
+                    : previous?.BasePackageHash ?? string.Empty,
+                BaseDeleted = contentChanged && previous != null
+                    ? (previous.BaseRevision > 0 ? previous.BaseDeleted : previous.Deleted)
+                    : previous?.BaseDeleted ?? false,
+                BasePurged = contentChanged && previous != null
+                    ? (previous.BaseRevision > 0 ? previous.BasePurged : previous.Purged)
+                    : previous?.BasePurged ?? false,
                 Deleted = false
             };
             items.Add(entry);
@@ -929,6 +1402,17 @@ public sealed class WebDavSyncService
                 PackageHash = stateEntry.PackageHash,
                 PackagePath = stateEntry.PackagePath,
                 UpdatedAtUtc = stateEntry.Deleted ? stateEntry.UpdatedAtUtc : DateTimeOffset.UtcNow.ToString("O"),
+                Revision = stateEntry.Revision > 0 ? stateEntry.Revision : ExtensionSyncRevision.Next(localState.Revision),
+                UpdatedByDeviceId = string.IsNullOrWhiteSpace(stateEntry.UpdatedByDeviceId)
+                    ? DeviceIdentityStore.GetOrCreateDesktopDeviceId()
+                    : stateEntry.UpdatedByDeviceId,
+                UpdatedByDeviceName = string.IsNullOrWhiteSpace(stateEntry.UpdatedByDeviceName)
+                    ? DeviceIdentityStore.GetDesktopDisplayName()
+                    : stateEntry.UpdatedByDeviceName,
+                BaseRevision = stateEntry.BaseRevision,
+                BasePackageHash = stateEntry.BasePackageHash,
+                BaseDeleted = stateEntry.BaseDeleted,
+                BasePurged = stateEntry.BasePurged,
                 Deleted = true,
                 Purged = stateEntry.Purged,
                 LocalDeletionPending = stateEntry.LocalDeletionPending
@@ -943,6 +1427,10 @@ public sealed class WebDavSyncService
         return new WebDavSyncIndex
         {
             SchemaVersion = index.SchemaVersion,
+            Revision = index.Revision,
+            UpdatedAtUtc = index.UpdatedAtUtc,
+            UpdatedByDeviceId = index.UpdatedByDeviceId,
+            UpdatedByDeviceName = index.UpdatedByDeviceName,
             Items = index.Items.Select(item => new WebDavSyncEntry
             {
                 ExtensionId = item.ExtensionId,
@@ -952,9 +1440,16 @@ public sealed class WebDavSyncService
                 PackageHash = item.PackageHash,
                 PackagePath = item.PackagePath,
                 UpdatedAtUtc = item.UpdatedAtUtc,
+                Revision = item.Revision,
+                UpdatedByDeviceId = item.UpdatedByDeviceId,
+                UpdatedByDeviceName = item.UpdatedByDeviceName,
                 Deleted = item.Deleted,
                 Purged = item.Purged,
-                LocalDeletionPending = false
+                LocalDeletionPending = false,
+                BaseRevision = item.Revision,
+                BasePackageHash = item.PackageHash,
+                BaseDeleted = item.Deleted,
+                BasePurged = item.Purged
             }).ToList()
         };
     }
@@ -1003,7 +1498,11 @@ public sealed class WebDavSyncService
     {
         var remoteIndex = new WebDavSyncIndex
         {
-            SchemaVersion = index.SchemaVersion,
+            SchemaVersion = 2,
+            Revision = index.Revision,
+            UpdatedAtUtc = index.UpdatedAtUtc,
+            UpdatedByDeviceId = index.UpdatedByDeviceId,
+            UpdatedByDeviceName = index.UpdatedByDeviceName,
             Items = index.Items.Select(item => new WebDavSyncEntry
             {
                 ExtensionId = item.ExtensionId,
@@ -1013,6 +1512,9 @@ public sealed class WebDavSyncService
                 PackageHash = item.PackageHash,
                 PackagePath = item.PackagePath,
                 UpdatedAtUtc = item.UpdatedAtUtc,
+                Revision = item.Revision,
+                UpdatedByDeviceId = item.UpdatedByDeviceId,
+                UpdatedByDeviceName = item.UpdatedByDeviceName,
                 Deleted = item.Deleted,
                 Purged = item.Purged
             }).ToList()
@@ -1395,25 +1897,7 @@ public sealed class WebDavSyncService
 
     private static int CompareEntries(WebDavSyncEntry left, WebDavSyncEntry right)
     {
-        var leftUpdated = ParseTimestamp(left.UpdatedAtUtc);
-        var rightUpdated = ParseTimestamp(right.UpdatedAtUtc);
-        var compare = leftUpdated.CompareTo(rightUpdated);
-        if (compare != 0)
-        {
-            return compare;
-        }
-
-        if (left.Deleted != right.Deleted)
-        {
-            return left.Deleted ? 1 : -1;
-        }
-
-        if (left.Purged != right.Purged)
-        {
-            return left.Purged ? 1 : -1;
-        }
-
-        return string.Compare(left.PackageHash, right.PackageHash, StringComparison.OrdinalIgnoreCase);
+        return ExtensionSyncRevision.Compare(left, right);
     }
 
     private static bool EntriesEquivalent(WebDavSyncEntry left, WebDavSyncEntry right)
@@ -1425,6 +1909,8 @@ public sealed class WebDavSyncService
                string.Equals(left.PackageHash, right.PackageHash, StringComparison.OrdinalIgnoreCase) &&
                string.Equals(left.PackagePath, right.PackagePath, StringComparison.OrdinalIgnoreCase) &&
                string.Equals(left.UpdatedAtUtc, right.UpdatedAtUtc, StringComparison.Ordinal) &&
+               left.Revision == right.Revision &&
+               string.Equals(left.UpdatedByDeviceId, right.UpdatedByDeviceId, StringComparison.OrdinalIgnoreCase) &&
                left.Deleted == right.Deleted &&
                left.Purged == right.Purged;
     }
@@ -1632,7 +2118,15 @@ public sealed class WebDavYanmStateSnapshot
 
 public sealed class WebDavSyncIndex
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
+
+    public long Revision { get; set; }
+
+    public string UpdatedAtUtc { get; set; } = string.Empty;
+
+    public string? UpdatedByDeviceId { get; set; }
+
+    public string? UpdatedByDeviceName { get; set; }
 
     public List<WebDavSyncEntry> Items { get; set; } = [];
 }
@@ -1653,9 +2147,24 @@ public sealed class WebDavSyncEntry
 
     public string UpdatedAtUtc { get; set; } = string.Empty;
 
+    public long Revision { get; set; }
+
+    public string? UpdatedByDeviceId { get; set; }
+
+    public string? UpdatedByDeviceName { get; set; }
+
     public bool Deleted { get; set; }
 
     public bool Purged { get; set; }
 
     public bool LocalDeletionPending { get; set; }
+
+    // 以下基线字段只保存在本机索引，用于识别同一扩展的双端并发修改。
+    public long BaseRevision { get; set; }
+
+    public string BasePackageHash { get; set; } = string.Empty;
+
+    public bool BaseDeleted { get; set; }
+
+    public bool BasePurged { get; set; }
 }

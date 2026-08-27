@@ -8,16 +8,30 @@ using Velopack.Sources;
 
 namespace OpenQuickHost.Sync;
 
+public enum UpdateChannelMode
+{
+    Official,
+    Mirror
+}
+
 public sealed class VelopackUpdateService
 {
     private static readonly Lazy<VelopackUpdateService> _instance = new(() => new VelopackUpdateService());
     public static VelopackUpdateService Instance => _instance.Value;
 
     private readonly string _repoUrl = "https://github.com/luoluoluo22/yanzi";
-    private readonly string _proxyUrlPrefix = "https://ghfast.top/";
+    public const string DefaultMirrorPrefix = "https://ghfast.top/";
+    public const string BackupMirrorPrefix = "https://gh.ddlc.top/";
+
+    private UpdateChannelMode _currentChannelMode = UpdateChannelMode.Mirror;
+    public UpdateChannelMode CurrentChannelMode => _currentChannelMode;
+
     private UpdateManager? _updateManager;
     private bool _isDownloading;
     private string _resolvedUpdateUrl = "";
+
+    public bool IsDownloading => _isDownloading;
+    public int CurrentProgress { get; private set; } = 0;
 
     public event Action<int>? DownloadProgressChanged;
     public event Action<string>? UpdateStatusChanged;
@@ -31,27 +45,34 @@ public sealed class VelopackUpdateService
 
     private VelopackUpdateService()
     {
-        InitializeManager();
+        InitializeManager(UpdateChannelMode.Mirror);
     }
 
-    private void InitializeManager()
+    public void InitializeManager(UpdateChannelMode mode)
     {
         try
         {
-            // 利用国内加速 CDN 对 GitHub Release 路径进行代理包装
-            // Velopack 的 SimpleWebSource 期望拿到 releases.json 所在的根目录
-            // 在 GitHub Release 中，文件的物理下载地址根目录大约是 releases/latest/download/ 
-            // SimpleWebSource 会去请求 $url/RELEASES，所以我们把加速前缀注入进去
-            _resolvedUpdateUrl = $"{_proxyUrlPrefix.TrimEnd('/')}/{_repoUrl.TrimEnd('/')}/releases/latest/download/";
+            _currentChannelMode = mode;
+            if (mode == UpdateChannelMode.Mirror)
+            {
+                // 利用网页端同款加速镜像对 GitHub Release 路径进行代理包装
+                _resolvedUpdateUrl = $"{DefaultMirrorPrefix.TrimEnd('/')}/{_repoUrl.TrimEnd('/')}/releases/latest/download/";
+            }
+            else
+            {
+                // 官方 GitHub 直连源
+                _resolvedUpdateUrl = $"{_repoUrl.TrimEnd('/')}/releases/latest/download/";
+            }
+
             var source = new SimpleWebSource(_resolvedUpdateUrl);
-            _updateManager = new UpdateManager(source, null, new HostVelopackLogger());
+            _updateManager = new UpdateManager(source, null, null);
             
             // 记录完整的诊断启动信息
             var isInstalled = _updateManager.IsInstalled;
             var currentVersion = _updateManager.IsInstalled ? _updateManager.CurrentVersion?.ToString() ?? "null" : "N/A (not installed)";
             var appId = _updateManager.AppId ?? "null";
             HostAssets.AppendLog(
-                $"VelopackUpdateService: initialized OK. " +
+                $"VelopackUpdateService: initialized OK (mode={_currentChannelMode}). " +
                 $"isInstalled={isInstalled}, currentVersion={currentVersion}, appId={appId}, " +
                 $"updateUrl={_resolvedUpdateUrl}, " +
                 $"baseDir={AppDomain.CurrentDomain.BaseDirectory}, " +
@@ -60,7 +81,7 @@ public sealed class VelopackUpdateService
         catch (Exception ex)
         {
             HostAssets.AppendLog(
-                $"VelopackUpdateService: FAILED to initialize UpdateManager.\n" +
+                $"VelopackUpdateService: FAILED to initialize UpdateManager (mode={mode}).\n" +
                 $"  ExceptionType: {ex.GetType().FullName}\n" +
                 $"  Message: {ex.Message}\n" +
                 $"  StackTrace: {ex.StackTrace}\n" +
@@ -69,33 +90,33 @@ public sealed class VelopackUpdateService
     }
 
     /// <summary>
-    /// 检测是否有新版本可用
+    /// 检测是否有新版本可用（指定更新源通道）
     /// </summary>
-    public async Task<UpdateInfo?> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
+    public async Task<UpdateInfo?> CheckForUpdatesAsync(UpdateChannelMode channelMode, CancellationToken cancellationToken = default)
     {
-        if (_updateManager == null)
+        if (_updateManager == null || _currentChannelMode != channelMode)
         {
-            HostAssets.AppendLog("VelopackUpdateService: _updateManager is null, attempting re-init...");
-            InitializeManager();
+            InitializeManager(channelMode);
         }
 
         if (_updateManager == null)
         {
-            HostAssets.AppendLog("VelopackUpdateService: _updateManager still null after re-init, aborting check.");
+            HostAssets.AppendLog($"VelopackUpdateService: _updateManager still null after init ({channelMode}), aborting check.");
             UpdateStatusChanged?.Invoke("更新管理器未就绪。");
             return null;
         }
 
+        var channelName = channelMode == UpdateChannelMode.Mirror ? "镜像源 (ghfast.top)" : "官方源 (GitHub)";
         try
         {
             // 在执行检测前，输出运行时诊断快照
             var isInstalled = _updateManager.IsInstalled;
             var currentVer = isInstalled ? _updateManager.CurrentVersion?.ToString() ?? "null" : "N/A";
             HostAssets.AppendLog(
-                $"VelopackUpdateService: CheckForUpdatesAsync starting. " +
+                $"VelopackUpdateService: CheckForUpdatesAsync starting [{channelName}]. " +
                 $"isInstalled={isInstalled}, currentVer={currentVer}, url={_resolvedUpdateUrl}");
 
-            UpdateStatusChanged?.Invoke("正在检测新版本...");
+            UpdateStatusChanged?.Invoke($"[{channelName}] 正在检测新版本...");
 
             // 先尝试验证网络连通性（预诊断）
             await DiagnoseNetworkAsync(_resolvedUpdateUrl);
@@ -103,25 +124,33 @@ public sealed class VelopackUpdateService
             var updateInfo = await _updateManager.CheckForUpdatesAsync();
             if (updateInfo == null)
             {
-                HostAssets.AppendLog("VelopackUpdateService: CheckForUpdatesAsync returned null (already up to date).");
-                UpdateStatusChanged?.Invoke("当前已是最新版本。");
+                HostAssets.AppendLog($"VelopackUpdateService: CheckForUpdatesAsync returned null (already up to date) via {channelName}.");
+                UpdateStatusChanged?.Invoke($"[{channelName}] 当前已是最新版本。");
                 return null;
             }
 
             var newVersion = updateInfo.TargetFullRelease.Version.ToString();
-            HostAssets.AppendLog($"VelopackUpdateService: new version found: v{newVersion}");
-            UpdateStatusChanged?.Invoke($"发现新版本: v{newVersion}");
+            HostAssets.AppendLog($"VelopackUpdateService: new version found: v{newVersion} via {channelName}");
+            UpdateStatusChanged?.Invoke($"[{channelName}] 发现新版本: v{newVersion}");
             return updateInfo;
         }
         catch (Exception ex)
         {
             // 记录完整的异常堆栈链
-            LogUpdateException("CheckForUpdatesAsync", ex);
+            LogUpdateException($"CheckForUpdatesAsync [{channelName}]", ex);
 
             var friendlyMsg = BuildFriendlyErrorMessage(ex);
-            UpdateStatusChanged?.Invoke($"检测失败: {friendlyMsg}");
+            UpdateStatusChanged?.Invoke($"[{channelName}] 检测失败: {friendlyMsg}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// 检测是否有新版本可用（使用当前通道）
+    /// </summary>
+    public Task<UpdateInfo?> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
+    {
+        return CheckForUpdatesAsync(_currentChannelMode, cancellationToken);
     }
 
     /// <summary>
@@ -141,23 +170,27 @@ public sealed class VelopackUpdateService
             return false;
         }
 
+        var channelName = _currentChannelMode == UpdateChannelMode.Mirror ? "镜像源 (ghfast.top)" : "官方源 (GitHub)";
         _isDownloading = true;
         try
         {
             var targetVer = updateInfo.TargetFullRelease.Version.ToString();
-            HostAssets.AppendLog($"VelopackUpdateService: DownloadUpdatesAsync starting for v{targetVer}");
-            UpdateStatusChanged?.Invoke("正在后台下载增量更新...");
+            HostAssets.AppendLog($"VelopackUpdateService: DownloadUpdatesAsync starting for v{targetVer} via {channelName}");
+            UpdateStatusChanged?.Invoke($"[{channelName}] 正在后台下载增量更新...");
+            CurrentProgress = 0;
             DownloadProgressChanged?.Invoke(0);
 
             // 传入进度回调，Velopack 自动异步调用
             await _updateManager.DownloadUpdatesAsync(updateInfo, (progress) =>
             {
+                CurrentProgress = progress;
                 DownloadProgressChanged?.Invoke(progress);
             });
 
+            CurrentProgress = 100;
             DownloadProgressChanged?.Invoke(100);
-            HostAssets.AppendLog($"VelopackUpdateService: download completed for v{targetVer}");
-            UpdateStatusChanged?.Invoke("更新包已下载完成，重启即可生效！");
+            HostAssets.AppendLog($"VelopackUpdateService: download completed for v{targetVer} via {channelName}");
+            UpdateStatusChanged?.Invoke($"[{channelName}] 更新包已下载完成，重启即可生效！");
 
             ReadyUpdateInfo = updateInfo;
             IsUpdateReady = true;
@@ -167,10 +200,10 @@ public sealed class VelopackUpdateService
         }
         catch (Exception ex)
         {
-            LogUpdateException("DownloadUpdatesAsync", ex);
+            LogUpdateException($"DownloadUpdatesAsync [{channelName}]", ex);
 
             var friendlyMsg = BuildFriendlyErrorMessage(ex);
-            UpdateStatusChanged?.Invoke($"下载失败: {friendlyMsg}");
+            UpdateStatusChanged?.Invoke($"[{channelName}] 下载失败: {friendlyMsg}");
             return false;
         }
         finally

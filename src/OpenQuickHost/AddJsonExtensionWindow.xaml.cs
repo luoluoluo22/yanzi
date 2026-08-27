@@ -81,16 +81,18 @@ public partial class AddJsonExtensionWindow : Window
 
         Loaded += (_, _) =>
         {
+            EnsureCenteredAndFitsScreen();
+
             // 依据编辑状态动态展示窗口标题
             if (_isEditMode)
             {
-                HeaderTitleText.Text = "编辑扩展";
-                this.Title = "编辑扩展";
+                HeaderTitleText.Text = "编辑小程序";
+                this.Title = "编辑小程序";
             }
             else
             {
-                HeaderTitleText.Text = "新建扩展";
-                this.Title = "新建扩展";
+                HeaderTitleText.Text = "新建小程序";
+                this.Title = "新建小程序";
             }
 
             // 初始化加载持久化记住的测试输入参数，若为空则显示默认值
@@ -102,6 +104,14 @@ public partial class AddJsonExtensionWindow : Window
                 AdvancedModeTab.IsChecked = true;
                 SimpleModePanel.Visibility = Visibility.Collapsed;
                 AdvancedModePanel.Visibility = Visibility.Visible;
+                _manualMode = true;
+            }
+            else
+            {
+                SimpleModeTab.IsChecked = true;
+                SimpleModePanel.Visibility = Visibility.Visible;
+                AdvancedModePanel.Visibility = Visibility.Collapsed;
+                _manualMode = false;
             }
 
             // 确保 AI 编辑模式下 JSON 输入框为空（新增模式）
@@ -131,6 +141,7 @@ public partial class AddJsonExtensionWindow : Window
             
             // 初始化简单模式：根据已加载的 manifest 推断类型并把字段同步到简单控件
             InitializeSimpleMode();
+            InitializeAiWorkbenchSessions();
             if (_isEditMode && ShouldOpenAdvancedEditorForExistingJson(_initialJson))
             {
                 AdvancedModeTab.IsChecked = true;
@@ -140,9 +151,44 @@ public partial class AddJsonExtensionWindow : Window
             // 初始化完成，允许同步
             _isInitializing = false;
 
+            // 启动浏览器助手连接状态监测定时器，实时感知插件连接状态并自动消隐引导横幅
+            StartBrowserExtensionStateWatcher();
+
             // 异步初始化高级编辑器与内联脚本编辑器，支持 4 秒超时无缝降级
             _ = InitializeWebViewEditorsAsync();
         };
+
+        Closed += (s, e) =>
+        {
+            _browserExtensionCheckTimer?.Stop();
+        };
+    }
+
+    private void EnsureCenteredAndFitsScreen()
+    {
+        try
+        {
+            var workArea = SystemParameters.WorkArea;
+
+            // 若屏幕工作区较小或应用了高 DPI 缩放，自动微调宽高防止超出工作区边缘
+            if (Width > workArea.Width * 0.92)
+            {
+                Width = Math.Max(MinWidth, workArea.Width * 0.92);
+            }
+            if (Height > workArea.Height * 0.92)
+            {
+                Height = Math.Max(MinHeight, workArea.Height * 0.92);
+            }
+
+            // 强制在当前显示屏工作区中央精准定位
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            Left = Math.Max(workArea.Left, workArea.Left + (workArea.Width - Width) / 2);
+            Top = Math.Max(workArea.Top, workArea.Top + (workArea.Height - Height) / 2);
+        }
+        catch
+        {
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
     }
 
     private static bool ShouldOpenAdvancedEditorForExistingJson(string initialJson)
@@ -157,9 +203,7 @@ public partial class AddJsonExtensionWindow : Window
             using var document = JsonDocument.Parse(initialJson);
             var root = document.RootElement;
             return root.ValueKind == JsonValueKind.Object &&
-                   (root.TryGetProperty("app", out _) ||
-                    root.TryGetProperty("hostedViewXaml", out _) ||
-                    root.TryGetProperty("hostedViewV2", out _));
+                   root.TryGetProperty("app", out _);
         }
         catch
         {
@@ -177,14 +221,14 @@ public partial class AddJsonExtensionWindow : Window
 
     private void ConfigureMode(string initialJson)
     {
-        Title = _isEditMode ? "编辑扩展" : "添加新扩展";
+        Title = _isEditMode ? "编辑小程序" : "添加新小程序";
         ManualModeButton.Visibility = Visibility.Collapsed;
         ManualModeButton.Content = "手动编辑";
 
         if (_isEditMode)
         {
             PageHeaderPrefix.Text = "编辑";
-            PageHeaderAccent.Text = "扩展";
+            PageHeaderAccent.Text = "小程序";
             HeaderDescription.Text = "直接修改 JSON，验证通过后可以测试并保存。";
             SaveButton.Content = "保存修改";
             _currentStep = WizardStep.Test;
@@ -192,8 +236,8 @@ public partial class AddJsonExtensionWindow : Window
         else
         {
             PageHeaderPrefix.Text = "添加";
-            PageHeaderAccent.Text = "新扩展";
-            HeaderDescription.Text = "通过表单和手动编写 JSON 来创建扩展。";
+            PageHeaderAccent.Text = "新小程序";
+            HeaderDescription.Text = "通过表单和手动编写 JSON 来创建小程序。";
             SaveButton.Content = "保存并添加";
             _currentStep = WizardStep.Describe;
         }
@@ -285,6 +329,14 @@ public partial class AddJsonExtensionWindow : Window
         ManualTestSummaryText.Text = string.Empty;
         UpdateManualJsonValidationState();
 
+        // 实时同步解析 JSON 到隐藏表单与右侧预览区
+        if (!_isInitializing && _lastJsonValid && !string.IsNullOrWhiteSpace(ManualJsonInputBox.Text))
+        {
+            TryPopulateManualFormFromJson(ManualJsonInputBox.Text, showError: false);
+            SyncSimpleFromHiddenForm();
+            UpdatePreview();
+        }
+
         // 动态检测 JSON 并同步更新下方的内联脚本独立编辑器状态与高度分栏
         UpdateInlineScriptPanelState();
 
@@ -307,6 +359,300 @@ public partial class AddJsonExtensionWindow : Window
         await CopyTestLogToClipboardAsync(
             ManualCopyTestFailureButton,
             ManualTestLogTextBox.Text);
+    }
+
+    private bool _isExtensionGuideDismissed = false;
+    private System.Windows.Threading.DispatcherTimer? _browserExtensionCheckTimer;
+
+    private void StartBrowserExtensionStateWatcher()
+    {
+        UpdateBrowserExtensionBannerVisibility();
+
+        _browserExtensionCheckTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1.5)
+        };
+        _browserExtensionCheckTimer.Tick += (s, ev) => UpdateBrowserExtensionBannerVisibility();
+        _browserExtensionCheckTimer.Start();
+    }
+
+    private void UpdateBrowserExtensionBannerVisibility()
+    {
+        if (BrowserExtensionGuideBanner == null) return;
+
+        var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+        bool isConnected = agentServer != null && agentServer.IsBrowserConnected;
+
+        if (isConnected)
+        {
+            _isExtensionGuideDismissed = false;
+            BrowserExtensionGuideBanner.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            if (!_isExtensionGuideDismissed && AdvancedModePanel.Visibility == Visibility.Visible)
+            {
+                BrowserExtensionGuideBanner.Visibility = Visibility.Visible;
+            }
+        }
+    }
+
+    private void DismissExtensionGuide_Click(object sender, RoutedEventArgs e)
+    {
+        _isExtensionGuideDismissed = true;
+        if (BrowserExtensionGuideBanner != null)
+        {
+            BrowserExtensionGuideBanner.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void QuickInstallBrowserExtension_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var extPath = FindBrowserExtensionDirectory();
+            if (string.IsNullOrEmpty(extPath) || !Directory.Exists(extPath))
+            {
+                ShowError("未找到内置的浏览器插件目录。");
+                return;
+            }
+
+            // 1. 在资源管理器中高亮定位 manifest.json 文件或文件夹
+            var manifestFile = Path.Combine(extPath, "manifest.json");
+            if (File.Exists(manifestFile))
+            {
+                Process.Start("explorer.exe", $"/select,\"{manifestFile}\"");
+            }
+            else
+            {
+                Process.Start("explorer.exe", $"\"{extPath}\"");
+            }
+
+            // 2. 唤起默认浏览器打开小程序管理页
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "chrome://extensions",
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "edge://extensions",
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            }
+
+            System.Windows.MessageBox.Show(
+                this,
+                "已为你打开插件目录与浏览器小程序页！\n\n【极速加载步骤】：\n1. 开启浏览器右上角的「开发者模式」；\n2. 将高亮选中的 browser-extension 文件夹直接拖入浏览器即可！\n\n安装完成后燕子将自动感知并就绪。",
+                "燕子浏览器助手加载指引",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Quick install browser extension failed: {ex}");
+            ShowError($"打开插件目录失败：{ex.Message}");
+        }
+    }
+
+    private void OpenExtensionTutorial_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://github.com/luoluoluo22/yanzi#readme",
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            QuickInstallBrowserExtension_Click(sender, e);
+        }
+    }
+
+    private static string? FindBrowserExtensionDirectory()
+    {
+        try
+        {
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var dir1 = Path.Combine(baseDir, "browser-extension");
+            if (Directory.Exists(dir1)) return dir1;
+
+            var dir2 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\..\browser-extension"));
+            if (Directory.Exists(dir2)) return dir2;
+
+            var dir3 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\browser-extension"));
+            if (Directory.Exists(dir3)) return dir3;
+        }
+        catch { }
+
+        return null;
+    }
+
+    private void CustomPromptTextBox_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (CustomPromptPlaceholder != null)
+        {
+            CustomPromptPlaceholder.Visibility = Visibility.Collapsed;
+        }
+        UpdateBrowserExtensionBannerVisibility();
+    }
+
+    private void CustomPromptTextBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (CustomPromptPlaceholder != null)
+        {
+            CustomPromptPlaceholder.Visibility = string.IsNullOrEmpty(CustomPromptTextBox.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+    }
+
+    private void CustomPromptTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (CustomPromptPlaceholder != null)
+        {
+            CustomPromptPlaceholder.Visibility = string.IsNullOrEmpty(CustomPromptTextBox.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+    }
+
+    private async void ManualAiFixTestFailureButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            ErrorText.Visibility = Visibility.Collapsed;
+
+            var currentJson = ManualJsonInputBox.Text.Trim();
+            var errorSummary = ManualTestSummaryText.Text.Trim();
+            var errorLog = ManualTestLogTextBox.Text.Trim();
+            var customPrompt = CustomPromptTextBox?.Text?.Trim();
+
+            if (string.IsNullOrWhiteSpace(currentJson))
+            {
+                ShowError("当前编辑器中无 JSON 内容，无法生成修复指令。");
+                return;
+            }
+
+            var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+            if (agentServer == null || !agentServer.IsBrowserConnected)
+            {
+                ShowError("燕子浏览器助手未连接。请先打开 Chrome 或 Edge 浏览器并确认插件已开启。");
+                return;
+            }
+
+            // 构造错误修复专属提示词
+            var fixPromptBuilder = new StringBuilder();
+            fixPromptBuilder.AppendLine("刚才生成的 Yanzi 小程序 JSON 在试运行测试时发生错误，请根据以下报错信息进行分析并修复该小程序的 JSON 代码。");
+            fixPromptBuilder.AppendLine();
+            fixPromptBuilder.AppendLine("【一、当前出现错误的 JSON 配置】：");
+            fixPromptBuilder.AppendLine("```json");
+            fixPromptBuilder.AppendLine(currentJson);
+            fixPromptBuilder.AppendLine("```");
+            fixPromptBuilder.AppendLine();
+            fixPromptBuilder.AppendLine("【二、试运行报错摘要与执行日志】：");
+            if (!string.IsNullOrWhiteSpace(errorSummary))
+            {
+                fixPromptBuilder.AppendLine($"[错误摘要]: {errorSummary}");
+            }
+            if (!string.IsNullOrWhiteSpace(errorLog))
+            {
+                fixPromptBuilder.AppendLine("[详细日志]:");
+                fixPromptBuilder.AppendLine(errorLog);
+            }
+            if (!string.IsNullOrWhiteSpace(customPrompt))
+            {
+                fixPromptBuilder.AppendLine();
+                fixPromptBuilder.AppendLine("【三、原始自定义需求】：");
+                fixPromptBuilder.AppendLine(customPrompt);
+            }
+            fixPromptBuilder.AppendLine();
+            fixPromptBuilder.AppendLine("【四、修复要求】：");
+            fixPromptBuilder.AppendLine("1. 仔细分析报错原因（如 C# 编译错误、缺少 using/命名空间、语法错误、进程启动参数格式错误、类型不匹配等），进行针对性修复。");
+            fixPromptBuilder.AppendLine("2. 仅返回修复后的完整合法 ```json ... ``` 代码块，不要附加任何解释说明文字。");
+
+            var fixPrompt = fixPromptBuilder.ToString();
+
+            // 设置 UI 进入修复中状态
+            ManualAiFixTestFailureButton.IsEnabled = false;
+            ManualAiFixTestFailureButton.Content = "⏳ 正在自动修复...";
+            ManualTestSummaryText.Foreground = AccentBrush;
+            if (_currentAiSession != null)
+            {
+                _currentAiSession.Messages.Add(new ExtAiChatMessage
+                {
+                    Role = "user",
+                    Content = "⚡ 试运行出现异常，请求 DeepSeek 自动诊断修复..."
+                });
+                _currentAiSession.LastUpdatedAt = DateTime.Now;
+                ScrollAiChatToEnd();
+            }
+
+            var (success, jsonResult, error) = await agentServer.RunBrowserAiPromptTransferAsync(fixPrompt, "deepseek", 120);
+
+            if (!success || string.IsNullOrWhiteSpace(jsonResult))
+            {
+                ManualAiFixTestFailureButton.IsEnabled = true;
+                ManualAiFixTestFailureButton.Content = "⚡ DeepSeek 自动修复";
+                ManualTestSummaryText.Foreground = RedBrush;
+                ManualTestSummaryText.Text = $"DeepSeek 自动修复失败: {error ?? "未知错误"}";
+                ShowError($"AI 自动修复失败：{error}");
+                return;
+            }
+
+            // 成功获取到修复后的 JSON
+            ManualAiFixTestFailureButton.IsEnabled = true;
+            ManualAiFixTestFailureButton.Content = "⚡ DeepSeek 自动修复";
+            ManualTestSummaryText.Foreground = GreenBrush;
+            ManualTestSummaryText.Text = "✅ DeepSeek 已完成代码修复，正在重新自动试运行...";
+
+            // 写入编辑器
+            ManualJsonInputBox.Text = jsonResult;
+            if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+            {
+                _isUpdatingWebView = true;
+                _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(jsonResult)})");
+                _isUpdatingWebView = false;
+            }
+
+            // 同步表单数据与右侧实时预览
+            TryPopulateManualFormFromJson(jsonResult, showError: false);
+            SyncSimpleFromHiddenForm();
+            UpdatePreview();
+
+            if (_currentAiSession != null)
+            {
+                _currentAiSession.CurrentJson = jsonResult;
+                _currentAiSession.Messages.Add(CreateAssistantVersionMessage(jsonResult, "✅ DeepSeek 已完成修复并覆写编辑器，正在重新试运行验证..."));
+                _currentAiSession.LastUpdatedAt = DateTime.Now;
+                ScrollAiChatToEnd();
+            }
+
+            // 再次自动触发试运行验证
+            await Task.Delay(400);
+            ManualTestExtensionButton_Click(this, new RoutedEventArgs());
+        }
+        catch (Exception ex)
+        {
+            if (ManualAiFixTestFailureButton != null)
+            {
+                ManualAiFixTestFailureButton.IsEnabled = true;
+                ManualAiFixTestFailureButton.Content = "⚡ DeepSeek 自动修复";
+            }
+            HostAssets.AppendLog($"DeepSeek auto fix failed: {ex}");
+            ShowError($"自动修复异常：{ex.Message}");
+        }
     }
 
     private void ManualTemplateButton_Click(object sender, RoutedEventArgs e)
@@ -400,11 +746,86 @@ public partial class AddJsonExtensionWindow : Window
         SafeRefreshIconPreview();
     }
 
+    private void PickIconPresetButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new IconPickerDialog(this, IconSimpleBox.Text);
+        if (dialog.ShowDialog() == true && !string.IsNullOrEmpty(dialog.SelectedIconReference))
+        {
+            IconSimpleBox.Text = dialog.SelectedIconReference;
+        }
+    }
+
+    private void PickIconForegroundColorButton_Click(object sender, RoutedEventArgs e)
+    {
+        MediaColor initColor = Colors.White;
+        try
+        {
+            var currentIcon = IconSimpleBox.Text?.Trim() ?? string.Empty;
+            if (currentIcon.LastIndexOf('#') is var hashIdx && hashIdx > 0)
+            {
+                initColor = (MediaColor)MediaColorConverter.ConvertFromString(currentIcon[hashIdx..])!;
+            }
+        }
+        catch {}
+
+        var dialog = new ColorPickerDialog(this, initColor);
+        if (dialog.ShowDialog() == true)
+        {
+            var color = dialog.SelectedColor;
+            var hex = $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
+            
+            var currentIcon = IconSimpleBox.Text?.Trim() ?? string.Empty;
+            if (!string.IsNullOrEmpty(currentIcon))
+            {
+                var baseIcon = currentIcon;
+                if (currentIcon.LastIndexOf('#') is var hashIdx && hashIdx > 0)
+                {
+                    baseIcon = currentIcon[..hashIdx].TrimEnd(':');
+                }
+                IconSimpleBox.Text = $"{baseIcon}:{hex}";
+            }
+            else
+            {
+                IconSimpleBox.Text = $"mdi:search:{hex}";
+            }
+        }
+    }
+
+    private void PickAccentColorButton_Click(object sender, RoutedEventArgs e)
+    {
+        MediaColor initColor = (MediaColor)MediaColorConverter.ConvertFromString("#FF3B82F6")!;
+        try
+        {
+            var current = AccentHexSimpleBox.Text?.Trim();
+            if (!string.IsNullOrEmpty(current))
+            {
+                initColor = (MediaColor)MediaColorConverter.ConvertFromString(current)!;
+            }
+        }
+        catch {}
+
+        var dialog = new ColorPickerDialog(this, initColor);
+        if (dialog.ShowDialog() == true)
+        {
+            var color = dialog.SelectedColor;
+            var hex = $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
+            AccentHexSimpleBox.Text = hex;
+        }
+    }
+
+    private void AccentColorLivePreview_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
+        {
+            PickAccentColorButton_Click(sender, e);
+        }
+    }
+
     private void PickIconImageButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "选择扩展图标",
+            Title = "选择小程序图标",
             Filter = "图片文件|*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.ico|所有文件|*.*",
             CheckFileExists = true,
             Multiselect = false
@@ -429,7 +850,7 @@ public partial class AddJsonExtensionWindow : Window
     {
         if (AiRequestBox.Text.Trim().Length <= 3)
         {
-            ShowError("先写清楚你想做什么扩展，再进入下一步。");
+            ShowError("先写清楚你想做什么小程序，再进入下一步。");
             return;
         }
 
@@ -535,6 +956,547 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
+    private void AiViewMode_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing) return;
+        if (AiViewPreviewTab2 != null && AiViewSourceTab2 != null)
+        {
+            if (AiViewPreviewTab?.IsChecked == true) AiViewPreviewTab2.IsChecked = true;
+            else if (AiViewSourceTab?.IsChecked == true) AiViewSourceTab2.IsChecked = true;
+        }
+        UpdateAiRightViewMode();
+    }
+
+    private void AiViewSourceTab2_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing) return;
+        if (AiViewSourceTab != null) AiViewSourceTab.IsChecked = true;
+        UpdateAiRightViewMode();
+    }
+
+    private void AiViewPreviewTab2_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing) return;
+        if (AiViewPreviewTab != null) AiViewPreviewTab.IsChecked = true;
+        UpdateAiRightViewMode();
+    }
+
+    public void UpdateAiRightViewMode()
+    {
+        if (AdvancedModePanel == null || RightPropertiesPanel == null) return;
+
+        bool isAdvanced = AdvancedModeTab?.IsChecked == true || AdvancedModePanel.Visibility == Visibility.Visible;
+
+        if (!isAdvanced)
+        {
+            // 简单模式：右侧固定展示为 360px 宽度的属性预览栏，且不显示顶部切回源码按钮
+            RightPropertiesPanel.Visibility = Visibility.Visible;
+            if (RightPropertiesHeader != null) RightPropertiesHeader.Visibility = Visibility.Collapsed;
+            if (RightPropertiesColDef != null)
+            {
+                RightPropertiesColDef.Width = new GridLength(360);
+            }
+            if (AiCodeWorkspacePanel != null) AiCodeWorkspacePanel.Visibility = Visibility.Collapsed;
+            if (AiCodeSplitter != null) AiCodeSplitter.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // AI 模式：根据 AiViewSourceTab / AiViewPreviewTab 单选按钮动态切换
+        bool isSourceMode = AiViewSourceTab?.IsChecked == true;
+        if (RightPropertiesHeader != null) RightPropertiesHeader.Visibility = Visibility.Visible;
+
+        if (isSourceMode)
+        {
+            // 源码模式：
+            // 1. 中间对话区固定为适度宽度 380px，给右侧 Monaco 代码区留出最大空间
+            if (AiChatColDef != null)
+            {
+                AiChatColDef.Width = new GridLength(380);
+            }
+            // 2. 展开第 3 栏代码区与分割线
+            if (AiCodeSplitterColDef != null) AiCodeSplitterColDef.Width = new GridLength(1);
+            if (AiCodeColDef != null)
+            {
+                AiCodeColDef.MinWidth = 320;
+                AiCodeColDef.Width = new GridLength(1, GridUnitType.Star);
+            }
+            if (AiCodeWorkspacePanel != null) AiCodeWorkspacePanel.Visibility = Visibility.Visible;
+            if (AiCodeSplitter != null) AiCodeSplitter.Visibility = Visibility.Visible;
+            RightPropertiesPanel.Visibility = Visibility.Collapsed;
+            if (RightPropertiesColDef != null)
+            {
+                RightPropertiesColDef.Width = new GridLength(0);
+            }
+        }
+        else
+        {
+            // 预览模式：
+            // 1. 彻底折叠第 3 栏 Monaco 代码列（Width=0, MinWidth=0）与分割线，彻底消除中间空白占用！
+            if (AiCodeSplitterColDef != null) AiCodeSplitterColDef.Width = new GridLength(0);
+            if (AiCodeColDef != null)
+            {
+                AiCodeColDef.MinWidth = 0;
+                AiCodeColDef.Width = new GridLength(0);
+            }
+            if (AiCodeWorkspacePanel != null) AiCodeWorkspacePanel.Visibility = Visibility.Collapsed;
+            if (AiCodeSplitter != null) AiCodeSplitter.Visibility = Visibility.Collapsed;
+
+            // 2. 中间对话区展开占据左侧全部剩余宽度（无缝连接右侧预览栏）
+            if (AiChatColDef != null)
+            {
+                AiChatColDef.Width = new GridLength(1, GridUnitType.Star);
+            }
+            // 3. 展开外部属性栏并紧贴窗口最右侧（380px 舒适标准宽度）
+            RightPropertiesPanel.Visibility = Visibility.Visible;
+            if (RightPropertiesColDef != null)
+            {
+                RightPropertiesColDef.Width = new GridLength(380);
+            }
+            UpdatePreview();
+        }
+    }
+
+    public System.Collections.ObjectModel.ObservableCollection<ExtAiSessionItem> AiSessions { get; } = new();
+    private ExtAiSessionItem? _currentAiSession;
+
+    private void InitializeAiWorkbenchSessions()
+    {
+        if (AiSessions.Count == 0)
+        {
+            var defaultSession = new ExtAiSessionItem
+            {
+                Title = "新建小程序会话",
+                CurrentJson = ManualJsonInputBox?.Text ?? _initialJson ?? string.Empty
+            };
+            defaultSession.Messages.Add(new ExtAiChatMessage
+            {
+                Role = "assistant",
+                Content = "你好！我是 DeepSeek AI 小程序开发助手。请在下方输入你想要实现的功能需求（例如：打开计算器、清理回收站、翻译选中文本等），我会为你生成完整的小程序 JSON 并自动试运行。"
+            });
+            AiSessions.Add(defaultSession);
+        }
+
+        if (AiSessionListBox != null)
+        {
+            AiSessionListBox.ItemsSource = AiSessions;
+            AiSessionListBox.SelectedIndex = 0;
+        }
+
+        UpdateAiRightViewMode();
+    }
+
+    private void AiSessionListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (AiSessionListBox?.SelectedItem is ExtAiSessionItem session)
+        {
+            _currentAiSession = session;
+            if (ActiveSessionTitleText != null)
+            {
+                ActiveSessionTitleText.Text = session.Title;
+            }
+            if (AiChatItemsControl != null)
+            {
+                AiChatItemsControl.ItemsSource = session.Messages;
+            }
+            if (!string.IsNullOrWhiteSpace(session.CurrentJson) && ManualJsonInputBox != null && ManualJsonInputBox.Text != session.CurrentJson)
+            {
+                ManualJsonInputBox.Text = session.CurrentJson;
+                if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+                {
+                    _isUpdatingWebView = true;
+                    _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(session.CurrentJson)})");
+                    _isUpdatingWebView = false;
+                }
+                TryPopulateManualFormFromJson(session.CurrentJson, showError: false);
+                SyncSimpleFromHiddenForm();
+                UpdatePreview();
+            }
+            ScrollAiChatToEnd();
+        }
+    }
+
+    private void NewAiSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        var newSession = new ExtAiSessionItem
+        {
+            Title = $"会话 {AiSessions.Count + 1}",
+            CurrentJson = string.Empty
+        };
+        newSession.Messages.Add(new ExtAiChatMessage
+        {
+            Role = "assistant",
+            Content = "你好！请输入你的新小程序功能需求，我会即时为你构建代码。"
+        });
+        AiSessions.Insert(0, newSession);
+        AiSessionListBox.SelectedItem = newSession;
+        if (CustomPromptTextBox != null)
+        {
+            CustomPromptTextBox.Clear();
+            CustomPromptTextBox.Focus();
+        }
+    }
+
+    private ExtAiChatMessage CreateAssistantVersionMessage(string jsonResult, string summary)
+    {
+        string extName = "自定义小程序";
+        string extType = "小程序";
+        string? extIcon = null;
+        string? accentHex = "#3B82F6";
+        Geometry? vectorGeo = null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonResult);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("name", out var np) && np.ValueKind == JsonValueKind.String)
+            {
+                extName = np.GetString() ?? extName;
+            }
+            if (root.TryGetProperty("type", out var tp) && tp.ValueKind == JsonValueKind.String)
+            {
+                extType = tp.GetString() switch
+                {
+                    "open-target" => "打开目标",
+                    "open-url" => "打开网址",
+                    "inline-csharp" => "C# 脚本",
+                    "powershell" => "PowerShell",
+                    "system-action" => "系统控制",
+                    "shell" => "命令行",
+                    "custom-protocol" => "协议交互",
+                    _ => tp.GetString() ?? "小程序"
+                };
+            }
+            if (root.TryGetProperty("icon", out var ip) && ip.ValueKind == JsonValueKind.String)
+            {
+                extIcon = ip.GetString();
+                if (!string.IsNullOrWhiteSpace(extIcon))
+                {
+                    vectorGeo = ExtensionIconLibrary.ResolveVectorIcon(extIcon);
+                }
+            }
+            if (root.TryGetProperty("accentHex", out var ap) && ap.ValueKind == JsonValueKind.String)
+            {
+                accentHex = ap.GetString() ?? accentHex;
+            }
+        }
+        catch { }
+
+        System.Windows.Media.Brush bgBrush;
+        try
+        {
+            bgBrush = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(accentHex ?? "#3B82F6"));
+        }
+        catch
+        {
+            bgBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(59, 130, 246));
+        }
+
+        string glyph = !string.IsNullOrWhiteSpace(extName) ? extName.Substring(0, 1).ToUpperInvariant() : "E";
+        int versionIndex = (_currentAiSession?.Messages.Count(m => !string.IsNullOrWhiteSpace(m.ExtractedJson)) ?? 0) + 1;
+
+        var msg = new ExtAiChatMessage
+        {
+            Role = "assistant",
+            Content = summary,
+            ExtractedJson = jsonResult,
+            VersionNumber = versionIndex,
+            ExtensionName = extName,
+            ExtensionType = extType,
+            ExtensionIcon = extIcon,
+            IconVectorGeometry = vectorGeo,
+            IconGlyphText = glyph,
+            CardIconBgBrush = bgBrush,
+            Timestamp = DateTime.Now
+        };
+
+        // 3 分钟内重复时间点消隐
+        if (_currentAiSession != null && _currentAiSession.Messages.Count > 0)
+        {
+            var lastMsg = _currentAiSession.Messages[^1];
+            if (Math.Abs((msg.Timestamp - lastMsg.Timestamp).TotalMinutes) < 3.0 && msg.TimeText == lastMsg.TimeText)
+            {
+                msg.ShowTimestamp = false;
+            }
+        }
+
+        return msg;
+    }
+
+    private async void AiRunVersionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string json } && !string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                // 1. 若当前 JSON 与此版本不同，先恢复为此版本
+                if (ManualJsonInputBox != null && ManualJsonInputBox.Text != json)
+                {
+                    ManualJsonInputBox.Text = json;
+                    if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+                    {
+                        _isUpdatingWebView = true;
+                        _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(json)})");
+                        _isUpdatingWebView = false;
+                    }
+                    TryPopulateManualFormFromJson(json, showError: false);
+                    SyncSimpleFromHiddenForm();
+                    UpdatePreview();
+                }
+
+                if (_currentAiSession != null)
+                {
+                    _currentAiSession.CurrentJson = json;
+                }
+
+                // 2. 立即执行试运行
+                await RunTestAndRenderAsync(
+                    ManualTestExtensionButton,
+                    ManualTestResultPanel,
+                    ManualTestSummaryText,
+                    ManualTestLogTextBox,
+                    ManualCopyTestFailureButton,
+                    useManualJson: true);
+
+                // 3. 更新对应版本卡片右上角的运行状态徽章
+                if (_currentAiSession != null)
+                {
+                    var matchMsg = _currentAiSession.Messages.LastOrDefault(m => m.ExtractedJson == json);
+                    if (matchMsg != null)
+                    {
+                        matchMsg.TestStatus = _testSucceeded ? "success" : "failed";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"运行失败：{ex.Message}");
+            }
+        }
+    }
+
+    private void AiRestoreVersionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string json } && !string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                if (ManualJsonInputBox != null)
+                {
+                    ManualJsonInputBox.Text = json;
+                }
+                if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+                {
+                    _isUpdatingWebView = true;
+                    _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(json)})");
+                    _isUpdatingWebView = false;
+                }
+                TryPopulateManualFormFromJson(json, showError: false);
+                SyncSimpleFromHiddenForm();
+                UpdatePreview();
+
+                if (_currentAiSession != null)
+                {
+                    _currentAiSession.CurrentJson = json;
+                    _currentAiSession.LastUpdatedAt = DateTime.Now;
+                }
+
+                ShowError("已将编辑器与预览恢复为此版本！");
+                if (ErrorText != null)
+                {
+                    ErrorText.Foreground = GreenBrush;
+                    ErrorText.Visibility = Visibility.Visible;
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError($"应用版本失败：{ex.Message}");
+            }
+        }
+    }
+
+    private async void AiCopyVersionJsonButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string json && !string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                await Task.Run(() => CopyTextToClipboard(json));
+                var origContent = btn.Content;
+                btn.Content = "已复制";
+                await Task.Delay(1200);
+                btn.Content = origContent;
+            }
+            catch (Exception ex)
+            {
+                ShowError($"复制失败：{ex.Message}");
+            }
+        }
+    }
+
+    private void CustomPromptTextBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            if (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift))
+            {
+                // Shift + Enter: 允许正常换行
+                return;
+            }
+            else
+            {
+                // Enter: 拦截换行并触发发送
+                e.Handled = true;
+                DeepSeekAutoGenerateButton_Click(this, new RoutedEventArgs());
+            }
+        }
+    }
+
+    private void CustomPromptTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        // 兼容处理
+    }
+
+    private void ScrollAiChatToEnd()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            AiChatScrollViewer?.ScrollToEnd();
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private async void DeepSeekAutoGenerateButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            ErrorText.Visibility = Visibility.Collapsed;
+
+            var userInput = (CustomPromptTextBox?.Text ?? string.Empty).Trim();
+            if (_currentAiSession == null && AiSessions.Count > 0)
+            {
+                _currentAiSession = AiSessions[0];
+            }
+
+            bool isNewSession = _currentAiSession == null || !_currentAiSession.HasSentInitialPrompt || string.IsNullOrWhiteSpace(_currentAiSession.CurrentJson);
+
+            string prompt;
+            if (isNewSession)
+            {
+                prompt = TryBuildManualCopyPrompt();
+                if (string.IsNullOrWhiteSpace(prompt) && !string.IsNullOrWhiteSpace(_aiGuidePrompt))
+                {
+                    prompt = _aiGuidePrompt;
+                }
+            }
+            else
+            {
+                var currentJson = _currentAiSession?.CurrentJson ?? ManualJsonInputBox?.Text ?? string.Empty;
+                prompt = BuildFollowUpModifyPrompt(userInput, currentJson);
+            }
+
+            if (string.IsNullOrWhiteSpace(prompt))
+            {
+                ShowError("请先填写小程序的需求或修改指令，以便生成对应的 AI 提示词。");
+                return;
+            }
+
+            if (_currentAiSession != null)
+            {
+                var promptDisplay = !string.IsNullOrWhiteSpace(userInput) ? userInput : (isNewSession ? "生成小程序 JSON" : "修改小程序配置");
+                var userMsg = new ExtAiChatMessage
+                {
+                    Role = "user",
+                    Content = promptDisplay,
+                    Timestamp = DateTime.Now
+                };
+                if (_currentAiSession.Messages.Count > 0)
+                {
+                    var lastMsg = _currentAiSession.Messages[^1];
+                    if (Math.Abs((userMsg.Timestamp - lastMsg.Timestamp).TotalMinutes) < 3.0 && userMsg.TimeText == lastMsg.TimeText)
+                    {
+                        userMsg.ShowTimestamp = false;
+                    }
+                }
+                _currentAiSession.Messages.Add(userMsg);
+                if (_currentAiSession.Title == "新建小程序会话" || _currentAiSession.Title.StartsWith("会话 "))
+                {
+                    _currentAiSession.Title = promptDisplay.Length > 12 ? promptDisplay.Substring(0, 12) + "..." : promptDisplay;
+                }
+                _currentAiSession.LastUpdatedAt = DateTime.Now;
+                ScrollAiChatToEnd();
+            }
+
+            if (CustomPromptTextBox != null)
+            {
+                CustomPromptTextBox.Text = string.Empty;
+            }
+
+            var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+            if (agentServer == null || !agentServer.IsBrowserConnected)
+            {
+                ShowError("燕子浏览器助手未连接。请先打开 Chrome 或 Edge 浏览器并确认插件已开启。");
+                return;
+            }
+
+            // 更新 UI 进入生成中状态
+            SetAiAutoGeneratingState(true, "正在将提示词传递至 DeepSeek 网页端并自动发送...");
+            HostAssets.AppendLog($"[AI Transfer Dispatch] isNewSession={isNewSession}, sessionId={_currentAiSession?.Id}, sessionTitle={_currentAiSession?.Title}, promptLen={prompt.Length}");
+
+            var (success, jsonResult, error) = await agentServer.RunBrowserAiPromptTransferAsync(prompt, "deepseek", 120, isNewSession);
+
+            if (!success || string.IsNullOrWhiteSpace(jsonResult))
+            {
+                SetAiAutoGeneratingState(false, null);
+                ShowError($"AI 生成失败：{error ?? "未知错误"}");
+                return;
+            }
+
+            // 成功提取到 JSON
+            SetAiAutoGeneratingState(false, null);
+
+            // 写入编辑器
+            ManualJsonInputBox.Text = jsonResult;
+            if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+            {
+                _isUpdatingWebView = true;
+                _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(jsonResult)})");
+                _isUpdatingWebView = false;
+            }
+
+            // 同步表单数据与右侧实时预览
+            TryPopulateManualFormFromJson(jsonResult, showError: false);
+            SyncSimpleFromHiddenForm();
+            UpdatePreview();
+
+            if (_currentAiSession != null)
+            {
+                _currentAiSession.HasSentInitialPrompt = true;
+                _currentAiSession.CurrentJson = jsonResult;
+                _currentAiSession.Messages.Add(CreateAssistantVersionMessage(jsonResult, "✅ 已成功生成小程序 JSON 并载入编辑器，正在启动试运行验证..."));
+                _currentAiSession.LastUpdatedAt = DateTime.Now;
+                ScrollAiChatToEnd();
+            }
+
+            // 自动触发试运行
+            await Task.Delay(300);
+            ManualTestExtensionButton_Click(this, new RoutedEventArgs());
+        }
+        catch (Exception ex)
+        {
+            SetAiAutoGeneratingState(false, null);
+            HostAssets.AppendLog($"DeepSeek auto generate failed: {ex}");
+            ShowError($"自动生成异常：{ex.Message}");
+        }
+    }
+
+    private void SetAiAutoGeneratingState(bool isGenerating, string? statusText)
+    {
+        if (ManualDeepSeekButton != null)
+        {
+            ManualDeepSeekButton.IsEnabled = !isGenerating;
+            ManualDeepSeekButton.Opacity = isGenerating ? 0.6 : 1.0;
+        }
+    }
+
     private async void ManualCopyJsonButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -563,9 +1525,50 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
+    private string BuildFollowUpModifyPrompt(string userInput, string currentJson)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("请在当前小程序版本的基础上，按照以下最新修改需求进行调整，并输出更新后的完整 JSON 配置：");
+        sb.AppendLine();
+        sb.AppendLine("【最新修改需求】：");
+        sb.AppendLine(string.IsNullOrWhiteSpace(userInput) ? "请检查并优化当前小程序配置。" : userInput.Trim());
+        sb.AppendLine();
+        if (!string.IsNullOrWhiteSpace(currentJson))
+        {
+            sb.AppendLine("【当前最新 JSON 代码】：");
+            sb.AppendLine("```json");
+            sb.AppendLine(currentJson.Trim());
+            sb.AppendLine("```");
+            sb.AppendLine();
+        }
+        sb.AppendLine("【输出要求】：");
+        sb.AppendLine("1. 遵循 Yanzi 小程序 manifest 规范；");
+        sb.AppendLine("2. 仅输出更新后的完整合法 JSON 代码块（包裹在 ```json 与 ``` 中），不要输出多余废话。");
+        return sb.ToString();
+    }
+
     private string TryBuildManualCopyPrompt()
     {
-        return BuildDetailedPrompt(BuildManualRequestSummary());
+        var baseSummary = BuildManualRequestSummary();
+        var custom = CustomPromptTextBox?.Text?.Trim();
+
+        if (string.IsNullOrWhiteSpace(baseSummary) && !string.IsNullOrWhiteSpace(custom))
+        {
+            baseSummary = custom;
+        }
+
+        var basePrompt = BuildDetailedPrompt(baseSummary);
+
+        if (!string.IsNullOrWhiteSpace(custom) && !string.Equals(baseSummary, custom, StringComparison.Ordinal))
+        {
+            var sb = new StringBuilder(basePrompt);
+            sb.AppendLine();
+            sb.AppendLine("【三、用户补充自定义要求（优先级最高，必须满足）】：");
+            sb.AppendLine(custom);
+            return sb.ToString();
+        }
+
+        return basePrompt;
     }
 
     private string BuildManualRequestSummary()
@@ -594,7 +1597,7 @@ public partial class AddJsonExtensionWindow : Window
 
         if (!string.IsNullOrWhiteSpace(QueryTargetTemplateBox.Text))
         {
-            parts.Add($"这是一个搜索扩展，搜索模板是：{QueryTargetTemplateBox.Text.Trim()}");
+            parts.Add($"这是一个搜索小程序，搜索模板是：{QueryTargetTemplateBox.Text.Trim()}");
         }
 
         if (!string.IsNullOrWhiteSpace(QueryPrefixesBox.Text))
@@ -647,14 +1650,9 @@ public partial class AddJsonExtensionWindow : Window
             parts.Add($"热键行为是：{HotkeyBehaviorBox.Text.Trim()}");
         }
 
-        if (!string.IsNullOrWhiteSpace(IdBox.Text))
-        {
-            parts.Add($"扩展 ID 倾向于使用：{IdBox.Text.Trim()}");
-        }
-
         return parts.Count == 0
-            ? "创建一个新的 Yanzi 扩展。"
-            : $"创建一个新的 Yanzi 扩展，要求如下：{string.Join("；", parts)}。";
+            ? "创建一个新的 Yanzi 小程序。"
+            : $"创建一个新的 Yanzi 小程序，要求如下：{string.Join("；", parts)}。";
     }
 
     private void AiLinkButton_Click(object sender, RoutedEventArgs e)
@@ -1397,14 +2395,9 @@ public partial class AddJsonExtensionWindow : Window
 
     private LocalExtensionManifest BuildManifestFromForm()
     {
-        if (string.IsNullOrWhiteSpace(IdBox.Text))
-        {
-            throw new InvalidOperationException("扩展 ID 不能为空。");
-        }
-
         if (string.IsNullOrWhiteSpace(NameBox.Text))
         {
-            throw new InvalidOperationException("扩展名称不能为空。");
+            throw new InvalidOperationException("小程序名称不能为空。");
         }
 
         var runtime = NullIfEmpty(RuntimeBox.Text);
@@ -1414,7 +2407,7 @@ public partial class AddJsonExtensionWindow : Window
 
         return new LocalExtensionManifest
         {
-            Id = IdBox.Text.Trim(),
+            Id = GetOrCreateFormExtensionId(),
             Name = NameBox.Text.Trim(),
             Version = string.IsNullOrWhiteSpace(VersionBox.Text) ? "0.1.0" : VersionBox.Text.Trim(),
             Category = NullIfEmpty(CategoryBox.Text),
@@ -1450,6 +2443,18 @@ public partial class AddJsonExtensionWindow : Window
             SearchProvider = _manualSearchProvider,
             MouseGesture = NormalizeMouseGestureForManifest(_manualMouseGesture)
         };
+    }
+
+    private string GetOrCreateFormExtensionId()
+    {
+        if (!string.IsNullOrWhiteSpace(IdBox.Text))
+        {
+            return IdBox.Text.Trim();
+        }
+
+        var id = LocalExtensionCatalog.CreateSystemExtensionId();
+        IdBox.Text = id;
+        return id;
     }
 
     private LocalExtensionManifest? TryParsePreservedManifest()
@@ -1508,7 +2513,9 @@ public partial class AddJsonExtensionWindow : Window
 
     private void ApplyManifestToForm(LocalExtensionManifest manifest)
     {
-        IdBox.Text = manifest.Id;
+        IdBox.Text = string.IsNullOrWhiteSpace(manifest.Id)
+            ? LocalExtensionCatalog.CreateSystemExtensionId()
+            : manifest.Id;
         NameBox.Text = manifest.Name;
         VersionBox.Text = manifest.Version;
         CategoryBox.Text = manifest.Category ?? string.Empty;
@@ -1544,15 +2551,29 @@ public partial class AddJsonExtensionWindow : Window
         IconPreviewGlyph.Visibility = Visibility.Collapsed;
 
         var iconReference = NullIfEmpty(IconBox.Text);
+        var openTarget = NullIfEmpty(OpenTargetBox.Text);
         var previewDirectory = ResolvePreviewDirectory();
 
         var imageSource = ExtensionIconLibrary.ResolveImageSource(iconReference, previewDirectory);
-        if (imageSource != null)
+        if (imageSource == null && !string.IsNullOrWhiteSpace(openTarget))
+        {
+            imageSource = ExtensionIconLibrary.ResolveImageSource(openTarget, previewDirectory);
+        }
+
+        var isGenericIconRef = string.IsNullOrWhiteSpace(iconReference) ||
+                               iconReference.Equals("mdi:file", StringComparison.OrdinalIgnoreCase) ||
+                               iconReference.Equals("file", StringComparison.OrdinalIgnoreCase) ||
+                               iconReference.Equals("mdi:document", StringComparison.OrdinalIgnoreCase) ||
+                               iconReference.Equals("document", StringComparison.OrdinalIgnoreCase);
+
+        if (imageSource != null && (isGenericIconRef || ExtensionIconLibrary.ResolveVectorIcon(iconReference) == null))
         {
             IconPreviewImage.Source = imageSource;
             IconPreviewImage.Visibility = Visibility.Visible;
             IconPreviewHostBackgroundToImage();
-            IconPreviewHintText.Text = "当前使用图片图标或本地图标路径。";
+            IconPreviewHintText.Text = !string.IsNullOrWhiteSpace(openTarget) && isGenericIconRef
+                ? "当前显示打开目标（快捷方式/程序）图标。"
+                : "当前使用图片图标或本地图标路径。";
             HighlightSelectedBuiltInButton(null);
             return;
         }
@@ -1562,9 +2583,34 @@ public partial class AddJsonExtensionWindow : Window
         {
             IconPreviewVector.Data = vectorIcon;
             IconPreviewVectorHost.Visibility = Visibility.Visible;
+            
+            var vectorColorHex = "#FFFFFFFF";
+            if (iconReference != null && iconReference.LastIndexOf('#') is var hashIdx && hashIdx > 0)
+            {
+                vectorColorHex = iconReference[hashIdx..];
+            }
+            try
+            {
+                IconPreviewVector.Fill = CreateBrush(vectorColorHex);
+            }
+            catch
+            {
+                IconPreviewVector.ClearValue(System.Windows.Shapes.Shape.FillProperty);
+            }
+
             IconPreviewHostBackgroundToAccent();
             IconPreviewHintText.Text = $"当前使用内置图标：{iconReference}";
             HighlightSelectedBuiltInButton(iconReference);
+            return;
+        }
+
+        if (imageSource != null)
+        {
+            IconPreviewImage.Source = imageSource;
+            IconPreviewImage.Visibility = Visibility.Visible;
+            IconPreviewHostBackgroundToImage();
+            IconPreviewHintText.Text = "当前使用目标文件图标。";
+            HighlightSelectedBuiltInButton(null);
             return;
         }
 
@@ -1687,7 +2733,7 @@ public partial class AddJsonExtensionWindow : Window
             ?? throw new InvalidOperationException("JSON 解析失败。");
 
         var logBuilder = new StringBuilder();
-        logBuilder.AppendLine($"扩展：{manifest.Name} ({manifest.Id})");
+        logBuilder.AppendLine($"小程序：{manifest.Name} ({manifest.Id})");
         logBuilder.AppendLine($"时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         logBuilder.AppendLine();
 
@@ -1703,21 +2749,21 @@ public partial class AddJsonExtensionWindow : Window
                 if (mainWindow == null)
                 {
                     logBuilder.AppendLine("未找到主窗口实例，无法预览 hostedView。");
-                    return new TestExecutionResult(false, "没有可用的主窗口来预览该扩展。", logBuilder.ToString());
+                    return new TestExecutionResult(false, "没有可用的主窗口来预览该小程序。", logBuilder.ToString());
                 }
 
                 Hide();
                 await mainWindow.Dispatcher.InvokeAsync(() => mainWindow.PreviewHostedViewForTestAsync(command, editorWindowToRestore: this)).Task.Unwrap();
                 var hostedViewType = manifest.HostedViewXaml?.Type ?? manifest.HostedViewV2?.Type ?? manifest.HostedView?.Type ?? "unknown";
-                logBuilder.AppendLine("类型：宿主内置界面扩展");
+                logBuilder.AppendLine("类型：宿主内置界面小程序");
                 logBuilder.AppendLine($"视图类型：{hostedViewType}");
                 logBuilder.AppendLine($"窗口宽度：{manifest.HostedViewXaml?.Window?.Width?.ToString("0") ?? manifest.HostedViewV2?.Window?.Width?.ToString("0") ?? manifest.HostedView?.WindowWidth?.ToString("0") ?? "默认"}");
                 logBuilder.AppendLine($"窗口高度：{manifest.HostedViewXaml?.Window?.Height?.ToString("0") ?? manifest.HostedViewV2?.Window?.Height?.ToString("0") ?? manifest.HostedView?.WindowHeight?.ToString("0") ?? "默认"}");
-                logBuilder.AppendLine("已拉起主窗口并打开扩展视图。");
+                logBuilder.AppendLine("已拉起主窗口并打开小程序视图。");
                 logBuilder.AppendLine(manifest.HostedViewXaml != null
                     ? "当前 hostedViewXaml 使用动态 XAML 宿主能力。"
                     : "当前 hostedViewV2 使用受限组件协议，不支持直接声明任意 WPF 控件树。");
-                return new TestExecutionResult(true, "测试通过，已在主窗口中打开该扩展界面。", logBuilder.ToString());
+                return new TestExecutionResult(true, "测试通过，已在主窗口中打开该小程序界面。", logBuilder.ToString());
             }
             finally
             {
@@ -1731,8 +2777,8 @@ public partial class AddJsonExtensionWindow : Window
             {
                 return new TestExecutionResult(
                     false,
-                    "当前 JSON 使用的是外部脚本入口，测试前需要先保存脚本文件到扩展目录。",
-                    logBuilder.AppendLine("当前只支持直接测试内联脚本扩展。").ToString());
+                    "当前 JSON 使用的是外部脚本入口，测试前需要先保存脚本文件到小程序目录。",
+                    logBuilder.AppendLine("当前只支持直接测试内联脚本小程序。").ToString());
             }
 
             var tempDirectory = Path.Combine(Path.GetTempPath(), "yanzi-extension-test", Guid.NewGuid().ToString("N"));
@@ -1787,7 +2833,7 @@ public partial class AddJsonExtensionWindow : Window
                 FileName = preview,
                 UseShellExecute = true
             });
-            logBuilder.AppendLine("类型：网页搜索扩展");
+            logBuilder.AppendLine("类型：网页搜索小程序");
             logBuilder.AppendLine($"示例关键词：{sampleQuery}");
             logBuilder.AppendLine($"预览地址：{preview}");
             logBuilder.AppendLine("已实际打开搜索地址。");
@@ -1810,10 +2856,10 @@ public partial class AddJsonExtensionWindow : Window
                 }
 
                 await mainWindow.Dispatcher.InvokeAsync(() => mainWindow.OpenSearchProviderInLauncher(command, string.Empty));
-                logBuilder.AppendLine("类型：扩展搜索提供器");
+                logBuilder.AppendLine("类型：小程序搜索提供器");
                 logBuilder.AppendLine($"提供器：{manifest.SearchProvider.Type}");
                 logBuilder.AppendLine($"搜索目录：{manifest.SearchProvider.Path ?? manifest.OpenTarget ?? "未设置"}");
-                logBuilder.AppendLine("已拉起主窗口并进入该扩展的搜索输入。");
+                logBuilder.AppendLine("已拉起主窗口并进入该小程序的搜索输入。");
                 return new TestExecutionResult(true, "测试通过，已在主窗口中打开搜索入口。", logBuilder.ToString());
             }
             finally
@@ -1835,7 +2881,7 @@ public partial class AddJsonExtensionWindow : Window
                 FileName = target,
                 UseShellExecute = true
             });
-            logBuilder.AppendLine("类型：打开目标扩展");
+            logBuilder.AppendLine("类型：打开目标小程序");
             logBuilder.AppendLine($"目标：{target}");
             logBuilder.AppendLine($"本地存在：{exists}");
             logBuilder.AppendLine($"绝对地址：{isUri}");
@@ -1856,7 +2902,7 @@ public partial class AddJsonExtensionWindow : Window
         }
 
         logBuilder.AppendLine("未检测到 runtime、queryTargetTemplate 或 openTarget。");
-        return new TestExecutionResult(false, "当前扩展缺少可测试的执行入口。", logBuilder.ToString());
+        return new TestExecutionResult(false, "当前小程序缺少可测试的执行入口。", logBuilder.ToString());
     }
 
     private static bool TryResolveExecutableOnPath(string fileName)
@@ -1920,10 +2966,34 @@ public partial class AddJsonExtensionWindow : Window
             _testCompleted = true;
             _testSucceeded = result.Success;
 
+            // 成功时不弹日志面板打扰用户，只有失败时才弹出
+            if (result.Success)
+            {
+                resultPanel.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                resultPanel.Visibility = Visibility.Visible;
+            }
+
             summaryText.Foreground = result.Success ? GreenBrush : RedBrush;
             summaryText.Text = result.Summary;
             logTextBox.Text = result.Log;
             copyFailureButton.Visibility = string.IsNullOrWhiteSpace(result.Log) ? Visibility.Collapsed : Visibility.Visible;
+            if (ManualAiFixTestFailureButton != null)
+            {
+                ManualAiFixTestFailureButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
+            }
+
+            // 更新 AI 对话区最新版本卡片的运行状态标识
+            if (_currentAiSession != null)
+            {
+                var latestMsg = _currentAiSession.Messages.LastOrDefault(m => m.HasVersionCard);
+                if (latestMsg != null)
+                {
+                    latestMsg.TestStatus = result.Success ? "success" : "failed";
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -1934,11 +3004,15 @@ public partial class AddJsonExtensionWindow : Window
             summaryText.Text = "测试执行失败。";
             logTextBox.Text = ex.ToString();
             copyFailureButton.Visibility = Visibility.Visible;
+            if (ManualAiFixTestFailureButton != null)
+            {
+                ManualAiFixTestFailureButton.Visibility = Visibility.Visible;
+            }
         }
         finally
         {
             triggerButton.IsEnabled = _lastJsonValid;
-            triggerButton.Content = "测试扩展";
+            triggerButton.Content = "测试小程序";
             RefreshAllState();
         }
     }
@@ -1968,8 +3042,8 @@ public partial class AddJsonExtensionWindow : Window
         return new CommandItem(
             glyph: "E",
             title: manifest.Name,
-            subtitle: manifest.Description ?? "临时测试扩展",
-            category: manifest.Category ?? "扩展",
+            subtitle: manifest.Description ?? "临时测试小程序",
+            category: manifest.Category ?? "小程序",
             accentHex: NormalizeAccentHexOrDefault(manifest.AccentHex),
             openTarget: manifest.OpenTarget,
             keywords: manifest.Keywords ?? [],
@@ -1995,7 +3069,7 @@ public partial class AddJsonExtensionWindow : Window
     private static string BuildGenerationPrompt(string request)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("请生成一个 Yanzi 扩展 manifest JSON。");
+        builder.AppendLine("请生成一个 Yanzi 小程序 manifest JSON。");
         builder.AppendLine();
         builder.AppendLine("需求：");
         builder.AppendLine(request);
@@ -2041,17 +3115,17 @@ public partial class AddJsonExtensionWindow : Window
     private static string BuildDetailedPrompt(string request)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("请帮我生成一个 Yanzi 扩展的完整 JSON 配置。");
+        builder.AppendLine("请帮我生成一个 Yanzi 小程序的完整 JSON 配置。");
         builder.AppendLine();
         builder.AppendLine("一、背景说明");
-        builder.AppendLine("这个产品的设计理念是“万物皆扩展”。用户会在桌面启动器、快捷面板、鼠标呼出面板里运行扩展。");
-        builder.AppendLine("扩展可以是：");
+        builder.AppendLine("这个产品的设计理念是“万物皆小程序”。用户会在桌面启动器、快捷面板、鼠标呼出面板里运行小程序。");
+        builder.AppendLine("小程序可以是：");
         builder.AppendLine("1. 直接打开网页、程序、文件、文件夹");
         builder.AppendLine("2. 做网页搜索");
         builder.AppendLine("3. 运行脚本处理输入内容");
         builder.AppendLine("4. 用 C#/.NET/WPF/Windows 原生能力完成系统操作或独立工具");
         builder.AppendLine("5. 在宿主界面里展示一个简单工作区");
-        builder.AppendLine("宿主的角色是管家：负责搜索框入口、输入传递、扩展状态、本地/云端存储和少量受控宿主视图动作；除这些已声明 API 外，功能实现应优先写原生 C#，不要臆造宿主封装方法。");
+        builder.AppendLine("宿主的角色是管家：负责搜索框入口、输入传递、小程序状态、本地/云端存储和少量受控宿主视图动作；除这些已声明 API 外，功能实现应优先写原生 C#，不要臆造宿主封装方法。");
         builder.AppendLine();
         builder.AppendLine("我的需求是：");
         builder.AppendLine(request);
@@ -2075,7 +3149,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("   - 修改 Windows 个性化、壁纸、系统颜色等设置时，不能只写注册表后直接返回成功；必须调用实际生效 API、检查返回值，必要时生成壁纸文件并调用 SystemParametersInfo(SPI_SETDESKWALLPAPER) 或明确提示需要用户手动刷新/注销");
         builder.AppendLine("   - 脚本测试只能判断代码是否成功执行，不能自动证明桌面背景、系统颜色、网络状态等外部副作用真的生效；这类脚本应自行读取/验证结果后再返回成功");
         builder.AppendLine("   - 宿主会自动引用随应用发布的常用托管 DLL，可直接使用 System.Drawing.Common、System.Management、System.IO.Ports、System.ServiceProcess、System.Diagnostics.EventLog、System.DirectoryServices、System.Security.Cryptography.ProtectedData、System.Text.Encoding.CodePages 等基础库");
-        builder.AppendLine("4.1 如果需要用户在主界面输入“前缀 + 内容”后触发扩展，必须提供 queryPrefixes；脚本或工作区扩展会通过 context.InputText 收到去掉前缀后的内容");
+        builder.AppendLine("4.1 如果需要用户在主界面输入“前缀 + 内容”后触发小程序，必须提供 queryPrefixes；脚本或工作区小程序会通过 context.InputText 收到去掉前缀后的内容");
         builder.AppendLine("5. 如果是 C# 内联脚本，必须严格遵守宿主约定：");
         builder.AppendLine("   - 必须包含 \"runtime\": \"csharp\"");
         builder.AppendLine("   - 必须包含 \"entryMode\": \"inline\"");
@@ -2088,40 +3162,41 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("   - YanziActionContext 只提供宿主管家能力：InputText、LaunchSource、ExtensionDirectory、ExtensionDataDirectory、Now、Permissions、State、SetStateAsync、Storage、ViewState、UpdateView");
         builder.AppendLine("   - 不要发明 context.SetTheme、context.GetTheme、context.OpenFilePicker、context.ShowMessage、context.GetStateAsync<T>() 等不存在的宿主 API；这些需求应优先用原生 C#/.NET/WPF/Windows API 自己实现");
         builder.AppendLine("   - 不要根据旧命名空间推断 pack URI、程序集名或资源路径；当前应用程序集名是 Yanzi，且没有内置主题资源字典");
-        builder.AppendLine("5.1 只有脚本真正创建 WPF 原生窗口时才输出 \"uiMode\": \"native-window\"，典型特征是 new Window、ShowDialog、WindowStartupLocation 或 WindowStyle。仅使用 System.Windows.Clipboard 不属于原生窗口扩展。");
+        builder.AppendLine("5.1 只有脚本真正创建 WPF 原生窗口时才输出 \"uiMode\": \"native-window\"，典型特征是 new Window、ShowDialog、WindowStartupLocation 或 WindowStyle。仅使用 System.Windows.Clipboard 不属于原生窗口小程序。");
         builder.AppendLine("5.2 只要是 native-window 扩展，就不要再同时输出 hostedViewXaml 或 hostedViewV2");
         builder.AppendLine("5.3 如果需求是独立弹窗小工具、原生窗口小应用、独立编辑器，而不是寄生在宿主里的工作区，优先输出 native-window，而不是 hostedViewXaml");
         builder.AppendLine();
         builder.AppendLine("三、字段说明");
-        builder.AppendLine("- id：扩展唯一标识，只能英文小写、数字、短横线，例如 \"open-project-folder\"");
-        builder.AppendLine("- name：扩展显示名称");
+        builder.AppendLine("- id：小程序唯一标识，只能英文小写、数字、短横线，例如 \"open-project-folder\"");
+        builder.AppendLine("- name：小程序显示名称");
         builder.AppendLine("- version：版本号，默认 \"0.1.0\"");
         builder.AppendLine("- category：分类，例如 \"扩展\"、\"网页搜索\"、\"效率工具\"");
-        builder.AppendLine("- description：一句话描述扩展用途");
+        builder.AppendLine("- description：一句话描述小程序用途");
         builder.AppendLine("- keywords：搜索关键词数组");
         builder.AppendLine("- icon：图标，可用 mdi:图标名 或图片地址");
-        builder.AppendLine("- accentHex：可选，扩展按钮 / 卡片底色，支持 #RRGGBB 或 #AARRGGBB，例如 #10B981、#FFF97316；不要所有扩展都用默认蓝色");
+        builder.AppendLine("- accentHex：可选，小程序按钮 / 卡片底色，支持 #RRGGBB 或 #AARRGGBB，例如 #10B981、#FFF97316；不要所有小程序都用默认蓝色");
         builder.AppendLine("- openTarget：点击后直接打开的目标");
-        builder.AppendLine("- queryPrefixes：前缀数组，例如 [\"百度\", \"baidu\"]；搜索扩展会把后面的内容替换进 {query}，脚本 / 工作区扩展会把后面的内容传给 context.InputText");
+        builder.AppendLine("- queryPrefixes：前缀数组，例如 [\"百度\", \"baidu\"]；搜索小程序会把后面的内容替换进 {query}，脚本 / 工作区扩展会把后面的内容传给 context.InputText");
         builder.AppendLine("- queryTargetTemplate：搜索模板，必须包含 {query}");
-        builder.AppendLine("- searchProvider：可选；如果希望某个扩展被固定到顶部后，在主界面继续输入关键词就返回一组列表结果，可输出 searchProvider");
+        builder.AppendLine("- searchProvider：可选；如果希望某个小程序被固定到顶部后，在主界面继续输入关键词就返回一组列表结果，可输出 searchProvider");
         builder.AppendLine("- searchProvider.type：当前支持 \"folder\"，表示在指定目录下搜索文件/文件夹");
-        builder.AppendLine("- searchProvider.type 也支持 \"script\"；这时扩展自己的脚本需要返回 JSON 结果数组");
+        builder.AppendLine("- searchProvider.type 也支持 \"script\"；这时小程序自己的脚本需要返回 JSON 结果数组");
         builder.AppendLine("- searchProvider.path：搜索根目录；如果省略且 openTarget 本身是目录，会自动拿 openTarget 当根目录");
         builder.AppendLine("- searchProvider.aliases：可选；固定到顶部后支持 @别名 关键词，例如 @项目 需求文档");
         builder.AppendLine("- searchProvider.includeSubdirectories / includeFiles / includeDirectories / maxResults：可选，控制搜索范围");
         builder.AppendLine("- script provider 的脚本返回格式建议是 JSON 数组，每项包含 title、subtitle、kind、openTarget、keywords、accentHex；kind 可用 file、folder、record、url、script、api");
         builder.AppendLine("- runtime：脚本运行时，例如 \"csharp\" 或 \"powershell\"");
-        builder.AppendLine("- uiMode：可选；如果希望 C# 扩展自己弹原生窗口而不是寄生在宿主界面中，可写 \"native-window\"");
+        builder.AppendLine("- uiMode：可选；如果希望 C# 小程序自己弹原生窗口而不是寄生在宿主界面中，可写 \"native-window\"");
         builder.AppendLine("- entryMode：如果是内联脚本请写 \"inline\"");
         builder.AppendLine("- entry：如果是外部脚本文件，写入口文件名");
         builder.AppendLine("- permissions：权限数组，例如 [\"clipboard\", \"network\"]");
         builder.AppendLine("- 宿主 API 边界：context 不是万能能力对象，只能使用本文明确列出的成员；其它能力请在 script.source 中直接使用 C# 原生库、WPF、P/Invoke、Process、File、HttpClient 等实现");
         builder.AppendLine("- 命名边界：产品名和应用名是 Yanzi；不要在 C# 脚本里写旧产品名相关命名空间、程序集引用、pack URI、资源路径或品牌文案。hostedViewXaml 的 oqh:HostedViewBridge 命名空间使用模板给出的 Yanzi 命名空间");
-        builder.AppendLine("- 扩展脚本现在支持 context.Storage 本地/云端存储 helper：ReadTextAsync、WriteTextAsync、ReadJsonAsync<T>、WriteJsonAsync<T>");
-        builder.AppendLine("- context.Storage 默认支持 scope = local、cloud、both；local 写入本地扩展数据目录，cloud / both 会通过宿主 API 写入坚果云 / WebDAV");
+        builder.AppendLine("- 小程序脚本现在支持 context.Storage 本地/云端存储 helper：ReadTextAsync、WriteTextAsync、DeleteTextAsync、ReadJsonAsync<T>、WriteJsonAsync<T>");
+        builder.AppendLine("- context.Storage 默认支持 scope = local、cloud、both；local 写入本地小程序数据目录，cloud / both 会通过宿主 API 写入坚果云 / WebDAV");
         builder.AppendLine("- context.Storage.ReadTextAsync 的可用写法是：await context.Storage.ReadTextAsync(\"note.txt\", scope: \"both\")；不要传 defaultValue 参数");
         builder.AppendLine("- context.Storage.WriteTextAsync 的可用写法是：await context.Storage.WriteTextAsync(\"note.txt\", content, scope: \"both\")");
+        builder.AppendLine("- context.Storage.DeleteTextAsync 的可用写法是：await context.Storage.DeleteTextAsync(\"note.txt\", scope: \"both\")；cloud / both 会同步 tombstone");
         builder.AppendLine("- 如果需要默认值，请自己写：var text = await context.Storage.ReadTextAsync(\"note.txt\", scope: \"both\") ?? string.Empty; 或用 try/catch，不要发明 defaultValue 参数");
         builder.AppendLine("- script.source：内联脚本源码");
         builder.AppendLine("- hostedViewXaml：如果要让宿主直接加载自定义 XAML 界面，请输出 hostedViewXaml");
@@ -2152,7 +3227,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- 组件的 bind 字段用于绑定到 state 路径");
         builder.AppendLine("- button.actions：当前支持 setState、runScript、loadStorage、saveStorage");
         builder.AppendLine("- 如果只是旧版简单双栏工作区，也可以输出 hostedView，但新方案优先用 hostedViewXaml 或 hostedViewV2");
-        builder.AppendLine("- 如果不想寄生在宿主界面中，而是希望扩展自己弹原生 WPF 窗口，可使用 C# 扩展并设置 uiMode = native-window；这类扩展仍然需要用 YanziActionContext 读取输入、状态和存储");
+        builder.AppendLine("- 如果不想寄生在宿主界面中，而是希望小程序自己弹原生 WPF 窗口，可使用 C# 小程序并设置 uiMode = native-window；这类小程序仍然需要用 YanziActionContext 读取输入、状态和存储");
         builder.AppendLine("- native-window 扩展中的 WPF 窗口代码必须在 STA 线程中创建和显示；如果手动 new Window / TextBox / Button，必须显式创建 STA 线程再 ShowDialog，不要直接在 RunAsync 当前线程里 new Window");
         builder.AppendLine("- 如果需求是笔记、便签、编辑器、独立小应用，并且不寄生在宿主界面中，请优先参考模板 5.1 的原生笔记窗口，不要自己改写窗口启动结构");
         builder.AppendLine("- 如果需求是修改宿主自身界面资源，可使用 System.Windows.Application.Current.Dispatcher 和 Application.Current.Resources 等 WPF 原生对象尝试实现，但不要写 context.SetTheme 这类未声明方法");
@@ -2172,7 +3247,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"icon\": \"mdi:folder\"");
         builder.AppendLine("}");
         builder.AppendLine();
-        builder.AppendLine("模板 2：网页搜索扩展");
+        builder.AppendLine("模板 2：网页搜索小程序");
         builder.AppendLine("{");
         builder.AppendLine("  \"id\": \"search-baidu\",");
         builder.AppendLine("  \"name\": \"百度搜索\",");
@@ -2470,7 +3545,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("}");
         builder.AppendLine();
         builder.AppendLine();
-        builder.AppendLine("模板 5：原生窗口扩展（uiMode = native-window）");
+        builder.AppendLine("模板 5：原生窗口小程序（uiMode = native-window）");
         builder.AppendLine("{");
         builder.AppendLine("  \"id\": \"native-window-demo\",");
         builder.AppendLine("  \"name\": \"原生窗口示例\",");
@@ -2584,7 +3659,7 @@ public partial class AddJsonExtensionWindow : Window
             EntryMode = "inline",
             Permissions = ["clipboard"],
             Icon = "mdi:code-tags",
-            AccentHex = "#FF8B5CF6",
+            AccentHex = "#FF3B82F6",
             Script = new LocalExtensionInlineScriptManifest
             {
                 Source = "public static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        return Task.FromResult(\"收到输入：\" + context.InputText);\n    }\n}"
@@ -4050,4 +5125,88 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
     }
 
     #endregion
+}
+
+public sealed class ExtAiChatMessage : System.ComponentModel.INotifyPropertyChanged
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Role { get; set; } = "user"; // "user" | "assistant" | "error"
+    public string Content { get; set; } = "";
+    public string? ExtractedJson { get; set; }
+    public int VersionNumber { get; set; } = 0;
+    public string? ExtensionName { get; set; }
+    public string? ExtensionType { get; set; }
+    public string? ExtensionIcon { get; set; }
+    public Geometry? IconVectorGeometry { get; set; }
+    public string? IconGlyphText { get; set; }
+    public System.Windows.Media.Brush CardIconBgBrush { get; set; } = new SolidColorBrush(System.Windows.Media.Color.FromRgb(59, 130, 246));
+
+    private string? _testStatus; // null | "success" | "failed"
+    public string? TestStatus
+    {
+        get => _testStatus;
+        set
+        {
+            _testStatus = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TestStatus)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TestSuccessVisibility)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TestFailedVisibility)));
+        }
+    }
+
+    public Visibility TestSuccessVisibility => TestStatus == "success" ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility TestFailedVisibility => TestStatus == "failed" ? Visibility.Visible : Visibility.Collapsed;
+
+    public DateTime Timestamp { get; set; } = DateTime.Now;
+    public string TimeText => Timestamp.ToString("HH:mm");
+
+    private bool _showTimestamp = true;
+    public bool ShowTimestamp
+    {
+        get => _showTimestamp;
+        set
+        {
+            _showTimestamp = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(ShowTimestamp)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TimestampVisibility)));
+        }
+    }
+    public Visibility TimestampVisibility => ShowTimestamp ? Visibility.Visible : Visibility.Collapsed;
+
+    public bool IsUser => Role == "user";
+    public bool IsAssistant => Role == "assistant";
+    public bool IsError => Role == "error";
+    public bool HasVersionCard => IsAssistant && !string.IsNullOrWhiteSpace(ExtractedJson);
+    public Visibility UserVisibility => IsUser ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility AssistantVisibility => IsAssistant ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility VersionCardVisibility => HasVersionCard ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility IconVectorVisibility => IconVectorGeometry != null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility IconGlyphVisibility => IconVectorGeometry == null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ErrorVisibility => IsError ? Visibility.Visible : Visibility.Collapsed;
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+}
+
+public sealed class ExtAiSessionItem : System.ComponentModel.INotifyPropertyChanged
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    private string _title = "新建小程序会话";
+    public string Title
+    {
+        get => _title;
+        set
+        {
+            _title = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Title)));
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(TimeText)));
+        }
+    }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime LastUpdatedAt { get; set; } = DateTime.Now;
+    public string TimeText => LastUpdatedAt.ToString("HH:mm");
+    public System.Collections.ObjectModel.ObservableCollection<ExtAiChatMessage> Messages { get; set; } = new();
+    public string CurrentJson { get; set; } = "";
+    public bool HasSentInitialPrompt { get; set; } = false;
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 }

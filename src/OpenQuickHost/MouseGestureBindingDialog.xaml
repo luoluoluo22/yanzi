@@ -1,0 +1,403 @@
+<Window x:Class="OpenQuickHost.MouseGestureBindingDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:OpenQuickHost"
+        mc:Ignorable="d"
+        Title="手势动作配置" Width="680" Height="620"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" ShowInTaskbar="False">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <local:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+
+        <!-- Tab 胶囊样式 -->
+        <Style x:Key="DialogTabRadioStyle" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Root" CornerRadius="8" Background="Transparent" Padding="{TemplateBinding Padding}" Margin="0,0,6,0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+                                <Setter TargetName="Root" Property="Background" Value="#22FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushAccent}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushAccentText}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 黑名单专属红色 Tab 胶囊样式 -->
+        <Style x:Key="BlacklistTabRadioStyle" TargetType="RadioButton" BasedOn="{StaticResource DialogTabRadioStyle}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Root" CornerRadius="8" Background="Transparent" Padding="{TemplateBinding Padding}" Margin="0,0,6,0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#FFF87171" />
+                                <Setter TargetName="Root" Property="Background" Value="#22EF4444" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#FFDC2626" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 滚动条样式 -->
+        <Style TargetType="{x:Type ScrollViewer}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollViewer}">
+                        <Grid Background="{TemplateBinding Background}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Grid.Column="0" Margin="{TemplateBinding Padding}" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" CanContentScroll="{TemplateBinding CanContentScroll}" />
+                            <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1" AutomationProperties.AutomationId="VerticalScrollBar" Cursor="Arrow" Value="{TemplateBinding VerticalOffset}" Maximum="{TemplateBinding ScrollableHeight}" Minimum="0" Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" ViewportSize="{TemplateBinding ViewportWidth}" Width="6" Margin="2,0,0,0" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type ScrollBar}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True" IsEnabled="{TemplateBinding IsEnabled}">
+                                <Track.Thumb>
+                                    <Thumb Background="{DynamicResource BrushBorder}" BorderThickness="0" Width="6">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="{x:Type Thumb}">
+                                                <Border Background="{TemplateBinding Background}" CornerRadius="3" />
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="#FF16161B" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.5" CornerRadius="16" SnapsToDevicePixels="True">
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <!-- 头部：手势信息与关闭按钮 -->
+                <RowDefinition Height="Auto" />
+                <!-- Tab 切换栏 -->
+                <RowDefinition Height="Auto" />
+                <!-- 搜索与多选工具栏 -->
+                <RowDefinition Height="Auto" />
+                <!-- 主体内容列表 -->
+                <RowDefinition Height="*" />
+                <!-- 底部操作按钮 -->
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 1. 顶部手势概要 -->
+            <Grid Grid.Row="0" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Border Width="48" Height="48" CornerRadius="12" Background="#FF1F1F24" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,14,0">
+                    <Path x:Name="GesturePreviewPath" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="GestureTitleText" Text="手势名称" Foreground="{DynamicResource BrushTextMain}" FontSize="16" FontWeight="Bold"/>
+                        <Border x:Name="GestureTriggerBadge" Background="#1A3B82F6" BorderBrush="#FF3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="GestureTriggerText" Text="按住右键划线" Foreground="#FF3B82F6" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                    </StackPanel>
+                    <TextBlock x:Name="GestureDescText" Text="可选择触发的小程序，配置白名单生效应用或黑名单禁用应用" Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <!-- 关闭按钮 -->
+                <Button Grid.Column="2" Width="30" Height="30" Click="CloseButton_Click" Background="Transparent" BorderThickness="0" Cursor="Hand" VerticalAlignment="Top">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="btnBorder" Background="Transparent" CornerRadius="8">
+                                <Path Data="M 7 7 L 17 17 M 17 7 L 7 17" Stroke="{DynamicResource BrushTextSec}" StrokeThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="btnBorder" Property="Background" Value="#26FFFFFF"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Grid>
+
+            <!-- 2. 分类 Tab 切换栏 (3个Tab) -->
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,14">
+                <RadioButton x:Name="TabExtensionsRadio" Content="绑定小程序" GroupName="BindType" IsChecked="True" Checked="TabRadio_Checked" Style="{StaticResource DialogTabRadioStyle}"/>
+                <RadioButton x:Name="TabWhitelistRadio" Content="白名单应用 (限定生效)" GroupName="BindType" Checked="TabRadio_Checked" Style="{StaticResource DialogTabRadioStyle}"/>
+                <RadioButton x:Name="TabBlacklistRadio" Content="黑名单应用 (禁用手势)" GroupName="BindType" Checked="TabRadio_Checked" Style="{StaticResource BlacklistTabRadioStyle}"/>
+            </StackPanel>
+
+            <!-- 3. 搜索与工具栏 -->
+            <Grid Grid.Row="2" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Border Height="36" Background="#FF1E1E24" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="34"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Viewbox Width="14" Height="14" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Path Data="{local:IconGeometry search}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform"/>
+                        </Viewbox>
+                        <TextBox Grid.Column="1" x:Name="SearchBox" TextChanged="SearchBox_TextChanged" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource BrushTextMain}" CaretBrush="White" VerticalContentAlignment="Center" FontSize="13"/>
+                        <TextBlock Grid.Column="1" x:Name="SearchPlaceholder" Text="搜索小程序名称或 ID..." Foreground="#FF666666" VerticalAlignment="Center" IsHitTestVisible="False" Margin="2,0,0,0"/>
+                    </Grid>
+                </Border>
+
+                <!-- 应用多选辅助工具栏 (在白名单或黑名单 Tab 显示) -->
+                <StackPanel Grid.Column="1" x:Name="AppsToolbarPanel" Orientation="Horizontal" Margin="8,0,0,0" Visibility="Collapsed">
+                    <Button Content="全选" Style="{StaticResource SecondaryBtn}" Height="36" Padding="10,0" Margin="0,0,6,0" Click="SelectAllAppsButton_Click"/>
+                    <Button Content="清空" Style="{StaticResource SecondaryBtn}" Height="36" Padding="10,0" Margin="0,0,6,0" Click="ClearAllAppsButton_Click"/>
+                    <Button x:Name="BrowseExeButton" Content="浏览 EXE..." Style="{StaticResource SecondaryBtn}" Height="36" Padding="12,0" Click="BrowseExeButton_Click"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- 4. 列表展示区 -->
+            <Border Grid.Row="3" Background="#FF131317" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="6">
+                <Grid>
+                    <!-- 小程序列表 -->
+                    <ListBox x:Name="ExtensionsListBox" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" SelectionChanged="ItemListBox_SelectionChanged" MouseDoubleClick="ItemListBox_MouseDoubleClick">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="8,6"/>
+                                <Setter Property="Margin" Value="0,2"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="ItemBorder" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ItemBorder" Property="Background" Value="#1AFFFFFF"/>
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="ItemBorder" Property="Background" Value="#2A3B82F6"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="38"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="32" Height="32" Background="{Binding AccentBrush}" CornerRadius="8" VerticalAlignment="Center">
+                                        <Grid>
+                                            <Image Source="{Binding IconSource}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform" Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
+                                        <TextBlock Text="{Binding Label}" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding ExtensionId}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <Border Grid.Column="2" Background="#1AFBBF24" BorderBrush="#FFFBBF24" BorderThickness="1" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Category}" Foreground="#FFFBBF24" FontSize="11"/>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- 白名单应用列表 -->
+                    <ListBox x:Name="WhitelistAppsListBox" Visibility="Collapsed" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="8,6"/>
+                                <Setter Property="Margin" Value="0,2"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="ItemBorder" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ItemBorder" Property="Background" Value="#1AFFFFFF"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="38"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 白名单复选框 -->
+                                    <CheckBox IsChecked="{Binding IsWhitelistSelected, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="AppCheckBox_Changed" Unchecked="AppCheckBox_Changed"/>
+
+                                    <!-- 真实 EXE 图标提取渲染 -->
+                                    <Border Grid.Column="1" Width="32" Height="32" Background="#26FFFFFF" CornerRadius="8" VerticalAlignment="Center">
+                                        <Grid>
+                                            <Image Source="{Binding IconSource}" Width="22" Height="22" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Viewbox Width="16" Height="16" Visibility="{Binding HasIcon, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                                <Path Data="{local:IconGeometry application}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform"/>
+                                            </Viewbox>
+                                        </Grid>
+                                    </Border>
+
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="10,0,0,0">
+                                        <TextBlock Text="{Binding AppName}" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding AppPath}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+
+                                    <Border Grid.Column="3" Background="#1A3B82F6" BorderBrush="#FF3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                        <TextBlock Text="限定生效" Foreground="#FF3B82F6" FontSize="11"/>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- 黑名单应用列表 -->
+                    <ListBox x:Name="BlacklistAppsListBox" Visibility="Collapsed" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="8,6"/>
+                                <Setter Property="Margin" Value="0,2"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="ItemBorder" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ItemBorder" Property="Background" Value="#1AFFFFFF"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="38"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 黑名单复选框 -->
+                                    <CheckBox IsChecked="{Binding IsBlacklistSelected, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,10,0" Checked="AppCheckBox_Changed" Unchecked="AppCheckBox_Changed"/>
+
+                                    <!-- 真实 EXE 图标提取渲染 -->
+                                    <Border Grid.Column="1" Width="32" Height="32" Background="#26EF4444" CornerRadius="8" VerticalAlignment="Center">
+                                        <Grid>
+                                            <Image Source="{Binding IconSource}" Width="22" Height="22" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Viewbox Width="16" Height="16" Visibility="{Binding HasIcon, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                                <Path Data="{local:IconGeometry application}" Fill="#FFEF4444" Stretch="Uniform"/>
+                                            </Viewbox>
+                                        </Grid>
+                                    </Border>
+
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="10,0,0,0">
+                                        <TextBlock Text="{Binding AppName}" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding AppPath}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+
+                                    <Border Grid.Column="3" Background="#1AEF4444" BorderBrush="#FFEF4444" BorderThickness="1" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                        <TextBlock Text="前台禁用" Foreground="#FFEF4444" FontSize="11"/>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <!-- 5. 底部操作栏 -->
+            <Grid Grid.Row="4" Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 解除绑定按钮 (仅在已绑定时可用) -->
+                <Button x:Name="UnbindButton" Content="解除绑定" Style="{StaticResource SecondaryBtn}" Foreground="#FFEF4444" Height="34" Padding="14,0" Click="UnbindButton_Click" Visibility="Collapsed"/>
+
+                <!-- 统计提示信息 -->
+                <TextBlock Grid.Column="1" x:Name="SelectedSummaryText" Text="未限定应用（全局所有窗口生效）" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="14,0" FontSize="12"/>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Content="取消" Style="{StaticResource SecondaryBtn}" Height="34" Padding="16,0" Margin="0,0,10,0" Click="CloseButton_Click"/>
+                    <Button x:Name="ConfirmBindButton" Content="确定保存" Style="{StaticResource PrimaryBtn}" Height="34" Padding="20,0" Click="ConfirmBindButton_Click" IsEnabled="True"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

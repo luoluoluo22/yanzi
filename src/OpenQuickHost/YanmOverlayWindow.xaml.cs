@@ -48,6 +48,7 @@ public partial class YanmOverlayWindow : Window
     private bool _webDavStateRefreshPendingForce;
     private string _webDavStateRefreshPendingReason = string.Empty;
     private DateTime _lastWebDavStateRefreshUtc = DateTime.MinValue;
+    private string? _lastAppliedStateUpdatedAtUtc;
     private bool _interactiveOutsideClickCandidate;
     private WpfPoint _interactiveOutsideClickStart;
     private bool _isWebView2Available = true;
@@ -153,7 +154,8 @@ public partial class YanmOverlayWindow : Window
 
     public void ReloadSettings()
     {
-        _settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
+        var appSettings = AppSettingsStore.Load();
+        _settings = appSettings.Yanm ?? new YanmSettings();
         if (!_settings.Enabled)
         {
             HideOverlay();
@@ -166,12 +168,20 @@ public partial class YanmOverlayWindow : Window
             ApplyScreenBounds();
             UpdateDynamicTexts();
             RenderAll();
+            
+            var currentUtc = appSettings.YanmStateUpdatedAtUtc;
+            if (_lastAppliedStateUpdatedAtUtc != currentUtc)
+            {
+                _lastAppliedStateUpdatedAtUtc = currentUtc;
+                ReloadAllComponentBrowsers();
+            }
         }
     }
 
     private void ShowOverlay(bool pinned)
     {
-        _settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
+        var appSettings = AppSettingsStore.Load();
+        _settings = appSettings.Yanm ?? new YanmSettings();
         if (!_settings.Enabled)
         {
             HostAssets.AppendLog("Yanm: show skipped because feature is disabled.");
@@ -196,6 +206,14 @@ public partial class YanmOverlayWindow : Window
         UpdateCornerHint();
         HostAssets.AppendLog($"Yanm: showing overlay, pinned={pinned}, editMode={_isEditMode}, components={_settings.Components.Count}, bounds=({Left},{Top},{Width},{Height}).");
         RenderAll();
+        
+        var currentUtc = appSettings.YanmStateUpdatedAtUtc;
+        if (_lastAppliedStateUpdatedAtUtc != currentUtc)
+        {
+            _lastAppliedStateUpdatedAtUtc = currentUtc;
+            ReloadAllComponentBrowsers();
+        }
+
         Show();
         ApplyScreenBounds();
         Activate();
@@ -324,6 +342,48 @@ public partial class YanmOverlayWindow : Window
         SyncStatusPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private void ReloadAllComponentBrowsers()
+    {
+        foreach (var view in _componentViews.Values)
+        {
+            if (view.Browser.CoreWebView2 != null)
+            {
+                try
+                {
+                    view.Browser.CoreWebView2.Reload();
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Yanm: failed to reload component browser {view.Id}: {ex.Message}");
+                }
+            }
+        }
+        HostAssets.AppendLog($"Yanm: all component browsers reloaded to apply new state, count={_componentViews.Count}.");
+    }
+
+    private void BroadcastAllComponentStates()
+    {
+        _settings.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var keys = _settings.ComponentState.Keys.ToList();
+        foreach (var view in _componentViews.Values)
+        {
+            foreach (var key in keys)
+            {
+                if (TryGetPublicComponentStateKey(view.Id, key, out var publicKey))
+                {
+                    SendComponentState(view.Id, publicKey);
+                    continue;
+                }
+
+                if (!IsScopedComponentStateKey(key))
+                {
+                    SendComponentState(view.Id, key);
+                }
+            }
+        }
+        HostAssets.AppendLog($"Yanm: component state broadcast, components={_componentViews.Count}, keys={keys.Count}.");
+    }
+
     private void ApplyWebDavStateRefreshToComponents()
     {
         if (!IsVisible)
@@ -331,39 +391,22 @@ public partial class YanmOverlayWindow : Window
             return;
         }
 
-        _settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
-        _settings.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var appSettings = AppSettingsStore.Load();
+        _settings = appSettings.Yanm ?? new YanmSettings();
         UpdateDynamicTexts();
         RenderAll();
 
-        var keys = _settings.ComponentState.Keys.ToList();
-        foreach (var view in _componentViews.Values)
-        {
-            foreach (var key in keys)
-            {
-                SendComponentState(view.Id, key);
-            }
-        }
-
-        HostAssets.AppendLog($"Yanm: component state broadcast after WebDAV refresh, components={_componentViews.Count}, keys={keys.Count}.");
+        var currentUtc = appSettings.YanmStateUpdatedAtUtc;
+        _lastAppliedStateUpdatedAtUtc = currentUtc;
+        BroadcastAllComponentStates();
+        HostAssets.AppendLog("Yanm: cloud state applied via broadcast (no page reload).");
     }
 
     private void ApplyScreenBounds()
     {
-        var helper = new WindowInteropHelper(this);
-        var handle = helper.Handle == IntPtr.Zero ? helper.EnsureHandle() : helper.Handle;
-        var source = HwndSource.FromHwnd(handle) ?? PresentationSource.FromVisual(this) as HwndSource;
-        var transform = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-        var target = GetTargetScreenBounds();
-        var topLeft = transform.Transform(new WpfPoint(target.Left, target.Top));
-        var bottomRight = transform.Transform(new WpfPoint(target.Right, target.Bottom));
-
-        Left = topLeft.X;
-        Top = topLeft.Y;
-        Width = Math.Max(1, bottomRight.X - topLeft.X);
-        Height = Math.Max(1, bottomRight.Y - topLeft.Y);
+        OverlayWindowManager.CoverActiveScreen(this);
         HostAssets.AppendLog(
-            $"Yanm: screen bounds applied, target={DescribeScreen(target)}, all={DescribeAllScreens()}, dip=({Left:0},{Top:0},{Width:0},{Height:0}), m11={transform.M11:0.###}, m22={transform.M22:0.###}, hwnd=0x{handle.ToInt64():X}.");
+            $"Yanm: screen bounds applied via OverlayWindowManager, dip=({Left:0},{Top:0},{Width:0},{Height:0}).");
     }
 
     private static System.Drawing.Rectangle GetTargetScreenBounds()
@@ -836,6 +879,40 @@ public partial class YanmOverlayWindow : Window
 """;
 
         var html = component.Html;
+        var headBridge = $$"""
+<script>
+  window.yanm = window.yanm || {};
+  window.yanm.componentId = '{{component.Id}}';
+  window.yanm.componentTitle = {{JsonSerializer.Serialize(component.Title)}};
+  window.__yanmComponentId = '{{component.Id}}';
+</script>
+""";
+        var trimmed = html == null ? "" : html.Trim();
+        if (trimmed.Contains("<html", StringComparison.OrdinalIgnoreCase))
+        {
+            int headEnd = trimmed.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+            if (headEnd >= 0)
+            {
+                html = trimmed.Insert(headEnd, headBridge);
+            }
+            else
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(?i)<html[^>]*>");
+                if (match.Success)
+                {
+                    html = trimmed.Insert(match.Index + match.Length, "<head>" + headBridge + "</head>");
+                }
+                else
+                {
+                    html = headBridge + trimmed;
+                }
+            }
+        }
+        else
+        {
+            html = headBridge + trimmed;
+        }
+
         var bodyEnd = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
         return bodyEnd >= 0
             ? html.Insert(bodyEnd, script)
@@ -901,6 +978,7 @@ public partial class YanmOverlayWindow : Window
                     var setStateValue = root.TryGetProperty("value", out var setValueProperty) ? setValueProperty.GetString() ?? string.Empty : string.Empty;
                     HostAssets.AppendLog($"Yanm: component state queued, component={component.Title}, key={setStateKey}, valueLength={setStateValue.Length}.");
                     QueueComponentStateSave(
+                        componentId,
                         setStateKey,
                         setStateValue);
                     break;
@@ -947,7 +1025,7 @@ public partial class YanmOverlayWindow : Window
         {
             "system.info" => BuildSystemInfoResult(),
             "state.get" => BuildStateGetResult(componentId, args),
-            "state.set" => BuildStateSetResult(args),
+            "state.set" => BuildStateSetResult(componentId, args),
             "clipboard.read" => ClipboardService.GetText() ?? string.Empty,
             "clipboard.write" => BuildClipboardWriteResult(args),
             "desktop.list" => BuildDesktopListResult(),
@@ -983,12 +1061,17 @@ public partial class YanmOverlayWindow : Window
 
         var settings = AppSettingsStore.Load();
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        settings.Yanm.ComponentState.TryGetValue(key, out var value);
+        var scopedKey = ToComponentStateStorageKey(componentId, key);
+        if (!settings.Yanm.ComponentState.TryGetValue(scopedKey, out var value))
+        {
+            settings.Yanm.ComponentState.TryGetValue(key, out value);
+        }
+
         HostAssets.AppendLog($"Yanm: state.get, component={FindCurrentComponent(componentId)?.Title ?? componentId}, key={key}.");
         return new { key, value = value ?? string.Empty };
     }
 
-    private object BuildStateSetResult(JsonElement args)
+    private object BuildStateSetResult(string componentId, JsonElement args)
     {
         var key = GetInvokeString(args, "key");
         var value = GetInvokeString(args, "value");
@@ -997,7 +1080,7 @@ public partial class YanmOverlayWindow : Window
             throw new InvalidOperationException("state.set 缺少 key。");
         }
 
-        QueueComponentStateSave(key, value);
+        QueueComponentStateSave(componentId, key, value);
         return new { key, value };
     }
 
@@ -1104,19 +1187,24 @@ public partial class YanmOverlayWindow : Window
 
         var settings = AppSettingsStore.Load();
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        settings.Yanm.ComponentState.TryGetValue(key, out var value);
+        var scopedKey = ToComponentStateStorageKey(componentId, key);
+        if (!settings.Yanm.ComponentState.TryGetValue(scopedKey, out var value))
+        {
+            settings.Yanm.ComponentState.TryGetValue(key, out value);
+        }
+
         HostAssets.AppendLog($"Yanm: component state read, component={FindCurrentComponent(componentId)?.Title ?? componentId}, key={key}, valueLength={value?.Length ?? 0}.");
         return value ?? string.Empty;
     }
 
-    private void QueueComponentStateSave(string key, string value)
+    private void QueueComponentStateSave(string componentId, string key, string value)
     {
-        if (string.IsNullOrWhiteSpace(key))
+        if (string.IsNullOrWhiteSpace(componentId) || string.IsNullOrWhiteSpace(key))
         {
             return;
         }
 
-        _pendingComponentState[key] = value ?? string.Empty;
+        _pendingComponentState[ToComponentStateStorageKey(componentId, key)] = value ?? string.Empty;
         _componentStateSaveTimer ??= new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(800)
@@ -1125,6 +1213,47 @@ public partial class YanmOverlayWindow : Window
         _componentStateSaveTimer.Tick += ComponentStateSaveTimer_Tick;
         _componentStateSaveTimer.Stop();
         _componentStateSaveTimer.Start();
+    }
+
+    private static string ToComponentStateStorageKey(string componentId, string key)
+    {
+        var normalizedComponentId = (componentId ?? string.Empty).Trim();
+        var normalizedKey = (key ?? string.Empty).Trim();
+        return $"component:{normalizedComponentId}:{normalizedKey}";
+    }
+
+    private static bool TryGetPublicComponentStateKey(string componentId, string storageKey, out string key)
+    {
+        var prefix = $"component:{(componentId ?? string.Empty).Trim()}:";
+        if (!string.IsNullOrWhiteSpace(storageKey) &&
+            storageKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            key = storageKey[prefix.Length..];
+            return !string.IsNullOrWhiteSpace(key);
+        }
+
+        key = string.Empty;
+        return false;
+    }
+
+    private static bool IsScopedComponentStateKey(string key)
+    {
+        return !string.IsNullOrWhiteSpace(key) &&
+               key.StartsWith("component:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void RemoveComponentState(Dictionary<string, string> state, string componentId)
+    {
+        if (string.IsNullOrWhiteSpace(componentId))
+        {
+            return;
+        }
+
+        var prefix = $"component:{componentId.Trim()}:";
+        foreach (var key in state.Keys.Where(item => item.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            state.Remove(key);
+        }
     }
 
     private void ComponentStateSaveTimer_Tick(object? sender, EventArgs e)
@@ -1802,6 +1931,8 @@ public partial class YanmOverlayWindow : Window
 
         var settings = AppSettingsStore.Load();
         settings.Yanm.Components.RemoveAll(item => item.Id.Equals(component.Id, StringComparison.OrdinalIgnoreCase));
+        RemoveComponentState(settings.Yanm.ComponentState, component.Id);
+        RemoveComponentState(_pendingComponentState, component.Id);
         SaveSettings(settings, "yanm-component-deleted");
     }
 
@@ -2107,7 +2238,7 @@ public partial class YanmOverlayWindow : Window
         _isPinned = false;
         _isInteractiveHoldPinned = false;
         ResetInteractionState(clearEditMode: true);
-        Hide();
+        OverlayWindowManager.SafeHideAndPark(this);
     }
 
     private void UpdateSelectionBox(WpfPoint a, WpfPoint b, bool snap)

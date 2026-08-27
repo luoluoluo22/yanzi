@@ -48,6 +48,16 @@ public static class AppEnvironmentVariableStore
     public static void Save(IEnumerable<AppEnvironmentVariableSettings> variables)
     {
         var settings = AppSettingsStore.Load();
+        settings.EnvironmentVariables = PrepareSyncedValues(variables);
+        AppSettingsStore.Save(settings);
+    }
+
+    /// <summary>
+    /// Stores synchronized secret values in the protected local secret file and returns
+    /// metadata safe to persist in settings.json.
+    /// </summary>
+    public static List<AppEnvironmentVariableSettings> PrepareSyncedValues(IEnumerable<AppEnvironmentVariableSettings> variables)
+    {
         var normalizedVariables = variables
             .Where(static item => !string.IsNullOrWhiteSpace(item.Name))
             .Select(static item => new AppEnvironmentVariableSettings
@@ -67,7 +77,7 @@ public static class AppEnvironmentVariableStore
             static item => item.Value ?? string.Empty,
             StringComparer.OrdinalIgnoreCase));
 
-        settings.EnvironmentVariables = normalizedVariables
+        return normalizedVariables
             .Select(static item => new AppEnvironmentVariableSettings
             {
                 Name = item.Name,
@@ -75,7 +85,24 @@ public static class AppEnvironmentVariableStore
                 Description = item.Description ?? string.Empty
             })
             .ToList();
-        AppSettingsStore.Save(settings);
+    }
+
+    /// <summary>
+    /// Applies synchronized names/descriptions while retaining protected values already
+    /// present on this device. Secret values are intentionally not cloud-synchronized.
+    /// </summary>
+    public static List<AppEnvironmentVariableSettings> PrepareSyncedMetadata(IEnumerable<AppEnvironmentVariableSettings> variables)
+    {
+        var localValues = Load().ToDictionary(
+            static item => item.Name,
+            static item => item.Value ?? string.Empty,
+            StringComparer.OrdinalIgnoreCase);
+        return PrepareSyncedValues(variables.Select(item => new AppEnvironmentVariableSettings
+        {
+            Name = item.Name,
+            Value = localValues.TryGetValue(item.Name, out var value) ? value : string.Empty,
+            Description = item.Description
+        }));
     }
 
     public static string? GetValue(string? name)

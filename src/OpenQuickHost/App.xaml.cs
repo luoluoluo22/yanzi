@@ -1,6 +1,11 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Threading;
+using WpfColor = System.Windows.Media.Color;
+using WpfPen = System.Windows.Media.Pen;
+using WpfBrush = System.Windows.Media.SolidColorBrush;
 using Microsoft.Win32;
 using OpenQuickHost.Sync;
 using Forms = System.Windows.Forms;
@@ -39,25 +44,47 @@ public static class WindowDwmBehavior
 public partial class App : WpfApplication
 {
     private const string SingleInstanceAppId = "Yanzi.OpenQuickHost";
+
     private Forms.NotifyIcon? _notifyIcon;
     private SettingsWindow? _settingsWindow;
     private RunningExtensionsWindow? _runningExtensionsWindow;
     private InputStateWindow? _inputStateWindow;
+    private QuestWindow? _questWindow;
     private LocalAgentApiServer? _agentApiServer;
+    public LocalAgentApiServer? AgentApiServer => _agentApiServer;
     private LanDiscoveryService? _lanDiscoveryService;
     private SingleInstanceService? _singleInstanceService;
     private bool _listenerServicesPaused;
+    private bool _isAutoPausedByBlacklist;
+    private IntPtr _foregroundHook = IntPtr.Zero;
+    private WinEventDelegate? _winEventDelegate;
     private bool _isAppFullyInitialized;
+    private string _lastTrayForegroundProcess = string.Empty;
 
     protected override void OnStartup(WpfStartupEventArgs e)
     {
+        // 运行端到端加密 E2EE 模块启动自检
+        try
+        {
+            Sync.SyncCryptoService.SelfTest();
+            HostAssets.AppendLog("E2EE SyncCryptoService self-test passed successfully.");
+        }
+        catch (System.Exception ex)
+        {
+            HostAssets.AppendLog($"CRITICAL: E2EE SyncCryptoService self-test failed! {ex.Message}");
+            System.Windows.MessageBox.Show($"加密服务启动自检失败：{ex.Message}\n请检查系统加密组件是否完整。", "安全自检失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
+
         // 0. 将工作目录切换到临时目录，防止进程被强杀后工作目录句柄锁住安装目录
         //    导致 Velopack 覆盖安装时 "Failed to remove existing application directory" 错误
         try { System.IO.Directory.SetCurrentDirectory(System.IO.Path.GetTempPath()); } catch { /* ignore */ }
 
         // 1. 必须最先执行，拦截 Velopack 的命令行钩子（如快捷方式生成、升级更新等）
         Velopack.VelopackApp.Build()
-            .WithAfterInstallFastCallback(v =>
+            .SetLogger(new OpenQuickHost.Sync.HostVelopackLogger())
+            .OnAfterInstallFastCallback(v =>
             {
                 try
                 {
@@ -80,7 +107,7 @@ public partial class App : WpfApplication
                     HostAssets.AppendLog($"Velopack AfterInstall Hook error: {ex.Message}");
                 }
             })
-            .WithBeforeUninstallFastCallback(v =>
+            .OnBeforeUninstallFastCallback(v =>
             {
                 try
                 {
@@ -92,13 +119,35 @@ public partial class App : WpfApplication
 
                     // 停止所有关联的 Everything 进程，防止目录被占用无法删除
                     EverythingRuntimeService.KillAllYanziEverythingProcesses();
+
+                    // 清理软件的所有本地运行数据与用户配置目录 (%LOCALAPPDATA%\OpenQuickHost)
+                    try
+                    {
+                        var localAppData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData);
+                        var dataDir = System.IO.Path.Combine(localAppData, "OpenQuickHost");
+                        if (System.IO.Directory.Exists(dataDir))
+                        {
+                            // 启动独立分离的 cmd 进程，在 1 秒后强删数据目录（等待当前进程完全退出释放句柄锁）
+                            var cmdText = $"/c timeout /t 1 /nobreak >nul & rd /s /q \"{dataDir}\"";
+                            var psi = new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = "cmd.exe",
+                                Arguments = cmdText,
+                                CreateNoWindow = true,
+                                UseShellExecute = false
+                            };
+                            System.Diagnostics.Process.Start(psi);
+                        }
+                    }
+                    catch { /* ignore */ }
                 }
                 catch (System.Exception ex)
                 {
                     HostAssets.AppendLog($"Velopack BeforeUninstall Hook error: {ex.Message}");
                 }
+                System.Environment.Exit(0);
             })
-            .WithBeforeUpdateFastCallback(v =>
+            .OnBeforeUpdateFastCallback(v =>
             {
                 try
                 {
@@ -110,7 +159,7 @@ public partial class App : WpfApplication
                     HostAssets.AppendLog($"Velopack BeforeUpdate Hook error: {ex.Message}");
                 }
             })
-            .WithAfterUpdateFastCallback(v =>
+            .OnAfterUpdateFastCallback(v =>
             {
                 try
                 {
@@ -168,11 +217,20 @@ public partial class App : WpfApplication
 
         SyncConfigLoader.EnsureExampleFile();
         var settings = AppSettingsStore.Load();
+        HostAssets.AppendLog($"[App.OnStartup] Loaded settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
         ApplyTheme(settings.ThemeMode);
         EventManager.RegisterClassHandler(typeof(Window), Window.LoadedEvent, new RoutedEventHandler(Window_GlobalLoaded));
         SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
         StartupRegistrationService.Apply(settings.LaunchAtStartup);
-        EverythingRuntimeService.EnsureStartedInBackground();
+        if (settings.EnableEverything)
+        {
+            HostAssets.AppendLog("[App.OnStartup] Starting Everything background service because EnableEverything is true");
+            EverythingRuntimeService.EnsureStartedInBackground();
+        }
+        else
+        {
+            HostAssets.AppendLog("[App.OnStartup] Everything background service is disabled in settings");
+        }
 
         _ = Task.Run(() => OpenQuickHost.Sync.ExtensionRecycleBinService.PurgeExpiredItems(30));
 
@@ -184,8 +242,13 @@ public partial class App : WpfApplication
             MainWindow = window;
             TryRegisterUriProtocol();
             _notifyIcon = BuildNotifyIcon(window);
-            HostAssets.AppendLog($"App startup: version={AppVersionInfo.Version}, build={AppVersionInfo.BuildStamp}, baseDir={AppDomain.CurrentDomain.BaseDirectory}");
-            window.Show();
+            // 确保窗口句柄创建，触发 SourceInitialized 完成热键和监听服务初始化
+            var helper = new System.Windows.Interop.WindowInteropHelper(window);
+            helper.EnsureHandle();
+
+            // 无论前台还是后台启动，都必须初始化后台核心服务（WebDAV、Everything、WindowBinding、鼠标手势等）
+            window.InitializeBackgroundServices();
+
             if (ShouldStartHidden(e.Args))
             {
                 window.HideToTray();
@@ -201,6 +264,27 @@ public partial class App : WpfApplication
 
             // 4. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
             _isAppFullyInitialized = true;
+
+            // 预加载设置窗口并提前创建 HWND 与 DWM 深色环境，避免第一次打开时因主线程创建句柄和排版引发首屏闪白或卡顿
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_settingsWindow == null && MainWindow is MainWindow mainWindow)
+                {
+                    try
+                    {
+                        _settingsWindow = new SettingsWindow(mainWindow);
+                        var helper = new System.Windows.Interop.WindowInteropHelper(_settingsWindow);
+                        helper.EnsureHandle();
+                        UpdateWindowDwmTheme(_settingsWindow);
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Settings window pre-load failed: {ex.Message}");
+                    }
+                }
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+            StartForegroundMonitorTimer();
 
             // 启动 5 秒后在后台静默发起更新流程
             _ = Task.Delay(5000).ContinueWith(async _ =>
@@ -257,6 +341,9 @@ public partial class App : WpfApplication
     }
 
     [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
 
     [DllImport("dwmapi.dll")]
@@ -266,6 +353,8 @@ public partial class App : WpfApplication
     private static extern bool SetWindowPos(IntPtr hwnd, IntPtr hwndInsertAfter, int x, int y, int cx, int cy, uint flags);
 
     private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int DwmwaUseImmersiveDarkModeOld = 19;
+    private const int DwmwaCaptionColor = 35;
     private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOZORDER = 0x0004;
@@ -337,7 +426,17 @@ public partial class App : WpfApplication
         var hBrush = GetStockObject(useDarkMode == 1 ? BLACK_BRUSH : WHITE_BRUSH);
         SetClassLong(handle, GCLP_HBRBACKGROUND, hBrush);
 
-        _ = DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref useDarkMode, sizeof(int));
+        if (DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref useDarkMode, sizeof(int)) != 0)
+        {
+            _ = DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkModeOld, ref useDarkMode, sizeof(int));
+        }
+
+        if (useDarkMode == 1)
+        {
+            // Windows 11 DWM 标题栏背景色 (RGB: 17, 17, 17)
+            int captionColor = 0x00111111;
+            _ = DwmSetWindowAttribute(handle, DwmwaCaptionColor, ref captionColor, sizeof(int));
+        }
         
         // Force the OS to redraw the non-client area immediately
         SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
@@ -406,6 +505,12 @@ public partial class App : WpfApplication
         AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
         TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
         SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
+
+        if (_foregroundHook != IntPtr.Zero)
+        {
+            UnhookWinEvent(_foregroundHook);
+            _foregroundHook = IntPtr.Zero;
+        }
 
         try
         {
@@ -685,25 +790,44 @@ public partial class App : WpfApplication
 
         notifyIcon.Icon = TryCreateNotifyIcon() ?? SystemIcons.Application;
         
-        notifyIcon.DoubleClick += (_, _) => ToggleListenerServices();
+        notifyIcon.MouseClick += (_, e) =>
+        {
+            if (e.Button == Forms.MouseButtons.Left)
+            {
+                window.ShowMousePanel();
+            }
+        };
+
+        notifyIcon.DoubleClick += (_, _) =>
+        {
+            ToggleListenerServices();
+            window.HideMousePanel();
+        };
         
         // 右键弹出 WPF ContextMenu
         notifyIcon.MouseUp += (s, e) =>
         {
             if (e.Button == Forms.MouseButtons.Right)
             {
+                _lastTrayForegroundProcess = YarnSelectService.GetForegroundProcessName();
                 if (WpfApplication.Current.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu menu)
                 {
                     UpdateTrayMenuState(menu);
+                    // 激活托盘宿主句柄以确保菜单失去焦点时能自动关闭，避免调用未显示Window的Activate()
+                    var helper = new System.Windows.Interop.WindowInteropHelper(window);
+                    if (helper.Handle != IntPtr.Zero)
+                    {
+                        SetForegroundWindow(helper.Handle);
+                    }
                     menu.IsOpen = true;
-                    // 激活窗口以确保菜单失去焦点时能自动关闭
-                    window.Activate();
                 }
             }
         };
 
         return notifyIcon;
     }
+
+
 
     public void ShowDesktopNotification(string title, string message, Forms.ToolTipIcon icon = Forms.ToolTipIcon.Info)
     {
@@ -731,9 +855,61 @@ public partial class App : WpfApplication
         (MainWindow as MainWindow)?.ShowPanel();
     }
 
+    private void TrayAddGlobalBlacklist_Click(object sender, RoutedEventArgs e)
+    {
+        var settings = AppSettingsStore.Load();
+        var initialList = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
+        
+        var defaultProcess = _lastTrayForegroundProcess;
+        var inputWindow = new ProcessPickerWindow("全局黑名单", "请选择要加入全局服务黑名单的进程：", defaultProcess, initialList);
+        if (inputWindow.ShowDialog() == true)
+        {
+            settings.GlobalServiceBlacklistedProcesses = inputWindow.Blacklist.Select(b => b.ProcessName).ToList();
+            foreach (var b in inputWindow.Blacklist)
+            {
+                if (!string.IsNullOrWhiteSpace(b.ExecutablePath))
+                {
+                    settings.ProcessExecutablePaths[b.ProcessName] = b.ExecutablePath;
+                }
+            }
+            AppSettingsStore.Save(settings);
+
+            if (MainWindow is MainWindow mainWindow)
+            {
+                mainWindow.RefreshAppSettings();
+            }
+
+            CheckForegroundBlacklist();
+
+            ShowDesktopNotification("全局黑名单", $"全局服务黑名单已更新。");
+        }
+    }
+
     private void TrayMousePanel_Click(object sender, RoutedEventArgs e)
     {
         (MainWindow as MainWindow)?.ShowMousePanel();
+    }
+
+    private void TrayQuestCenter_Click(object sender, RoutedEventArgs e)
+    {
+        if (_questWindow == null || !_questWindow.IsLoaded)
+        {
+            _questWindow = new QuestWindow();
+            _questWindow.Closed += (_, _) => _questWindow = null;
+        }
+        _questWindow.Show();
+        try
+        {
+            if (_questWindow.IsVisible)
+            {
+                _questWindow.Activate();
+            }
+        }
+        catch
+        {
+            // Ignore Activate exception during early window show phase
+        }
+        _questWindow.ResetExplicitSelectionAndRefresh();
     }
 
     private void TrayToggleMousePanelService_Click(object sender, RoutedEventArgs e)
@@ -787,8 +963,13 @@ public partial class App : WpfApplication
         if (MainWindow is MainWindow mw)
         {
             mw.AllowClose = true;
-            Current.Shutdown();
+            Shutdown();
         }
+    }
+
+    private void TrayMobileInbox_Click(object sender, RoutedEventArgs e)
+    {
+        (MainWindow as MainWindow)?.ShowMobileInboxWindow();
     }
 
     private void ToggleListenerServices()
@@ -799,12 +980,31 @@ public partial class App : WpfApplication
         }
 
         _listenerServicesPaused = !_listenerServicesPaused;
-        if (_listenerServicesPaused)
+        ApplyServicePauseState();
+    }
+
+    private void ApplyServicePauseState()
+    {
+        if (MainWindow is not MainWindow mainWindow || _notifyIcon == null)
+            return;
+
+        var shouldPause = _listenerServicesPaused || _isAutoPausedByBlacklist;
+
+        if (shouldPause)
         {
             mainWindow.PauseListenerServices();
-            _notifyIcon.Icon = TryCreateDisabledNotifyIcon() ?? SystemIcons.Application;
-            _notifyIcon.Text = "燕子 - 服务已暂停";
-            HostAssets.AppendLog("Tray: listener services paused.");
+            
+            if (_listenerServicesPaused)
+            {
+                _notifyIcon.Icon = TryCreateDisabledNotifyIcon() ?? SystemIcons.Application;
+                _notifyIcon.Text = "燕子 - 服务已暂停";
+            }
+            else
+            {
+                _notifyIcon.Icon = TryCreateDisabledNotifyIcon() ?? SystemIcons.Application;
+                _notifyIcon.Text = "燕子 - 自动暂停 (黑名单)";
+            }
+            HostAssets.AppendLog($"Tray: listener services paused (Manual: {_listenerServicesPaused}, Auto: {_isAutoPausedByBlacklist}).");
         }
         else
         {
@@ -815,11 +1015,88 @@ public partial class App : WpfApplication
         }
     }
 
+    private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+
+    private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+    private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+    public void CheckForegroundBlacklist()
+    {
+        if (_listenerServicesPaused)
+            return; // User manually paused, no need to auto-pause/resume logic
+
+        try
+        {
+            var currentProcess = YarnSelectService.GetForegroundProcessName();
+            if (string.IsNullOrWhiteSpace(currentProcess))
+                return;
+
+            var settings = AppSettingsStore.Load();
+            var blacklist = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
+
+            bool isInBlacklist = blacklist.Any(p => ProcessHelper.ProcessNameMatches(currentProcess, p));
+
+            if (isInBlacklist && !_isAutoPausedByBlacklist)
+            {
+                _isAutoPausedByBlacklist = true;
+                ApplyServicePauseState();
+            }
+            else if (!isInBlacklist && _isAutoPausedByBlacklist)
+            {
+                _isAutoPausedByBlacklist = false;
+                ApplyServicePauseState();
+            }
+        }
+        catch
+        {
+            // Ignore errors
+        }
+    }
+
+    private void StartForegroundMonitorTimer()
+    {
+        // 1. 启动时立即检测一次当前前台进程
+        CheckForegroundBlacklist();
+
+        // 2. 注册 Windows 系统级 EVENT_SYSTEM_FOREGROUND 事件钩子（实现真正的事件驱动，0ms 延迟，0 CPU 轮询损耗）
+        _winEventDelegate = (hHook, eventType, hwnd, idObject, idChild, dwThread, dwTime) =>
+        {
+            if (eventType == EVENT_SYSTEM_FOREGROUND)
+            {
+                Dispatcher.BeginInvoke(new Action(CheckForegroundBlacklist));
+            }
+        };
+
+        _foregroundHook = SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero,
+            _winEventDelegate,
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    }
+
     private void UpdateTrayMenuState(System.Windows.Controls.ContextMenu menu)
     {
         foreach (var item in menu.Items.OfType<System.Windows.Controls.MenuItem>())
         {
-            if (Equals(item.Tag, "service-toggle"))
+            if (Equals(item.Tag, "show-searchbox"))
+            {
+                item.Visibility = MainWindow != null && MainWindow.IsVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+            }
+            else if (Equals(item.Tag, "mobile-chat"))
+            {
+                item.Visibility = System.Windows.Visibility.Visible;
+            }
+            else if (Equals(item.Tag, "service-toggle"))
             {
                 item.Header = _listenerServicesPaused ? "恢复全部服务" : "暂停全部服务";
             }
@@ -829,7 +1106,7 @@ public partial class App : WpfApplication
             }
             else if (Equals(item.Tag, "running-extensions"))
             {
-                item.Header = $"正在运行的扩展 ({RunningExtensionRegistry.GetRunningCount()})";
+                item.Header = $"正在运行的小程序 ({RunningExtensionRegistry.GetRunningCount()})";
             }
         }
     }
@@ -860,12 +1137,12 @@ public partial class App : WpfApplication
             using var bitmap = new Bitmap(32, 32);
             using (var g = Graphics.FromImage(bitmap))
             {
-                g.Clear(Color.Transparent);
-                using var fill = new SolidBrush(Color.FromArgb(255, 96, 96, 96));
-                using var border = new Pen(Color.FromArgb(255, 150, 150, 150), 2);
+                g.Clear(System.Drawing.Color.Transparent);
+                using var fill = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(255, 96, 96, 96));
+                using var border = new System.Drawing.Pen(System.Drawing.Color.FromArgb(255, 150, 150, 150), 2);
                 g.FillEllipse(fill, 4, 4, 24, 24);
                 g.DrawEllipse(border, 4, 4, 24, 24);
-                using var slash = new Pen(Color.FromArgb(255, 220, 220, 220), 3);
+                using var slash = new System.Drawing.Pen(System.Drawing.Color.FromArgb(255, 220, 220, 220), 3);
                 g.DrawLine(slash, 10, 22, 22, 10);
             }
 
@@ -880,56 +1157,70 @@ public partial class App : WpfApplication
     public static void EnableSilentLoading(Window window)
     {
         var startupLocation = window.WindowStartupLocation;
-        bool isFirstRender = true;
+        var originalWidth = window.Width;
+        var originalHeight = window.Height;
+        var originalSizeToContent = window.SizeToContent;
+        var originalShowInTaskbar = window.ShowInTaskbar;
+        var originalResizeMode = window.ResizeMode;
+        var isFirstRender = true;
 
-        double originalWidth = window.Width;
-        double originalHeight = window.Height;
-        SizeToContent originalSizeToContent = window.SizeToContent;
-
-        window.WindowState = WindowState.Minimized;
         window.ShowInTaskbar = false;
+        window.ResizeMode = ResizeMode.NoResize;
+        window.Background = new SolidColorBrush(WpfColor.FromRgb(17, 17, 17));
 
-        window.ContentRendered += (s, e) =>
+        void RevealWindow()
         {
-            if (!isFirstRender) return;
+            if (!isFirstRender)
+            {
+                return;
+            }
+
             isFirstRender = false;
 
-            var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
-            if (handle != IntPtr.Zero)
+            try
             {
-                int disableTransitions = 1;
-                DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
+                var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                if (handle != IntPtr.Zero)
+                {
+                    int disableTransitions = 1;
+                    DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
+                }
+
+                window.SizeToContent = originalSizeToContent;
+                if (!double.IsNaN(originalWidth)) window.Width = originalWidth;
+                if (!double.IsNaN(originalHeight)) window.Height = originalHeight;
+
+                if (startupLocation == WindowStartupLocation.CenterOwner && window.Owner != null)
+                {
+                    window.Left = window.Owner.Left + (window.Owner.Width - window.Width) / 2;
+                    window.Top = window.Owner.Top + (window.Owner.Height - window.Height) / 2;
+                }
+                else if (startupLocation == WindowStartupLocation.CenterScreen)
+                {
+                    var screenWidth = SystemParameters.PrimaryScreenWidth;
+                    var screenHeight = SystemParameters.PrimaryScreenHeight;
+                    window.Left = (screenWidth - window.Width) / 2;
+                    window.Top = (screenHeight - window.Height) / 2;
+                }
+
+                window.ShowInTaskbar = originalShowInTaskbar;
+                window.ResizeMode = originalResizeMode;
+                window.Opacity = 1;
+
+                if (handle != IntPtr.Zero)
+                {
+                    int disableTransitions = 0;
+                    DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
+                }
             }
-
-            window.WindowState = WindowState.Normal;
-
-            window.SizeToContent = originalSizeToContent;
-            if (!double.IsNaN(originalWidth)) window.Width = originalWidth;
-            if (!double.IsNaN(originalHeight)) window.Height = originalHeight;
-
-            if (startupLocation == WindowStartupLocation.CenterOwner && window.Owner != null)
+            catch (Exception ex)
             {
-                window.Left = window.Owner.Left + (window.Owner.Width - window.Width) / 2;
-                window.Top = window.Owner.Top + (window.Owner.Height - window.Height) / 2;
+                HostAssets.AppendLog($"EnableSilentLoading.RevealWindow error: {ex.Message}");
             }
-            else if (startupLocation == WindowStartupLocation.CenterScreen)
-            {
-                var screenWidth = SystemParameters.PrimaryScreenWidth;
-                var screenHeight = SystemParameters.PrimaryScreenHeight;
-                window.Left = (screenWidth - window.Width) / 2;
-                window.Top = (screenHeight - window.Height) / 2;
-            }
+        }
 
-            window.ShowInTaskbar = true;
-            window.Activate();
-            window.Focus();
-
-            if (handle != IntPtr.Zero)
-            {
-                int disableTransitions = 0;
-                DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
-            }
-        };
+        window.Loaded += (_, _) => window.Dispatcher.BeginInvoke((Action)RevealWindow, DispatcherPriority.Loaded);
+        window.ContentRendered += (_, _) => window.Dispatcher.BeginInvoke((Action)RevealWindow, DispatcherPriority.Render);
     }
 
     public new static App? Current => System.Windows.Application.Current as App;
@@ -945,106 +1236,75 @@ public partial class App : WpfApplication
 
         try
         {
-            HostAssets.AppendLog($"Settings window open requested: section={sectionKey ?? "default"}, existing={_settingsWindow != null && _settingsWindow.IsLoaded}.");
+            HostAssets.AppendLog($"Settings window open requested: section={sectionKey ?? "default"}, existing={_settingsWindow != null && _settingsWindow.IsLoaded}, visible={_settingsWindow?.IsVisible ?? false}, opacity={_settingsWindow?.Opacity.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "n/a"}.");
             if (_settingsWindow == null)
             {
+                HostAssets.AppendLog("Settings window not cached, creating new instance.");
                 _settingsWindow = new SettingsWindow(mainWindow);
-                
-                // 离屏渲染大法：使用 Minimized 静默加载，等待 WPF 渲染完毕后再恢复
-                double targetLeft = _settingsWindow.Left;
-                double targetTop = _settingsWindow.Top;
-                var startupLocation = _settingsWindow.WindowStartupLocation;
-                bool isFirstRender = true;
-
-                _settingsWindow.WindowState = WindowState.Minimized;
-                _settingsWindow.ShowInTaskbar = false;
-
-                _settingsWindow.Closed += (s, e) =>
-                {
-                    _settingsWindow = null;
-                };
-
-                _settingsWindow.ContentRendered += (s, e) =>
-                {
-                    if (!isFirstRender) return;
-                    isFirstRender = false;
-
-                    var handle = new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Handle;
-                    if (handle != IntPtr.Zero)
-                    {
-                        int disableTransitions = 1;
-                        DwmSetWindowAttribute(handle, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref disableTransitions, sizeof(int));
-                    }
-
-                    _settingsWindow.WindowState = WindowState.Normal;
-
-                    if (!double.IsNaN(targetLeft) && !double.IsNaN(targetTop))
-                    {
-                        _settingsWindow.Left = targetLeft;
-                        _settingsWindow.Top = targetTop;
-                    }
-                    else if (startupLocation == WindowStartupLocation.CenterScreen)
-                    {
-                        var screenWidth = SystemParameters.PrimaryScreenWidth;
-                        var screenHeight = SystemParameters.PrimaryScreenHeight;
-                        _settingsWindow.Left = (screenWidth - _settingsWindow.Width) / 2;
-                        _settingsWindow.Top = (screenHeight - _settingsWindow.Height) / 2;
-                    }
-
-                    _settingsWindow.ShowInTaskbar = true;
-                    _settingsWindow.Activate();
-                    _settingsWindow.Focus();
-
-                    if (handle != IntPtr.Zero)
-                    {
-                        int disableTransitions = 0;
-                        DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
-                    }
-                };
-
-
-                
+                var helper = new System.Windows.Interop.WindowInteropHelper(_settingsWindow);
+                helper.EnsureHandle();
+                UpdateWindowDwmTheme(_settingsWindow);
                 HostAssets.AppendLog("Settings window created.");
             }
-            else if (_settingsWindow.WindowState == WindowState.Minimized || !_settingsWindow.IsVisible)
+            else if (!_settingsWindow.IsLoaded)
             {
-                var handle = new System.Windows.Interop.WindowInteropHelper(_settingsWindow).Handle;
-                if (handle != IntPtr.Zero)
-                {
-                    int disableTransitions = 1;
-                    DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
-                }
-                
-                _settingsWindow.ShowInTaskbar = true;
+                HostAssets.AppendLog($"Settings window exists but not loaded yet. visibility={_settingsWindow.Visibility}, opacity={_settingsWindow.Opacity}, windowState={_settingsWindow.WindowState}.");
+            }
+
+            if (_settingsWindow.WindowState == WindowState.Minimized)
+            {
+                HostAssets.AppendLog("Settings window was minimized, restoring to normal.");
                 _settingsWindow.WindowState = WindowState.Normal;
-                
-                if (handle != IntPtr.Zero)
-                {
-                    int disableTransitions = 0;
-                    DwmSetWindowAttribute(handle, 3, ref disableTransitions, sizeof(int));
-                }
             }
 
             if (!_settingsWindow.IsVisible)
             {
+                HostAssets.AppendLog($"Settings window is not visible before Show(). opacity={_settingsWindow.Opacity}, visibility={_settingsWindow.Visibility}.");
                 _settingsWindow.Show();
-                HostAssets.AppendLog("Settings window shown.");
+                HostAssets.AppendLog($"Settings window shown. opacity={_settingsWindow.Opacity}, visibility={_settingsWindow.Visibility}.");
             }
 
-            if (_settingsWindow.WindowState == System.Windows.WindowState.Minimized)
-            {
-                _settingsWindow.WindowState = System.Windows.WindowState.Normal;
-            }
-
+            _settingsWindow.Opacity = 1;
             _settingsWindow.NavigateTo(sectionKey);
             _settingsWindow.Activate();
             _settingsWindow.Focus();
-            HostAssets.AppendLog("Settings window activated.");
+            HostAssets.AppendLog($"Settings window activated. opacity={_settingsWindow.Opacity}, active={_settingsWindow.IsActive}.");
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Settings window open failed: {ex}");
+            try
+            {
+                _settingsWindow = new SettingsWindow(mainWindow);
+                _settingsWindow.Show();
+                _settingsWindow.NavigateTo(sectionKey);
+                _settingsWindow.Activate();
+                _settingsWindow.Focus();
+            }
+            catch (Exception ex2)
+            {
+                HostAssets.AppendLog($"Settings window fallback recreation failed: {ex2}");
+            }
         }
+    }
+
+    public void ReloadSettingsWindowIfOpen()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                if (_settingsWindow != null)
+                {
+                    _settingsWindow.ReloadSettingsFromDisk();
+                    HostAssets.AppendLog("Settings window settings reloaded from disk due to external sync.");
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Error reloading settings window: {ex.Message}");
+            }
+        });
     }
 
     public void OpenRunningExtensionsWindow()
@@ -1089,7 +1349,11 @@ public partial class App : WpfApplication
             ? "/Themes/LightTheme.xaml"
             : "/Themes/DarkTheme.xaml";
 
-        var mergedDicts = Current.Resources.MergedDictionaries;
+        var mergedDicts = Current?.Resources?.MergedDictionaries;
+        if (mergedDicts == null)
+        {
+            return;
+        }
         
         var existingThemeDict = mergedDicts.FirstOrDefault(static d => 
             d.Source != null && d.Source.OriginalString.Contains("Theme.xaml"));

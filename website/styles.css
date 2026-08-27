@@ -1315,6 +1315,9 @@ pre {
 
 .doc-page {
   padding-top: 80px;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
 }
 
 .doc-hero {
@@ -1331,9 +1334,9 @@ pre {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 240px;
   gap: 2.5rem;
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 8rem;
+  max-width: 100%;
+  margin: 0;
+  padding: 2rem 3rem 8rem;
   align-items: start;
   transition: grid-template-columns 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1534,9 +1537,9 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 2rem;
-  max-width: 820px;
+  max-width: 100%;
   width: 100%;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .guide-card {
@@ -3453,4 +3456,332 @@ article h3:hover .heading-anchor-link {
   .guide-card {
     padding: 1.5rem !important;
   }
+}
+/* Split button & Dropdown for downloads */
+.split-button-container {
+  display: inline-flex;
+  position: relative;
+  align-items: stretch;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 10px 20px -5px rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-md);
+}
+
+.split-button-container:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(59, 130, 246, 0.25);
+}
+
+.split-button-container .button.primary {
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.split-button-container .button.primary:first-child {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-top-left-radius: var(--radius-md) !important;
+  border-bottom-left-radius: var(--radius-md) !important;
+  padding-right: 16px;
+  background: var(--text) !important;
+  color: var(--bg) !important;
+  margin-right: 0 !important;
+}
+
+.split-button-arrow {
+  border: none !important;
+  border-left: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-top-right-radius: var(--radius-md) !important;
+  border-bottom-right-radius: var(--radius-md) !important;
+  padding: 0 14px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  background: var(--text) !important;
+  color: var(--bg) !important;
+  margin-left: 0 !important;
+  height: 52px !important;
+  box-sizing: border-box !important;
+}
+
+.split-button-arrow:hover, .split-button-arrow[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.9) !important;
+}
+
+.download-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: none;
+  flex-direction: column;
+  min-width: 180px;
+  z-index: 100;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.download-dropdown-menu.show {
+  display: flex;
+}
+
+.download-dropdown-menu a {
+  padding: 14px 16px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+  transition: background 0.2s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.download-dropdown-menu a:hover {
+  background: var(--panel-hover);
+}
+
+/* Custom Copy Modal */
+.copy-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(10, 10, 12, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.copy-modal-overlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.copy-modal-card {
+  width: 90%;
+  max-width: 380px;
+  padding: 2.2rem 2rem;
+  box-sizing: border-box;
+  position: relative;
+  color: #ffffff;
+  background: rgba(20, 22, 28, 0.9);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 20px;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(59, 130, 246, 0.2);
+  transform: translateY(20px) scale(0.95);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.copy-modal-overlay.is-visible .copy-modal-card {
+  transform: translateY(0) scale(1);
+}
+
+.copy-modal-icon {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+  box-shadow: inset 0 0 10px rgba(59, 130, 246, 0.2);
+}
+
+.copy-modal-card h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.copy-modal-card p {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0 0 1.75rem;
+}
+
+.copy-modal-card .modal-code {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  margin: 0 2px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  font-size: 1.05rem;
+}
+
+.copy-modal-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.copy-modal-actions .button {
+  flex: 1;
+  height: 46px;
+  font-size: 0.9rem;
+  border-radius: 12px;
+  text-decoration: none !important;
+}
+
+.copy-modal-actions .button.secondary {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.copy-modal-actions .button.secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.copy-modal-actions .button.primary {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.25) !important;
+}
+
+.copy-modal-actions .button.primary:hover {
+  background: #2563eb !important;
+  box-shadow: 0 12px 20px rgba(59, 130, 246, 0.35) !important;
+}
+
+/* ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+ *  Sleek & Premium UI Layout Polish
+ * ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T */
+
+/* Typography & Titles */
+h1, h2 {
+  letter-spacing: -0.03em !important;
+  line-height: 1.15 !important;
+}
+
+.hero-text {
+  font-size: 1.2rem !important;
+  line-height: 1.75 !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  max-width: 48ch !important;
+}
+
+/* Nav links spacing */
+.site-header nav {
+  gap: 2.5rem !important;
+  align-items: center;
+}
+
+.site-header nav a {
+  font-size: 0.95rem !important;
+  letter-spacing: -0.01em;
+}
+
+/* Float Animation for Hero Mockup */
+@keyframes heroFloat {
+  0% { transform: translateY(0px) rotateY(-15deg) rotateX(5deg) scale(0.95); }
+  50% { transform: translateY(-8px) rotateY(-13deg) rotateX(4deg) scale(0.97); }
+  100% { transform: translateY(0px) rotateY(-15deg) rotateX(5deg) scale(0.95); }
+}
+
+.tilt-effect {
+  animation: heroFloat 6s ease-in-out infinite;
+}
+
+.mock-image-container:hover .tilt-effect {
+  animation: none !important;
+  transform: rotateY(0deg) rotateX(0deg) scale(1) !important;
+}
+
+/* Modern Mockup Shadow Glow */
+.app-screenshot {
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8), 0 0 50px rgba(59, 130, 246, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.mock-image-container:hover .app-screenshot {
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.9), 0 0 70px rgba(59, 130, 246, 0.25) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Glassmorphism Card Upgrades */
+.card {
+  background: rgba(20, 22, 28, 0.6) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.card:hover {
+  background: rgba(28, 30, 38, 0.85) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4), 0 0 30px rgba(59, 130, 246, 0.1) !important;
+  transform: translateY(-6px) !important;
+}
+
+.card-icon {
+  border-radius: 14px !important;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Interactive Demo V2 Cards Clean layout */
+.demo-v2-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.4) !important;
+  border-radius: 24px !important;
+  padding: 2rem !important;
+}
+
+/* Showcase Grid Polish */
+.showcase-grid .panel-mock {
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.showcase-grid .panel-mock:hover {
+  transform: translateY(-6px) !important;
+}
+
+/* Dropdown Menu Styles Refinement */
+.download-dropdown-menu {
+  background: rgba(20, 22, 28, 0.85) !important;
+  border: 1px solid rgba(59, 130, 246, 0.25) !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(59, 130, 246, 0.1) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-radius: 14px !important;
+  padding: 6px 0 !important;
+}
+
+.download-dropdown-menu a {
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  padding: 12px 20px !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.download-dropdown-menu a:hover {
+  background: rgba(59, 130, 246, 0.1) !important;
+  color: #3b82f6 !important;
 }

@@ -7,8 +7,8 @@ public class RadialMenuSettings
     
     public bool Enabled { get; set; } = true;
     public string MouseTriggerMode { get; set; } = string.Empty;
-    public int RadiusPixels { get; set; } = 110;
-    public int DeadZonePixels { get; set; } = 30;
+    public int RadiusPixels { get; set; } = 90;
+    public int DeadZonePixels { get; set; } = 24;
     public bool TriggerRightButtonDrag { get; set; }
     public int DragThresholdPixels { get; set; } = 30;
     public bool TriggerRightButtonLongPress { get; set; } = true;

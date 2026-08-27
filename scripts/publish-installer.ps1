@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$Version = "0.1.0",
@@ -10,11 +10,17 @@ $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $project = Join-Path $root "src\OpenQuickHost\OpenQuickHost.csproj"
+
+if ([string]::IsNullOrEmpty($Version) -or $Version -eq "0.1.0") {
+    if (Test-Path $project) {
+        [xml]$xml = Get-Content $project
+        $Version = $xml.Project.PropertyGroup.Version.Trim()
+        Write-Host "Auto-detected version from csproj: $Version"
+    }
+}
+
 $publishDir = Join-Path $root ".artifacts\publish\$Runtime"
 $installerOutDir = Join-Path $root ".artifacts\installer"
-$issPath = Join-Path $root "installer\yanzi.iss"
-$installerFileName = "YanziSetup.exe"
-$installerPath = Join-Path $installerOutDir $installerFileName
 
 function Assert-PayloadFile {
     param(
@@ -43,27 +49,30 @@ function Assert-PayloadDirectory {
 if (Test-Path $publishDir) {
     Remove-Item -Path $publishDir -Recurse -Force
 }
-# 不再清空 installerOutDir，保留之前的完整包以便 Velopack 生成增量包 (Delta)
 if (-not (Test-Path $installerOutDir)) {
     New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
 }
 
 New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
 
-dotnet publish $project `
-    -c $Configuration `
-    -r $Runtime `
-    --self-contained true `
-    -p:Version=$Version `
-    -p:InformationalVersion=$Version `
-    -p:FileVersion="$Version.0" `
-    -p:AssemblyVersion="$Version.0" `
-    -p:PublishSingleFile=false `
-    -p:SatelliteResourceLanguages=zh-Hans `
-    -p:DebugType=None `
-    -p:DebugSymbols=false `
-    -p:CETCompat=false `
-    -o $publishDir
+$publishArgs = @(
+    "publish", $project,
+    "-c", $Configuration,
+    "-r", $Runtime,
+    "--self-contained", "true",
+    "--source", "https://repo.huaweicloud.com/repository/nuget/v3/index.json",
+    "-p:Version=$Version",
+    "-p:InformationalVersion=$Version",
+    "-p:FileVersion=$Version.0",
+    "-p:AssemblyVersion=$Version.0",
+    "-p:PublishSingleFile=false",
+    "-p:SatelliteResourceLanguages=zh-Hans",
+    "-p:DebugType=None",
+    "-p:DebugSymbols=false",
+    "-p:CETCompat=false",
+    "-o", $publishDir
+)
+dotnet @publishArgs
 
 Write-Host "Verifying installer payload..."
 Assert-PayloadFile "Yanzi.exe"
@@ -87,11 +96,30 @@ Assert-PayloadFile "NativeWindowRefs\PresentationFramework.dll"
 Assert-PayloadFile "NativeWindowRefs\PresentationCore.dll"
 Assert-PayloadFile "NativeWindowRefs\WindowsBase.dll"
 Assert-PayloadFile "NativeWindowRefs\System.Xaml.dll"
+Assert-PayloadFile "NativeWindowRefs\System.Windows.Forms.dll"
 
 Write-Host "Published installer payload:"
 Write-Host "  $publishDir"
 
 if (-not $SkipInstaller) {
+    # 自动解析 csproj 中锁定的 Velopack NuGet 包版本，并强行自动对齐全局 vpk 打包工具版本
+    [xml]$xml = Get-Content $project
+    $expectedVelopackVer = ($xml.Project.ItemGroup.PackageReference | Where-Object { $_.Include -eq "Velopack" -or $_.Include -eq "velopack" }).Version
+    if (-not [string]::IsNullOrWhiteSpace($expectedVelopackVer)) {
+        $vpkToolList = dotnet tool list -g 2>$null | Out-String
+        if ($vpkToolList -match 'vpk\s+([0-9a-zA-Z\.\-]+)') {
+            $installedVpkVer = $matches[1].Trim()
+            if ($installedVpkVer -ne $expectedVelopackVer) {
+                Write-Host "检测到打包工具与项目 SDK 版本不同步 ($installedVpkVer != $expectedVelopackVer)，正在自动强行对齐..." -ForegroundColor Yellow
+                dotnet tool update -g vpk --version $expectedVelopackVer | Out-Null
+                Write-Host "打包工具已自动对齐为 $expectedVelopackVer。" -ForegroundColor Green
+            }
+        } else {
+            Write-Host "未检测到全局 vpk 工具，正在自动安装指定版本 $expectedVelopackVer ..." -ForegroundColor Yellow
+            dotnet tool install -g vpk --version $expectedVelopackVer | Out-Null
+        }
+    }
+
     $vpk = Get-Command vpk -ErrorAction SilentlyContinue
     if (-not $vpk) {
         $vpkPath = "vpk"
@@ -99,29 +127,51 @@ if (-not $SkipInstaller) {
         $vpkPath = $vpk.Source
     }
 
-    Write-Host "Downloading previous releases from GitHub for delta generation..."
-    $downloadArgs = @("download", "github", "--repoUrl", "https://github.com/luoluoluo22/yanzi", "--outputDir", $installerOutDir)
-    if ($GithubToken) {
-        $downloadArgs += @("--token", $GithubToken)
+    $cleanVer = $Version.TrimStart("vV")
+    $hasLocalPreviousReleases = $false
+    $releasesFile = Join-Path $installerOutDir "RELEASES"
+    if (Test-Path $releasesFile) {
+        $existingFullNupkg = Get-ChildItem -Path $installerOutDir -File -Filter "*-full.nupkg" | Where-Object { $_.Name -notmatch [regex]::Escape($cleanVer) }
+        if ($existingFullNupkg.Count -gt 0) {
+            $hasLocalPreviousReleases = $true
+            Write-Host "Found local baseline release package: $($existingFullNupkg[0].Name). Skipping remote download!" -ForegroundColor Green
+        }
     }
 
-    try {
-        & $vpkPath $downloadArgs
-        Write-Host "Successfully downloaded previous releases."
-    } catch {
-        Write-Warning "Could not download previous releases (this is normal for the very first release or offline builds): $_"
+    if (-not $hasLocalPreviousReleases) {
+        Write-Host "No local previous releases found. Downloading from GitHub for delta generation..."
+        $downloadArgs = @("download", "github", "--repoUrl", "https://github.com/luoluoluo22/yanzi", "--outputDir", $installerOutDir)
+        if ($GithubToken) {
+            $downloadArgs += @("--token", $GithubToken)
+        }
+
+        try {
+            & $vpkPath $downloadArgs
+            Write-Host "Successfully downloaded previous releases."
+        } catch {
+            Write-Warning "Could not download previous releases (this is normal for the very first release or offline builds): $_"
+        }
+    }
+
+    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match [regex]::Escape($cleanVer) } | Remove-Item -Force -ErrorAction SilentlyContinue
+    if (Test-Path $releasesFile) {
+        $lines = Get-Content $releasesFile | Where-Object { $_ -notmatch [regex]::Escape($cleanVer) }
+        Set-Content -Path $releasesFile -Value $lines
     }
 
     Write-Host "Building Velopack installer package..."
-    & $vpkPath pack `
-        --packId "Yanzi" `
-        --packTitle "Yanzi" `
-        --packVersion $Version `
-        --packDir $publishDir `
-        --mainExe "Yanzi.exe" `
-        --icon "$root\src\OpenQuickHost\yanzi.ico" `
-        --outputDir $installerOutDir `
-        --shortcuts "Desktop,StartMenuRoot"
+    $packArgs = @(
+        "pack",
+        "--packId", "Yanzi",
+        "--packTitle", "Yanzi",
+        "--packVersion", $Version,
+        "--packDir", $publishDir,
+        "--mainExe", "Yanzi.exe",
+        "--icon", "$root\src\OpenQuickHost\yanzi.ico",
+        "--outputDir", $installerOutDir,
+        "--shortcuts", "Desktop,StartMenuRoot"
+    )
+    & $vpkPath @packArgs
 
     if ($LASTEXITCODE -ne 0) {
         throw "Velopack pack failed to build the installer."
@@ -144,12 +194,24 @@ if (-not $SkipInstaller) {
         Rename-Item -Path $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
     }
 
-    # 打包并重命名完毕后，删除所有历史下载的、不是当前版本的旧 nupkg 包
+    # 智能保留最近 2 个版本的 full.nupkg 作为下次本地增量基准，仅清理历史旧 exe/zip 和过期 delta 包
     Write-Host "Cleaning up historical packages in output directory..."
     $cleanVersion = $Version.TrimStart("vV")
     Get-ChildItem -Path $installerOutDir -File | Where-Object {
-        $_.Extension -eq ".nupkg" -and $_.Name -notmatch [regex]::Escape($cleanVersion)
-    } | Remove-Item -Force
+        ($_.Extension -in @(".exe", ".zip")) -and ($_.Name -notmatch [regex]::Escape($cleanVersion))
+    } | Remove-Item -Force -ErrorAction SilentlyContinue
+
+    Get-ChildItem -Path $installerOutDir -File -Filter "*-delta.nupkg" | Where-Object {
+        $_.Name -notmatch [regex]::Escape($cleanVersion)
+    } | Remove-Item -Force -ErrorAction SilentlyContinue
+
+    $fullPackages = Get-ChildItem -Path $installerOutDir -File -Filter "*-full.nupkg" | Sort-Object LastWriteTime -Descending
+    if ($fullPackages.Count -gt 2) {
+        $fullPackages | Select-Object -Skip 2 | ForEach-Object {
+            Write-Host "Pruning aged baseline full package: $($_.Name)"
+            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     Write-Host "Velopack packaging completed successfully."
     Write-Host "Installer output directory:"

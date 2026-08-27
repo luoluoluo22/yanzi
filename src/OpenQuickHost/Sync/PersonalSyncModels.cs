@@ -168,6 +168,9 @@ public sealed class CloudPersonalSyncConfigSnapshot
     [JsonPropertyName("secrets")]
     public PersonalSyncSecretBag Secrets { get; set; } = new();
 
+    [JsonPropertyName("e2eePayload")]
+    public string? E2eePayload { get; set; }
+
     [JsonPropertyName("autoSyncDelaySeconds")]
     public int AutoSyncDelaySeconds { get; set; } = 10;
 

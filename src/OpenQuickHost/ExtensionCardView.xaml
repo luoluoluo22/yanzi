@@ -113,10 +113,9 @@
                                         <TextBlock Text="📦" FontSize="{DynamicResource FontSizeTitle}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
 
-                                    <!-- 标题和ID -->
+                                    <!-- 标题 -->
                                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
                                         <TextBlock Text="扩展名称" Foreground="White" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="extension.id" Foreground="#FF6B7280" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
 
                                     <!-- 开关 -->
@@ -211,11 +210,6 @@
                     
                     <Border Background="#FF1E1E1E" CornerRadius="8" BorderBrush="#FF2A2A2A" BorderThickness="1" Padding="14" Margin="0,0,0,16">
                         <StackPanel>
-                            <Grid Margin="0,0,0,10">
-                                <TextBlock Text="扩展 ID" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmallPlus}"/>
-                                <TextBlock Text="extension.id" Foreground="White" FontSize="{DynamicResource FontSizeSmallPlus}" HorizontalAlignment="Right"/>
-                            </Grid>
-                            <Rectangle Height="1" Fill="#FF2A2A2A" Margin="0,0,0,10"/>
                             <Grid Margin="0,0,0,10">
                                 <TextBlock Text="分类" Foreground="#FF8E8E8E" FontSize="{DynamicResource FontSizeSmallPlus}"/>
                                 <TextBlock Text="工具" Foreground="White" FontSize="{DynamicResource FontSizeSmallPlus}" HorizontalAlignment="Right"/>

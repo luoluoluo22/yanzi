@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:OpenQuickHost"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
-        Title="鼠标面板" Height="560" Width="284"
+        Title="{local:Term Backpack}" Width="284"
         WindowStyle="None"
         Background="Transparent"
         UseLayoutRounding="True"
@@ -15,6 +15,9 @@
         TextOptions.TextRenderingMode="ClearType"
         ShowInTaskbar="False"
         WindowStartupLocation="Manual"
+        Topmost="True"
+        Focusable="False"
+        ShowActivated="False"
         Deactivated="Window_Deactivated">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
@@ -31,6 +34,22 @@
         <local:BooleanToColorConverter x:Key="BooleanToColorConverter" />
         <local:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
         <local:NotNullToVisibilityConverter x:Key="NotNullToVisibilityConverter" />
+
+        <!-- 图钉任务激发金色脉冲动画 -->
+        <Storyboard x:Key="PinQuestBreatheAnimation" RepeatBehavior="Forever" AutoReverse="True">
+            <DoubleAnimation Storyboard.TargetName="PinQuestHighlightBorder"
+                             Storyboard.TargetProperty="Opacity"
+                             From="0.2" To="1.0"
+                             Duration="0:0:0.6" />
+            <DoubleAnimation Storyboard.TargetName="PinAutoHideButtonScale"
+                             Storyboard.TargetProperty="ScaleX"
+                             From="1.0" To="1.15"
+                             Duration="0:0:0.6" />
+            <DoubleAnimation Storyboard.TargetName="PinAutoHideButtonScale"
+                             Storyboard.TargetProperty="ScaleY"
+                             From="1.0" To="1.15"
+                             Duration="0:0:0.6" />
+        </Storyboard>
         
         <Style x:Key="SidebarButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
@@ -80,6 +99,103 @@
         <Style x:Key="SlotButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip">
+                <Setter.Value>
+                    <ToolTip Background="Transparent"
+                             BorderThickness="0"
+                             Padding="0"
+                             HasDropShadow="True">
+                        <ToolTip.Style>
+                            <Style TargetType="ToolTip">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ToolTip.Style>
+                        <Border Width="230"
+                                Background="#F210111A"
+                                BorderBrush="{Binding RarityBrush}"
+                                BorderThickness="1.5"
+                                CornerRadius="10"
+                                Padding="12,10">
+                            <StackPanel>
+                                <!-- 头部：标题与稀有度勋章 -->
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Title}"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="13.5"
+                                               FontWeight="Bold"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <Border Grid.Column="1"
+                                            Background="{Binding RarityBadgeBackground}"
+                                            BorderBrush="{Binding RarityBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="5"
+                                            Padding="6,2"
+                                            Margin="4,0,0,0">
+                                        <TextBlock Text="{Binding RarityText}"
+                                                   Foreground="{Binding RarityBrush}"
+                                                   FontSize="10"
+                                                   FontWeight="Bold"/>
+                                    </Border>
+                                </Grid>
+
+                                <!-- 第二行：工具描述 (紧随标题下方) -->
+                                <TextBlock Text="{Binding CardDescription}"
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,8"
+                                           LineHeight="16"/>
+
+                                <!-- 分割线 -->
+                                <Rectangle Height="1" Fill="#20FFFFFF" Margin="0,0,0,8"/>
+
+                                <!-- 属性列表 -->
+                                <Grid Margin="0,0,0,3">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="🏷️ 分类:" Foreground="{DynamicResource BrushTextMuted}" FontSize="11"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding ItemCategoryText}" Foreground="{DynamicResource BrushTextMain}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,3">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="📊 击发频次:" Foreground="{DynamicResource BrushTextMuted}" FontSize="11"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <TextBlock Text="{Binding UsageCount}" Foreground="#FFF59E0B" FontSize="11" FontWeight="Bold"/>
+                                        <TextBlock Text=" 次调用" Foreground="{DynamicResource BrushTextMuted}" FontSize="11"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="⚡ 当前状态:" Foreground="{DynamicResource BrushTextMuted}" FontSize="11"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding RunningStatusText}" Foreground="{Binding RunningStatusBrush}" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </ToolTip>
+                </Setter.Value>
+            </Setter>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -89,6 +205,14 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                    <Setter Property="Cursor" Value="Arrow"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsDragging}" Value="True">
+                    <Setter Property="Cursor" Value="SizeAll"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
         <DataTemplate x:Key="FolderPreviewIconTemplate">
@@ -131,6 +255,7 @@
     </Window.Resources>
 
     <Border Margin="1"
+            x:Name="MainCardBorder"
             Background="{DynamicResource BrushDialogBG}"
             CornerRadius="0"
             BorderBrush="{DynamicResource BrushBorder}"
@@ -147,179 +272,169 @@
                 <RowDefinition Height="1"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            <!-- Sidebar -->
-            <Border Grid.RowSpan="4" BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" Padding="0,8">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="1"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+            <!-- Sidebar Background & Border -->
+            <Border Grid.Column="0" Grid.RowSpan="4" BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" Padding="0,8"/>
 
-                    <Border Grid.Row="1">
-                        <StackPanel HorizontalAlignment="Center">
-                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="通用收藏" Click="ToggleGlobalFavorites_Click">
-                            <Viewbox Width="16" Height="16">
-                                <Canvas Width="24" Height="24">
-                                    <Path Fill="#FFFBBF24">
-                                        <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
-                                    </Path>
-                                </Canvas>
-                            </Viewbox>
-                        </Button>
-                        <ItemsControl ItemsSource="{Binding GlobalGroups}" Margin="0,4,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Style="{StaticResource GroupButtonStyle}"
-                                            Margin="0,0,0,4"
-                                            Tag="{Binding}"
-                                            Click="GlobalGroupButton_Click"
-                                            ToolTip="{Binding Name}">
-                                        <Button.ContextMenu>
-                                            <ContextMenu>
-                                                <MenuItem Header="重命名分组" Click="RenameGlobalGroup_Click" CommandParameter="{Binding}" />
-                                                <MenuItem Header="删除分组" Click="DeleteGlobalGroup_Click" CommandParameter="{Binding}" />
-                                            </ContextMenu>
-                                        </Button.ContextMenu>
-                                        <Button.Background>
-                                            <Binding Path="IsSelected" Converter="{StaticResource BooleanToColorConverter}" ConverterParameter="Transparent|#1A3B82F6"/>
-                                        </Button.Background>
-                                        <TextBlock Text="{Binding ShortName}"
-                                                   FontSize="{DynamicResource FontSizeSmall}"
-                                                   FontWeight="SemiBold">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                            <Setter Property="Foreground" Value="#FF6EA8FF"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建通用分组" Click="AddGlobalGroupButton_Click">
-                            <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
-                                    <Path.Style>
-                                        <Style TargetType="Path">
-                                            <Setter Property="Opacity" Value="0"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
-                                                    <Setter Property="Opacity" Value="1"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Path.Style>
+            <!-- Sidebar Global Groups (Row 1) -->
+            <Border Grid.Column="0" Grid.Row="1" VerticalAlignment="Top" Margin="0,4,0,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="通用收藏" Click="ToggleGlobalFavorites_Click">
+                        <Viewbox Width="16" Height="16">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="#FFFBBF24">
+                                    <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
                                 </Path>
-                            </Viewbox>
-                        </Button>
-                        </StackPanel>
-                    </Border>
-
-                    <Rectangle Grid.Row="2" Height="1" Fill="#18FFFFFF" Margin="6,0"/>
-
-                    <Border Grid.Row="3">
-                        <StackPanel HorizontalAlignment="Center" Margin="0,8,0,0">
-                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="专属收藏" Click="ToggleContextFavorites_Click">
-                            <Viewbox Width="16" Height="16">
-                                <Canvas Width="24" Height="24">
-                                    <Path Fill="#FFFBBF24">
-                                        <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
-                                    </Path>
-                                </Canvas>
-                            </Viewbox>
-                        </Button>
-                        <ItemsControl ItemsSource="{Binding ContextGroups}" Margin="0,4,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Style="{StaticResource GroupButtonStyle}"
-                                            Margin="0,0,0,4"
-                                            Tag="{Binding}"
-                                            Click="ContextGroupButton_Click"
-                                            ToolTip="{Binding Name}">
-                                        <Button.ContextMenu>
-                                            <ContextMenu>
-                                                <MenuItem Header="重命名分组" Click="RenameContextGroup_Click" CommandParameter="{Binding}" />
-                                                <MenuItem Header="删除分组" Click="DeleteContextGroup_Click" CommandParameter="{Binding}" />
-                                            </ContextMenu>
-                                        </Button.ContextMenu>
-                                        <Button.Background>
-                                            <Binding Path="IsSelected" Converter="{StaticResource BooleanToColorConverter}" ConverterParameter="Transparent|#1A22C55E"/>
-                                        </Button.Background>
-                                        <TextBlock Text="{Binding ShortName}"
-                                                   FontSize="{DynamicResource FontSizeSmall}"
-                                                   FontWeight="SemiBold">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                            <Setter Property="Foreground" Value="#FF4ADE80"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建专属分组" Click="AddContextGroupButton_Click">
-                            <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
-                                    <Path.Style>
-                                        <Style TargetType="Path">
-                                            <Setter Property="Opacity" Value="0"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
-                                                    <Setter Property="Opacity" Value="1"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Path.Style>
-                                </Path>
-                            </Viewbox>
-                        </Button>
-                        </StackPanel>
-                    </Border>
-                    
-                    <StackPanel Grid.Row="4" VerticalAlignment="Bottom" HorizontalAlignment="Center">
-                        <Button Style="{StaticResource SidebarButtonStyle}" Margin="0,0,0,6" Click="MobileMessagesButton_Click" Width="32" Height="32" ToolTip="手机消息">
-                            <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry mobile}" Fill="#FF67E8F9" Stretch="Uniform"/>
-                            </Viewbox>
-                        </Button>
-                        <Button Style="{StaticResource SidebarButtonStyle}" Click="SettingsButton_Click" Width="32" Height="32" ToolTip="设置">
-                            <Viewbox Width="16" Height="16">
-                                <Path Data="{local:IconGeometry settings}" Fill="#FF888888" Stretch="Uniform"/>
-                            </Viewbox>
-                        </Button>
-                    </StackPanel>
-                </Grid>
+                            </Canvas>
+                        </Viewbox>
+                    </Button>
+                    <ItemsControl ItemsSource="{Binding GlobalGroups}" Margin="0,4,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource GroupButtonStyle}"
+                                        Margin="0,0,0,4"
+                                        Tag="{Binding}"
+                                        Click="GlobalGroupButton_Click"
+                                        ToolTip="{Binding Name}">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="重命名分组" Click="RenameGlobalGroup_Click" CommandParameter="{Binding}" />
+                                            <MenuItem Header="删除分组" Click="DeleteGlobalGroup_Click" CommandParameter="{Binding}" />
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <TextBlock Text="{Binding ShortName}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
+                                               FontWeight="SemiBold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="Foreground" Value="#FF6EA8FF"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建通用分组" Click="AddGlobalGroupButton_Click">
+                        <Viewbox Width="16" Height="16">
+                            <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Opacity" Value="0.3"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                <Setter Property="Opacity" Value="1"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                        </Viewbox>
+                    </Button>
+                </StackPanel>
             </Border>
+
+            <!-- Sidebar Contextual Groups (Row 3: Top Aligned with ContextSectionTitle) -->
+            <Border Grid.Column="0" Grid.Row="3" VerticalAlignment="Top" Margin="0,4,0,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="专属收藏" Click="ToggleContextFavorites_Click">
+                        <Viewbox Width="16" Height="16">
+                            <Canvas Width="24" Height="24">
+                                <Path Fill="#FFFBBF24">
+                                    <Path.Data>M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z</Path.Data>
+                                </Path>
+                            </Canvas>
+                        </Viewbox>
+                    </Button>
+                    <ItemsControl ItemsSource="{Binding ContextGroups}" Margin="0,4,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource GroupButtonStyle}"
+                                        Margin="0,0,0,4"
+                                        Tag="{Binding}"
+                                        Click="ContextGroupButton_Click"
+                                        ToolTip="{Binding Name}">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="重命名分组" Click="RenameContextGroup_Click" CommandParameter="{Binding}" />
+                                            <MenuItem Header="删除分组" Click="DeleteContextGroup_Click" CommandParameter="{Binding}" />
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <TextBlock Text="{Binding ShortName}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
+                                               FontWeight="SemiBold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="Foreground" Value="#FF6EA8FF"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Style="{StaticResource SidebarButtonStyle}" Width="32" Height="32" ToolTip="新建专属分组" Click="AddContextGroupButton_Click">
+                        <Viewbox Width="16" Height="16">
+                            <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Opacity" Value="0.3"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                <Setter Property="Opacity" Value="1"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                        </Viewbox>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <!-- Sidebar Footer Buttons (Row 3: Bottom Aligned) -->
+            <StackPanel Grid.Column="0" Grid.Row="3" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,8">
+                <Button x:Name="MobileMessagesButton" Style="{StaticResource SidebarButtonStyle}" Margin="0,0,0,6" Click="MobileMessagesButton_Click" Width="32" Height="32" ToolTip="手机消息">
+                    <Grid Width="20" Height="20">
+                        <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Path Data="{local:IconGeometry mobile}" Fill="#FFFFFFFF" Stretch="Uniform"/>
+                        </Viewbox>
+                        <Ellipse x:Name="MobileDiscoverBadge" Width="6" Height="6" Fill="#FF22C55E" Margin="0,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
+                        <Ellipse x:Name="MobileMessageBadge" Width="6" Height="6" Fill="#FFE11D48" Margin="0,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed"/>
+                    </Grid>
+                </Button>
+                <Button x:Name="SettingsButton" Style="{StaticResource SidebarButtonStyle}" Click="SettingsButton_Click" Width="32" Height="32" ToolTip="设置">
+                    <Viewbox Width="16" Height="16">
+                        <Path Data="{local:IconGeometry settings}" Fill="#FF888888" Stretch="Uniform"/>
+                    </Viewbox>
+                </Button>
+            </StackPanel>
 
             <!-- Top Bar -->
             <Grid Grid.Column="1" Grid.Row="0" Margin="8,8,8,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-                    <Button Width="28"
-                            Height="28"
-                            Background="Transparent"
-                            BorderThickness="0"
+                <Grid Grid.Column="0" Width="34" Height="34">
+                    <Button x:Name="EditModeButton"
+                            Width="34"
+                            Height="34"
                             ToolTip="{Binding EditButtonTooltip}"
                             Click="EditModeButton_Click"
+                            MouseEnter="EditModeButton_MouseEnter"
+                            MouseLeave="EditModeButton_MouseLeave"
                             Style="{StaticResource SidebarButtonStyle}">
                         <Viewbox Width="14" Height="14">
                             <Path Data="{local:IconGeometry pen}" Stretch="Uniform">
@@ -328,7 +443,7 @@
                                         <Setter Property="Fill" Value="{DynamicResource BrushTextMain}"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsEditMode}" Value="True">
-                                                <Setter Property="Fill" Value="#FFF59E0B"/>
+                                                <Setter Property="Fill" Value="#FF3B82F6"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -336,76 +451,115 @@
                             </Path>
                         </Viewbox>
                     </Button>
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding EditModeHintText}"
-                               Foreground="{DynamicResource BrushTextMain}"
-                               FontSize="{DynamicResource FontSizeNormal}"
-                               FontWeight="SemiBold"
-                               VerticalAlignment="Center"
-                               Margin="10,0,0,0"
-                               TextTrimming="CharacterEllipsis"/>
 
-                    <Button Grid.Column="2"
-                            Width="28"
-                            Height="28"
-                            Margin="0,0,6,0"
-                            Background="Transparent"
-                            BorderThickness="0"
+                    <!-- 3秒顺时针悬浮进度外框动画 (Clockwise Progress Ring) -->
+                    <Path x:Name="EditModeHoverProgressRing"
+                          IsHitTestVisible="False"
+                          Width="34" Height="34"
+                          Stroke="#FF3B82F6"
+                          StrokeThickness="2"
+                          StrokeDashArray="94.25 94.25"
+                          StrokeDashOffset="94.25"
+                          Visibility="Collapsed"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center">
+                        <Path.Data>
+                            <EllipseGeometry Center="17,17" RadiusX="15" RadiusY="15"/>
+                        </Path.Data>
+                        <Path.RenderTransform>
+                            <RotateTransform Angle="-90" CenterX="17" CenterY="17"/>
+                        </Path.RenderTransform>
+                    </Path>
+                </Grid>
+
+                <!-- 填充中间空间的可延伸搜索框 -->
+                <Border Grid.Column="1" Height="34" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="10,0" Margin="6,0,6,0">
+                    <Grid VerticalAlignment="Center">
+                        <Viewbox Width="14" Height="14" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <Path Data="{local:IconGeometry search}" 
+                                  Fill="{DynamicResource BrushTextSec}" Opacity="0.8"/>
+                        </Viewbox>
+                        <TextBox x:Name="HubSearchBox"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Foreground="{DynamicResource BrushTextMain}"
+                                 FontSize="{DynamicResource FontSizeNormal}"
+                                 Margin="22,0,0,0"
+                                 VerticalAlignment="Center"
+                                 VerticalContentAlignment="Center"
+                                 CaretBrush="#FF3B82F6"
+                                 Focusable="True"
+                                 PreviewMouseDown="HubSearchBox_PreviewMouseDown"
+                                 GotKeyboardFocus="HubSearchBox_GotKeyboardFocus"
+                                 TextChanged="HubSearchBox_TextChanged"/>
+                        <TextBlock Text="搜索..." 
+                                   IsHitTestVisible="False"
+                                   Foreground="{DynamicResource BrushTextMuted}" 
+                                   FontSize="{DynamicResource FontSizeNormal}" 
+                                   Margin="24,0,0,0" 
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding Text, ElementName=HubSearchBox}" Value=""/>
+                                                <Condition Binding="{Binding IsKeyboardFocused, ElementName=HubSearchBox}" Value="False"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+
+                <!-- 最右侧置顶按钮 -->
+                <Grid Grid.Column="2" Width="34" Height="34">
+                    <!-- 图钉任务模式发光呼吸层 -->
+                    <Border x:Name="PinQuestHighlightBorder"
+                            Width="34"
+                            Height="34"
+                            CornerRadius="10"
+                            Background="#33F59E0B"
+                            BorderBrush="#FFF59E0B"
+                            BorderThickness="1.5"
+                            Opacity="0"
+                            IsHitTestVisible="False">
+                        <Border.Effect>
+                            <BlurEffect Radius="8" />
+                        </Border.Effect>
+                    </Border>
+
+                    <Button x:Name="PinAutoHideButton"
+                            Width="34"
+                            Height="34"
                             ToolTip="{Binding PinButtonTooltip}"
                             Click="PinAutoHideButton_Click"
-                            Style="{StaticResource SidebarButtonStyle}">
+                            Style="{StaticResource SidebarButtonStyle}"
+                            RenderTransformOrigin="0.5,0.5">
+                        <Button.RenderTransform>
+                            <ScaleTransform x:Name="PinAutoHideButtonScale" ScaleX="1.0" ScaleY="1.0"/>
+                        </Button.RenderTransform>
                         <Viewbox Width="14" Height="14">
                             <Path Data="{local:IconGeometry pin}"
                                   Fill="{Binding PinButtonBrush}"
                                   Stretch="Uniform"/>
                         </Viewbox>
                     </Button>
-                    
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="6" Padding="8,4" Width="112" Margin="0,0,4,0">
-                            <Grid>
-                                <Viewbox Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                    <Path Data="{local:IconGeometry search}" 
-                                          Fill="#FF888888" Opacity="0.8"/>
-                                </Viewbox>
-                                <TextBox x:Name="HubSearchBox"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         Foreground="{DynamicResource BrushTextMain}"
-                                         FontSize="{DynamicResource FontSizeSmall}"
-                                         Margin="18,0,0,0"
-                                         VerticalAlignment="Center"
-                                         CaretBrush="#FF3B82F6"
-                                         TextChanged="HubSearchBox_TextChanged"/>
-                                <TextBlock Text="搜索..." 
-                                           IsHitTestVisible="False"
-                                           Foreground="{DynamicResource BrushTextMuted}" 
-                                           FontSize="{DynamicResource FontSizeSmall}" 
-                                           Margin="20,0,0,0" 
-                                           VerticalAlignment="Center">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Text, ElementName=HubSearchBox}" Value="">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
+                </Grid>
             </Grid>
 
-            <Grid Grid.Column="1" Grid.Row="1" Margin="6,0,6,6" MouseWheel="GlobalPanel_MouseWheel">
-                <ItemsControl ItemsSource="{Binding GlobalSlots}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Columns="4"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
+            <Grid Grid.Column="1" Grid.Row="1" Margin="6,0,6,4" MouseWheel="GlobalPanel_MouseWheel">
+                <StackPanel>
+                    <ItemsControl ItemsSource="{Binding GlobalSlots}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="{Binding GlobalColumnCount}"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Button Style="{StaticResource SlotButtonStyle}"
@@ -429,19 +583,19 @@
                                                         <Path Data="{local:IconGeometry star}" Fill="#FBBF24" Stretch="Uniform" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="复制扩展" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="复制" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="剪切扩展" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="剪切" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Tag="PasteNormal" Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                                <MenuItem Tag="PasteNormal" Header="粘贴" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
@@ -456,31 +610,31 @@
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="编辑" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="{Binding PublishMenuHeader}" Click="PublishExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
-                                                        <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                                        <Path Data="{local:IconGeometry publish}" Fill="#3B82F6" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
-                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                          Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="打开商店链接" Click="OpenStoreLink_Click" CommandParameter="{Binding}"
-                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                          Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="打开目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -493,154 +647,285 @@
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <Separator Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                <MenuItem Header="移除扩展" Click="RemoveExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="移除" Click="RemoveExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
-                                                        <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" />
+                                                        <Path Data="{local:IconGeometry broom}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="删除" Click="DeleteExtension_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanDeleteExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                             </ContextMenu>
                                         </Button.ContextMenu>
-                                        <StackPanel Margin="0,4" HorizontalAlignment="Center">
-                                            <Border Width="40" Height="40" CornerRadius="9" 
-                                                    ClipToBounds="True"
-                                                    HorizontalAlignment="Center"
-                                                    Margin="0,0,0,3">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}"/>
-                                                        <Setter Property="BorderBrush" Value="Transparent"/>
-                                                        <Setter Property="BorderThickness" Value="0"/>
-                                                        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
-                                                        <Setter Property="RenderTransform">
-                                                            <Setter.Value>
-                                                                <ScaleTransform ScaleX="1" ScaleY="1"/>
-                                                            </Setter.Value>
-                                                        </Setter>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
-                                                                <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
-                                                                <Setter Property="Background" Value="#FF3B82F6"/>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                                <Setter Property="Background" Value="#FF2563EB"/>
-                                                                <Setter Property="BorderBrush" Value="#FFFFFFFF"/>
-                                                                <Setter Property="BorderThickness" Value="2"/>
-                                                                <Setter Property="RenderTransform">
-                                                                    <Setter.Value>
-                                                                        <ScaleTransform ScaleX="1.08" ScaleY="1.08"/>
-                                                                    </Setter.Value>
-                                                                </Setter>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
-                                                                <Setter Property="Background" Value="Transparent"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Border.Style>
-                                                <Grid>
-                                                    <!-- Empty: + icon via Viewbox -->
-                                                    <Viewbox Width="18" Height="18"
-                                                             HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                             Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform">
-                                                            <Path.Style>
-                                                                <Style TargetType="Path">
-                                                                    <Setter Property="Opacity" Value="0"/>
+                                        <Grid>
+                                            <!-- Left Insert Indicator (Vertical Bar) -->
+                                            <Border Width="3" Height="32" CornerRadius="1.5"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                    Margin="-2,8,0,0" IsHitTestVisible="False"
+                                                    Background="#FF38BDF8"
+                                                    Visibility="{Binding IsInsertTargetLeft, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#FF38BDF8" Opacity="0.95"/>
+                                                </Border.Effect>
+                                            </Border>
+
+                                            <!-- Right Insert Indicator (Vertical Bar) -->
+                                            <Border Width="3" Height="32" CornerRadius="1.5"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,8,-2,0" IsHitTestVisible="False"
+                                                    Background="#FF38BDF8"
+                                                    Visibility="{Binding IsInsertTargetRight, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#FF38BDF8" Opacity="0.95"/>
+                                                </Border.Effect>
+                                            </Border>
+
+                                            <StackPanel Margin="0,4" HorizontalAlignment="Center">
+                                                <Border Width="40" Height="40" CornerRadius="9" 
+                                                        ClipToBounds="True"
+                                                        HorizontalAlignment="Center"
+                                                        Margin="0,0,0,3">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="{Binding DisplayAccentBrush, FallbackValue='#FF1E1E1E'}"/>
+                                                            <Setter Property="BorderBrush" Value="Transparent"/>
+                                                            <Setter Property="BorderThickness" Value="0"/>
+                                                            <Setter Property="Opacity" Value="1"/>
+                                                            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                                                            <Setter Property="RenderTransform">
+                                                                <Setter.Value>
+                                                                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsDragging}" Value="True">
+                                                                    <Setter Property="Opacity" Value="0.35"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding HasSwapPreviewIcon}" Value="True">
+                                                                    <Setter Property="Opacity" Value="0.90"/>
+                                                                    <Setter Property="BorderBrush" Value="#803B82F6"/>
+                                                                    <Setter Property="BorderThickness" Value="1.5"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                                    <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsQuestHighlight}" Value="True">
+                                                                    <Setter Property="Background" Value="#26F59E0B"/>
+                                                                </DataTrigger>
+                                                                <!-- 空格子：仅当鼠标真正移入该 40x40 方块自身时才高亮变蓝 -->
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsEmpty}" Value="True"/>
+                                                                        <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Background" Value="#FF3B82F6"/>
+                                                                </MultiDataTrigger>
+                                                                <!-- 非空格子：鼠标移入整个 Button 卡片区域高亮 -->
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsEmpty}" Value="False"/>
+                                                                        <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True"/>
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Background" Value="#FF3B82F6"/>
+                                                                </MultiDataTrigger>
+                                                                <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
+                                                                    <Setter Property="Background" Value="#503B82F6"/>
+                                                                    <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                                                                    <Setter Property="BorderThickness" Value="2.5"/>
+                                                                    <Setter Property="RenderTransform">
+                                                                        <Setter.Value>
+                                                                            <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
+                                                                        </Setter.Value>
+                                                                    </Setter>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding HasEffectiveImageIcon}" Value="True">
+                                                                    <Setter Property="Background" Value="Transparent"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <Grid>
+                                                        <!-- 任务引导单个空格子金色呼吸光晕层 (纯单外框线 + 光晕呼吸，不形变) -->
+                                                        <Border Width="38" Height="38" CornerRadius="8"
+                                                                Background="#26F59E0B"
+                                                                BorderBrush="#FFF59E0B"
+                                                                BorderThickness="1.5"
+                                                                IsHitTestVisible="False"
+                                                                Visibility="{Binding IsQuestHighlight, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Border.Effect>
+                                                                <DropShadowEffect BlurRadius="14" ShadowDepth="0" Color="#FFF59E0B" Opacity="0.9"/>
+                                                            </Border.Effect>
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
                                                                     <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
-                                                                            <Setter Property="Opacity" Value="1"/>
-                                                                            <Setter Property="Fill" Value="White"/>
+                                                                        <DataTrigger Binding="{Binding IsQuestHighlight}" Value="True">
+                                                                            <DataTrigger.EnterActions>
+                                                                                <BeginStoryboard x:Name="GlobalSlotBreatheSb">
+                                                                                    <Storyboard RepeatBehavior="Forever">
+                                                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                                         From="0.35" To="1.0" Duration="0:0:0.75" AutoReverse="True"/>
+                                                                                    </Storyboard>
+                                                                                </BeginStoryboard>
+                                                                            </DataTrigger.EnterActions>
+                                                                            <DataTrigger.ExitActions>
+                                                                                <StopStoryboard BeginStoryboardName="GlobalSlotBreatheSb"/>
+                                                                            </DataTrigger.ExitActions>
                                                                         </DataTrigger>
                                                                     </Style.Triggers>
                                                                 </Style>
-                                                            </Path.Style>
-                                                        </Path>
-                                                    </Viewbox>
-                                                    
-                                                    <!-- Occupied -->
-                                                    <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Grid.Style>
-                                                            <Style TargetType="Grid">
-                                                                <Setter Property="Opacity" Value="1" />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
-                                                                        <Setter Property="Opacity" Value="0.55" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Grid.Style>
-                                                        <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
-                                                                      Width="36"
-                                                                      Height="36"
-                                                                      Visibility="{Binding HasFolderPreview, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                            <ItemsControl.ItemsPanel>
-                                                                <ItemsPanelTemplate>
-                                                                    <UniformGrid Columns="2" Rows="2"/>
-                                                                </ItemsPanelTemplate>
-                                                            </ItemsControl.ItemsPanel>
-                                                            <ItemsControl.ItemTemplate>
-                                                                <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                        <Image Source="{Binding Icon}" Stretch="UniformToFill"
-                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                               Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Viewbox Width="20" Height="20"
-                                                                 HorizontalAlignment="Center"
-                                                                 VerticalAlignment="Center"
-                                                                 Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                            <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Border.Style>
+                                                        </Border>
+
+                                                        <!-- Empty: + icon via Viewbox -->
+                                                        <Viewbox Width="18" Height="18"
+                                                                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                 Visibility="{Binding ShouldShowEmptyPlusIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
+                                                                <Path.Style>
+                                                                    <Style TargetType="Path">
+                                                                        <Setter Property="Fill" Value="{DynamicResource BrushTextSec}"/>
+                                                                        <Setter Property="Opacity" Value="0"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsQuestHighlight}" Value="True">
+                                                                                <Setter Property="Opacity" Value="0.95"/>
+                                                                                <Setter Property="Fill" Value="#FFF59E0B"/>
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                                                <Setter Property="Opacity" Value="1"/>
+                                                                                <Setter Property="Fill" Value="White"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Path.Style>
+                                                            </Path>
                                                         </Viewbox>
-                                                        <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+
+                                                        <!-- Drop Target Hover Icon Preview -->
+                                                        <Grid Visibility="{Binding HasDropPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}" Opacity="0.85">
+                                                            <Image Source="{Binding DropPreviewIconSource}" Stretch="UniformToFill"
                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                   Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"
-                                                                BorderBrush="#CCFFFFFF" BorderThickness="1"
-                                                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,1,1,0"
-                                                                Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <!-- Favorite indicator -->
-                                                        <Border Width="10" Height="10" CornerRadius="5" Background="#FFFBBF24"
-                                                                HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3,3,0,0"
-                                                                Visibility="{Binding IsFavorite, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        <Grid Width="18"
-                                                              Height="18"
-                                                              Background="Transparent"
-                                                              HorizontalAlignment="Right"
-                                                              VerticalAlignment="Bottom"
-                                                              Margin="0,0,1,1"
-                                                              IsHitTestVisible="False"
-                                                              Visibility="{Binding HasFolderBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                            <Path Data="M18,0 L18,18 L0,18 Z" Fill="#FF1D4ED8" Stretch="Fill"/>
-                                                            <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="7.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,1"/>
+                                                                   Visibility="{Binding HasDropPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                     Visibility="{Binding HasDropPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Path Data="{Binding DropPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Viewbox>
+                                                            <TextBlock Text="{Binding DropPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                       Visibility="{Binding UseDropPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         </Grid>
-                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2,0,0,2" IsHitTestVisible="False">
-                                                            <!-- Shortcut indicator -->
-                                                            <Border Background="#CC1E293B" CornerRadius="4" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="2.5" Width="14" Height="14" Visibility="{Binding IsShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                                <Viewbox Width="9" Height="9">
-                                                                    <Path Data="M19,15V19H5V5H11V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V15H19M16.5,3L14.79,4.79L18.5,8.5H13A5,5 0 0,0 8,13.5V17H10V13.5A3,3 0 0,1 13,10.5H18.5L14.79,14.21L16.5,16L23,9.5L16.5,3Z" Fill="White"/>
-                                                                </Viewbox>
-                                                            </Border>
-                                                            <!-- Running indicator (Green Dot) -->
-                                                            <Border Width="9" Height="9" CornerRadius="4.5" Background="#FF10B981"
+
+                                                        <!-- Swap Target Hover Icon Preview on Drag Source Slot -->
+                                                        <Grid Visibility="{Binding HasSwapPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}" Opacity="0.85">
+                                                            <Image Source="{Binding SwapPreviewIconSource}" Stretch="UniformToFill"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding HasSwapPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                     Visibility="{Binding HasSwapPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Path Data="{Binding SwapPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Viewbox>
+                                                            <TextBlock Text="{Binding SwapPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                       Visibility="{Binding UseSwapPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        </Grid>
+                                                        
+                                                        <!-- Occupied -->
+                                                        <Grid Visibility="{Binding ShouldShowOccupiedContent, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Grid.Style>
+                                                                <Style TargetType="Grid">
+                                                                    <Setter Property="Opacity" Value="1" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
+                                                                            <Setter Property="Opacity" Value="0.55" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
+                                                                            <Setter Property="Opacity" Value="0.45" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding HasDropPreviewIcon}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding HasSwapPreviewIcon}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Grid.Style>
+                                                            <ItemsControl ItemsSource="{Binding FolderPreviewItems}"
+                                                                          Width="36"
+                                                                          Height="36"
+                                                                          Visibility="{Binding HasFolderPreview, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <UniformGrid Columns="2" Rows="2"/>
+                                                                    </ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                            <Image Source="{Binding Icon}" Stretch="Uniform"
+                                                                   MaxWidth="38" MaxHeight="38"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Viewbox Width="20" Height="20"
+                                                                     HorizontalAlignment="Center"
+                                                                     VerticalAlignment="Center"
+                                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                            </Viewbox>
+                                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Border Width="9" Height="9" CornerRadius="4.5" Background="#FFFF5A7A"
                                                                     BorderBrush="#CCFFFFFF" BorderThickness="1"
-                                                                    Margin="2,0,0,0" VerticalAlignment="Center"
-                                                                    Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                        </StackPanel>
-                                                    </Grid>
-                                                    <Border Background="#C0181818"
-                                                            Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                    <Viewbox Width="20"
-                                                             Height="20"
-                                                             HorizontalAlignment="Center"
-                                                             VerticalAlignment="Center"
-                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry sync}"
-                                                              Fill="{DynamicResource BrushTextMain}"
+                                                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,1,1,0"
+                                                                    Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <!-- Favorite indicator -->
+                                                            <Border Width="10" Height="10" CornerRadius="5" Background="#FFFBBF24"
+                                                                    HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3,3,0,0"
+                                                                    Visibility="{Binding IsFavorite, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            <Grid Width="18"
+                                                                  Height="18"
+                                                                  Background="Transparent"
+                                                                  HorizontalAlignment="Right"
+                                                                  VerticalAlignment="Bottom"
+                                                                  Margin="0,0,1,1"
+                                                                  IsHitTestVisible="False"
+                                                                  Visibility="{Binding HasFolderBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                <Path Data="M18,0 L18,18 L0,18 Z" Fill="#FF1D4ED8" Stretch="Fill"/>
+                                                                <TextBlock Text="{Binding FolderBadgeText}" Foreground="White" FontSize="7.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,1"/>
+                                                            </Grid>
+                                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2,0,0,2" IsHitTestVisible="False">
+                                                                <!-- Shortcut indicator -->
+                                                                <Border Background="#CC1E293B" CornerRadius="4" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="2.5" Width="14" Height="14" Visibility="{Binding IsShortcut, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                                    <Viewbox Width="9" Height="9">
+                                                                        <Path Data="M19,15V19H5V5H11V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V15H19M16.5,3L14.79,4.79L18.5,8.5H13A5,5 0 0,0 8,13.5V17H10V13.5A3,3 0 0,1 13,10.5H18.5L14.79,14.21L16.5,16L23,9.5L16.5,3Z" Fill="White"/>
+                                                                    </Viewbox>
+                                                                </Border>
+                                                                <!-- Running indicator (Green Dot) -->
+                                                                <Border Width="9" Height="9" CornerRadius="4.5" Background="#FF10B981"
+                                                                        BorderBrush="#CCFFFFFF" BorderThickness="1"
+                                                                        Margin="2,0,0,0" VerticalAlignment="Center"
+                                                                        Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        <Border Background="#C0181818"
+                                                                Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                        <Path Width="14"
+                                                              Height="14"
+                                                              Data="M12,2 A10,10 0 1,1 2,12"
+                                                              Stroke="{DynamicResource BrushTextMain}"
+                                                              StrokeThickness="2"
+                                                              StrokeStartLineCap="Round"
+                                                              StrokeEndLineCap="Round"
                                                               Stretch="Uniform"
-                                                              RenderTransformOrigin="0.5,0.5">
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center"
+                                                              RenderTransformOrigin="0.5,0.5"
+                                                              Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                             <Path.RenderTransform>
                                                                 <RotateTransform Angle="0" />
                                                             </Path.RenderTransform>
@@ -651,50 +936,217 @@
                                                                             <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
                                                                                              From="0"
                                                                                              To="360"
-                                                                                             Duration="0:0:0.9" />
+                                                                                             Duration="0:0:1.0" />
                                                                         </Storyboard>
                                                                     </BeginStoryboard>
                                                                 </EventTrigger>
                                                             </Path.Triggers>
                                                         </Path>
-                                                    </Viewbox>
-                                                </Grid>
-                                            </Border>
-                                            <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}" 
-                                                       FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
-                                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                                <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}" 
+                                                           FontSize="9.5" TextAlignment="Center" Width="52" TextTrimming="CharacterEllipsis">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Grid>
                                     </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                    <!-- Global Slots Row/Column Toolbar (Edit Mode Only) -->
+                    <Border HorizontalAlignment="Center"
+                            Margin="0,6,0,2"
+                            Background="#14FFFFFF"
+                            BorderBrush="#1AFFFFFF"
+                            BorderThickness="1"
+                            CornerRadius="14"
+                            Padding="6,2"
+                            Visibility="{Binding IsEditMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <!-- 行数控制 -->
+                            <Button Click="RemoveGlobalRow_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanRemoveGlobalRow}"
+                                    ToolTip="删除通用槽位一行 (最少1行)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H5V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <TextBlock Text="{Binding GlobalRowCount, StringFormat='{}{0}行'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="10.5"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"
+                                       ToolTip="通用槽位行数"/>
+                            <Button Click="AddGlobalRow_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanAddGlobalRow}"
+                                    ToolTip="添加通用槽位一行 (最多8行)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <!-- 分隔竖线 -->
+                            <Rectangle Width="1" Height="12" Fill="#25FFFFFF" Margin="6,0"/>
+
+                            <!-- 列数控制 -->
+                            <Button Click="RemoveGlobalColumn_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanRemoveGlobalColumn}"
+                                    ToolTip="减少通用槽位一列 (最少3列)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H5V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <TextBlock Text="{Binding GlobalColumnCount, StringFormat='{}{0}列'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="10.5"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"
+                                       ToolTip="通用槽位列数"/>
+                            <Button Click="AddGlobalColumn_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanAddGlobalColumn}"
+                                    ToolTip="增加通用槽位一列 (最多8列)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </Grid>
 
             <Rectangle Grid.ColumnSpan="2" Grid.Row="2" Height="1" Fill="#18FFFFFF" Margin="8,2"/>
 
-            <Grid Grid.Column="1" Grid.Row="3" Margin="6,6,6,8" MouseWheel="ContextPanel_MouseWheel">
+            <Grid Grid.Column="1" Grid.Row="3" Margin="6,4,6,8" MouseWheel="ContextPanel_MouseWheel">
                 <StackPanel>
-                    <TextBlock Text="{Binding ContextSectionTitle}"
-                               Foreground="{DynamicResource BrushTextMuted}"
-                               FontSize="{DynamicResource FontSizeSmallPlus}"
-                               FontWeight="SemiBold"
-                               HorizontalAlignment="Center"
-                               Margin="0,0,0,6"
-                               ToolTip="{Binding ContextHintText}"/>
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Margin="0,0,0,6"
+                                ToolTip="{Binding ContextHintText}">
+                        <Border Width="20" Height="20"
+                                CornerRadius="4"
+                                Margin="0,0,6,0"
+                                VerticalAlignment="Center"
+                                Visibility="{Binding HasContextProcessIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Image Source="{Binding ContextProcessIcon}"
+                                   Width="20" Height="20"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                   VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="{Binding ContextSectionTitle}"
+                                   Foreground="{DynamicResource BrushTextMuted}"
+                                   FontSize="{DynamicResource FontSizeSmallPlus}"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
                     <ItemsControl ItemsSource="{Binding ContextSlots}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <UniformGrid Columns="4"/>
+                                    <UniformGrid Columns="{Binding ContextColumnCount}"/>
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
@@ -720,19 +1172,19 @@
                                                         <Path Data="{local:IconGeometry star}" Fill="#FBBF24" Stretch="Uniform" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="复制扩展" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="复制" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="剪切扩展" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="剪切" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Tag="PasteNormal" Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                                <MenuItem Tag="PasteNormal" Header="粘贴" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
@@ -747,31 +1199,31 @@
                                                         <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="编辑" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="{Binding PublishMenuHeader}" Click="PublishExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
-                                                        <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                                        <Path Data="{local:IconGeometry publish}" Fill="#3B82F6" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
-                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                          Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="打开商店链接" Click="OpenStoreLink_Click" CommandParameter="{Binding}"
-                                                          Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                          Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="打开目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
                                                         <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -784,24 +1236,54 @@
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                                 <Separator Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                <MenuItem Header="移除扩展" Click="RemoveExtension_Click" CommandParameter="{Binding}"
+                                                <MenuItem Header="移除" Click="RemoveExtension_Click" CommandParameter="{Binding}"
                                                           Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <MenuItem.Icon>
-                                                        <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" />
+                                                        <Path Data="{local:IconGeometry broom}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="删除" Click="DeleteExtension_Click" CommandParameter="{Binding}"
+                                                          Visibility="{Binding CanDeleteExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <MenuItem.Icon>
+                                                        <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
                                             </ContextMenu>
                                         </Button.ContextMenu>
-                                        <StackPanel Margin="0,4" HorizontalAlignment="Center">
+                                        <Grid>
+                                            <!-- Left Insert Indicator (Vertical Bar) -->
+                                            <Border Width="3" Height="32" CornerRadius="1.5"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                    Margin="-2,8,0,0" IsHitTestVisible="False"
+                                                    Background="#FF38BDF8"
+                                                    Visibility="{Binding IsInsertTargetLeft, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#FF38BDF8" Opacity="0.95"/>
+                                                </Border.Effect>
+                                            </Border>
+
+                                            <!-- Right Insert Indicator (Vertical Bar) -->
+                                            <Border Width="3" Height="32" CornerRadius="1.5"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,8,-2,0" IsHitTestVisible="False"
+                                                    Background="#FF38BDF8"
+                                                    Visibility="{Binding IsInsertTargetRight, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#FF38BDF8" Opacity="0.95"/>
+                                                </Border.Effect>
+                                            </Border>
+
+                                            <StackPanel Margin="0,4" HorizontalAlignment="Center">
                                             <Border Width="40" Height="40" CornerRadius="9"
                                                     ClipToBounds="True"
                                                     HorizontalAlignment="Center"
                                                     Margin="0,0,0,3">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="{Binding Command.AccentBrush, FallbackValue='#FF1E1E1E'}"/>
+                                                        <Setter Property="Background" Value="{Binding DisplayAccentBrush, FallbackValue='#FF1E1E1E'}"/>
                                                         <Setter Property="BorderBrush" Value="Transparent"/>
                                                         <Setter Property="BorderThickness" Value="0"/>
+                                                        <Setter Property="Opacity" Value="1"/>
                                                         <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
                                                         <Setter Property="RenderTransform">
                                                             <Setter.Value>
@@ -809,23 +1291,44 @@
                                                             </Setter.Value>
                                                         </Setter>
                                                         <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsDragging}" Value="True">
+                                                                <Setter Property="Opacity" Value="0.35"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding HasSwapPreviewIcon}" Value="True">
+                                                                <Setter Property="Opacity" Value="0.90"/>
+                                                                <Setter Property="BorderBrush" Value="#803B82F6"/>
+                                                                <Setter Property="BorderThickness" Value="1.5"/>
+                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsEmpty}" Value="True">
                                                                 <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
                                                             </DataTrigger>
-                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                            <!-- 空格子：仅当鼠标真正移入该 40x40 方块自身时才高亮变蓝 -->
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsEmpty}" Value="True"/>
+                                                                    <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                                                </MultiDataTrigger.Conditions>
                                                                 <Setter Property="Background" Value="#FF3B82F6"/>
-                                                            </DataTrigger>
+                                                            </MultiDataTrigger>
+                                                            <!-- 非空格子：鼠标移入整个 Button 卡片区域高亮 -->
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsEmpty}" Value="False"/>
+                                                                    <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Background" Value="#FF3B82F6"/>
+                                                            </MultiDataTrigger>
                                                             <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                                <Setter Property="Background" Value="#FF2563EB"/>
-                                                                <Setter Property="BorderBrush" Value="#FFFFFFFF"/>
-                                                                <Setter Property="BorderThickness" Value="2"/>
+                                                                <Setter Property="Background" Value="#503B82F6"/>
+                                                                <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                                                                <Setter Property="BorderThickness" Value="2.5"/>
                                                                 <Setter Property="RenderTransform">
                                                                     <Setter.Value>
-                                                                        <ScaleTransform ScaleX="1.08" ScaleY="1.08"/>
+                                                                        <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
                                                                     </Setter.Value>
                                                                 </Setter>
                                                             </DataTrigger>
-                                                            <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                            <DataTrigger Binding="{Binding HasEffectiveImageIcon}" Value="True">
                                                                 <Setter Property="Background" Value="Transparent"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
@@ -834,13 +1337,14 @@
                                                 <Grid>
                                                     <Viewbox Width="18" Height="18"
                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                             Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform">
+                                                             Visibility="{Binding ShouldShowEmptyPlusIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
                                                             <Path.Style>
                                                                 <Style TargetType="Path">
+                                                                    <Setter Property="Fill" Value="{DynamicResource BrushTextSec}"/>
                                                                     <Setter Property="Opacity" Value="0"/>
                                                                     <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
                                                                             <Setter Property="Opacity" Value="1"/>
                                                                             <Setter Property="Fill" Value="White"/>
                                                                         </DataTrigger>
@@ -850,13 +1354,47 @@
                                                         </Path>
                                                     </Viewbox>
 
-                                                    <Grid Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <!-- Drop Target Hover Icon Preview -->
+                                                    <Grid Visibility="{Binding HasDropPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}" Opacity="0.85">
+                                                        <Image Source="{Binding DropPreviewIconSource}" Stretch="UniformToFill"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="{Binding HasDropPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                 Visibility="{Binding HasDropPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Data="{Binding DropPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                        </Viewbox>
+                                                        <TextBlock Text="{Binding DropPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding UseDropPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    </Grid>
+
+                                                    <!-- Swap Target Hover Icon Preview on Drag Source Slot -->
+                                                    <Grid Visibility="{Binding HasSwapPreviewIcon, Converter={StaticResource BooleanToVisibilityConverter}}" Opacity="0.85">
+                                                        <Image Source="{Binding SwapPreviewIconSource}" Stretch="UniformToFill"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="{Binding HasSwapPreviewImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                 Visibility="{Binding HasSwapPreviewVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <Path Data="{Binding SwapPreviewVectorIcon}" Fill="White" Stretch="Uniform"/>
+                                                        </Viewbox>
+                                                        <TextBlock Text="{Binding SwapPreviewGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Visibility="{Binding UseSwapPreviewGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    </Grid>
+
+                                                    <Grid Visibility="{Binding ShouldShowOccupiedContent, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                         <Grid.Style>
                                                             <Style TargetType="Grid">
                                                                 <Setter Property="Opacity" Value="1" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
                                                                         <Setter Property="Opacity" Value="0.55" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding HasDropPreviewIcon}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding HasSwapPreviewIcon}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
@@ -874,7 +1412,8 @@
                                                                 <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
                                                             </ItemsControl.ItemTemplate>
                                                         </ItemsControl>
-                                                        <Image Source="{Binding Icon}" Stretch="UniformToFill"
+                                                        <Image Source="{Binding Icon}" Stretch="Uniform"
+                                                               MaxWidth="38" MaxHeight="38"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                         <Viewbox Width="20" Height="20"
@@ -914,32 +1453,34 @@
                                                     </Grid>
                                                     <Border Background="#C0181818"
                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                    <Viewbox Width="20"
-                                                             Height="20"
-                                                             HorizontalAlignment="Center"
-                                                             VerticalAlignment="Center"
-                                                             Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <Path Data="{local:IconGeometry sync}"
-                                                              Fill="{DynamicResource BrushTextMain}"
-                                                              Stretch="Uniform"
-                                                              RenderTransformOrigin="0.5,0.5">
-                                                            <Path.RenderTransform>
-                                                                <RotateTransform Angle="0" />
-                                                            </Path.RenderTransform>
-                                                            <Path.Triggers>
-                                                                <EventTrigger RoutedEvent="Loaded">
-                                                                    <BeginStoryboard>
-                                                                        <Storyboard RepeatBehavior="Forever">
-                                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                             From="0"
-                                                                                             To="360"
-                                                                                             Duration="0:0:0.9" />
-                                                                        </Storyboard>
-                                                                    </BeginStoryboard>
-                                                                </EventTrigger>
-                                                            </Path.Triggers>
-                                                        </Path>
-                                                    </Viewbox>
+                                                    <Path Width="14"
+                                                          Height="14"
+                                                          Data="M12,2 A10,10 0 1,1 2,12"
+                                                          Stroke="{DynamicResource BrushTextMain}"
+                                                          StrokeThickness="2"
+                                                          StrokeStartLineCap="Round"
+                                                          StrokeEndLineCap="Round"
+                                                          Stretch="Uniform"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"
+                                                          RenderTransformOrigin="0.5,0.5"
+                                                          Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Path.RenderTransform>
+                                                            <RotateTransform Angle="0" />
+                                                        </Path.RenderTransform>
+                                                        <Path.Triggers>
+                                                            <EventTrigger RoutedEvent="Loaded">
+                                                                <BeginStoryboard>
+                                                                    <Storyboard RepeatBehavior="Forever">
+                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                         From="0"
+                                                                                         To="360"
+                                                                                         Duration="0:0:1.0" />
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </EventTrigger>
+                                                        </Path.Triggers>
+                                                    </Path>
                                                 </Grid>
                                             </Border>
                                             <TextBlock Text="{Binding DisplayTitle, FallbackValue='推荐位'}"
@@ -956,38 +1497,218 @@
                                                 </TextBlock.Style>
                                             </TextBlock>
                                         </StackPanel>
+                                    </Grid>
                                     </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <!-- Context Slots Row/Column Toolbar (Edit Mode Only) -->
+                    <Border HorizontalAlignment="Center"
+                            Margin="0,6,0,2"
+                            Background="#14FFFFFF"
+                            BorderBrush="#1AFFFFFF"
+                            BorderThickness="1"
+                            CornerRadius="14"
+                            Padding="6,2"
+                            Visibility="{Binding IsEditMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <!-- 行数控制 -->
+                            <Button Click="RemoveContextRow_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanRemoveContextRow}"
+                                    ToolTip="删除专属槽位一行 (最少1行)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H5V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <TextBlock Text="{Binding ContextRowCount, StringFormat='{}{0}行'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="10.5"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"
+                                       ToolTip="专属槽位行数"/>
+                            <Button Click="AddContextRow_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanAddContextRow}"
+                                    ToolTip="添加专属槽位一行 (最多8行)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <!-- 分隔竖线 -->
+                            <Rectangle Width="1" Height="12" Fill="#25FFFFFF" Margin="6,0"/>
+
+                            <!-- 列数控制 -->
+                            <Button Click="RemoveContextColumn_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanRemoveContextColumn}"
+                                    ToolTip="减少专属槽位一列 (最少3列)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H5V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <TextBlock Text="{Binding ContextColumnCount, StringFormat='{}{0}列'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="10.5"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"
+                                       ToolTip="专属槽位列数"/>
+                            <Button Click="AddContextColumn_Click"
+                                    Width="22" Height="22"
+                                    Margin="0"
+                                    IsEnabled="{Binding CanAddContextColumn}"
+                                    ToolTip="增加专属槽位一列 (最多8列)">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Cursor" Value="Hand"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="bd" CornerRadius="6" Background="{TemplateBinding Background}">
+                                                        <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="bd" Property="Background" Value="#25FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Grid>
 
-            <Border Grid.Column="1"
-                    Grid.RowSpan="4"
-                    Panel.ZIndex="20"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Top"
-                    Margin="0,46,8,0"
-                    Padding="8,6"
-                    CornerRadius="10"
-                    Background="#E61F2937"
-                    BorderBrush="#334ADE80"
-                    BorderThickness="1"
-                    IsHitTestVisible="False"
-                    Visibility="{Binding IsDraggingSlot, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <StackPanel>
-                    <TextBlock Text="普通拖放：放入 / 交换"
-                               Foreground="{DynamicResource BrushTextMain}"
-                               FontSize="10.5"
-                               FontWeight="SemiBold" />
-                    <TextBlock Text="按住 Ctrl：成组 / 加入分组"
-                               Foreground="#FF86EFAC"
-                               FontSize="10.5"
-                               FontWeight="SemiBold"
-                               Margin="0,2,0,0" />
-                </StackPanel>
-            </Border>
+            <!-- Drag & Drop Grouping Hint Popup (Floats on the right outside the main panel only when hovering over occupied slots) -->
+            <Popup x:Name="DragHintPopup"
+                   IsOpen="{Binding ShowDragGroupingHint, Mode=OneWay}"
+                   Placement="Right"
+                   PlacementTarget="{Binding ElementName=MainCardBorder}"
+                   HorizontalOffset="10"
+                   VerticalOffset="46"
+                   AllowsTransparency="True"
+                   PopupAnimation="Fade">
+                <Border Padding="10,8"
+                        CornerRadius="10"
+                        Background="#F2181F2C"
+                        BorderBrush="#404ADE80"
+                        BorderThickness="1">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="12" ShadowDepth="3" Direction="270" Color="#000000" Opacity="0.5"/>
+                    </Border.Effect>
+                    <StackPanel VerticalAlignment="Center">
+                        <!-- Insert mode hint -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                    Visibility="{Binding IsInsertMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Border Background="#3338BDF8" CornerRadius="3" Padding="5,2" Margin="0,0,8,0" VerticalAlignment="Center">
+                                <TextBlock Text="📍 插入" Foreground="#FF38BDF8" FontSize="11" FontWeight="Bold"/>
+                            </Border>
+                            <TextBlock Text="松开鼠标：插入此位置，后续依次后移"
+                                       Foreground="#FFBAE6FD"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                        
+                        <!-- Swap / Group mode hint -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                    Visibility="{Binding IsNotInsertMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Border Background="#3310B981" CornerRadius="3" Padding="5,2" Margin="0,0,8,0" VerticalAlignment="Center">
+                                <TextBlock Text="Ctrl" Foreground="#FF86EFAC" FontSize="11" FontWeight="Bold"/>
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="按住 Ctrl 拖放：成组 / 加入分组"
+                                           Foreground="#FF86EFAC"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="直接松开：与该槽位交换位置"
+                                           Foreground="{DynamicResource BrushTextSec}"
+                                           FontSize="10"
+                                           Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Popup>
 
             <Border Grid.Column="1"
                     Grid.RowSpan="4"
@@ -1084,19 +1805,19 @@
                                                     <Path Data="{local:IconGeometry star}" Fill="#FBBF24" Stretch="Uniform" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="复制扩展" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="复制" Click="CopySlotExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="剪切扩展" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="剪切" Click="CutSlotExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding IsOccupied, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Tag="PasteNormal" Header="粘贴扩展" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
+                                            <MenuItem Tag="PasteNormal" Header="粘贴" Click="PasteSlotExtension_Click" CommandParameter="{Binding}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
@@ -1111,31 +1832,31 @@
                                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="编辑扩展" Click="EditExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="编辑" Click="EditExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanEdit, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry pen}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="发布到商店" Click="PublishExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="{Binding PublishMenuHeader}" Click="PublishExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
-                                                    <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                                    <Path Data="{local:IconGeometry publish}" Fill="#3B82F6" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Header="复制商店链接" Click="CopyStoreLink_Click" CommandParameter="{Binding}"
-                                                      Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                      Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Header="打开商店链接" Click="OpenStoreLink_Click" CommandParameter="{Binding}"
-                                                      Visibility="{Binding CanPublish, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                      Visibility="{Binding CanShowStoreLink, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
-                                            <MenuItem Header="打开扩展目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="打开目录" Click="OpenExtensionDirectory_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanOpenDirectory, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
                                                     <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
@@ -1148,10 +1869,16 @@
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <Separator Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <MenuItem Header="移除扩展" Click="RemoveExtension_Click" CommandParameter="{Binding}"
+                                            <MenuItem Header="移除" Click="RemoveExtension_Click" CommandParameter="{Binding}"
                                                       Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <MenuItem.Icon>
-                                                    <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" />
+                                                    <Path Data="{local:IconGeometry broom}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="删除" Click="DeleteExtension_Click" CommandParameter="{Binding}"
+                                                      Visibility="{Binding CanDeleteExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <MenuItem.Icon>
+                                                    <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                         </ContextMenu>
@@ -1177,12 +1904,12 @@
                                                             <Setter Property="Background" Value="#FF3B82F6"/>
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                            <Setter Property="Background" Value="#FF2563EB"/>
-                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF"/>
-                                                            <Setter Property="BorderThickness" Value="2"/>
+                                                            <Setter Property="Background" Value="#503B82F6"/>
+                                                            <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                                                            <Setter Property="BorderThickness" Value="2.5"/>
                                                             <Setter Property="RenderTransform">
                                                                 <Setter.Value>
-                                                                    <ScaleTransform ScaleX="1.08" ScaleY="1.08"/>
+                                                                    <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
                                                                 </Setter.Value>
                                                             </Setter>
                                                         </DataTrigger>
@@ -1206,9 +1933,10 @@
                                                 <Viewbox Width="18" Height="18"
                                                          HorizontalAlignment="Center" VerticalAlignment="Center"
                                                          Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform">
+                                                    <Path Data="{local:IconGeometry plus}" Stretch="Uniform">
                                                         <Path.Style>
                                                             <Style TargetType="Path">
+                                                                <Setter Property="Fill" Value="{DynamicResource BrushTextSec}"/>
                                                                 <Setter Property="Opacity" Value="0"/>
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
@@ -1233,7 +1961,8 @@
                                                         <StaticResource ResourceKey="FolderPreviewIconTemplate"/>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
-                                                <Image Source="{Binding Icon}" Stretch="UniformToFill"
+                                                <Image Source="{Binding Icon}" Stretch="Uniform"
+                                                       MaxWidth="38" MaxHeight="38"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                                        Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                 <Viewbox Width="20" Height="20"
@@ -1275,32 +2004,34 @@
                                                 </StackPanel>
                                                 <Border Background="#C0181818"
                                                         Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                <Viewbox Width="20"
-                                                         Height="20"
-                                                         HorizontalAlignment="Center"
-                                                         VerticalAlignment="Center"
-                                                         Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <Path Data="{local:IconGeometry sync}"
-                                                          Fill="{DynamicResource BrushTextMain}"
-                                                          Stretch="Uniform"
-                                                          RenderTransformOrigin="0.5,0.5">
-                                                        <Path.RenderTransform>
-                                                            <RotateTransform Angle="0" />
-                                                        </Path.RenderTransform>
-                                                        <Path.Triggers>
-                                                            <EventTrigger RoutedEvent="Loaded">
-                                                                <BeginStoryboard>
-                                                                    <Storyboard RepeatBehavior="Forever">
-                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                         From="0"
-                                                                                         To="360"
-                                                                                         Duration="0:0:0.9" />
-                                                                    </Storyboard>
-                                                                </BeginStoryboard>
-                                                            </EventTrigger>
-                                                        </Path.Triggers>
-                                                    </Path>
-                                                </Viewbox>
+                                                <Path Width="14"
+                                                      Height="14"
+                                                      Data="M12,2 A10,10 0 1,1 2,12"
+                                                      Stroke="{DynamicResource BrushTextMain}"
+                                                      StrokeThickness="2"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      Stretch="Uniform"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      RenderTransformOrigin="0.5,0.5"
+                                                      Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path.RenderTransform>
+                                                        <RotateTransform Angle="0" />
+                                                    </Path.RenderTransform>
+                                                    <Path.Triggers>
+                                                        <EventTrigger RoutedEvent="Loaded">
+                                                            <BeginStoryboard>
+                                                                <Storyboard RepeatBehavior="Forever">
+                                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                                     From="0"
+                                                                                     To="360"
+                                                                                     Duration="0:0:1.0" />
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </EventTrigger>
+                                                    </Path.Triggers>
+                                                </Path>
                                             </Grid>
                                         </Border>
                                         <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}"

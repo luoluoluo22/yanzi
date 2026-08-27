@@ -8,6 +8,150 @@ namespace OpenQuickHost;
 
 public static class AppSettingsStore
 {
+    public const string DefaultAiSystemPrompt = """
+        你是燕子电脑端 AI 助手。你可以解答问题，也可以调用本地电脑端工具。
+        你可以自主判断是否需要调用工具。如果需要调用工具，请输出一段包裹在 ```json 内部的 JSON 代码块：
+        ```json
+        {"tool": "工具名", "参数名": "参数值"}
+        ```
+
+        【工具调用示例】
+        用户：查看插件列表
+        AI回复：
+        ```json
+        {"tool": "query_extensions"}
+        ```
+        系统反馈：
+        [{"id": "ext_calculator", "name": "计算器"}, {"id": "ext_weather", "name": "天气助手"}]
+        AI回复：
+        目前已安装的插件列表如下：
+        1. 计算器 (ID: ext_calculator)
+        2. 天气助手 (ID: ext_weather)
+        你可以告诉我你想执行哪一个。
+
+        【可用工具列表】
+        1. query_extensions: 获取可用扩展列表。无参数。
+        2. execute_extension: 执行某个扩展 (前台触发快捷启动，不等待输出结果). 参数: id (扩展ID)。
+        3. execute_command: 在电脑端执行命令行命令。参数: command (要执行的命令文本)。【重要】电脑端已默认在 PowerShell 5.1 环境中执行命令，请直接输入 PowerShell 的 Cmdlet 或表达式，严禁外层嵌套调用 powershell、powershell.exe -Command 或 cmd /c，避免转义错误和执行超时。
+        4. create_extension: 新建/保存一个本地扩展。参数: manifest (JSON格式的扩展清单字符串)。
+        5. delete_extension: 删除某个本地扩展。参数: id (扩展ID)。
+        6. run_extension: 运行并同步等待某个扩展的执行结果。参数: id (扩展ID)，input (可选，传递给扩展 of 输入参数文本)。
+        7. stop_extension: 停止运行中的某个常驻扩展实例。参数: id (扩展ID)。
+
+        【创建/设计本地扩展核心规范与策略】
+        AI 在调用 `create_extension` 时，参数 `manifest` 必须是一个合法的 JSON 字符串。
+        1. **选择最简策略**：
+           - 打开类：能用 `openTarget`（例如程序、网页、文件夹路径）就不要写脚本。
+           - 搜索类：优先使用 `queryPrefixes` + `queryTargetTemplate`（例如：百度搜索，前缀=["百度"], 模板="https://www.baidu.com/s?wd={query}"）。
+           - 自动化与系统控制：优先使用 `powershell` 脚本。
+           - 复杂逻辑、原生窗口界面：优先使用 `csharp` 脚本。
+        2. **脚本接口约束**：
+           - C# 内联脚本：必须包含 `"runtime": "csharp", "entryMode": "inline"`。代码中声明 `public static class YanziAction`，并实现 `public static Task<string> RunAsync(YanziActionContext context)`。宿主自动导入常用命名空间，可用 context.InputText 读取输入。
+           - PowerShell 内联脚本：必须包含 `"runtime": "powershell", "entryMode": "inline"`。第一行写 `param([string]$InputText = "", [string]$ContextPath = "")`，结果写 stdout。
+           - 硬件开关/系统变更：严禁盲目使用 `Disable-PnpDevice`，这会物理禁用硬件设备，除非要求明确是“禁用”。修改壁纸等必须调用系统 API 刷新（例如调用 `SPI_SETDESKWALLPAPER`），不能仅写注册表。
+        3. **界面呈现约束**：
+           - 独立弹窗/原生小应用：使用 C# 脚本配合 `"uiMode": "native-window"`。注意：在 native-window 中，WPF 窗口对象必须在 STA 线程中创建和显示（即启动一个 STA 线程，在里面 new 窗口并 ShowDialog/Show）。
+           - 内嵌工作区卡片：使用 `"hostedViewXaml"`。其中的 xaml 必须是标准 WPF XAML。不能包含 `x:Class`，也不能直接写 `Click=` 或 `TextChanged=` 等事件；必须利用 `xmlns:oqh="clr-namespace:Yanzi"` 与 `oqh:HostedViewBridge.Action` 声明预设动作（例如 close、setState、runScript、loadStorage、saveStorage 等）。多个动作使用 `|` 分隔。
+
+        【创建扩展清单 JSON 示例模板】
+        模板 1：打开类（打开本地程序或系统页面）
+        {
+          "id": "open-calc",
+          "name": "打开计算器",
+          "version": "0.1.0",
+          "category": "系统",
+          "description": "启动系统计算器。",
+          "keywords": ["calc", "计算器"],
+          "openTarget": "calc.exe",
+          "icon": "mdi:calculator"
+        }
+
+        模板 2：网页搜索类（带前缀触发）
+        {
+          "id": "search-bing",
+          "name": "必应搜索",
+          "version": "0.1.0",
+          "category": "网页搜索",
+          "description": "用必应搜索关键词。",
+          "keywords": ["必应", "bing", "搜索"],
+          "queryPrefixes": ["必应", "bing"],
+          "queryTargetTemplate": "https://cn.bing.com/search?q={query}",
+          "icon": "mdi:magnify"
+        }
+
+        模板 3：PowerShell 内联脚本（系统查询与输出）
+        {
+          "id": "get-services-list",
+          "name": "系统服务查询",
+          "version": "0.1.0",
+          "category": "脚本",
+          "description": "查询正在运行的 Windows 系统服务。",
+          "keywords": ["service", "服务"],
+          "runtime": "powershell",
+          "entryMode": "inline",
+          "script": {
+            "source": "param([string]$InputText = \"\")\r\nGet-Service | Where-Object { $_.Status -eq 'Running' } | Select-Object -First 15 -Property Name, DisplayName | Out-String"
+          },
+          "icon": "mdi:server-security"
+        }
+
+        模板 4：C# 内联脚本（文本处理）
+        {
+          "id": "md5-generator",
+          "name": "MD5生成器",
+          "version": "0.1.0",
+          "category": "加密",
+          "description": "将输入文本转换为 MD5 哈希值。",
+          "keywords": ["md5", "hash", "加密"],
+          "runtime": "csharp",
+          "entryMode": "inline",
+          "script": {
+            "source": "using System.Text;\r\nusing System.Security.Cryptography;\r\npublic static class YanziAction\r\n{\r\n    public static Task<string> RunAsync(YanziActionContext context)\r\n    {\r\n        if (string.IsNullOrEmpty(context.InputText)) return Task.FromResult(\"\");\r\n        using (var md5 = MD5.Create())\r\n        {\r\n            var bytes = md5.ComputeHash(Encoding.UTF8.GetBytes(context.InputText));\r\n            var sb = new StringBuilder();\r\n            foreach (var b in bytes) sb.Append(b.ToString(\"x2\"));\r\n            return Task.FromResult(sb.ToString());\r\n        }\r\n    }\r\n}"
+          },
+          "icon": "mdi:key-variant"
+        }
+
+        模板 5：C# 原生独立窗口扩展 (native-window，使用 STA 线程启动窗口)
+        {
+          "id": "custom-dialog-tool",
+          "name": "简易弹窗工具",
+          "version": "0.1.0",
+          "category": "工具",
+          "description": "打开一个独立的原生 WPF 弹窗来输入文本。",
+          "keywords": ["dialog", "窗口"],
+          "runtime": "csharp",
+          "entryMode": "inline",
+          "uiMode": "native-window",
+          "script": {
+            "source": "using System.Threading;\r\nusing System.Windows;\r\nusing System.Windows.Controls;\r\npublic static class YanziAction\r\n{\r\n    public static Task<string> RunAsync(YanziActionContext context)\r\n    {\r\n        var tcs = new TaskCompletionSource<string>();\r\n        var thread = new Thread(() =>\r\n        {\r\n            var win = new Window\r\n            {\r\n                Title = \"信息录入\",\r\n                Width = 300,\r\n                Height = 180,\r\n                WindowStartupLocation = WindowStartupLocation.CenterScreen,\r\n                Background = System.Windows.Media.Brushes.DarkGray\r\n            };\r\n            var stack = new StackPanel { Margin = new Thickness(15) };\r\n            var txt = new TextBox { Height = 30, Margin = new Thickness(0, 10, 0, 10) };\r\n            var btn = new Button { Content = \"确认\", Height = 30 };\r\n            btn.Click += (s, e) => { tcs.SetResult(txt.Text); win.Close(); };\r\n            stack.Children.Add(new TextBlock { Text = \"请输入内容:\" });\r\n            stack.Children.Add(txt);\r\n            stack.Children.Add(btn);\r\n            win.Content = stack;\r\n            win.Closed += (s, e) => { tcs.TrySetResult(\"\"); };\r\n            win.ShowDialog();\r\n        });\r\n        thread.SetApartmentState(ApartmentState.STA);\r\n        thread.Start();\r\n        return tcs.Task;\r\n    }\r\n}"
+          },
+          "icon": "mdi:application-window"
+        }
+
+        模板 6：宿主内嵌 hostedViewXaml 卡片扩展
+        {
+          "id": "todo-workspace-card",
+          "name": "内嵌备忘录",
+          "version": "0.1.0",
+          "category": "工具",
+          "description": "宿主工作区内嵌备忘展示。",
+          "keywords": ["memo", "备忘录"],
+          "hostedViewXaml": {
+            "xaml": "<Border xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:oqh=\"clr-namespace:Yanzi\" BorderBrush=\"#33FFFFFF\" BorderThickness=\"1\" CornerRadius=\"8\" Padding=\"12\" Background=\"#1E1E1E\"><Grid><Grid.RowDefinitions><RowDefinition Height=\"Auto\"/><RowDefinition Height=\"*\"/></Grid.RowDefinitions><TextBlock Text=\"简易记事\" Foreground=\"#85b7eb\" FontWeight=\"Bold\"/><TextBox Grid.Row=\"1\" Margin=\"0,8,0,0\" Text=\"{Binding [note]}\" AcceptsReturn=\"True\" Background=\"#121212\" Foreground=\"White\" BorderThickness=\"0\"/><Button Grid.Row=\"0\" HorizontalAlignment=\"Right\" Content=\"关闭\" oqh:HostedViewBridge.Action=\"close\" Style=\"{StaticResource InlineLinkButtonStyle}\"/></Grid></Border>",
+            "state": {
+              "note": "临时的备忘内容，这里的数据双向绑定到 textbox"
+            },
+            "window": {
+              "width": 320,
+              "height": 240
+            }
+          },
+          "icon": "mdi:notebook-edit"
+        }
+
+        【注意】如果你调用了工具，系统会在后台真实执行，并在执行完成后将真实的结果反馈给你，之后你再根据执行结果来决定是继续调用工具还是输出最终的自然语言回复。
+        """;
+
     public static string SettingsPath =>
         HostAssets.ResolveDataFilePath("appsettings.local.json");
 
@@ -15,22 +159,41 @@ public static class AppSettingsStore
     {
         if (!File.Exists(SettingsPath))
         {
-            return Normalize(new AppSettings());
+            var defaults = Normalize(new AppSettings());
+            AiCredentialStore.ImportPlaintextAndHydrate(defaults);
+            return defaults;
         }
 
         try
         {
             var json = File.ReadAllText(SettingsPath);
-            return Normalize(JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings());
+            var settings = Normalize(JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings());
+            var migrated = AiCredentialStore.ImportPlaintextAndHydrate(settings);
+            if (migrated)
+            {
+                WriteSanitizedSettings(settings);
+            }
+            return settings;
         }
         catch
         {
-            return Normalize(new AppSettings());
+            var defaults = Normalize(new AppSettings());
+            AiCredentialStore.ImportPlaintextAndHydrate(defaults);
+            return defaults;
         }
     }
 
     public static void Save(AppSettings settings)
     {
+        settings = Normalize(settings);
+        AiCredentialStore.Capture(settings);
+        WriteSanitizedSettings(settings);
+        HostAssets.AppendLog($"[AppSettingsStore] Saved settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
+    }
+
+    private static void WriteSanitizedSettings(AppSettings settings)
+    {
+        AiCredentialStore.RemovePlaintext(settings);
         var json = JsonSerializer.Serialize(settings, JsonOptions);
         File.WriteAllText(SettingsPath, json);
     }
@@ -78,56 +241,41 @@ public static class AppSettingsStore
             });
         }
 
-        foreach (var group in settings.QuickPanelGlobalGroups.Concat(settings.QuickPanelContextGroups))
+        if (settings.QuickPanelGlobalRowCount <= 0)
         {
-            group.Id = string.IsNullOrWhiteSpace(group.Id) ? Guid.NewGuid().ToString("N") : group.Id;
-            group.Name = string.IsNullOrWhiteSpace(group.Name) ? "未命名" : group.Name.Trim();
-            group.ContextProcessName = group.ContextProcessName?.Trim();
-            group.ContextDisplayName = group.ContextDisplayName?.Trim();
-            group.Slots ??= [];
-            group.SlotItems ??= [];
-            while (group.Slots.Count < 12)
-            {
-                group.Slots.Add(null);
-            }
-            if (group.Slots.Count > 12)
-            {
-                group.Slots = group.Slots.Take(12).ToList();
-            }
-
-            if (group.SlotItems.Count == 0)
-            {
-                group.SlotItems = group.Slots
-                    .Take(12)
-                    .Select(static slot => string.IsNullOrWhiteSpace(slot)
-                        ? null
-                        : new QuickPanelSlotItem { ExtensionId = slot })
-                    .ToList();
-            }
-
-            while (group.SlotItems.Count < 12)
-            {
-                group.SlotItems.Add(null);
-            }
-
-            if (group.SlotItems.Count > 12)
-            {
-                group.SlotItems = group.SlotItems.Take(12).ToList();
-            }
-
-            for (var index = 0; index < group.SlotItems.Count; index++)
-            {
-                group.SlotItems[index] = NormalizeSlotItem(group.SlotItems[index]);
-            }
-
-            group.Slots = ProjectLegacySlots(group.SlotItems);
+            settings.QuickPanelGlobalRowCount = settings.QuickPanelRowCount > 0 ? settings.QuickPanelRowCount : 3;
         }
+        if (settings.QuickPanelGlobalColumnCount <= 0)
+        {
+            settings.QuickPanelGlobalColumnCount = 4;
+        }
+        if (settings.QuickPanelContextRowCount <= 0)
+        {
+            settings.QuickPanelContextRowCount = settings.QuickPanelRowCount > 0 ? settings.QuickPanelRowCount : 3;
+        }
+        if (settings.QuickPanelContextColumnCount <= 0)
+        {
+            settings.QuickPanelContextColumnCount = 4;
+        }
+
+        settings.QuickPanelGlobalRowCount = Math.Max(1, Math.Min(8, settings.QuickPanelGlobalRowCount));
+        settings.QuickPanelGlobalColumnCount = Math.Max(3, Math.Min(8, settings.QuickPanelGlobalColumnCount));
+        settings.QuickPanelContextRowCount = Math.Max(1, Math.Min(8, settings.QuickPanelContextRowCount));
+        settings.QuickPanelContextColumnCount = Math.Max(3, Math.Min(8, settings.QuickPanelContextColumnCount));
+
+        var globalSlotCount = settings.QuickPanelGlobalRowCount * settings.QuickPanelGlobalColumnCount;
+        var contextSlotCount = settings.QuickPanelContextRowCount * settings.QuickPanelContextColumnCount;
+
+        NormalizeGroupList(settings.QuickPanelGlobalGroups, globalSlotCount);
+        NormalizeGroupList(settings.QuickPanelContextGroups, contextSlotCount);
 
         settings.GlobalFavoriteExtensionIds ??= settings.FavoriteExtensionIds?.ToList() ?? [];
         settings.ContextFavoriteExtensionIds ??= [];
         settings.DisabledExtensionIds ??= [];
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
+        settings.CompletedQuestIds ??= [];
+        settings.UnlockedBadges ??= [];
         settings.YarnSelect ??= new YarnSelectSettings();
         settings.YarnSelect.WhitelistedProcesses ??= [];
         settings.YarnSelect.BlacklistedProcesses ??= [];
@@ -159,7 +307,7 @@ public static class AppSettingsStore
             settings.RadialMenu.Pages.Add(new RadialMenuPageSettings
             {
                 Id = "default",
-                Name = "默认",
+                Name = "全局",
                 Slots = settings.RadialMenu.Slots?.ToList() ?? Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList()
             });
         }
@@ -168,6 +316,11 @@ public static class AppSettingsStore
         {
             page.Id = string.IsNullOrWhiteSpace(page.Id) ? Guid.NewGuid().ToString("N") : page.Id.Trim();
             page.Name = string.IsNullOrWhiteSpace(page.Name) ? "未命名" : page.Name.Trim();
+            if (page.Id.Equals("default", StringComparison.OrdinalIgnoreCase) && 
+                (page.Name == "默认" || page.Name == "办公" || page.Name == "燕环"))
+            {
+                page.Name = "全局";
+            }
             page.Slots ??= [];
             while (page.Slots.Count < RadialMenuSettings.TotalSlotCount)
             {
@@ -217,6 +370,7 @@ public static class AppSettingsStore
             : settings.RadialMenu.Pages[0].Id;
         settings.RadialMenu.ActivationKey = RadialActivationKeys.Normalize(settings.RadialMenu.ActivationKey);
         settings.RadialMenu.CustomShortcut = (settings.RadialMenu.CustomShortcut ?? string.Empty).Trim();
+        settings.GlobalServiceBlacklistedProcesses = NormalizeProcessList(settings.GlobalServiceBlacklistedProcesses);
         settings.RadialMenu.WhitelistedProcesses = NormalizeProcessList(settings.RadialMenu.WhitelistedProcesses);
         settings.RadialMenu.BlacklistedProcesses = NormalizeProcessList(settings.RadialMenu.BlacklistedProcesses);
         settings.RadialMenu.Slots = settings.RadialMenu.Pages[0].Slots.ToList();
@@ -225,8 +379,8 @@ public static class AppSettingsStore
         settings.RadialMenu.DragThresholdPixels = Math.Clamp(settings.RadialMenu.DragThresholdPixels, 8, 120);
         settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
         settings.QuickPanelMouseTriggers.LongPressMilliseconds =
-            (settings.QuickPanelMouseTriggers.LongPressMilliseconds == 120 || settings.QuickPanelMouseTriggers.LongPressMilliseconds == 500)
-                ? 350
+            (settings.QuickPanelMouseTriggers.LongPressMilliseconds == 120 || settings.QuickPanelMouseTriggers.LongPressMilliseconds == 500 || settings.QuickPanelMouseTriggers.LongPressMilliseconds == 350)
+                ? 250
                 : Math.Clamp(settings.QuickPanelMouseTriggers.LongPressMilliseconds, 50, 1500);
         settings.QuickPanelMouseTriggers.DragThresholdPixels = Math.Clamp(settings.QuickPanelMouseTriggers.DragThresholdPixels, 8, 120);
         settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode);
@@ -296,10 +450,19 @@ public static class AppSettingsStore
         settings.PersonalSync.WebDav.Username = settings.PersonalSync.WebDav.Username?.Trim() ?? string.Empty;
         settings.PersonalSync.WebDav.PathPrefix = string.IsNullOrWhiteSpace(settings.PersonalSync.WebDav.PathPrefix) ? "/yanzi" : settings.PersonalSync.WebDav.PathPrefix.Trim();
 
-        if (hasLegacyWebDavConfig &&
-            (settings.PersonalSync.Provider == PersonalSyncProviders.None ||
-             string.IsNullOrWhiteSpace(settings.PersonalSync.WebDav.Username)))
+        var shouldAdoptLegacyWebDavConfig =
+            hasLegacyWebDavConfig &&
+            settings.PersonalSync.Provider == PersonalSyncProviders.None;
+        if (shouldAdoptLegacyWebDavConfig)
         {
+            CloudSyncDiagnostics.Log(
+                "AppSettingsStore",
+                "Adopting legacy WebDAV config into personal sync settings",
+                ("providerBefore", settings.PersonalSync.Provider),
+                ("enableWebDavSync", settings.EnableWebDavSync),
+                ("webDavUrl", settings.WebDavServerUrl),
+                ("webDavRootPath", settings.WebDavRootPath),
+                ("webDavUsername", settings.WebDavUsername));
             settings.PersonalSync.Provider = PersonalSyncProviders.WebDav;
             settings.PersonalSync.Enabled = settings.EnableWebDavSync;
             settings.PersonalSync.WebDav.Url = string.IsNullOrWhiteSpace(settings.WebDavServerUrl)
@@ -330,6 +493,27 @@ public static class AppSettingsStore
         settings.AiBaseUrl = settings.AiBaseUrl?.Trim() ?? string.Empty;
         settings.AiApiKey = settings.AiApiKey?.Trim() ?? string.Empty;
         settings.AiModel = settings.AiModel?.Trim() ?? string.Empty;
+        settings.AiSystemPrompt = string.IsNullOrWhiteSpace(settings.AiSystemPrompt)
+            ? DefaultAiSystemPrompt
+            : settings.AiSystemPrompt.Trim();
+
+        settings.AiServiceProviders ??= [];
+        if (settings.AiServiceProviders.Count == 0)
+        {
+            var defaultProvider = new AiServiceProviderSettings
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "默认提供商",
+                ProviderType = "OpenAI",
+                BaseUrl = settings.AiBaseUrl,
+                ApiKey = settings.AiApiKey,
+                IsEnabled = true,
+                Models = string.IsNullOrWhiteSpace(settings.AiModel) ? [] : new List<string> { settings.AiModel },
+                SelectedModel = settings.AiModel
+            };
+            settings.AiServiceProviders.Add(defaultProvider);
+            settings.ActiveServiceProviderId = defaultProvider.Id;
+        }
         settings.Yanm ??= new YanmSettings();
         settings.Yanm.Components ??= [];
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -354,9 +538,12 @@ public static class AppSettingsStore
             settings.Yanm.DefaultComponentVersion = YanmSettings.CurrentDefaultComponentVersion;
         }
 
+        NormalizeDefaultYanmComponentIds(settings.Yanm);
+
+        var yanmComponentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var component in settings.Yanm.Components)
         {
-            component.Id = string.IsNullOrWhiteSpace(component.Id) ? Guid.NewGuid().ToString("N") : component.Id;
+            component.Id = NormalizeYanmComponentId(component.Id, yanmComponentIds);
             component.Title = string.IsNullOrWhiteSpace(component.Title) ? "燕幕组件" : component.Title.Trim();
             component.X = Math.Max(0, component.X);
             component.Y = Math.Max(0, component.Y);
@@ -384,7 +571,104 @@ public static class AppSettingsStore
         settings.LastAutoBackupTime = (settings.LastAutoBackupTime ?? string.Empty).Trim();
         settings.CustomBackupDirectory = (settings.CustomBackupDirectory ?? string.Empty).Trim();
 
+        settings.SearchScopeConfigs ??= [];
+        var defaultList = new List<(string Key, string Label)>
+        {
+            ("all", "全部"),
+            ("extension", "扩展"),
+            ("application", "应用"),
+            ("file", "文件"),
+            ("system", "系统"),
+            ("yanyu", "燕语"),
+            ("ai", "AI对话"),
+            ("store", "扩展商店")
+        };
+
+        foreach (var def in defaultList)
+        {
+            if (!settings.SearchScopeConfigs.Any(c => string.Equals(c.Key, def.Key, StringComparison.OrdinalIgnoreCase)))
+            {
+                settings.SearchScopeConfigs.Add(new SearchScopeConfigItem { Key = def.Key, Label = def.Label, IsVisible = true, IsPinned = false });
+            }
+        }
+
+        settings.PinnedSearchScopeCommandIds ??= [];
+        foreach (var id in settings.PinnedSearchScopeCommandIds)
+        {
+            var key = $"pinned_{id}";
+            if (!settings.SearchScopeConfigs.Any(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase)))
+            {
+                settings.SearchScopeConfigs.Add(new SearchScopeConfigItem { Key = key, Label = $"固定:{id}", IsVisible = true, IsPinned = true });
+            }
+        }
+
+        settings.SearchScopeConfigs.RemoveAll(c => c.IsPinned && !settings.PinnedSearchScopeCommandIds.Contains(c.Key.Replace("pinned_", ""), StringComparer.OrdinalIgnoreCase));
+
         return settings;
+    }
+
+    private static void NormalizeDefaultYanmComponentIds(YanmSettings yanm)
+    {
+        if (yanm.Components.Count == 0)
+        {
+            return;
+        }
+
+        var usedIds = yanm.Components
+            .Where(static component => !string.IsNullOrWhiteSpace(component.Id))
+            .Select(static component => component.Id.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var component in yanm.Components)
+        {
+            if (!YanmComponentSettings.TryGetDefaultComponentId(component.Title, out var stableId))
+            {
+                continue;
+            }
+
+            var currentId = component.Id?.Trim() ?? string.Empty;
+            if (string.Equals(currentId, stableId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (usedIds.Contains(stableId))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(currentId) &&
+                yanm.ComponentState.TryGetValue(currentId, out var state) &&
+                !yanm.ComponentState.ContainsKey(stableId))
+            {
+                yanm.ComponentState[stableId] = state;
+                yanm.ComponentState.Remove(currentId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(currentId))
+            {
+                usedIds.Remove(currentId);
+            }
+
+            component.Id = stableId;
+            usedIds.Add(stableId);
+        }
+    }
+
+    private static string NormalizeYanmComponentId(string? id, HashSet<string> usedIds)
+    {
+        var normalized = id?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized) || usedIds.Contains(normalized))
+        {
+            do
+            {
+                normalized = YanmComponentSettings.CreateSystemComponentId();
+            }
+            while (usedIds.Contains(normalized));
+        }
+
+        usedIds.Add(normalized);
+        return normalized;
     }
 
     private static QuickPanelSlotItem? NormalizeSlotItem(QuickPanelSlotItem? item)
@@ -452,6 +736,54 @@ public static class AppSettingsStore
         }
 
         return result;
+    }
+
+    private static void NormalizeGroupList(List<QuickPanelGroupSettings> groups, int slotCount)
+    {
+        foreach (var group in groups)
+        {
+            group.Id = string.IsNullOrWhiteSpace(group.Id) ? Guid.NewGuid().ToString("N") : group.Id;
+            group.Name = string.IsNullOrWhiteSpace(group.Name) ? "未命名" : group.Name.Trim();
+            group.ContextProcessName = group.ContextProcessName?.Trim();
+            group.ContextDisplayName = group.ContextDisplayName?.Trim();
+            group.Slots ??= [];
+            group.SlotItems ??= [];
+            while (group.Slots.Count < slotCount)
+            {
+                group.Slots.Add(null);
+            }
+            if (group.Slots.Count > slotCount)
+            {
+                group.Slots = group.Slots.Take(slotCount).ToList();
+            }
+
+            if (group.SlotItems.Count == 0)
+            {
+                group.SlotItems = group.Slots
+                    .Take(slotCount)
+                    .Select(static slot => string.IsNullOrWhiteSpace(slot)
+                        ? null
+                        : new QuickPanelSlotItem { ExtensionId = slot })
+                    .ToList();
+            }
+
+            while (group.SlotItems.Count < slotCount)
+            {
+                group.SlotItems.Add(null);
+            }
+
+            if (group.SlotItems.Count > slotCount)
+            {
+                group.SlotItems = group.SlotItems.Take(slotCount).ToList();
+            }
+
+            for (var index = 0; index < group.SlotItems.Count; index++)
+            {
+                group.SlotItems[index] = NormalizeSlotItem(group.SlotItems[index]);
+            }
+
+            group.Slots = ProjectLegacySlots(group.SlotItems);
+        }
     }
 
     private static bool HasWebDavConfigValues(string? serverUrl, string? rootPath, string? username)
@@ -548,6 +880,8 @@ public sealed record AppSettings
 
     public bool RefreshCloudOnStartup { get; set; } = true;
 
+    public bool ShowBlindOperationGuide { get; set; } = true;
+
     public bool CloseToTray { get; set; } = true;
 
     public bool EnableAutoUpdate { get; set; } = true;
@@ -560,6 +894,16 @@ public sealed record AppSettings
 
     public List<string?> QuickPanelSlots { get; set; } = Enumerable.Repeat<string?>(null, 28).ToList();
 
+    public int QuickPanelRowCount { get; set; } = 3;
+
+    public int QuickPanelGlobalRowCount { get; set; } = 3;
+
+    public int QuickPanelGlobalColumnCount { get; set; } = 4;
+
+    public int QuickPanelContextRowCount { get; set; } = 3;
+
+    public int QuickPanelContextColumnCount { get; set; } = 4;
+
     public List<QuickPanelGroupSettings> QuickPanelGlobalGroups { get; set; } = [];
 
     public List<QuickPanelGroupSettings> QuickPanelContextGroups { get; set; } = [];
@@ -570,9 +914,13 @@ public sealed record AppSettings
 
     public string QuickPanelTrigger { get; set; } = "MiddleButtonLongPress";
 
-    public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
+        public List<MouseGestureAppBinding> MouseGestureAppBindings { get; set; } = new();
+public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
 
-    public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.RightDrag;
+    public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.None;
+    public bool MouseGestureEnableWheelActions { get; set; } = true;
+    public bool MouseGestureEnableRockerActions { get; set; } = true;
+    public List<string> MouseGestureBlacklistedProcesses { get; set; } = [];
 
     public YarnSelectSettings YarnSelect { get; set; } = new();
 
@@ -588,9 +936,19 @@ public sealed record AppSettings
 
     public List<string> PinnedSearchScopeCommandIds { get; set; } = new();
 
+    public List<SearchScopeConfigItem> SearchScopeConfigs { get; set; } = new();
+
     public List<string> RecentlyAddedExtensionIds { get; set; } = new();
 
     public List<string> UnreadNewExtensionIds { get; set; } = new();
+
+    public int AchievementPoints { get; set; } = 0;
+
+    public bool HasOpenedBackpack { get; set; } = false;
+
+    public List<string> CompletedQuestIds { get; set; } = new();
+
+    public List<string> UnlockedBadges { get; set; } = new();
 
     public bool EnableAgentApi { get; set; } = true;
 
@@ -601,6 +959,12 @@ public sealed record AppSettings
     public string WanPushUuid { get; set; } = System.Guid.NewGuid().ToString("N");
 
     public bool EnableLanSync { get; set; } = false;
+
+    public bool EnableBrowserHelper { get; set; } = true;
+
+    public bool EnableWanPush { get; set; } = false;
+
+    public bool EnableEverything { get; set; } = true;
 
     public PersonalSyncSettings PersonalSync { get; set; } = new();
 
@@ -624,6 +988,12 @@ public sealed record AppSettings
 
     public string AiModel { get; set; } = string.Empty;
 
+    public string AiSystemPrompt { get; set; } = string.Empty;
+
+    public List<AiServiceProviderSettings> AiServiceProviders { get; set; } = [];
+
+    public string ActiveServiceProviderId { get; set; } = string.Empty;
+
     public List<AppEnvironmentVariableSettings> EnvironmentVariables { get; set; } = [];
 
     public List<YanyuRuleSettings> YanyuRules { get; set; } = [];
@@ -644,6 +1014,8 @@ public sealed record AppSettings
 
     public string LauncherConfigUpdatedAtUtc { get; set; } = string.Empty;
 
+    public string YanmStateUpdatedAtUtc { get; set; } = string.Empty;
+
     public double? SettingsWindowLeft { get; set; }
 
     public double? SettingsWindowTop { get; set; }
@@ -653,6 +1025,12 @@ public sealed record AppSettings
     public double? SettingsWindowHeight { get; set; }
 
     public string LastTestArgument { get; set; } = "示例参数";
+
+    public string MobileExtensionsJson { get; set; } = "[]";
+
+    public List<string> GlobalServiceBlacklistedProcesses { get; set; } = [];
+
+    public System.Collections.Generic.Dictionary<string, string> ProcessExecutablePaths { get; set; } = new();
 }
 
 public sealed class WindowSnapAssistCustomLayoutSettings
@@ -668,6 +1046,14 @@ public sealed class WindowSnapAssistCustomLayoutSettings
     public double WidthRatio { get; set; }
 
     public double HeightRatio { get; set; }
+}
+
+public sealed class SearchScopeConfigItem
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public bool IsVisible { get; set; } = true;
+    public bool IsPinned { get; set; } = false;
 }
 
 public sealed class QuickPanelGroupSettings
@@ -712,13 +1098,15 @@ public sealed record QuickPanelMouseTriggerSettings
 
     public bool CtrlLeftClick { get; set; } = false;
 
+    public bool CtrlLeftDrag { get; set; } = false;
+
     public bool CtrlRightClick { get; set; } = false;
     
     public bool CtrlMiddleClick { get; set; } = false;
 
-    public bool MiddleButtonLongPress { get; set; } = true;
+    public bool MiddleButtonLongPress { get; set; } = false;
 
-    public bool RightButtonLongPress { get; set; } = false;
+    public bool RightButtonLongPress { get; set; } = true;
 
     public bool RightButtonDrag { get; set; } = false;
 
@@ -730,9 +1118,18 @@ public sealed record QuickPanelMouseTriggerSettings
 
     public bool ExecuteOnButtonRelease { get; set; } = true;
 
-    public int LongPressMilliseconds { get; set; } = 350;
+    public int LongPressMilliseconds { get; set; } = 250;
 
     public int DragThresholdPixels { get; set; } = 26;
+}
+
+public sealed class MouseGestureAppBinding
+{
+    public string Sequence { get; set; } = string.Empty;
+    public string AppPath { get; set; } = string.Empty;
+    public string AppName { get; set; } = string.Empty;
+    public string? ExtensionId { get; set; }
+    public bool IsBlacklist { get; set; }
 }
 
 public sealed class YarnSelectSettings
@@ -797,14 +1194,21 @@ public sealed class YarnSelectSettings
             return string.Empty;
         }
 
-        return key.ToLowerInvariant() switch
+        var lower = key.ToLowerInvariant();
+        if (lower.StartsWith("right", StringComparison.Ordinal) || lower == "右键")
         {
-            "right" or "右键" => "Right",
-            "x1" or "侧键1" => "X1",
-            "x2" or "侧键2" => "X2",
-            _ when key.Length == 1 => key.ToUpperInvariant(),
-            _ => key.ToUpperInvariant()
-        };
+            return "Right";
+        }
+        if (lower.StartsWith("x1", StringComparison.Ordinal) || lower == "侧键1")
+        {
+            return "X1";
+        }
+        if (lower.StartsWith("x2", StringComparison.Ordinal) || lower == "侧键2")
+        {
+            return "X2";
+        }
+
+        return key.Length == 1 ? key.ToUpperInvariant() : key;
     }
 }
 
@@ -812,11 +1216,13 @@ public sealed class RadialMenuSettings
 {
     public const int InnerSlotCount = 8;
 
-    public const int OuterSlotCount = 16;
+    public const int MiddleSlotCount = 16;
 
-    public const int TotalSlotCount = InnerSlotCount + OuterSlotCount;
+    public const int OuterSlotCount = 8;
 
-    public bool Enabled { get; set; } = false;
+    public const int TotalSlotCount = InnerSlotCount + MiddleSlotCount + OuterSlotCount;
+
+    public bool Enabled { get; set; } = true;
 
     public bool TriggerRightButtonDrag { get; set; } = true;
 
@@ -835,6 +1241,8 @@ public sealed class RadialMenuSettings
     public bool TriggerHorizontalWheel { get; set; } = false;
     
     public bool TriggerCtrlLeftClick { get; set; } = false;
+    
+    public bool TriggerCtrlLeftDrag { get; set; } = false;
     
     public bool TriggerCtrlRightClick { get; set; } = false;
     
@@ -863,6 +1271,115 @@ public sealed class RadialMenuSettings
     public string SelectedPageId { get; set; } = "default";
 
     public List<RadialMenuPageSettings> Pages { get; set; } = [];
+
+    public HashSet<string> GetChildPageIdsSet()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Pages == null) return set;
+        foreach (var page in Pages)
+        {
+            if (page.ChildPageIds == null) continue;
+            foreach (var childId in page.ChildPageIds)
+            {
+                if (!string.IsNullOrWhiteSpace(childId) && !string.Equals(childId, page.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    set.Add(childId);
+                }
+            }
+        }
+        return set;
+    }
+
+    /// <summary>
+    /// 递归收集指定根页面及其所有层级的后代子环页面 ID
+    /// </summary>
+    public HashSet<string> CollectPageAndDescendantIds(string rootPageId)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(rootPageId) || Pages == null)
+        {
+            return result;
+        }
+
+        var stack = new Stack<string>();
+        stack.Push(rootPageId.Trim());
+        while (stack.Count > 0)
+        {
+            var pageId = stack.Pop();
+            if (!result.Add(pageId))
+            {
+                continue;
+            }
+
+            var page = Pages.FirstOrDefault(p => p.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
+            if (page?.ChildPageIds == null)
+            {
+                continue;
+            }
+
+            foreach (var childId in page.ChildPageIds)
+            {
+                if (!string.IsNullOrWhiteSpace(childId) && !string.Equals(childId, page.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    stack.Push(childId.Trim());
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 级联删除页面及其所有后代子环，并清理剩余所有槽位中的子环引用
+    /// </summary>
+    public HashSet<string> CascadeDeletePages(IEnumerable<string> rootPageIdsToDelete)
+    {
+        var allIdsToDelete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Pages == null)
+        {
+            return allIdsToDelete;
+        }
+
+        foreach (var rootId in rootPageIdsToDelete)
+        {
+            var tree = CollectPageAndDescendantIds(rootId);
+            foreach (var id in tree)
+            {
+                allIdsToDelete.Add(id);
+            }
+        }
+
+        if (allIdsToDelete.Count == 0)
+        {
+            return allIdsToDelete;
+        }
+
+        // 1. 批量移除所有目标页面与其深层子环页面
+        Pages.RemoveAll(p => allIdsToDelete.Contains(p.Id));
+
+        // 2. 清理剩余页面槽位中对已删除页面的子环引用
+        foreach (var page in Pages)
+        {
+            if (page.ChildPageIds == null) continue;
+            for (int i = 0; i < page.ChildPageIds.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(page.ChildPageIds[i]) && allIdsToDelete.Contains(page.ChildPageIds[i]!))
+                {
+                    page.ChildPageIds[i] = null;
+                }
+            }
+        }
+
+        // 3. 如果当前选中的页面被删除了，重新选定一个合法的顶层页面
+        if (allIdsToDelete.Contains(SelectedPageId))
+        {
+            var childPageIdsSet = GetChildPageIdsSet();
+            var topLevelPages = Pages.Where(p => !childPageIdsSet.Contains(p.Id)).ToList();
+            SelectedPageId = topLevelPages.FirstOrDefault()?.Id ?? Pages.FirstOrDefault()?.Id ?? "default";
+        }
+
+        return allIdsToDelete;
+    }
 }
 
 public static class RadialActivationKeys
@@ -896,6 +1413,10 @@ public sealed class RadialMenuPageSettings
     public List<string?> SlotTitles { get; set; } = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList();
 
     public List<string?> ChildPageIds { get; set; } = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList();
+
+    public string? ContextProcessName { get; set; }
+
+    public string? ContextDisplayName { get; set; }
 }
 
 public sealed class YanmSettings
@@ -933,6 +1454,8 @@ public sealed class YanmSettings
     public bool TriggerHorizontalWheel { get; set; } = false;
     
     public bool TriggerCtrlLeftClick { get; set; } = false;
+
+    public bool TriggerCtrlLeftDrag { get; set; } = false;
     
     public bool TriggerCtrlRightClick { get; set; } = false;
     
@@ -983,6 +1506,7 @@ public static class MouseTriggerModes
     public const string X1Down = "X1Down";
     public const string X2Down = "X2Down";
     public const string CtrlLeftClick = "CtrlLeftClick";
+    public const string CtrlLeftDrag = "CtrlLeftDrag";
     public const string CtrlRightClick = "CtrlRightClick";
     public const string CtrlMiddleClick = "CtrlMiddleClick";
     public const string MiddleLongPress = "MiddleLongPress";
@@ -999,6 +1523,7 @@ public static class MouseTriggerModes
             X1Down => X1Down,
             X2Down => X2Down,
             CtrlLeftClick => CtrlLeftClick,
+            CtrlLeftDrag => CtrlLeftDrag,
             CtrlRightClick => CtrlRightClick,
             CtrlMiddleClick => CtrlMiddleClick,
             MiddleLongPress => MiddleLongPress,
@@ -1016,6 +1541,7 @@ public static class MouseGestureTriggerModes
     public const string None = "None";
     public const string RightDrag = "RightDrag";
     public const string MiddleDrag = "MiddleDrag";
+    public const string CtrlLeftDrag = "CtrlLeftDrag";
 
     public static string Normalize(string? value)
     {
@@ -1023,8 +1549,10 @@ public static class MouseGestureTriggerModes
         {
             RightDrag => RightDrag,
             MiddleDrag => MiddleDrag,
+            CtrlLeftDrag => CtrlLeftDrag,
             "right-drag" => RightDrag,
             "middle-drag" => MiddleDrag,
+            "ctrl-left-drag" => CtrlLeftDrag,
             _ => None
         };
     }
@@ -1035,21 +1563,56 @@ public static class MouseGestureTriggerModes
         {
             MiddleDrag => "middle-drag",
             RightDrag => "right-drag",
+            CtrlLeftDrag => "ctrl-left-drag",
             _ => string.Empty
         };
     }
 
     public static string FromRuntimeTrigger(string? value)
     {
-        return (value ?? string.Empty).Trim().Equals("middle-drag", StringComparison.OrdinalIgnoreCase)
-            ? MiddleDrag
-            : RightDrag;
+        var trimmed = (value ?? string.Empty).Trim();
+        if (trimmed.Equals("middle-drag", StringComparison.OrdinalIgnoreCase))
+        {
+            return MiddleDrag;
+        }
+        if (trimmed.Equals("ctrl-left-drag", StringComparison.OrdinalIgnoreCase))
+        {
+            return CtrlLeftDrag;
+        }
+        return RightDrag;
     }
 }
 
 public sealed class YanmComponentSettings
 {
-    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public const string ProductivityOverviewId = "cmp_default_productivity_overview";
+    public const string ProductivityTodoId = "cmp_default_productivity_todo";
+    public const string ProductivityBookmarksId = "cmp_default_productivity_bookmarks";
+    public const string ProductivityFocusId = "cmp_default_productivity_focus";
+    public const string ProductivityCalendarId = "cmp_default_productivity_calendar";
+    public const string ProductivityAppLauncherId = "cmp_default_productivity_app_launcher";
+    public const string ProductivityHabitsId = "cmp_default_productivity_habits";
+    public const string ProductivityDesktopId = "cmp_default_productivity_desktop";
+    public const string ProductivityMoodWaterId = "cmp_default_productivity_mood_water";
+    public const string ProductivityNoteId = "cmp_default_productivity_note";
+    public const string ProductivitySystemId = "cmp_default_productivity_system";
+
+    private static readonly Dictionary<string, string> DefaultComponentIdsByTitle = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["效率概览"] = ProductivityOverviewId,
+        ["待办事项"] = ProductivityTodoId,
+        ["快速书签"] = ProductivityBookmarksId,
+        ["番茄专注"] = ProductivityFocusId,
+        ["日历"] = ProductivityCalendarId,
+        ["应用启动台"] = ProductivityAppLauncherId,
+        ["习惯打卡"] = ProductivityHabitsId,
+        ["桌面文件"] = ProductivityDesktopId,
+        ["心情喝水"] = ProductivityMoodWaterId,
+        ["便签"] = ProductivityNoteId,
+        ["系统状态"] = ProductivitySystemId
+    };
+
+    public string Id { get; set; } = CreateSystemComponentId();
 
     public string Title { get; set; } = "燕幕组件";
 
@@ -1069,12 +1632,27 @@ public sealed class YanmComponentSettings
 
     public int RefreshIntervalSeconds { get; set; } = 300;
 
+    public static string CreateSystemComponentId() => $"cmp_{Guid.NewGuid():N}";
+
+    public static bool TryGetDefaultComponentId(string? title, out string id)
+    {
+        if (DefaultComponentIdsByTitle.TryGetValue((title ?? string.Empty).Trim(), out var value))
+        {
+            id = value;
+            return true;
+        }
+
+        id = string.Empty;
+        return false;
+    }
+
     public static List<YanmComponentSettings> CreateDefaultComponents()
     {
         return
         [
             new YanmComponentSettings
             {
+                Id = ProductivityOverviewId,
                 Title = "效率概览",
                 X = 70,
                 Y = 90,
@@ -1084,6 +1662,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityTodoId,
                 Title = "待办事项",
                 X = 450,
                 Y = 90,
@@ -1093,6 +1672,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityBookmarksId,
                 Title = "快速书签",
                 X = 950,
                 Y = 90,
@@ -1102,6 +1682,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityFocusId,
                 Title = "番茄专注",
                 X = 70,
                 Y = 320,
@@ -1111,6 +1692,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityCalendarId,
                 Title = "日历",
                 X = 450,
                 Y = 360,
@@ -1120,6 +1702,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityAppLauncherId,
                 Title = "应用启动台",
                 X = 695,
                 Y = 360,
@@ -1129,6 +1712,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityHabitsId,
                 Title = "习惯打卡",
                 X = 450,
                 Y = 640,
@@ -1138,6 +1722,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityDesktopId,
                 Title = "桌面文件",
                 X = 950,
                 Y = 360,
@@ -1147,6 +1732,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityMoodWaterId,
                 Title = "心情喝水",
                 X = 70,
                 Y = 530,
@@ -1156,6 +1742,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivityNoteId,
                 Title = "便签",
                 X = 70,
                 Y = 710,
@@ -1165,6 +1752,7 @@ public sealed class YanmComponentSettings
             },
             new YanmComponentSettings
             {
+                Id = ProductivitySystemId,
                 Title = "系统状态",
                 X = 950,
                 Y = 690,
@@ -1313,6 +1901,13 @@ public sealed class YanmComponentSettings
   function render(){var list=document.getElementById('list');list.innerHTML='';var open=0;todos.forEach(function(item,i){if(!item.done)open++;var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;cursor:pointer';row.onmouseenter=function(){row.style.background='rgba(255,255,255,.05)'};row.onmouseleave=function(){row.style.background='transparent'};row.innerHTML='<span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:'+dot(item)+';border:'+(item.done||item.hot?'0':'1.5px solid rgba(255,255,255,.2)')+'"></span><span style="font-size:13px;flex:1;color:'+(item.done?'rgba(255,255,255,.25)':'rgba(255,255,255,.8)')+';text-decoration:'+(item.done?'line-through':'none')+'">'+item.text+'</span><span style="font-size:10px;color:'+(item.hot?'#ef9f27':'rgba(255,255,255,.25)')+'">'+(item.due||'')+'</span>';row.onclick=function(){item.done=!item.done;save();};list.appendChild(row);});document.getElementById('count').textContent=open+' 项';document.getElementById('sync').textContent=hostLoaded?'已接入宿主同步':'本机缓存';}
   function add(){var input=document.getElementById('input');var v=input.value.trim();if(!v){input.focus();return;}todos.unshift({text:v,done:false,due:'今天'});input.value='';save();input.focus();}
   function request(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.get',{key:key}).then(function(res){var v=res&&res.value;if(v){try{todos=JSON.parse(v)||todos;hostLoaded=true;local();}catch(e){}}render();}).catch(render);return true;}return false;}
+  window.addEventListener('yanm:message', function(e) {
+    var d = e.detail || {};
+    if (d.type === 'host.state' && d.key === key && Object.prototype.hasOwnProperty.call(d, 'value')) {
+      var v = String(d.value || '');
+      if (v) { try { todos = JSON.parse(v) || todos; hostLoaded = true; local(); render(); } catch(err){} }
+    }
+  });
   load();render();document.getElementById('add').onclick=add;document.getElementById('clear').onclick=function(){todos=todos.filter(function(x){return !x.done});save();};document.getElementById('input').onkeydown=function(e){if(e.key==='Enter')add();};if(!request())setTimeout(request,300);
 })();
 </script>
@@ -1356,6 +1951,7 @@ document.getElementById('toggle').onclick=function(){running=!running;if(running
 function renderMood(){var labels=['😫','😕','😐','😊','😄'], box=document.getElementById('moods');box.innerHTML='';labels.forEach(function(x,i){var b=document.createElement('button');b.textContent=x;b.style.cssText='width:32px;height:28px;border-radius:7px;border:'+(state.mood===i?'.5px solid rgba(99,153,34,.4)':'0')+';background:'+(state.mood===i?'rgba(99,153,34,.2)':'rgba(255,255,255,.05)')+';font-size:15px';b.onclick=function(){state.mood=i;persist();renderMood();};box.appendChild(b);});document.getElementById('moodLog').textContent='今天已记录';}
 function renderWater(){var box=document.getElementById('water');box.innerHTML='';for(var i=0;i<8;i++){var d=document.createElement('div');d.style.cssText='width:20px;height:22px;border-radius:3px;border:.5px solid rgba(55,138,221,.25);background:'+(i<state.water?'rgba(55,138,221,.25)':'rgba(255,255,255,.03)')+';cursor:pointer';(function(idx){d.onclick=function(){state.water=idx+1;persist();renderWater();};})(i);box.appendChild(d);}document.getElementById('waterTxt').textContent='已喝 '+state.water+' / 8 杯';}
 function request(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.get',{key:key}).then(function(res){if(res&&res.value){try{state=JSON.parse(res.value)||state;}catch(e){}}renderMood();renderWater();});}}
+window.addEventListener('yanm:message',function(e){var d=e.detail||{};if(d.type==='host.state'&&d.key===key&&Object.prototype.hasOwnProperty.call(d,'value')){try{state=JSON.parse(String(d.value||''))||state;renderMood();renderWater();}catch(_e){}}});
 load();renderMood();renderWater();document.getElementById('addWater').onclick=function(){state.water=Math.min(8,state.water+1);persist();renderWater();};request();})();
 </script>
 """);
@@ -1776,6 +2372,7 @@ function hostName(url){try{return new URL(url).host;}catch(e){return url;}}
 function render(){var list=document.getElementById('list');list.innerHTML='';if(!urls.length){list.innerHTML='<div class=\"empty\">还没有书签，点击右上角或输入网址添加。</div>';return;}urls.forEach(function(url,index){var row=document.createElement('div');row.className='item';row.innerHTML='<div class=\"left\"><div class=\"title\">'+hostName(url)+'</div><div class=\"url\">'+url+'</div></div><div class=\"meta\">打开</div>';row.onclick=function(){if(window.yanm&&window.yanm.invoke){window.yanm.invoke('path.open',{path:url});}};var remove=document.createElement('button');remove.className='remove';remove.type='button';remove.innerText='删';remove.onclick=function(e){e.stopPropagation();urls.splice(index,1);save();render();};row.appendChild(remove);list.appendChild(row);});}
 function addUrl(prefill){var input=document.getElementById('urlInput');var raw=(typeof prefill==='string'&&prefill?prefill:input.value||'').replace(/^\s+|\s+$/g,'');if(!raw){input.focus();return;}var v=/^https?:\/\//i.test(raw)?raw:'https://'+raw;if(urls.indexOf(v)>=0){input.value='';input.focus();return;}urls.unshift(v);input.value='';save();render();}
 function init(){loadLocal();render();document.getElementById('addBtn').onclick=function(){addUrl();};document.getElementById('urlInput').onkeydown=function(e){e=e||window.event;if(e.keyCode===13)addUrl();};if(window.yanm&&window.yanm.invoke){window.yanm.invoke('state.get',{key:hostKey}).then(function(res){var value=res&&typeof res.value==='string'?res.value:'';if(value){try{urls=JSON.parse(value)||fallback();save();render();}catch(e){}}});}else{setTimeout(init,250);}}
+window.addEventListener('yanm:message',function(e){var d=e.detail||{};if(d.type==='host.state'&&d.key===hostKey&&Object.prototype.hasOwnProperty.call(d,'value')){try{urls=JSON.parse(String(d.value||''))||fallback();loadLocal=function(){};render();}catch(_e){}}});
 init();})();
 </script></body></html>
 """;
@@ -2058,4 +2655,16 @@ public static class WindowBindingCorners
             _ => TopLeft
         };
     }
+}
+
+public sealed class AiServiceProviderSettings
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get; set; } = string.Empty;
+    public string ProviderType { get; set; } = "OpenAI";
+    public string BaseUrl { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; } = true;
+    public List<string> Models { get; set; } = [];
+    public string SelectedModel { get; set; } = string.Empty;
 }

@@ -1,4 +1,7 @@
+using System.Collections.Concurrent;
 using System.IO;
+using System.Text;
+using System.Threading;
 
 namespace OpenQuickHost;
 
@@ -6,6 +9,13 @@ public static class HostAssets
 {
     private const string DevWorkspacePath = @"F:\Desktop\kaifa\OpenQuickHost";
     private const long MaxLogFileBytes = 8L * 1024 * 1024;
+    private const int MaxQueuedLogLines = 4096;
+    private const int MaxLogFlushLines = 256;
+
+    private static readonly ConcurrentQueue<string> PendingLogLines = new();
+    private static readonly AutoResetEvent LogFlushSignal = new(false);
+    private static int _logWorkerStarted;
+    private static int _queuedLogLineCount;
 
     public static string InstallRootPath => AppDomain.CurrentDomain.BaseDirectory;
 
@@ -33,6 +43,8 @@ public static class HostAssets
     public static string HostLogPath => Path.Combine(LogsPath, "host.log");
 
     public static string DevDebugLogPath => Path.Combine(LogsPath, "dev-debug.log");
+
+    public static string CloudSyncDiagnosticsLogPath => Path.Combine(LogsPath, "cloud-sync-diagnostics.log");
 
     public static string RecentCommandsPath => ResolveDataFilePath("recent-commands.txt");
 
@@ -116,11 +128,16 @@ public static class HostAssets
 
     public static void AppendLog(string message)
     {
-        EnsureCreated();
-        RotateFileIfTooLarge(HostLogPath, MaxLogFileBytes);
-        File.AppendAllText(
-            HostLogPath,
-            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+        var line = $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
+        if (Interlocked.Increment(ref _queuedLogLineCount) > MaxQueuedLogLines)
+        {
+            Interlocked.Decrement(ref _queuedLogLineCount);
+            return;
+        }
+
+        PendingLogLines.Enqueue(line);
+        EnsureLogWorkerStarted();
+        LogFlushSignal.Set();
     }
 
     public static void AppendDevLog(string message)
@@ -135,6 +152,16 @@ public static class HostAssets
         File.AppendAllText(
             DevDebugLogPath,
             $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+    }
+
+    public static void AppendCloudSyncDiagnosticLog(string message)
+    {
+        EnsureCreated();
+        RotateFileIfTooLarge(CloudSyncDiagnosticsLogPath, MaxLogFileBytes);
+        File.AppendAllText(
+            CloudSyncDiagnosticsLogPath,
+            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+        AppendLog($"[CloudSyncDiag] {message}");
     }
 
     public static IReadOnlyList<string> ReadHostLogTailLines(int maxBytes, int maxLines)
@@ -187,6 +214,69 @@ public static class HostAssets
             }
 
             File.Move(path, archivePath);
+        }
+        catch
+        {
+            // Logging must never block normal app execution.
+        }
+    }
+
+    private static void EnsureLogWorkerStarted()
+    {
+        if (Interlocked.Exchange(ref _logWorkerStarted, 1) == 1)
+        {
+            return;
+        }
+
+        _ = Task.Factory.StartNew(
+            LogWorkerLoop,
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+    }
+
+    private static void LogWorkerLoop()
+    {
+        while (true)
+        {
+            LogFlushSignal.WaitOne(TimeSpan.FromSeconds(1));
+            FlushPendingLogLines();
+        }
+    }
+
+    private static void FlushPendingLogLines()
+    {
+        if (PendingLogLines.IsEmpty)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(LogsPath);
+            EnsureFile(
+                HostLogPath,
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Swallow Launcher initialized.{Environment.NewLine}");
+            RotateFileIfTooLarge(HostLogPath, MaxLogFileBytes);
+
+            var builder = new StringBuilder(capacity: 8192);
+            var flushed = 0;
+            while (flushed < MaxLogFlushLines && PendingLogLines.TryDequeue(out var line))
+            {
+                Interlocked.Decrement(ref _queuedLogLineCount);
+                builder.Append(line);
+                flushed++;
+            }
+
+            if (builder.Length > 0)
+            {
+                File.AppendAllText(HostLogPath, builder.ToString());
+            }
+
+            if (!PendingLogLines.IsEmpty)
+            {
+                LogFlushSignal.Set();
+            }
         }
         catch
         {

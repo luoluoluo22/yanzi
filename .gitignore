@@ -10,6 +10,8 @@ artifacts/
 cloudflare/.wrangler/
 cloudflare/node_modules/
 website/downloads/*.zip
+!website/downloads/open-yanzi-github.zip
+!website/downloads/open-yanzi-homepage.zip
 build-verify*/
 mobile/android/.gradle/
 mobile/android/local.properties
@@ -39,3 +41,13 @@ publish/
 *.msi
 *Setup*.exe
 .DS_Store
+
+# Temporary release notes drafts
+RELEASE_NOTES.md
+
+# 软著与专利申报材料
+软著申报材料_*
+商标申报图样_*
+燕子Logo_*
+*申报材料*
+*.pdf

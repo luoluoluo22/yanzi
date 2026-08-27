@@ -14,27 +14,24 @@
         <Grid Margin="25">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-
-            <TextBlock x:Name="TitleText" Text="输入" Style="{StaticResource TitleText}" />
             
             <TextBlock x:Name="DescriptionText"
-                       Grid.Row="1"
-                       Margin="0,8,0,0"
+                       Grid.Row="0"
+                       Margin="0,0,0,0"
                        Style="{StaticResource DescriptionText}" />
 
             <TextBox x:Name="ValueBox"
-                      Grid.Row="2"
+                      Grid.Row="1"
                       Height="40"
                       Margin="0,20,0,0"
                       Padding="12,10"
                       VerticalAlignment="Top"
                       PreviewKeyDown="ValueBox_PreviewKeyDown" />
 
-            <Grid Grid.Row="3" Margin="0,15,0,0">
+            <Grid Grid.Row="2" Margin="0,15,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />

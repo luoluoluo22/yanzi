@@ -438,7 +438,6 @@ public static class ScriptExtensionRunner
     {
         var references = new List<MetadataReference>(
             global::Basic.Reference.Assemblies.Net90.ReferenceInfos.All
-                .Where(info => !info.FileName.Contains(".Private."))
                 .Select(static info => (MetadataReference)info.Reference));
 
         var bundledDirectory = GetBundledNativeWindowReferenceDirectory();
@@ -473,15 +472,14 @@ public static class ScriptExtensionRunner
         }
 
         var finalReferences = references
-            .GroupBy(static reference => reference.Display, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(static reference =>
+            {
+                var display = reference.Display;
+                if (string.IsNullOrWhiteSpace(display)) return Guid.NewGuid().ToString();
+                return Path.GetFileName(display);
+            }, StringComparer.OrdinalIgnoreCase)
             .Select(static group => group.First())
             .ToList();
-
-        bool hasPrivateXml = finalReferences.Any(r => r.Display != null && r.Display.Contains("System.Private.Xml", StringComparison.OrdinalIgnoreCase));
-        if (hasPrivateXml)
-        {
-            finalReferences.RemoveAll(r => r.Display != null && r.Display.Contains("System.Xml.XmlSerializer", StringComparison.OrdinalIgnoreCase));
-        }
 
         return finalReferences.ToArray();
     }
@@ -687,7 +685,8 @@ public static class ScriptExtensionRunner
                      "WindowsBase.dll",
                      "PresentationCore.dll",
                      "PresentationFramework.dll",
-                     "System.Xaml.dll"
+                     "System.Xaml.dll",
+                     "System.Windows.Forms.dll"
                  })
         {
             AddTrustedPlatformAssembly(paths, trustedPlatformAssemblies, fileName);
@@ -712,6 +711,7 @@ public static class ScriptExtensionRunner
             AddCandidateFile(paths, directory, "PresentationCore.dll");
             AddCandidateFile(paths, directory, "PresentationFramework.dll");
             AddCandidateFile(paths, directory, "System.Xaml.dll");
+            AddCandidateFile(paths, directory, "System.Windows.Forms.dll");
         }
 
         return paths
@@ -913,7 +913,7 @@ public static class ScriptExtensionRunner
 
         var environmentSnapshot = CaptureRuntimeEnvironmentSnapshot();
         var originalDirectory = Directory.GetCurrentDirectory();
-        var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: false);
+        var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: true);
         try
         {
             ApplyRuntimeEnvironment(command, contextPath, stateUpdatePath, launchSource);
@@ -922,7 +922,24 @@ public static class ScriptExtensionRunner
                 Directory.SetCurrentDirectory(command.ExtensionDirectoryPath);
             }
 
-            var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
+            Assembly assembly;
+            var pdbPath = Path.ChangeExtension(assemblyPath, ".pdb");
+            if (File.Exists(pdbPath))
+            {
+                using (var fs = new FileStream(assemblyPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var pdbFs = new FileStream(pdbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    assembly = loadContext.LoadFromStream(fs, pdbFs);
+                }
+            }
+            else
+            {
+                using (var fs = new FileStream(assemblyPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    assembly = loadContext.LoadFromStream(fs);
+                }
+            }
+
             var runtimeContext = CreateInProcessRuntimeContext(assembly, context, stateUpdatePath);
             var runMethod = FindYanziActionRunMethod(assembly, runtimeContext.GetType());
             ready.TrySetResult(null);
@@ -1503,7 +1520,6 @@ public static class ScriptExtensionRunner
         public sealed class YanziStorageClient
         {
             private readonly YanziActionContext _context;
-            private readonly SemaphoreSlim _cloudWriteGate = new(1, 1);
 
             public YanziStorageClient(YanziActionContext context)
             {
@@ -1520,9 +1536,9 @@ public static class ScriptExtensionRunner
 
                 if (string.Equals(normalizedScope, "both", StringComparison.OrdinalIgnoreCase))
                 {
-                    var localText = await ReadLocalTextAsync(key);
-                    _ = RefreshLocalFromCloudAsync(key);
-                    return localText;
+                    // Let the host perform the local-first read and guarded background refresh.
+                    // Writing the fetched cloud value directly here bypassed pending/conflict checks.
+                    return await ReadCloudTextAsync(key, "both");
                 }
 
                 return await ReadCloudTextAsync(key, normalizedScope);
@@ -1548,20 +1564,38 @@ public static class ScriptExtensionRunner
 
                 if (string.Equals(normalizedScope, "both", StringComparison.OrdinalIgnoreCase))
                 {
-                    await WriteLocalTextAsync(key, content);
-                    _ = TryWriteCloudTextAsync(key, content ?? string.Empty);
+                    // The host marks the key pending before it queues the cloud write, closing the
+                    // refresh-vs-write race that existed when this client wrote the file first.
+                    await WriteCloudTextAsync(key, content ?? string.Empty, "both");
                     return;
                 }
 
-                await WriteCloudTextAsync(key, content ?? string.Empty);
+                await WriteCloudTextAsync(key, content ?? string.Empty, "cloud");
             }
 
-            private async Task WriteCloudTextAsync(string key, string content)
+            public async Task DeleteTextAsync(string key, string scope = "local")
+            {
+                var normalizedScope = NormalizeScope(scope);
+                if (string.Equals(normalizedScope, "local", StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrWhiteSpace(_context.AgentApiBaseUrl))
+                {
+                    var localPath = ResolveLocalPath(key);
+                    if (File.Exists(localPath)) File.Delete(localPath);
+                    return;
+                }
+
+                using var client = CreateClient();
+                using var response = await client.DeleteAsync(
+                    $"/v1/storage/{Uri.EscapeDataString(_context.ExtensionId)}?key={Uri.EscapeDataString(key)}&scope={Uri.EscapeDataString(normalizedScope)}");
+                response.EnsureSuccessStatusCode();
+            }
+
+            private async Task WriteCloudTextAsync(string key, string content, string scope)
             {
                 using var client = CreateClient();
                 using var response = await client.PutAsJsonAsync(
                     $"/v1/storage/{Uri.EscapeDataString(_context.ExtensionId)}",
-                    new StorageWriteRequest(key, content ?? string.Empty, "cloud"));
+                    new StorageWriteRequest(key, content ?? string.Empty, scope));
                 response.EnsureSuccessStatusCode();
             }
 
@@ -1576,39 +1610,6 @@ public static class ScriptExtensionRunner
                 var path = ResolveLocalPath(key);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 await File.WriteAllTextAsync(path, content ?? string.Empty, Encoding.UTF8);
-            }
-
-            private async Task RefreshLocalFromCloudAsync(string key)
-            {
-                try
-                {
-                    var cloudText = await ReadCloudTextAsync(key, "cloud");
-                    if (cloudText != null)
-                    {
-                        await WriteLocalTextAsync(key, cloudText);
-                    }
-                }
-                catch
-                {
-                    // Cloud refresh is opportunistic; local-first reads must stay fast.
-                }
-            }
-
-            private async Task TryWriteCloudTextAsync(string key, string content)
-            {
-                await _cloudWriteGate.WaitAsync();
-                try
-                {
-                    await WriteCloudTextAsync(key, content);
-                }
-                catch
-                {
-                    // Cloud writes are queued behind the local save for UI responsiveness.
-                }
-                finally
-                {
-                    _cloudWriteGate.Release();
-                }
             }
 
             public async Task<T?> ReadJsonAsync<T>(string key, string scope = "local")

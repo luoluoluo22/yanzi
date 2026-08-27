@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Text.Json;
@@ -185,6 +185,7 @@ public partial class MainWindow
         try
         {
             var geometry = Geometry.Parse("M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z");
+            geometry.Transform = new ScaleTransform(0.666, 0.666, 12, 12);
             if (geometry.CanFreeze)
             {
                 geometry.Freeze();
@@ -195,12 +196,17 @@ public partial class MainWindow
                 brush,
                 null,
                 geometry);
-            if (drawing.CanFreeze)
+
+            var drawingGroup = new DrawingGroup();
+            drawingGroup.Children.Add(new GeometryDrawing(System.Windows.Media.Brushes.Transparent, null, new RectangleGeometry(new System.Windows.Rect(0, 0, 24, 24))));
+            drawingGroup.Children.Add(drawing);
+
+            if (drawingGroup.CanFreeze)
             {
-                drawing.Freeze();
+                drawingGroup.Freeze();
             }
 
-            var image = new DrawingImage(drawing);
+            var image = new DrawingImage(drawingGroup);
             if (image.CanFreeze)
             {
                 image.Freeze();
@@ -219,7 +225,7 @@ public partial class MainWindow
     private string BuildYanyuActionSummary(YanyuRuleSettings rule)
     {
         return string.Equals(rule.ActionType, YanyuActionTypes.RunExtension, StringComparison.OrdinalIgnoreCase)
-            ? $"运行扩展：{ResolveYanyuRuleExtensionTitle(rule)}"
+            ? $"运行小程序：{ResolveYanyuRuleExtensionTitle(rule)}"
             : $"粘贴文本：{BuildYanyuPreviewText(rule.TextContent)}";
     }
 
@@ -319,7 +325,7 @@ public partial class MainWindow
             Enabled = true,
             ActionType = YanyuActionTypes.PasteText,
             ExtensionId = defaultExtension?.ExtensionId ?? string.Empty,
-            Description = defaultExtension == null ? string.Empty : $"运行扩展：{defaultExtension.Title}"
+            Description = defaultExtension == null ? string.Empty : $"运行小程序：{defaultExtension.Title}"
         };
 
         var edited = ShowYanyuEditor(

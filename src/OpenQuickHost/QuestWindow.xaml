@@ -1,0 +1,334 @@
+<Window x:Class="OpenQuickHost.QuestWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="任务与成就"
+        Width="580"
+        SizeToContent="Height"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        KeyDown="Window_KeyDown"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <!-- 浮窗核心根容器：垂直流布局 (顶部卡片 + 可折叠清单抽屉面板) -->
+    <StackPanel x:Name="RootPanel" Width="560" Margin="10,6,10,12" HorizontalAlignment="Center">
+
+        <!-- 1. 核心任务卡片 (尺寸放大、字体字号放大、按钮更大更饱满) -->
+        <Border x:Name="CardBorder"
+                Height="76"
+                Background="#F014141E"
+                BorderBrush="#40FFFFFF"
+                BorderThickness="1.2"
+                CornerRadius="20"
+                Padding="12,8,14,8">
+            <Border.Effect>
+                <DropShadowEffect x:Name="CardShadow"
+                                  BlurRadius="22"
+                                  Direction="270"
+                                  ShadowDepth="4"
+                                  Opacity="0.7"
+                                  Color="#000000" />
+            </Border.Effect>
+
+            <Grid VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <!-- Column 0: 左侧清单按钮与内嵌图标 -->
+                    <ColumnDefinition Width="Auto" />
+                    <!-- Column 1: 中间富文本任务文案与分数 -->
+                    <ColumnDefinition Width="*" />
+                    <!-- Column 2: 右侧操作按钮组 -->
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 左侧功能区：清单展开按钮 + 燕子吉祥物 / 通关打勾徽标 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                    <!-- 左上角/最左侧：清单展开按钮 -->
+                    <Button x:Name="BtnToggleDrawer"
+                            Width="30"
+                            Height="30"
+                            Background="#1AFFFFFF"
+                            BorderBrush="#33FFFFFF"
+                            BorderThickness="1"
+                            Foreground="#CCFFFFFF"
+                            FontSize="13"
+                            Margin="0,0,8,0"
+                            Cursor="Hand"
+                            ToolTip="任务清单与升级进度"
+                            Click="BtnToggleDrawer_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Brd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Brd" Property="Background" Value="#33FFFFFF" />
+                                        <Setter Property="Foreground" Value="#FFFFFFFF" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <TextBlock Text="📋" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,-1,0,0"/>
+                    </Button>
+
+                    <!-- 内嵌图标容器 (燕子 / 通关打勾) -->
+                    <Grid Width="42" Height="42" VerticalAlignment="Center">
+                        <!-- 燕子吉祥物 -->
+                        <Image x:Name="ImgYanziMascot"
+                               Source="pack://application:,,,/Assets/yanzi_mascot.png"
+                               Width="40"
+                               Height="40"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality"
+                               SnapsToDevicePixels="True" />
+
+                        <!-- 通关打勾徽标 (绿底白勾，100%在矩形内) -->
+                        <Border x:Name="SuccessCheckBadge"
+                                Width="36"
+                                Height="36"
+                                CornerRadius="18"
+                                Background="#FF10B981"
+                                BorderBrush="#FFFFFFFF"
+                                BorderThickness="2"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Visibility="Collapsed">
+                            <TextBlock Text="✓"
+                                       Foreground="#FFFFFFFF"
+                                       FontSize="19"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Margin="0,-1,0,0"/>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+
+                <!-- 中间文案区 (字号放大至 15.5，支持黄色强调色) -->
+                <TextBlock Grid.Column="1"
+                           x:Name="TxtQuestPrompt"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           FontSize="15.5"
+                           FontWeight="SemiBold"
+                           Foreground="#FFF0F0F5">
+                    <!-- 动态富文本内容将在代码中灵活填充，保证右键/背包/关键短语黄色强调 -->
+                </TextBlock>
+
+                <!-- 右侧操作按钮组 (字号放大、间距更舒适) -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- 下一关快捷按钮 (通关后显现，无向右箭头) -->
+                    <Button x:Name="BtnNextQuest"
+                            Content="下一关"
+                            Background="#FFFFFFFF"
+                            Foreground="#FF047857"
+                            FontWeight="Bold"
+                            FontSize="13"
+                            Padding="14,6"
+                            Margin="0,0,8,0"
+                            Cursor="Hand"
+                            Visibility="Collapsed"
+                            Click="BtnNextQuest_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Brd" Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Opacity" Value="0.9" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <!-- 重置当前关卡小按钮 -->
+                    <Button x:Name="BtnResetCurrentQuest"
+                            Width="28"
+                            Height="28"
+                            Background="#14FFFFFF"
+                            BorderBrush="#33FFFFFF"
+                            BorderThickness="1"
+                            Foreground="#90FFFFFF"
+                            FontSize="12"
+                            Margin="0,0,8,0"
+                            Cursor="Hand"
+                            ToolTip="重置当前关卡 (重新练习本关)"
+                            Click="BtnResetCurrentQuest_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Brd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Foreground" Value="#FFFFFFFF" />
+                                        <Setter TargetName="Brd" Property="Background" Value="#33FFFFFF" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <TextBlock Text="🔄" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,-1,0,0"/>
+                    </Button>
+
+                    <!-- 关闭按钮 -->
+                    <Button x:Name="CloseButton"
+                            Width="28"
+                            Height="28"
+                            Background="#14FFFFFF"
+                            BorderBrush="#33FFFFFF"
+                            BorderThickness="1"
+                            Foreground="#90FFFFFF"
+                            FontSize="12"
+                            Cursor="Hand"
+                            ToolTip="退出任务浮窗 (ESC)"
+                            Click="CloseButton_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Brd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Foreground" Value="#FFFFFFFF" />
+                                        <Setter TargetName="Brd" Property="Background" Value="#33FFFFFF" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <TextBlock Text="✕" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,-1,0,0"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 2. 下拉任务清单与升级进度总览面板 (点击左侧 📋 按钮展开/折叠) -->
+        <Border x:Name="DrawerPanel"
+                Margin="0,8,0,0"
+                Background="#F5101018"
+                BorderBrush="#33FFFFFF"
+                BorderThickness="1.2"
+                CornerRadius="18"
+                Padding="16,14,16,14"
+                Visibility="Collapsed">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="20" Direction="270" ShadowDepth="4" Opacity="0.6" Color="#000000" />
+            </Border.Effect>
+
+            <StackPanel>
+                <!-- 抽屉头部：等级称号 + 总积分 + 进度条 -->
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="TxtUserLevelTitle" Text="Lv.1 探索学徒" Foreground="#FFFDE047" FontSize="14" FontWeight="Bold" Margin="0,0,10,0"/>
+                        <TextBlock Text="主线成就进度" Foreground="#80FFFFFF" FontSize="12" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="1"
+                               x:Name="TxtTotalScoreSummary"
+                               Text="🌟 30 / 320 分"
+                               Foreground="#FF34D399"
+                               FontSize="13.5"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- 升级进度条 -->
+                <Border Height="8" CornerRadius="4" Background="#26FFFFFF" Margin="0,0,0,14" ClipToBounds="True">
+                    <Border x:Name="ProgressBarFill"
+                            HorizontalAlignment="Left"
+                            Width="80"
+                            CornerRadius="4">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                <GradientStop Color="#FF10B981" Offset="0"/>
+                                <GradientStop Color="#FFF59E0B" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                </Border>
+
+                <!-- 任务列表容器 -->
+                <StackPanel x:Name="QuestItemsListContainer" Margin="0,0,0,10">
+                    <!-- 将由代码动态生成 6 个精美关卡条目，支持点击直接跳转练习 -->
+                </StackPanel>
+
+                <!-- 抽屉底部工具栏：左下角【重置整个任务】+ 右下角【收起清单】 -->
+                <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左下角：重置整个任务 (浅白极客风格) -->
+                    <Button x:Name="BtnResetAllQuests"
+                            Grid.Column="0"
+                            HorizontalAlignment="Left"
+                            Background="#14FFFFFF"
+                            BorderBrush="#33FFFFFF"
+                            BorderThickness="1"
+                            Foreground="#AAFFFFFF"
+                            Padding="10,5"
+                            FontSize="11.5"
+                            FontWeight="SemiBold"
+                            Cursor="Hand"
+                            ToolTip="清空全部任务进度与积分，从头开始"
+                            Click="BtnResetAllQuests_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Brd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Brd" Property="Background" Value="#26FFFFFF" />
+                                        <Setter Property="Foreground" Value="#FFFFFFFF" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🔄 " FontSize="11" VerticalAlignment="Center"/>
+                            <TextBlock Text="重置整个任务" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- 右下角：收起清单按钮 -->
+                    <Button Grid.Column="1"
+                            Content="收起清单 ▲"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="#80FFFFFF"
+                            FontSize="11.5"
+                            Cursor="Hand"
+                            Click="BtnToggleDrawer_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Foreground" Value="#FFFFFFFF" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </Grid>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</Window>

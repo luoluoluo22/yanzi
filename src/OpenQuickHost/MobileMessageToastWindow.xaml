@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="手机消息"
         Width="390"
-        SizeToContent="Height"
+        Height="450"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
@@ -11,8 +11,8 @@
         ShowActivated="False"
         Topmost="True"
         WindowStartupLocation="Manual">
-    <Border Background="#F20B1220"
-            BorderBrush="#334BD4FF"
+    <Border Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1"
             CornerRadius="18"
             Padding="16">
@@ -23,102 +23,78 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <DockPanel Grid.Row="0"
-                       LastChildFill="False">
-                <StackPanel DockPanel.Dock="Left">
-                    <TextBlock x:Name="TitleText"
-                               Text="手机发来消息"
-                               Foreground="White"
-                               FontSize="17"
-                               FontWeight="SemiBold"
-                               TextTrimming="CharacterEllipsis" />
-                    <TextBlock x:Name="MetaText"
-                               Margin="0,4,0,0"
-                               Foreground="#FF94A3B8"
-                               Text="手机与电脑对话"
-                               FontSize="{DynamicResource FontSizeSmallPlus}" />
-                </StackPanel>
+                        LastChildFill="False">
+                <TextBlock x:Name="TitleText"
+                           Text="手机"
+                           Foreground="{DynamicResource BrushTextMain}"
+                           FontSize="17"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           DockPanel.Dock="Left" />
+                
                 <Button DockPanel.Dock="Right"
                         Width="30"
                         Height="30"
-                        Margin="12,0,0,0"
+                        Margin="8,0,0,0"
                         Content="×"
-                        Background="#1AFFFFFF"
-                        BorderBrush="#22FFFFFF"
-                        Foreground="White"
+                        Style="{StaticResource SecondaryBtn}"
+                        Padding="0"
+                        FontSize="16"
                         Click="CloseButton_Click" />
+                
+                <Button DockPanel.Dock="Right"
+                        Width="46"
+                        Height="30"
+                        Content="清理"
+                        Style="{StaticResource SecondaryBtn}"
+                        Padding="0"
+                        FontSize="12"
+                        Click="ClearHistoryButton_Click" />
             </DockPanel>
 
             <ScrollViewer x:Name="MessageScrollViewer"
                           Grid.Row="1"
                           Margin="0,14,0,0"
-                          MinHeight="96"
-                          MaxHeight="260"
                           VerticalScrollBarVisibility="Auto"
-                          Background="#66111827">
+                          Background="{DynamicResource BrushInputBG}">
                 <StackPanel x:Name="MessageStack"
                             Margin="8" />
             </ScrollViewer>
 
+            <DockPanel Grid.Row="2" Margin="0,10,0,0">
+                <Button x:Name="AttachButton" DockPanel.Dock="Left" Width="30" Height="30" Margin="0,0,8,0" Content="＋" Click="AttachButton_Click" Style="{StaticResource SecondaryBtn}" FontSize="16" Padding="0" />
+                <Button x:Name="VoiceButton" DockPanel.Dock="Left" Width="30" Height="30" Margin="0,0,8,0" Content="🎙" Click="VoiceButton_Click" Style="{StaticResource SecondaryBtn}" FontSize="14" Padding="0" />
+                <Button x:Name="SendButton" DockPanel.Dock="Right" Width="60" Height="30" Margin="8,0,0,0" Content="发送" Click="SendButton_Click" Style="{StaticResource PrimaryBtn}" />
+                <TextBox x:Name="InputTextBox" Height="30" Background="{DynamicResource BrushInputBG}" Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="6,2,6,2" KeyDown="InputTextBox_KeyDown" VerticalContentAlignment="Center"/>
+            </DockPanel>
+
             <TextBlock x:Name="UrlHintText"
-                       Grid.Row="2"
+                       Grid.Row="3"
                        Margin="2,8,0,0"
-                       Foreground="#FF67E8F9"
+                       Foreground="{DynamicResource BrushAccent}"
                        FontSize="{DynamicResource FontSizeSmallPlus}"
                        TextTrimming="CharacterEllipsis"
                        Visibility="Collapsed" />
 
-            <DockPanel Grid.Row="3"
-                       Margin="0,14,0,0"
-                       LastChildFill="False">
-                <Button Width="72"
+            <DockPanel Grid.Row="4"
+                        Margin="0,10,0,0"
+                        LastChildFill="False">
+                <Button x:Name="OpenLinkButton"
+                        Width="86"
                         Height="34"
-                        DockPanel.Dock="Left"
-                        Content="清理"
-                        Background="#FF1F2937"
-                        BorderBrush="#55EF4444"
-                        Foreground="#FFFFA3A3"
-                        Click="ClearHistoryButton_Click" />
-                <StackPanel DockPanel.Dock="Right"
-                            Orientation="Horizontal">
-                    <Button x:Name="OpenLinkButton"
-                            Width="86"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="打开链接"
-                            Background="#FF0891B2"
-                            BorderBrush="#FF22D3EE"
-                            Foreground="White"
-                            Click="OpenLinkButton_Click"
-                            Visibility="Collapsed" />
-                    <CheckBox x:Name="AutoCloseCheckBox"
-                              Content="5s 自动关闭"
-                              Foreground="#FF94A3B8"
-                              VerticalAlignment="Center"
-                              Margin="0,0,12,0"
-                              Checked="AutoCloseCheckBox_Checked"
-                              Unchecked="AutoCloseCheckBox_Unchecked" />
-                    <Button Width="72"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="复制全部"
-                            Background="#FF1F2937"
-                            BorderBrush="#334BD4FF"
-                            Foreground="White"
-                            Click="CopyButton_Click" />
-                    <Button Width="72"
-                            Height="34"
-                            Content="关闭"
-                            Background="#FF111827"
-                            BorderBrush="#334BD4FF"
-                            Foreground="White"
-                            Click="CloseButton_Click" />
-                </StackPanel>
+                        DockPanel.Dock="Right"
+                        Content="打开链接"
+                        Style="{StaticResource PrimaryBtn}"
+                        Click="OpenLinkButton_Click"
+                        Visibility="Collapsed" />
             </DockPanel>
         </Grid>
     </Border>

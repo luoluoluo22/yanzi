@@ -11,7 +11,6 @@ public partial class SimpleTextInputWindow : Window
         InitializeComponent();
         _allowEmpty = allowEmpty;
         Title = title;
-        TitleText.Text = title;
         DescriptionText.Text = description;
         ValueBox.Text = initialValue;
         Loaded += (_, _) =>

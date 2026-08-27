@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -56,9 +56,9 @@ public partial class AddJsonExtensionWindow
             IdPrefix: "open-target",
             Name: "打开记事本",
             Description: "点击后启动 Windows 记事本。",
-            Category: "扩展",
+            Category: "小程序",
             Keywords: "记事本, notepad, 打开",
-            Icon: "mdi:globe",
+            Icon: @"C:\Windows\System32\notepad.exe",
             AccentHex: "#FF3B82F6",
             OpenTarget: "notepad.exe"),
 
@@ -68,15 +68,15 @@ public partial class AddJsonExtensionWindow
             Description: "在百度上搜索关键字。",
             Category: "网页搜索",
             Keywords: "搜索, baidu, 百度",
-            Icon: "mdi:search",
+            Icon: "https://www.baidu.com/favicon.ico",
             AccentHex: "#FF6366F1",
             QueryTemplate: "https://www.baidu.com/s?wd={query}",
             QueryPrefixes: "b, baidu"),
 
         ["paste-text"] = new TypeTemplate(
             IdPrefix: "paste-snippet",
-            Name: "粘贴致敬模板",
-            Description: "把一段固定文本粘贴到当前光标处。",
+            Name: "粘贴文本 ",
+            Description: "把一段文本粘贴到当前位置",
             Category: "脚本",
             Keywords: "粘贴, paste, 模板",
             Icon: "mdi:clipboard",
@@ -114,7 +114,7 @@ public partial class AddJsonExtensionWindow
             Category: "脚本",
             Keywords: "csharp, 脚本, dotnet",
             Icon: "mdi:code",
-            AccentHex: "#FF8B5CF6",
+            AccentHex: "#FF3B82F6",
             Runtime: "csharp",
             EntryMode: "inline"),
 
@@ -258,7 +258,7 @@ public partial class AddJsonExtensionWindow
     private void TriggerShortcutEdit_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new HotkeyCaptureWindow(
-            "设置扩展快捷键",
+            "设置小程序快捷键",
             "窗口激活后，按一次组合键即可完成录制。留空可清除快捷键。",
             GlobalShortcutBox.Text ?? string.Empty,
             allowEmpty: true)
@@ -512,12 +512,12 @@ public partial class AddJsonExtensionWindow
         var known = CollectKnownGestures();
         if (known.TryGetValue(key, out var owners) && owners.Count > 0)
         {
-            GestureConflictHintText.Text = $"可能冲突：{string.Join("、", owners)} 已使用同一手势。运行时会进入扩展选择。";
+            GestureConflictHintText.Text = $"可能冲突：{string.Join("、", owners)} 已使用同一手势。运行时会进入小程序选择。";
             GestureConflictHintText.Foreground = new WpfSolidColorBrush(WpfColor.FromRgb(0xFB, 0x92, 0x3C));
             return;
         }
 
-        GestureConflictHintText.Text = "当前序列未与现有扩展冲突。";
+        GestureConflictHintText.Text = "当前序列未与现有小程序冲突。";
         GestureConflictHintText.Foreground = new WpfSolidColorBrush(WpfColor.FromRgb(0x34, 0xD3, 0x99));
     }
 
@@ -548,15 +548,9 @@ public partial class AddJsonExtensionWindow
     {
         if (!TypeTemplates.TryGetValue(typeKey, out var tpl)) return;
 
-        var newId = $"{tpl.IdPrefix}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
-
-        if (_isEditMode && !string.IsNullOrWhiteSpace(IdBox.Text))
+        if (!_isEditMode && string.IsNullOrWhiteSpace(IdBox.Text))
         {
-            _lastTemplateSnapshot["Id"] = IdBox.Text;
-        }
-        else
-        {
-            SetIfDefaultOrEmpty(IdBox, newId, "Id", forceOverride, prefixMatch: tpl.IdPrefix);
+            IdBox.Text = LocalExtensionCatalog.CreateSystemExtensionId();
         }
 
         SetIfDefaultOrEmpty(NameBox, tpl.Name, "Name", forceOverride);
@@ -586,12 +580,6 @@ public partial class AddJsonExtensionWindow
         if (!TypeTemplates.TryGetValue(typeKey, out var tpl))
         {
             return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(IdBox.Text) &&
-            IdBox.Text.StartsWith(tpl.IdPrefix + "-", StringComparison.Ordinal))
-        {
-            _lastTemplateSnapshot["Id"] = IdBox.Text;
         }
 
         _lastTemplateSnapshot["Name"] = tpl.Name;
@@ -652,6 +640,7 @@ public partial class AddJsonExtensionWindow
         if (SimpleModePanel == null || AdvancedModePanel == null) return;
         SimpleModePanel.Visibility = Visibility.Visible;
         AdvancedModePanel.Visibility = Visibility.Collapsed;
+        UpdateAiRightViewMode();
         if (_isInitializing) return;
         // 从 JSON 同步回简单表单
         if (!string.IsNullOrWhiteSpace(ManualJsonInputBox.Text))
@@ -667,6 +656,8 @@ public partial class AddJsonExtensionWindow
         if (SimpleModePanel == null || AdvancedModePanel == null) return;
         SimpleModePanel.Visibility = Visibility.Collapsed;
         AdvancedModePanel.Visibility = Visibility.Visible;
+        UpdateBrowserExtensionBannerVisibility();
+        UpdateAiRightViewMode();
         if (_isInitializing) return;
 
         if (!ShouldKeepCurrentAdvancedJson())
@@ -758,7 +749,7 @@ public partial class AddJsonExtensionWindow
                     _manualUiMode = null;
                     if (string.IsNullOrWhiteSpace(PasteTextSimpleBox.Text))
                     {
-                        PasteTextSimpleBox.Text = "你好，这里是粘贴模板内容。";
+                        PasteTextSimpleBox.Text = "燕子，没有你我怎么活啊！";
                     }
                     RebuildPasteScript();
                     break;
@@ -877,17 +868,143 @@ public partial class AddJsonExtensionWindow
 
     private void OpenTargetPreset_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string preset })
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string preset)
         {
             OpenTargetSimpleBox.Text = preset;
+            
+            var label = btn.Content?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var name = $"打开{label}";
+                var desc = label == "记事本" ? "点击后启动 Windows 记事本。" : $"点击后打开{label}。";
+                
+                // 智能判定图标
+                var icon = "mdi:application"; // 默认图标
+                
+                var lowerPreset = preset.ToLowerInvariant();
+                if (lowerPreset.Contains("notepad.exe"))
+                {
+                    icon = @"C:\Windows\System32\notepad.exe";
+                }
+                else if (lowerPreset.Contains("desktop"))
+                {
+                    icon = "mdi:monitor";
+                }
+                else if (lowerPreset.Contains("download"))
+                {
+                    icon = "mdi:folder-download";
+                }
+                else if (lowerPreset.StartsWith("http://") || lowerPreset.StartsWith("https://"))
+                {
+                    try
+                    {
+                        var uri = new Uri(preset);
+                        icon = $"{uri.Scheme}://{uri.Host}/favicon.ico";
+                    }
+                    catch
+                    {
+                        icon = "mdi:earth";
+                    }
+                }
+                else if (lowerPreset.StartsWith("ms-settings"))
+                {
+                    icon = "mdi:cog";
+                }
+                else if (preset.Contains(@"\") || lowerPreset.Contains("c:") || lowerPreset.Contains("d:"))
+                {
+                    icon = "mdi:folder";
+                }
+
+                NameSimpleBox.Text = name;
+                DescriptionSimpleBox.Text = desc;
+                IconSimpleBox.Text = icon;
+                
+                _lastTemplateSnapshot["Name"] = name;
+                _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["Icon"] = icon;
+                _lastTemplateSnapshot["OpenTarget"] = preset;
+            }
         }
     }
 
     private void SearchPreset_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string preset })
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string preset)
         {
             SearchTemplateSimpleBox.Text = preset;
+            
+            var label = btn.Content?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var name = $"{label}搜索";
+                var desc = $"在{label}上搜索关键字。";
+                
+                var icon = "mdi:search";
+                try
+                {
+                    var uri = new Uri(preset);
+                    icon = uri.Host.Contains("bilibili") ? "https://www.bilibili.com/favicon.ico" : $"{uri.Scheme}://{uri.Host}/favicon.ico";
+                }
+                catch
+                {
+                    // Ignore
+                }
+                
+                NameSimpleBox.Text = name;
+                DescriptionSimpleBox.Text = desc;
+                IconSimpleBox.Text = icon;
+                
+                _lastTemplateSnapshot["Name"] = name;
+                _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["Icon"] = icon;
+                _lastTemplateSnapshot["QueryTemplate"] = preset;
+
+                var prefixes = string.Empty;
+                var lowerLabel = label.ToLowerInvariant();
+                if (lowerLabel.Contains("baidu") || lowerLabel.Contains("百度"))
+                {
+                    prefixes = "b, baidu";
+                }
+                else if (lowerLabel.Contains("google") || lowerLabel.Contains("谷歌"))
+                {
+                    prefixes = "g, google";
+                }
+                else if (lowerLabel.Contains("bing"))
+                {
+                    prefixes = "bi, bing";
+                }
+                else if (lowerLabel.Contains("github"))
+                {
+                    prefixes = "gh, github";
+                }
+                else if (lowerLabel.Contains("juejin") || lowerLabel.Contains("掘金"))
+                {
+                    prefixes = "j, juejin";
+                }
+                else if (lowerLabel.Contains("mdn"))
+                {
+                    prefixes = "mdn";
+                }
+                else if (lowerLabel.Contains("bilibili") || lowerLabel.Contains("哔哩"))
+                {
+                    prefixes = "bili, bilibili";
+                }
+                else if (lowerLabel.Contains("zhihu") || lowerLabel.Contains("知乎"))
+                {
+                    prefixes = "zh, zhihu";
+                }
+                else if (lowerLabel.Contains("xiaohongshu") || lowerLabel.Contains("红书"))
+                {
+                    prefixes = "xhs, xiaohongshu";
+                }
+                else
+                {
+                    prefixes = lowerLabel;
+                }
+
+                SearchPrefixesSimpleBox.Text = prefixes;
+                _lastTemplateSnapshot["QueryPrefixes"] = prefixes;
+            }
         }
     }
 
@@ -940,7 +1057,7 @@ public partial class AddJsonExtensionWindow
             public static Task<string> RunAsync(YanziActionContext context)
             {
                 var payload = Encoding.UTF8.GetString(Convert.FromBase64String("{{b64}}"));
-                System.Windows.Forms.Clipboard.SetText(payload);
+                System.Windows.Forms.Clipboard.SetDataObject(payload, true, 10, 50);
                 Thread.Sleep(35);
                 SendCtrlV();
                 return Task.FromResult("已粘贴。");
@@ -1035,9 +1152,27 @@ public partial class AddJsonExtensionWindow
 
     private void HotkeyPreset_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string keys })
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string keys)
         {
             HotkeySequenceBox.Text = keys;
+            
+            var label = btn.Content?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var action = label.Split(' ')[0];
+                var name = $"发送{action}快捷键";
+                var desc = $"发送 {keys} 快捷键。";
+                var icon = "mdi:keyboard-outline";
+                
+                NameSimpleBox.Text = name;
+                DescriptionSimpleBox.Text = desc;
+                IconSimpleBox.Text = icon;
+                
+                _lastTemplateSnapshot["Name"] = name;
+                _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["Icon"] = icon;
+                _lastTemplateSnapshot["Runtime"] = "csharp";
+            }
         }
     }
 
@@ -1229,7 +1364,8 @@ public partial class AddJsonExtensionWindow
         if (string.IsNullOrWhiteSpace(script) ||
             !script.Contains("FromBase64String", StringComparison.OrdinalIgnoreCase) ||
             !(script.Contains("Set-Clipboard", StringComparison.OrdinalIgnoreCase) ||
-              script.Contains("Clipboard.SetText", StringComparison.OrdinalIgnoreCase)))
+              script.Contains("Clipboard.SetText", StringComparison.OrdinalIgnoreCase) ||
+              script.Contains("Clipboard.SetDataObject", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
@@ -1582,8 +1718,25 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         AccentHexBox.Text = AccentHexSimpleBox.Text;
+        UpdateAccentColorLivePreview();
         UpdatePreview();
         TryRefreshJsonFromHiddenForm();
+    }
+
+    private void UpdateAccentColorLivePreview()
+    {
+        try
+        {
+            var hex = AccentHexSimpleBox.Text?.Trim();
+            if (!string.IsNullOrEmpty(hex))
+            {
+                AccentColorLivePreview.Background = CreateBrush(NormalizeAccentHexOrDefault(hex));
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
     }
 
     // ===================== 同步：隐藏数据 → 简单控件 =====================
@@ -1597,7 +1750,6 @@ public partial class AddJsonExtensionWindow
             DescriptionSimpleBox.Text = DescriptionBox.Text;
             IconSimpleBox.Text = IconBox.Text;
             AccentHexSimpleBox.Text = AccentHexBox.Text;
-            IdSimpleBox.Text = IdBox.Text;
             VersionSimpleBox.Text = VersionBox.Text;
             CategorySimpleBox.Text = CategoryBox.Text;
             KeywordsSimpleBox.Text = KeywordsBox.Text;
@@ -1656,6 +1808,7 @@ public partial class AddJsonExtensionWindow
             }
 
             // 类型推断只在初始化时做，简单模式日常切换不再反推
+            UpdateAccentColorLivePreview();
         }
         finally
         {
@@ -1726,7 +1879,7 @@ public partial class AddJsonExtensionWindow
         _suppressPreviewSync = true;
         try
         {
-            var name = string.IsNullOrWhiteSpace(NameBox.Text) ? "未命名扩展" : NameBox.Text;
+            var name = string.IsNullOrWhiteSpace(NameBox.Text) ? "未命名小程序" : NameBox.Text;
             var desc = string.IsNullOrWhiteSpace(DescriptionBox.Text) ? "选择类型并填写信息以预览" : DescriptionBox.Text;
             if (PreviewNameText.Text != name) PreviewNameText.Text = name;
             if (PreviewDescText.Text != desc) PreviewDescText.Text = desc;
@@ -1749,7 +1902,7 @@ public partial class AddJsonExtensionWindow
         if (_isInitializing || _suppressPreviewSync) return;
         var v = PreviewNameText.Text;
         // 用户清空时不要把占位符当成真值
-        if (v == "未命名扩展") return;
+        if (v == "未命名小程序") return;
         NameBox.Text = v;
         // 同步右侧名称输入框
         if (NameSimpleBox.Text != v) NameSimpleBox.Text = v;

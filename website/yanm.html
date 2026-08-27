@@ -2,10 +2,12 @@
 <html lang="zh-CN">
 
 <head>
+  <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>燕幕网页版 - 燕子启动器</title>
+  <link rel="canonical" href="https://yanzi.luoluoluo.cc.cd/yanm.html">
   <meta name="description" content="登录燕子账号，在网页端查看并同步燕子云端的燕幕数据。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,6 +15,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/assets/auth.css">
   <style>
     body {
       min-height: 100vh;
@@ -59,14 +62,7 @@
       max-width: 720px;
     }
 
-    .yanm-auth-card {
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 28px;
-      padding: 1.25rem;
-      background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.035));
-      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.28);
-      backdrop-filter: blur(20px);
-    }
+
 
     .yanm-field {
       display: grid;
@@ -276,7 +272,12 @@
       <a href="/store.html">扩展商店</a>
       <a href="/yanm.html" class="active">燕幕</a>
       <a href="/docs/product-overview.html">文档</a>
-      <a href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载</a>
+      <a href="/index.html#download">免费下载</a>
+      <span id="global-auth-container" style="margin-left: 16px; display: inline-flex; align-items: center; vertical-align: middle;">
+        <button id="global-login-btn" class="button secondary" style="padding: 0 12px; height: 32px; font-size: 0.85rem; border-radius: 6px; margin: 0; cursor: pointer;">
+          登录
+        </button>
+      </span>
     </nav>
   </header>
 
@@ -291,18 +292,7 @@
         </p>
       </div>
 
-      <article class="yanm-auth-card" id="auth-card">
-        <div class="yanm-field">
-          <label for="email">邮箱</label>
-          <input id="email" class="yanm-input" type="email" autocomplete="username" placeholder="you@example.com">
-        </div>
-        <div class="yanm-field">
-          <label for="password">密码</label>
-          <input id="password" class="yanm-input" type="password" autocomplete="current-password" placeholder="燕子账号密码">
-        </div>
-        <button class="button primary" id="login-button" type="button">登录并读取燕幕</button>
-        <div class="yanm-status" id="auth-status"></div>
-      </article>
+
     </section>
 
     <section class="yanm-toolbar">
@@ -316,7 +306,7 @@
       <div class="yanm-toolbar-actions">
         <button class="button secondary" id="scale-mode-button" type="button">显示: 适应窗口</button>
         <button class="button secondary" id="refresh-button" type="button">刷新燕幕</button>
-        <button class="button secondary" id="logout-button" type="button">退出登录</button>
+
       </div>
     </section>
 
@@ -338,17 +328,9 @@
 
   <script>
     const API_BASE = "https://sync.luoluoluo.cc.cd";
-    const TOKEN_KEY = "yanzi.yanm.token";
-    const USER_KEY = "yanzi.yanm.user";
-
-    const authCard = document.getElementById("auth-card");
-    const emailInput = document.getElementById("email");
-    const passwordInput = document.getElementById("password");
-    const loginButton = document.getElementById("login-button");
+    
     const refreshButton = document.getElementById("refresh-button");
-    const logoutButton = document.getElementById("logout-button");
     const scaleModeButton = document.getElementById("scale-mode-button");
-    const authStatus = document.getElementById("auth-status");
     const userLabel = document.getElementById("user-label");
     const syncLabel = document.getElementById("sync-label");
     const debugPanel = document.getElementById("debug-panel");
@@ -360,48 +342,36 @@
     const SCALE_MODE_KEY = "yanzi.yanm.scaleMode";
     let currentSnapshot = null;
     let saveTimer = 0;
+    let isSaving = false;
+    let hasPendingChanges = false;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    let retryTimer = 0;
     let scaleMode = localStorage.getItem(SCALE_MODE_KEY) || "fit"; // "fit" or "actual"
 
     function getToken() {
-      return localStorage.getItem(TOKEN_KEY) || "";
+      return window.YanziAuth ? window.YanziAuth.getToken() : "";
     }
 
     function setToken(token) {
-      if (token) {
-        localStorage.setItem(TOKEN_KEY, token);
-      } else {
-        localStorage.removeItem(TOKEN_KEY);
-      }
+      // 由全局 auth.js 管理
     }
 
     function setUser(user) {
-      if (user) {
-        localStorage.setItem(USER_KEY, JSON.stringify(user));
-      } else {
-        localStorage.removeItem(USER_KEY);
-      }
       renderUser();
     }
 
     function getUser() {
-      try {
-        return JSON.parse(localStorage.getItem(USER_KEY) || "null");
-      } catch {
-        return null;
-      }
+      return window.YanziAuth ? window.YanziAuth.getUser() : null;
     }
 
     function renderUser() {
       const user = getUser();
       userLabel.textContent = user ? (user.username || user.email) : "未登录";
-      authCard.classList.toggle("yanm-hidden", Boolean(user));
       document.body.classList.toggle("yanm-logged-in", Boolean(user));
     }
 
-    function setStatus(message, isError = false) {
-      authStatus.textContent = message || "";
-      authStatus.classList.toggle("error", Boolean(isError));
-    }
+
 
     function setDiagnostics(diagnostics) {
       if (!diagnostics) {
@@ -424,88 +394,8 @@
       }
     }
 
-    async function api(path, options = {}) {
-      const headers = new Headers(options.headers || {});
-      headers.set("accept", "application/json");
-      if (options.body && !headers.has("content-type")) {
-        headers.set("content-type", "application/json");
-      }
-
-      const token = getToken();
-      if (token) {
-        headers.set("authorization", `Bearer ${token}`);
-      }
-
-      let response;
-      try {
-        response = await fetch(`${API_BASE}${path}`, {
-          ...options,
-          headers
-        });
-      } catch (error) {
-        const diagnostics = {
-          code: "network_fetch_failed",
-          message: error.message || "Failed to fetch",
-          apiBase: API_BASE,
-          path,
-          method: options.method || "GET",
-          online: navigator.onLine,
-          pageOrigin: location.origin
-        };
-        setDiagnostics(diagnostics);
-        throw new Error(`网络请求失败：${diagnostics.message}`);
-      }
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setDiagnostics({
-          code: payload.error || "api_error",
-          status: response.status,
-          message: payload.message || `请求失败：${response.status}`,
-          path,
-          method: options.method || "GET"
-        });
-        throw new Error(payload.message || `请求失败：${response.status}`);
-      }
-      return payload;
-    }
-
-    async function login() {
-      setBusy(loginButton, true, "登录中...");
-      setStatus("");
-      try {
-        const auth = await api("/v1/auth/login", {
-          method: "POST",
-          body: JSON.stringify({
-            email: emailInput.value.trim(),
-            password: passwordInput.value
-          })
-        });
-        setToken(auth.accessToken || "");
-        const me = await api("/v1/auth/me");
-        setUser(me);
-        passwordInput.value = "";
-        await loadYanm();
-      } catch (error) {
-        setStatus(error.message || "登录失败", true);
-      } finally {
-        setBusy(loginButton, false);
-      }
-    }
-
-    async function restoreSession() {
-      if (!getToken()) {
-        renderUser();
-        return;
-      }
-
-      try {
-        const me = await api("/v1/auth/me");
-        setUser(me);
-        await loadYanm();
-      } catch {
-        setToken("");
-        setUser(null);
-      }
+    function api(path, options = {}) {
+      return window.YanziAuth.api(path, options);
     }
 
     async function loadYanm() {
@@ -663,14 +553,14 @@
       }
 
       try {
-        const result = await dispatchInvoke(message.method, message.args || {});
+        const result = await dispatchInvoke(message.method, message.args || {}, message.componentId || "");
         event.source.postMessage({ type: "yanm.reply", id: message.id, ok: true, result }, "*");
       } catch (error) {
         event.source.postMessage({ type: "yanm.reply", id: message.id, ok: false, error: error.message || "调用失败" }, "*");
       }
     });
 
-    async function dispatchInvoke(method, args) {
+    async function dispatchInvoke(method, args, componentId) {
       if (!currentSnapshot) {
         throw new Error("燕幕数据未加载");
       }
@@ -690,7 +580,10 @@
           };
         case "state.get": {
           const key = String(args.key || "");
-          return { key, value: String(currentSnapshot.yanm.componentState[key] || "") };
+          const state = currentSnapshot.yanm.componentState || {};
+          const scopedKey = componentId ? `component:${componentId}:${key}` : "";
+          const value = (scopedKey && state[scopedKey] != null) ? state[scopedKey] : (state[key] != null ? state[key] : "");
+          return { key, value: String(value) };
         }
         case "state.set": {
           const key = String(args.key || "");
@@ -698,7 +591,8 @@
             throw new Error("state.set 缺少 key");
           }
           const value = String(args.value || "");
-          currentSnapshot.yanm.componentState[key] = value;
+          const scopedKey = componentId ? `component:${componentId}:${key}` : key;
+          currentSnapshot.yanm.componentState[scopedKey] = value;
           queueSaveYanm();
           return { key, value };
         }
@@ -709,8 +603,18 @@
 
     function queueSaveYanm() {
       clearTimeout(saveTimer);
+      clearTimeout(retryTimer);
       syncLabel.textContent = "状态已修改，准备写回燕子云端...";
-      saveTimer = setTimeout(saveYanm, 900);
+      saveTimer = setTimeout(triggerSave, 3000);
+    }
+
+    function triggerSave() {
+      if (isSaving) {
+        hasPendingChanges = true;
+        syncLabel.textContent = "检测到新修改，将在上一次写入完成后自动更新...";
+        return;
+      }
+      saveYanm();
     }
 
     async function saveYanm() {
@@ -718,6 +622,10 @@
         return;
       }
 
+      isSaving = true;
+      hasPendingChanges = false;
+      syncLabel.textContent = "正在写回燕子云端...";
+      
       const updatedAtUtc = new Date().toISOString();
       try {
         await api("/v1/me/yanm-state", {
@@ -729,17 +637,29 @@
         });
         currentSnapshot.updatedAtUtc = updatedAtUtc;
         syncLabel.textContent = `已写回燕子云端：${new Date(updatedAtUtc).toLocaleString()}`;
+        retryCount = 0;
+        isSaving = false;
+        
+        if (hasPendingChanges) {
+          triggerSave();
+        }
       } catch (error) {
-        syncLabel.textContent = error.message || "写回燕子云端失败";
+        isSaving = false;
+        console.error("Save yanm failed:", error);
+        
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          const delay = retryCount * 2000;
+          syncLabel.textContent = `写回失败 (${error.message || "未知错误"})，将在 ${delay / 1000} 秒后重试 (第 ${retryCount}/${MAX_RETRIES} 次)...`;
+          clearTimeout(retryTimer);
+          retryTimer = setTimeout(triggerSave, delay);
+        } else {
+          syncLabel.textContent = `写回燕子云端失败：${error.message || "网络错误"}。可以再次修改或手动刷新。`;
+          retryCount = 0;
+        }
       }
     }
 
-    loginButton.addEventListener("click", login);
-    passwordInput.addEventListener("keydown", function (event) {
-      if (event.key === "Enter") {
-        login();
-      }
-    });
     function updateScaleModeButton() {
       if (scaleMode === "fit") {
         scaleModeButton.textContent = "显示: 适应窗口";
@@ -758,24 +678,34 @@
     });
 
     refreshButton.addEventListener("click", loadYanm);
-    logoutButton.addEventListener("click", function () {
-      setToken("");
-      setUser(null);
-      currentSnapshot = null;
-      setDiagnostics(null);
-      stage.innerHTML = "";
-      empty.classList.remove("yanm-hidden");
-      syncLabel.textContent = "已退出登录";
-    });
+
     window.addEventListener("resize", function () {
       if (currentSnapshot) {
         renderYanm(currentSnapshot.yanm);
       }
     });
 
+    window.addEventListener("yanzi-auth-changed", function (e) {
+      renderUser();
+      if (e.detail.token) {
+        loadYanm();
+      } else {
+        currentSnapshot = null;
+        setDiagnostics(null);
+        stage.innerHTML = "";
+        empty.classList.remove("yanm-hidden");
+        syncLabel.textContent = "请登录后查看云端数据";
+      }
+    });
+
     updateScaleModeButton();
-    restoreSession();
+    renderUser();
+    if (getToken()) {
+      loadYanm();
+    }
   </script>
+  <script src="/assets/auth.js?v=20260701-4"></script>
 </body>
 
 </html>
+

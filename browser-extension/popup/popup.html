@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>燕子浏览器助手控制台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-wrapper">
+        <img src="../assets/icon48.png" alt="燕子启动器 Logo" class="app-logo-img">
+      </div>
+      <div class="brand">
+        <h1>燕子浏览器助手</h1>
+        <p>Yanzi Browser Helper</p>
+      </div>
+    </header>
+
+    <!-- Status Card -->
+    <section class="status-section glass-card">
+      <div class="status-row">
+        <span class="status-label">本地服务连接</span>
+        <div class="status-indicator">
+          <span id="connection-status-dot" class="led-dot disconnected"></span>
+          <span id="connection-status-text" class="status-text text-disconnected">未连接</span>
+        </div>
+      </div>
+      <p class="server-info">监听地址: <code class="code-highlight">127.0.0.1:18293</code></p>
+    </section>
+
+    <!-- Logs Panel -->
+    <section class="logs-section glass-card">
+      <div class="section-title-row">
+        <h2>任务执行日志</h2>
+        <span class="log-count" id="log-count">0 条</span>
+      </div>
+      <div class="logs-container" id="logs-container">
+        <div class="log-placeholder">暂无任何执行日志</div>
+      </div>
+    </section>
+
+    <!-- Footer Actions -->
+    <footer class="app-footer">
+      <button id="reconnect-btn" class="btn primary-btn btn-glow">重新连接服务</button>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

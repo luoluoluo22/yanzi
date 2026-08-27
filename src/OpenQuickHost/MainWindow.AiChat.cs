@@ -10,6 +10,8 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Linq;
+using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
@@ -34,6 +36,21 @@ public partial class MainWindow
     private string _aiChatInputText = string.Empty;
     private string _aiChatStatusText = "选择或新建话题开始对话";
     private bool _isAiChatRequestInFlight;
+    private bool _isInitializingComboBox;
+
+    public bool IsAiChatRequestInFlight
+    {
+        get => _isAiChatRequestInFlight;
+        set
+        {
+            if (_isAiChatRequestInFlight != value)
+            {
+                _isAiChatRequestInFlight = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     private string _lastNonAiSearchScopeKey = SearchScopeAll;
 
     // ==================== 属性 ====================
@@ -60,6 +77,10 @@ public partial class MainWindow
             if (_selectedAiChatTopic != null)
             {
                 _selectedAiChatTopic.IsSelected = true;
+                foreach (var t in _aiChatTopics)
+                {
+                    t.IsDeleteConfirming = false;
+                }
             }
 
             OnPropertyChanged();
@@ -267,7 +288,92 @@ public partial class MainWindow
         var topic = new AiChatTopic("新对话");  // 临时标题，会在第一条消息后更新
         _aiChatTopics.Insert(0, topic);
         SelectTopic(topic);
+        ReorderTopics();
         SaveTopicsToStorage();
+    }
+
+    private void EscReturnButton_Click(object sender, MouseButtonEventArgs e)
+    {
+        ExitAiChatMode();
+    }
+
+    private void PinTopicButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: AiChatTopic topic })
+        {
+            topic.IsPinned = !topic.IsPinned;
+            ReorderTopics();
+            SaveTopicsToStorage();
+        }
+    }
+
+    private void RenameTopicButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: AiChatTopic topic })
+        {
+            RenameTopic(topic);
+        }
+    }
+
+    private void DeleteTopicButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: AiChatTopic topic })
+        {
+            if (topic.IsDeleteConfirming)
+            {
+                DeleteTopic(topic);
+            }
+            else
+            {
+                foreach (var t in _aiChatTopics)
+                {
+                    t.IsDeleteConfirming = false;
+                }
+                topic.IsDeleteConfirming = true;
+            }
+        }
+    }
+
+    private void ReorderTopics()
+    {
+        var originalSelected = _selectedAiChatTopic;
+        var sorted = _aiChatTopics
+            .OrderByDescending(t => t.IsPinned)
+            .ThenByDescending(t => t.UpdatedAt)
+            .ToList();
+
+        bool changed = false;
+        if (_aiChatTopics.Count == sorted.Count)
+        {
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                if (_aiChatTopics[i] != sorted[i])
+                {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            changed = true;
+        }
+
+        if (changed)
+        {
+            _selectedAiChatTopic = null;
+            _aiChatTopics.Clear();
+            foreach (var t in sorted)
+            {
+                _aiChatTopics.Add(t);
+            }
+            _selectedAiChatTopic = originalSelected;
+            if (_selectedAiChatTopic != null)
+            {
+                _selectedAiChatTopic.IsSelected = true;
+            }
+            OnPropertyChanged(nameof(SelectedAiChatTopic));
+        }
     }
 
     private void SelectTopic(AiChatTopic topic)
@@ -533,6 +639,7 @@ public partial class MainWindow
     private void ActivateAiChatMode()
     {
         LoadTopicsFromStorage();
+        InitializeAiModelComboBox();
         
         // 切换到 AI Chat 模式时，调整窗口大小以获得更好的阅读体验
         if (WindowState == WindowState.Normal)
@@ -592,6 +699,99 @@ public partial class MainWindow
         SearchBox.SelectAll();
     }
 
+    public void InitializeAiModelComboBox()
+    {
+        if (AiModelSelectionComboBox == null) return;
+
+        _isInitializingComboBox = true;
+        try
+        {
+            var items = new List<string>();
+            var providers = _appSettings.AiServiceProviders;
+            string? selectedText = null;
+
+            if (providers != null)
+            {
+                foreach (var provider in providers)
+                {
+                    if (provider.IsEnabled && provider.Models != null)
+                    {
+                        foreach (var model in provider.Models)
+                        {
+                            var text = $"{provider.Name} / {model}";
+                            items.Add(text);
+                            if (provider.Id == _appSettings.ActiveServiceProviderId && model == _appSettings.AiModel)
+                            {
+                                selectedText = text;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (selectedText == null && !string.IsNullOrWhiteSpace(_appSettings.AiModel))
+            {
+                selectedText = $"{_appSettings.AiModel}";
+                if (!items.Contains(selectedText))
+                {
+                    items.Insert(0, selectedText);
+                }
+            }
+
+            AiModelSelectionComboBox.ItemsSource = items;
+
+            if (selectedText != null)
+            {
+                AiModelSelectionComboBox.SelectedItem = selectedText;
+            }
+            else if (items.Count > 0)
+            {
+                AiModelSelectionComboBox.SelectedIndex = 0;
+            }
+        }
+        finally
+        {
+            _isInitializingComboBox = false;
+        }
+    }
+
+    private void AiModelSelectionComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_isInitializingComboBox) return;
+        if (AiModelSelectionComboBox == null) return;
+
+        if (AiModelSelectionComboBox.SelectedItem is string selectedText)
+        {
+            var parts = selectedText.Split(new[] { " / " }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2)
+            {
+                var providerName = parts[0];
+                var modelName = parts[1];
+
+                var providers = _appSettings.AiServiceProviders;
+                var provider = providers?.FirstOrDefault(p => p.Name == providerName && p.IsEnabled);
+                if (provider != null)
+                {
+                    _appSettings.ActiveServiceProviderId = provider.Id;
+                    _appSettings.AiModel = modelName;
+                    _appSettings.AiBaseUrl = provider.BaseUrl;
+                    _appSettings.AiApiKey = provider.ApiKey;
+                    AppSettingsStore.Save(_appSettings);
+
+                    OnPropertyChanged(nameof(AiChatModelDisplayText));
+                }
+            }
+        }
+    }
+
+    public void OnAiSettingsChanged()
+    {
+        _appSettings = AppSettingsStore.Load();
+        InitializeAiModelComboBox();
+        OnPropertyChanged(nameof(AiChatModelDisplayText));
+    }
+
+
     private async void SubmitAiChatMessage()
     {
         var userInput = AiChatInputText.Trim();
@@ -600,7 +800,7 @@ public partial class MainWindow
             return;
         }
 
-        if (_isAiChatRequestInFlight)
+        if (IsAiChatRequestInFlight)
         {
             return;
         }
@@ -632,22 +832,77 @@ public partial class MainWindow
         }
         
         _selectedAiChatTopic.NotifyMessagesChanged();
+        ReorderTopics();
 
         // 清空输入
         AiChatInputText = string.Empty;
         _aiChatAttachments.Clear();
 
         // 请求 AI
-        _isAiChatRequestInFlight = true;
+        IsAiChatRequestInFlight = true;
         AiChatStatusText = "AI 正在输入…";
 
         try
         {
-            var reply = await RequestAiChatCompletionAsync();
-            var aiMessage = new AiChatMessage(false, reply);
-            _aiChatMessages.Add(aiMessage);
-            _selectedAiChatTopic.Messages.Add(aiMessage);
-            _selectedAiChatTopic.NotifyMessagesChanged();
+            int loopCount = 0;
+            const int maxLoops = 5;
+            bool keepLooping = true;
+
+            while (keepLooping && loopCount < maxLoops)
+            {
+                loopCount++;
+                var reply = await RequestAiChatCompletionAsync();
+                
+                // 解析工具调用
+                var toolCall = ParseToolCall(reply);
+                if (toolCall != null)
+                {
+                    var toolName = toolCall.ToolName;
+                    
+                    // 将大模型的每一次回复（包含工具调用JSON的 assistant 消息）作为工具调用指示添加到界面上
+                    var aiMessage = new AiChatMessage(false, reply)
+                    {
+                        IsToolCall = true,
+                        ToolName = toolName
+                    };
+                    _aiChatMessages.Add(aiMessage);
+                    _selectedAiChatTopic.Messages.Add(aiMessage);
+                    _selectedAiChatTopic.NotifyMessagesChanged();
+                    ReorderTopics();
+                    
+                    AiChatStatusText = $"AI 正在调用工具: {toolName}…";
+                    
+                    // 执行本地工具
+                    string feedback;
+                    try
+                    {
+                        feedback = await ExecuteToolAsync(toolCall);
+                    }
+                    catch (Exception ex)
+                    {
+                        feedback = $"【系统反馈】执行工具失败：{ex.Message}";
+                    }
+                    
+                    // 合并：将反馈直接更新至该工具调用消息的 ToolFeedback 属性上
+                    aiMessage.ToolFeedback = feedback;
+                    _selectedAiChatTopic.NotifyMessagesChanged();
+                    ReorderTopics();
+                    
+                    AiChatStatusText = "AI 正在思考系统反馈…";
+                }
+                else
+                {
+                    // 没有检测到工具调用，这是最终的自然语言回复
+                    var aiMessage = new AiChatMessage(false, reply);
+                    _aiChatMessages.Add(aiMessage);
+                    _selectedAiChatTopic.Messages.Add(aiMessage);
+                    _selectedAiChatTopic.NotifyMessagesChanged();
+                    ReorderTopics();
+                    
+                    keepLooping = false;
+                }
+            }
+
             AiChatStatusText = "继续对话";
             SaveTopicsToStorage();
         }
@@ -658,8 +913,422 @@ public partial class MainWindow
         }
         finally
         {
-            _isAiChatRequestInFlight = false;
+            IsAiChatRequestInFlight = false;
             _ = Dispatcher.BeginInvoke(() => FocusAiInput(), DispatcherPriority.Background);
+        }
+    }
+
+    private class ToolCallInfo
+    {
+        public string ToolName { get; set; } = string.Empty;
+        public JsonElement RawPayload { get; set; }
+    }
+
+    private ToolCallInfo? ParseToolCall(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return null;
+
+        string jsonContent = content.Trim();
+        int startIdx = content.IndexOf("```json");
+        int endIdx;
+        if (startIdx != -1 && (endIdx = content.IndexOf("```", startIdx + 7)) != -1)
+        {
+            jsonContent = content.Substring(startIdx + 7, endIdx - startIdx - 7).Trim();
+        }
+
+        if (jsonContent.StartsWith("{") && jsonContent.EndsWith("}"))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(jsonContent);
+                var root = doc.RootElement.Clone();
+                if (root.TryGetProperty("tool", out var toolProp))
+                {
+                    var toolName = toolProp.GetString();
+                    if (!string.IsNullOrWhiteSpace(toolName) && IsKnownAiTool(toolName))
+                    {
+                        return new ToolCallInfo
+                        {
+                            ToolName = toolName,
+                            RawPayload = root
+                        };
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore and fallback
+            }
+        }
+
+        // 正则备用
+        try
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(jsonContent, @"""tool""\s*:\s*""([^""]+)""");
+            if (match.Success)
+            {
+                var toolName = match.Groups[1].Value;
+                if (!string.IsNullOrWhiteSpace(toolName) && IsKnownAiTool(toolName))
+                {
+                    var minimalJson = $"{{\"tool\":\"{toolName}\"}}";
+                    using var doc = JsonDocument.Parse(minimalJson);
+                    return new ToolCallInfo
+                    {
+                        ToolName = toolName,
+                        RawPayload = doc.RootElement.Clone()
+                    };
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        return null;
+    }
+
+    private bool IsKnownAiTool(string toolName)
+    {
+        return toolName is "query_extensions" or "execute_extension" or "execute_command" or "create_extension" or "delete_extension" or "run_extension" or "stop_extension";
+    }
+
+    private async Task<string> ExecuteToolAsync(ToolCallInfo toolCall)
+    {
+        switch (toolCall.ToolName)
+        {
+            case "query_extensions":
+                {
+                    var extensions = GetExtensionsForSettings();
+                    var list = new List<object>();
+                    foreach (var ext in extensions)
+                    {
+                        list.Add(new
+                        {
+                            id = ext.ExtensionId,
+                            name = ext.Title,
+                            desc = ext.Subtitle
+                        });
+                    }
+                    var jsonStr = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = false });
+                    return $"【系统反馈】这是查询到的扩展列表：\n{jsonStr}";
+                }
+
+            case "execute_extension":
+                {
+                    string id = string.Empty;
+                    if (toolCall.RawPayload.TryGetProperty("id", out var idProp))
+                    {
+                        id = idProp.GetString() ?? string.Empty;
+                    }
+                    else if (toolCall.RawPayload.TryGetProperty("extensionId", out var extIdProp))
+                    {
+                        id = extIdProp.GetString() ?? string.Empty;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        return "【系统反馈】执行失败：未指定扩展 id 参数。";
+                    }
+
+                    var extId = id;
+                    var success = await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (TryResolveExtensionCommand(extId, out var command))
+                        {
+                            MarkExtensionAsSeen(command);
+                            _ = ExecuteCommandAsync(ResolveRunnableCommand(command), explicitInput: null, launchSource: "ai-agent");
+                            return true;
+                        }
+                        return false;
+                    });
+
+                    if (success)
+                    {
+                        return $"【系统反馈】已成功在后台触发扩展 {extId} 的执行。";
+                    }
+                    else
+                    {
+                        return $"【系统反馈】执行失败：未能找到启用状态的小程序 ID \"{extId}\"。";
+                    }
+                }
+
+            case "execute_command":
+                {
+                    string command = string.Empty;
+                    if (toolCall.RawPayload.TryGetProperty("command", out var cmdProp))
+                    {
+                        command = cmdProp.GetString() ?? string.Empty;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(command))
+                    {
+                        return "【系统反馈】执行失败：未指定 command 参数。";
+                    }
+
+                    var result = await RunPowerShellCommandAsync(command);
+                    return $"【系统反馈】命令行执行结果(退出码:{result.ExitCode})：\n{result.Output}\n请根据结果直接使用自然语言回复用户，绝对不要再次调用本工具！";
+                }
+
+            case "create_extension":
+                {
+                    string manifestStr = string.Empty;
+                    if (toolCall.RawPayload.TryGetProperty("manifest", out var manifestProp))
+                    {
+                        manifestStr = manifestProp.GetString() ?? string.Empty;
+                    }
+                    if (string.IsNullOrWhiteSpace(manifestStr))
+                    {
+                        if (toolCall.RawPayload.TryGetProperty("manifest", out var manifestRaw) && manifestRaw.ValueKind == JsonValueKind.Object)
+                        {
+                            manifestStr = JsonSerializer.Serialize(manifestRaw);
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(manifestStr))
+                    {
+                        return "【系统反馈】新建失败：未指定 manifest 参数。";
+                    }
+
+                    try
+                    {
+                        var result = await Dispatcher.InvokeAsync(() =>
+                        {
+                            var command = LocalExtensionCatalog.SaveJsonExtension(manifestStr, forceNewSystemId: true);
+                            if (command != null)
+                            {
+                                TrackRecentlyAddedExtension(command.ExtensionId);
+                                ReloadLocalExtensionsFromExternal();
+                                QueueCSharpPrebuild(command, "api-add");
+                                return (true, command.ExtensionId);
+                            }
+                            return (false, string.Empty);
+                        });
+
+                        if (result.Item1)
+                        {
+                            return $"【系统反馈】新建小程序成功，新生成的小程序 ID 为：{result.Item2}，且已自动编译并刷新列表。";
+                        }
+                        else
+                        {
+                            return "【系统反馈】新建小程序失败。";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        return $"【系统反馈】新建小程序失败：{ex.Message}";
+                    }
+                }
+
+            case "delete_extension":
+                {
+                    string id = string.Empty;
+                    if (toolCall.RawPayload.TryGetProperty("id", out var idProp))
+                    {
+                        id = idProp.GetString() ?? string.Empty;
+                    }
+                    else if (toolCall.RawPayload.TryGetProperty("extensionId", out var extIdProp))
+                    {
+                        id = extIdProp.GetString() ?? string.Empty;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        return "【系统反馈】删除失败：未指定 id 参数。";
+                    }
+
+                    var extIdToDelete = id;
+                    try
+                    {
+                        var result = await Dispatcher.InvokeAsync(() =>
+                        {
+                            var commands = LocalExtensionCatalog.LoadCommands();
+                            var command = commands.FirstOrDefault(c => string.Equals(c.ExtensionId, extIdToDelete, StringComparison.OrdinalIgnoreCase));
+                            if (command != null)
+                            {
+                                ExtensionRecycleBinService.MoveToRecycleBin(extIdToDelete, command.ExtensionDirectoryPath);
+                                ReloadLocalExtensionsFromExternal();
+                                return true;
+                            }
+                            return false;
+                        });
+
+                        if (result)
+                        {
+                            return $"【系统反馈】已成功删除小程序 ID: {extIdToDelete} 并刷新列表。";
+                        }
+                        else
+                        {
+                            return $"【系统反馈】删除失败：未能找到 ID 为 \"{extIdToDelete}\" 的扩展。";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        return $"【系统反馈】删除小程序失败：{ex.Message}";
+                    }
+                }
+
+            case "run_extension":
+                {
+                    string id = string.Empty;
+                    if (toolCall.RawPayload.TryGetProperty("id", out var idProp))
+                    {
+                        id = idProp.GetString() ?? string.Empty;
+                    }
+                    else if (toolCall.RawPayload.TryGetProperty("extensionId", out var extIdProp))
+                    {
+                        id = extIdProp.GetString() ?? string.Empty;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        return "【系统反馈】运行失败：未指定 id 参数。";
+                    }
+
+                    string inputStr = string.Empty;
+                    if (toolCall.RawPayload.TryGetProperty("input", out var inputProp))
+                    {
+                        inputStr = inputProp.GetString() ?? string.Empty;
+                    }
+
+                    var extIdToRun = id;
+                    try
+                    {
+                        var (success, output, error) = await await Dispatcher.InvokeAsync(async () =>
+                        {
+                            if (TryResolveExtensionCommand(extIdToRun, out var command))
+                            {
+                                MarkExtensionAsSeen(command);
+                                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                                try
+                                {
+                                    var result = await ScriptExtensionRunner.ExecuteAsync(command, inputStr, "ai-agent", cts.Token);
+                                    return (true, result.Output ?? string.Empty, result.Error ?? string.Empty);
+                                }
+                                catch (Exception ex)
+                                {
+                                    return (false, string.Empty, ex.Message);
+                                }
+                            }
+                            return (false, string.Empty, "未找到该扩展");
+                        });
+
+                        if (success)
+                        {
+                            return $"【系统反馈】扩展 {extIdToRun} 运行成功。\n【标准输出】\n{output}\n【标准错误】\n{error}";
+                        }
+                        else
+                        {
+                            return $"【系统反馈】扩展 {extIdToRun} 运行失败：{error}";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        return $"【系统反馈】运行小程序失败：{ex.Message}";
+                    }
+                }
+
+            case "stop_extension":
+                {
+                    string id = string.Empty;
+                    if (toolCall.RawPayload.TryGetProperty("id", out var idProp))
+                    {
+                        id = idProp.GetString() ?? string.Empty;
+                    }
+                    else if (toolCall.RawPayload.TryGetProperty("extensionId", out var extIdProp))
+                    {
+                        id = extIdProp.GetString() ?? string.Empty;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        return "【系统反馈】停止失败：未指定 id 参数。";
+                    }
+
+                    var extIdToStop = id;
+                    try
+                    {
+                        var success = await Dispatcher.InvokeAsync(() =>
+                        {
+                            var runningInstances = RunningExtensionRegistry.GetSnapshot()
+                                .Where(x => string.Equals(x.ExtensionId, extIdToStop, StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+
+                            if (runningInstances.Count == 0)
+                            {
+                                return false;
+                            }
+
+                            foreach (var instance in runningInstances)
+                            {
+                                RunningExtensionRegistry.TryTerminate(instance.InstanceId, out _);
+                            }
+                            return true;
+                        });
+
+                        if (success)
+                        {
+                            return $"【系统反馈】已成功停止小程序 ID: {extIdToStop} 的所有运行实例。";
+                        }
+                        else
+                        {
+                            return $"【系统反馈】停止失败：未能找到处于运行状态下的小程序 ID \"{extIdToStop}\" 实例。";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        return $"【系统反馈】停止小程序失败：{ex.Message}";
+                    }
+                }
+
+            default:
+                return $"【系统反馈】未知的工具名称：{toolCall.ToolName}";
+        }
+    }
+
+    private async Task<(int ExitCode, string Output)> RunPowerShellCommandAsync(string command)
+    {
+        try
+        {
+            using var process = new System.Diagnostics.Process();
+            process.StartInfo.FileName = "powershell.exe";
+            var prependedCommand = "$ProgressPreference = 'SilentlyContinue';\r\n" + command;
+            var bytes = System.Text.Encoding.Unicode.GetBytes(prependedCommand);
+            var base64 = Convert.ToBase64String(bytes);
+            
+            process.StartInfo.Arguments = $"-NoProfile -NonInteractive -EncodedCommand {base64}";
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+
+            var outputBuilder = new System.Text.StringBuilder();
+            var errorBuilder = new System.Text.StringBuilder();
+
+            process.OutputDataReceived += (s, e) => { if (e.Data != null) outputBuilder.AppendLine(e.Data); };
+            process.ErrorDataReceived += (s, e) => { if (e.Data != null) errorBuilder.AppendLine(e.Data); };
+
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            try
+            {
+                await process.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                process.Kill(true);
+                return (-1, outputBuilder.ToString() + "\r\n[错误] 命令执行超时 (15秒)\r\n" + errorBuilder.ToString());
+            }
+
+            var fullOutput = outputBuilder.ToString() + errorBuilder.ToString();
+            return (process.ExitCode, fullOutput);
+        }
+        catch (Exception ex)
+        {
+            return (-1, $"[执行异常] {ex.Message}");
         }
     }
 
@@ -720,14 +1389,60 @@ public partial class MainWindow
         return content;
     }
 
+    private const string DEFAULT_SYSTEM_PROMPT = 
+        "你是燕子电脑端 AI 助手。你可以解答问题，也可以调用本地电脑端工具。\n" +
+        "你可以自主判断是否需要调用工具。如果需要调用工具，请输出一段包裹在 ```json 内部的 JSON 代码块：\n" +
+        "```json\n" +
+        "{\"tool\": \"工具名\", \"参数名\": \"参数值\"}\n" +
+        "```\n\n" +
+        "【工具调用示例】\n" +
+        "用户：查看插件列表\n" +
+        "AI回复：\n" +
+        "```json\n" +
+        "{\"tool\": \"query_extensions\"}\n" +
+        "```\n" +
+        "系统反馈：\n" +
+        "[{\"id\": \"ext_calculator\", \"name\": \"计算器\"}, {\"id\": \"ext_weather\", \"name\": \"天气助手\"}]\n" +
+        "AI回复：\n" +
+        "目前已安装的插件列表如下：\n" +
+        "1. 计算器 (ID: ext_calculator)\n" +
+        "2. 天气助手 (ID: ext_weather)\n" +
+        "你可以告诉我你想执行哪一个。\n\n" +
+        "【可用工具列表】\n" +
+        "1. query_extensions: 获取可用小程序列表。无参数。\n" +
+        "2. execute_extension: 执行某个扩展. 参数: id (扩展ID)。\n" +
+        "3. execute_command: 在电脑端执行命令行命令。参数: command (要执行的命令文本)。【重要】电脑端已默认在 PowerShell 5.1 环境中执行命令，请直接输入 PowerShell 的 Cmdlet 或表达式，严禁外层嵌套调用 powershell、powershell.exe -Command 或 cmd /c，避免转义错误和执行超时。\n\n" +
+        "【注意】如果你调用了工具，系统会在后台真实执行，并在执行完成后将真实的结果反馈给你，之后你再根据执行结果来决定是继续调用工具还是输出最终的自然语言回复。";
+
     private IReadOnlyList<object> BuildAiRequestMessages()
     {
+        var settings = AppSettingsStore.Load();
+        var basePrompt = string.IsNullOrWhiteSpace(settings.AiSystemPrompt)
+            ? DEFAULT_SYSTEM_PROMPT
+            : settings.AiSystemPrompt;
+
+        // 获取可用小程序列表
+        var extList = new List<object>();
+        foreach (var cmd in GetExtensionsForSettings())
+        {
+            extList.Add(new
+            {
+                id = cmd.ExtensionId,
+                name = cmd.Title,
+                desc = cmd.Subtitle
+            });
+        }
+        var extListJson = JsonSerializer.Serialize(extList);
+
+        var finalPrompt = "【系统指令（严格遵守）】\n" + basePrompt + 
+                          "\n当前可用小程序有:\n" + extListJson;
+
         var messages = new List<object>
         {
             new
             {
                 role = "system",
-                content = "你是燕子启动器中的 AI 助手。回答简洁、直接，优先帮助用户完成桌面效率任务。"
+                content = finalPrompt
             }
         };
 
@@ -738,6 +1453,15 @@ public partial class MainWindow
                 role = message.IsUser ? "user" : "assistant",
                 content = message.BuildRequestContent()
             });
+
+            if (message.IsToolCall && !string.IsNullOrWhiteSpace(message.ToolFeedback))
+            {
+                messages.Add(new
+                {
+                    role = "user",
+                    content = message.ToolFeedback
+                });
+            }
         }
 
         return messages;
@@ -935,6 +1659,7 @@ public partial class MainWindow
                 {
                     id = t.Id,
                     title = t.Title,
+                    isPinned = t.IsPinned,
                     createdAt = t.CreatedAt,
                     updatedAt = t.UpdatedAt,
                     messages = t.Messages.Select(m => new
@@ -993,6 +1718,11 @@ public partial class MainWindow
                 var title = topicElement.GetProperty("title").GetString() ?? "未命名";
                 var topic = new AiChatTopic(title);
 
+                if (topicElement.TryGetProperty("isPinned", out var isPinnedElement))
+                {
+                    topic.IsPinned = isPinnedElement.GetBoolean();
+                }
+
                 if (topicElement.TryGetProperty("messages", out var messagesArray))
                 {
                     foreach (var msgElement in messagesArray.EnumerateArray())
@@ -1019,6 +1749,8 @@ public partial class MainWindow
 
                 _aiChatTopics.Add(topic);
             }
+
+            ReorderTopics();
         }
         catch (Exception ex)
         {
@@ -1028,12 +1760,13 @@ public partial class MainWindow
 
     // ==================== 公共接口 ====================
     
-    public void SaveAiSettings(string baseUrl, string apiKey, string model)
+    public void SaveAiSettings(string baseUrl, string apiKey, string model, string systemPrompt)
     {
         var settings = AppSettingsStore.Load();
         settings.AiBaseUrl = baseUrl;
         settings.AiApiKey = apiKey;
         settings.AiModel = model;
+        settings.AiSystemPrompt = systemPrompt;
         AppSettingsStore.Save(settings);
         _appSettings = settings;
         _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
@@ -1044,8 +1777,43 @@ public partial class MainWindow
 
 // ==================== 数据模型 ====================
 
-public sealed class AiChatMessage
+public sealed class AiChatMessage : INotifyPropertyChanged
 {
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    private bool _isToolCall;
+    private string? _toolName;
+    private string? _toolFeedback;
+    private bool _isExpanded = true; // 默认展开，让用户能够直观看到执行状态
+
+    public bool IsToolCall
+    {
+        get => _isToolCall;
+        set { _isToolCall = value; OnPropertyChanged(); }
+    }
+
+    public string? ToolName
+    {
+        get => _toolName;
+        set { _toolName = value; OnPropertyChanged(); }
+    }
+
+    public string? ToolFeedback
+    {
+        get => _toolFeedback;
+        set { _toolFeedback = value; OnPropertyChanged(); }
+    }
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set { _isExpanded = value; OnPropertyChanged(); }
+    }
+
     public AiChatMessage(bool isUser, string text, IEnumerable<AiChatMessageAttachment>? attachments = null)
     {
         Id = Guid.NewGuid().ToString();
@@ -1160,6 +1928,36 @@ public sealed class AiChatTopic : INotifyPropertyChanged
             if (_isSelected != value)
             {
                 _isSelected = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private bool _isPinned;
+    private bool _isDeleteConfirming;
+
+    public bool IsPinned
+    {
+        get => _isPinned;
+        set
+        {
+            if (_isPinned != value)
+            {
+                _isPinned = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsDeleteConfirming
+    {
+        get => _isDeleteConfirming;
+        set
+        {
+            if (_isDeleteConfirming != value)
+            {
+                _isDeleteConfirming = value;
                 OnPropertyChanged();
             }
         }

@@ -1,0 +1,1454 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>个人中心 - 燕子</title>
+  <meta name="description" content="燕子个人中心">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/assets/auth.css">
+  <style>
+    main.profile-page {
+      width: min(1440px, calc(100% - 3rem));
+      padding-bottom: 6rem;
+    }
+
+    .profile-doc-layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 2.5rem;
+      padding: 2rem 0 6rem;
+      align-items: start;
+    }
+
+    .profile-sidebar-card {
+      position: sticky;
+      top: 100px;
+      max-height: calc(100vh - 140px);
+      overflow-y: auto;
+      padding: 1.25rem;
+      border-radius: var(--radius-md);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(24px) saturate(180%);
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .profile-mini-user {
+      display: grid;
+      grid-template-columns: 46px minmax(0, 1fr);
+      gap: 0.85rem;
+      align-items: center;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .profile-avatar-small {
+      width: 46px;
+      height: 46px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 750;
+      box-shadow: 0 16px 40px rgba(59, 130, 246, 0.28);
+    }
+
+    .profile-mini-user strong,
+    .profile-mini-user span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .profile-mini-user span {
+      margin-top: 0.2rem;
+      color: var(--text-dim);
+      font-size: 0.82rem;
+    }
+
+    .profile-nav-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .profile-nav-title {
+      display: block;
+      padding-left: 0.75rem;
+      margin-bottom: 0.4rem;
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .profile-tab-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.62rem 0.75rem;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-muted);
+      text-align: left;
+      font: inherit;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .profile-tab-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .profile-tab-btn.active {
+      color: var(--text);
+      background: rgba(59, 130, 246, 0.15);
+      border-left: 3px solid var(--accent);
+      border-radius: 4px 8px 8px 4px;
+      font-weight: 650;
+      box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.1);
+      text-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .profile-tab-count {
+      min-width: 1.65rem;
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text-dim);
+      font-size: 0.72rem;
+      text-align: center;
+    }
+
+    .profile-tab-btn.active .profile-tab-count {
+      color: #bfdbfe;
+      background: rgba(59, 130, 246, 0.18);
+    }
+
+    .profile-content-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      max-width: 1000px;
+      width: 100%;
+    }
+
+    .profile-view {
+      display: none;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .profile-view.active {
+      display: flex;
+    }
+
+    .profile-card {
+      padding: 2rem;
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    }
+
+    .profile-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.2rem;
+      flex-wrap: wrap;
+    }
+
+    .profile-card-header h1,
+    .profile-card-header h2 {
+      margin: 0 0 0.35rem;
+      letter-spacing: -0.02em;
+    }
+
+    .profile-card-header h1 {
+      font-size: clamp(1.7rem, 4vw, 2.5rem);
+    }
+
+    .profile-card-header h2 {
+      font-size: 1.35rem;
+    }
+
+    .profile-card-subtitle {
+      margin: 0;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .profile-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .profile-grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .info-item,
+    .stat-card {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      padding: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 18px;
+      background: rgba(0, 0, 0, 0.16);
+    }
+
+    .info-label,
+    .stat-label {
+      color: rgba(255, 255, 255, 0.58);
+      font-size: 0.78rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .info-value,
+    .stat-value {
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      line-height: 1.05;
+      font-weight: 780;
+    }
+
+    .profile-toolbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto auto;
+      gap: 0.8rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .profile-input,
+    .profile-select {
+      height: 42px;
+      width: 100%;
+      padding: 0 1rem;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.28);
+      border: 1px solid var(--border);
+      color: var(--text);
+      outline: none;
+      font: inherit;
+      font-size: 0.9rem;
+    }
+
+    .profile-input:focus,
+    .profile-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .profile-select option {
+      color: #0f172a;
+    }
+
+    .table-wrap {
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      background: rgba(0, 0, 0, 0.13);
+    }
+
+    .profile-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .profile-table th,
+    .profile-table td {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 0.9rem;
+    }
+
+    .profile-table th {
+      color: var(--text-dim);
+      font-size: 0.76rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .profile-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .profile-table tr.clickable-row {
+      cursor: pointer;
+    }
+
+    .profile-table tr.clickable-row:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .extension-cell {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      min-width: 0;
+    }
+
+    .extension-icon {
+      width: 38px;
+      height: 38px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--accent);
+      font-weight: 800;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+    }
+
+    .extension-icon.large {
+      width: 58px;
+      height: 58px;
+      border-radius: 16px;
+      font-size: 1.2rem;
+    }
+
+    .extension-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .extension-name-block {
+      min-width: 0;
+    }
+
+    .extension-name-block strong,
+    .extension-name-block span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .extension-name-block span {
+      margin-top: 0.2rem;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+    }
+
+    .detail-extension-head {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      min-width: 0;
+    }
+
+    .muted {
+      color: var(--text-dim);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text);
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    .badge.ok {
+      background: rgba(34, 197, 94, 0.14);
+      border-color: rgba(34, 197, 94, 0.3);
+    }
+
+    .badge.warn {
+      background: rgba(245, 158, 11, 0.14);
+      border-color: rgba(245, 158, 11, 0.32);
+    }
+
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 1rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      flex-wrap: wrap;
+    }
+
+    .pagination-buttons {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .page-btn,
+    .text-btn {
+      min-height: 36px;
+      padding: 0 0.85rem;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.055);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      cursor: pointer;
+      font: inherit;
+      transition: all 0.2s ease;
+    }
+
+    .page-btn:hover,
+    .text-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .page-btn:disabled,
+    .text-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+
+    .detail-back {
+      margin-bottom: 0.8rem;
+      align-self: flex-start;
+    }
+
+    .detail-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .detail-title-row h2 {
+      margin: 0 0 0.3rem;
+      overflow-wrap: anywhere;
+    }
+
+    .json-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin: 1.4rem 0 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .json-toolbar h3 {
+      margin: 0;
+    }
+
+    .json-toolbar-note {
+      display: block;
+      margin-top: 0.2rem;
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    .json-toolbar-actions {
+      display: flex;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+    }
+
+    .json-block {
+      margin: 0;
+      padding: 1rem;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.24);
+      color: rgba(255, 255, 255, 0.84);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 0.84rem;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      max-height: 460px;
+      overflow: auto;
+    }
+
+    .json-block.collapsed {
+      max-height: 190px;
+    }
+
+    .empty-state,
+    .loading-state,
+    .error-state {
+      padding: 1rem;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.14);
+      color: var(--text-dim);
+    }
+
+    .error-state {
+      color: #fca5a5;
+    }
+
+    .profile-login-prompt {
+      text-align: center;
+      margin-top: 6rem;
+    }
+
+    @media (max-width: 980px) {
+      main.profile-page {
+        width: min(100% - 2rem, 1000px);
+      }
+
+      .profile-doc-layout {
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+
+      .profile-sidebar-card {
+        position: static;
+        max-height: none;
+      }
+
+      .profile-nav-group {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .profile-nav-title {
+        grid-column: 1 / -1;
+      }
+
+      .profile-grid,
+      .profile-grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 680px) {
+      main.profile-page {
+        width: min(100% - 1rem, 1000px);
+      }
+
+      .profile-card {
+        padding: 1.2rem;
+      }
+
+      .profile-grid,
+      .profile-grid.two,
+      .profile-nav-group,
+      .profile-toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      .profile-table {
+        min-width: 820px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="noise"></div>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo"
+          style="border-radius: 8px; filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));" />
+        <span style="font-weight: 600;">燕子启动器</span>
+      </a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/docs/product-overview.html">文档</a>
+      <a href="/index.html#download">免费下载</a>
+      <span id="global-auth-container" style="margin-left: 16px; display: inline-flex; align-items: center; vertical-align: middle;">
+        <button id="global-login-btn" class="button secondary" style="padding: 0 12px; height: 32px; font-size: 0.85rem; border-radius: 6px; margin: 0; cursor: pointer;">
+          登录
+        </button>
+      </span>
+    </nav>
+  </header>
+
+  <main class="profile-page">
+    <div id="profile-shell" class="profile-doc-layout" style="display: none;">
+      <aside class="profile-sidebar-card">
+        <div class="profile-mini-user">
+          <div class="profile-avatar-small" id="sidebar-profile-initial">?</div>
+          <div>
+            <strong id="sidebar-profile-name">加载中...</strong>
+            <span id="sidebar-profile-email">-</span>
+          </div>
+        </div>
+
+        <div class="sidebar-search-container">
+          <input type="text" id="profile-section-search" class="sidebar-search-input" placeholder="搜索栏目...">
+          <svg class="sidebar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+
+        <div class="profile-nav-group" id="profile-nav-group">
+          <span class="profile-nav-title">个人中心</span>
+          <button class="profile-tab-btn active" data-view="overview" data-keywords="账号 概览 统计 user account overview">
+            <span>账号概览</span><span class="profile-tab-count" id="nav-count-overview">-</span>
+          </button>
+          <button class="profile-tab-btn" data-view="extensions" data-keywords="扩展 列表 搜索 分页 extensions list search">
+            <span>我的扩展</span><span class="profile-tab-count" id="nav-count-extensions">0</span>
+          </button>
+          <button class="profile-tab-btn" data-view="sync" data-keywords="同步 webdav 配置 云端 sync config">
+            <span>同步配置</span><span class="profile-tab-count" id="nav-count-sync">-</span>
+          </button>
+          <button class="profile-tab-btn" data-view="devices" data-keywords="设备 绑定 在线 devices platform">
+            <span>我的设备</span><span class="profile-tab-count" id="nav-count-devices">0</span>
+          </button>
+          <button class="profile-tab-btn" data-view="yanm" data-keywords="燕幕 状态 快照 yanm snapshot">
+            <span>燕幕状态</span><span class="profile-tab-count" id="nav-count-yanm">-</span>
+          </button>
+        </div>
+
+        <div class="profile-actions">
+          <button class="button secondary" id="profile-refresh-btn" type="button" style="width:100%; height:42px; padding:0 1rem;">刷新数据</button>
+          <button class="button secondary" onclick="window.YanziAuth.logout()" type="button" style="width:100%; height:42px; padding:0 1rem;">退出登录</button>
+        </div>
+      </aside>
+
+      <div class="profile-content-stack">
+        <section class="profile-view active" id="view-overview">
+          <article class="profile-card">
+            <div class="profile-card-header">
+              <div>
+                <h1>账号概览</h1>
+                <p class="profile-card-subtitle">当前登录账号、后端身份信息和个人数据统计。</p>
+              </div>
+            </div>
+            <div class="profile-grid">
+              <div class="info-item">
+                <span class="info-label">用户 ID</span>
+                <span class="info-value" id="page-profile-user-id">-</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">用户名</span>
+                <span class="info-value" id="page-profile-name-value">-</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">邮箱地址</span>
+                <span class="info-value" id="page-profile-email">-</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">账号角色</span>
+                <span class="info-value" id="page-profile-role-value">-</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="profile-card">
+            <div class="profile-card-header">
+              <div>
+                <h2>数据统计</h2>
+                <p class="profile-card-subtitle">汇总后端存储的扩展、配置、设备与云端状态。</p>
+              </div>
+            </div>
+            <div class="profile-grid">
+              <div class="stat-card">
+                <span class="stat-label">扩展总数</span>
+                <span class="stat-value" id="stat-extension-total">-</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">已启用</span>
+                <span class="stat-value" id="stat-extension-enabled">-</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">配置项</span>
+                <span class="stat-value" id="stat-config-total">-</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">绑定设备</span>
+                <span class="stat-value" id="stat-device-total">-</span>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="profile-view" id="view-extensions">
+          <article class="profile-card" id="extension-list-card">
+            <div class="profile-card-header">
+              <div>
+                <h1>我的扩展</h1>
+                <p class="profile-card-subtitle">列表页支持搜索、状态筛选和分页；点击任意扩展进入详情页。</p>
+              </div>
+            </div>
+            <div class="profile-toolbar">
+              <input type="search" id="extension-search-input" class="profile-input" placeholder="搜索扩展名称、ID、版本或配置内容...">
+              <select id="extension-status-filter" class="profile-select" aria-label="扩展状态筛选">
+                <option value="all">全部状态</option>
+                <option value="enabled">仅已启用</option>
+                <option value="disabled">仅已停用</option>
+                <option value="config">仅配置项</option>
+              </select>
+              <select id="extension-page-size" class="profile-select" aria-label="每页数量">
+                <option value="8">每页 8 条</option>
+                <option value="12" selected>每页 12 条</option>
+                <option value="20">每页 20 条</option>
+                <option value="50">每页 50 条</option>
+              </select>
+            </div>
+            <div id="extensions-list-panel">
+              <div class="loading-state">正在读取扩展数据...</div>
+            </div>
+          </article>
+
+          <article class="profile-card" id="extension-detail-card" style="display:none;">
+            <button class="text-btn detail-back" id="extension-detail-back" type="button">← 返回扩展列表</button>
+            <div id="extension-detail-panel"></div>
+          </article>
+        </section>
+
+        <section class="profile-view" id="view-sync">
+          <article class="profile-card">
+            <div class="profile-card-header">
+              <div>
+                <h1>同步配置</h1>
+                <p class="profile-card-subtitle">显示 WebDAV 同步配置。密码不会明文展示，只显示是否已设置。</p>
+              </div>
+            </div>
+            <div class="profile-grid" id="webdav-grid">
+              <div class="loading-state">正在读取同步配置...</div>
+            </div>
+          </article>
+        </section>
+
+        <section class="profile-view" id="view-devices">
+          <article class="profile-card">
+            <div class="profile-card-header">
+              <div>
+                <h1>我的设备</h1>
+                <p class="profile-card-subtitle">展示账号绑定设备、平台能力和最后在线时间。</p>
+              </div>
+            </div>
+            <div id="devices-list-panel">
+              <div class="loading-state">正在读取设备数据...</div>
+            </div>
+          </article>
+        </section>
+
+        <section class="profile-view" id="view-yanm">
+          <article class="profile-card">
+            <div class="profile-card-header">
+              <div>
+                <h1>燕幕云端状态</h1>
+                <p class="profile-card-subtitle">展示云端快照来源、更新时间、大小和诊断信息。</p>
+              </div>
+            </div>
+            <div id="yanm-state-panel">
+              <div class="loading-state">正在读取燕幕状态...</div>
+            </div>
+          </article>
+        </section>
+      </div>
+    </div>
+
+    <div id="profile-login-prompt" class="profile-login-prompt">
+      <h2>尚未登录</h2>
+      <p style="color: var(--text-muted); margin-bottom: 2rem;">请先登录以查看个人信息</p>
+      <button class="button primary" onclick="window.YanziAuth.showLogin()">登录燕子账号</button>
+    </div>
+  </main>
+
+  <script src="/assets/auth.js?v=20260701-4"></script>
+  <script>
+    const PROFILE_ENDPOINTS = {
+      me: "/v1/auth/me",
+      extensions: "/v1/me/extensions",
+      storeExtensions: "/v1/extensions?pageSize=60",
+      devices: "/v1/me/devices",
+      webdav: "/v1/sync/webdav-config",
+      yanm: "/v1/me/yanm-state"
+    };
+
+    const SENSITIVE_KEY_PATTERN = /(password|passwd|pwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|authorization|credential|cookie|session)/i;
+
+    const profileState = {
+      activeView: "overview",
+      extensions: [],
+      storeExtensionMap: new Map(),
+      devices: [],
+      webdav: null,
+      yanm: null,
+      extensionQuery: "",
+      extensionFilter: "all",
+      extensionPage: 1,
+      extensionPageSize: 12,
+      selectedExtensionId: null
+    };
+
+    function text(value, fallback = "-") {
+      if (value === null || value === undefined || value === "") return fallback;
+      return String(value);
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString("zh-CN", { hour12: false });
+    }
+
+    function formatBytes(bytes) {
+      const value = Number(bytes || 0);
+      if (!Number.isFinite(value) || value <= 0) return "-";
+      if (value < 1024) return `${value} B`;
+      if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+      return `${(value / 1024 / 1024).toFixed(2)} MB`;
+    }
+
+    function escapeHtml(value) {
+      return text(value, "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function parseJsonObject(value) {
+      if (!value) return null;
+      if (typeof value === "object") return value;
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+
+    function prettyJson(value) {
+      const parsed = parseJsonObject(value);
+      if (!parsed) return text(value, "{}");
+      return JSON.stringify(parsed, null, 2);
+    }
+
+    function redactSensitiveData(value, parentKey = "") {
+      if (Array.isArray(value)) {
+        return value.map(item => redactSensitiveData(item, parentKey));
+      }
+
+      if (value && typeof value === "object") {
+        const result = {};
+        for (const [key, nestedValue] of Object.entries(value)) {
+          result[key] = SENSITIVE_KEY_PATTERN.test(key)
+            ? "********"
+            : redactSensitiveData(nestedValue, key);
+        }
+        return result;
+      }
+
+      if (SENSITIVE_KEY_PATTERN.test(parentKey) && value !== null && value !== undefined && value !== "") {
+        return "********";
+      }
+
+      return value;
+    }
+
+    function redactSensitiveJsonString(value) {
+      const parsed = parseJsonObject(value);
+      if (parsed) {
+        return JSON.stringify(redactSensitiveData(parsed), null, 2);
+      }
+
+      return text(value, "{}").replace(/("(?:password|passwd|pwd|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|authorization|credential|cookie|session)"\s*:\s*")[^"]*(")/gi, "$1********$2");
+    }
+
+    async function copyText(value) {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      return copied;
+    }
+
+    function getExtensionId(record) {
+      return text(record?.extension_id || record?.extensionId);
+    }
+
+    function getExtensionSettings(record) {
+      return parseJsonObject(record?.settings_json || record?.settingsJson) || {};
+    }
+
+    function getStoreMeta(record) {
+      return profileState.storeExtensionMap.get(getExtensionId(record)) || {};
+    }
+
+    function getExtensionName(record) {
+      const settings = getExtensionSettings(record);
+      const meta = getStoreMeta(record);
+      return text(
+        settings.title || settings.displayName || settings.name || meta.display_name || meta.displayName || meta.name || getExtensionId(record)
+      );
+    }
+
+    function getExtensionDescription(record) {
+      const settings = getExtensionSettings(record);
+      const meta = getStoreMeta(record);
+      return text(settings.description || meta.description || "暂无描述");
+    }
+
+    function getExtensionIconValue(record) {
+      const settings = getExtensionSettings(record);
+      const meta = getStoreMeta(record);
+      return text(settings.iconUrl || settings.icon_url || settings.icon || meta.icon_url || meta.iconUrl || meta.icon, "");
+    }
+
+    function renderExtensionIcon(record, sizeClass = "") {
+      const icon = getExtensionIconValue(record);
+      const name = getExtensionName(record);
+      const initial = escapeHtml(name.substring(0, 1).toUpperCase() || "扩");
+      const className = `extension-icon ${sizeClass}`.trim();
+
+      if (/^https?:\/\//i.test(icon) || icon.startsWith("/")) {
+        return `<span class="${className}"><img src="${escapeHtml(icon)}" alt="${escapeHtml(name)} 图标" loading="lazy" onerror="this.parentElement.textContent='${initial}'"></span>`;
+      }
+
+      if (icon && !icon.startsWith("mdi:")) {
+        return `<span class="${className}">${escapeHtml(icon.substring(0, 2))}</span>`;
+      }
+
+      return `<span class="${className}">${initial}</span>`;
+    }
+
+    function isEnabled(record) {
+      return record?.enabled === true || Number(record?.enabled) === 1 || String(record?.enabled).toLowerCase() === "true";
+    }
+
+    function isConfigExtension(record) {
+      const id = getExtensionId(record).toLowerCase();
+      const settings = getExtensionSettings(record);
+      return id.includes("settings") || id.includes("config") || id === "yanzi-webdav-settings" || id === "yanzi-quickpanel-settings" || settings.source === "openquickhost-desktop-config";
+    }
+
+    function setView(viewName) {
+      profileState.activeView = viewName;
+      document.querySelectorAll(".profile-tab-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.view === viewName);
+      });
+      document.querySelectorAll(".profile-view").forEach(view => {
+        view.classList.toggle("active", view.id === `view-${viewName}`);
+      });
+      if (viewName !== "extensions") {
+        closeExtensionDetail();
+      }
+    }
+
+    async function safeApi(path) {
+      try {
+        return { ok: true, data: await window.YanziAuth.api(path) };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    }
+
+    async function loadStoreExtensionMetadata() {
+      const map = new Map();
+      let page = 1;
+      let hasMore = true;
+
+      while (hasMore && page <= 20) {
+        const result = await safeApi(`${PROFILE_ENDPOINTS.storeExtensions}&page=${page}`);
+        if (!result.ok) break;
+        for (const item of result.data.items || []) {
+          if (item.extension_id) map.set(item.extension_id, item);
+        }
+        hasMore = !!result.data.has_more;
+        page += 1;
+      }
+
+      return map;
+    }
+
+    async function loadProfileData() {
+      const [me, extensions, devices, webdav, yanm, storeMeta] = await Promise.all([
+        safeApi(PROFILE_ENDPOINTS.me),
+        safeApi(PROFILE_ENDPOINTS.extensions),
+        safeApi(PROFILE_ENDPOINTS.devices),
+        safeApi(PROFILE_ENDPOINTS.webdav),
+        safeApi(PROFILE_ENDPOINTS.yanm),
+        loadStoreExtensionMetadata()
+      ]);
+
+      return { me, extensions, devices, webdav, yanm, storeMeta };
+    }
+
+    function renderAccount(user, meResult) {
+      const me = meResult.ok ? meResult.data : user;
+      const displayName = me?.username || user?.username || "未设置用户名";
+      const email = me?.email || user?.email || "-";
+      const isAdmin = !!(me?.isAdmin || user?.isAdmin);
+      const role = isAdmin ? "系统管理员" : "普通用户";
+      const initial = (displayName || email || "?").substring(0, 1).toUpperCase();
+
+      document.getElementById("sidebar-profile-initial").textContent = initial;
+      document.getElementById("sidebar-profile-name").textContent = displayName;
+      document.getElementById("sidebar-profile-email").textContent = email;
+      document.getElementById("page-profile-user-id").textContent = text(me?.userId || user?.userId);
+      document.getElementById("page-profile-name-value").textContent = displayName;
+      document.getElementById("page-profile-email").textContent = email;
+      document.getElementById("page-profile-role-value").textContent = role;
+      document.getElementById("nav-count-overview").textContent = isAdmin ? "Admin" : "User";
+    }
+
+    function renderStats(extensionsResult, devicesResult, webdavResult, yanmResult, storeMeta) {
+      const extensions = extensionsResult.ok ? (extensionsResult.data.items || []) : [];
+      const devices = devicesResult.ok ? (devicesResult.data.items || []) : [];
+      const enabled = extensions.filter(isEnabled).length;
+      const configs = extensions.filter(isConfigExtension).length;
+
+      profileState.extensions = extensions;
+      profileState.storeExtensionMap = storeMeta instanceof Map ? storeMeta : new Map();
+      profileState.devices = devices;
+      profileState.webdav = webdavResult.ok ? webdavResult.data : null;
+      profileState.yanm = yanmResult.ok ? yanmResult.data : null;
+
+      document.getElementById("stat-extension-total").textContent = extensionsResult.ok ? extensions.length : "-";
+      document.getElementById("stat-extension-enabled").textContent = extensionsResult.ok ? enabled : "-";
+      document.getElementById("stat-config-total").textContent = extensionsResult.ok ? configs : "-";
+      document.getElementById("stat-device-total").textContent = devicesResult.ok ? devices.length : "-";
+
+      document.getElementById("nav-count-extensions").textContent = extensionsResult.ok ? extensions.length : "-";
+      document.getElementById("nav-count-devices").textContent = devicesResult.ok ? devices.length : "-";
+      document.getElementById("nav-count-sync").textContent = webdavResult.ok && webdavResult.data?.enabled ? "开" : "关";
+      document.getElementById("nav-count-yanm").textContent = yanmResult.ok ? "有" : "无";
+    }
+
+    function renderInfoGrid(containerId, items) {
+      document.getElementById(containerId).innerHTML = items.map(item => `
+        <div class="info-item">
+          <span class="info-label">${escapeHtml(item.label)}</span>
+          <span class="info-value">${escapeHtml(item.value)}</span>
+        </div>
+      `).join("");
+    }
+
+    function renderWebdav(webdavResult) {
+      if (!webdavResult.ok) {
+        document.getElementById("webdav-grid").innerHTML = `<div class="error-state">同步配置读取失败：${escapeHtml(webdavResult.error?.message || "未知错误")}</div>`;
+        return;
+      }
+
+      const config = webdavResult.data || {};
+      renderInfoGrid("webdav-grid", [
+        { label: "是否启用", value: config.enabled ? "已启用" : "未启用" },
+        { label: "服务器地址", value: config.serverUrl || "-" },
+        { label: "根路径", value: config.rootPath || "-" },
+        { label: "用户名", value: config.username || "-" },
+        { label: "密码状态", value: config.password ? "已设置" : "未设置" }
+      ]);
+    }
+
+    function getFilteredExtensions() {
+      const query = profileState.extensionQuery.trim().toLowerCase();
+      return profileState.extensions.filter(item => {
+        if (profileState.extensionFilter === "enabled" && !isEnabled(item)) return false;
+        if (profileState.extensionFilter === "disabled" && isEnabled(item)) return false;
+        if (profileState.extensionFilter === "config" && !isConfigExtension(item)) return false;
+        if (!query) return true;
+        const haystack = [
+          getExtensionName(item),
+          getExtensionId(item),
+          getExtensionDescription(item),
+          item.installed_version,
+          item.installedVersion,
+          item.updated_at,
+          item.updatedAt,
+          item.settings_json,
+          item.settingsJson
+        ].map(value => text(value, "").toLowerCase()).join(" ");
+        return haystack.includes(query);
+      });
+    }
+
+    function renderExtensionsList() {
+      const container = document.getElementById("extensions-list-panel");
+      const items = getFilteredExtensions();
+      const pageSize = profileState.extensionPageSize;
+      const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+      profileState.extensionPage = Math.min(Math.max(profileState.extensionPage, 1), totalPages);
+      const start = (profileState.extensionPage - 1) * pageSize;
+      const pageItems = items.slice(start, start + pageSize);
+
+      if (profileState.extensions.length === 0) {
+        container.innerHTML = `<div class="empty-state">当前账号还没有保存扩展数据。</div>`;
+        return;
+      }
+
+      if (items.length === 0) {
+        container.innerHTML = `<div class="empty-state">没有匹配的扩展。请调整搜索关键词或筛选条件。</div>`;
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="table-wrap">
+          <table class="profile-table">
+            <thead>
+              <tr>
+                <th>扩展</th>
+                <th>版本</th>
+                <th>状态</th>
+                <th>类型</th>
+                <th>更新时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pageItems.map(item => {
+                const extensionId = getExtensionId(item);
+                const enabled = isEnabled(item);
+                return `
+                  <tr class="clickable-row" data-extension-id="${escapeHtml(extensionId)}">
+                    <td>
+                      <div class="extension-cell">
+                        ${renderExtensionIcon(item)}
+                        <div class="extension-name-block">
+                          <strong>${escapeHtml(getExtensionName(item))}</strong>
+                          <span>${escapeHtml(extensionId)}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>${escapeHtml(item.installed_version || item.installedVersion || "-")}</td>
+                    <td><span class="badge ${enabled ? "ok" : "warn"}">${enabled ? "已启用" : "已停用"}</span></td>
+                    <td>${isConfigExtension(item) ? "系统/配置项" : "普通扩展"}</td>
+                    <td class="muted">${escapeHtml(formatDate(item.updated_at || item.updatedAt))}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span>共 ${items.length} 条，当前第 ${profileState.extensionPage} / ${totalPages} 页</span>
+          <div class="pagination-buttons">
+            <button class="page-btn" id="extension-prev-page" ${profileState.extensionPage <= 1 ? "disabled" : ""}>上一页</button>
+            <button class="page-btn" id="extension-next-page" ${profileState.extensionPage >= totalPages ? "disabled" : ""}>下一页</button>
+          </div>
+        </div>
+      `;
+
+      container.querySelectorAll(".clickable-row").forEach(row => {
+        row.addEventListener("click", () => openExtensionDetail(row.dataset.extensionId));
+      });
+      document.getElementById("extension-prev-page")?.addEventListener("click", () => {
+        profileState.extensionPage -= 1;
+        renderExtensionsList();
+      });
+      document.getElementById("extension-next-page")?.addEventListener("click", () => {
+        profileState.extensionPage += 1;
+        renderExtensionsList();
+      });
+    }
+
+    function renderExtensions(extensionsResult) {
+      if (!extensionsResult.ok) {
+        document.getElementById("extensions-list-panel").innerHTML = `<div class="error-state">扩展数据读取失败：${escapeHtml(extensionsResult.error?.message || "未知错误")}</div>`;
+        return;
+      }
+      closeExtensionDetail();
+      renderExtensionsList();
+    }
+
+    function openExtensionDetail(extensionId) {
+      const item = profileState.extensions.find(record => getExtensionId(record) === extensionId);
+      if (!item) return;
+      profileState.selectedExtensionId = extensionId;
+      const enabled = isEnabled(item);
+      const rawSettings = item.settings_json || item.settingsJson || {};
+      const settings = redactSensitiveJsonString(rawSettings);
+      const meta = getStoreMeta(item);
+
+      document.getElementById("extension-list-card").style.display = "none";
+      document.getElementById("extension-detail-card").style.display = "block";
+      document.getElementById("extension-detail-panel").innerHTML = `
+        <div class="detail-title-row">
+          <div class="detail-extension-head">
+            ${renderExtensionIcon(item, "large")}
+            <div>
+              <h2>${escapeHtml(getExtensionName(item))}</h2>
+              <p class="profile-card-subtitle">${escapeHtml(extensionId)} · ${escapeHtml(getExtensionDescription(item))}</p>
+            </div>
+          </div>
+          <span class="badge ${enabled ? "ok" : "warn"}">${enabled ? "已启用" : "已停用"}</span>
+        </div>
+        <div class="profile-grid">
+          <div class="info-item">
+            <span class="info-label">安装版本</span>
+            <span class="info-value">${escapeHtml(item.installed_version || item.installedVersion || "-")}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">商店版本</span>
+            <span class="info-value">${escapeHtml(meta.latest_version || meta.latestVersion || "-")}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">类型判断</span>
+            <span class="info-value">${isConfigExtension(item) ? "系统/配置项" : "普通扩展"}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">更新时间</span>
+            <span class="info-value">${escapeHtml(formatDate(item.updated_at || item.updatedAt))}</span>
+          </div>
+        </div>
+        <div class="json-toolbar">
+          <div>
+            <h3>配置 JSON</h3>
+            <span class="json-toolbar-note">已自动隐藏 password、token、secret、apiKey、authorization 等敏感字段。</span>
+          </div>
+          <div class="json-toolbar-actions">
+            <button class="text-btn" type="button" data-copy-json="extension-settings-json">复制 JSON</button>
+            <button class="text-btn" type="button" data-toggle-json="extension-settings-json">展开全部</button>
+          </div>
+        </div>
+        <pre class="json-block collapsed" id="extension-settings-json">${escapeHtml(settings)}</pre>
+      `;
+    }
+
+    function closeExtensionDetail() {
+      profileState.selectedExtensionId = null;
+      const listCard = document.getElementById("extension-list-card");
+      const detailCard = document.getElementById("extension-detail-card");
+      if (listCard) listCard.style.display = "block";
+      if (detailCard) detailCard.style.display = "none";
+    }
+
+    function renderDevices(devicesResult) {
+      const container = document.getElementById("devices-list-panel");
+      if (!devicesResult.ok) {
+        container.innerHTML = `<div class="error-state">设备数据读取失败：${escapeHtml(devicesResult.error?.message || "未知错误")}</div>`;
+        return;
+      }
+
+      const items = devicesResult.data.items || [];
+      if (items.length === 0) {
+        container.innerHTML = `<div class="empty-state">当前账号还没有绑定设备。</div>`;
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="table-wrap">
+          <table class="profile-table">
+            <thead>
+              <tr>
+                <th>设备名称</th>
+                <th>平台</th>
+                <th>设备 ID</th>
+                <th>最后在线</th>
+                <th>更新时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map(item => `
+                <tr>
+                  <td><strong>${escapeHtml(item.displayName || item.display_name || "未命名设备")}</strong></td>
+                  <td><span class="badge">${escapeHtml(item.platform || "未知平台")}</span></td>
+                  <td class="muted">${escapeHtml(item.deviceId || item.device_id || "-")}</td>
+                  <td>${escapeHtml(formatDate(item.lastSeenAt || item.last_seen_at))}</td>
+                  <td class="muted">${escapeHtml(formatDate(item.updatedAt || item.updated_at))}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        <h3 style="margin:1.4rem 0 0.75rem;">设备能力明细</h3>
+        <pre class="json-block">${escapeHtml(redactSensitiveJsonString(items.map(item => ({
+          deviceId: item.deviceId || item.device_id,
+          displayName: item.displayName || item.display_name,
+          platform: item.platform,
+          capabilities: parseJsonObject(item.capabilities || item.capabilities_json) || {}
+        }))))}</pre>
+      `;
+    }
+
+    function renderYanmState(yanmResult) {
+      const container = document.getElementById("yanm-state-panel");
+      if (!yanmResult.ok) {
+        const message = yanmResult.error?.message || "暂无云端快照";
+        container.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
+        return;
+      }
+
+      const state = yanmResult.data || {};
+      container.innerHTML = `
+        <div class="profile-grid">
+          <div class="info-item">
+            <span class="info-label">快照来源</span>
+            <span class="info-value">${escapeHtml(state.source || "-")}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">更新时间</span>
+            <span class="info-value">${escapeHtml(formatDate(state.updatedAtUtc))}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">快照大小</span>
+            <span class="info-value">${escapeHtml(formatBytes(state.bytes))}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">查看链接</span>
+            <span class="info-value">${state.viewUrl ? `<a href="${escapeHtml(state.viewUrl)}" target="_blank" rel="noopener noreferrer">打开快照</a>` : "-"}</span>
+          </div>
+        </div>
+        <h3 style="margin:1.4rem 0 0.75rem;">诊断信息</h3>
+        <pre class="json-block">${escapeHtml(redactSensitiveJsonString(state.diagnostics || {}))}</pre>
+      `;
+    }
+
+    async function renderProfilePage() {
+      const user = window.YanziAuth ? window.YanziAuth.getUser() : null;
+      const shell = document.getElementById("profile-shell");
+      const prompt = document.getElementById("profile-login-prompt");
+
+      if (!user) {
+        shell.style.display = "none";
+        prompt.style.display = "block";
+        return;
+      }
+
+      shell.style.display = "grid";
+      prompt.style.display = "none";
+      renderAccount(user, { ok: true, data: user });
+
+      const refreshBtn = document.getElementById("profile-refresh-btn");
+      if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "正在刷新...";
+      }
+
+      try {
+        const data = await loadProfileData();
+        renderAccount(user, data.me);
+        renderStats(data.extensions, data.devices, data.webdav, data.yanm, data.storeMeta);
+        renderWebdav(data.webdav);
+        renderExtensions(data.extensions);
+        renderDevices(data.devices);
+        renderYanmState(data.yanm);
+      } finally {
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = "刷新数据";
+        }
+      }
+    }
+
+    function bindProfileEvents() {
+      document.querySelectorAll(".profile-tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => setView(btn.dataset.view));
+      });
+
+      document.getElementById("profile-refresh-btn")?.addEventListener("click", renderProfilePage);
+      document.getElementById("extension-detail-back")?.addEventListener("click", closeExtensionDetail);
+
+      document.getElementById("extension-search-input")?.addEventListener("input", event => {
+        profileState.extensionQuery = event.target.value || "";
+        profileState.extensionPage = 1;
+        renderExtensionsList();
+      });
+
+      document.getElementById("extension-status-filter")?.addEventListener("change", event => {
+        profileState.extensionFilter = event.target.value || "all";
+        profileState.extensionPage = 1;
+        renderExtensionsList();
+      });
+
+      document.getElementById("extension-page-size")?.addEventListener("change", event => {
+        profileState.extensionPageSize = Number(event.target.value) || 12;
+        profileState.extensionPage = 1;
+        renderExtensionsList();
+      });
+
+      document.getElementById("profile-section-search")?.addEventListener("input", event => {
+        const query = String(event.target.value || "").trim().toLowerCase();
+        document.querySelectorAll(".profile-tab-btn").forEach(btn => {
+          const haystack = `${btn.textContent || ""} ${btn.dataset.keywords || ""}`.toLowerCase();
+          btn.style.display = !query || haystack.includes(query) ? "flex" : "none";
+        });
+      });
+
+      document.addEventListener("click", async event => {
+        const copyButton = event.target.closest("[data-copy-json]");
+        if (copyButton) {
+          const target = document.getElementById(copyButton.dataset.copyJson);
+          if (!target) return;
+          const originalLabel = copyButton.textContent;
+          const copied = await copyText(target.textContent || "");
+          copyButton.textContent = copied ? "已复制" : "复制失败";
+          window.setTimeout(() => {
+            copyButton.textContent = originalLabel;
+          }, 1200);
+          return;
+        }
+
+        const toggleButton = event.target.closest("[data-toggle-json]");
+        if (toggleButton) {
+          const target = document.getElementById(toggleButton.dataset.toggleJson);
+          if (!target) return;
+          const collapsed = target.classList.toggle("collapsed");
+          toggleButton.textContent = collapsed ? "展开全部" : "收起 JSON";
+        }
+      });
+    }
+
+    window.addEventListener("yanzi-auth-changed", () => {
+      renderProfilePage();
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      bindProfileEvents();
+      renderProfilePage();
+    });
+  </script>
+</body>
+
+</html>

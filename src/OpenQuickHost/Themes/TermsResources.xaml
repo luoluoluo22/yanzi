@@ -1,0 +1,20 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!-- 专有名词全局字典定义 (Brand Terms) -->
+    <!-- 品牌/产品名称 -->
+    <sys:String x:Key="Term.AppName">燕子</sys:String>
+
+    <!-- 核心专有名词 -->
+    <sys:String x:Key="Term.MiniApp">小程序</sys:String>
+    <sys:String x:Key="Term.Backpack">背包</sys:String>
+    <sys:String x:Key="Term.Warehouse">仓库</sys:String>
+    <sys:String x:Key="Term.YanRing">燕环</sys:String>
+    <sys:String x:Key="Term.YanVoice">燕语</sys:String>
+    <sys:String x:Key="Term.YanScreen">燕幕</sys:String>
+    <sys:String x:Key="Term.MouseGesture">鼠标手势</sys:String>
+    <sys:String x:Key="Term.YanSelect">燕选</sys:String>
+    <sys:String x:Key="Term.YanNest">燕窝</sys:String>
+
+</ResourceDictionary>

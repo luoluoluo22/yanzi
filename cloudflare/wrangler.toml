@@ -1,4 +1,4 @@
-name = "openquickhost-sync"
+name = "yanzi-sync"
 main = "src/index.js"
 compatibility_date = "2026-04-23"
 [[d1_databases]]
@@ -10,10 +10,9 @@ database_id = "512f99ac-4f5f-4e30-affb-58fc4da94bfa"
 binding = "PACKAGES"
 bucket_name = "openquickhost-sync-assets"
 
-[[migrations]]
-tag = "v1_device_relay"
-new_sqlite_classes = ["DeviceRelayRoom"]
+[[routes]]
+pattern = "sync.luoluoluo.cc.cd"
+custom_domain = true
 
-[[migrations]]
-tag = "delete-relay-room"
-deleted_classes = ["DeviceRelayRoom"]
+
+# trigger build 2026-07-04

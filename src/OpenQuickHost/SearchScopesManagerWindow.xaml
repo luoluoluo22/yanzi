@@ -1,0 +1,122 @@
+<Window x:Class="OpenQuickHost.SearchScopesManagerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="管理搜索标签"
+        Width="460"
+        Height="420"
+        WindowStartupLocation="CenterOwner"
+        Style="{StaticResource DialogWindow}">
+    <Border Margin="1"
+            CornerRadius="0"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
+            BorderThickness="1">
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Text="管理搜索标签" Style="{StaticResource TitleText}" />
+            <TextBlock Grid.Row="1"
+                       Margin="0,6,0,10"
+                       Text="选中复选框以显示该标签，取消勾选以隐藏。通过右侧按钮调整前后顺序。"
+                       Style="{StaticResource DescriptionText}"
+                       TextWrapping="Wrap" />
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <ListBox x:Name="ScopesListBox"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Margin="0,0,12,0"
+                         Foreground="{DynamicResource BrushTextMain}"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.Template>
+                        <ControlTemplate TargetType="ListBox">
+                            <ScrollViewer x:Name="ScrollViewer" Focusable="false" Padding="{TemplateBinding Padding}">
+                                <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            </ScrollViewer>
+                        </ControlTemplate>
+                    </ListBox.Template>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderBrush" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Padding" Value="4,4" />
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="4,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,8,0" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Label}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Top">
+                    <Button Content="上移"
+                            Style="{StaticResource SecondaryBtn}"
+                            Width="80"
+                            Margin="0,0,0,10"
+                            Click="MoveUpButton_Click" />
+                    <Button Content="下移"
+                            Style="{StaticResource SecondaryBtn}"
+                            Width="80"
+                            Click="MoveDownButton_Click" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="3" Margin="0,15,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <CheckBox x:Name="EnableEverythingCheckBox"
+                          Content="启用 Everything 文件搜索"
+                          VerticalAlignment="Center"
+                          Foreground="{DynamicResource BrushTextMain}" />
+                <Button Grid.Column="1"
+                        Content="取消"
+                        Style="{StaticResource SecondaryBtn}"
+                        Width="90"
+                        Margin="0,0,10,0"
+                        Click="CancelButton_Click" />
+                <Button Grid.Column="2"
+                        Content="保存"
+                        Style="{StaticResource PrimaryBtn}"
+                        Width="90"
+                        Click="SaveButton_Click" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

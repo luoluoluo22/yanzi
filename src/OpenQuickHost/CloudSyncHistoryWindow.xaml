@@ -1,0 +1,74 @@
+<Window x:Class="OpenQuickHost.CloudSyncHistoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="账号同步历史"
+        Width="820" Height="560" MinWidth="680" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BrushBG}">
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextMain}" FontSize="20" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding ObjectId}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,5,0,0"/>
+                <TextBlock Text="每次创建、修改、删除和恢复都会形成一个不可变版本；恢复也会生成新版本，不会抹掉历史。"
+                           Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,9,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+            <Button Grid.Column="1" Content="刷新历史" Style="{StaticResource SecondaryBtn}" Height="30" Padding="12,0" Click="RefreshButton_Click"/>
+        </Grid>
+
+        <Border Grid.Row="1" Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
+                CornerRadius="7" Padding="10,7" Margin="0,16,0,10">
+            <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="12" TextWrapping="Wrap"/>
+        </Border>
+
+        <ListView Grid.Row="2" ItemsSource="{Binding Versions}" Background="Transparent"
+                  BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Header="版本" Width="90">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Revision, StringFormat=rev {0}}" Foreground="{DynamicResource BrushTextMain}" FontWeight="SemiBold"/>
+                                    <TextBlock Text=" 当前" Foreground="#FF22C55E" Margin="5,0,0,0" Visibility="{Binding IsCurrent, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Header="操作" DisplayMemberBinding="{Binding OperationText}" Width="105"/>
+                    <GridViewColumn Header="时间" DisplayMemberBinding="{Binding UpdatedAtText}" Width="160"/>
+                    <GridViewColumn Header="来源设备" DisplayMemberBinding="{Binding DeviceText}" Width="190"/>
+                    <GridViewColumn Header="说明" DisplayMemberBinding="{Binding DetailText}" Width="150"/>
+                    <GridViewColumn Header="操作" Width="86">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Content="恢复此版" Style="{StaticResource SecondaryBtn}" Height="26" Padding="8,0"
+                                        IsEnabled="{Binding CanRestore}" Click="RestoreVersionButton_Click"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                </GridView>
+            </ListView.View>
+        </ListView>
+
+        <Grid Grid.Row="3" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="历史内容不会在列表中展开，以免意外暴露 AI 密钥等敏感配置。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="关闭" Style="{StaticResource SecondaryBtn}" Width="80" Height="30" Click="CloseButton_Click"/>
+        </Grid>
+    </Grid>
+</Window>

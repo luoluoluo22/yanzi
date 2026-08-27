@@ -3,12 +3,95 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Concurrent;
+using System.Net.WebSockets;
+using System.Threading;
+using System.Threading.Tasks;
 using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
 public sealed class LocalAgentApiServer : IDisposable
 {
+    private WebSocket? _activeBrowserSocket;
+    public event Action<bool>? BrowserConnectionChanged;
+    public bool IsBrowserConnected => _activeBrowserSocket != null && _activeBrowserSocket.State == WebSocketState.Open;
+    public string ConnectedBrowserName { get; private set; } = "";
+
+    public static string LastKnownMobileDeviceModel { get; set; } = "";
+    public static event Action<string>? MobileDeviceConnected;
+
+    private static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingBrowserTasks = new(StringComparer.OrdinalIgnoreCase);
+
+    public async Task<(bool success, string? jsonResult, string? error)> RunBrowserAiPromptTransferAsync(
+        string prompt,
+        string aiSite = "deepseek",
+        int timeoutSeconds = 120,
+        bool isNewSession = false)
+    {
+        if (_activeBrowserSocket == null || _activeBrowserSocket.State != WebSocketState.Open)
+        {
+            return (false, null, "燕子浏览器助手未连接。请先打开浏览器并确保已启用“燕子浏览器助手”插件。");
+        }
+
+        var taskId = Guid.NewGuid().ToString("N");
+        var taskPayload = new Dictionary<string, object>
+        {
+            ["type"] = "task_request",
+            ["taskId"] = taskId,
+            ["action"] = "ai_prompt_transfer",
+            ["aiSite"] = aiSite,
+            ["prompt"] = prompt,
+            ["timeoutSeconds"] = timeoutSeconds,
+            ["isNewSession"] = isNewSession
+        };
+
+        var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingBrowserTasks[taskId] = tcs;
+
+        try
+        {
+            var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
+            await _activeBrowserSocket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, _cts.Token);
+            HostAssets.AppendLog($"[LocalAgentApi] Dispatched AI prompt transfer task to browser extension: taskId={taskId}, site={aiSite}, promptLength={prompt.Length}");
+        }
+        catch (Exception ex)
+        {
+            _pendingBrowserTasks.TryRemove(taskId, out _);
+            return (false, null, $"向浏览器助手发送指令失败: {ex.Message}");
+        }
+
+        using (var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds + 10)))
+        {
+            var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
+            if (completedTask == tcs.Task)
+            {
+                var resultDoc = await tcs.Task;
+                string? status = resultDoc.TryGetProperty("status", out var statusProp) ? statusProp.GetString() : null;
+                string? message = resultDoc.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : null;
+
+                if (status == "success")
+                {
+                    if (resultDoc.TryGetProperty("data", out var dataProp) &&
+                        dataProp.TryGetProperty("rawJson", out var jsonProp))
+                    {
+                        var rawJson = jsonProp.GetString();
+                        return (true, rawJson, null);
+                    }
+                    return (false, null, "已从 AI 页面完成生成，但未提取到有效的 JSON 代码块。");
+                }
+                else
+                {
+                    return (false, null, string.IsNullOrWhiteSpace(message) ? "DeepSeek 网页端生成异常或超时" : message);
+                }
+            }
+            else
+            {
+                _pendingBrowserTasks.TryRemove(taskId, out _);
+                return (false, null, $"AI 响应超时（等待超过 {timeoutSeconds} 秒未返回）");
+            }
+        }
+    }
+
     private readonly string _prefix;
     private readonly string _token;
     private readonly Action<string?> _onMutated;
@@ -116,6 +199,11 @@ public sealed class LocalAgentApiServer : IDisposable
         }
     }
 
+    private static string ResolveFsPath(string? path)
+    {
+        return PathHelper.ResolveFsPath(path);
+    }
+
     private async Task HandleRequestAsync(HttpListenerContext context)
     {
         var request = context.Request;
@@ -137,6 +225,159 @@ public sealed class LocalAgentApiServer : IDisposable
             {
                 response.StatusCode = 204;
                 response.Close();
+                return;
+            }
+
+            if (path == "/v1/browser/ws")
+            {
+                var settings = AppSettingsStore.Load();
+                if (!settings.EnableBrowserHelper)
+                {
+                    await WriteJsonAsync(response, 403, new { error = "browser_helper_disabled_by_settings" });
+                    return;
+                }
+
+                if (context.Request.IsWebSocketRequest)
+                {
+                    try
+                    {
+                        var wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
+                        var webSocket = wsContext.WebSocket;
+
+                        var userAgent = context.Request.Headers["User-Agent"] ?? "";
+                        var browserName = "浏览器";
+                        if (userAgent.Contains("Edg/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            browserName = "Edge";
+                        }
+                        else if (userAgent.Contains("Chrome/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            browserName = "Chrome";
+                        }
+                        else if (userAgent.Contains("Firefox/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            browserName = "Firefox";
+                        }
+                        else if (userAgent.Contains("Safari/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            browserName = "Safari";
+                        }
+                        ConnectedBrowserName = browserName;
+                        
+                        var oldSocket = Interlocked.Exchange(ref _activeBrowserSocket, webSocket);
+                        if (oldSocket != null)
+                        {
+                            try { await oldSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "New connection established", CancellationToken.None); } catch {}
+                            oldSocket.Dispose();
+                        }
+
+                        BrowserConnectionChanged?.Invoke(true);
+                        HostAssets.AppendLog("Local Agent API: Browser extension connected via WebSocket.");
+
+                        _ = Task.Run(() => HandleBrowserWebSocketLoopAsync(webSocket), _cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Local Agent API WebSocket accept error: {ex.Message}");
+                        response.StatusCode = 500;
+                        response.Close();
+                    }
+                }
+                else
+                {
+                    await WriteJsonAsync(response, 400, new { error = "websocket_required" });
+                }
+                return;
+            }
+
+            if (request.HttpMethod == "POST" && path == "/v1/browser/execute")
+            {
+                if (!IsAuthorized(request))
+                {
+                    await WriteJsonAsync(response, 401, new { error = "unauthorized" });
+                    return;
+                }
+
+                if (_activeBrowserSocket == null || _activeBrowserSocket.State != WebSocketState.Open)
+                {
+                    await WriteJsonAsync(response, 503, new { error = "browser_extension_not_connected" });
+                    return;
+                }
+
+                string body;
+                using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                {
+                    body = await reader.ReadToEndAsync();
+                }
+
+                var taskId = Guid.NewGuid().ToString("N");
+                var taskPayload = new Dictionary<string, object>();
+                try
+                {
+                    var jsonDoc = JsonDocument.Parse(body);
+                    foreach (var prop in jsonDoc.RootElement.EnumerateObject())
+                    {
+                        taskPayload[prop.Name] = prop.Value;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await WriteJsonAsync(response, 400, new { error = "invalid_json_body: " + ex.Message });
+                    return;
+                }
+
+                taskPayload["type"] = "task_request";
+                taskPayload["taskId"] = taskId;
+                if (!taskPayload.ContainsKey("action"))
+                {
+                    taskPayload["action"] = "workflow";
+                }
+
+                var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _pendingBrowserTasks[taskId] = tcs;
+
+                try
+                {
+                    var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
+                    await _activeBrowserSocket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, _cts.Token);
+                }
+                catch (Exception ex)
+                {
+                    _pendingBrowserTasks.TryRemove(taskId, out _);
+                    await WriteJsonAsync(response, 500, new { error = "failed_to_send_to_extension: " + ex.Message });
+                    return;
+                }
+
+                using (var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                {
+                    var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
+                    if (completedTask == tcs.Task)
+                    {
+                        var resultDoc = await tcs.Task;
+                        var responseData = new Dictionary<string, object?>();
+                        responseData["taskId"] = taskId;
+                        
+                        if (resultDoc.TryGetProperty("status", out var statusProp)) 
+                            responseData["status"] = statusProp.GetString();
+                        if (resultDoc.TryGetProperty("message", out var msgProp)) 
+                            responseData["message"] = msgProp.GetString();
+                        if (resultDoc.TryGetProperty("data", out var dataProp)) 
+                            responseData["data"] = dataProp;
+                        
+                        int httpStatus = 200;
+                        if (responseData.TryGetValue("status", out var st) && st?.ToString() == "error")
+                        {
+                            httpStatus = 500;
+                        }
+
+                        await WriteJsonAsync(response, httpStatus, responseData);
+                    }
+                    else
+                    {
+                        _pendingBrowserTasks.TryRemove(taskId, out _);
+                        await WriteJsonAsync(response, 504, new { error = "browser_execution_timeout" });
+                    }
+                }
                 return;
             }
 
@@ -337,6 +578,11 @@ public sealed class LocalAgentApiServer : IDisposable
                     var items = new List<object>();
                     string currentPath = "";
 
+                    if (string.IsNullOrEmpty(targetPath) || string.Equals(targetPath, "Desktop", StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                    }
+
                     if (string.IsNullOrEmpty(targetPath))
                     {
                         foreach (var drive in DriveInfo.GetDrives())
@@ -444,7 +690,7 @@ public sealed class LocalAgentApiServer : IDisposable
             if (request.HttpMethod == "POST" && path == "/v1/fs/read")
             {
                 var payload = await ReadJsonBodyAsync(request);
-                var targetPath = GetString(payload, "path");
+                var targetPath = ResolveFsPath(GetString(payload, "path"));
 
                 if (string.IsNullOrEmpty(targetPath))
                 {
@@ -468,12 +714,31 @@ public sealed class LocalAgentApiServer : IDisposable
                         return;
                     }
 
+                    var ext = fileInfo.Extension.ToLowerInvariant();
+                    bool isImage = ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".bmp" || ext == ".ico";
+                    if (isImage)
+                    {
+                        var bytes = File.ReadAllBytes(fullPath);
+                        var base64 = Convert.ToBase64String(bytes);
+                        await WriteJsonAsync(response, 200, new
+                        {
+                            ok = true,
+                            path = fullPath,
+                            content = base64,
+                            isBase64 = true,
+                            ext = ext
+                        });
+                        return;
+                    }
+
                     string content = File.ReadAllText(fullPath, Encoding.UTF8);
                     await WriteJsonAsync(response, 200, new
                     {
                         ok = true,
                         path = fullPath,
-                        content = content
+                        content = content,
+                        isBase64 = false,
+                        ext = ext
                     });
                 }
                 catch (Exception ex)
@@ -547,6 +812,10 @@ public sealed class LocalAgentApiServer : IDisposable
             {
                 var payload = await ReadJsonBodyAsync(request);
                 var deviceId = GetString(payload, "deviceId") ?? "android-lan";
+                
+                LastKnownMobileDeviceModel = MobileDeviceNameNormalizer.Normalize(deviceId);
+                MobileDeviceConnected?.Invoke(LastKnownMobileDeviceModel);
+
                 await WriteJsonAsync(response, 200, new
                 {
                     ok = true,
@@ -731,11 +1000,19 @@ public sealed class LocalAgentApiServer : IDisposable
                     return;
                 }
                 var payload = await ReadJsonBodyAsync(request);
+
+                var sourceDeviceId = GetString(payload, "sourceDeviceId");
+                if (!string.IsNullOrEmpty(sourceDeviceId))
+                {
+                    LastKnownMobileDeviceModel = MobileDeviceNameNormalizer.Normalize(sourceDeviceId);
+                    MobileDeviceConnected?.Invoke(LastKnownMobileDeviceModel);
+                }
+
                 var messageId = Guid.NewGuid().ToString("N");
                 var message = new DeviceMessageRecord
                 {
                     MessageId = messageId,
-                    SourceDeviceId = GetString(payload, "sourceDeviceId") ?? "lan",
+                    SourceDeviceId = sourceDeviceId ?? "lan",
                     TargetPlatform = GetString(payload, "targetPlatform") ?? "desktop",
                     Kind = GetString(payload, "kind") ?? "text",
                     Title = GetString(payload, "title") ?? "局域网消息",
@@ -917,6 +1194,21 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "GET" && path == "/v1/sync/personal-config")
+            {
+                var settings = AppSettingsStore.Load();
+                var secrets = PersonalSyncSecretStore.Load();
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    enabled = settings.PersonalSync.Enabled,
+                    provider = settings.PersonalSync.Provider,
+                    settings = settings.PersonalSync,
+                    secrets = secrets
+                });
+                return;
+            }
+
             if (request.HttpMethod == "POST" && path == "/v1/sync/trigger")
             {
                 if (_onTriggerSync != null)
@@ -946,6 +1238,28 @@ public sealed class LocalAgentApiServer : IDisposable
                     content = result.Content,
                     source = result.Source,
                     localPath = result.LocalPath
+                });
+                return;
+            }
+
+            if (request.HttpMethod == "DELETE" && path.StartsWith("/v1/storage/", StringComparison.Ordinal))
+            {
+                var extensionId = Uri.UnescapeDataString(path["/v1/storage/".Length..]);
+                var key = GetQueryString(request, "key");
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    await WriteJsonAsync(response, 400, new { error = "key_required" });
+                    return;
+                }
+                var scope = GetQueryString(request, "scope");
+                var result = await ExtensionStorageService.DeleteTextAsync(extensionId, key, scope);
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    localPath = result.LocalPath,
+                    cloudSaved = result.CloudSaved,
+                    result.Scope,
+                    cloudMessage = result.CloudMessage
                 });
                 return;
             }
@@ -987,7 +1301,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     return;
                 }
 
-                var command = LocalExtensionCatalog.SaveJsonExtension(manifest);
+                var command = LocalExtensionCatalog.SaveJsonExtension(manifest, forceNewSystemId: true);
                 _onMutated(command.ExtensionId);
                 MainWindow.QueueCSharpPrebuild(command, "api-add");
                 await WriteJsonAsync(response, 201, new { item = ToDto(command) });
@@ -1046,7 +1360,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     return;
                 }
 
-                var command = LocalExtensionCatalog.SaveJsonExtension(manifest);
+                var command = LocalExtensionCatalog.SaveJsonExtension(manifest, forceNewSystemId: false);
                 _onMutated(command.ExtensionId);
                 MainWindow.QueueCSharpPrebuild(command, "api-edit");
                 await WriteJsonAsync(response, 200, new { item = ToDto(command) });
@@ -1225,12 +1539,91 @@ public sealed class LocalAgentApiServer : IDisposable
                 var settings = AppSettingsStore.Load();
                 settings.Yanm = yanm;
                 var updatedAtUtc = GetString(payload, "updatedAtUtc");
-                settings.LauncherConfigUpdatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
+                settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
                     ? DateTime.UtcNow.ToString("O")
                     : updatedAtUtc;
                 AppSettingsStore.Save(settings);
                 _onSettingsChanged?.Invoke("api-yanm-state-updated", true);
+                
+                if (_onPushToMobile != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _onPushToMobile("YanziSync", "yanm_updated");
+                        }
+                        catch {}
+                    });
+                }
+                
                 await WriteYanmStateAsync(response, AppSettingsStore.Load());
+                return;
+            }
+
+            if (request.HttpMethod == "PUT" && path == "/v1/me/yanm-state/component-state")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                var patch = ReadYanmComponentStatePatch(payload);
+                if (patch.Count == 0)
+                {
+                    await WriteJsonAsync(response, 400, new { error = "component_state_required" });
+                    return;
+                }
+
+                var settings = AppSettingsStore.Load();
+                settings.Yanm ??= new YanmSettings();
+                settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in patch)
+                {
+                    settings.Yanm.ComponentState[item.Key] = item.Value;
+                }
+
+                var updatedAtUtc = GetString(payload, "updatedAtUtc");
+                settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
+                    ? DateTime.UtcNow.ToString("O")
+                    : updatedAtUtc;
+                AppSettingsStore.Save(settings);
+                _onSettingsChanged?.Invoke("api-yanm-component-state-updated", false);
+
+                if (_onPushToMobile != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _onPushToMobile("YanziSync", "yanm_updated");
+                        }
+                        catch {}
+                    });
+                }
+
+                await WriteYanmStateAsync(response, AppSettingsStore.Load());
+                return;
+            }
+
+            if (request.HttpMethod == "GET" && path == "/v1/me/mobile/extensions")
+            {
+                var settings = AppSettingsStore.Load();
+                var list = settings.MobileExtensionsJson ?? "[]";
+                await WriteJsonAsync(response, 200, new { ok = true, extensions = list });
+                return;
+            }
+
+            if (request.HttpMethod == "PUT" && path == "/v1/me/mobile/extensions")
+            {
+                var payload = await ReadJsonBodyAsync(request);
+                if (!payload.TryGetProperty("extensions", out var extElement) || extElement.ValueKind != JsonValueKind.String)
+                {
+                    await WriteJsonAsync(response, 400, new { error = "extensions_string_required" });
+                    return;
+                }
+                var extensionsStr = extElement.GetString() ?? "[]";
+                var settings = AppSettingsStore.Load();
+                settings.MobileExtensionsJson = extensionsStr;
+                AppSettingsStore.Save(settings);
+                _onSettingsChanged?.Invoke("api-mobile-extensions-updated", true);
+                await WriteJsonAsync(response, 200, new { ok = true });
                 return;
             }
 
@@ -1365,9 +1758,12 @@ public sealed class LocalAgentApiServer : IDisposable
     {
         settings.Yanm ??= new YanmSettings();
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var updatedAtUtc = string.IsNullOrWhiteSpace(settings.LauncherConfigUpdatedAtUtc)
+        var updatedAtUtc = string.IsNullOrWhiteSpace(settings.YanmStateUpdatedAtUtc)
+            ? settings.LauncherConfigUpdatedAtUtc
+            : settings.YanmStateUpdatedAtUtc;
+        updatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
             ? DateTime.UtcNow.ToString("O")
-            : settings.LauncherConfigUpdatedAtUtc;
+            : updatedAtUtc;
         var bytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(settings.Yanm, JsonOptions));
         return WriteJsonAsync(response, 200, new
         {
@@ -1451,6 +1847,43 @@ public sealed class LocalAgentApiServer : IDisposable
         }
 
         return value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    }
+
+    private static Dictionary<string, string> ReadYanmComponentStatePatch(JsonElement payload)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (payload.TryGetProperty("componentState", out var stateElement) &&
+            stateElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var item in stateElement.EnumerateObject())
+            {
+                var key = item.Name.Trim();
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    result[key] = JsonElementToStateString(item.Value);
+                }
+            }
+        }
+
+        var explicitKey = GetString(payload, "stateKey") ?? GetString(payload, "key");
+        if (!string.IsNullOrWhiteSpace(explicitKey))
+        {
+            payload.TryGetProperty("value", out var valueElement);
+            result[explicitKey.Trim()] = JsonElementToStateString(valueElement);
+        }
+
+        return result;
+    }
+
+    private static string JsonElementToStateString(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Null => string.Empty,
+            JsonValueKind.Undefined => string.Empty,
+            _ => value.GetRawText()
+        };
     }
 
     private static LocalMobileMessageDetail CreateLocalMobileMessageDetail(DeviceMessageRecord message, bool success, string output)
@@ -2201,5 +2634,78 @@ public sealed class LocalAgentApiServer : IDisposable
 </html>
 """;
         return html.Replace("__YANZI_TOKEN__", _token ?? string.Empty);
+    }
+
+    private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket)
+    {
+        var buffer = new byte[1024 * 64];
+        try
+        {
+            while (webSocket.State == WebSocketState.Open && !_cts.IsCancellationRequested)
+            {
+                var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    break;
+                }
+
+                if (result.MessageType == WebSocketMessageType.Text)
+                {
+                    var rawJson = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    
+                    if (!result.EndOfMessage)
+                    {
+                        using var ms = new MemoryStream();
+                        await ms.WriteAsync(buffer, 0, result.Count);
+                        while (!result.EndOfMessage)
+                        {
+                            result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
+                            await ms.WriteAsync(buffer, 0, result.Count);
+                        }
+                        rawJson = Encoding.UTF8.GetString(ms.ToArray());
+                    }
+
+                    try
+                    {
+                        using var jsonDoc = JsonDocument.Parse(rawJson);
+                        var json = jsonDoc.RootElement;
+                        if (json.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "task_response")
+                        {
+                            if (json.TryGetProperty("taskId", out var taskIdProp))
+                            {
+                                var taskId = taskIdProp.GetString();
+                                if (!string.IsNullOrEmpty(taskId) && _pendingBrowserTasks.TryRemove(taskId, out var tcs))
+                                {
+                                    tcs.SetResult(json.Clone());
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Local Agent API error processing WS message: {ex.Message}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Local Agent API Browser WebSocket disconnected: {ex.Message}");
+        }
+        finally
+        {
+            if (Interlocked.CompareExchange(ref _activeBrowserSocket, null, webSocket) == webSocket)
+            {
+                ConnectedBrowserName = "";
+                BrowserConnectionChanged?.Invoke(false);
+            }
+            try
+            {
+                await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
+            }
+            catch { /* ignore */ }
+            webSocket.Dispose();
+            HostAssets.AppendLog("Local Agent API: Browser extension disconnected.");
+        }
     }
 }

@@ -1,7 +1,8 @@
 <Window x:Class="OpenQuickHost.YanyuEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="燕语编辑"
+        xmlns:local="clr-namespace:OpenQuickHost"
+        Title="{local:Term YanVoice, Suffix='编辑'}"
         Width="820"
         Height="620"
         MinWidth="680"
@@ -186,7 +187,7 @@
 
             <StackPanel>
                 <TextBlock x:Name="TitleText"
-                           Text="编辑燕语"
+                           Text="{local:Term YanVoice, Prefix='编辑'}"
                            Style="{StaticResource TitleText}" />
                 <TextBlock x:Name="DescriptionText"
                            Margin="0,8,0,0"

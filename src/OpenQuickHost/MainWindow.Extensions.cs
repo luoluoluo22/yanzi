@@ -60,7 +60,7 @@ public partial class MainWindow
     public CommandItem PersistJsonExtensionFromDialog(string json, bool isEditMode)
     {
         HostAssets.AppendLog($"PersistJsonExtensionFromDialog: start, editMode={isEditMode}.");
-        var command = LocalExtensionCatalog.SaveJsonExtension(json);
+        var command = LocalExtensionCatalog.SaveJsonExtension(json, forceNewSystemId: !isEditMode);
         QueueCSharpPrebuild(command, isEditMode ? "extension-edit" : "extension-add");
 
         if (!isEditMode)
@@ -75,7 +75,7 @@ public partial class MainWindow
         CommandList.SelectedItem = SelectedCommand;
         LastRunMessage = isEditMode
             ? $"已更新本地 JSON 扩展：{command.Title}"
-            : $"已添加本地 JSON 扩展：{command.Title}";
+            : $"已添加本地 JSON 小程序：{command.Title}";
         HostAssets.AppendLog($"PersistJsonExtensionFromDialog: success, extensionId={command.ExtensionId}.");
         return command;
     }
@@ -83,7 +83,7 @@ public partial class MainWindow
     public void ReloadLocalExtensionsFromExternal()
     {
         LocalExtensionCatalog.EnsureSampleExtension();
-        ReplaceLocalExtensions(LocalExtensionCatalog.LoadEntries(), "已通过外部 Agent API 刷新本地扩展。");
+        ReplaceLocalExtensions(LocalExtensionCatalog.LoadEntries(), "已通过外部 Agent API 刷新本地小程序。");
     }
 
     private void ReloadLocalExtensionsFromWebDav()
@@ -260,7 +260,7 @@ public partial class MainWindow
             try
             {
                 HostAssets.AppendLog("ShowJsonExtensionEditorForOwner: persisting after dialog return.");
-                var command = LocalExtensionCatalog.SaveJsonExtension(dialog.JsonContent);
+                var command = LocalExtensionCatalog.SaveJsonExtension(dialog.JsonContent, forceNewSystemId: !isEditMode);
                 QueueCSharpPrebuild(command, isEditMode ? "extension-edit-fallback" : "extension-add-fallback");
                 UpsertLocalExtensionCommand(command);
                 StartMouseGestureService();
@@ -324,7 +324,7 @@ public partial class MainWindow
                     {
                         _ = dispatcher.InvokeAsync(async () =>
                         {
-                            var mainWin = System.Windows.Application.Current.MainWindow as MainWindow;
+                            var mainWin = System.Windows.Application.Current?.MainWindow as MainWindow;
                             if (mainWin != null)
                             {
                                 try
@@ -406,11 +406,16 @@ public partial class MainWindow
         return ShowJsonExtensionEditorForOwner(string.Empty, false, owner ?? this);
     }
 
+    public CommandItem? OpenAddExtensionWithInitialJson(string initialJson, Window? owner = null)
+    {
+        return ShowJsonExtensionEditorForOwner(initialJson, false, owner ?? this);
+    }
+
     public CommandItem CreateQuickOpenExtensionFromPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            throw new InvalidOperationException("路径为空，无法创建扩展。");
+            throw new InvalidOperationException("路径为空，无法创建小程序。");
         }
 
         var fullPath = Path.GetFullPath(path);
@@ -427,16 +432,24 @@ public partial class MainWindow
             fileName = fullPath;
         }
 
+        var displayName = isDirectory ? fileName : Path.GetFileNameWithoutExtension(fileName);
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            displayName = fileName;
+        }
+
         var extensionId = $"quick-open-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}";
+        var iconPath = isDirectory ? "mdi:folder" : fullPath;
         var manifest = new LocalExtensionManifest
         {
             Id = extensionId,
-            Name = fileName,
+            Name = displayName,
             Version = "1.0.0",
             Category = isDirectory ? "目录" : "文件",
             Description = isDirectory ? $"打开目录：{fullPath}" : $"打开文件：{fullPath}",
             Keywords = new[]
             {
+                displayName,
                 fileName,
                 Path.GetFileNameWithoutExtension(fileName),
                 Path.GetExtension(fullPath),
@@ -445,8 +458,10 @@ public partial class MainWindow
                 "拖拽导入"
             }.Where(static value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             OpenTarget = fullPath,
-            Icon = isDirectory ? "mdi:folder" : "mdi:file"
+            Icon = iconPath
         };
+
+        HostAssets.AppendLog($"[IconLog] CreateQuickOpenExtensionFromPath: inputPath='{path}', fullPath='{fullPath}', displayName='{displayName}', iconPath='{iconPath}'.");
 
         var json = JsonSerializer.Serialize(manifest, new JsonSerializerOptions
         {
@@ -478,6 +493,7 @@ public partial class MainWindow
 
     public void ShowPanel()
     {
+        HasBeenShown = true;
         ShowInTaskbar = true;
         if (!IsVisible)
         {
@@ -508,6 +524,11 @@ public partial class MainWindow
         _quickPanel?.ShowAtMouse();
     }
 
+    public void HideMousePanel()
+    {
+        _quickPanel?.Hide();
+    }
+
     private void BringMainWindowToFront()
     {
         Activate();
@@ -520,7 +541,6 @@ public partial class MainWindow
         }
 
         Topmost = true;
-        Topmost = false;
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
     }
@@ -594,7 +614,7 @@ public partial class MainWindow
         InputHookService.Start(
             () => _quickPanel?.ShowAtMouse(),
             () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease(),
-            () => _radialMenu?.ShowAtMouse(),
+            pt => _radialMenu?.ShowAtMouse(pt),
             () => _radialMenu?.ExecuteSelectedFromHoldRelease(),
             () => _yanmOverlay?.ShowTemporary(),
             () => _yanmOverlay?.HideTemporary(),
@@ -629,26 +649,52 @@ public partial class MainWindow
         _windowSnapAssistService.TriggerAtForegroundWindow();
     }
 
-    public IReadOnlyList<RadialMenuRuntimeItem> GetRadialMenuItems(string? pageId = null)
+    public IReadOnlyList<RadialMenuRuntimeItem> GetRadialMenuItems(string? pageId = null, string? activeProcessName = null)
     {
         var allCommands = GetAllCommands();
         var settings = AppSettingsStore.Load();
         var radial = settings.RadialMenu ?? new RadialMenuSettings();
-        var page = radial.Pages.FirstOrDefault(item => item.Id.Equals(pageId ?? radial.SelectedPageId, StringComparison.OrdinalIgnoreCase))
-            ?? radial.Pages.FirstOrDefault();
-        var slots = page?.Slots ?? [];
-        var slotTitles = page?.SlotTitles ?? [];
-        var childPages = page?.ChildPageIds ?? [];
+        
+        RadialMenuPageSettings? targetPage = null;
+        if (!string.IsNullOrEmpty(pageId))
+        {
+            targetPage = radial.Pages.FirstOrDefault(item => item.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (targetPage == null)
+        {
+            if (!string.IsNullOrWhiteSpace(activeProcessName))
+            {
+                var normalizedProcess = activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
+                targetPage = radial.Pages.FirstOrDefault(item =>
+                    !string.IsNullOrEmpty(item.ContextProcessName) &&
+                    item.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase));
+            }
+
+            targetPage ??= radial.Pages.FirstOrDefault(item => item.Id.Equals(radial.SelectedPageId, StringComparison.OrdinalIgnoreCase))
+                ?? radial.Pages.FirstOrDefault(item => string.IsNullOrEmpty(item.ContextProcessName))
+                ?? radial.Pages.FirstOrDefault();
+        }
+
         var result = new List<RadialMenuRuntimeItem>();
         for (var index = 0; index < RadialMenuSettings.TotalSlotCount; index++)
         {
-            var extensionId = slots.ElementAtOrDefault(index);
-            var displayTitle = slotTitles.ElementAtOrDefault(index);
+            string? extensionId = null;
+            string? displayTitle = null;
+            string? childPageId = null;
+
+            if (targetPage != null)
+            {
+                extensionId = targetPage.Slots.ElementAtOrDefault(index);
+                displayTitle = targetPage.SlotTitles.ElementAtOrDefault(index);
+                childPageId = targetPage.ChildPageIds.ElementAtOrDefault(index);
+            }
+
             var command = string.IsNullOrWhiteSpace(extensionId)
                 ? null
                 : ResolveRadialCommand(extensionId, allCommands, displayTitle);
-            var childPageId = childPages.ElementAtOrDefault(index) ?? string.Empty;
-            result.Add(new RadialMenuRuntimeItem(command, childPageId));
+            
+            result.Add(new RadialMenuRuntimeItem(command, childPageId ?? string.Empty));
         }
 
         return result;
@@ -828,8 +874,6 @@ public partial class MainWindow
 
     private static uint SendSimulatedKeystroke(uint modifiers, Key key, out int inputCount, out int lastError)
     {
-        Thread.Sleep(60);
-
         var virtualKeys = new List<ushort>(5);
         if ((modifiers & ModControl) != 0)
         {
@@ -999,12 +1043,12 @@ public partial class MainWindow
                 item.ExtensionId.Equals(request.ExtensionId ?? string.Empty, StringComparison.OrdinalIgnoreCase));
             if (command == null)
             {
-                LastRunMessage = $"燕选运行扩展失败：没有找到扩展 {request.ExtensionId}";
+                LastRunMessage = $"燕选运行小程序失败：没有找到扩展 {request.ExtensionId}";
                 return;
             }
 
             _ = ExecuteCommandAsync(ResolveRunnableCommand(command), text, "yarnselect");
-            LastRunMessage = $"燕选运行扩展：{command.Title}";
+            LastRunMessage = $"燕选运行小程序：{command.Title}";
         }
     }
 
@@ -1022,7 +1066,7 @@ public partial class MainWindow
         UnregisterYanmHotkey();
         UnregisterWindowSnapAssistHotkey();
         UnregisterExtensionHotkeys();
-        SyncStatus = "已暂停快捷键、扩展快捷键、燕选和鼠标面板监听。";
+        SyncStatus = "已暂停快捷键、小程序快捷键、燕选和鼠标面板监听。";
     }
 
     public void ResumeListenerServices()
@@ -1042,7 +1086,7 @@ public partial class MainWindow
         RefreshRadialHotkeyRegistration();
         RefreshWindowSnapAssistHotkeyRegistration();
         RefreshExtensionHotkeys();
-        SyncStatus = "已恢复快捷键、扩展快捷键、燕选和鼠标面板监听。";
+        SyncStatus = "已恢复快捷键、小程序快捷键、燕选和鼠标面板监听。";
     }
 
     /// <summary>启动全局鼠标手势服务并扫描所有扩展中的 MouseGesture 注册到服务里。</summary>
@@ -1069,6 +1113,14 @@ public partial class MainWindow
         // 钩子线程上回调，UI 线程执行扩展
         Dispatcher.BeginInvoke(new Action(() =>
         {
+            if (gesture.ExtensionId != null && gesture.ExtensionId.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
+            {
+                var appPath = gesture.ExtensionId.Substring(4);
+                LaunchOrActivateApp(appPath, gesture.ExtensionName);
+                LastRunMessage = $"鼠标手势 {gesture.Sequence} 触发应用：{gesture.ExtensionName}";
+                return;
+            }
+
             var command = _allCommands.FirstOrDefault(c =>
                 string.Equals(c.ExtensionId, gesture.ExtensionId, StringComparison.OrdinalIgnoreCase));
             if (command == null)
@@ -1082,6 +1134,50 @@ public partial class MainWindow
         }));
     }
 
+
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "IsIconic")]
+    private static extern bool AppIsIconic(IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "ShowWindow")]
+    private static extern bool AppShowWindow(IntPtr hWnd, int nCmdShow);
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetForegroundWindow")]
+    private static extern bool AppSetForegroundWindow(IntPtr hWnd);
+
+    private static void LaunchOrActivateApp(string appPath, string appName)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(appPath) || !System.IO.File.Exists(appPath))
+            {
+                return;
+            }
+
+            var fileName = System.IO.Path.GetFileNameWithoutExtension(appPath);
+            var processes = System.Diagnostics.Process.GetProcessesByName(fileName);
+            var runningProc = processes.FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
+            if (runningProc != null)
+            {
+                var hWnd = runningProc.MainWindowHandle;
+                if (AppIsIconic(hWnd))
+                {
+                    AppShowWindow(hWnd, 9);
+                }
+                AppSetForegroundWindow(hWnd);
+                return;
+            }
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = appPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to launch app gesture: {appPath}, err={ex.Message}");
+        }
+    }
+
     private void PinAutoHideButton_Click(object sender, RoutedEventArgs e)
     {
         _isPinned = !_isPinned;
@@ -1092,8 +1188,25 @@ public partial class MainWindow
 
     public void HideToTray()
     {
+        _searchPipelineManager.CancelActive();
+        if (OwnedWindows.OfType<Window>().Any(static w => w.IsVisible))
+        {
+            return;
+        }
+
+        if (IsRadialPickerMode)
+        {
+            SetSearchScopePopupOpen(false);
+            if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
+            if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
+            Hide();
+            return;
+        }
+
         ShowInTaskbar = false;
         SetSearchScopePopupOpen(false);
+        if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
+        if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
         Hide();
     }
 
@@ -1109,16 +1222,30 @@ public partial class MainWindow
         }
     }
 
+    private bool _isHookAdded;
+
     private void MainWindow_SourceInitialized(object? sender, EventArgs e)
     {
         _source = (HwndSource?)PresentationSource.FromVisual(this);
+        if (_source == null)
+        {
+            var helper = new WindowInteropHelper(this);
+            if (helper.Handle != IntPtr.Zero)
+            {
+                _source = HwndSource.FromHwnd(helper.Handle);
+            }
+        }
         if (_source == null)
         {
             return;
         }
 
         _lastKnownWindowDpi = GetCurrentWindowDpi();
-        _source.AddHook(WndProc);
+        if (!_isHookAdded)
+        {
+            _source.AddHook(WndProc);
+            _isHookAdded = true;
+        }
         if (!_listenerServicesPaused)
         {
             StartKeyboardTriggerService();
@@ -1186,6 +1313,10 @@ public partial class MainWindow
     private void Window_Deactivated(object? sender, EventArgs e)
     {
         SetSearchScopePopupOpen(false);
+        if (CapsGuidePopup != null)
+        {
+            CapsGuidePopup.IsOpen = false;
+        }
 
         if (_isPinned || !IsVisible)
         {
@@ -1218,11 +1349,17 @@ public partial class MainWindow
     private void MainWindow_Activated(object? sender, EventArgs e)
     {
         SetSearchScopePopupOpen(true);
+        UpdateCapsGuidePopupPosition();
     }
 
     private void MainWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         SetSearchScopePopupOpen(IsVisible && IsActive);
+        if (!IsVisible)
+        {
+            if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
+            if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
+        }
     }
 
     private void MainWindow_PositionChanged(object? sender, EventArgs e)
@@ -1406,7 +1543,7 @@ public partial class MainWindow
     private uint GetCurrentWindowDpi()
     {
         var handle = new WindowInteropHelper(this).Handle;
-        return handle == IntPtr.Zero ? 96u : GetDpiForWindow(handle);
+        return ScreenHelper.GetDpiForWindow(handle);
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1417,9 +1554,6 @@ public partial class MainWindow
         public int Right;
         public int Bottom;
     }
-
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     private void ExecuteCommandFromGlobalHotkey(CommandItem command)
     {
@@ -1636,6 +1770,12 @@ public partial class MainWindow
         UnregisterLauncherHotkey();
         var shortcut = AppSettingsStore.Load().LauncherHotkey;
         KeyboardDoubleTapService.ApplyConfiguredShortcut(shortcut);
+        if (string.IsNullOrWhiteSpace(shortcut))
+        {
+            HostAssets.AppendLog("Launcher hotkey cleared.");
+            return true;
+        }
+
         if (IsDoubleTapShortcut(shortcut))
         {
             HostAssets.AppendLog($"Launcher hotkey registered as double tap: {shortcut}");
@@ -1764,75 +1904,14 @@ public partial class MainWindow
     private static bool IsRadialAllowedForForegroundProcess()
     {
         var radial = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
-        var whitelist = radial.WhitelistedProcesses ?? [];
-        var blacklist = radial.BlacklistedProcesses ?? [];
-        if (whitelist.Count == 0 && blacklist.Count == 0)
-        {
-            return true;
-        }
-
         var processName = GetForegroundProcessName();
-        if (string.IsNullOrWhiteSpace(processName))
+        var allowed = ProcessHelper.IsProcessAllowed(processName, radial.WhitelistedProcesses, radial.BlacklistedProcesses);
+        if (!allowed)
         {
-            return whitelist.Count == 0;
+            HostAssets.AppendLog($"Radial hotkey blocked by process filter, process={processName}.");
         }
 
-        if (whitelist.Count > 0)
-        {
-            var allowed = whitelist.Any(item => ProcessNameMatches(processName, item));
-            if (!allowed)
-            {
-                HostAssets.AppendLog($"Radial hotkey blocked by whitelist, process={processName}.");
-            }
-
-            return allowed;
-        }
-
-        var blocked = blacklist.Any(item => ProcessNameMatches(processName, item));
-        if (blocked)
-        {
-            HostAssets.AppendLog($"Radial hotkey blocked by blacklist, process={processName}.");
-        }
-
-        return !blocked;
-    }
-
-    private static bool ProcessNameMatches(string processName, string pattern)
-    {
-        var normalizedProcess = NormalizeProcessName(processName);
-        var normalizedPattern = NormalizeProcessName(pattern);
-        if (string.IsNullOrWhiteSpace(normalizedPattern))
-        {
-            return false;
-        }
-
-        if (normalizedPattern.Contains('*', StringComparison.Ordinal))
-        {
-            var parts = normalizedPattern.Split('*', StringSplitOptions.RemoveEmptyEntries);
-            var index = 0;
-            foreach (var part in parts)
-            {
-                var found = normalizedProcess.IndexOf(part, index, StringComparison.OrdinalIgnoreCase);
-                if (found < 0)
-                {
-                    return false;
-                }
-
-                index = found + part.Length;
-            }
-
-            return true;
-        }
-
-        return normalizedProcess.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeProcessName(string value)
-    {
-        value = (value ?? string.Empty).Trim();
-        return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? value[..^4]
-            : value;
+        return allowed;
     }
 
     private static string GetForegroundProcessName()
@@ -1845,8 +1924,21 @@ public partial class MainWindow
                 return string.Empty;
             }
 
+            var className = new System.Text.StringBuilder(256);
+            if (GetClassName(hwnd, className, className.Capacity) > 0)
+            {
+                var classStr = className.ToString();
+                if (string.Equals(classStr, "Progman", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "WorkerW", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_SecondaryTrayWnd", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "desktop";
+                }
+            }
+
             _ = GetWindowThreadProcessId(hwnd, out var processId);
-            return processId == 0 ? string.Empty : Process.GetProcessById((int)processId).ProcessName;
+            return ProcessHelper.GetProcessNameByPid(processId);
         }
         catch
         {
@@ -2099,7 +2191,7 @@ public partial class MainWindow
         {
             if (!_localExtensionIndex.TryGetValue(extensionId, out var editable))
             {
-                return Task.FromResult((false, "没有找到对应扩展。"));
+                return Task.FromResult((false, "没有找到对应小程序。"));
             }
 
             var manifestJson = LocalExtensionCatalog.LoadManifestJson(editable.ExtensionId);
@@ -2112,7 +2204,7 @@ public partial class MainWindow
             ReplaceEditedExtensionReferences(extensionId, updated.ExtensionId);
             LastRunMessage = $"已更新本地 JSON 扩展：{updated.Title}";
             QueueBackgroundWebDavSync("extension-edit-settings");
-            return Task.FromResult((true, $"已更新扩展：{updated.Title}"));
+            return Task.FromResult((true, $"已更新小程序：{updated.Title}"));
         }
         catch (Exception ex)
         {
@@ -2260,13 +2352,13 @@ public partial class MainWindow
         {
             if (!_localExtensionIndex.TryGetValue(extensionId, out var deletable))
             {
-                return Task.FromResult((false, "没有找到对应扩展。"));
+                return Task.FromResult((false, "没有找到对应小程序。"));
             }
 
             var confirm = System.Windows.MessageBox.Show(
                 owner ?? this,
                 $"确认删除“{deletable.Title}”吗？",
-                "删除扩展",
+                "删除小程序",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
             if (confirm != MessageBoxResult.Yes)
@@ -2284,6 +2376,7 @@ public partial class MainWindow
 
             LastRunMessage = $"已将扩展移入回收站：{deletable.Title}";
             SyncStatus = $"已将扩展移入回收站：{deletable.Title}";
+            QueuePrivateExtensionRemovalFromAccount(deletable.ExtensionId);
             QueueBackgroundWebDavSync("extension-delete-settings");
             return Task.FromResult((true, $"已将扩展移入回收站：{deletable.Title}"));
         }
@@ -2418,6 +2511,7 @@ public partial class MainWindow
             CommandList.SelectedItem = SelectedCommand;
             LastRunMessage = $"已从回收站恢复扩展：{command.Title}";
             SyncStatus = $"已恢复扩展：{command.Title}";
+            QueuePrivateExtensionUpsertToAccount(command.ExtensionId);
             QueueBackgroundWebDavSync("extension-restore-settings");
             return Task.FromResult((true, $"已恢复扩展：{command.Title}"));
         }
@@ -2437,10 +2531,11 @@ public partial class MainWindow
             ApplyFilter(SearchBox.Text);
             SelectedCommand = FilteredCommands.FirstOrDefault();
             CommandList.SelectedItem = SelectedCommand;
-            LastRunMessage = $"已彻底删除扩展：{deleted.Title}";
-            SyncStatus = $"已彻底删除扩展：{deleted.Title}";
+            LastRunMessage = $"已彻底删除小程序：{deleted.Title}";
+            SyncStatus = $"已彻底删除小程序：{deleted.Title}";
+            QueuePrivateExtensionRemovalFromAccount(deleted.ExtensionId);
             QueueBackgroundWebDavSync("extension-purge-settings");
-            return Task.FromResult((true, $"已彻底删除扩展：{deleted.Title}，会同步到其他设备。"));
+            return Task.FromResult((true, $"已彻底删除小程序：{deleted.Title}，会同步到其他设备。"));
         }
         catch (Exception ex)
         {
@@ -2486,7 +2581,7 @@ public partial class MainWindow
             string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
             !Directory.Exists(command.ExtensionDirectoryPath))
         {
-            message = "扩展目录不存在。";
+            message = "小程序目录不存在。";
             return false;
         }
 
@@ -2669,11 +2764,11 @@ public partial class MainWindow
         var extension = ResolveRunnableCommand(sourceCommand);
         if (extension.Source != CommandSource.LocalExtension)
         {
-            SyncStatus = "当前选中项不是本地扩展，不能直接重命名。";
+            SyncStatus = "当前选中项不是本地小程序，不能直接重命名。";
             return Task.CompletedTask;
         }
 
-        var dialog = new SimpleTextInputWindow("重命名扩展", "输入新的扩展名称。", extension.Title)
+        var dialog = new SimpleTextInputWindow("重命名扩展", "输入新的小程序名称。", extension.Title)
         {
             Owner = this
         };

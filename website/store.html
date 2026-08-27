@@ -2,17 +2,20 @@
 <html lang="zh-CN">
 
 <head>
+  <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>燕子扩展商店</title>
-  <meta name="description" content="燕子扩展商店，目前仅展示两个真实测试扩展。">
+  <link rel="canonical" href="https://yanzi.luoluoluo.cc.cd/store.html">
+  <meta name="description" content="燕子扩展商店，帮你快速找到常用工具和现成扩展。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/assets/auth.css">
 </head>
 
 <body>
@@ -86,34 +89,43 @@
     }
 
     .store-card-icon-wrapper {
-      width: 110px;
-      height: 110px;
-      border-radius: 28px;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
       border: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 1.25rem;
+      margin-bottom: 1rem;
       transition: all 0.3s ease;
-      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
       background: transparent;
       position: relative;
     }
 
     .store-card:hover .store-card-icon-wrapper {
       border-color: var(--accent);
-      box-shadow: 0 0 30px var(--accent-glow);
+      box-shadow: 0 0 20px var(--accent-glow);
     }
 
     .store-card-icon {
-      width: 60px;
-      height: 60px;
-      font-size: 2.5rem;
+      width: 20px;
+      height: 20px;
+      font-size: 1.1rem;
       display: flex;
       align-items: center;
       justify-content: center;
       color: var(--accent);
-      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+    }
+
+    .store-card-icon-wrapper svg {
+      color: inherit !important;
+      fill: currentColor !important;
+    }
+    
+    .store-card-icon-wrapper svg path {
+      fill: currentColor !important;
     }
 
     .store-card-icon img {
@@ -234,7 +246,12 @@
         <a href="/store.html" class="active">扩展商店</a>
         <a href="/yanm.html">燕幕</a>
         <a href="/docs/product-overview.html">文档</a>
-        <a href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载</a>
+        <a href="/index.html#download">免费下载</a>
+        <span id="global-auth-container" style="margin-left: 16px; display: inline-flex; align-items: center; vertical-align: middle;">
+          <button id="global-login-btn" class="button secondary" style="padding: 0 12px; height: 32px; font-size: 0.85rem; border-radius: 6px; margin: 0; cursor: pointer;">
+            登录
+          </button>
+        </span>
       </nav>
     </header>
 
@@ -246,8 +263,8 @@
             <input id="store-search" class="store-search-input" type="search" placeholder="搜索扩展名、关键词...">
           </div>
           <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1.5rem;">
-            <p id="store-status" style="margin: 0; font-size: 0.9rem; color: var(--text-dim);">正在加载...</p>
-            <p id="local-client-status" style="margin: 0; font-size: 0.9rem; color: var(--accent);">本机安装状态后台检测中...</p>
+            <p id="store-status" style="margin: 0; font-size: 0.9rem; color: var(--text-dim);">找一找适合你的现成工具</p>
+            <p id="local-client-status" style="margin: 0; font-size: 0.9rem; color: var(--accent);">本机状态检测中，安装不受影响</p>
           </div>
         </div>
       </section>
@@ -313,7 +330,7 @@
 
       function renderGrid(items) {
         storeGrid.innerHTML = "";
-        storeStatus.textContent = `共 ${totalItems} 个扩展`;
+        storeStatus.textContent = totalItems ? `共 ${totalItems} 个工具` : "找一找适合你的现成工具";
 
         if (!items.length) {
           storeGrid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; padding: 4rem; color: var(--text-dim);">没有找到匹配的扩展</p>`;
@@ -326,8 +343,8 @@
           article.className = "store-card";
 
         article.innerHTML = `
-          <div class="store-card-icon-wrapper">
-            <div class="store-card-icon">${renderIconMarkup(item, 60)}</div>
+          <div class="store-card-icon-wrapper" style="${getIconWrapperStyle(item, false)}">
+            <div class="store-card-icon" style="color: inherit;">${renderIconMarkup(item, 30)}</div>
           </div>
           <div class="store-card-name">${escapeHtml(item.display_name)}</div>
           <div class="store-card-version">v${escapeHtml(item.latest_version)}</div>
@@ -354,6 +371,19 @@
             ? "更新到最新版"
             : "安装到燕子";
 
+        const hasArchive = !!(item.archive_download_url || item.package_path);
+        const installBtnMarkup = hasArchive
+          ? `<button class="button primary" style="flex: 1;" type="button" data-install-protocol="${escapeHtml(getProtocolUrl(item))}">${escapeHtml(installLabel)}</button>`
+          : `<button class="button primary" style="flex: 1; opacity: 0.5; cursor: not-allowed;" type="button" disabled>暂无安装包</button>`;
+
+        const downloadBtnMarkup = hasArchive
+          ? `<a class="button secondary" style="flex: 1; text-align: center; display: inline-flex; align-items: center; justify-content: center;" href="${escapeHtml(getPackageUrl(item))}">下载扩展包</a>`
+          : `<a class="button secondary" style="flex: 1; opacity: 0.5; cursor: not-allowed; pointer-events: none; text-align: center; display: inline-flex; align-items: center; justify-content: center;" href="javascript:void(0);" disabled>暂无扩展包</a>`;
+
+        const archiveNoticeMarkup = hasArchive
+          ? ""
+          : `<p style="margin-top: 1rem; font-size: 0.9rem; color: #ffaa00;">提示：该扩展的发布者尚未上传安装包。</p>`;
+
         storeDetail.innerHTML = `
         <div class="back-nav">
           <button class="back-button" onclick="goBack()">
@@ -362,8 +392,8 @@
           </button>
         </div>
         <div class="detail-head">
-          <div class="store-card-icon-wrapper" style="width: 80px; height: 80px; border-radius: 20px; margin-bottom: 0;">
-            <div class="store-card-icon" style="font-size: 2rem; width: 72px; height: 72px;">${renderIconMarkup(item, 72)}</div>
+          <div class="store-card-icon-wrapper" style="${getIconWrapperStyle(item, true)}">
+            <div class="store-card-icon" style="font-size: 1.5rem; width: 32px; height: 32px; color: inherit;">${renderIconMarkup(item, 32)}</div>
           </div>
           <div class="detail-title">
             <h2>${escapeHtml(item.display_name)}</h2>
@@ -373,13 +403,14 @@
           </div>
         </div>
         <div class="detail-body">
-          <p>${escapeHtml(item.description)}</p>
+          <p>${escapeHtml(item.description || "这个工具可以直接用来帮你少点几次鼠标。")}</p>
           <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--accent);">${escapeHtml(getLocalStatusLabel(item))}</p>
           
           <div style="display: flex; gap: 1rem; margin-top: 2.5rem;">
-            <button class="button primary" style="flex: 1;" type="button" data-install-protocol="${escapeHtml(getProtocolUrl(item))}">${escapeHtml(installLabel)}</button>
-            <a class="button secondary" style="flex: 1;" href="${escapeHtml(getPackageUrl(item))}">下载扩展包</a>
+            ${installBtnMarkup}
+            ${downloadBtnMarkup}
           </div>
+          ${archiveNoticeMarkup}
 
           ${buildInstallAssist(item)}
           
@@ -626,7 +657,13 @@
 
       function renderIconMarkup(item, size) {
         const icon = String(item.icon || item.manifest?.icon || "").trim();
-        if (icon && /^https?:\/\//i.test(icon)) {
+        const isDefaultLogo = !icon || icon.includes("logo-white-transparent") || icon.includes("logo-white.png");
+        
+        if (isDefaultLogo) {
+          return `<img src="/assets/logo-white-transparent.png" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy">`;
+        }
+
+        if (/^https?:\/\//i.test(icon)) {
           return `<img src="${escapeHtml(icon)}" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy" referrerpolicy="no-referrer">`;
         }
 
@@ -636,8 +673,37 @@
           return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${escapeHtml(mdiPath)}" fill="currentColor"></path></svg>`;
         }
 
-        const firstChar = (item.display_name || item.extension_id).charAt(0).toUpperCase();
-        return escapeHtml(firstChar);
+        return `<img src="/assets/logo-white-transparent.png" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy">`;
+      }
+
+      function normalizeCssColor(hex) {
+        if (!hex || typeof hex !== "string") return "#38BDF8";
+        hex = hex.trim();
+        if (hex.startsWith("#") && hex.length === 9) {
+          // #FFEC4899 (ARGB) -> #EC4899 (RGB)
+          return "#" + hex.slice(3);
+        }
+        return hex;
+      }
+
+      function getIconWrapperStyle(item, isDetail = false) {
+        const icon = String(item.icon || item.manifest?.icon || "").trim();
+        const isDefaultLogo = !icon || icon.includes("logo-white-transparent") || icon.includes("logo-white.png") || !/^https?:\/\//i.test(icon);
+        const isImage = !isDefaultLogo && /^https?:\/\//i.test(icon);
+        const rawColor = item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex || "#38BDF8";
+        const color = normalizeCssColor(rawColor);
+        
+        if (isImage) {
+          if (isDetail) {
+            return `width: 48px; height: 48px; border-radius: 12px; margin-bottom: 0; background: transparent !important; border: 1px solid var(--border) !important;`;
+          }
+          return `background: transparent !important; border: 1px solid var(--border) !important;`;
+        } else {
+          if (isDetail) {
+            return `width: 48px; height: 48px; border-radius: 12px; margin-bottom: 0; background: ${color} !important; border: none !important; color: white !important; display: flex; align-items: center; justify-content: center;`;
+          }
+          return `background: ${color} !important; border: none !important; color: white !important; display: flex; align-items: center; justify-content: center;`;
+        }
       }
 
       async function loadMdiIconPaths() {
@@ -697,6 +763,8 @@
 
       initStore();
     </script>
+  <script src="/assets/auth.js?v=20260701-4"></script>
   </body>
 
 </html>
+

@@ -30,6 +30,154 @@ namespace OpenQuickHost;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
+    public bool HasBeenShown { get; set; } = false;
+
+    private TaskCompletionSource<RadialPickerResult?>? _radialPickerTcs;
+    private bool _isRadialPickerMode;
+    private bool _radialPickerAllowAddChild;
+
+    public bool IsRadialPickerMode
+    {
+        get => _isRadialPickerMode;
+        set
+        {
+            _isRadialPickerMode = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(RadialPickerBarVisibility));
+            OnPropertyChanged(nameof(RadialPickerAddChildVisibility));
+            OnPropertyChanged(nameof(NormalFooterMenuVisibility));
+            UpdateFooterMenuHint(false);
+        }
+    }
+
+    public bool RadialPickerAllowAddChild
+    {
+        get => _radialPickerAllowAddChild;
+        set
+        {
+            _radialPickerAllowAddChild = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(RadialPickerAddChildVisibility));
+        }
+    }
+
+    public Visibility RadialPickerBarVisibility => IsRadialPickerMode ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility RadialPickerAddChildVisibility => (IsRadialPickerMode && RadialPickerAllowAddChild) ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility NormalFooterMenuVisibility => IsRadialPickerMode ? Visibility.Collapsed : Visibility.Visible;
+
+    public Task<RadialPickerResult?> ShowForRadialPickerAsync(bool allowAddChildPage, RadialMenuWindow? radialWindow = null)
+    {
+        HostAssets.AppendLog($"[PickerLog] MainWindow.ShowForRadialPickerAsync: allowAddChild={allowAddChildPage}.");
+        if (_radialPickerTcs != null && !_radialPickerTcs.Task.IsCompleted)
+        {
+            HostAssets.AppendLog($"[PickerLog] Overwriting active _radialPickerTcs! Stack:\n{new System.Diagnostics.StackTrace()}");
+            _radialPickerTcs.TrySetResult(null);
+        }
+        _radialPickerTcs = new TaskCompletionSource<RadialPickerResult?>();
+        IsRadialPickerMode = true;
+        RadialPickerAllowAddChild = allowAddChildPage;
+
+        ShowPanel();
+
+        // 调整位置：左侧仓库，右侧轮盘，两者水平并排不重叠
+        PositionPickerSideBySide(radialWindow);
+
+        return _radialPickerTcs.Task;
+    }
+
+    private void PositionPickerSideBySide(RadialMenuWindow? radialWindow)
+    {
+        try
+        {
+            var mousePt = System.Windows.Forms.Cursor.Position;
+            var screen = System.Windows.Forms.Screen.FromPoint(mousePt);
+            var workArea = screen.WorkingArea;
+
+            var source = PresentationSource.FromVisual(this);
+            double dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+            double dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+
+            double workLeft = workArea.Left / dpiX;
+            double workTop = workArea.Top / dpiY;
+            double workWidth = workArea.Width / dpiX;
+            double workHeight = workArea.Height / dpiY;
+
+            double pickerWidth = Width > 100 ? Width : 680;
+            double pickerHeight = Height > 100 ? Height : 560;
+            double gap = 30.0;
+            double wheelVisualRadius = 280.0;
+            double wheelVisualDiameter = wheelVisualRadius * 2.0;
+
+            double totalWidth = pickerWidth + gap + wheelVisualDiameter;
+            double startX = workLeft + Math.Max(20.0, (workWidth - totalWidth) / 2.0);
+
+            // 1. 左侧仓库窗口位置
+            Left = startX;
+            Top = workTop + Math.Max(20.0, (workHeight - pickerHeight) / 2.0);
+
+            // 2. 右侧轮盘位置
+            if (radialWindow != null)
+            {
+                double wheelCenterScreenX = startX + pickerWidth + gap + wheelVisualRadius;
+                double wheelCenterScreenY = workTop + (workHeight / 2.0);
+
+                radialWindow.Left = wheelCenterScreenX - 700.0;
+                radialWindow.Top = wheelCenterScreenY - 700.0;
+                radialWindow.ActivateForEditInteraction();
+            }
+
+            HostAssets.AppendLog($"[PickerLog] PositionPickerSideBySide: pickerPos=({Left:0.#},{Top:0.#}), totalWidth={totalWidth:0.#}, screen=({workWidth:0.#}x{workHeight:0.#}).");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[PickerLog] PositionPickerSideBySide exception: {ex.Message}");
+        }
+    }
+
+    private void RadialPickerConfirmButton_Click(object sender, RoutedEventArgs e)
+    {
+        ConfirmRadialPickerSelection();
+    }
+
+    private void RadialPickerAddChildButton_Click(object sender, RoutedEventArgs e)
+    {
+        AddChildPageRadialSelection();
+    }
+
+    private void ConfirmRadialPickerSelection()
+    {
+        HostAssets.AppendLog($"[PickerLog] ConfirmRadialPickerSelection: SelectedCommand='{SelectedCommand?.Title}', extId='{SelectedCommand?.ExtensionId}', target='{SelectedCommand?.OpenTarget}'. Stack:\n{new System.Diagnostics.StackTrace()}");
+        if (SelectedCommand == null)
+        {
+            HostAssets.AppendLog("[PickerLog] ConfirmRadialPickerSelection FAILED: SelectedCommand is null!");
+            return;
+        }
+
+        var result = new RadialPickerResult(RadialSlotPickerWindow.PickerAction.AddCommand, SelectedCommand);
+        IsRadialPickerMode = false;
+        HideToTray();
+        _radialPickerTcs?.TrySetResult(result);
+    }
+
+    private void AddChildPageRadialSelection()
+    {
+        var result = new RadialPickerResult(RadialSlotPickerWindow.PickerAction.AddChildPage, null);
+        IsRadialPickerMode = false;
+        HideToTray();
+        _radialPickerTcs?.TrySetResult(result);
+    }
+
+    private void FooterMenuHint_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (IsRadialPickerMode)
+        {
+            ConfirmRadialPickerSelection();
+            e.Handled = true;
+        }
+    }
+
     private const int HotKeyId = 0x5301;
     private const int YanmHotKeyId = 0x5302;
     private const int RadialHotKeyId = 0x5303;
@@ -74,6 +222,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int _nextExtensionHotkeyId = 0x5400;
     private QuickPanelWindow? _quickPanel;
     private RadialMenuWindow? _radialMenu;
+    public RadialMenuWindow? RadialMenuInstance => _radialMenu;
     private YanmOverlayWindow? _yanmOverlay;
     private MobileMessageToastWindow? _mobileMessageToastWindow;
     private readonly WindowBoundExtensionsService _windowBoundExtensionsService;
@@ -81,15 +230,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _backgroundWebDavSyncTimer;
     private readonly DispatcherTimer _backgroundWebDavSyncDelayTimer;
     private readonly DispatcherTimer _cloudReconnectTimer;
+    private readonly DispatcherTimer _desktopPresenceHeartbeatTimer;
     private readonly DispatcherTimer _mobileMessagePollTimer;
-    private readonly DispatcherTimer _fileSearchDebounceTimer;
-    private int _fileSearchRequestVersion;
+    private readonly DispatcherTimer _searchDebounceTimer;
+    private readonly SearchPipelineManager _searchPipelineManager = new();
     private DateTimeOffset _lastFileSearchManualInitPromptAt = DateTimeOffset.MinValue;
     private bool _backgroundWebDavSyncRunning;
     private bool _backgroundWebDavSyncRequested;
+    private string? _backgroundWebDavSyncRequestedReason;
     private bool _isReplacingLocalExtensions;
     private string? _pendingBackgroundWebDavSyncReason;
     private bool _cloudReconnectInProgress;
+    private bool _desktopPresenceHeartbeatRunning;
     private bool _mobileMessagePollRunning;
     private CancellationTokenSource? _mobileMessageBridgeCts;
     private Task? _mobileMessageBridgeTask;
@@ -97,13 +249,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int _cloudReconnectAttemptCount;
     private string? _cloudReconnectPendingReason;
     private string? _desktopDeviceId;
-    private string _pendingFileSearchTerm = string.Empty;
     private string _activeFilterScopeKey = SearchScopeAll;
-    private string _pendingProviderSearchTerm = string.Empty;
-    private string _pendingProviderSearchScopeKey = string.Empty;
-    private CommandItem? _pendingProviderSearchCommand;
-    private string _searchInlineCompletionSuffix = string.Empty;
-    private double _searchInlineCompletionPrefixWidth;
     private SearchScopeTab? _selectedSearchScope;
     private bool _listenerServicesPaused;
     private readonly double _defaultWindowWidth;
@@ -124,10 +270,41 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastAppliedFilterScopeKey = SearchScopeAll;
     private uint _lastKnownWindowDpi = 96;
     private bool _dpiRefreshRequested;
+    private readonly List<ScoredCommand> _filterMatchScratch = new(256);
+    private static readonly Comparison<ScoredCommand> _filterMatchSorter = CompareScoredCommands;
+
+    private static int CompareScoredCommands(ScoredCommand left, ScoredCommand right)
+    {
+        var scoreDelta = right.Score.CompareTo(left.Score);
+        if (scoreDelta != 0) return scoreDelta;
+        var categoryDelta = string.Compare(left.Command.Category, right.Command.Category, StringComparison.OrdinalIgnoreCase);
+        if (categoryDelta != 0) return categoryDelta;
+        return string.Compare(left.Command.Title, right.Command.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static MainWindow? Instance { get; private set; }
 
     public MainWindow()
     {
+        Instance = this;
         InitializeComponent();
+        AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler((s, e) =>
+        {
+            if (e.Key == Key.Escape && _quickPanel?.IsEditMode == true)
+            {
+                var focusedObj = FocusManager.GetFocusedElement(this);
+                HostAssets.AppendLog($"MainWindow Esc pressed during EditMode: IsActive={IsActive}, Focused={focusedObj?.GetType().Name ?? "null"}");
+                _quickPanel.ToggleEditModeWithLauncherAlignment();
+                e.Handled = true;
+                return;
+            }
+
+            if (HandleNavigationShortcut(e))
+            {
+                return;
+            }
+        }), handledEventsToo: true);
+        CleanAllTemporaryExtensions();
         UpdateFooterMenuHint(isMenuOpen: false);
         _defaultWindowWidth = Width;
         _defaultWindowHeight = Height;
@@ -162,21 +339,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _cloudReconnectTimer = new DispatcherTimer();
         _cloudReconnectTimer.Tick += CloudReconnectTimer_Tick;
 
+        _desktopPresenceHeartbeatTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(30)
+        };
+        _desktopPresenceHeartbeatTimer.Tick += async (_, _) => await SendDesktopPresenceHeartbeatSafeAsync("timer");
+
         _mobileMessagePollTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(5)
         };
         _mobileMessagePollTimer.Tick += MobileMessagePollTimer_Tick;
 
-        _fileSearchDebounceTimer = new DispatcherTimer
+        _searchDebounceTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(120)
+            Interval = TimeSpan.FromMilliseconds(40)
         };
-        _fileSearchDebounceTimer.Tick += FileSearchDebounceTimer_Tick;
+        _searchDebounceTimer.Tick += (s, e) =>
+        {
+            _searchDebounceTimer.Stop();
+            ApplyFilter(SearchBox.Text);
+        };
 
         _allCommands = CreateSeedCommands();
         _allCommands.AddRange(LocalExtensionCatalog.LoadCommands());
-        _allCommands.AddRange(CreateInstalledApplicationCommands());
         _localExtensionIndex = _allCommands
             .Where(x => x.Source == CommandSource.LocalExtension)
             .GroupBy(x => x.ExtensionId, StringComparer.OrdinalIgnoreCase)
@@ -186,12 +372,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ApplyNewExtensionState(localCommand);
         }
 
-        FilteredCommands = new ObservableCollection<CommandItem>(_allCommands);
+        FilteredCommands = new BulkObservableCollection<CommandItem>(_allCommands);
         _attachedFiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(AttachedFilesVisibility));
         SearchScopes = new ObservableCollection<SearchScopeTab>(BuildSearchScopes());
         _selectedSearchScope = SearchScopes.First();
         SelectedCommand = FilteredCommands.FirstOrDefault();
         DataContext = this;
+        ExtensionIconLibrary.RemoteIconDownloaded += (url, image) =>
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                var matchedItems = _allCommands
+                    .Where(x => string.Equals(x.IconReference, url, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                foreach (var item in matchedItems)
+                {
+                    item.SetIconSource(image);
+                }
+            });
+        };
         ApplyFilter(string.Empty);
         Loaded += MainWindow_Loaded;
         Activated += MainWindow_Activated;
@@ -204,6 +403,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _quickPanel = new QuickPanelWindow(this);
         _radialMenu = new RadialMenuWindow(this);
+        Dispatcher.InvokeAsync(() => _radialMenu?.Warmup(), System.Windows.Threading.DispatcherPriority.Background);
         _yanmOverlay = new YanmOverlayWindow(this);
         _windowBoundExtensionsService = new WindowBoundExtensionsService(this);
         _windowSnapAssistService = new WindowSnapAssistService();
@@ -226,18 +426,56 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _windowBoundExtensionsService.Stop();
             _windowSnapAssistService.Stop();
             _mobileMessageBridgeCts?.Cancel();
+            _desktopPresenceHeartbeatTimer.Stop();
             _mobileMessagePollTimer.Stop();
         };
 
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
+        RegisterSystemPowerAndSessionWatchdog();
 
         RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
         Closed += (s, e) =>
         {
             RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
         };
+    }
+
+    private void RegisterSystemPowerAndSessionWatchdog()
+    {
+        try
+        {
+            Microsoft.Win32.SystemEvents.PowerModeChanged += (_, e) =>
+            {
+                if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+                {
+                    HostAssets.AppendLog("System power event: Resume detected, executing hook self-healing watchdog.");
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        InputHookService.RestartHooks("power-resume");
+                        MouseGestureService.RestartHook("power-resume");
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
+            };
+
+            Microsoft.Win32.SystemEvents.SessionSwitch += (_, e) =>
+            {
+                if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionUnlock)
+                {
+                    HostAssets.AppendLog("System session event: SessionUnlock detected, executing hook self-healing watchdog.");
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        InputHookService.RestartHooks("session-unlock");
+                        MouseGestureService.RestartHook("session-unlock");
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to register system power/session watchdog: {ex.Message}");
+        }
     }
 
     private void RunningExtensionRegistry_Changed(object? sender, EventArgs e)
@@ -263,7 +501,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public ObservableCollection<CommandItem> FilteredCommands { get; }
+    public BulkObservableCollection<CommandItem> FilteredCommands { get; }
 
     public ObservableCollection<AttachedFileItem> AttachedFiles => _attachedFiles;
 
@@ -298,8 +536,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsAiChatMode));
             OnPropertyChanged(nameof(AiChatVisibility));
+            OnPropertyChanged(nameof(IsStoreMode));
+            OnPropertyChanged(nameof(StoreVisibility));
             OnPropertyChanged(nameof(NormalLauncherVisibility));
+            OnPropertyChanged(nameof(IsFileSearchScopeActive));
             OnPropertyChanged(nameof(AiChatModelDisplayText));
+
+            if (IsStoreMode)
+            {
+                if (_isStoreLoading && StoreLoadingOverlay != null)
+                {
+                    StoreLoadingOverlay.Visibility = Visibility.Visible;
+                }
+            }
+            else
+            {
+                if (StoreLoadingOverlay != null)
+                {
+                    StoreLoadingOverlay.Visibility = Visibility.Collapsed;
+                }
+            }
 
             if (!string.Equals(previousScopeKey, SearchScopeAi, StringComparison.OrdinalIgnoreCase))
             {
@@ -307,32 +563,80 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             ApplyFilter(SearchBox.Text);
+            
+            if (wasAiMode && !IsAiChatMode)
+            {
+                // 从 AI Chat 模式切换到其他模式时，恢复窗口尺寸
+                RestoreDefaultWindowSize();
+                if (!IsStoreMode) 
+                {
+                    SetSearchScopePopupOpen(true);
+                }
+            }
+
             if (IsAiChatMode)
             {
                 ActivateAiChatMode();
             }
-            else if (wasAiMode)
+            else if (IsStoreMode)
             {
-                // 从 AI Chat 模式切换到其他模式时，恢复窗口尺寸
-                RestoreDefaultWindowSize();
-                SetSearchScopePopupOpen(true);
+                _ = LoadStoreExtensionsAsync();
             }
         }
     }
 
     private IEnumerable<SearchScopeTab> BuildSearchScopes()
     {
-        yield return new SearchScopeTab(SearchScopeAll, "全部", "所有结果", true);
-        yield return new SearchScopeTab(SearchScopeExtension, "扩展", "所有扩展");
-        yield return new SearchScopeTab(SearchScopeApplication, "应用", "已安装应用");
-        yield return new SearchScopeTab(SearchScopeFile, "文件", "Everything 文件结果");
-        yield return new SearchScopeTab(SearchScopeSystem, "系统", "Windows 系统与设置");
-        yield return new SearchScopeTab(SearchScopeYanyu, "燕语", "文本指令与扩展触发词");
-        yield return new SearchScopeTab(SearchScopeAi, "AI对话", "切换到 AI 对话模式");
+        var settings = AppSettingsStore.Load();
+        var allCommands = GetAllCommands();
+        settings.SearchScopeConfigs ??= [];
 
-        foreach (var pinnedCommand in GetPinnedSearchScopeCommands())
+        foreach (var config in settings.SearchScopeConfigs)
         {
-            yield return SearchScopeTab.CreatePinnedCommand(pinnedCommand.ExtensionId, pinnedCommand.Title, $"固定扩展：{pinnedCommand.Title}");
+            if (config == null || !config.IsVisible)
+            {
+                continue;
+            }
+
+            if (!config.IsPinned)
+            {
+                switch (config.Key)
+                {
+                    case SearchScopeAll:
+                        yield return new SearchScopeTab(SearchScopeAll, "全部", "所有结果");
+                        break;
+                    case SearchScopeExtension:
+                        yield return new SearchScopeTab(SearchScopeExtension, "扩展", "所有扩展");
+                        break;
+                    case SearchScopeApplication:
+                        yield return new SearchScopeTab(SearchScopeApplication, "应用", "已安装应用");
+                        break;
+                    case SearchScopeFile:
+                        yield return new SearchScopeTab(SearchScopeFile, "文件", "Everything 文件结果");
+                        break;
+                    case SearchScopeSystem:
+                        yield return new SearchScopeTab(SearchScopeSystem, "系统", "Windows 系统与设置");
+                        break;
+                    case SearchScopeYanyu:
+                        yield return new SearchScopeTab(SearchScopeYanyu, "燕语", "文本指令与扩展触发词");
+                        break;
+                    case SearchScopeAi:
+                        yield return new SearchScopeTab(SearchScopeAi, "AI对话", "切换到 AI 对话模式");
+                        break;
+                    case SearchScopeStore:
+                        yield return new SearchScopeTab(SearchScopeStore, "小程序商店", "浏览与安装云端扩展");
+                        break;
+                }
+            }
+            else
+            {
+                var commandId = config.Key.Replace("pinned_", "");
+                var pinnedCommand = allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, commandId, StringComparison.OrdinalIgnoreCase));
+                if (pinnedCommand != null)
+                {
+                    yield return SearchScopeTab.CreatePinnedCommand(pinnedCommand.ExtensionId, pinnedCommand.Title, $"固定扩展：{pinnedCommand.Title}");
+                }
+            }
         }
     }
 
@@ -388,10 +692,159 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _lastActionableCommand = value;
             }
 
+            UpdateAdjacentSelectionHints();
+            UpdateCapsGuidePopupPosition();
             OnPropertyChanged();
             OnPropertyChanged(nameof(EffectiveSelectedCommand));
             OnPropertyChanged(nameof(FooterHint));
         }
+    }
+
+    private void UpdateAdjacentSelectionHints()
+    {
+        if (FilteredCommands == null || FilteredCommands.Count == 0) return;
+        var selectedIndex = _selectedCommand == null ? -1 : FilteredCommands.IndexOf(_selectedCommand);
+        for (int i = 0; i < FilteredCommands.Count; i++)
+        {
+            var item = FilteredCommands[i];
+            item.IsPreviousToSelected = (selectedIndex >= 0 && i == selectedIndex - 1);
+            item.IsNextToSelected = (selectedIndex >= 0 && i == selectedIndex + 1);
+        }
+    }
+
+    public void UpdateCapsGuidePopupPosition()
+    {
+        if (CapsGuidePopup == null) return;
+
+        if (!_appSettings.ShowBlindOperationGuide || !IsVisible || WindowState == WindowState.Minimized || CommandList == null || !CommandList.IsVisible || FilteredCommands == null || FilteredCommands.Count == 0)
+        {
+            CapsGuidePopup.IsOpen = false;
+            return;
+        }
+
+        CapsGuidePopup.IsOpen = true;
+
+        if (CommandList.SelectedItem != null)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+            {
+                if (CapsGuidePopup == null || !CapsGuidePopup.IsOpen || CommandList == null) return;
+                var container = CommandList.ItemContainerGenerator.ContainerFromItem(CommandList.SelectedItem) as FrameworkElement;
+                if (container != null && container.IsLoaded)
+                {
+                    try
+                    {
+                        var relativePoint = container.TransformToAncestor(this).Transform(new System.Windows.Point(0, 0));
+                        var targetOffset = relativePoint.Y + (container.ActualHeight / 2) - 85;
+                        if (targetOffset < 30) targetOffset = 30;
+                        if (targetOffset > ActualHeight - 200) targetOffset = ActualHeight - 200;
+                        
+                        CapsGuidePopup.VerticalOffset = targetOffset;
+                    }
+                    catch
+                    {
+                        CapsGuidePopup.VerticalOffset = 80;
+                    }
+                }
+            });
+        }
+        else
+        {
+            CapsGuidePopup.VerticalOffset = 80;
+        }
+    }
+
+    private void CloseBlindGuide_Click(object sender, RoutedEventArgs e)
+    {
+        _appSettings.ShowBlindOperationGuide = false;
+        AppSettingsStore.Save(_appSettings);
+        if (CapsGuidePopup != null)
+        {
+            CapsGuidePopup.IsOpen = false;
+        }
+        LastRunMessage = "已关闭盲操指南，可点击右下角 '?' 图标重新开启。";
+    }
+
+    private void FooterBlindGuideHelpButton_Click(object sender, RoutedEventArgs e)
+    {
+        _appSettings.ShowBlindOperationGuide = !_appSettings.ShowBlindOperationGuide;
+        AppSettingsStore.Save(_appSettings);
+        if (_appSettings.ShowBlindOperationGuide)
+        {
+            UpdateCapsGuidePopupPosition();
+            LastRunMessage = "已开启盲操指南。";
+        }
+        else
+        {
+            if (CapsGuidePopup != null)
+            {
+                CapsGuidePopup.IsOpen = false;
+            }
+            LastRunMessage = "已隐藏盲操指南。";
+        }
+    }
+
+    private bool _isCapsIndicatorActive;
+    public bool IsCapsIndicatorActive
+    {
+        get => _isCapsIndicatorActive;
+        set
+        {
+            if (_isCapsIndicatorActive != value)
+            {
+                _isCapsIndicatorActive = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private string? _activeFlashedKey;
+    public string? ActiveFlashedKey
+    {
+        get => _activeFlashedKey;
+        set
+        {
+            if (_activeFlashedKey != value)
+            {
+                _activeFlashedKey = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsKeyWFlashed));
+                OnPropertyChanged(nameof(IsKeySFlashed));
+                OnPropertyChanged(nameof(IsKeyAFlashed));
+                OnPropertyChanged(nameof(IsKeyDFlashed));
+                OnPropertyChanged(nameof(IsKeySpaceFlashed));
+            }
+        }
+    }
+
+    public bool IsKeyWFlashed => _activeFlashedKey == "W";
+    public bool IsKeySFlashed => _activeFlashedKey == "S";
+    public bool IsKeyAFlashed => _activeFlashedKey == "A";
+    public bool IsKeyDFlashed => _activeFlashedKey == "D";
+    public bool IsKeySpaceFlashed => _activeFlashedKey == "Space";
+
+    private DispatcherTimer? _keyFlashTimer;
+
+    public void SetCapsGuideState(bool isCapsDown, string? activeKey)
+    {
+        IsCapsIndicatorActive = isCapsDown;
+        if (!string.IsNullOrEmpty(activeKey))
+        {
+            FlashGuideKey(activeKey);
+        }
+    }
+
+    public void FlashGuideKey(string key)
+    {
+        ActiveFlashedKey = key;
+        _keyFlashTimer?.Stop();
+        _keyFlashTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(240) };
+        _keyFlashTimer.Tick += (s, e) =>
+        {
+            _keyFlashTimer?.Stop();
+            ActiveFlashedKey = null;
+        };
+        _keyFlashTimer.Start();
     }
 
     public string LastRunMessage
@@ -409,60 +862,149 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsFileSearchScopeActive =>
+        string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase) &&
+        !IsAiChatMode;
+
+    private bool _isFileSearching;
+    public bool IsFileSearching
+    {
+        get => _isFileSearching;
+        set
+        {
+            if (_isFileSearching == value) return;
+            _isFileSearching = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string _fileSearchingText = "搜索中...";
+    public string FileSearchingText
+    {
+        get => _fileSearchingText;
+        set
+        {
+            if (_fileSearchingText == value) return;
+            _fileSearchingText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private static ImageSource? _cachedEverythingIcon;
+    public ImageSource? EverythingIconSource
+    {
+        get
+        {
+            if (_cachedEverythingIcon != null)
+            {
+                return _cachedEverythingIcon;
+            }
+
+            try
+            {
+                var bundledExe = Path.Combine(AppContext.BaseDirectory, "EverythingRuntime", "Everything.exe");
+                if (File.Exists(bundledExe))
+                {
+                    _cachedEverythingIcon = ExtensionIconLibrary.TryExtractAssociatedIcon(bundledExe);
+                    if (_cachedEverythingIcon != null)
+                    {
+                        return _cachedEverythingIcon;
+                    }
+                }
+
+                var devPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "third_party", "everything-runtime", "package", "everything.exe"));
+                if (File.Exists(devPath))
+                {
+                    _cachedEverythingIcon = ExtensionIconLibrary.TryExtractAssociatedIcon(devPath);
+                    if (_cachedEverythingIcon != null)
+                    {
+                        return _cachedEverythingIcon;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore icon extraction failures
+            }
+
+            return null;
+        }
+    }
+
+    public bool HasEverythingIcon => EverythingIconSource != null;
+
+    public bool IsFileSearchEnabledInHomeView
+    {
+        get => _appSettings.EnableEverything;
+        set
+        {
+            HostAssets.AppendLog($"[MainWindow] IsFileSearchEnabledInHomeView setter called with value={value}, current={_appSettings.EnableEverything}");
+            if (value == _appSettings.EnableEverything)
+            {
+                return;
+            }
+
+            _appSettings = _appSettings with
+            {
+                EnableEverything = value,
+                LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O")
+            };
+            AppSettingsStore.Save(_appSettings);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(VisibleCountText));
+            OnPropertyChanged(nameof(FooterHint));
+            NotifyQuickPanelSettingsChanged("everything-engine-toggle", refreshYanmOverlay: false);
+
+            if (value)
+            {
+                _ = Task.Run(async () =>
+                {
+                    EverythingRuntimeService.EnsureRunning();
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        ApplyFilter(SearchBox?.Text);
+                    });
+                });
+            }
+            else
+            {
+                EverythingRuntimeService.StopOwnedRuntime();
+                EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                ApplyFilter(SearchBox?.Text);
+            }
+        }
+    }
+
+    private void FileSearchToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.CheckBox cb)
+        {
+            HostAssets.AppendLog($"[MainWindow] FileSearchToggle_Click: IsChecked={cb.IsChecked}");
+            IsFileSearchEnabledInHomeView = cb.IsChecked == true;
+        }
+    }
+
     public string VisibleCountText => string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase)
-        ? $"{FilteredCommands.Count} 个文件结果"
+        ? (!_appSettings.EnableEverything ? "文件搜索未启用" : $"{FilteredCommands.Count} 个文件结果")
         : string.Equals(_activeFilterScopeKey, SearchScopeAi, StringComparison.OrdinalIgnoreCase)
             ? $"{AiChatMessages.Count} 条对话"
             : $"{FilteredCommands.Count} 条结果";
 
-    public string SearchInlineCompletionSuffix
-    {
-        get => _searchInlineCompletionSuffix;
-        private set
-        {
-            if (value == _searchInlineCompletionSuffix)
-            {
-                return;
-            }
 
-            _searchInlineCompletionSuffix = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(SearchInlineCompletionVisibility));
-        }
-    }
 
-    public double SearchInlineCompletionPrefixWidth
-    {
-        get => _searchInlineCompletionPrefixWidth;
-        private set
-        {
-            if (Math.Abs(value - _searchInlineCompletionPrefixWidth) < 0.1)
-            {
-                return;
-            }
-
-            _searchInlineCompletionPrefixWidth = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public Visibility SearchInlineCompletionVisibility => string.IsNullOrWhiteSpace(SearchInlineCompletionSuffix)
-        ? Visibility.Collapsed
-        : Visibility.Visible;
-
-    public string FooterHint => SelectedCommand == null
-        ? "Up / Down 切换   Enter 执行   → 菜单   Esc 收起"
-        : SelectedCommand.IsFileSystemResult
-            ? "Up / Down 切换   Enter 打开   右键原生菜单   Esc 收起"
-        : SelectedCommand.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
-            ? $"{SelectedCommand.Title}   ·   {BuildQueryPreviewText(SelectedCommand, _activeQueryArgument)}"
-            : $"{SelectedCommand.Title}   ·   {SelectedCommand.Category}   ·   → 菜单";
+    public string FooterHint => IsFileSearchScopeActive && !_appSettings.EnableEverything
+        ? "Everything 文件搜索已关闭 · 点击上方开关即可启用"
+        : SelectedCommand == null
+            ? "Up / Down 切换   Enter 执行   → 菜单   Esc 收起"
+            : SelectedCommand.IsFileSystemResult
+                ? "Up / Down 切换   Enter 打开   右键原生菜单   Esc 收起"
+            : SelectedCommand.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
+                ? $"{SelectedCommand.Title}   ·   {BuildQueryPreviewText(SelectedCommand, _activeQueryArgument)}"
+                : $"{SelectedCommand.Title}   ·   {SelectedCommand.Category}   ·   → 菜单";
 
     public bool IsHostedViewOpen => _activeHostedView != null;
 
-    public System.Windows.Media.Brush PinButtonBrush => _isPinned
-        ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FFF59E0B")!
-        : (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF777777")!;
+    public System.Windows.Media.Brush PinButtonBrush => _isPinned ? PinBrushes.Active : PinBrushes.Inactive;
 
     public string PinButtonTooltip => _isPinned ? "已固定，失去焦点时不自动关闭" : "点击固定，失去焦点时不自动关闭";
 
@@ -581,11 +1123,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    private bool _isBackgroundServicesInitialized;
+
+    public void InitializeBackgroundServices()
     {
-        SearchBox.Focus();
-        SetSearchScopePopupOpen(true);
+        if (_isBackgroundServicesInitialized) return;
+        _isBackgroundServicesInitialized = true;
+
         StartBackgroundWebDavSync();
+        _ = LoadInstalledApplicationsAsync();
         _windowBoundExtensionsService.Start(_appSettings.WindowBindings);
         if (_appSettings.EnableWindowSnapAssist)
         {
@@ -597,6 +1143,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StartMousePanelService();
             StartMouseGestureService();
             QueueBackgroundWebDavSync("startup");
+            WarmupChildWindows();
             return;
         }
 
@@ -606,18 +1153,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             StartMobileMessageBridge("startup-no-cloud-refresh");
             QueueBackgroundWebDavSync("startup");
+            WarmupChildWindows();
             return;
         }
 
-        await RefreshCloudStateAsync(allowLoginPrompt: false);
-        if (_cloudSyncClient != null && _cloudSyncClient.HasCredential)
+        _ = Task.Run(async () =>
         {
-            ScheduleSilentCloudReconnect("startup-post-refresh");
-            StartMobileMessageBridge("startup-post-refresh");
-        }
-        StartStartupExtensions();
+            await RefreshCloudStateAsync(allowLoginPrompt: false);
+            if (_cloudSyncClient != null && _cloudSyncClient.HasCredential)
+            {
+                ScheduleSilentCloudReconnect("startup-post-refresh");
+                StartMobileMessageBridge("startup-post-refresh");
+            }
+            StartStartupExtensions();
+            WarmupChildWindows();
+        });
+    }
 
-        // 异步预热快捷菜单和面板窗口以消除首次显示时的卡顿
+    private void WarmupChildWindows()
+    {
         _ = Dispatcher.BeginInvoke(new Action(() =>
         {
             try
@@ -673,6 +1227,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     _yanmOverlay?.QueueWebDavStateRefresh("startup-preload", force: true);
                 }
+
+                MouseGestureService.WarmUp();
             }
             catch (Exception ex)
             {
@@ -681,10 +1237,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }), DispatcherPriority.ApplicationIdle);
     }
 
+    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        InitializeBackgroundServices();
+        SearchBox.Focus();
+        SetSearchScopePopupOpen(true);
+    }
+
     private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
-        ApplyFilter(SearchBox.Text);
-        UpdateSearchInlineCompletion();
+        _searchDebounceTimer.Stop();
+        if (string.IsNullOrEmpty(SearchBox.Text))
+        {
+            ApplyFilter(string.Empty);
+        }
+        else
+        {
+            _searchDebounceTimer.Start();
+        }
     }
 
     private void SearchBox_DragEnter(object sender, System.Windows.DragEventArgs e)
@@ -715,6 +1285,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void SearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key == Key.A && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            SearchBox.SelectAll();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
         {
             CopySearchSelectionToClipboard();
@@ -735,16 +1312,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (e.Key == Key.Enter)
         {
+            if (_searchDebounceTimer.IsEnabled)
+            {
+                _searchDebounceTimer.Stop();
+                ApplyFilter(SearchBox.Text);
+            }
             RunSelectedCommand();
             e.Handled = true;
         }
         else if (e.Key == Key.Tab)
         {
             TryHandleSearchScopeTabNavigation(e);
-        }
-        else if (e.Key == Key.Right && AcceptSearchInlineCompletion())
-        {
-            e.Handled = true;
         }
         else if (e.Key == Key.Right && CanOpenCommandMenuFromSearchBox())
         {
@@ -758,8 +1336,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (FilteredCommands.Count == 0 ||
             SelectedCommand == null ||
             SearchBox.SelectionLength > 0 ||
-            SearchBox.CaretIndex != SearchBox.Text.Length ||
-            !string.IsNullOrWhiteSpace(SearchInlineCompletionSuffix))
+            SearchBox.CaretIndex != SearchBox.Text.Length)
         {
             return false;
         }
@@ -829,7 +1406,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch (Exception ex)
             {
                 HostAssets.AppendLog($"Create extension from dropped path failed: path={filePath}, error={FormatExceptionMessage(ex)}");
-                SyncStatus = $"拖拽创建扩展失败：{Path.GetFileName(filePath)}，{FormatExceptionMessage(ex)}";
+                SyncStatus = $"拖拽创建小程序失败：{Path.GetFileName(filePath)}，{FormatExceptionMessage(ex)}";
             }
         }
 
@@ -848,7 +1425,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CommandList.SelectedItem = latestCommand;
         CommandList.ScrollIntoView(latestCommand);
         LastRunMessage = createdCommands.Count == 1
-            ? $"已创建扩展：{latestCommand.Title}"
+            ? $"已创建小程序：{latestCommand.Title}"
             : $"已创建 {createdCommands.Count} 个扩展。";
     }
 
@@ -952,6 +1529,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SearchBox.CaretIndex = SearchBox.Text.Length;
     }
 
+    private void EditSearchScopesMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SearchScopesManagerWindow(this);
+        dialog.Owner = this;
+        if (dialog.ShowDialog() == true)
+        {
+            ReloadSearchScopes();
+        }
+    }
+
     private void CommandList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (CommandList.SelectedItem is CommandItem item)
@@ -962,6 +1549,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CommandList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
+        if (CommandList.SelectedItem is CommandItem item && item.Source == CommandSource.Cloud)
+        {
+            ShowStoreExtensionDetail(item);
+            e.Handled = true;
+            return;
+        }
         RunSelectedCommand();
     }
 
@@ -1030,9 +1623,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var payload = new System.Windows.DataObject(typeof(CommandItem), runnable);
         WindowBindingDropOverlayWindow? bindingOverlay = null;
-        if (runnable.Source is CommandSource.LocalExtension or CommandSource.Cloud)
+        if ((runnable.Source is CommandSource.LocalExtension or CommandSource.Cloud) &&
+            (_quickPanel?.IsEditMode != true) &&
+            (_quickPanel?.IsVisible != true))
         {
-            bindingOverlay = new WindowBindingDropOverlayWindow(runnable, _appSettings.WindowBindings?.MarginPixels ?? 14);
+            bindingOverlay = new WindowBindingDropOverlayWindow(runnable, this, _appSettings.WindowBindings?.MarginPixels ?? 14);
             bindingOverlay.BindingDropped += (hwnd, corner, offsetX, offsetY) =>
             {
                 _ = BindExtensionToWindowHandleAsync(runnable, hwnd, corner, restorePanel: false, offsetX, offsetY);
@@ -1415,6 +2010,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (e.Key == Key.Escape)
         {
+            if (_quickPanel?.IsEditMode == true)
+            {
+                _quickPanel.ToggleEditModeWithLauncherAlignment();
+                e.Handled = true;
+                return;
+            }
             if (IsHostedViewOpen)
             {
                 CloseHostedView();
@@ -1439,6 +2040,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private bool _isContextMenuOpen;
+    public bool IsContextMenuOpen
+    {
+        get => _isContextMenuOpen;
+        set
+        {
+            if (_isContextMenuOpen != value)
+            {
+                _isContextMenuOpen = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     private void CommandListContextMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not System.Windows.Controls.ContextMenu menu)
@@ -1446,7 +2061,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        UpdateFooterMenuHint(isMenuOpen: true);
+        IsContextMenuOpen = true;
 
         Dispatcher.BeginInvoke(() =>
         {
@@ -1459,7 +2074,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CommandListContextMenu_Closed(object sender, RoutedEventArgs e)
     {
-        UpdateFooterMenuHint(isMenuOpen: false);
+        IsContextMenuOpen = false;
 
         if (_commandActionsMenuOrigin == CommandActionsMenuOrigin.SearchBox)
         {
@@ -1471,27 +2086,163 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CommandList.Focus();
     }
 
+    private void BackToSearchMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        CloseActiveContextMenu();
+    }
+
+    private void CloseActiveContextMenu()
+    {
+        if (CommandList.ContextMenu?.IsOpen == true)
+        {
+            CommandList.ContextMenu.IsOpen = false;
+        }
+
+        if (TryFindResource("FileResultContextMenu") is ContextMenu fileMenu && fileMenu.IsOpen)
+        {
+            fileMenu.IsOpen = false;
+        }
+
+        if (TryFindResource("GenericResultContextMenu") is ContextMenu genericMenu && genericMenu.IsOpen)
+        {
+            genericMenu.IsOpen = false;
+        }
+
+        if (_commandActionsMenuOrigin == CommandActionsMenuOrigin.SearchBox)
+        {
+            SearchBox.Focus();
+            SearchBox.CaretIndex = SearchBox.Text.Length;
+        }
+        else
+        {
+            CommandList.Focus();
+        }
+    }
+
     private void CommandListContextMenu_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == Key.Left || e.Key == Key.Escape)
+        var actualKey = e.Key switch
+        {
+            Key.ImeProcessed => e.ImeProcessedKey,
+            Key.System => e.SystemKey,
+            _ => e.Key
+        };
+
+        var isAltDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
+        var isShiftDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+
+        if (e.Key == Key.Left || 
+            e.Key == Key.Escape || 
+            (e.Key == Key.Tab && isShiftDown) ||
+            (isAltDown && (actualKey == Key.A || actualKey == Key.H)))
         {
             if (sender is System.Windows.Controls.ContextMenu menu)
             {
                 menu.IsOpen = false;
             }
 
-            if (_commandActionsMenuOrigin == CommandActionsMenuOrigin.SearchBox)
-            {
-                SearchBox.Focus();
-                SearchBox.CaretIndex = SearchBox.Text.Length;
-            }
-            else
-            {
-                CommandList.Focus();
-            }
-
+            CloseActiveContextMenu();
             e.Handled = true;
         }
+    }
+
+    private bool HandleNavigationShortcut(System.Windows.Input.KeyEventArgs e)
+    {
+        var actualKey = e.Key switch
+        {
+            Key.ImeProcessed => e.ImeProcessedKey,
+            Key.System => e.SystemKey,
+            _ => e.Key
+        };
+
+        var isAltDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
+        var isCtrlDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+
+        // 1. Alt + WSAD / HJKL 极客全盲操导航 (与输入框所有的 Ctrl+A/C/V/Z 编辑快捷键 100% 零冲突)
+        if (isAltDown && !isCtrlDown)
+        {
+            switch (actualKey)
+            {
+                case Key.W: // 上
+                case Key.K:
+                    MoveSelection(-1);
+                    e.Handled = true;
+                    return true;
+
+                case Key.S: // 下
+                case Key.J:
+                    MoveSelection(1);
+                    e.Handled = true;
+                    return true;
+
+                case Key.A: // 左 (返回搜索输入框)
+                case Key.H:
+                    SearchBox.Focus();
+                    SearchBox.CaretIndex = SearchBox.Text.Length;
+                    e.Handled = true;
+                    return true;
+
+                case Key.D: // 右 (打开操作菜单)
+                case Key.L:
+                    var origin = SearchBox.IsKeyboardFocusWithin ? CommandActionsMenuOrigin.SearchBox : CommandActionsMenuOrigin.ResultsList;
+                    OpenCommandActionsMenu(origin);
+                    e.Handled = true;
+                    return true;
+            }
+        }
+
+        // 2. Ctrl + J / K (Vim 经典上下切项，在文本框中无任何冲突)
+        if (isCtrlDown && !isAltDown)
+        {
+            if (actualKey == Key.K)
+            {
+                MoveSelection(-1);
+                e.Handled = true;
+                return true;
+            }
+            if (actualKey == Key.J)
+            {
+                MoveSelection(1);
+                e.Handled = true;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void HandleCapsNavigation(LauncherCapsAction action)
+    {
+        switch (action)
+        {
+            case LauncherCapsAction.MoveUp:
+                MoveSelection(-1);
+                break;
+            case LauncherCapsAction.MoveDown:
+                MoveSelection(1);
+                break;
+            case LauncherCapsAction.ReturnToSearch:
+                CloseActiveContextMenu();
+                SearchBox.Focus();
+                SearchBox.CaretIndex = SearchBox.Text.Length;
+                break;
+            case LauncherCapsAction.OpenMenu:
+                var origin = SearchBox.IsKeyboardFocusWithin ? CommandActionsMenuOrigin.SearchBox : CommandActionsMenuOrigin.ResultsList;
+                OpenCommandActionsMenu(origin);
+                break;
+            case LauncherCapsAction.Execute:
+                RunSelectedCommand();
+                break;
+        }
+    }
+
+    public enum LauncherCapsAction
+    {
+        MoveUp,
+        MoveDown,
+        ReturnToSearch,
+        OpenMenu,
+        Execute
     }
 
     private enum CommandActionsMenuOrigin
@@ -1502,13 +2253,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void UpdateFooterMenuHint(bool isMenuOpen)
     {
-        if (FooterMenuHintText == null || FooterMenuHintKeyText == null)
-        {
-            return;
-        }
-
-        FooterMenuHintText.Text = isMenuOpen ? "左箭头返回" : "右箭头菜单";
-        FooterMenuHintKeyText.Text = isMenuOpen ? "←" : "→";
     }
 
     private void FooterQuickMenuButton_Click(object sender, RoutedEventArgs e)
@@ -1577,7 +2321,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = HostAssets.DocsReadmePath,
+                FileName = "https://yanzi.luoluoluo.cc.cd/docs/product-overview",
                 UseShellExecute = true
             });
             LastRunMessage = "已打开帮助文档。";
@@ -1681,13 +2425,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RenameCommandMenuItem.IsEnabled = canManageLocalExtension;
         RenameCommandMenuItem.Visibility = Visibility.Collapsed;
         EditExtensionMenuItem.IsEnabled = canManageLocalExtension || isYanyuRule;
-        EditExtensionMenuItem.Header = isYanyuRule ? "编辑燕语" : "编辑扩展";
+        EditExtensionMenuItem.Header = isYanyuRule ? "编辑燕语" : "编辑小程序";
         PublishExtensionMenuItem.IsEnabled = canManageLocalExtension && _cloudSyncClient != null;
         PublishExtensionMenuItem.Visibility = isYanyuRule ? Visibility.Collapsed : Visibility.Visible;
+        PublishExtensionMenuItem.Header = (resolved.IsPublishedInStore) ? "更新到商店" : "发布到商店";
         CopyExtensionStoreLinkMenuItem.IsEnabled = canManageLocalExtension;
-        CopyExtensionStoreLinkMenuItem.Visibility = Visibility.Collapsed;
+        CopyExtensionStoreLinkMenuItem.Visibility = (canManageLocalExtension && resolved.IsPublishedInStore) ? Visibility.Visible : Visibility.Collapsed;
         OpenExtensionStoreLinkMenuItem.IsEnabled = canManageLocalExtension;
-        OpenExtensionStoreLinkMenuItem.Visibility = isYanyuRule ? Visibility.Collapsed : Visibility.Visible;
+        OpenExtensionStoreLinkMenuItem.Visibility = (canManageLocalExtension && resolved.IsPublishedInStore && !isYanyuRule) ? Visibility.Visible : Visibility.Collapsed;
         DeleteExtensionMenuItem.IsEnabled = canManageLocalExtension || isYanyuRule;
         DeleteExtensionMenuItem.Header = isYanyuRule ? "删除燕语" : "删除";
         
@@ -1879,23 +2624,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
         };
 
-        AddMenuItem(menu, "编辑扩展", "pen", async () => await EditSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
-        AddMenuItem(menu, "发布到商店", "publish", async () =>
+        AddMenuItem(menu, "编辑小程序", "pen", async () => await EditSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
+        AddMenuItem(menu, command.IsPublishedInStore ? "更新到商店" : "发布到商店", "publish", async () =>
         {
             var ok = await PublishSelectedExtensionAsync();
             if (!ok)
             {
-                SyncStatus = string.IsNullOrWhiteSpace(SyncStatus) ? "发布到商店失败。" : SyncStatus;
+                SyncStatus = string.IsNullOrWhiteSpace(SyncStatus) ? (command.IsPublishedInStore ? "更新到商店失败。" : "发布到商店失败。") : SyncStatus;
             }
         }, command.Source == CommandSource.LocalExtension && _cloudSyncClient != null);
-        AddMenuItem(menu, "打开商店链接", "link", () => OpenExtensionStoreLinkMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), command.Source == CommandSource.LocalExtension);
+        AddMenuItem(menu, "打开商店链接", "link", () => OpenExtensionStoreLinkMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), command.Source == CommandSource.LocalExtension && command.IsPublishedInStore);
         AddMenuItem(menu, "删除", "delete", async () => await DeleteSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
         menu.Items.Add(new Separator());
-        AddMenuItem(menu, "复制扩展", "copy", () => CopyExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
-        AddMenuItem(menu, "剪切扩展", "cut", () => CutExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
-        AddMenuItem(menu, "粘贴扩展", "paste", () => PasteExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+        AddMenuItem(menu, "复制小程序", "copy", () => CopyExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+        AddMenuItem(menu, "剪切小程序", "cut", () => CutExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+        AddMenuItem(menu, "粘贴小程序", "paste", () => PasteExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
         menu.Items.Add(new Separator());
-        AddMenuItem(menu, "添加到鼠标面板", "plus", () => AddCurrentCommandToQuickPanel(), true);
+        AddMenuItem(menu, "添加到背包", "backpack", () => AddCurrentCommandToQuickPanel(), true);
         menu.Items.Add(new Separator());
         var hoverModeEnabled = IsWindowBindingHoverMode(bindingRuleId);
         AddMenuItem(menu, hoverModeEnabled ? "始终显示" : "悬停时显示", "pin", () => ToggleWindowBindingHoverMode(bindingRuleId), true);
@@ -2100,6 +2845,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void RunSelectedCommand()
     {
+        if (IsRadialPickerMode)
+        {
+            ConfirmRadialPickerSelection();
+            return;
+        }
+
         if (SelectedCommand == null)
         {
             LastRunMessage = "没有可执行的命令。";
@@ -2131,6 +2882,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 ShowInTaskbar = true
             };
+
+            if (runnable.ExtensionDirectoryPath != null && runnable.ExtensionDirectoryPath.Contains("_temp_run_"))
+            {
+                window.Closed += (s, e) =>
+                {
+                    Task.Run(async () =>
+                    {
+                        await Task.Delay(2000); // 延时以释放WebView/进程锁定的文件
+                        try
+                        {
+                            if (Directory.Exists(runnable.ExtensionDirectoryPath))
+                            {
+                                Directory.Delete(runnable.ExtensionDirectoryPath, recursive: true);
+                            }
+                        }
+                        catch {}
+                    });
+                };
+            }
+
             window.Show();
             HostAssets.AppendRecent(runnable.Title);
             LastRunMessage = $"已打开应用扩展：{runnable.Title}";
@@ -2179,6 +2950,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (ScriptExtensionRunner.CanExecute(runnable))
         {
             await ExecuteScriptCommandAsync(runnable, explicitInput ?? BuildScriptInput(runnable, SearchBox.Text), launchSource);
+
+            if (runnable.ExtensionDirectoryPath != null && runnable.ExtensionDirectoryPath.Contains("_temp_run_"))
+            {
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(2000); // 延时以释放文件进程锁
+                    try
+                    {
+                        if (Directory.Exists(runnable.ExtensionDirectoryPath))
+                        {
+                            Directory.Delete(runnable.ExtensionDirectoryPath, recursive: true);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Failed to delete temporary extension directory: {ex.Message}");
+                    }
+                });
+            }
             return;
         }
 
@@ -2214,10 +3004,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (runnable.Source == CommandSource.Cloud)
+        {
+            HostAssets.AppendLog($"Triggering download for cloud extension: {runnable.Title}");
+            LastRunMessage = $"正在安装扩展：{runnable.Title} ...";
+            _ = InstallStoreExtensionAsync(runnable.ExtensionId).ContinueWith(t => 
+            {
+                if (t.IsCompletedSuccessfully)
+                {
+                    Dispatcher.Invoke(() => LastRunMessage = t.Result.ok ? $"已安装小程序：{runnable.Title}" : $"安装失败：{t.Result.message}");
+                }
+            });
+            return;
+        }
+
         HostAssets.AppendLog($"Command has no executable target: {runnable.Title}");
-        LastRunMessage = runnable.Source == CommandSource.Cloud
-            ? $"云端记录已存在，但当前机器没有安装对应扩展：{runnable.ExtensionId}。先下载扩展包或放入本地扩展目录。"
-            : $"当前命令没有 openTarget，也没有脚本入口：{runnable.Title}";
+        LastRunMessage = $"当前命令没有 openTarget，也没有脚本入口：{runnable.Title}";
     }
 
     private void OpenQueryCommandInLauncher(CommandItem command)
@@ -2248,9 +3050,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CreateSystemCommand("热", "移动热点", "打开热点共享设置。", "#FF0F766E", "ms-settings:network-mobilehotspot", "system-network-hotspot", "mdi:globe", ["系统", "热点", "共享网络", "mobile hotspot"]),
             CreateSystemCommand("飞", "飞行模式", "打开飞行模式设置。", "#FF64748B", "ms-settings:network-airplanemode", "system-network-airplane", "mdi:globe", ["系统", "飞行模式", "无线关闭"]),
             CreateSystemCommand("网", "网络和 Internet", "打开网络设置。", "#FF0EA5E9", "ms-settings:network", "system-settings-network", "mdi:globe", ["系统", "设置", "网络", "wifi", "代理"]),
-            CreateSystemCommand("蓝", "蓝牙和设备", "打开蓝牙与设备设置。", "#FF8B5CF6", "ms-settings:bluetooth", "system-settings-bluetooth", "mdi:settings", ["系统", "设置", "蓝牙", "设备", "鼠标", "键盘"]),
+            CreateSystemCommand("蓝", "蓝牙和设备", "打开蓝牙与设备设置。", "#FF3B82F6", "ms-settings:bluetooth", "system-settings-bluetooth", "mdi:settings", ["系统", "设置", "蓝牙", "设备", "鼠标", "键盘"]),
             CreateSystemCommand("连", "已连接设备", "打开已连接设备管理。", "#FF7C3AED", "ms-settings:connecteddevices", "system-connected-devices", "mdi:settings", ["系统", "设备", "已连接设备", "蓝牙设备"]),
-            CreateSystemCommand("鼠", "鼠标和触摸板", "打开鼠标和基础触控设置。", "#FF8B5CF6", "ms-settings:mousetouchpad", "system-mouse-touchpad", "mdi:settings", ["系统", "鼠标", "触摸板", "滚轮"]),
+            CreateSystemCommand("鼠", "鼠标和触摸板", "打开鼠标和基础触控设置。", "#FF3B82F6", "ms-settings:mousetouchpad", "system-mouse-touchpad", "mdi:settings", ["系统", "鼠标", "触摸板", "滚轮"]),
             CreateSystemCommand("触", "触摸板", "打开触摸板手势和灵敏度设置。", "#FF6D28D9", "ms-settings:devices-touchpad", "system-touchpad", "mdi:settings", ["系统", "触摸板", "手势"]),
             CreateSystemCommand("相", "相机设置", "打开摄像头设备设置。", "#FF0F766E", "ms-settings:camera", "system-camera-settings", "mdi:settings", ["系统", "摄像头", "相机", "camera"]),
             CreateSystemCommand("打", "打印机和扫描仪", "打开打印机、扫描仪和设备管理。", "#FF6366F1", "ms-settings:printers", "system-settings-printers", "mdi:file", ["系统", "设置", "打印机", "扫描仪", "设备", "打印"]),
@@ -2394,6 +3196,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private Task LoadInstalledApplicationsAsync()
+    {
+        return Task.Run(() =>
+        {
+            var commands = CreateInstalledApplicationCommands();
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (commands.Count == 0)
+                {
+                    return;
+                }
+                _allCommands.AddRange(commands);
+                OnPropertyChanged(nameof(VisibleCountText));
+                OnPropertyChanged(nameof(FooterHint));
+            }, DispatcherPriority.Background);
+        });
+    }
+
     private static string InferApplicationGlyph(string title)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -2428,8 +3248,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _quickPanelClipboard = new QuickPanelClipboardItem(command.ExtensionId, command.Title, isCut, sourceSlot);
         var action = isCut ? "剪切" : "复制";
         LastRunMessage = sourceSlot == null
-            ? $"已{action}扩展：{command.Title}。现在可以在鼠标面板槽位右键粘贴。"
-            : $"已{action}鼠标面板中的扩展：{command.Title}。";
+            ? $"已{action}小程序：{command.Title}。现在可以在背包槽位右键粘贴。"
+            : $"已{action}背包中的小程序：{command.Title}。";
+    }
+
+    public bool HasExtensionInClipboard()
+    {
+        if (GetQuickPanelClipboard() != null)
+        {
+            return true;
+        }
+
+        try
+        {
+            if (System.Windows.Clipboard.ContainsText())
+            {
+                var text = System.Windows.Clipboard.GetText();
+                var json = ExtractExtensionJsonFromClipboard(text);
+                return !string.IsNullOrWhiteSpace(json);
+            }
+        }
+        catch { }
+
+        return false;
     }
 
     public bool TryImportExtensionFromSystemClipboard(out CommandItem? command, out string message)
@@ -2457,7 +3298,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var normalizedJson = ExtractExtensionJsonFromClipboard(clipboardText);
         if (string.IsNullOrWhiteSpace(normalizedJson))
         {
-            message = "系统剪贴板里没有可导入的扩展 JSON。";
+            message = "系统剪贴板里没有可导入的小程序 JSON。";
             return false;
         }
 
@@ -2469,7 +3310,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            message = $"剪贴板里的扩展 JSON 无法导入：{FormatExceptionMessage(ex)}";
+            message = $"剪贴板里的小程序 JSON 无法导入：{FormatExceptionMessage(ex)}";
             return false;
         }
     }
@@ -2927,8 +3768,61 @@ public sealed class CloudWebDavConfigSnapshot
 
 public sealed class CloudQuickPanelConfigSnapshot
 {
+    [JsonPropertyName("schemaVersion")]
+    public int SchemaVersion { get; set; } = 2;
+
     [JsonPropertyName("updatedAtUtc")]
     public string? UpdatedAtUtc { get; set; }
+
+    [JsonPropertyName("sourceDeviceId")]
+    public string? SourceDeviceId { get; set; }
+
+    [JsonPropertyName("sourceDeviceName")]
+    public string? SourceDeviceName { get; set; }
+
+    [JsonPropertyName("isInitialDefaultConfig")]
+    public bool IsInitialDefaultConfig { get; set; }
+
+    [JsonPropertyName("hasUserContent")]
+    public bool HasUserContent { get; set; }
+
+    [JsonPropertyName("themeMode")]
+    public string ThemeMode { get; set; } = "Dark";
+
+    [JsonPropertyName("autoCloseToastEnabled")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AutoCloseToastEnabled { get; set; }
+
+    [JsonPropertyName("enableAutoUpdate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? EnableAutoUpdate { get; set; }
+
+    [JsonPropertyName("enableBrowserHelper")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? EnableBrowserHelper { get; set; }
+
+    [JsonPropertyName("preferManualExtensionEditor")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PreferManualExtensionEditor { get; set; }
+
+    [JsonPropertyName("enableEverything")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? EnableEverything { get; set; }
+
+    [JsonPropertyName("launcherHotkey")]
+    public string LauncherHotkey { get; set; } = "Alt+Space";
+
+    [JsonPropertyName("launchAtStartup")]
+    public bool LaunchAtStartup { get; set; } = true;
+
+    [JsonPropertyName("refreshCloudOnStartup")]
+    public bool RefreshCloudOnStartup { get; set; } = true;
+
+    [JsonPropertyName("closeToTray")]
+    public bool CloseToTray { get; set; } = true;
+
+    [JsonPropertyName("quickPanelTrigger")]
+    public string QuickPanelTrigger { get; set; } = "MiddleButtonLongPress";
 
     [JsonPropertyName("quickPanelSlots")]
     public List<string?> QuickPanelSlots { get; set; } = Enumerable.Repeat<string?>(null, 28).ToList();
@@ -2954,11 +3848,43 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonPropertyName("quickPanelMouseTriggers")]
     public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
 
+    [JsonPropertyName("mouseGestureAppBindings")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<MouseGestureAppBinding>? MouseGestureAppBindings { get; set; }
+
     [JsonPropertyName("mouseGestureTriggerMode")]
-    public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.RightDrag;
+    public string MouseGestureTriggerMode { get; set; } = MouseGestureTriggerModes.None;
 
     [JsonPropertyName("windowSnapAssistMouseTriggerMode")]
     public string WindowSnapAssistMouseTriggerMode { get; set; } = MouseTriggerModes.None;
+
+    [JsonPropertyName("enableWindowSnapAssist")]
+    public bool EnableWindowSnapAssist { get; set; } = true;
+
+    [JsonPropertyName("windowSnapAssistHotkey")]
+    public string WindowSnapAssistHotkey { get; set; } = string.Empty;
+
+    [JsonPropertyName("windowSnapAssistCustomLayouts")]
+    public List<WindowSnapAssistCustomLayoutSettings> WindowSnapAssistCustomLayouts { get; set; } = [];
+
+    [JsonPropertyName("windowBindings")]
+    public WindowBindingSettings? WindowBindings { get; set; }
+
+    [JsonPropertyName("disabledExtensionIds")]
+    public List<string> DisabledExtensionIds { get; set; } = [];
+
+    [JsonPropertyName("pinnedSearchScopeCommandIds")]
+    public List<string> PinnedSearchScopeCommandIds { get; set; } = [];
+
+    [JsonPropertyName("searchScopeConfigs")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<SearchScopeConfigItem>? SearchScopeConfigs { get; set; }
+
+    [JsonPropertyName("enableAgentApi")]
+    public bool EnableAgentApi { get; set; } = true;
+
+    [JsonPropertyName("agentApiPort")]
+    public int AgentApiPort { get; set; } = 53919;
 
     [JsonPropertyName("yarnSelect")]
     public YarnSelectSettings? YarnSelect { get; set; }
@@ -2970,7 +3896,12 @@ public sealed class CloudQuickPanelConfigSnapshot
     public List<YanyuRuleSettings>? YanyuRules { get; set; }
 
     [JsonPropertyName("yanm")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public YanmSettings? Yanm { get; set; }
+
+    [JsonPropertyName("environmentVariables")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AppEnvironmentVariableSettings>? EnvironmentVariables { get; set; }
 
     [JsonPropertyName("aiBaseUrl")]
     public string? AiBaseUrl { get; set; }
@@ -2981,10 +3912,32 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonPropertyName("aiModel")]
     public string? AiModel { get; set; }
 
+    [JsonPropertyName("aiSystemPrompt")]
+    public string? AiSystemPrompt { get; set; }
+
+    [JsonPropertyName("aiServiceProviders")]
+    public List<AiServiceProviderSettings> AiServiceProviders { get; set; } = [];
+
+    [JsonPropertyName("activeServiceProviderId")]
+    public string? ActiveServiceProviderId { get; set; }
+
     public static CloudQuickPanelConfigSnapshot FromSettings(AppSettings settings)
     {
-        return new CloudQuickPanelConfigSnapshot
+        var snapshot = new CloudQuickPanelConfigSnapshot
         {
+            SourceDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+            SourceDeviceName = DeviceIdentityStore.GetDesktopDisplayName(),
+            ThemeMode = settings.ThemeMode,
+            AutoCloseToastEnabled = settings.AutoCloseToastEnabled,
+            EnableAutoUpdate = settings.EnableAutoUpdate,
+            EnableBrowserHelper = settings.EnableBrowserHelper,
+            PreferManualExtensionEditor = settings.PreferManualExtensionEditor,
+            EnableEverything = settings.EnableEverything,
+            LauncherHotkey = settings.LauncherHotkey,
+            LaunchAtStartup = settings.LaunchAtStartup,
+            RefreshCloudOnStartup = settings.RefreshCloudOnStartup,
+            CloseToTray = settings.CloseToTray,
+            QuickPanelTrigger = settings.QuickPanelTrigger,
             QuickPanelSlots = settings.QuickPanelSlots.ToList(),
             QuickPanelGlobalGroups = CloneGroups(settings.QuickPanelGlobalGroups),
             QuickPanelContextGroups = CloneGroups(settings.QuickPanelContextGroups),
@@ -2993,25 +3946,57 @@ public sealed class CloudQuickPanelConfigSnapshot
             GlobalFavoriteExtensionIds = settings.GlobalFavoriteExtensionIds.ToList(),
             ContextFavoriteExtensionIds = settings.ContextFavoriteExtensionIds.ToList(),
             QuickPanelMouseTriggers = CloneTriggers(settings.QuickPanelMouseTriggers),
+            MouseGestureAppBindings = CloneByJson(settings.MouseGestureAppBindings),
             MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode),
             WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(settings.WindowSnapAssistMouseTriggerMode),
+            EnableWindowSnapAssist = settings.EnableWindowSnapAssist,
+            WindowSnapAssistHotkey = settings.WindowSnapAssistHotkey,
+            WindowSnapAssistCustomLayouts = CloneByJson(settings.WindowSnapAssistCustomLayouts),
+            WindowBindings = CloneByJson(settings.WindowBindings),
+            DisabledExtensionIds = settings.DisabledExtensionIds.ToList(),
+            PinnedSearchScopeCommandIds = settings.PinnedSearchScopeCommandIds.ToList(),
+            SearchScopeConfigs = CloneByJson(settings.SearchScopeConfigs),
+            EnableAgentApi = settings.EnableAgentApi,
+            AgentApiPort = settings.AgentApiPort,
             YarnSelect = CloneByJson(settings.YarnSelect),
             RadialMenu = CloneByJson(settings.RadialMenu),
             YanyuRules = CloneByJson(settings.YanyuRules),
-            Yanm = CloneByJson(settings.Yanm),
+            // 燕幕使用独立 yanm-state 及独立时间戳同步。继续读取旧快照中的
+            // Yanm 仅用于迁移，但新主配置不再写入，避免两条同步链互相回滚。
+            Yanm = null,
+            // 仅同步名称和说明；值继续由本机 DPAPI 保护，不写入普通云端 JSON。
+            EnvironmentVariables = CloneByJson(settings.EnvironmentVariables),
             AiBaseUrl = settings.AiBaseUrl,
-            AiApiKey = settings.AiApiKey,
+            // AI 密钥只保存在本机 DPAPI；云端和个人仓库仅同步服务商元数据。
+            AiApiKey = null,
             AiModel = settings.AiModel,
+            AiSystemPrompt = settings.AiSystemPrompt,
+            AiServiceProviders = AiCredentialStore.PrepareSyncedProviderMetadata(settings.AiServiceProviders),
+            ActiveServiceProviderId = settings.ActiveServiceProviderId,
             UpdatedAtUtc = string.IsNullOrWhiteSpace(settings.LauncherConfigUpdatedAtUtc)
                 ? DateTime.UtcNow.ToString("O")
                 : settings.LauncherConfigUpdatedAtUtc
         };
+        snapshot.HasUserContent = HasMeaningfulUserContent(snapshot);
+        snapshot.IsInitialDefaultConfig = !snapshot.HasUserContent;
+        return snapshot;
     }
 
     public AppSettings ToAppSettings()
     {
         return new AppSettings
         {
+            ThemeMode = ThemeMode,
+            AutoCloseToastEnabled = AutoCloseToastEnabled ?? false,
+            EnableAutoUpdate = EnableAutoUpdate ?? true,
+            EnableBrowserHelper = EnableBrowserHelper ?? true,
+            PreferManualExtensionEditor = PreferManualExtensionEditor ?? false,
+            EnableEverything = EnableEverything ?? true,
+            LauncherHotkey = LauncherHotkey,
+            LaunchAtStartup = LaunchAtStartup,
+            RefreshCloudOnStartup = RefreshCloudOnStartup,
+            CloseToTray = CloseToTray,
+            QuickPanelTrigger = QuickPanelTrigger,
             QuickPanelSlots = QuickPanelSlots.ToList(),
             QuickPanelGlobalGroups = CloneGroups(QuickPanelGlobalGroups),
             QuickPanelContextGroups = CloneGroups(QuickPanelContextGroups),
@@ -3020,15 +4005,29 @@ public sealed class CloudQuickPanelConfigSnapshot
             GlobalFavoriteExtensionIds = GlobalFavoriteExtensionIds.ToList(),
             ContextFavoriteExtensionIds = ContextFavoriteExtensionIds.ToList(),
             QuickPanelMouseTriggers = CloneTriggers(QuickPanelMouseTriggers),
+            MouseGestureAppBindings = MouseGestureAppBindings == null ? [] : CloneByJson(MouseGestureAppBindings),
             MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(MouseGestureTriggerMode),
             WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(WindowSnapAssistMouseTriggerMode),
+            EnableWindowSnapAssist = EnableWindowSnapAssist,
+            WindowSnapAssistHotkey = WindowSnapAssistHotkey,
+            WindowSnapAssistCustomLayouts = CloneByJson(WindowSnapAssistCustomLayouts),
+            WindowBindings = WindowBindings == null ? new WindowBindingSettings() : CloneByJson(WindowBindings),
+            DisabledExtensionIds = DisabledExtensionIds.ToList(),
+            PinnedSearchScopeCommandIds = PinnedSearchScopeCommandIds.ToList(),
+            SearchScopeConfigs = SearchScopeConfigs == null ? [] : CloneByJson(SearchScopeConfigs),
+            EnableAgentApi = EnableAgentApi,
+            AgentApiPort = AgentApiPort,
             YarnSelect = YarnSelect == null ? new YarnSelectSettings() : CloneByJson(YarnSelect),
             RadialMenu = RadialMenu == null ? new RadialMenuSettings() : CloneByJson(RadialMenu),
             YanyuRules = YanyuRules == null ? [] : CloneByJson(YanyuRules),
             Yanm = Yanm == null ? new YanmSettings() : CloneByJson(Yanm),
+            EnvironmentVariables = EnvironmentVariables == null ? [] : CloneByJson(EnvironmentVariables),
             AiBaseUrl = AiBaseUrl ?? string.Empty,
             AiApiKey = AiApiKey ?? string.Empty,
             AiModel = AiModel ?? string.Empty,
+            AiSystemPrompt = string.IsNullOrWhiteSpace(AiSystemPrompt) ? AppSettingsStore.DefaultAiSystemPrompt : AiSystemPrompt,
+            AiServiceProviders = AiServiceProviders == null ? [] : CloneByJson(AiServiceProviders),
+            ActiveServiceProviderId = ActiveServiceProviderId ?? string.Empty,
             LauncherConfigUpdatedAtUtc = UpdatedAtUtc ?? string.Empty
         };
     }
@@ -3037,6 +4036,111 @@ public sealed class CloudQuickPanelConfigSnapshot
     {
         var json = JsonSerializer.Serialize(value);
         return JsonSerializer.Deserialize<T>(json) ?? value;
+    }
+
+
+    public static bool HasMeaningfulUserContent(CloudQuickPanelConfigSnapshot? snapshot)
+    {
+        if (snapshot == null)
+        {
+            return false;
+        }
+
+        return snapshot.HasUserContent ||
+               snapshot.QuickPanelSlots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
+               HasQuickPanelGroupContent(snapshot.QuickPanelGlobalGroups) ||
+               HasQuickPanelGroupContent(snapshot.QuickPanelContextGroups) ||
+               snapshot.GlobalFavoriteExtensionIds.Count > 0 ||
+               snapshot.ContextFavoriteExtensionIds.Count > 0 ||
+               snapshot.DisabledExtensionIds.Count > 0 ||
+               snapshot.PinnedSearchScopeCommandIds.Count > 0 ||
+               (snapshot.SearchScopeConfigs?.Any(static item => !item.IsVisible || item.IsPinned) ?? false) ||
+               (snapshot.MouseGestureAppBindings?.Count ?? 0) > 0 ||
+               (snapshot.EnvironmentVariables?.Count ?? 0) > 0 ||
+               snapshot.WindowSnapAssistCustomLayouts.Count > 0 ||
+               HasWindowBindingContent(snapshot.WindowBindings) ||
+               (snapshot.YanyuRules?.Count ?? 0) > 0 ||
+               HasRadialContent(snapshot.RadialMenu) ||
+               HasYanmUserContent(snapshot.Yanm) ||
+               HasAiConfig(snapshot) ||
+               snapshot.AutoCloseToastEnabled == true ||
+               snapshot.EnableAutoUpdate == false ||
+               snapshot.EnableBrowserHelper == false ||
+               snapshot.PreferManualExtensionEditor == true ||
+               snapshot.EnableEverything == false ||
+               !string.Equals(snapshot.ThemeMode, "Dark", StringComparison.OrdinalIgnoreCase) ||
+               snapshot.LaunchAtStartup == false ||
+               snapshot.RefreshCloudOnStartup == false ||
+               snapshot.CloseToTray == false ||
+               snapshot.EnableAgentApi == false ||
+               snapshot.AgentApiPort != 53919 ||
+               snapshot.EnableWindowSnapAssist == false ||
+               !string.IsNullOrWhiteSpace(snapshot.WindowSnapAssistHotkey) ||
+               snapshot.WindowBindings is { Enabled: false } ||
+               snapshot.WindowBindings is { MarginPixels: not 14 } ||
+               snapshot.YarnSelect is { Enabled: false } ||
+               (snapshot.YarnSelect?.Rules?.Count ?? 0) > 0 ||
+               !string.Equals(snapshot.LauncherHotkey, "Alt+Space", StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(snapshot.QuickPanelTrigger, "MiddleButtonLongPress", StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(MouseGestureTriggerModes.Normalize(snapshot.MouseGestureTriggerMode), MouseGestureTriggerModes.None, StringComparison.OrdinalIgnoreCase) ||
+               !string.Equals(MouseTriggerModes.Normalize(snapshot.WindowSnapAssistMouseTriggerMode), MouseTriggerModes.None, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsInitialDefaultSnapshot(CloudQuickPanelConfigSnapshot? snapshot)
+    {
+        return snapshot == null || snapshot.IsInitialDefaultConfig || !HasMeaningfulUserContent(snapshot);
+    }
+
+    private static bool HasQuickPanelGroupContent(IEnumerable<QuickPanelGroupSettings> groups)
+    {
+        return groups.Any(static group =>
+            group.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
+            group.SlotItems.Any(static item => item != null));
+    }
+
+    private static bool HasWindowBindingContent(WindowBindingSettings? settings)
+    {
+        return settings?.Rules?.Count > 0;
+    }
+
+    private static bool HasRadialContent(RadialMenuSettings? settings)
+    {
+        return settings != null &&
+               (!settings.Enabled ||
+                !settings.TriggerRightButtonDrag ||
+                settings.TriggerMiddleButtonDrag ||
+                settings.TriggerRightButtonLongPress ||
+                settings.TriggerMiddleButtonLongPress ||
+                settings.TriggerMiddleButtonDown ||
+                settings.TriggerX1ButtonDown ||
+                settings.TriggerX2ButtonDown ||
+                settings.TriggerHorizontalWheel ||
+                settings.TriggerCtrlLeftClick ||
+                settings.TriggerCtrlRightClick ||
+                settings.TriggerCtrlMiddleClick ||
+                !string.Equals(settings.ActivationKey, RadialActivationKeys.CapsLock, StringComparison.OrdinalIgnoreCase) ||
+                !string.IsNullOrWhiteSpace(settings.CustomShortcut) ||
+                settings.Pages.Any(static page =>
+                    page.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)) ||
+                    page.ChildPageIds.Any(static childPageId => !string.IsNullOrWhiteSpace(childPageId))) ||
+                settings.Slots.Any(static slot => !string.IsNullOrWhiteSpace(slot)));
+    }
+
+    private static bool HasYanmUserContent(YanmSettings? settings)
+    {
+        return settings?.ComponentState?.Count > 0 ||
+               settings?.HasInitializedDefaultComponents == false && settings?.Components?.Count > 0;
+    }
+
+    private static bool HasAiConfig(CloudQuickPanelConfigSnapshot snapshot)
+    {
+        return !string.IsNullOrWhiteSpace(snapshot.AiBaseUrl) ||
+               !string.IsNullOrWhiteSpace(snapshot.AiApiKey) ||
+               !string.IsNullOrWhiteSpace(snapshot.AiModel) ||
+               !string.IsNullOrWhiteSpace(snapshot.ActiveServiceProviderId) ||
+               (snapshot.AiServiceProviders?.Count ?? 0) > 0 ||
+               (!string.IsNullOrWhiteSpace(snapshot.AiSystemPrompt) &&
+                !string.Equals(snapshot.AiSystemPrompt, AppSettingsStore.DefaultAiSystemPrompt, StringComparison.Ordinal));
     }
 
     private static List<QuickPanelGroupSettings> CloneGroups(IEnumerable<QuickPanelGroupSettings> groups)
@@ -3064,7 +4168,8 @@ public sealed class CloudQuickPanelConfigSnapshot
                 ExtensionId = item.ExtensionId,
                 FolderName = item.FolderName,
                 FolderExtensionIds = item.FolderExtensionIds.ToList(),
-                FolderSlotItems = item.FolderSlotItems.Select(CloneQuickPanelSlotItem).ToList()
+                FolderSlotItems = item.FolderSlotItems.Select(CloneQuickPanelSlotItem).ToList(),
+                IsShortcut = item.IsShortcut
             };
     }
 
@@ -3086,6 +4191,86 @@ public sealed class CloudQuickPanelConfigSnapshot
             LongPressMilliseconds = trigger.LongPressMilliseconds,
             DragThresholdPixels = trigger.DragThresholdPixels
         };
+    }
+}
+
+internal static class PinBrushes
+{
+    public static readonly System.Windows.Media.Brush Active =
+        FreezeBrush(new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xF5, 0x9E, 0x0B)));
+    public static readonly System.Windows.Media.Brush Inactive =
+        FreezeBrush(new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x77, 0x77, 0x77)));
+
+    private static System.Windows.Media.Brush FreezeBrush(System.Windows.Media.Brush brush)
+    {
+        if (brush.CanFreeze)
+        {
+            brush.Freeze();
+        }
+        return brush;
+    }
+}
+
+internal static class AccentBrushCache
+{
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Windows.Media.Brush> Cache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Windows.Media.Brush> ColorOnlyCache = new(StringComparer.OrdinalIgnoreCase);
+
+    public static System.Windows.Media.Brush Get(string? accentHex)
+    {
+        if (string.IsNullOrWhiteSpace(accentHex))
+        {
+            return System.Windows.Media.Brushes.Transparent;
+        }
+
+        return Cache.GetOrAdd(accentHex, static hex =>
+        {
+            try
+            {
+                var brush = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(hex)!;
+                if (brush.CanFreeze)
+                {
+                    brush.Freeze();
+                }
+                return brush;
+            }
+            catch
+            {
+                return System.Windows.Media.Brushes.Transparent;
+            }
+        });
+    }
+
+    public static System.Windows.Media.Brush GetVectorColor(string? iconReference)
+    {
+        if (string.IsNullOrWhiteSpace(iconReference))
+        {
+            return System.Windows.Media.Brushes.White;
+        }
+
+        var hashIdx = iconReference.LastIndexOf('#');
+        if (hashIdx <= 0 || hashIdx >= iconReference.Length - 1)
+        {
+            return System.Windows.Media.Brushes.White;
+        }
+
+        var hex = iconReference[hashIdx..];
+        return ColorOnlyCache.GetOrAdd(hex, static color =>
+        {
+            try
+            {
+                var brush = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(color)!;
+                if (brush.CanFreeze)
+                {
+                    brush.Freeze();
+                }
+                return brush;
+            }
+            catch
+            {
+                return System.Windows.Media.Brushes.White;
+            }
+        });
     }
 }
 
@@ -3128,7 +4313,8 @@ public sealed class CommandItem : INotifyPropertyChanged
         ImageSource? iconSourceOverride = null,
         CommandSearchProviderDefinition? searchProvider = null,
         ResultItemKind resultKind = ResultItemKind.None,
-        string? resultProviderTitle = null)
+        string? resultProviderTitle = null,
+        bool isPublishedInStore = false)
     {
         Glyph = glyph;
         Title = title;
@@ -3136,7 +4322,7 @@ public sealed class CommandItem : INotifyPropertyChanged
         Category = category;
         OpenTarget = openTarget;
         Keywords = keywords.ToArray();
-        AccentBrush = (SolidColorBrush)new BrushConverter().ConvertFromString(accentHex)!;
+        AccentBrush = AccentBrushCache.Get(accentHex);
         Source = source;
         ExtensionId = string.IsNullOrWhiteSpace(extensionId)
             ? CloudSyncClient.CreateExtensionId(this)
@@ -3157,13 +4343,26 @@ public sealed class CommandItem : INotifyPropertyChanged
         InlineScriptSource = inlineScriptSource;
         IconReference = iconReference;
         _iconSource = iconSourceOverride ?? ExtensionIconLibrary.ResolveImageSource(iconReference, extensionDirectoryPath);
+        if (_iconSource == null && !string.IsNullOrWhiteSpace(openTarget) && (File.Exists(openTarget) || Directory.Exists(openTarget)))
+        {
+            _iconSource = ExtensionIconLibrary.ResolveImageSource(openTarget, extensionDirectoryPath);
+        }
+
         VectorIcon = ExtensionIconLibrary.ResolveVectorIcon(iconReference);
+        if (_iconSource != null && (iconReference == "mdi:file" || iconReference == "mdi:document" || string.IsNullOrWhiteSpace(iconReference)))
+        {
+            VectorIcon = null;
+        }
+        
+        VectorIconBrush = AccentBrushCache.GetVectorColor(iconReference);
+        
         Startup = startup;
         LaunchArguments = launchArguments;
         WorkingDirectory = workingDirectory;
         SearchProvider = searchProvider;
         ResultKind = resultKind;
         ResultProviderTitle = resultProviderTitle;
+        IsPublishedInStore = isPublishedInStore;
     }
 
     public string Glyph { get; }
@@ -3176,15 +4375,49 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public Geometry? VectorIcon { get; }
 
+    public System.Windows.Media.Brush VectorIconBrush { get; }
+
     public bool HasImageIcon => IconSource != null;
 
-    public bool HasVectorIcon => VectorIcon != null;
+    public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
 
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon;
 
     public string Title { get; }
 
     public string Subtitle { get; }
+
+    public string Description => Subtitle;
+
+    public int UsageCount { get; set; } = 0;
+
+    private bool _isPreviousToSelected;
+    public bool IsPreviousToSelected
+    {
+        get => _isPreviousToSelected;
+        set
+        {
+            if (_isPreviousToSelected != value)
+            {
+                _isPreviousToSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPreviousToSelected)));
+            }
+        }
+    }
+
+    private bool _isNextToSelected;
+    public bool IsNextToSelected
+    {
+        get => _isNextToSelected;
+        set
+        {
+            if (_isNextToSelected != value)
+            {
+                _isNextToSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsNextToSelected)));
+            }
+        }
+    }
 
     public string DisplaySubtitle => string.IsNullOrWhiteSpace(_queryPreviewSubtitle) ? Subtitle : _queryPreviewSubtitle;
 
@@ -3303,11 +4536,34 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public bool ExistsInCloud { get; private set; }
 
+    public bool IsPublishedInStore { get; private set; }
+
+    public void SetPublishedInStore(bool published)
+    {
+        if (IsPublishedInStore == published) return;
+        IsPublishedInStore = published;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPublishedInStore)));
+    }
+
     public bool InstalledForUser { get; private set; }
 
     public bool HasArchive { get; private set; }
 
     public string? LocalPackagePath { get; private set; }
+
+    public int InstallCount { get; private set; }
+
+    public double Rating { get; private set; }
+
+    public bool IsInstalled => InstalledForUser;
+
+    public string InstallCountLabel => InstallCount >= 1000000 
+        ? $"{(double)InstallCount / 1000000:F1}M" 
+        : (InstallCount >= 1000 
+            ? $"{(double)InstallCount / 1000:F1}K" 
+            : InstallCount.ToString());
+
+    public string RatingLabel => Rating > 0 ? Rating.ToString("F1") : "4.8";
 
     public string VersionLabel => string.IsNullOrWhiteSpace(CloudVersion) ? SourceLabel : $"v{CloudVersion}";
 
@@ -3355,22 +4611,24 @@ public sealed class CommandItem : INotifyPropertyChanged
     private string SourceLabel => Source switch
     {
         CommandSource.Cloud => "云端",
-        CommandSource.LocalExtension => "本地扩展",
+        CommandSource.LocalExtension => "本地小程序",
         CommandSource.WebSearch => "网页搜索",
         CommandSource.Application => "应用",
         CommandSource.File => !string.IsNullOrWhiteSpace(ResultProviderTitle) ? ResultProviderTitle! : "文件结果",
         _ => "本地"
     };
-    private string ArchiveSummary => HasArchive ? "已包含扩展包。" : "当前还没有扩展包。";
+    private string ArchiveSummary => HasArchive ? "已包含扩展包。" : "当前还没有小程序包。";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public void ApplyCloudData(string? displayName, string? version, bool existsInCloud, bool installedForUser, string? archiveKey)
+    public void ApplyCloudData(string? displayName, string? version, bool existsInCloud, bool installedForUser, string? archiveKey, int installCount = 0, double rating = 0.0)
     {
         CloudVersion = version;
         ExistsInCloud = existsInCloud;
         InstalledForUser = installedForUser;
         HasArchive = !string.IsNullOrWhiteSpace(archiveKey);
+        InstallCount = installCount;
+        Rating = rating;
         NotifyCloudChanged();
     }
 
@@ -3408,10 +4666,13 @@ public sealed class CommandItem : INotifyPropertyChanged
 
         _queryPreviewSubtitle = subtitle;
         _queryPreviewActionLabel = actionLabel;
+        HasQueryPreview = !string.IsNullOrEmpty(_queryPreviewSubtitle) || !string.IsNullOrEmpty(_queryPreviewActionLabel);
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplaySubtitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EffectiveSubtitle)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayActionLabel)));
     }
+
+    public bool HasQueryPreview { get; private set; }
 
     public void SetIconSource(ImageSource? iconSource)
     {
@@ -3458,6 +4719,11 @@ public sealed class CommandItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(VersionLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CloudSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LocalPackagePath)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsInstalled)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(InstallCount)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Rating)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(InstallCountLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RatingLabel)));
     }
 }
 
@@ -3521,5 +4787,26 @@ public sealed class AttachedFileItem : INotifyPropertyChanged
         _iconSource = iconSource;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IconSource)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIcon)));
+    }
+}
+
+public class RadialSlotPickerWindow
+{
+    public enum PickerAction
+    {
+        AddCommand,
+        AddChildPage
+    }
+}
+
+public class RadialPickerResult
+{
+    public RadialSlotPickerWindow.PickerAction Action { get; }
+    public CommandItem? Command { get; }
+
+    public RadialPickerResult(RadialSlotPickerWindow.PickerAction action, CommandItem? command)
+    {
+        Action = action;
+        Command = command;
     }
 }

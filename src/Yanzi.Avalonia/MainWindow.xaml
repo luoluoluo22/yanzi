@@ -27,7 +27,7 @@
             Background="Transparent"
             IsVisible="{Binding IsContentVisible}">
         <!-- Main Outer Ring -->
-        <Ellipse Width="430" Height="430"
+        <Ellipse Width="352" Height="352"
                  Canvas.Left="{Binding MainOuterEllipseX}"
                  Canvas.Top="{Binding MainOuterEllipseY}"
                  Fill="#AA101010"
@@ -71,7 +71,7 @@
         </ItemsControl>
 
         <!-- Inner Ring -->
-        <Ellipse Width="270" Height="270"
+        <Ellipse Width="220" Height="220"
                  Canvas.Left="{Binding MainInnerEllipseX}"
                  Canvas.Top="{Binding MainInnerEllipseY}"
                  Fill="#CC101010"
@@ -115,7 +115,7 @@
         </ItemsControl>
 
         <!-- Center Circle -->
-        <Ellipse Width="64" Height="64"
+        <Ellipse Width="52" Height="52"
                  Canvas.Left="{Binding CenterCircleX}"
                  Canvas.Top="{Binding CenterCircleY}"
                  Fill="#F2161616"
@@ -159,35 +159,35 @@
             </ItemsControl.Styles>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Border Width="62" Height="50"
-                            Background="Transparent"
-                            PointerPressed="RadialSlot_PointerPressed"
-                            PointerEntered="RadialSlot_PointerEntered"
-                            PointerExited="RadialSlot_PointerExited">
+                    <Border Width="50" Height="40"
+                             Background="Transparent"
+                             PointerPressed="RadialSlot_PointerPressed"
+                             PointerEntered="RadialSlot_PointerEntered"
+                             PointerExited="RadialSlot_PointerExited">
                         <Border.RenderTransform>
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                         </Border.RenderTransform>
                         <Grid>
                             <!-- Empty Slot Hover Background -->
-                            <Ellipse Width="40" Height="40" Fill="#20FFFFFF"
+                            <Ellipse Width="32" Height="32" Fill="#20FFFFFF"
                                      IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                             
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <!-- Add Icon for Empty Slots -->
-                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="20"
+                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="16"
                                            HorizontalAlignment="Center"
                                            IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 
                                 <!-- Normal Content -->
-                                <Grid Width="23" Height="23" HorizontalAlignment="Center"
+                                <Grid Width="18" Height="18" HorizontalAlignment="Center"
                                       IsVisible="{Binding IsNotEmpty}">
                                     <TextBlock Text="{Binding DisplayGlyph}" 
-                                               Foreground="White" FontSize="11"
+                                               Foreground="White" FontSize="9"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}" 
                                            Foreground="White"
-                                           FontSize="9" Width="50" TextAlignment="Center"
+                                           FontSize="8" Width="44" TextAlignment="Center"
                                            Margin="0,4,0,0"
                                            IsVisible="{Binding IsNotEmpty}"/>
                             </StackPanel>
@@ -214,32 +214,32 @@
             </ItemsControl.Styles>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Border Width="76" Height="60"
-                            Background="Transparent"
-                            PointerPressed="RadialSlot_PointerPressed"
-                            PointerEntered="RadialSlot_PointerEntered"
-                            PointerExited="RadialSlot_PointerExited">
+                    <Border Width="64" Height="50"
+                             Background="Transparent"
+                             PointerPressed="RadialSlot_PointerPressed"
+                             PointerEntered="RadialSlot_PointerEntered"
+                             PointerExited="RadialSlot_PointerExited">
                         <Border.RenderTransform>
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                         </Border.RenderTransform>
                         <Grid>
-                            <Ellipse Width="50" Height="50" Fill="#20FFFFFF"
+                            <Ellipse Width="40" Height="40" Fill="#20FFFFFF"
                                      IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                             
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="24"
+                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="20"
                                            HorizontalAlignment="Center"
                                            IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 
-                                <Grid Width="32" Height="32" HorizontalAlignment="Center"
+                                <Grid Width="26" Height="26" HorizontalAlignment="Center"
                                       IsVisible="{Binding IsNotEmpty}">
                                     <TextBlock Text="{Binding DisplayGlyph}" 
-                                               Foreground="White" FontSize="13"
+                                               Foreground="White" FontSize="11"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}" 
                                            Foreground="White"
-                                           FontSize="10" Width="60" TextAlignment="Center"
+                                           FontSize="9" Width="50" TextAlignment="Center"
                                            Margin="0,4,0,0"
                                            IsVisible="{Binding IsNotEmpty}"/>
                             </StackPanel>
@@ -253,7 +253,7 @@
         <Canvas IsVisible="{Binding HasChildRing}"
                 Width="{Binding OverlayWidth}"
                 Height="{Binding OverlayHeight}">
-            <Ellipse Width="240" Height="240"
+            <Ellipse Width="200" Height="200"
                      Canvas.Left="{Binding ChildRingEllipseX}"
                      Canvas.Top="{Binding ChildRingEllipseY}"
                      Fill="#BB101010"
@@ -277,7 +277,7 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <Ellipse Width="64" Height="64"
+            <Ellipse Width="52" Height="52"
                      Canvas.Left="{Binding ChildRingCenterEllipseX}"
                      Canvas.Top="{Binding ChildRingCenterEllipseY}"
                      Fill="#F2161616"
@@ -305,7 +305,7 @@
                 </ItemsControl.Styles>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="68" Height="54"
+                        <Border Width="56" Height="44"
                                 Background="Transparent"
                                 PointerPressed="RadialSlot_PointerPressed"
                                 PointerEntered="RadialSlot_PointerEntered"
@@ -314,21 +314,21 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <Ellipse Width="45" Height="45" Fill="#20FFFFFF"
+                                <Ellipse Width="36" Height="36" Fill="#20FFFFFF"
                                          IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="22"
+                                    <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="18"
                                                HorizontalAlignment="Center"
                                                IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
-                                    <Grid Width="26" Height="26" HorizontalAlignment="Center"
+                                    <Grid Width="22" Height="22" HorizontalAlignment="Center"
                                           IsVisible="{Binding IsNotEmpty}">
                                         <TextBlock Text="{Binding DisplayGlyph}" 
-                                                   Foreground="White" FontSize="12"
+                                                   Foreground="White" FontSize="9"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}" 
                                                Foreground="White"
-                                               FontSize="9" Width="54" TextAlignment="Center"
+                                               FontSize="8" Width="46" TextAlignment="Center"
                                                Margin="0,4,0,0"
                                                IsVisible="{Binding IsNotEmpty}"/>
                                 </StackPanel>
@@ -342,12 +342,12 @@
         <Canvas IsVisible="{Binding HasGrandChildRing}"
                 Width="{Binding OverlayWidth}"
                 Height="{Binding OverlayHeight}">
-            <Ellipse Width="196" Height="196"
-                     Canvas.Left="{Binding GrandChildRingEllipseX}"
-                     Canvas.Top="{Binding GrandChildRingEllipseY}"
-                     Fill="#BB101010"
-                     Stroke="#33FFFFFF"
-                     StrokeThickness="1"/>
+            <Ellipse Width="160" Height="160"
+                      Canvas.Left="{Binding GrandChildRingEllipseX}"
+                      Canvas.Top="{Binding GrandChildRingEllipseY}"
+                      Fill="#BB101010"
+                      Stroke="#33FFFFFF"
+                      StrokeThickness="1"/>
             <ItemsControl ItemsSource="{Binding GrandChildItems}"
                           Width="{Binding OverlayWidth}"
                           Height="{Binding OverlayHeight}"
@@ -366,12 +366,12 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <Ellipse Width="54" Height="54"
-                     Canvas.Left="{Binding GrandChildRingCenterEllipseX}"
-                     Canvas.Top="{Binding GrandChildRingCenterEllipseY}"
-                     Fill="#F2161616"
-                     Stroke="#33FFFFFF"
-                     StrokeThickness="1"/>
+            <Ellipse Width="44" Height="44"
+                      Canvas.Left="{Binding GrandChildRingCenterEllipseX}"
+                      Canvas.Top="{Binding GrandChildRingCenterEllipseY}"
+                      Fill="#F2161616"
+                      Stroke="#33FFFFFF"
+                      StrokeThickness="1"/>
             <TextBlock Text="{Binding GrandChildRingTitle}"
                        Canvas.Left="{Binding GrandChildRingTitleX}"
                        Canvas.Top="{Binding GrandChildRingTitleY}"
@@ -394,7 +394,7 @@
                 </ItemsControl.Styles>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="64" Height="52"
+                        <Border Width="50" Height="40"
                                 Background="Transparent"
                                 PointerPressed="RadialSlot_PointerPressed"
                                 PointerEntered="RadialSlot_PointerEntered"
@@ -403,21 +403,21 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <Ellipse Width="42" Height="42" Fill="#20FFFFFF"
+                                <Ellipse Width="32" Height="32" Fill="#20FFFFFF"
                                          IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="20"
+                                    <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="16"
                                                HorizontalAlignment="Center"
                                                IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
-                                    <Grid Width="24" Height="24" HorizontalAlignment="Center"
+                                    <Grid Width="18" Height="18" HorizontalAlignment="Center"
                                           IsVisible="{Binding IsNotEmpty}">
                                         <TextBlock Text="{Binding DisplayGlyph}"
-                                                   Foreground="White" FontSize="11"
+                                                   Foreground="White" FontSize="9"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="White"
-                                               FontSize="9" Width="52" TextAlignment="Center"
+                                               FontSize="8" Width="44" TextAlignment="Center"
                                                Margin="0,4,0,0"
                                                IsVisible="{Binding IsNotEmpty}"/>
                                 </StackPanel>

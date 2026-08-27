@@ -14,10 +14,19 @@ public static class ExtensionPackageService
 
     public static byte[] BuildPackage(CommandItem command, string version, string? iconOverride = null)
     {
-        if (!string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) &&
-            Directory.Exists(command.ExtensionDirectoryPath))
+        var extensionsRoot = Path.GetFullPath(ExtensionsRootPath);
+        var appDataRoot = Path.GetDirectoryName(extensionsRoot);
+
+        var dirPath = !string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath)
+            ? Path.GetFullPath(command.ExtensionDirectoryPath)
+            : null;
+
+        if (dirPath != null &&
+            Directory.Exists(dirPath) &&
+            !string.Equals(dirPath, extensionsRoot, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(dirPath, appDataRoot, StringComparison.OrdinalIgnoreCase))
         {
-            return BuildDirectoryPackage(command.ExtensionDirectoryPath, iconOverride);
+            return BuildDirectoryPackage(dirPath, iconOverride);
         }
 
         using var stream = new MemoryStream();

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2. 燕子搜索 - 燕子在线文档</title>
+  <meta name="description" content="介绍如何使用燕子搜索，包括基础搜索规则、仅支持完整中文名搜索的说明以及键盘操作。">
+  <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="site-header">
+    <div class="brand">
+      <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;">
+        <img src="/assets/logo-white-transparent.png" width="36" height="36" alt="燕子启动器 Logo" class="brand-logo" style="border-radius:8px;filter:drop-shadow(0 0 8px rgba(59,130,246,.3));">
+        <span style="font-weight:600;">燕子启动器</span>
+      </a>
+    </div>
+    <nav>
+      <a href="/">首页</a>
+      <a href="/store.html">扩展商店</a>
+      <a href="/yanm.html">燕幕</a>
+      <a href="/docs/product-overview.html" class="active">文档</a>
+      <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>
+    </nav>
+  </header>
+  <button id="sidebar-expand-btn" class="sidebar-expand-btn" title="展开侧边栏">›</button>
+  <main class="doc-page">
+    <div class="doc-layout">
+      <aside class="doc-sidebar">
+        <!-- 侧边栏由 docs.js 动态生成 -->
+      </aside>
+      <div class="guide-stack">
+        <div class="doc-content-header" style="margin-bottom: 2rem;">
+          <h1 style="font-size: 2.2rem; font-weight: 850; letter-spacing: -0.03em; margin: 0 0 0.5rem 0; background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">2. 燕子搜索（启动器）</h1>
+          <p style="color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0;">燕子搜索是系统的键盘效率核心入口，随时全局唤出。</p>
+        </div>
+
+        <article class="guide-card">
+          <h2>唤出与关闭</h2>
+          <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">操作</th>
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">方式</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:0.5rem 0.75rem;">唤出搜索框</td><td style="padding:0.5rem 0.75rem;"><code>Alt + Space</code>（也可以在设置中修改为双击 Alt）</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;">关闭搜索框</td><td style="padding:0.5rem 0.75rem;"><code>Esc</code> 键，或鼠标点击搜索框外部区域</td></tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="guide-card">
+          <h2>搜索规则</h2>
+          <p>在搜索框中直接输入你要查找的应用或扩展的完整中文名称，例如输入 <code>微信</code> 打开微信，输入 <code>计算器</code> 打开计算器，选中后按下回车即可立即运行。</p>
+        </article>
+
+        <article class="guide-card">
+          <h2>键盘快捷键操作</h2>
+          <table style="width:100%;border-collapse:collapse;margin-top:0.5rem;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">按键</th>
+              <th style="text-align:left;padding:0.5rem 0.75rem;color:var(--text-muted);font-weight:500;">功能说明</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Up / Down</code></td><td style="padding:0.5rem 0.75rem;">在搜索出的结果列表中上下切换选中项</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Enter</code></td><td style="padding:0.5rem 0.75rem;">执行/打开当前选中的项目</td></tr>
+              <tr><td style="padding:0.5rem 0.75rem;"><code>Ctrl + K</code></td><td style="padding:0.5rem 0.75rem;">打开当前选中项的“动作菜单”（用于删除、编辑、固定到面板等操作）</td></tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="guide-card">
+          <h2>参数化与范围搜索</h2>
+          <p>支持通过“前缀关键词 + 空格 + 参数”的组合直接发起带关键词的特定操作，例如：</p>
+          <ul>
+            <li><code>谷歌 今天的新闻</code> —— 使用 Google 搜索“今天的新闻”</li>
+            <li><code>百度 天气预报</code> —— 使用百度搜索“天气预报”</li>
+          </ul>
+          <p>若将扩展固定到顶部标签栏后，可使用 <code>@别名 关键词</code> 形式在特定扩展的内部范围进行搜索：</p>
+          <ul>
+            <li><code>@下载 设计稿.pdf</code> —— 在配置好的下载目录范围内精确查找该 PDF 文件</li>
+          </ul>
+        </article>
+
+        <div class="doc-page-nav" style="display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+          <a href="getting-started.html" class="button secondary" style="gap: 8px; height: 46px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            上一页: 1. 下载与安装
+          </a>
+          <a href="yanh-guide.html" class="button primary" style="gap: 8px; height: 46px; margin-left: auto;">
+            下一页: 3. 燕环与鼠标面板
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+        </div>
+      </div>
+      <aside class="doc-outline">
+        <strong>本页目录</strong>
+        <ul id="outline-list"></ul>
+      </aside>
+    </div>
+  </main>
+  <script src="../assets/docs-data.js"></script>
+  <script src="../assets/docs.js"></script>
+</body>
+</html>

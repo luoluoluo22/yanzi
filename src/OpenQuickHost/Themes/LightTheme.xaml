@@ -26,6 +26,7 @@
     
     <!-- Other Helper Theme Colors -->
     <SolidColorBrush x:Key="BrushListViewItemMouseOver" Color="#0D000000"/>
+    <SolidColorBrush x:Key="BrushTagHoverBG" Color="#FFE2ECFC"/>
     <SolidColorBrush x:Key="BrushListViewItemHeaderBG" Color="#FFF3F4F6"/>
     <SolidColorBrush x:Key="BrushListViewItemSelectedBG" Color="#202563EB"/>
     <SolidColorBrush x:Key="BrushListViewItemSelectedBorder" Color="#402563EB"/>
@@ -38,4 +39,22 @@
     <SolidColorBrush x:Key="BrushMenuItemHighlightBG" Color="#10000000"/>
     <SolidColorBrush x:Key="BrushMenuItemGestureText" Color="#80000000"/>
     <SolidColorBrush x:Key="BrushMenuItemDisabledText" Color="#40000000"/>
+
+    <!-- Radial Menu (燕环) Colors -->
+    <SolidColorBrush x:Key="BrushRadialOuterBG" Color="#AAF3F4F6"/>
+    <SolidColorBrush x:Key="BrushRadialInnerBG" Color="#CCF3F4F6"/>
+    <SolidColorBrush x:Key="BrushRadialCenterBG" Color="#F2FFFFFF"/>
+    <SolidColorBrush x:Key="BrushRadialBorder" Color="#FFB9B9B9"/>
+    <SolidColorBrush x:Key="BrushRadialBorderActive" Color="#FF8E8E8E"/>
+    <SolidColorBrush x:Key="BrushRadialBorderSec" Color="#FFD6D6D6"/>
+    <SolidColorBrush x:Key="BrushRadialText" Color="#FF111827"/>
+    <SolidColorBrush x:Key="BrushRadialTextMuted" Color="#FF6B7280"/>
+    <SolidColorBrush x:Key="BrushRadialIcon" Color="#FF374151"/>
+    <SolidColorBrush x:Key="BrushRadialButtonBG" Color="#E6E5E7EB"/>
+    <SolidColorBrush x:Key="BrushRadialSlotHover" Color="#1F000000"/>
+    <SolidColorBrush x:Key="BrushRadialSlotHoverBorder" Color="#3F000000"/>
+    <SolidColorBrush x:Key="BrushRadialEmptySector" Color="#FFE5E7EB"/>
+    <SolidColorBrush x:Key="BrushRadialFallbackSector" Color="#FFF3F4F6"/>
+    <SolidColorBrush x:Key="BrushRadialChildAccentSector" Color="#FF2563EB"/>
+    <SolidColorBrush x:Key="BrushRadialSlotBorder" Color="#1F000000"/>
 </ResourceDictionary>

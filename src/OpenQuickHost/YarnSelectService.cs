@@ -9,6 +9,7 @@ public static class YarnSelectService
 {
     private const int WhMouseLl = 14;
     private const int WhKeyboardLl = 13;
+    private const int WmMouseMove = 0x0200;
     private const int WmLButtonDown = 0x0201;
     private const int WmLButtonUp = 0x0202;
     private const int WmRButtonDown = 0x0204;
@@ -28,7 +29,7 @@ public static class YarnSelectService
     private const int VkRWin = 0x5C;
     private const int XButton1 = 1;
     private const int XButton2 = 2;
-    private const uint LlInjected = 0x00000001;
+    private static readonly IntPtr SyntheticExtraInfo = (IntPtr)0x59414E5A; // "YANZ"
     private const uint InputKeyboard = 1;
     private const uint KeyEventFKeyUp = 0x0002;
 
@@ -165,16 +166,22 @@ public static class YarnSelectService
         return hook != IntPtr.Zero ? hook : SetWindowsHookEx(WhKeyboardLl, proc, IntPtr.Zero, 0);
     }
 
-    private static IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private static unsafe IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode < 0 || !_settings.Enabled)
         {
             return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
         }
 
-        var message = wParam.ToInt32();
-        var mouse = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
-        if ((mouse.flags & LlInjected) != 0)
+        var message = (int)wParam;
+        // YarnSelect 不需要处理 WM_MOUSEMOVE 消息，1 纳秒极速透传
+        if (message == WmMouseMove)
+        {
+            return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
+        }
+
+        var mouse = *(MSLLHOOKSTRUCT*)lParam;
+        if (mouse.dwExtraInfo == SyntheticExtraInfo)
         {
             return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
         }
@@ -223,21 +230,21 @@ public static class YarnSelectService
         return CallNextHookEx(_mouseHookId, nCode, wParam, lParam);
     }
 
-    private static IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private static unsafe IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode < 0 || !_settings.Enabled || !_leftButtonDown)
         {
             return CallNextHookEx(_keyboardHookId, nCode, wParam, lParam);
         }
 
-        var message = wParam.ToInt32();
+        var message = (int)wParam;
         if (message != WmKeyDown && message != WmSysKeyDown)
         {
             return CallNextHookEx(_keyboardHookId, nCode, wParam, lParam);
         }
 
-        var keyboard = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
-        if ((keyboard.flags & LlInjected) != 0 || HasModifierDown() || !CanTrigger())
+        var keyboard = *(KBDLLHOOKSTRUCT*)lParam;
+        if (keyboard.dwExtraInfo == SyntheticExtraInfo || HasModifierDown() || !CanTrigger())
         {
             return CallNextHookEx(_keyboardHookId, nCode, wParam, lParam);
         }
@@ -429,28 +436,16 @@ public static class YarnSelectService
             return false;
         }
 
-        var whitelist = _settings.WhitelistedProcesses ?? [];
-        if (whitelist.Count > 0)
+        var allowed = ProcessHelper.IsProcessAllowed(processName, _settings.WhitelistedProcesses, _settings.BlacklistedProcesses);
+        if (!allowed && logBlocked)
         {
-            var allowedByWhitelist = whitelist.Any(item => ProcessNameMatches(processName, item));
-            if (!allowedByWhitelist && logBlocked)
-            {
-                LogBlockedForegroundProcess(processName, "not-in-whitelist");
-            }
-
-            return allowedByWhitelist;
+            LogBlockedForegroundProcess(processName, "process-filter");
         }
 
-        var blockedByBlacklist = _settings.BlacklistedProcesses.Any(item => ProcessNameMatches(processName, item));
-        if (blockedByBlacklist && logBlocked)
-        {
-            LogBlockedForegroundProcess(processName, "blacklist");
-        }
-
-        return !blockedByBlacklist;
+        return allowed;
     }
 
-    private static string GetForegroundProcessName()
+    public static string GetForegroundProcessName()
     {
         try
         {
@@ -460,51 +455,26 @@ public static class YarnSelectService
                 return string.Empty;
             }
 
+            var className = new System.Text.StringBuilder(256);
+            if (GetClassName(hwnd, className, className.Capacity) > 0)
+            {
+                var classStr = className.ToString();
+                if (string.Equals(classStr, "Progman", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "WorkerW", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_SecondaryTrayWnd", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "desktop";
+                }
+            }
+
             _ = GetWindowThreadProcessId(hwnd, out var processId);
-            return processId == 0 ? string.Empty : Process.GetProcessById((int)processId).ProcessName;
+            return ProcessHelper.GetProcessNameByPid(processId);
         }
         catch
         {
             return string.Empty;
         }
-    }
-
-    private static string NormalizeProcessName(string value)
-    {
-        value = (value ?? string.Empty).Trim();
-        return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? value[..^4]
-            : value;
-    }
-
-    private static bool ProcessNameMatches(string processName, string pattern)
-    {
-        var normalizedProcess = NormalizeProcessName(processName);
-        var normalizedPattern = NormalizeProcessName(pattern);
-        if (string.IsNullOrWhiteSpace(normalizedPattern))
-        {
-            return false;
-        }
-
-        if (normalizedPattern.Contains('*', StringComparison.Ordinal))
-        {
-            var parts = normalizedPattern.Split('*', StringSplitOptions.RemoveEmptyEntries);
-            var index = 0;
-            foreach (var part in parts)
-            {
-                var found = normalizedProcess.IndexOf(part, index, StringComparison.OrdinalIgnoreCase);
-                if (found < 0)
-                {
-                    return false;
-                }
-
-                index = found + part.Length;
-            }
-
-            return true;
-        }
-
-        return normalizedProcess.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void LogBlockedForegroundProcess(string processName, string reason)
@@ -556,6 +526,9 @@ public static class YarnSelectService
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
