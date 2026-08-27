@@ -436,6 +436,59 @@
     });
   }
 
+  const FALLBACK_SEED_REPLIES = {
+    "wsh_table_md": [
+      {
+        id: "rep_table_md",
+        username: "极客阿杰",
+        content: "已经写好了一个轻量级的 C# 正则换行解析小程序，支持制表符 \\t 与空格智能对齐，粘贴即可转为标准 Markdown！",
+        code_snippet: "// 燕子 C# 小程序: 剪贴板表格转 Markdown\nusing System.Text;\nusing System.Text.RegularExpressions;\n\nstring text = Context.GetSelectedText();\nif (string.IsNullOrWhiteSpace(text)) return;\n\nvar lines = text.Split(new[] { '\\r', '\\n' }, StringSplitOptions.RemoveEmptyEntries);\nvar sb = new StringBuilder();\nfor (int i = 0; i < lines.Length; i++) {\n    var cells = Regex.Split(lines[i], @\"\\t+|\\s{2,}\");\n    sb.AppendLine(\"| \" + string.Join(\" | \", cells) + \" |\");\n    if (i == 0) {\n        sb.AppendLine(\"| \" + string.Join(\" | \", cells.Select(_ => \"---\")) + \" |\");\n    }\n}\nContext.SetClipboardText(sb.ToString());\nContext.ShowToast(\"表格已转换为 Markdown 并复制到剪贴板！\");",
+        is_accepted: 1,
+        created_at: new Date(Date.now() - 3600000 * 48).toISOString()
+      }
+    ],
+    "wsh_json_fmt": [
+      {
+        id: "rep_json_fmt",
+        username: "云端筑梦师",
+        content: "采用 .NET System.Text.Json 高性能解析，支持 2 空格美化与单行压缩双模式切换。",
+        code_snippet: "// JSON 格式化与语法校验小程序\nusing System.Text.Json;\n\ntry {\n    string input = Context.GetClipboardText();\n    using var doc = JsonDocument.Parse(input);\n    string formatted = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });\n    Context.SetClipboardText(formatted);\n    Context.ShowToast(\"JSON 格式化成功！\");\n} catch (Exception ex) {\n    Context.ShowToast(\"JSON 格式错误: \" + ex.Message);\n}",
+        is_accepted: 1,
+        created_at: new Date(Date.now() - 3600000 * 36).toISOString()
+      }
+    ],
+    "wsh_clean_desktop": [
+      {
+        id: "rep_clean_desktop",
+        username: "星野代码",
+        content: "提供了一个安全归档脚本，自动扫描桌面截图匹配模式并安全移动，遇到同名自动加序号。",
+        code_snippet: "// 桌面截图智能归档小程序\nstring desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);\nstring archiveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), \"截图归档\", DateTime.Now.ToString(\"yyyy-MM\"));\nDirectory.CreateDirectory(archiveDir);\n\nvar files = Directory.GetFiles(desktop, \"*.*\")\n    .Where(f => f.EndsWith(\".png\", StringComparison.OrdinalIgnoreCase) || f.EndsWith(\".jpg\", StringComparison.OrdinalIgnoreCase))\n    .Where(f => Path.GetFileName(f).StartsWith(\"Screenshot\") || Path.GetFileName(f).Contains(\"截图\"));\n\nint count = 0;\nforeach (var file in files) {\n    string dest = Path.Combine(archiveDir, Path.GetFileName(file));\n    File.Move(file, dest);\n    count++;\n}\nContext.ShowToast($\"已成功归档 {count} 张桌面截图！\");",
+        is_accepted: 0,
+        created_at: new Date(Date.now() - 3600000 * 18).toISOString()
+      }
+    ],
+    "wsh_color_picker": [
+      {
+        id: "rep_color_picker",
+        username: "燕子核心工坊",
+        content: "已封装基于 GDI+ GetPixel 的毫秒级拾色小程序，并支持色值转换与音效反馈！",
+        code_snippet: "// 屏幕拾色取色器\nvar pos = Context.GetCursorPosition();\nusing var bmp = new Bitmap(1, 1);\nusing var g = Graphics.FromImage(bmp);\ng.CopyFromScreen(pos.X, pos.Y, 0, 0, new Size(1, 1));\nColor color = bmp.GetPixel(0, 0);\n\nstring hex = $\"#{color.R:X2}{color.G:X2}{color.B:X2}\";\nContext.SetClipboardText(hex);\nContext.ShowToast($\"🎨 已获取颜色: {hex}\");",
+        is_accepted: 1,
+        created_at: new Date(Date.now() - 3600000 * 6).toISOString()
+      }
+    ],
+    "wsh_qr_code": [
+      {
+        id: "rep_qr_code",
+        username: "燕子核心工坊",
+        content: "集成轻量纯 C# 二维码渲染器，无需任何第三方 DLL 依赖，0.01 秒极速展示！",
+        code_snippet: "// 纯原生二维码生成小程序\nstring content = Context.GetSelectedText() ?? Context.GetClipboardText();\nif (string.IsNullOrWhiteSpace(content)) return;\n\nContext.ShowQrCodeDialog(content, \"扫码直传燕子手机版\");",
+        is_accepted: 1,
+        created_at: new Date(Date.now() - 3600000 * 2).toISOString()
+      }
+    ]
+  };
+
   // 打开心愿详情与回复抽屉
   async function openWishDetailModal(wishId) {
     activeWishId = wishId;
@@ -453,14 +506,21 @@
     try {
       const res = await fetch(`${API_BASE}/v1/wishes/${wishId}`);
       const data = await res.json();
-      if (!data.ok || !data.wish) {
-        modalBody.innerHTML = `<p style="color:#ef4444;">无法获取心愿详情</p>`;
+      if (data.ok && data.wish) {
+        renderWishDetail(data.wish, data.replies || [], modalBody);
         return;
       }
-
-      renderWishDetail(data.wish, data.replies || [], modalBody);
     } catch (err) {
-      modalBody.innerHTML = `<p style="color:#ef4444;">网络请求失败</p>`;
+      console.warn("fetch wish detail error, fallback to seed:", err);
+    }
+
+    // 优雅回退到本地种子数据
+    const fallbackWish = FALLBACK_SEED_WISHES.find(w => w.id === wishId);
+    if (fallbackWish) {
+      const fallbackReplies = FALLBACK_SEED_REPLIES[wishId] || [];
+      renderWishDetail(fallbackWish, fallbackReplies, modalBody);
+    } else {
+      modalBody.innerHTML = `<p style="color:#ef4444; text-align:center; padding:2rem 0;">无法获取心愿详情，请稍后重试</p>`;
     }
   }
 

@@ -5594,9 +5594,14 @@ async function listWishes(env, { status = "all", category = "all", search = "", 
 
 async function getWishDetail(env, wishId) {
   await ensureWishWallTables(env);
-  const wish = await env.DB.prepare(
+  let wish = await env.DB.prepare(
     "SELECT * FROM wishes WHERE id = ?"
   ).bind(wishId).first();
+
+  if (!wish) {
+    await seedWishWallData(env).catch(() => {});
+    wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  }
 
   if (!wish) {
     throw new HttpError(404, "wish_not_found", "心愿不存在或已被移除");
