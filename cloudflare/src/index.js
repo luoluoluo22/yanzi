@@ -664,36 +664,48 @@ async function handleRequest(request, env) {
       }
       const data = await ghResponse.json();
       const assets = data.assets || [];
-      const version = data.tag_name ? data.tag_name.replace(/^v/, "") : "0.3.19";
+      let winVersion = "0.3.19";
+      let macVersion = "0.1.0";
+      let androidVersion = "0.2.24";
+
+      if (data.tag_name) {
+        if (data.tag_name.startsWith("v")) {
+          winVersion = data.tag_name.replace(/^v/, "");
+        } else if (data.tag_name.startsWith("macos-v")) {
+          macVersion = data.tag_name.replace(/^macos-v/, "");
+        } else if (data.tag_name.startsWith("android-v")) {
+          androidVersion = data.tag_name.replace(/^android-v/, "");
+        }
+      }
 
       // 提取多平台构建产物
       const winSetupAsset = assets.find(asset => asset.name.endsWith(".exe")) || null;
       const winPortableAsset = assets.find(asset => asset.name.includes("Portable") && asset.name.endsWith(".zip")) || null;
-      const macAsset = assets.find(asset => asset.name.endsWith(".dmg") || asset.name.includes("osx") || asset.name.includes("mac")) || null;
+      const macAsset = assets.find(asset => asset.name.endsWith(".dmg") || (asset.name.includes("macos") && asset.name.endsWith(".dmg"))) || null;
       const androidAsset = assets.find(asset => asset.name.endsWith(".apk")) || null;
 
-      const defaultWinFileName = winSetupAsset ? winSetupAsset.name : `Yanzi-win-Setup-${version}.exe`;
-      const defaultWinDownloadUrl = winSetupAsset ? winSetupAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${version}/${defaultWinFileName}`;
-      const defaultMacFileName = macAsset ? macAsset.name : "Yanzi-macos-v0.1.0.dmg";
-      const defaultMacDownloadUrl = macAsset ? macAsset.browser_download_url : "https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.dmg";
+      const defaultWinFileName = winSetupAsset ? winSetupAsset.name : `Yanzi-win-Setup-${winVersion}.exe`;
+      const defaultWinDownloadUrl = winSetupAsset ? winSetupAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${winVersion}/${defaultWinFileName}`;
+      const defaultMacFileName = macAsset ? macAsset.name : `Yanzi-macos-v${macVersion}.dmg`;
+      const defaultMacDownloadUrl = macAsset ? macAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/macos-v${macVersion}/${defaultMacFileName}`;
 
       const requestedPlatform = (url.searchParams.get("platform") || "windows").toLowerCase();
 
       const platforms = {
         windows: {
           name: "Windows",
-          version: version,
+          version: winVersion,
           file_name: defaultWinFileName,
           download_url: defaultWinDownloadUrl,
           mirror_url: `https://ghfast.top/${defaultWinDownloadUrl}`,
-          portable_url: winPortableAsset ? winPortableAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${version}/Yanzi-win-Portable-${version}.zip`,
+          portable_url: winPortableAsset ? winPortableAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${winVersion}/Yanzi-win-Portable-${winVersion}.zip`,
           lanzou_url: "https://wwbnh.lanzout.com/b0pnkaj6j",
           quark_url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh",
           has_asset: Boolean(winSetupAsset)
         },
         mac: {
           name: "macOS",
-          version: "0.1.0",
+          version: macVersion,
           file_name: defaultMacFileName,
           download_url: defaultMacDownloadUrl,
           mirror_url: `https://ghfast.top/${defaultMacDownloadUrl}`,
@@ -701,8 +713,8 @@ async function handleRequest(request, env) {
         },
         android: {
           name: "Android",
-          version: "0.2.24",
-          file_name: androidAsset ? androidAsset.name : "Yanzi-android-v0.2.24.apk",
+          version: androidVersion,
+          file_name: androidAsset ? androidAsset.name : `Yanzi-android-v${androidVersion}.apk`,
           download_url: "https://wwbnh.lanzout.com/b0pnm6z2j",
           has_asset: Boolean(androidAsset)
         }
@@ -712,8 +724,8 @@ async function handleRequest(request, env) {
 
       const payload = {
         channel: "stable",
-        version: version,
-        title: data.name || `燕子启动器 v${version}`,
+        version: selectedPlatform.version,
+        title: data.name || `燕子启动器 ${selectedPlatform.name} v${selectedPlatform.version}`,
         notes: data.body || "",
         download_url: selectedPlatform.download_url,
         file_name: selectedPlatform.file_name,
