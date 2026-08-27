@@ -38,6 +38,12 @@ public partial class SettingsWindow : Window
             rightLongPressCheck.IsChecked = _mainWindow.InputTriggerSettings.EnableSecondaryButtonLongPress;
         }
 
+        var longPressThresholdInput = this.FindControl<NumericUpDown>("LongPressThresholdInput");
+        if (longPressThresholdInput != null)
+        {
+            longPressThresholdInput.Value = _mainWindow.InputTriggerSettings.LongPressThresholdMs;
+        }
+
         var rightDragCheck = this.FindControl<CheckBox>("RightDragCheck");
         if (rightDragCheck != null)
         {
@@ -99,6 +105,12 @@ public partial class SettingsWindow : Window
         if (rightLongPressCheck != null)
         {
             _mainWindow.InputTriggerSettings.EnableSecondaryButtonLongPress = rightLongPressCheck.IsChecked ?? false;
+        }
+
+        var longPressThresholdInput = this.FindControl<NumericUpDown>("LongPressThresholdInput");
+        if (longPressThresholdInput != null && longPressThresholdInput.Value.HasValue)
+        {
+            _mainWindow.InputTriggerSettings.LongPressThresholdMs = (int)longPressThresholdInput.Value.Value;
         }
 
         var rightDragCheck = this.FindControl<CheckBox>("RightDragCheck");
@@ -284,6 +296,13 @@ public partial class SettingsWindow : Window
         {
             Console.WriteLine($"Failed to toggle auto-start settings: {ex.Message}");
         }
+    }
+
+    private void OpenPermissionGuide_Click(object? sender, RoutedEventArgs e)
+    {
+        var guideWindow = new PermissionGuideWindow(_mainWindow);
+        guideWindow.Show();
+        guideWindow.Activate();
     }
 
     [System.Runtime.InteropServices.DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]

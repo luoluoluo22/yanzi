@@ -49,6 +49,19 @@
                                            HorizontalAlignment="Right" VerticalAlignment="Center"/>
                         </DockPanel>
                     </Border>
+
+                    <!-- System Permissions Section -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
+                        <DockPanel>
+                            <StackPanel Spacing="2" VerticalAlignment="Center">
+                                <TextBlock Text="macOS 系统权限管理" Foreground="White" FontSize="14" FontWeight="Medium"/>
+                                <TextBlock Text="检查辅助功能与输入监控授权，重新连接服务" Foreground="#80FFFFFF" FontSize="10"/>
+                            </StackPanel>
+                            <Button Content="查看与重新授权..." Click="OpenPermissionGuide_Click" 
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    FontSize="11" Padding="10,5"/>
+                        </DockPanel>
+                    </Border>
                     
                     <!-- General Settings Section -->
                     <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
@@ -83,8 +96,17 @@
                         <StackPanel Spacing="12">
                             <TextBlock Text="鼠标右键触发" Foreground="White" FontSize="14" FontWeight="Medium"/>
                             
-                            <CheckBox x:Name="RightLongPressCheck" Content="启用右键长按弹出轮盘" Foreground="#E0FFFFFF"/>
+                            <CheckBox x:Name="RightLongPressCheck" Content="启用右键长按弹出背包" Foreground="#E0FFFFFF"/>
                             <CheckBox x:Name="RightDragCheck" Content="启用右键拖拽弹出轮盘" Foreground="#E0FFFFFF"/>
+
+                            <DockPanel Margin="0,4,0,0">
+                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="右键长按时间 (毫秒)" Foreground="#E0FFFFFF" FontSize="12"/>
+                                    <TextBlock Text="建议 250~350ms，越短唤出越快" Foreground="#80FFFFFF" FontSize="10"/>
+                                </StackPanel>
+                                <NumericUpDown x:Name="LongPressThresholdInput" Minimum="100" Maximum="1500" Increment="20" FormatString="F0"
+                                               Width="120" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                            </DockPanel>
                         </StackPanel>
                     </Border>
                     

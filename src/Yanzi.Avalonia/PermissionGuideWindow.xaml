@@ -1,0 +1,219 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Yanzi.Avalonia.PermissionGuideWindow"
+        Title="燕子启动器 - 系统权限与授权指引"
+        Width="640"
+        Height="470"
+        SystemDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        TransparencyBackgroundFallback="Transparent"
+        ShowInTaskbar="True"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        Topmost="True"
+        Focusable="True"
+        PointerPressed="Window_PointerPressed">
+    <Border CornerRadius="18"
+            BorderThickness="1"
+            BorderBrush="#3DFFFFFF"
+            Background="#F21E1E22"
+            Padding="24">
+        <DockPanel LastChildFill="True">
+            <!-- Header -->
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,18">
+                <StackPanel Spacing="3">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="🛡️" FontSize="18" VerticalAlignment="Center"/>
+                        <TextBlock Text="macOS 系统权限与授权指引"
+                                   Foreground="White"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="授予必要的系统权限以启用全局鼠标长按、轮盘拖拽与手势"
+                               Foreground="#99FFFFFF"
+                               FontSize="11"/>
+                </StackPanel>
+                <Button Content="✕"
+                        Click="Close_Click"
+                        Width="28"
+                        Height="28"
+                        Padding="0"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        DockPanel.Dock="Right"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Background="#20FFFFFF"
+                        Foreground="#AAFFFFFF"
+                        CornerRadius="14"/>
+            </DockPanel>
+
+            <!-- Bottom Action Bar -->
+            <Border DockPanel.Dock="Bottom" Margin="0,16,0,0" Padding="0,12,0,0" BorderThickness="0,1,0,0" BorderBrush="#1AFFFFFF">
+                <DockPanel>
+                    <TextBlock x:Name="StatusMessageText"
+                               Text="请按照指引开启权限，开启后点击「检查并重新连接」"
+                               Foreground="#B0FFFFFF"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               DockPanel.Dock="Left"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" DockPanel.Dock="Right">
+                        <Button Content="🔄 检查并重新连接"
+                                Click="CheckAndReconnect_Click"
+                                Background="#2A7BDE"
+                                Foreground="White"
+                                FontWeight="Medium"
+                                Padding="14,6"
+                                CornerRadius="8"/>
+                        <Button Content="关闭"
+                                Click="Close_Click"
+                                Width="70"
+                                HorizontalContentAlignment="Center"
+                                Padding="0,6"
+                                CornerRadius="8"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Main 2-Column Content -->
+            <Grid ColumnDefinitions="240,16,*">
+                <!-- Left Column: Instructions Guide -->
+                <Border Grid.Column="0"
+                        Background="#12FFFFFF"
+                        BorderBrush="#1AFFFFFF"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="14">
+                    <DockPanel LastChildFill="True">
+                        <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" Spacing="6">
+                            <TextBlock Text="💡 提示：若设置列表中未出现燕子，请点击下方在访达中定位并直接拖拽入列表"
+                                       Foreground="#80FFFFFF"
+                                       FontSize="10"
+                                       TextWrapping="Wrap"/>
+                            <Button Content="📁 在访达中定位应用"
+                                    Click="RevealInFinder_Click"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Center"
+                                    FontSize="11"
+                                    Background="#25FFFFFF"
+                                    CornerRadius="6"
+                                    Padding="0,6"/>
+                        </StackPanel>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="📖 操作指南" Foreground="#E0FFFFFF" FontSize="13" FontWeight="SemiBold"/>
+                                
+                                <Border Background="#1A000000" CornerRadius="8" Padding="10">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="步骤 1" Foreground="#4A90E2" FontSize="11" FontWeight="Bold"/>
+                                        <TextBlock Text="点击右侧对应权限的「打开系统设置」按钮，系统将自动跳转至对应的隐私面板。"
+                                                   Foreground="#CCCCCC" FontSize="11" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#1A000000" CornerRadius="8" Padding="10">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="步骤 2" Foreground="#4A90E2" FontSize="11" FontWeight="Bold"/>
+                                        <TextBlock Text="在设置列表中找到「Yanzi」或「燕子启动器」并将右侧开关打开（允许）。"
+                                                   Foreground="#CCCCCC" FontSize="11" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#1A000000" CornerRadius="8" Padding="10">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="步骤 3" Foreground="#4A90E2" FontSize="11" FontWeight="Bold"/>
+                                        <TextBlock Text="回到本窗口，点击右下方「检查并重新连接」，服务即可即时生效，无需重启！"
+                                                   Foreground="#CCCCCC" FontSize="11" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+
+                <!-- Right Column: Permission Status Cards -->
+                <StackPanel Grid.Column="2" Spacing="12">
+                    <!-- Accessibility Permission Card -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="12" Padding="14">
+                        <StackPanel Spacing="10">
+                            <DockPanel>
+                                <StackPanel Spacing="2" DockPanel.Dock="Left">
+                                    <TextBlock Text="1. 辅助功能 (Accessibility)" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="用于捕获全局按键、模拟输入与无缝交互" Foreground="#80FFFFFF" FontSize="10"/>
+                                </StackPanel>
+                                <Border x:Name="AccessibilityBadge"
+                                        DockPanel.Dock="Right"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        CornerRadius="6"
+                                        Padding="8,3"
+                                        Background="#33FF5555">
+                                    <TextBlock x:Name="AccessibilityStatusText"
+                                               Text="🔴 未授权"
+                                               FontSize="11"
+                                               FontWeight="Medium"
+                                               Foreground="#FF7777"/>
+                                </Border>
+                            </DockPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="打开辅助功能设置"
+                                        Click="OpenAccessibilitySettings_Click"
+                                        FontSize="11"
+                                        Padding="12,6"
+                                        CornerRadius="6"/>
+                                <Button Content="一键请求授权"
+                                        Click="RequestAccessibility_Click"
+                                        FontSize="11"
+                                        Background="#20FFFFFF"
+                                        Padding="12,6"
+                                        CornerRadius="6"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Input Monitoring Permission Card -->
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="12" Padding="14">
+                        <StackPanel Spacing="10">
+                            <DockPanel>
+                                <StackPanel Spacing="2" DockPanel.Dock="Left">
+                                    <TextBlock Text="2. 输入监控 (Input Monitoring)" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="用于全局右键长按呼出背包、拖拽轮盘与手势" Foreground="#80FFFFFF" FontSize="10"/>
+                                </StackPanel>
+                                <Border x:Name="InputMonitoringBadge"
+                                        DockPanel.Dock="Right"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        CornerRadius="6"
+                                        Padding="8,3"
+                                        Background="#33FF5555">
+                                    <TextBlock x:Name="InputMonitoringStatusText"
+                                               Text="🔴 未授权"
+                                               FontSize="11"
+                                               FontWeight="Medium"
+                                               Foreground="#FF7777"/>
+                                </Border>
+                            </DockPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="打开输入监控设置"
+                                        Click="OpenInputMonitoringSettings_Click"
+                                        FontSize="11"
+                                        Padding="12,6"
+                                        CornerRadius="6"/>
+                                <Button Content="一键请求授权"
+                                        Click="RequestInputMonitoring_Click"
+                                        FontSize="11"
+                                        Background="#20FFFFFF"
+                                        Padding="12,6"
+                                        CornerRadius="6"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </DockPanel>
+    </Border>
+</Window>

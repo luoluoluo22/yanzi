@@ -203,7 +203,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _inputTriggerSettings = new GlobalInputTriggerSettings
         {
-            LongPressThresholdMs = 400,
+            LongPressThresholdMs = 280,
             DragThresholdPixels = 30,
             EnableSecondaryButtonLongPress = true,
             EnableSecondaryButtonDrag = true,
@@ -544,6 +544,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Dispatcher.UIThread.Post(() => GlobalInputTriggerListener_ActivationRequested(sender, e));
             return;
         }
+
+        global::Yanzi.Avalonia.App.WriteLog($"MainWindow: ActivationRequested received: Source={e.Source}, IsLongPress={e.IsLongPress}, Pos=({e.ScreenX},{e.ScreenY}), _quickPanelIsNull={_quickPanel == null}");
 
         if (e.IsLongPress)
         {

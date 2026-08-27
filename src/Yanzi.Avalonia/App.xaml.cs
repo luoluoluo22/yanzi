@@ -112,6 +112,12 @@ public partial class App : Application
             };
             settingsMenuItem.Click += (sender, e) => OpenSettings();
 
+            var permissionGuideMenuItem = new NativeMenuItem("获取系统授权 / 授权指引...");
+            permissionGuideMenuItem.Click += (sender, e) => OpenPermissionGuide();
+
+            var resetInputMenuItem = new NativeMenuItem("重置键鼠状态 (清除卡键)");
+            resetInputMenuItem.Click += (sender, e) => ResetKeyboardAndMouse();
+
             var exitMenuItem = new NativeMenuItem("退出")
             {
                 Gesture = KeyGesture.Parse("cmd+q")
@@ -131,12 +137,19 @@ public partial class App : Application
                         openMousePanelMenuItem,
                         new NativeMenuItemSeparator(),
                         settingsMenuItem,
+                        permissionGuideMenuItem,
+                        resetInputMenuItem,
                         new NativeMenuItemSeparator(),
                         _toggleServiceMenuItem,
                         new NativeMenuItemSeparator(),
                         exitMenuItem
                     }
                 }
+            };
+            _trayIcon.Clicked += (sender, e) =>
+            {
+                WriteLog("TrayIcon Clicked: opening launcher window");
+                OpenLauncher();
             };
             WriteLog("CreateTrayIcon: TrayIcon instance created successfully");
 
@@ -179,6 +192,31 @@ public partial class App : Application
         var settingsWindow = new SettingsWindow(_mainWindow);
         settingsWindow.Show();
         settingsWindow.Activate();
+    }
+
+    private void OpenPermissionGuide()
+    {
+        if (_mainWindow == null)
+            return;
+
+        var guideWindow = new PermissionGuideWindow(_mainWindow);
+        guideWindow.Show();
+        guideWindow.Activate();
+    }
+
+    private void ResetKeyboardAndMouse()
+    {
+        WriteLog("ResetKeyboardAndMouse requested from tray menu.");
+        if (OperatingSystem.IsMacOS())
+        {
+            MacInputResetHelper.ResetKeyboardAndMouseState();
+        }
+
+        if (_mainWindow != null)
+        {
+            _mainWindow.RestartInputTriggerListener(true);
+        }
+        WriteLog("ResetKeyboardAndMouse completed.");
     }
 
     private void OpenLauncher()

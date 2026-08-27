@@ -36,27 +36,19 @@ public sealed class MacGlobalInputTriggerListenerFactory : IGlobalInputTriggerLi
 
 public sealed class MacGlobalInputTriggerListener : IGlobalInputTriggerListener
 {
-    private static readonly TimeSpan ActivationHoldWindow = TimeSpan.FromMilliseconds(900);
-    private readonly IGlobalInputTriggerListener[] _listeners;
-    private readonly object _activationLock = new();
-    private IGlobalInputTriggerListener? _activeListener;
-    private DateTime _activeListenerExpiresAtUtc = DateTime.MinValue;
+    private readonly MacFnKeyInputTriggerListener _listener;
 
     public MacGlobalInputTriggerListener(GlobalInputTriggerSettings settings)
     {
-        _listeners = [new MacSecondaryButtonInputTriggerListener(settings), new MacFnKeyInputTriggerListener(settings)];
-
-        foreach (var listener in _listeners)
-        {
-            listener.ActivationRequested += Listener_ActivationRequested;
-            listener.ActivationUpdated += Listener_ActivationUpdated;
-            listener.ActivationReleased += Listener_ActivationReleased;
-            listener.LauncherRequested += Listener_LauncherRequested;
-            listener.HotkeyTriggered += Listener_HotkeyTriggered;
-        }
+        _listener = new MacFnKeyInputTriggerListener(settings);
+        _listener.ActivationRequested += (s, e) => ActivationRequested?.Invoke(this, e);
+        _listener.ActivationUpdated += (s, e) => ActivationUpdated?.Invoke(this, e);
+        _listener.ActivationReleased += (s, e) => ActivationReleased?.Invoke(this, e);
+        _listener.LauncherRequested += (s, e) => LauncherRequested?.Invoke(this, e);
+        _listener.HotkeyTriggered += (s, e) => HotkeyTriggered?.Invoke(this, e);
     }
 
-    public bool IsRunning => _listeners.Any(listener => listener.IsRunning);
+    public bool IsRunning => _listener.IsRunning;
 
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationRequested;
     public event EventHandler<RadialMenuActivationEventArgs>? ActivationUpdated;
@@ -64,566 +56,12 @@ public sealed class MacGlobalInputTriggerListener : IGlobalInputTriggerListener
     public event EventHandler? LauncherRequested;
     public event EventHandler<HotkeyTriggeredEventArgs>? HotkeyTriggered;
 
-    public void UpdateAbbreviations(Dictionary<string, string> abbreviations)
-    {
-        foreach (var listener in _listeners)
-        {
-            listener.UpdateAbbreviations(abbreviations);
-        }
-    }
-
-    public void Start()
-    {
-        foreach (var listener in _listeners)
-            listener.Start();
-    }
-
-    public void Stop()
-    {
-        foreach (var listener in _listeners)
-            listener.Stop();
-    }
-
-    public void Dispose()
-    {
-        foreach (var listener in _listeners)
-        {
-            listener.ActivationRequested -= Listener_ActivationRequested;
-            listener.ActivationUpdated -= Listener_ActivationUpdated;
-            listener.ActivationReleased -= Listener_ActivationReleased;
-            listener.LauncherRequested -= Listener_LauncherRequested;
-            listener.HotkeyTriggered -= Listener_HotkeyTriggered;
-            listener.Dispose();
-        }
-    }
-
-    private void Listener_LauncherRequested(object? sender, EventArgs e)
-    {
-        LauncherRequested?.Invoke(this, e);
-    }
-
-    private void Listener_HotkeyTriggered(object? sender, HotkeyTriggeredEventArgs e)
-    {
-        HotkeyTriggered?.Invoke(this, e);
-    }
-
-    private void Listener_ActivationRequested(object? sender, RadialMenuActivationEventArgs e)
-    {
-        if (!TryClaimActivation(sender))
-            return;
-
-        ActivationRequested?.Invoke(this, e);
-    }
-
-    private void Listener_ActivationUpdated(object? sender, RadialMenuActivationEventArgs e)
-    {
-        if (!TryAcceptActiveEvent(sender, release: false))
-            return;
-
-        ActivationUpdated?.Invoke(this, e);
-    }
-
-    private void Listener_ActivationReleased(object? sender, RadialMenuActivationEventArgs e)
-    {
-        if (!TryAcceptActiveEvent(sender, release: true))
-            return;
-
-        ActivationReleased?.Invoke(this, e);
-    }
-
-    private bool TryClaimActivation(object? sender)
-    {
-        if (sender is not IGlobalInputTriggerListener listener)
-            return true;
-
-        lock (_activationLock)
-        {
-            var now = DateTime.UtcNow;
-            if (_activeListener != null &&
-                !ReferenceEquals(_activeListener, listener) &&
-                now < _activeListenerExpiresAtUtc)
-            {
-                if (listener is MacSecondaryButtonInputTriggerListener)
-                {
-                    MacLogger.WriteLog("NativeMac", $"Preempting active listener {_activeListener.GetType().Name} for MacSecondaryButtonInputTriggerListener in TryClaimActivation");
-                }
-                else
-                {
-                    MacLogger.WriteLog("NativeMac", $"Rejecting claim by {listener.GetType().Name} because {_activeListener.GetType().Name} is active until {_activeListenerExpiresAtUtc}");
-                    return false;
-                }
-            }
-
-            _activeListener = listener;
-            _activeListenerExpiresAtUtc = now + ActivationHoldWindow;
-            return true;
-        }
-    }
-
-    private bool TryAcceptActiveEvent(object? sender, bool release)
-    {
-        if (sender is not IGlobalInputTriggerListener listener)
-            return true;
-
-        lock (_activationLock)
-        {
-            var now = DateTime.UtcNow;
-            if (_activeListener != null && !ReferenceEquals(_activeListener, listener))
-            {
-                if (now < _activeListenerExpiresAtUtc)
-                {
-                    if (listener is MacSecondaryButtonInputTriggerListener)
-                    {
-                        MacLogger.WriteLog("NativeMac", $"Preempting active listener {_activeListener.GetType().Name} for MacSecondaryButtonInputTriggerListener in TryAcceptActiveEvent");
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-
-                _activeListener = listener;
-            }
-
-            if (_activeListener == null)
-                _activeListener = listener;
-
-            if (release)
-            {
-                if (!ReferenceEquals(_activeListener, listener))
-                {
-                    if (listener is MacFnKeyInputTriggerListener)
-                    {
-                        MacLogger.WriteLog("NativeMac", "Forcing release because MacFnKeyInputTriggerListener fired release (Fn released)");
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-
-                _activeListener = null;
-                _activeListenerExpiresAtUtc = DateTime.MinValue;
-            }
-            else
-            {
-                _activeListenerExpiresAtUtc = now + ActivationHoldWindow;
-            }
-
-            return true;
-        }
-    }
+    public void UpdateAbbreviations(Dictionary<string, string> abbreviations) => _listener.UpdateAbbreviations(abbreviations);
+    public void Start() => _listener.Start();
+    public void Stop() => _listener.Stop();
+    public void Dispose() => _listener.Dispose();
 }
 
-internal sealed class MacSecondaryButtonInputTriggerListener : IGlobalInputTriggerListener
-{
-    private readonly GlobalInputTriggerSettings _settings;
-    private IntPtr _eventTap;
-    private bool _isEnabled;
-    private bool _rightButtonPressed;
-    private bool _dragTriggered;
-    private Timer? _longPressTimer;
-    private Point _pressPoint = new(0, 0);
-    private readonly CGEventTapCallBack _eventTapCallback;
-
-    public bool IsRunning => _isEnabled;
-
-    public event EventHandler<RadialMenuActivationEventArgs>? ActivationRequested;
-    public event EventHandler<RadialMenuActivationEventArgs>? ActivationUpdated;
-    public event EventHandler<RadialMenuActivationEventArgs>? ActivationReleased;
-    public event EventHandler? LauncherRequested
-    {
-        add { }
-        remove { }
-    }
-
-    public event EventHandler<HotkeyTriggeredEventArgs>? HotkeyTriggered
-    {
-        add { }
-        remove { }
-    }
-
-    public MacSecondaryButtonInputTriggerListener(GlobalInputTriggerSettings settings)
-    {
-        _settings = settings;
-        _eventTapCallback = EventTapCallback;
-        _longPressTimer = new Timer();
-        _longPressTimer.Elapsed += LongPressTimer_Elapsed;
-    }
-
-    public void UpdateAbbreviations(Dictionary<string, string> abbreviations)
-    {
-        // Stub, no action needed for secondary button
-    }
-
-    public void Start()
-    {
-        if (_isEnabled)
-            return;
-
-        try
-        {
-            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
-            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] Starting MacSecondaryButtonInputTriggerListener...\n");
-        }
-        catch {}
-
-        _eventTap = CreateEventTap();
-        
-        try
-        {
-            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
-            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacSecondaryButton CreateEventTap returned: {_eventTap}\n");
-        }
-        catch {}
-
-        if (_eventTap == IntPtr.Zero)
-        {
-            Console.WriteLine("Failed to create event tap");
-            return;
-        }
-
-        try
-        {
-            var runLoopSource = CFMachPortCreateRunLoopSource(IntPtr.Zero, _eventTap, 0);
-            CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, CFRunLoopModeCommonModes);
-            CFRelease(runLoopSource);
-            CFRunLoopWakeUp(CFRunLoopGetMain());
-
-            CGEventTapEnable(_eventTap, true);
-
-            _isEnabled = true;
-            Console.WriteLine("Mac secondary-button trigger listener started");
-            LogInput($"settings secondaryLongPress={_settings.EnableSecondaryButtonLongPress}, secondaryDrag={_settings.EnableSecondaryButtonDrag}");
-            
-            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
-            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac] MacSecondaryButton listener started and registered successfully!\n");
-        }
-        catch (Exception ex)
-        {
-            try
-            {
-                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".yanzi_boot.log");
-                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [NativeMac ERROR] MacSecondaryButton Start Failed: {ex.GetType().Name} - {ex.Message}\nStack: {ex.StackTrace}\n");
-            }
-            catch {}
-        }
-    }
-
-    public void Stop()
-    {
-        if (!_isEnabled)
-            return;
-
-        CGEventTapEnable(_eventTap, false);
-        CFRelease(_eventTap);
-        _eventTap = IntPtr.Zero;
-
-        _longPressTimer?.Stop();
-        _rightButtonPressed = false;
-        _dragTriggered = false;
-        
-        _isEnabled = false;
-        Console.WriteLine("Mac secondary-button trigger listener stopped");
-    }
-
-    private IntPtr CreateEventTap()
-    {
-        var mask = CGEventMaskBit(CGEventType.RightMouseDown) |
-                   CGEventMaskBit(CGEventType.RightMouseUp) |
-                   CGEventMaskBit(CGEventType.MouseMoved) |
-                   CGEventMaskBit(CGEventType.RightMouseDragged);
-
-        // Try Session location first with active interception
-        var tap = CGEventTapCreate(
-            CGEventTapLocation.Session,
-            CGEventTapPlacement.HeadInsertEventTap,
-            CGEventTapOptions.Default,
-            mask,
-            _eventTapCallback,
-            IntPtr.Zero);
-
-        if (tap == IntPtr.Zero)
-        {
-            // Fallback to HID with active interception
-            tap = CGEventTapCreate(
-                CGEventTapLocation.HID,
-                CGEventTapPlacement.HeadInsertEventTap,
-                CGEventTapOptions.Default,
-                mask,
-                _eventTapCallback,
-                IntPtr.Zero);
-        }
-
-        if (tap == IntPtr.Zero)
-        {
-            // Fallback to Session with ListenOnly (succeeds without Accessibility permission)
-            tap = CGEventTapCreate(
-                CGEventTapLocation.Session,
-                CGEventTapPlacement.HeadInsertEventTap,
-                CGEventTapOptions.ListenOnly,
-                mask,
-                _eventTapCallback,
-                IntPtr.Zero);
-        }
-
-        if (tap == IntPtr.Zero)
-        {
-            // Fallback to HID with ListenOnly
-            tap = CGEventTapCreate(
-                CGEventTapLocation.HID,
-                CGEventTapPlacement.HeadInsertEventTap,
-                CGEventTapOptions.ListenOnly,
-                mask,
-                _eventTapCallback,
-                IntPtr.Zero);
-        }
-
-        return tap;
-    }
-
-    private IntPtr EventTapCallback(IntPtr proxy, CGEventType type, IntPtr eventRef, IntPtr refcon)
-    {
-        try
-        {
-            if (type == (CGEventType)0xFFFFFFFE || type == (CGEventType)0xFFFFFFFF)
-            {
-                Console.WriteLine($"[input] Secondary Event Tap disabled: {type}. Re-enabling...");
-                CGEventTapEnable(_eventTap, true);
-                return eventRef;
-            }
-
-            switch (type)
-            {
-                case CGEventType.RightMouseDown:
-                    HandleRightButtonDown(eventRef);
-                    break;
-                case CGEventType.RightMouseUp:
-                    HandleRightButtonUp();
-                    break;
-                case CGEventType.MouseMoved:
-                case CGEventType.RightMouseDragged:
-                    HandleMouseMove(eventRef);
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Global mouse callback failed: {ex}");
-        }
-
-        return eventRef;
-    }
-
-    private void HandleRightButtonDown(IntPtr eventPtr)
-    {
-        var flags = CGEventGetFlags(eventPtr);
-        var fnPressed = (flags & (1UL << 23)) != 0;
-
-        MacLogger.WriteLog("NativeMac", $"Secondary MouseDown, fnPressed={fnPressed}");
-
-        if (!fnPressed)
-        {
-            _rightButtonPressed = false;
-            return;
-        }
-
-        _rightButtonPressed = true;
-        _dragTriggered = false;
-        _pressPoint = GetEventLocation(eventPtr);
-        LogInput($"secondary down at {_pressPoint.X:0},{_pressPoint.Y:0}");
-
-        if (_settings.EnableSecondaryButtonLongPress)
-        {
-            _longPressTimer?.Stop();
-            _longPressTimer!.Interval = _settings.LongPressThresholdMs;
-            _longPressTimer.Start();
-        }
-    }
-
-    private void HandleRightButtonUp()
-    {
-        _longPressTimer?.Stop();
-        LogInput("secondary up");
-
-        if (_rightButtonPressed && _dragTriggered)
-        {
-            ReleaseActivation(RadialMenuActivationSource.SecondaryButton);
-        }
-
-        _rightButtonPressed = false;
-        _dragTriggered = false;
-    }
-
-    private void HandleMouseMove(IntPtr eventPtr)
-    {
-        if (!_rightButtonPressed)
-            return;
-
-        var currentPoint = GetEventLocation(eventPtr);
-
-        if (_dragTriggered)
-        {
-            ActivationUpdated?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.SecondaryButton, null, currentPoint.X, currentPoint.Y));
-            return;
-        }
-
-        var dx = currentPoint.X - _pressPoint.X;
-        var dy = currentPoint.Y - _pressPoint.Y;
-        var distanceSquared = dx * dx + dy * dy;
-
-        if (distanceSquared >= _settings.DragThresholdPixels * _settings.DragThresholdPixels)
-        {
-            _dragTriggered = true;
-            _longPressTimer?.Stop();
-
-            if (_settings.EnableSecondaryButtonDrag)
-            {
-                LogInput($"secondary drag activation at {currentPoint.X:0},{currentPoint.Y:0}");
-                RequestActivation(RadialMenuActivationSource.SecondaryButton, currentPoint, isLongPress: false);
-            }
-        }
-    }
-
-    private void LongPressTimer_Elapsed(object? sender, ElapsedEventArgs e)
-    {
-        try
-        {
-            _longPressTimer?.Stop();
-
-            if (_rightButtonPressed && !_dragTriggered)
-            {
-                _dragTriggered = true;
-                LogInput($"secondary long press activation at {_pressPoint.X:0},{_pressPoint.Y:0}");
-                RequestActivation(RadialMenuActivationSource.SecondaryButton, _pressPoint, isLongPress: true);
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Global mouse long press failed: {ex}");
-        }
-    }
-
-    private Point GetEventLocation(IntPtr eventPtr)
-    {
-        var point = CGEventGetLocation(eventPtr);
-        return new Point(point.X, point.Y);
-    }
-
-    private void RequestActivation(RadialMenuActivationSource source, Point point, int? fingerCount = null, bool isLongPress = false)
-    {
-        ActivationRequested?.Invoke(this, new RadialMenuActivationEventArgs(source, fingerCount, point.X, point.Y, isLongPress));
-    }
-
-    private void ReleaseActivation(RadialMenuActivationSource source)
-    {
-        ActivationReleased?.Invoke(this, new RadialMenuActivationEventArgs(source));
-    }
-
-    private void LogInput(string message)
-    {
-        if (_settings.EnableInputDiagnostics)
-            Console.WriteLine($"[input] {message}");
-    }
-
-    public void Dispose()
-    {
-        Stop();
-        _longPressTimer?.Dispose();
-    }
-
-    private record Point(double X, double Y);
-
-    #region P/Invoke
-
-    private enum CGEventTapLocation : uint
-    {
-        HID = 0,
-        Session = 1,
-        AnnotatedSession = 2
-    }
-
-    private enum CGEventTapPlacement : uint
-    {
-        HeadInsertEventTap = 0,
-        TailAppendEventTap = 1
-    }
-
-    private enum CGEventTapOptions : uint
-    {
-        Default = 0,
-        ListenOnly = 1
-    }
-
-    private enum CGEventType : uint
-    {
-        LeftMouseDown = 1,
-        LeftMouseUp = 2,
-        RightMouseDown = 3,
-        RightMouseUp = 4,
-        MouseMoved = 5,
-        LeftMouseDragged = 6,
-        RightMouseDragged = 7
-    }
-
-    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
-    private static extern IntPtr CGEventTapCreate(
-        CGEventTapLocation tap,
-        CGEventTapPlacement place,
-        CGEventTapOptions options,
-        ulong eventsOfInterest,
-        CGEventTapCallBack callback,
-        IntPtr userInfo);
-
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate IntPtr CGEventTapCallBack(IntPtr proxy, CGEventType type, IntPtr @event, IntPtr refcon);
-
-    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
-    private static extern void CGEventTapEnable(IntPtr tap, bool enable);
-
-    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-    private static extern IntPtr CFMachPortCreateRunLoopSource(IntPtr allocator, IntPtr port, uint order);
-
-    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-    private static extern IntPtr CFRunLoopGetCurrent();
-
-    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-    private static extern IntPtr CFRunLoopGetMain();
-
-    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-    private static extern void CFRunLoopAddSource(IntPtr runLoop, IntPtr source, IntPtr mode);
-
-    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-    private static extern void CFRelease(IntPtr cf);
-
-    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-    private static extern void CFRunLoopWakeUp(IntPtr runLoop);
-
-    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
-    private static extern CGPoint CGEventGetLocation(IntPtr @event);
-
-    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
-    private static extern ulong CGEventGetFlags(IntPtr @event);
-
-    private static ulong CGEventMaskBit(CGEventType type) => 1UL << (int)type;
-
-    private static readonly IntPtr CFRunLoopModeCommonModes =
-        CFStringCreateWithCString(IntPtr.Zero, "kCFRunLoopCommonModes", CFStringEncodingUtf8);
-
-    [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-    private static extern IntPtr CFStringCreateWithCString(IntPtr allocator, string cStr, uint encoding);
-
-    private const uint CFStringEncodingUtf8 = 0x08000100;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly struct CGPoint
-    {
-        public readonly double X;
-        public readonly double Y;
-    }
-
-    #endregion
-}
 
 internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
 {
@@ -637,6 +75,10 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
     private bool _trackpadTouchDetected;
     private Timer? _fnLongPressTimer;
     private Point _pressPoint = new(0, 0);
+    private bool _rightButtonPressed;
+    private bool _rightDragTriggered;
+    private Point _rightPressPoint = new(0, 0);
+    private readonly Timer _rightLongPressTimer;
     private readonly CGEventTapCallBack _eventTapCallback;
     private Thread? _eventTapThread;
     private ManualResetEventSlim? _startedEvent;
@@ -661,6 +103,8 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         _eventTapCallback = EventTapCallback;
         _fnLongPressTimer = new Timer();
         _fnLongPressTimer.Elapsed += FnLongPressTimer_Elapsed;
+        _rightLongPressTimer = new Timer();
+        _rightLongPressTimer.Elapsed += RightLongPressTimer_Elapsed;
     }
 
     public void UpdateAbbreviations(Dictionary<string, string> abbreviations)
@@ -854,8 +298,11 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         _fnKeyPressed = false;
         _gestureTriggered = false;
         _trackpadTouchDetected = false;
+        _rightLongPressTimer?.Stop();
+        _rightButtonPressed = false;
+        _rightDragTriggered = false;
         _isEnabled = false;
-        Console.WriteLine("Mac Fn key trigger listener stopped");
+        Console.WriteLine("Mac native input trigger listener stopped");
     }
 
     private IntPtr CreateEventTap()
@@ -866,7 +313,9 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
                    CGEventMaskBit(CGEventType.RightMouseDragged) |
                    CGEventMaskBit(CGEventType.ScrollWheel) |
                    CGEventMaskBit(CGEventType.KeyDown) |
-                   CGEventMaskBit(CGEventType.LeftMouseDown);
+                   CGEventMaskBit(CGEventType.LeftMouseDown) |
+                   CGEventMaskBit(CGEventType.RightMouseDown) |
+                   CGEventMaskBit(CGEventType.RightMouseUp);
 
         // Try Session location with active interception first (required to swallow space bar)
         var tap = CGEventTapCreate(
@@ -960,6 +409,35 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         }
     }
 
+    private void RightLongPressTimer_Elapsed(object? sender, ElapsedEventArgs e)
+    {
+        try
+        {
+            _rightLongPressTimer?.Stop();
+
+            LogBoot($"RightLongPressTimer_Elapsed: _rightButtonPressed={_rightButtonPressed}, _rightDragTriggered={_rightDragTriggered}, pos=({_rightPressPoint.X:0},{_rightPressPoint.Y:0})");
+
+            if (_rightButtonPressed && !_rightDragTriggered)
+            {
+                _rightDragTriggered = true;
+                LogBoot($"RightLongPressTimer_Elapsed: Firing ActivationRequested for SecondaryButton (isLongPress=true) at {_rightPressPoint.X:0},{_rightPressPoint.Y:0}");
+
+                ActivationRequested?.Invoke(
+                    this,
+                    new RadialMenuActivationEventArgs(
+                        RadialMenuActivationSource.SecondaryButton,
+                        null,
+                        _rightPressPoint.X,
+                        _rightPressPoint.Y,
+                        isLongPress: true));
+            }
+        }
+        catch (Exception ex)
+        {
+            LogBoot($"RightLongPressTimer_Elapsed failed: {ex.GetType().Name} - {ex.Message}");
+        }
+    }
+
     private void RequestFnDragActivation(Point currentPoint, string reason)
     {
         _fnLongPressTimer?.Stop();
@@ -986,6 +464,13 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
             {
                 LogBoot($"EventTapCallback: Event tap disabled by OS! type={type}. Re-enabling...");
                 CGEventTapEnable(_eventTap, true);
+                return eventRef;
+            }
+
+            // If this event was synthesized by Yanzi (short right-click replay), pass through directly!
+            var magic = CGEventGetIntegerValueField(eventRef, 42); // 42 = kCGEventSourceUserData
+            if (magic == SyntheticEventMagic)
+            {
                 return eventRef;
             }
 
@@ -1175,25 +660,132 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
                 }
             }
 
-            if (type == CGEventType.FlagsChanged)
-            {
-                HandleFnStateChange(fnPressed, eventRef);
-            }
-            else if (type == CGEventType.LeftMouseDown || type == CGEventType.RightMouseDown || type == CGEventType.ScrollWheel)
+            if (type == CGEventType.RightMouseDown)
             {
                 lock (_bufferLock)
                 {
                     _charBuffer.Clear();
                 }
-                if (type == CGEventType.ScrollWheel)
+
+                var loc = CGEventGetLocation(eventRef);
+                LogBoot($"EventTapCallback: RightMouseDown at {loc.X:0},{loc.Y:0}, longPressEnabled={_settings.EnableSecondaryButtonLongPress}, dragEnabled={_settings.EnableSecondaryButtonDrag}");
+
+                if (_settings.EnableSecondaryButtonLongPress || _settings.EnableSecondaryButtonDrag)
                 {
-                    HandleFnStateChange(fnPressed, eventRef);
+                    _rightPressPoint = new Point(loc.X, loc.Y);
+                    _rightButtonPressed = true;
+                    _rightDragTriggered = false;
+
+                    if (_settings.EnableSecondaryButtonLongPress)
+                    {
+                        _rightLongPressTimer.Stop();
+                        _rightLongPressTimer.Interval = Math.Max(50, _settings.LongPressThresholdMs);
+                        _rightLongPressTimer.Start();
+                        LogBoot($"EventTapCallback: Started _rightLongPressTimer with interval {_rightLongPressTimer.Interval}ms");
+                    }
+
+                    // Intercept and swallow the initial RightMouseDown so OS/apps do not show the context menu!
+                    return IntPtr.Zero;
                 }
+            }
+            else if (type == CGEventType.RightMouseUp)
+            {
+                _rightLongPressTimer.Stop();
+                var loc = CGEventGetLocation(eventRef);
+                LogBoot($"EventTapCallback: RightMouseUp at {loc.X:0},{loc.Y:0}, _rightButtonPressed={_rightButtonPressed}, _rightDragTriggered={_rightDragTriggered}");
+
+                var wasTriggered = _rightDragTriggered;
+                var wasPressed = _rightButtonPressed;
+                _rightButtonPressed = false;
+                _rightDragTriggered = false;
+
+                if (wasPressed)
+                {
+                    if (wasTriggered)
+                    {
+                        LogBoot($"EventTapCallback: Firing ActivationReleased for SecondaryButton at {loc.X:0},{loc.Y:0}");
+                        ActivationReleased?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.SecondaryButton, null, loc.X, loc.Y));
+                        // Swallow RightMouseUp to prevent context menu from appearing
+                        return IntPtr.Zero;
+                    }
+                    else
+                    {
+                        // It was a short right click without long press or drag:
+                        // Replay synthetic RightClick so the foreground application receives its context menu cleanly!
+                        LogBoot($"EventTapCallback: Replaying short right click at {_rightPressPoint.X:0},{_rightPressPoint.Y:0}");
+                        SendSyntheticRightClick(_rightPressPoint);
+                        return IntPtr.Zero;
+                    }
+                }
+            }
+            else if (type == CGEventType.LeftMouseDown)
+            {
+                _rightLongPressTimer.Stop();
+                _rightButtonPressed = false;
+                _rightDragTriggered = false;
+
+                lock (_bufferLock)
+                {
+                    _charBuffer.Clear();
+                }
+            }
+            else if (type == CGEventType.FlagsChanged)
+            {
+                HandleFnStateChange(fnPressed, eventRef);
+            }
+            else if (type == CGEventType.ScrollWheel)
+            {
+                lock (_bufferLock)
+                {
+                    _charBuffer.Clear();
+                }
+                HandleFnStateChange(fnPressed, eventRef);
             }
             else if (type == CGEventType.MouseMoved || type == CGEventType.LeftMouseDragged || type == CGEventType.RightMouseDragged)
             {
                 // Sync Fn key state on mouse movements/drags/scrolls as fallback
                 HandleFnStateChange(fnPressed, eventRef);
+
+                if (_rightButtonPressed)
+                {
+                    var currentPoint = GetEventLocation(eventRef);
+                    if (_rightDragTriggered)
+                    {
+                        ActivationUpdated?.Invoke(this, new RadialMenuActivationEventArgs(RadialMenuActivationSource.SecondaryButton, null, currentPoint.X, currentPoint.Y));
+                    }
+                    else
+                    {
+                        var dx = currentPoint.X - _rightPressPoint.X;
+                        var dy = currentPoint.Y - _rightPressPoint.Y;
+                        var distanceSquared = dx * dx + dy * dy;
+
+                        // Cancel long press timer if mouse moved intentionally (>= 8px drag intent, matching Windows design)
+                        const double cancelLongPressDistanceSquared = 8.0 * 8.0;
+                        if (distanceSquared >= cancelLongPressDistanceSquared)
+                        {
+                            _rightLongPressTimer.Stop();
+                        }
+
+                        var threshold = Math.Max(1, _settings.DragThresholdPixels);
+                        if (distanceSquared >= threshold * threshold)
+                        {
+                            _rightLongPressTimer.Stop();
+                            if (_settings.EnableSecondaryButtonDrag)
+                            {
+                                _rightDragTriggered = true;
+                                LogBoot($"EventTapCallback: Right button drag triggered radial menu at {currentPoint.X:0},{currentPoint.Y:0}");
+                                ActivationRequested?.Invoke(
+                                    this,
+                                    new RadialMenuActivationEventArgs(
+                                        RadialMenuActivationSource.SecondaryButton,
+                                        null,
+                                        currentPoint.X,
+                                        currentPoint.Y,
+                                        isLongPress: false));
+                            }
+                        }
+                    }
+                }
 
                 if (_fnKeyPressed)
                 {
@@ -1381,6 +973,8 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
                 PostKeyboardEvent(0x09, true, CGEventFlags.MaskCommand);
                 Thread.Sleep(15);
                 PostKeyboardEvent(0x09, false, CGEventFlags.MaskCommand);
+                Thread.Sleep(10);
+                MacInputResetHelper.PostFlagsChanged(MacInputResetHelper.CGEventFlags.None);
             }
             catch (Exception ex)
             {
@@ -1448,6 +1042,36 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         };
     }
 
+    private const long SyntheticEventMagic = 0x59414E5A49; // "YANZI"
+
+    private static void SendSyntheticRightClick(Point point)
+    {
+        var loc = new CGPoint(point.X, point.Y);
+        var down = CGEventCreateMouseEvent(IntPtr.Zero, CGEventType.RightMouseDown, loc, CGMouseButton.Right);
+        var up = CGEventCreateMouseEvent(IntPtr.Zero, CGEventType.RightMouseUp, loc, CGMouseButton.Right);
+
+        if (down != IntPtr.Zero && up != IntPtr.Zero)
+        {
+            try
+            {
+                CGEventSetIntegerValueField(down, 42, SyntheticEventMagic);
+                CGEventSetIntegerValueField(up, 42, SyntheticEventMagic);
+                CGEventPost(CGEventTapLocation.HID, down);
+                CGEventPost(CGEventTapLocation.HID, up);
+            }
+            finally
+            {
+                CFRelease(down);
+                CFRelease(up);
+            }
+        }
+        else
+        {
+            if (down != IntPtr.Zero) CFRelease(down);
+            if (up != IntPtr.Zero) CFRelease(up);
+        }
+    }
+
     private Point GetEventLocation(IntPtr eventPtr)
     {
         var point = CGEventGetLocation(eventPtr);
@@ -1494,6 +1118,7 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
     {
         Stop();
         _fnLongPressTimer?.Dispose();
+        _rightLongPressTimer?.Dispose();
     }
 
     private record Point(double X, double Y);
@@ -1533,8 +1158,21 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
         ScrollWheel = 22
     }
 
+    private enum CGMouseButton : uint
+    {
+        Left = 0,
+        Right = 1,
+        Center = 2
+    }
+
     [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     private static extern long CGEventGetIntegerValueField(IntPtr @event, int field);
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern void CGEventSetIntegerValueField(IntPtr @event, int field, long value);
+
+    [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+    private static extern IntPtr CGEventCreateMouseEvent(IntPtr source, CGEventType mouseType, CGPoint mouseCursorPosition, CGMouseButton mouseButton);
 
     [DllImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
     private static extern IntPtr CGEventTapCreate(
@@ -1599,6 +1237,12 @@ internal sealed class MacFnKeyInputTriggerListener : IGlobalInputTriggerListener
     {
         public readonly double X;
         public readonly double Y;
+
+        public CGPoint(double x, double y)
+        {
+            X = x;
+            Y = y;
+        }
     }
 
     [Flags]

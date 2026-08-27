@@ -222,9 +222,6 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         ClearActiveItem();
         var visibilityVersion = ++_visibilityVersion;
 
-        Opacity = 0;
-        IsContentVisible = false;
-
         PrepareOverlayForActivation(activation);
         LoadSlots();
         ActiveTitle = "取消";
@@ -234,7 +231,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         _isPanelActive = true;
         IsContentVisible = true;
-        Dispatcher.UIThread.Post(() => RevealPanel(visibilityVersion), DispatcherPriority.Loaded);
+        Opacity = 1;
+        Topmost = true;
     }
 
     private void RevealPanel(int visibilityVersion)
@@ -244,7 +242,6 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         Opacity = 1;
         Topmost = true;
-        Console.WriteLine($"[ui-panel] Panel revealed at Left={PanelLeft:0}, Top={PanelTop:0}");
     }
 
     public void ExecuteSelectedFromHoldRelease(RadialMenuActivationEventArgs? activation = null)
@@ -269,6 +266,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 if (!IsPinned)
                     HidePanel();
                 ActiveTitle = "取消";
+                _isExecuting = false;
+                _activeActivationSource = RadialMenuActivationSource.Unknown;
                 return;
             }
         }
@@ -283,12 +282,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             OpenSlotActionWindow(_activeItem);
             _isExecuting = false;
+            _activeActivationSource = RadialMenuActivationSource.Unknown;
             return;
         }
 
-        if (!IsPinned)
-            HidePanel();
-        ActiveTitle = "取消";
+        _isExecuting = false;
+        _activeActivationSource = RadialMenuActivationSource.Unknown;
     }
 
     private void Window_Deactivated(object? sender, EventArgs e)
