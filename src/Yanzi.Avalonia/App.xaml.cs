@@ -94,7 +94,7 @@ public partial class App : Application
             };
             openLauncherMenuItem.Click += (sender, e) => OpenLauncher();
 
-            var openMousePanelMenuItem = new NativeMenuItem("打开鼠标面板")
+            var openMousePanelMenuItem = new NativeMenuItem("打开背包")
             {
                 Gesture = KeyGesture.Parse("alt+m")
             };

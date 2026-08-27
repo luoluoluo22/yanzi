@@ -1393,6 +1393,78 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
         win.Activate();
     }
 
+    private void OnFormatJsonClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(EditorJsonText)) return;
+            using var doc = JsonDocument.Parse(EditorJsonText);
+            EditorJsonText = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+            ValidationMessage = "✅ 已完成 JSON 格式化排版";
+            ValidationColor = Brushes.LimeGreen;
+        }
+        catch (Exception ex)
+        {
+            ValidationMessage = $"⚠️ 格式化失败: {ex.Message}";
+            ValidationColor = Brushes.Red;
+        }
+    }
+
+    private async void OnCopyJsonClick(object? sender, RoutedEventArgs e)
+    {
+        if (Clipboard != null && !string.IsNullOrEmpty(EditorJsonText))
+        {
+            await Clipboard.SetTextAsync(EditorJsonText);
+            ValidationMessage = "📋 已复制 JSON 源码到剪贴板";
+            ValidationColor = Brushes.LimeGreen;
+        }
+    }
+
+    private void OnReplaceJsonClick(object? sender, RoutedEventArgs e)
+    {
+        var findBox = this.FindControl<TextBox>("JsonFindBox");
+        var replaceBox = this.FindControl<TextBox>("JsonReplaceBox");
+        var findText = findBox?.Text ?? string.Empty;
+        var replaceText = replaceBox?.Text ?? string.Empty;
+
+        if (string.IsNullOrEmpty(findText) || string.IsNullOrEmpty(EditorJsonText)) return;
+
+        var index = EditorJsonText.IndexOf(findText, StringComparison.Ordinal);
+        if (index >= 0)
+        {
+            EditorJsonText = EditorJsonText.Substring(0, index) + replaceText + EditorJsonText.Substring(index + findText.Length);
+            ValidationMessage = $"✅ 已替换 1 处匹配项";
+            ValidationColor = Brushes.LimeGreen;
+        }
+        else
+        {
+            ValidationMessage = $"⚠️ 未找到匹配项: '{findText}'";
+            ValidationColor = Brushes.Orange;
+        }
+    }
+
+    private void OnReplaceAllJsonClick(object? sender, RoutedEventArgs e)
+    {
+        var findBox = this.FindControl<TextBox>("JsonFindBox");
+        var replaceBox = this.FindControl<TextBox>("JsonReplaceBox");
+        var findText = findBox?.Text ?? string.Empty;
+        var replaceText = replaceBox?.Text ?? string.Empty;
+
+        if (string.IsNullOrEmpty(findText) || string.IsNullOrEmpty(EditorJsonText)) return;
+
+        if (EditorJsonText.Contains(findText))
+        {
+            EditorJsonText = EditorJsonText.Replace(findText, replaceText);
+            ValidationMessage = $"✅ 已全部替换 '{findText}'";
+            ValidationColor = Brushes.LimeGreen;
+        }
+        else
+        {
+            ValidationMessage = $"⚠️ 未找到匹配项: '{findText}'";
+            ValidationColor = Brushes.Orange;
+        }
+    }
+
     private void OnExitClick(object? sender, RoutedEventArgs e)
     {
         if (Application.Current?.ApplicationLifetime is global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)

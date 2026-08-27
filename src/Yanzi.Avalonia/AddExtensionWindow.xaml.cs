@@ -35,26 +35,6 @@ public partial class AddExtensionWindow : Window
         AvaloniaXamlLoader.Load(this);
     }
 
-    private void OnModeChanged(object? sender, RoutedEventArgs e)
-    {
-        var formRadio = this.FindControl<RadioButton>("FormModeRadio");
-        var wizardScroll = this.FindControl<ScrollViewer>("WizardScrollViewer");
-        var jsonGrid = this.FindControl<Grid>("JsonEditorGrid");
-
-        if (formRadio != null && wizardScroll != null && jsonGrid != null)
-        {
-            bool isForm = formRadio.IsChecked == true;
-            wizardScroll.IsVisible = isForm;
-            jsonGrid.IsVisible = !isForm;
-
-            if (!isForm)
-            {
-                // Sync form to JSON
-                SyncFormToJson();
-            }
-        }
-    }
-
     private void OnTypeCardClick(object? sender, PointerPressedEventArgs e)
     {
         if (sender is Border border && border.Tag is string tag)
@@ -222,36 +202,6 @@ public partial class AddExtensionWindow : Window
                 if (descInput != null) descInput.Text = p.Desc;
             };
             wrap.Children.Add(btn);
-        }
-    }
-
-    private void SyncFormToJson()
-    {
-        var mainInput = this.FindControl<TextBox>("MainFieldInput")?.Text ?? string.Empty;
-        var scriptInput = this.FindControl<TextBox>("ScriptFieldInput")?.Text ?? string.Empty;
-        var titleInput = this.FindControl<TextBox>("TitleInput")?.Text ?? "未命名小程序";
-        var iconInput = this.FindControl<TextBox>("IconInput")?.Text ?? "🌐";
-        var descInput = this.FindControl<TextBox>("DescInput")?.Text ?? string.Empty;
-        var catInput = this.FindControl<TextBox>("CategoryInput")?.Text ?? "快捷工具";
-        var abbrevInput = this.FindControl<TextBox>("AbbrevInput")?.Text ?? string.Empty;
-
-        var obj = new
-        {
-            id = Guid.NewGuid().ToString("N").Substring(0, 8),
-            type = _currentType,
-            title = titleInput,
-            icon = iconInput,
-            category = catInput,
-            description = descInput,
-            target = mainInput,
-            script = scriptInput,
-            abbreviation = abbrevInput
-        };
-
-        var rawInput = this.FindControl<TextBox>("RawJsonInput");
-        if (rawInput != null)
-        {
-            rawInput.Text = JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
         }
     }
 

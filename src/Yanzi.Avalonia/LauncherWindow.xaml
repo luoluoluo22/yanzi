@@ -265,39 +265,62 @@
                     </Grid>
 
                     <!-- 2. EXISTING EXTENSION/APPLESCRIPT JSON EDITOR PANEL -->
-                    <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding !IsSnippetEditor}">
+                    <Grid RowDefinitions="Auto,Auto,*,Auto" IsVisible="{Binding !IsSnippetEditor}">
                         <!-- Editor Header -->
-                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
-                            <StackPanel Spacing="3">
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                            <StackPanel Spacing="2">
                                 <TextBlock Text="{Binding EditorTitle}" Foreground="#FF10B981" FontSize="15" FontWeight="Bold"/>
-                                <TextBlock Text="定义小程序名称、图标和 AppleScript 苹果脚本内容" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
+                                <TextBlock Text="在此编写标准 JSON 小程序配置，支持 AppleScript/Shell/URL/快捷键" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
                             </StackPanel>
-                            <Button Grid.Column="1" Content="向导模式 ↗" Classes="action-btn cancel" Click="OnOpenAddExtensionWindowClick" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="向导构建 ↗" Classes="action-btn cancel" Click="OnOpenAddExtensionWindowClick" VerticalAlignment="Center"/>
                         </Grid>
 
-                        <!-- JSON Editor -->
-                        <ScrollViewer Grid.Row="1" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,0,0,14">
-                            <TextBox Name="JsonEditorInput"
-                                     Text="{Binding EditorJsonText, Mode=TwoWay}"
-                                     AcceptsReturn="True"
-                                     TextWrapping="Wrap"
-                                     FontFamily="Courier New, monospace"
-                                     FontSize="12"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     Foreground="{DynamicResource BrushTextMain}"/>
-                        </ScrollViewer>
+                        <!-- Toolbar: Format, Copy, Find, Replace (Matching Windows AddJsonExtensionWindow toolbar) -->
+                        <Border Grid.Row="1" Background="{DynamicResource BrushSecondaryBtnBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,0,0,10">
+                            <Grid ColumnDefinitions="Auto,6,*,4,*,4,Auto,2,Auto">
+                                <!-- Format & Copy -->
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                                    <Button Content="格式化" Classes="action-btn cancel" Padding="8,4" FontSize="11" Click="OnFormatJsonClick" ToolTip.Tip="美化并对齐 JSON 缩进"/>
+                                    <Button Content="复制" Classes="action-btn cancel" Padding="8,4" FontSize="11" Click="OnCopyJsonClick" ToolTip.Tip="复制全部 JSON 源码"/>
+                                </StackPanel>
 
-                        <!-- Action Buttons -->
-                        <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
-                            <TextBlock Grid.Row="0" Text="{Binding ValidationMessage}" Foreground="{Binding ValidationColor}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
+                                <!-- Find & Replace Boxes -->
+                                <TextBox Name="JsonFindBox" Grid.Column="2" Watermark="查找..." FontFamily="Consolas, monospace" FontSize="11" Height="28" MinHeight="0" Padding="6,2" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
+                                <TextBox Name="JsonReplaceBox" Grid.Column="4" Watermark="替换为..." FontFamily="Consolas, monospace" FontSize="11" Height="28" MinHeight="0" Padding="6,2" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}"/>
+
+                                <!-- Action Buttons -->
+                                <Button Grid.Column="6" Content="替换" Classes="action-btn cancel" Padding="6,4" FontSize="11" Click="OnReplaceJsonClick"/>
+                                <Button Grid.Column="8" Content="全换" Classes="action-btn cancel" Padding="6,4" FontSize="11" Click="OnReplaceAllJsonClick"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- JSON Editor & Status Overlay -->
+                        <Grid Grid.Row="2" Margin="0,0,0,12">
+                            <ScrollViewer Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="8">
+                                <TextBox Name="JsonEditorInput"
+                                         Text="{Binding EditorJsonText, Mode=TwoWay}"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         FontFamily="Courier New, Consolas, monospace"
+                                         FontSize="12"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         Foreground="{DynamicResource BrushTextMain}"/>
+                            </ScrollViewer>
+                        </Grid>
+
+                        <!-- Action Buttons & Validation Status -->
+                        <Grid Grid.Row="3" RowDefinitions="Auto,Auto">
+                            <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="0,0,0,10">
+                                <TextBlock Text="{Binding ValidationMessage}" Foreground="{Binding ValidationColor}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </Grid>
                             <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto">
                                 <Button Grid.Column="0" Classes="action-btn save" Command="{Binding SaveCustomExtensionCommand}">
                                     <TextBlock Text="保存并应用" Foreground="White" HorizontalAlignment="Center" FontWeight="SemiBold"/>
                                 </Button>
                                 <Button Grid.Column="1" Content="删除" Classes="action-btn delete" Command="{Binding DeleteCustomExtensionCommand}" IsVisible="{Binding IsDeleteMode}" Margin="8,0,0,0"/>
                                 <Button Grid.Column="2" Content="关闭" Classes="action-btn cancel" Command="{Binding ToggleEditorCommand}"/>
-                                <Button Grid.Column="3" Content="复制小程序提示词" Classes="action-btn cancel" Command="{Binding CopyPromptCommand}"/>
+                                <Button Grid.Column="3" Content="复制 AI 提示词" Classes="action-btn cancel" Command="{Binding CopyPromptCommand}" ToolTip.Tip="复制结构化 Prompt 供大模型生成"/>
                             </Grid>
                         </Grid>
                     </Grid>

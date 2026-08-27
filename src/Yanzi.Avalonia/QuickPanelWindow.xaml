@@ -3,7 +3,7 @@
         xmlns:local="clr-namespace:Yanzi.Avalonia"
         xmlns:shared="clr-namespace:Yanzi.Shared"
         x:Class="Yanzi.Avalonia.QuickPanelWindow"
-        Title="鼠标面板"
+        Title="背包"
         Width="364"
         Height="640"
         Opacity="0"
@@ -191,7 +191,7 @@
 
                         <!-- Pin AutoHide Button (Exact Windows pin.svg thumbtack) -->
                         <ToggleButton x:Name="PinButton" Grid.Column="2" Width="34" Height="34" Background="Transparent"
-                                      BorderThickness="0" CornerRadius="8" ToolTip.Tip="固定面板 / 自动隐藏"
+                                      BorderThickness="0" CornerRadius="8" ToolTip.Tip="固定背包 / 自动隐藏"
                                       IsChecked="{Binding IsPinned, Mode=TwoWay}" VerticalAlignment="Center">
                             <Path Data="M656.64 96l271.36 271.402667a36.48 36.48 0 0 1 0 51.584l-177.450667 177.450666a363.818667 363.818667 0 0 1-77.312 268.074667 36.437333 36.437333 0 0 1-28.544 13.653333 36.437333 36.437333 0 0 1-25.856-10.666666l-185.173333-185.130667-215.893333 215.893333a65.066667 65.066667 0 1 1-92.032-92.032l215.765333-215.808-185.088-185.002666a36.608 36.608 0 0 1 2.986667-54.4 363.008 363.008 0 0 1 227.413333-79.658667c13.568 0 27.136 0.682667 40.576 2.218667l177.450667-177.578667a36.437333 36.437333 0 0 1 25.898666-10.666667c9.344 0 18.688 3.541333 25.856 10.666667z"
                                   Fill="{Binding #PinButton.IsChecked, Converter={x:Static local:Converters.PinBrushConverter}}"

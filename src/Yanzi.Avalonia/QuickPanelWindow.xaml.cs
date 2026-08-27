@@ -434,7 +434,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             }
             else
             {
-                OpenSlotActionWindow(item);
+                OpenAddExtensionForSlot(item);
             }
             e.Handled = true;
             return;
@@ -442,6 +442,22 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         _draggedSlot = null;
         _isDraggingInternalSlot = false;
+    }
+
+    private void OpenAddExtensionForSlot(RadialMenuItemViewModel item)
+    {
+        _isActionWindowOpen = true;
+        var window = new AddExtensionWindow(_mainWindow);
+        window.Closed += (_, _) =>
+        {
+            _isActionWindowOpen = false;
+            if (window.ResultCommand != null)
+            {
+                AssignCommandToSlot(item, window.ResultCommand);
+            }
+        };
+        window.Show();
+        window.Activate();
     }
 
     private RadialMenuItemViewModel? FindSlotAtPosition(Point position)

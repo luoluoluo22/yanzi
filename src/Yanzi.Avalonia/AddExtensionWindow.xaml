@@ -14,30 +14,23 @@
         CanResize="True">
 
     <Grid RowDefinitions="Auto,*,Auto" Margin="24,18">
-        <!-- Top Header & Mode Switcher -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
-            <StackPanel Grid.Column="0" Spacing="4">
+        <!-- Top Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <StackPanel Spacing="4">
                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                     <Border Width="30" Height="30" CornerRadius="8" Background="{DynamicResource BrushAccent}">
                         <Path Data="{local:VectorIcon dashboard}" Fill="White" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
-                    <TextBlock Text="新建 / 编辑自定义小程序" Foreground="{DynamicResource BrushTextMain}" FontSize="17" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text="新建 / 编辑自定义小程序向导" Foreground="{DynamicResource BrushTextMain}" FontSize="17" FontWeight="Bold" VerticalAlignment="Center"/>
                 </StackPanel>
-                <TextBlock Text="为燕子添加自定义快捷动作、网页直达、AppleScript 脚本或快捷短语" Foreground="{DynamicResource BrushTextSec}" FontSize="12"/>
-            </StackPanel>
-
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <RadioButton Name="FormModeRadio" Content="🎨 图形向导模式" IsChecked="True" Classes="tabChip" Checked="OnModeChanged"/>
-                <RadioButton Name="JsonModeRadio" Content="📝 JSON 源码模式" Classes="tabChip" Checked="OnModeChanged"/>
+                <TextBlock Text="选择下方小程序类型与预设模板，快速为燕子添加自定义快捷动作、网页直达、AppleScript 或快捷短语" Foreground="{DynamicResource BrushTextSec}" FontSize="12"/>
             </StackPanel>
         </Grid>
 
-        <!-- Main Content Area -->
+        <!-- Main Content Area: Graphical Wizard -->
         <Border Grid.Row="1" Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="12" Padding="20,16">
-            <Panel>
-                <!-- 1. GRAPHICAL WIZARD MODE -->
-                <ScrollViewer Name="WizardScrollViewer" VerticalScrollBarVisibility="Auto" IsVisible="True">
-                    <StackPanel Spacing="18">
+            <ScrollViewer Name="WizardScrollViewer" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="18">
                         <!-- Type Selection Grid (6 Types matching Windows) -->
                         <StackPanel Spacing="8">
                             <TextBlock Text="1. 选择小程序类型" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
@@ -180,25 +173,7 @@
                             </StackPanel>
                         </Border>
                     </StackPanel>
-                </ScrollViewer>
-
-                <!-- 2. JSON CODE EDITOR MODE -->
-                <Grid Name="JsonEditorGrid" RowDefinitions="Auto,*" IsVisible="False">
-                    <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,10">
-                        <TextBlock Text="在此直接编写或粘贴完整的标准小程序 JSON 配置" Foreground="{DynamicResource BrushTextSec}" FontSize="11.5"/>
-                    </StackPanel>
-                    <ScrollViewer Grid.Row="1" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="10">
-                        <TextBox Name="RawJsonInput"
-                                 AcceptsReturn="True"
-                                 TextWrapping="Wrap"
-                                 FontFamily="Courier New, monospace"
-                                 FontSize="12.5"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 Foreground="{DynamicResource BrushTextMain}"/>
-                    </ScrollViewer>
-                </Grid>
-            </Panel>
+            </ScrollViewer>
         </Border>
 
         <!-- Bottom Action Bar -->
