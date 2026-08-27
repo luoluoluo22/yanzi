@@ -674,8 +674,8 @@ async function handleRequest(request, env) {
 
       const defaultWinFileName = winSetupAsset ? winSetupAsset.name : `Yanzi-win-Setup-${version}.exe`;
       const defaultWinDownloadUrl = winSetupAsset ? winSetupAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${version}/${defaultWinFileName}`;
-      const defaultMacFileName = macAsset ? macAsset.name : `Yanzi-${version}.dmg`;
-      const defaultMacDownloadUrl = macAsset ? macAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${version}/${defaultMacFileName}`;
+      const defaultMacFileName = macAsset ? macAsset.name : "Yanzi-macos-v0.1.0.dmg";
+      const defaultMacDownloadUrl = macAsset ? macAsset.browser_download_url : "https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.dmg";
 
       const requestedPlatform = (url.searchParams.get("platform") || "windows").toLowerCase();
 
@@ -693,7 +693,7 @@ async function handleRequest(request, env) {
         },
         mac: {
           name: "macOS",
-          version: version,
+          version: "0.1.0",
           file_name: defaultMacFileName,
           download_url: defaultMacDownloadUrl,
           mirror_url: `https://ghfast.top/${defaultMacDownloadUrl}`,
