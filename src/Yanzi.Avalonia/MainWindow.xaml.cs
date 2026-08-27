@@ -750,9 +750,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SetActiveItem(item);
 
         var pressedPoint = e.GetCurrentPoint(this);
-        if (pressedPoint.Properties.IsRightButtonPressed && _activeActivationSource == RadialMenuActivationSource.TrackpadGesture)
+        if (pressedPoint.Properties.IsRightButtonPressed)
         {
-            OpenSlotActionWindow(item);
+            ShowSlotContextMenu(item, sender as Control);
             return;
         }
 
@@ -764,6 +764,56 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             BuildNestedRingForItem(item);
             NotifyRadialBindings();
+        }
+        else if (item.IsEmpty)
+        {
+            OpenSlotActionWindow(item);
+        }
+    }
+
+    private void ShowSlotContextMenu(RadialMenuItemViewModel item, Control? target)
+    {
+        var menu = new ContextMenu();
+
+        var editItem = new MenuItem { Header = item.IsEmpty ? "➕ 添加小程序到此插槽..." : "✏️ 修改插槽小程序..." };
+        editItem.Click += (_, _) => OpenSlotActionWindow(item);
+        menu.Items.Add(editItem);
+
+        if (!item.IsEmpty && item.Command != null)
+        {
+            string? targetPath = null;
+            if (!string.IsNullOrEmpty(item.Command.ApplicationName))
+            {
+                if (item.Command.ApplicationName.StartsWith("/"))
+                    targetPath = item.Command.ApplicationName;
+                else
+                    targetPath = MacIconExtractor.GetApplicationPath(item.Command.ApplicationName);
+            }
+
+            if (!string.IsNullOrEmpty(targetPath))
+            {
+                var revealItem = new MenuItem { Header = "📁 在访达中显示" };
+                revealItem.Click += (_, _) =>
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start("open", $"-R \"{targetPath}\"");
+                    }
+                    catch { }
+                };
+                menu.Items.Add(revealItem);
+            }
+
+            menu.Items.Add(new Separator());
+
+            var removeItem = new MenuItem { Header = "🗑️ 清空插槽" };
+            removeItem.Click += (_, _) => RemoveCommandFromSlot(item.OwnerPageId, item.Index);
+            menu.Items.Add(removeItem);
+        }
+
+        if (target != null)
+        {
+            menu.Open(target);
         }
     }
 
@@ -1127,6 +1177,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void NotifyRadialBindings()
     {
+        LoadNativeIconsForRadialViewModels();
         OnPropertyChanged(nameof(Items));
         OnPropertyChanged(nameof(OuterItems));
         OnPropertyChanged(nameof(ChildItems));
@@ -1153,6 +1204,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(GrandChildRingCenterEllipseY));
         OnPropertyChanged(nameof(GrandChildRingTitleX));
         OnPropertyChanged(nameof(GrandChildRingTitleY));
+    }
+
+    private void LoadNativeIconsForRadialViewModels()
+    {
+        var allVms = Items.Concat(OuterItems).Concat(ChildItems).Concat(GrandChildItems);
+        foreach (var vm in allVms)
+        {
+            if (vm.Command != null && vm.Command.ActionKind == CommandActionKind.LaunchApplication && !string.IsNullOrEmpty(vm.Command.ApplicationName))
+            {
+                var cached = MacIconExtractor.GetCachedBitmap(vm.Command.ApplicationName);
+                if (cached != null)
+                {
+                    vm.RealIcon = cached;
+                }
+                else
+                {
+                    LoadNativeIconForViewModelAsync(vm, vm.Command.ApplicationName);
+                }
+            }
+        }
+    }
+
+    private async void LoadNativeIconForViewModelAsync(RadialMenuItemViewModel vm, string path)
+    {
+        try
+        {
+            var bitmap = await Task.Run(() => MacIconExtractor.GetCachedBitmap(path));
+            if (bitmap != null)
+            {
+                Dispatcher.UIThread.Post(() => vm.RealIcon = bitmap);
+            }
+        }
+        catch { }
     }
 
     private void BuildNestedRingForItem(RadialMenuItemViewModel item)

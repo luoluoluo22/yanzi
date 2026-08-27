@@ -179,11 +179,17 @@
                                            IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 
                                 <!-- Normal Content -->
-                                <Grid Width="18" Height="18" HorizontalAlignment="Center"
+                                <Grid Width="22" Height="22" HorizontalAlignment="Center"
                                       IsVisible="{Binding IsNotEmpty}">
                                     <TextBlock Text="{Binding DisplayGlyph}" 
-                                               Foreground="White" FontSize="9"
+                                               Foreground="White" FontSize="11"
+                                               IsVisible="{Binding !HasRealIcon}"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <Image Source="{Binding RealIcon}"
+                                           IsVisible="{Binding HasRealIcon}"
+                                           Width="20" Height="20"
+                                           Stretch="Uniform"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}" 
                                            Foreground="White"
@@ -231,11 +237,17 @@
                                            HorizontalAlignment="Center"
                                            IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 
-                                <Grid Width="26" Height="26" HorizontalAlignment="Center"
+                                <Grid Width="28" Height="28" HorizontalAlignment="Center"
                                       IsVisible="{Binding IsNotEmpty}">
                                     <TextBlock Text="{Binding DisplayGlyph}" 
-                                               Foreground="White" FontSize="11"
+                                               Foreground="White" FontSize="14"
+                                               IsVisible="{Binding !HasRealIcon}"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <Image Source="{Binding RealIcon}"
+                                           IsVisible="{Binding HasRealIcon}"
+                                           Width="26" Height="26"
+                                           Stretch="Uniform"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}" 
                                            Foreground="White"
@@ -320,11 +332,17 @@
                                     <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="18"
                                                HorizontalAlignment="Center"
                                                IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
-                                    <Grid Width="22" Height="22" HorizontalAlignment="Center"
+                                    <Grid Width="24" Height="24" HorizontalAlignment="Center"
                                           IsVisible="{Binding IsNotEmpty}">
                                         <TextBlock Text="{Binding DisplayGlyph}" 
-                                                   Foreground="White" FontSize="9"
+                                                   Foreground="White" FontSize="11"
+                                                   IsVisible="{Binding !HasRealIcon}"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <Image Source="{Binding RealIcon}"
+                                               IsVisible="{Binding HasRealIcon}"
+                                               Width="22" Height="22"
+                                               Stretch="Uniform"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}" 
                                                Foreground="White"
@@ -409,11 +427,17 @@
                                     <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="16"
                                                HorizontalAlignment="Center"
                                                IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
-                                    <Grid Width="18" Height="18" HorizontalAlignment="Center"
+                                    <Grid Width="20" Height="20" HorizontalAlignment="Center"
                                           IsVisible="{Binding IsNotEmpty}">
-                                        <TextBlock Text="{Binding DisplayGlyph}"
+                                        <TextBlock Text="{Binding DisplayGlyph}" 
                                                    Foreground="White" FontSize="9"
+                                                   IsVisible="{Binding !HasRealIcon}"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <Image Source="{Binding RealIcon}"
+                                               IsVisible="{Binding HasRealIcon}"
+                                               Width="18" Height="18"
+                                               Stretch="Uniform"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="White"

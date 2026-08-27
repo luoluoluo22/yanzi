@@ -1143,19 +1143,28 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (e.KeyModifiers == KeyModifiers.Alt)
+        if (e.KeyModifiers == KeyModifiers.Alt || e.KeyModifiers == KeyModifiers.Meta || e.KeyModifiers == KeyModifiers.Control)
         {
-            if (e.Key == Key.D1) { SwitchCategory("All"); e.Handled = true; }
-            else if (e.Key == Key.D2) { SwitchCategory("App"); e.Handled = true; }
-            else if (e.Key == Key.D3) { SwitchCategory("File"); e.Handled = true; }
-            else if (e.Key == Key.D4) { SwitchCategory("Extension"); e.Handled = true; }
-            else if (e.Key == Key.D5) { SwitchCategory("Clipboard"); e.Handled = true; }
-            else if (e.Key == Key.D6) { SwitchCategory("Snippet"); e.Handled = true; }
+            if (e.Key == Key.D1) { SwitchCategory("All"); e.Handled = true; return; }
+            else if (e.Key == Key.D2) { SwitchCategory("App"); e.Handled = true; return; }
+            else if (e.Key == Key.D3) { SwitchCategory("File"); e.Handled = true; return; }
+            else if (e.Key == Key.D4) { SwitchCategory("Extension"); e.Handled = true; return; }
+            else if (e.Key == Key.D5) { SwitchCategory("Clipboard"); e.Handled = true; return; }
+            else if (e.Key == Key.D6) { SwitchCategory("Snippet"); e.Handled = true; return; }
+            else if (e.Key == Key.E) { ToggleEditor(); e.Handled = true; return; }
+            else if (e.Key == Key.Enter) { RevealSelectedInFinder(); e.Handled = true; return; }
         }
 
         if (e.Key == Key.Escape)
         {
-            Hide();
+            if (WindowWidth > 650)
+            {
+                ToggleEditor();
+            }
+            else
+            {
+                Hide();
+            }
             e.Handled = true;
         }
         else if (e.Key == Key.Delete || (e.Key == Key.Back && e.KeyModifiers == KeyModifiers.Meta))
@@ -1183,10 +1192,40 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
         }
         else if (e.Key == Key.K && e.KeyModifiers == KeyModifiers.Control)
         {
-            // Ctrl K triggers categories or options if needed, here we toggle editor as a nice trick
             ToggleEditor();
             e.Handled = true;
         }
+    }
+
+    public void RevealSelectedInFinder()
+    {
+        if (SelectedItem == null) return;
+        var path = SelectedItem.Command?.ApplicationName;
+        if (!string.IsNullOrEmpty(path))
+        {
+            if (!path.StartsWith("/"))
+                path = MacIconExtractor.GetApplicationPath(path);
+
+            if (!string.IsNullOrEmpty(path) && (File.Exists(path) || Directory.Exists(path)))
+            {
+                try
+                {
+                    Process.Start("open", $"-R \"{path}\"");
+                    Hide();
+                }
+                catch { }
+            }
+        }
+    }
+
+    private void OnItemDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        ExecuteSelected();
+    }
+
+    private void OnOpenSelectedInFinderClick(object? sender, RoutedEventArgs e)
+    {
+        RevealSelectedInFinder();
     }
 
     private void CycleCategoryTab(bool forward)

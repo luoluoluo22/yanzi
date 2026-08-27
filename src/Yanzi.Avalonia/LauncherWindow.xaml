@@ -87,6 +87,7 @@
                 <ListBox Grid.Row="3" Name="ResultsList"
                          ItemsSource="{Binding FilteredItems}"
                          SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                         DoubleTapped="OnItemDoubleTapped"
                          Background="Transparent" BorderThickness="0"
                          Padding="0" Margin="0,0,0,10">
                     <ListBox.Styles>
@@ -146,10 +147,10 @@
                 </ListBox>
 
                 <!-- Bottom Action Bar -->
-                <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Height="30" VerticalAlignment="Center">
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="16">
+                <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Height="30" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
                         <!-- Add Button '+' -->
-                        <Button Width="26" Height="26" Background="#1DFFFFFF" BorderThickness="0" CornerRadius="13" Command="{Binding ToggleEditorCommand}">
+                        <Button Width="26" Height="26" Background="#1DFFFFFF" BorderThickness="0" CornerRadius="13" Command="{Binding ToggleEditorCommand}" ToolTip.Tip="新建自定义小程序 (Cmd+E)">
                             <TextBlock Text="＋" Foreground="White" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
                         <!-- Menu '≡' Button -->
@@ -157,23 +158,44 @@
                             <TextBlock Text="≡" Foreground="White" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             <Button.ContextMenu>
                                 <ContextMenu Name="MainMenu" Background="#F01C1C1C" BorderBrush="#30FFFFFF" BorderThickness="1" CornerRadius="10">
-                                    <MenuItem Header="切换标签页" InputGesture="Tab" Click="OnCycleTabClick" Foreground="White"/>
+                                    <MenuItem Header="切换分类标签" InputGesture="Tab" Click="OnCycleTabClick" Foreground="White"/>
+                                    <MenuItem Header="在访达中显示" InputGesture="Cmd+Enter" Click="OnOpenSelectedInFinderClick" Foreground="White"/>
+                                    <MenuItem Header="新建/编辑小程序" InputGesture="Cmd+E" Click="OnToggleEditorClick" Foreground="White"/>
                                     <Separator Background="#20FFFFFF"/>
-                                    <MenuItem Header="系统设置" InputGesture="Cmd+," Click="OnOpenSettingsClick" Foreground="White"/>
-                                    <MenuItem Header="管理/切换编辑器" InputGesture="Ctrl+K" Click="OnToggleEditorClick" Foreground="White"/>
+                                    <MenuItem Header="系统偏好设置..." InputGesture="Cmd+," Click="OnOpenSettingsClick" Foreground="White"/>
                                     <Separator Background="#20FFFFFF"/>
-                                    <MenuItem Header="退出应用" InputGesture="Cmd+Q" Click="OnExitClick" Foreground="White"/>
+                                    <MenuItem Header="退出燕子" InputGesture="Cmd+Q" Click="OnExitClick" Foreground="White"/>
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>
                     </StackPanel>
                     
-                    <!-- Keyboard shortcut hint -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                        <TextBlock Text="更多菜单" Foreground="#66FFFFFF" FontSize="11"/>
-                        <Border CornerRadius="4" Background="#1DFFFFFF" Padding="6,2">
-                            <TextBlock Text="Ctrl K" Foreground="#A0FFFFFF" FontSize="9.5" FontWeight="SemiBold"/>
-                        </Border>
+                    <!-- Operation hints (Middle & Right) -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Border CornerRadius="3" Background="#1DFFFFFF" Padding="4,1">
+                                <TextBlock Text="↵" Foreground="#A0FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                            <TextBlock Text="执行" Foreground="#66FFFFFF" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Border CornerRadius="3" Background="#1DFFFFFF" Padding="4,1">
+                                <TextBlock Text="⌘↵" Foreground="#A0FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                            <TextBlock Text="访达" Foreground="#66FFFFFF" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Border CornerRadius="3" Background="#1DFFFFFF" Padding="4,1">
+                                <TextBlock Text="Tab" Foreground="#A0FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                            <TextBlock Text="切换" Foreground="#66FFFFFF" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Border CornerRadius="3" Background="#1DFFFFFF" Padding="4,1">
+                                <TextBlock Text="⎋" Foreground="#A0FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            </Border>
+                            <TextBlock Text="关闭" Foreground="#66FFFFFF" FontSize="11"/>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
 
