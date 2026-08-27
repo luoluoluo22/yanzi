@@ -8,19 +8,34 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 
 REPO = "luoluoluo22/yanzi"
-TAG = "macos-v0.1.0"
-TITLE = "燕子 Yanzi for macOS v0.1.0"
-RELEASE_NOTES = """# 燕子 Yanzi for macOS v0.1.0 首发版本
+VERSION = "0.2.0"
+TAG = f"macos-v{VERSION}"
+TITLE = f"燕子 Yanzi for macOS v{VERSION}"
+RELEASE_NOTES = f"""# 燕子 Yanzi for macOS v{VERSION} 现代化升级版本
 
-**✨ 核心特性**
-- 【背包面板】支持鼠标右键长按呼出 12 槽位快捷背包，支持任意图标自由拖拽互换与排序。
-- 【智能搜索】支持在仓库与小程序选择器中通过全拼与拼音首字母（如 wx -> 微信, zd -> 终端, fd -> 访达）毫秒级检索。
-- 【小程序体系】内置常用系统动作（屏幕截图 ⌘⇧4、锁定屏幕 ⌘⌃Q、下载文件夹、废纸篓等），支持自定义 JSON 扩展与 AppleScript。
-- 【原生体验】高清 App 图标内存预热缓存，0 毫秒极速唤醒，图钉置顶状态持久化记忆。
+**✨ 核心更新与对齐特性**
+
+1. **🎨 深浅外观与色彩主题全面对齐**
+   - 完美适配 macOS 明亮浅色模式与暗黑深色模式，修复浅色模式下背包与卡片色彩对比度。
+   - 全局组件尺寸、圆角与排版严格遵循 Windows 标准规范。
+
+2. **🎒 背包（原鼠标面板）深度重构**
+   - 全面更名为「背包」，支持右键长按快速唤醒。
+   - 12 槽位图标支持自由拖拽排序与互换，点击空槽位默认直接唤起创建小程序向导。
+
+3. **🧩 小程序构建向导与 AI 生成双模式**
+   - **向导模式**：内置 6 大扩展类型（打开网址/程序、网页搜索、粘贴短语、AppleScript 脚本、Shell 终端、模拟按键）与丰富预设模板。
+   - **右侧实时预览区**：包含 48x48 实时外观卡片与名称、图标、分类、描述等即时属性配置。
+   - **AI 生成 / JSON 源码模式**：一键生成并复制大模型系统提示词，配备格式化、复制、查找与单处/全局替换工具栏及实时语法校验。
+
+4. **🔄 原生自动更新与多通道加速**
+   - 接入 GitHub Releases 自动版本检查与国内镜像加速下载（`ghfast.top`）。
+   - 支持后台分片下载与 macOS 原生原子无缝应用更新重启。
 
 ---
-- **安装包**：`Yanzi-macos-v0.1.0.dmg`（支持拖拽至 Applications 快捷安装）
-- **免安装压缩包**：`Yanzi-macos-v0.1.0.zip`
+
+- **安装镜像**：`Yanzi-macos-v{VERSION}.dmg`（拖拽至 Applications 即可安装）
+- **便携压缩包**：`Yanzi-macos-v{VERSION}.zip`
 """
 
 def main():
@@ -29,18 +44,20 @@ def main():
         token = sys.argv[1]
     
     if not token:
-        # Try reading from gh CLI if available
-        import subprocess
+        # Try reading from env.md if exists
         try:
-            res = subprocess.run(["/tmp/gh_2.98.0_macOS_amd64/bin/gh", "auth", "token"], capture_output=True, text=True)
-            if res.returncode == 0 and res.stdout.strip():
-                token = res.stdout.strip()
+            if os.path.exists("env.md"):
+                with open("env.md", "r", encoding="utf-8") as f:
+                    content = f.read()
+                    import re
+                    m = re.search(r"ghp_[a-zA-Z0-9]+", content)
+                    if m:
+                        token = m.group(0)
         except Exception:
             pass
 
     if not token:
-        print("ERROR: Please provide a GitHub Token via GITHUB_TOKEN env or as argument.")
-        print("Usage: python3 scripts/release_macos.py <YOUR_GITHUB_TOKEN>")
+        print("ERROR: GitHub Token not found. Please provide via GITHUB_TOKEN env or argument.")
         sys.exit(1)
 
     headers = {
@@ -73,7 +90,7 @@ def main():
         create_url = f"https://api.github.com/repos/{REPO}/releases"
         payload = {
             "tag_name": TAG,
-            "target_commitish": "main",
+            "target_commitish": "feature/mac-dev",
             "name": TITLE,
             "body": RELEASE_NOTES,
             "draft": False,
@@ -90,11 +107,30 @@ def main():
             release_id = data.get("id")
             upload_url_template = data.get("upload_url")
             print(f"Created new release successfully! ID: {release_id}")
+    else:
+        # Update existing release title and notes in UTF-8
+        print(f"Updating release notes for ID: {release_id}...")
+        patch_url = f"https://api.github.com/repos/{REPO}/releases/{release_id}"
+        patch_payload = {
+            "name": TITLE,
+            "body": RELEASE_NOTES
+        }
+        patch_req = urllib.request.Request(
+            patch_url,
+            data=json.dumps(patch_payload).encode("utf-8"),
+            headers=headers,
+            method="PATCH"
+        )
+        try:
+            with urllib.request.urlopen(patch_req) as resp:
+                print("Updated release metadata successfully.")
+        except Exception as e:
+            print(f"Warning: Failed to update release metadata: {e}")
 
     # 3. Upload assets
     assets = [
-        ("Yanzi-macos-v0.1.0.dmg", "application/x-apple-diskimage"),
-        ("Yanzi-macos-v0.1.0.zip", "application/zip")
+        (f"Yanzi-macos-v{VERSION}.dmg", "application/x-apple-diskimage"),
+        (f"Yanzi-macos-v{VERSION}.zip", "application/zip")
     ]
 
     base_upload_url = upload_url_template.split("{")[0]
@@ -104,7 +140,7 @@ def main():
             print(f"Warning: {asset_name} not found in current directory. Skipping.")
             continue
 
-        print(f"Uploading {asset_name}...")
+        print(f"Uploading {asset_name} ({os.path.getsize(asset_name) / (1024*1024):.1f} MB)...")
         upload_url = f"{base_upload_url}?name={urllib.parse.quote(asset_name)}"
         with open(asset_name, "rb") as f:
             file_data = f.read()
