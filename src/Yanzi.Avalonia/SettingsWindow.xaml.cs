@@ -8,6 +8,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
+using Yanzi.Platform.Mac;
 using Yanzi.Shared;
 
 namespace Yanzi.Avalonia;
@@ -119,6 +121,44 @@ public partial class SettingsWindow : Window
                 warningText.IsVisible = false;
             }
         }
+
+        // 7. Update UI
+        InitializeUpdateUI();
+    }
+
+    private void InitializeUpdateUI()
+    {
+        var verText = this.FindControl<TextBlock>("CurrentVersionText");
+        if (verText != null)
+        {
+            verText.Text = $"当前版本: v{MacUpdateService.Instance.CurrentVersion}";
+        }
+
+        var channelCombo = this.FindControl<ComboBox>("UpdateChannelCombo");
+        if (channelCombo != null)
+        {
+            channelCombo.SelectedIndex = MacUpdateService.Instance.CurrentChannel == UpdateChannelMode.Mirror ? 0 : 1;
+        }
+
+        MacUpdateService.Instance.StatusMessageChanged += msg =>
+        {
+            global::Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                var statusText = this.FindControl<TextBlock>("UpdateStatusText");
+                if (statusText != null) statusText.Text = msg;
+            });
+        };
+
+        MacUpdateService.Instance.DownloadProgressChanged += progress =>
+        {
+            global::Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                var pBar = this.FindControl<ProgressBar>("UpdateProgressBar");
+                var pPercent = this.FindControl<TextBlock>("UpdateProgressPercent");
+                if (pBar != null) pBar.Value = progress;
+                if (pPercent != null) pPercent.Text = $"{progress}%";
+            });
+        };
     }
 
     private void NavListBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -322,9 +362,104 @@ public partial class SettingsWindow : Window
         Close();
     }
 
-    private void CheckUpdate_Click(object? sender, RoutedEventArgs e)
+    private void UpdateChannelCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        ShowToast("✨ 当前已是最新版本 (v0.1.0)");
+        var combo = sender as ComboBox;
+        if (combo?.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+        {
+            MacUpdateService.Instance.CurrentChannel = tag == "Official" ? UpdateChannelMode.Official : UpdateChannelMode.Mirror;
+        }
+    }
+
+    private async void CheckUpdate_Click(object? sender, RoutedEventArgs e)
+    {
+        var checkBtn = this.FindControl<Button>("CheckUpdateBtn");
+        var downloadBtn = this.FindControl<Button>("DownloadUpdateBtn");
+        var notesCard = this.FindControl<Border>("ReleaseNotesCard");
+        var notesTitle = this.FindControl<TextBlock>("ReleaseNotesTitle");
+        var notesContent = this.FindControl<TextBlock>("ReleaseNotesContent");
+        var badge = this.FindControl<Border>("UpdateStatusBadge");
+        var statusText = this.FindControl<TextBlock>("UpdateStatusText");
+
+        if (checkBtn != null) checkBtn.IsEnabled = false;
+
+        var release = await MacUpdateService.Instance.CheckForUpdatesAsync();
+
+        if (checkBtn != null) checkBtn.IsEnabled = true;
+
+        if (release != null)
+        {
+            if (release.IsNewer)
+            {
+                if (badge != null)
+                {
+                    badge.Background = new SolidColorBrush(Color.Parse("#203B82F6"));
+                    badge.BorderBrush = new SolidColorBrush(Color.Parse("#FF3B82F6"));
+                }
+                if (statusText != null)
+                {
+                    statusText.Text = $"🎉 发现新版本: v{release.Version}";
+                    statusText.Foreground = new SolidColorBrush(Color.Parse("#FF3B82F6"));
+                }
+                if (downloadBtn != null) downloadBtn.IsVisible = true;
+                if (notesCard != null) notesCard.IsVisible = true;
+                if (notesTitle != null) notesTitle.Text = $"📝 新版本 v{release.Version} 更新日志";
+                if (notesContent != null) notesContent.Text = string.IsNullOrWhiteSpace(release.ReleaseNotes) ? "无详细更新说明" : release.ReleaseNotes;
+                ShowToast($"🎉 发现新版本 v{release.Version}！");
+            }
+            else
+            {
+                if (badge != null)
+                {
+                    badge.Background = new SolidColorBrush(Color.Parse("#1A22C55E"));
+                    badge.BorderBrush = new SolidColorBrush(Color.Parse("#FF22C55E"));
+                }
+                if (statusText != null)
+                {
+                    statusText.Text = $"🟢 当前已是最新版本 (v{MacUpdateService.Instance.CurrentVersion})";
+                    statusText.Foreground = new SolidColorBrush(Color.Parse("#FF22C55E"));
+                }
+                if (downloadBtn != null) downloadBtn.IsVisible = false;
+                if (notesCard != null) notesCard.IsVisible = false;
+                ShowToast($"✨ 当前已是最新版本 (v{MacUpdateService.Instance.CurrentVersion})");
+            }
+        }
+    }
+
+    private async void DownloadUpdate_Click(object? sender, RoutedEventArgs e)
+    {
+        var release = MacUpdateService.Instance.LatestRelease;
+        if (release == null) return;
+
+        var downloadBtn = this.FindControl<Button>("DownloadUpdateBtn");
+        var applyBtn = this.FindControl<Button>("ApplyUpdateBtn");
+        var progressContainer = this.FindControl<StackPanel>("UpdateProgressContainer");
+
+        if (downloadBtn != null) downloadBtn.IsEnabled = false;
+        if (progressContainer != null) progressContainer.IsVisible = true;
+
+        var downloadedPath = await MacUpdateService.Instance.DownloadUpdateAsync(release);
+
+        if (downloadBtn != null) downloadBtn.IsVisible = false;
+
+        if (!string.IsNullOrEmpty(downloadedPath))
+        {
+            if (applyBtn != null) applyBtn.IsVisible = true;
+            ShowToast("✅ 更新包下载完成！点击「安装并重启」立即生效");
+        }
+        else
+        {
+            if (downloadBtn != null) downloadBtn.IsEnabled = true;
+            ShowToast("⚠️ 更新包下载失败，请切换镜像通道重试");
+        }
+    }
+
+    private void ApplyUpdate_Click(object? sender, RoutedEventArgs e)
+    {
+        var path = MacUpdateService.Instance.DownloadedPackagePath;
+        if (string.IsNullOrEmpty(path)) return;
+
+        MacUpdateService.Instance.ApplyUpdateAndRestart(path);
     }
 
     private void OpenGitHub_Click(object? sender, RoutedEventArgs e)

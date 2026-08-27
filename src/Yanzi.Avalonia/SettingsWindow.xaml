@@ -341,21 +341,73 @@
                         </Border>
                     </StackPanel>
 
-                    <!-- 8. ABOUT PANEL -->
+                    <!-- 8. ABOUT & AUTO-UPDATE PANEL -->
                     <StackPanel Name="AboutPanel" Spacing="16" IsVisible="False">
+                        <!-- App Identity Card -->
                         <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="20">
-                            <StackPanel Spacing="12" HorizontalAlignment="Center">
-                                <Border Width="64" Height="64" CornerRadius="16" Background="{DynamicResource BrushAccent}" HorizontalAlignment="Center">
-                                    <Path Data="{local:VectorIcon settings}" Fill="White" Stretch="Uniform" Width="36" Height="36" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <StackPanel Spacing="10" HorizontalAlignment="Center">
+                                <Border Width="56" Height="56" CornerRadius="14" Background="{DynamicResource BrushAccent}" HorizontalAlignment="Center">
+                                    <Path Data="{local:VectorIcon settings}" Fill="White" Stretch="Uniform" Width="30" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                                 <TextBlock Text="燕子 (Yanzi) for macOS" Foreground="{DynamicResource BrushTextMain}" FontSize="17" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                <TextBlock Text="版本: v0.1.0 (Build 2026.08)" Foreground="{DynamicResource BrushTextSec}" FontSize="12" HorizontalAlignment="Center"/>
+                                <TextBlock Name="CurrentVersionText" Text="当前版本: v0.1.0" Foreground="{DynamicResource BrushTextSec}" FontSize="12" HorizontalAlignment="Center"/>
                                 
-                                <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,8,0,0">
-                                    <Button Content="检查更新..." Click="CheckUpdate_Click"/>
-                                    <Button Content="GitHub 仓库" Click="OpenGitHub_Click"/>
-                                    <Button Content="官方网站" Click="OpenWebsite_Click"/>
+                                <Border Name="UpdateStatusBadge" Background="#1A22C55E" BorderBrush="#FF22C55E" BorderThickness="1" CornerRadius="12" Padding="12,4" HorizontalAlignment="Center">
+                                    <TextBlock Name="UpdateStatusText" Text="🟢 已经是最新版本" Foreground="#FF22C55E" FontSize="11.5" FontWeight="Medium"/>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Auto-Update & Channel Configuration Card -->
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="自动更新与加速通道" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="更新下载通道" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="Medium"/>
+                                        <TextBlock Text="国内网络推荐使用镜像加速通道，体验高速下载" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                    </StackPanel>
+                                    <ComboBox Name="UpdateChannelCombo" Grid.Column="1" Width="170" SelectionChanged="UpdateChannelCombo_SelectionChanged" VerticalAlignment="Center">
+                                        <ComboBoxItem Content="国内镜像 (ghfast.top)" Tag="Mirror"/>
+                                        <ComboBoxItem Content="GitHub 官方直连" Tag="Official"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Rectangle Height="1" Fill="{DynamicResource BrushSeparator}"/>
+
+                                <!-- Action Buttons & Progress Bar -->
+                                <StackPanel Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                                            <Button Name="CheckUpdateBtn" Content="🔄 检查更新" Click="CheckUpdate_Click" Classes="primary" Padding="16,6"/>
+                                            <Button Name="DownloadUpdateBtn" Content="⬇️ 立即下载" Click="DownloadUpdate_Click" IsVisible="False" Classes="primary" Padding="16,6"/>
+                                            <Button Name="ApplyUpdateBtn" Content="🚀 安装并重启" Click="ApplyUpdate_Click" IsVisible="False" Classes="primary" Padding="16,6"/>
+                                        </StackPanel>
+
+                                        <Button Grid.Column="2" Content="GitHub 仓库" Click="OpenGitHub_Click" Margin="0,0,8,0" Padding="12,6"/>
+                                        <Button Grid.Column="3" Content="官方网站" Click="OpenWebsite_Click" Padding="12,6"/>
+                                    </Grid>
+
+                                    <!-- Progress Bar Container -->
+                                    <StackPanel Name="UpdateProgressContainer" Spacing="4" IsVisible="False">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Name="UpdateProgressLabel" Text="正在下载更新包..." Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                            <TextBlock Name="UpdateProgressPercent" Grid.Column="1" Text="0%" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="Bold"/>
+                                        </Grid>
+                                        <ProgressBar Name="UpdateProgressBar" Minimum="0" Maximum="100" Value="0" Height="6" CornerRadius="3" Foreground="{DynamicResource BrushAccent}"/>
+                                    </StackPanel>
                                 </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Release Notes / Changelog Container -->
+                        <Border Name="ReleaseNotesCard" Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16" IsVisible="False">
+                            <StackPanel Spacing="8">
+                                <TextBlock Name="ReleaseNotesTitle" Text="📝 新版本更新日志" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
+                                <ScrollViewer MaxHeight="140" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="10">
+                                    <TextBlock Name="ReleaseNotesContent" Text="" Foreground="{DynamicResource BrushTextSec}" FontSize="11.5" TextWrapping="Wrap"/>
+                                </ScrollViewer>
                             </StackPanel>
                         </Border>
                     </StackPanel>

@@ -69,6 +69,16 @@ public partial class App : Application
         WriteLog("App OnFrameworkInitializationCompleted: Invoking base...");
         base.OnFrameworkInitializationCompleted();
         WriteLog("App OnFrameworkInitializationCompleted: base invocation completed.");
+
+        // Silent background check for updates after 5 seconds
+        System.Threading.Tasks.Task.Delay(5000).ContinueWith(_ =>
+        {
+            try
+            {
+                MacUpdateService.Instance.CheckForUpdatesAsync().ConfigureAwait(false);
+            }
+            catch {}
+        });
     }
 
     private void CreateTrayIcon()
