@@ -1,129 +1,374 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Yanzi.Avalonia"
+        xmlns:shared="clr-namespace:Yanzi.Shared;assembly=Yanzi.Shared"
         x:Class="Yanzi.Avalonia.SettingsWindow"
-        Title="燕子启动器 - 设置"
-        Width="460"
-        Height="390"
-        SystemDecorations="None"
-        Background="#F0181818"
-        TransparencyLevelHint="Transparent"
-        TransparencyBackgroundFallback="Transparent"
-        ShowInTaskbar="True"
+        Title="燕子 - 偏好设置"
+        Width="880"
+        Height="620"
+        MinWidth="800"
+        MinHeight="520"
+        SystemDecorations="Full"
+        Background="{DynamicResource BrushWindowBG}"
         WindowStartupLocation="CenterScreen"
-        CanResize="False"
-        Focusable="True">
-    <Border CornerRadius="18"
-            BorderThickness="1"
-            BorderBrush="#2DFFFFFF"
-            Background="#F0181818"
-            Padding="24">
-        <DockPanel LastChildFill="True">
-            <!-- Header -->
-            <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,16">
-                <TextBlock Text="燕子启动器 - 设置"
-                           Foreground="White"
-                           FontSize="18"
-                           FontWeight="SemiBold"/>
-                <TextBlock Text="配置您的触发偏好与服务状态"
-                           Foreground="#99FFFFFF"
-                           FontSize="11"/>
-            </StackPanel>
-            
-            <!-- Bottom Buttons -->
-            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,16,0,0">
-                <Button Content="保存并应用" Click="Save_Click" Width="100" HorizontalContentAlignment="Center"/>
-                <Button Content="关闭" Click="Close_Click" Width="80" HorizontalContentAlignment="Center"/>
-            </StackPanel>
-            
-            <!-- Content -->
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="16">
-                    <!-- Service Status Section -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
-                        <DockPanel>
-                            <StackPanel Spacing="2" VerticalAlignment="Center">
-                                <TextBlock Text="服务运行状态" Foreground="White" FontSize="14" FontWeight="Medium"/>
-                                <TextBlock Text="启用或暂停全局触发服务" Foreground="#80FFFFFF" FontSize="10"/>
-                            </StackPanel>
-                            <ToggleSwitch x:Name="ServiceSwitch" OnContent="运行中" OffContent="已暂停" 
-                                           HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                        </DockPanel>
-                    </Border>
+        CanResize="True">
 
-                    <!-- System Permissions Section -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
-                        <DockPanel>
-                            <StackPanel Spacing="2" VerticalAlignment="Center">
-                                <TextBlock Text="macOS 系统权限管理" Foreground="White" FontSize="14" FontWeight="Medium"/>
-                                <TextBlock Text="检查辅助功能与输入监控授权，重新连接服务" Foreground="#80FFFFFF" FontSize="10"/>
-                            </StackPanel>
-                            <Button Content="查看与重新授权..." Click="OpenPermissionGuide_Click" 
-                                    HorizontalAlignment="Right" VerticalAlignment="Center"
-                                    FontSize="11" Padding="10,5"/>
-                        </DockPanel>
-                    </Border>
-                    
-                    <!-- General Settings Section -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="通用系统设置" Foreground="White" FontSize="14" FontWeight="Medium"/>
-                            <CheckBox x:Name="AutoStartCheck" Content="随系统开机自启动" Foreground="#E0FFFFFF"/>
+    <Grid ColumnDefinitions="210,*">
+        <!-- LEFT SIDEBAR -->
+        <Border Grid.Column="0" 
+                Background="{DynamicResource BrushSidebarBG}" 
+                BorderBrush="{DynamicResource BrushBorder}" 
+                BorderThickness="0,0,1,0"
+                Padding="12,16">
+            <DockPanel LastChildFill="True">
+                <!-- Sidebar Header -->
+                <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="8,4,8,18">
+                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <Border Width="32" Height="32" CornerRadius="8" Background="{DynamicResource BrushAccent}">
+                            <Path Data="{local:VectorIcon settings}" Fill="White" Stretch="Uniform" Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="燕子 Yanzi" Foreground="{DynamicResource BrushTextMain}" FontSize="14" FontWeight="Bold"/>
+                            <TextBlock Text="偏好设置中心" Foreground="{DynamicResource BrushTextSec}" FontSize="10.5"/>
                         </StackPanel>
-                    </Border>
-                    
-                    <!-- Launcher Hotkey Settings -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="仓库快捷键" Foreground="White" FontSize="14" FontWeight="Medium"/>
-                            <TextBlock Text="设置全局唤醒仓库的快捷键" Foreground="#80FFFFFF" FontSize="10"/>
-                            <TextBlock x:Name="AccessibilityWarning" 
-                                       Text="⚠️ 燕子启动器未获得 macOS 辅助功能 (Accessibility) 权限，快捷键可能不起作用。请在系统设置 -> 隐私与安全 -> 辅助功能 中启用它。" 
-                                       Foreground="#FFF87171" 
-                                       FontSize="10" 
-                                       TextWrapping="Wrap" 
-                                       Margin="0,4,0,0" 
-                                       IsVisible="False"/>
-                            
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <TextBox x:Name="LauncherHotkeyInput" Grid.Column="0" Watermark="例如: alt+space, cmd+space" Foreground="White" Background="#20000000" BorderBrush="#30FFFFFF" BorderThickness="1" CornerRadius="6" VerticalAlignment="Center" Padding="8,6"/>
-                                <Button x:Name="RecordButton" Grid.Column="1" Content="录制" Click="RecordHotkey_Click" Margin="8,0,0,0" Width="60" HorizontalContentAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Mouse Settings -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="鼠标右键触发" Foreground="White" FontSize="14" FontWeight="Medium"/>
-                            
-                            <CheckBox x:Name="RightLongPressCheck" Content="启用右键长按弹出背包" Foreground="#E0FFFFFF"/>
-                            <CheckBox x:Name="RightDragCheck" Content="启用右键拖拽弹出轮盘" Foreground="#E0FFFFFF"/>
-
-                            <DockPanel Margin="0,4,0,0">
-                                <StackPanel Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="右键长按时间 (毫秒)" Foreground="#E0FFFFFF" FontSize="12"/>
-                                    <TextBlock Text="建议 250~350ms，越短唤出越快" Foreground="#80FFFFFF" FontSize="10"/>
-                                </StackPanel>
-                                <NumericUpDown x:Name="LongPressThresholdInput" Minimum="100" Maximum="1500" Increment="20" FormatString="F0"
-                                               Width="120" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                            </DockPanel>
-                        </StackPanel>
-                    </Border>
-                    
-                    <!-- Fn + Slide Settings -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="Fn 键 + 触控板滑动触发" Foreground="White" FontSize="14" FontWeight="Medium"/>
-                            
-                            <DockPanel>
-                                <TextBlock Text="滑动触发距离 (像素)" Foreground="#E0FFFFFF" VerticalAlignment="Center"/>
-                                <NumericUpDown x:Name="DragThresholdInput" Minimum="5" Maximum="200" Increment="5" FormatString="F0"
-                                               Width="120" HorizontalAlignment="Right"/>
-                            </DockPanel>
-                        </StackPanel>
-                    </Border>
+                    </StackPanel>
                 </StackPanel>
+
+                <!-- Navigation ListBox -->
+                <ListBox Name="NavListBox"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         SelectionChanged="NavListBox_SelectionChanged">
+                    <ListBox.Styles>
+                        <Style Selector="ListBoxItem">
+                            <Setter Property="Padding" Value="10,8"/>
+                            <Setter Property="Margin" Value="0,2"/>
+                            <Setter Property="CornerRadius" Value="8"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                        </Style>
+                        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                            <Setter Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
+                        </Style>
+                        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                            <Setter Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}"/>
+                        </Style>
+                    </ListBox.Styles>
+
+                    <!-- Items -->
+                    <ListBoxItem Tag="general">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Path Data="{local:VectorIcon settings}" Fill="{DynamicResource BrushAccent}" Stretch="Uniform" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="常规设置" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+
+                    <ListBoxItem Tag="ai">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Path Data="{local:VectorIcon ai}" Fill="#FF8B5CF6" Stretch="Uniform" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="模型服务" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+
+                    <ListBoxItem Tag="env">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Path Data="{local:VectorIcon key}" Fill="#FF14B8A6" Stretch="Uniform" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="环境变量" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+
+                    <ListBoxItem Tag="sync">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Path Data="{local:VectorIcon sync}" Fill="#FF22C55E" Stretch="Uniform" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="同步与备份" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+
+                    <ListBoxItem Tag="extensions">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Path Data="{local:VectorIcon dashboard}" Fill="#FFF97316" Stretch="Uniform" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="小程序管理" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+
+                    <ListBoxItem Tag="mouse">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Path Data="{local:VectorIcon mouse}" Fill="#FFEC4899" Stretch="Uniform" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="鼠标与触控板" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+
+                    <ListBoxItem Tag="radial">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Path Data="{local:VectorIcon circle-outline}" Fill="{DynamicResource BrushAccent}" Stretch="Uniform" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="燕环轮盘" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+
+                    <ListBoxItem Tag="about">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Path Data="{local:VectorIcon info}" Fill="#FF60A5FA" Stretch="Uniform" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="关于燕子" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- RIGHT CONTENT AREA -->
+        <Border Grid.Column="1" Background="{DynamicResource BrushBG}" Padding="28,20">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <!-- Header Bar -->
+                <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,16">
+                    <TextBlock Name="SectionTitle" Text="常规设置" Foreground="{DynamicResource BrushTextMain}" FontSize="18" FontWeight="Bold"/>
+                    <TextBlock Name="SectionSubtitle" Text="配置燕子外观主题、开机自启与基础触发选项" Foreground="{DynamicResource BrushTextSec}" FontSize="11.5"/>
+                </StackPanel>
+
+            <!-- Main Scrollable Content Panel -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,14">
+                <Panel>
+                    <!-- 1. GENERAL PANEL -->
+                    <StackPanel Name="GeneralPanel" Spacing="16" IsVisible="True">
+                        <!-- Appearance Theme Card -->
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="深浅外观主题" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                    <TextBlock Text="选择明亮浅色、暗黑深色或自适应系统外观" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                </StackPanel>
+                                <ComboBox Name="ThemeModeCombo" Grid.Column="1" Width="130" SelectionChanged="ThemeModeCombo_SelectionChanged" VerticalAlignment="Center">
+                                    <ComboBoxItem Content="跟随系统" Tag="System"/>
+                                    <ComboBoxItem Content="深色模式" Tag="Dark"/>
+                                    <ComboBoxItem Content="浅色模式" Tag="Light"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
+                        <!-- Auto Start & Tray Options -->
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="系统行为" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="随 macOS 系统开机自启动" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <ToggleSwitch Name="AutoStartToggle" Grid.Column="1" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Rectangle Height="1" Fill="{DynamicResource BrushSeparator}"/>
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="启动时自动检查最新版本" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <ToggleSwitch Name="AutoCheckUpdateToggle" IsChecked="True" Grid.Column="1" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Rectangle Height="1" Fill="{DynamicResource BrushSeparator}"/>
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="关闭窗口时最小化保留在托盘" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <ToggleSwitch Name="CloseToTrayToggle" IsChecked="True" Grid.Column="1" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Launcher Hotkey -->
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="主启动器（仓库）快捷键" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                <TextBlock Text="全局唤醒与隐藏搜索启动框的按键组合" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                    <TextBox Name="LauncherHotkeyInput" Grid.Column="0" Watermark="例如: alt+space, cmd+space" Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="10,8"/>
+                                    <Button Name="RecordHotkeyBtn" Grid.Column="1" Content="录制按键" Click="RecordHotkey_Click" Margin="10,0,0,0" Width="80" HorizontalContentAlignment="Center"/>
+                                </Grid>
+
+                                <TextBlock Name="AccessibilityWarning" 
+                                           Text="⚠️ 未获得 macOS 辅助功能 (Accessibility) 权限，全局快捷键可能受限。请在系统设置 -> 隐私与安全 -> 辅助功能 中授予权限。" 
+                                           Foreground="#FFF87171" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" IsVisible="False"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Permissions Guide Button -->
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="macOS 系统权限诊断" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                    <TextBlock Text="检测辅助功能与输入监控授权状态并重新建立连接" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="权限检测与修复..." Click="OpenPermissionGuide_Click" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 2. AI SERVICES PANEL -->
+                    <StackPanel Name="AiPanel" Spacing="16" IsVisible="False">
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="AI 大模型提供商" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                <ComboBox Name="AiProviderCombo" Width="200" HorizontalAlignment="Left">
+                                    <ComboBoxItem Content="DeepSeek (推荐)" Tag="deepseek" IsSelected="True"/>
+                                    <ComboBoxItem Content="OpenAI" Tag="openai"/>
+                                    <ComboBoxItem Content="Claude (Anthropic)" Tag="claude"/>
+                                    <ComboBoxItem Content="Ollama (本地模型)" Tag="ollama"/>
+                                    <ComboBoxItem Content="自定义 OpenAI 兼容接口" Tag="custom"/>
+                                </ComboBox>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="API 配置信息" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="API 基础端点 (Base URL)" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                    <TextBox Name="AiBaseUrlInput" Text="https://api.deepseek.com/v1" Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                </StackPanel>
+
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="API 密钥 (API Key)" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                    <TextBox Name="AiApiKeyInput" PasswordChar="●" Watermark="sk-..." Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                </StackPanel>
+
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="默认模型名称" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                    <TextBox Name="AiModelInput" Text="deepseek-chat" Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                </StackPanel>
+
+                                <Button Content="测试连通性" Click="TestAiConnection_Click" HorizontalAlignment="Left" Width="100" HorizontalContentAlignment="Center" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 3. ENVIRONMENT PANEL -->
+                    <StackPanel Name="EnvPanel" Spacing="16" IsVisible="False">
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="全局自定义环境变量" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                <TextBlock Text="在此声明的环境变量将在所有小程序、AppleScript 及命令行执行环境中生效" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                
+                                <TextBox Name="EnvVariablesInput" AcceptsReturn="True" TextWrapping="Wrap" Height="140" Watermark="KEY=VALUE&#x0a;OPENAI_API_KEY=sk-...&#x0a;PATH=/usr/local/bin:$PATH" Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 4. SYNC PANEL -->
+                    <StackPanel Name="SyncPanel" Spacing="16" IsVisible="False">
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="云端账户与状态" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="当前状态: 已连接至云端同步" Foreground="#FF22C55E" FontSize="12.5" FontWeight="Medium"/>
+                                        <TextBlock Text="您的轮盘配置、自定义小程序及快捷短语已安全加密同步" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="立即同步" Click="ManualSync_Click" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 5. EXTENSIONS PANEL -->
+                    <StackPanel Name="ExtensionsPanel" Spacing="16" IsVisible="False">
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="小程序与短语扩展" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                <TextBlock Text="您可以在主启动器中按 Cmd+E 快速创建或修改自定义 AppleScript 小程序与短语" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                
+                                <Button Content="打开仓库并新建小程序 (Cmd+E)" Click="OpenLauncherEditor_Click" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 6. MOUSE & TOUCHPAD PANEL -->
+                    <StackPanel Name="MousePanel" Spacing="16" IsVisible="False">
+                        <!-- Right Click Long Press (QuickPanel) -->
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="鼠标右键长按弹出背包 (QuickPanel)" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                        <TextBlock Text="在任意界面按住右键指定时长后弹出九宫格快速工具背包" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                    </StackPanel>
+                                    <ToggleSwitch Name="RightLongPressToggle" Grid.Column="1" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Rectangle Height="1" Fill="{DynamicResource BrushSeparator}"/>
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="长按触发判定延迟 (毫秒)" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <NumericUpDown Name="LongPressThresholdInput" Grid.Column="1" Value="240" Minimum="100" Maximum="600" Increment="20" Width="100"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Right Click Drag (Radial) -->
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="鼠标右键划动呼出燕环 (Radial Menu)" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                        <TextBlock Text="按住右键并移动超出阈值后直接唤醒圆形轮盘菜单" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
+                                    </StackPanel>
+                                    <ToggleSwitch Name="RightDragToggle" Grid.Column="1" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Rectangle Height="1" Fill="{DynamicResource BrushSeparator}"/>
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="拖拽触发距离阈值 (像素)" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <NumericUpDown Name="DragThresholdInput" Grid.Column="1" Value="28" Minimum="10" Maximum="100" Increment="5" Width="100"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 7. RADIAL MENU PANEL -->
+                    <StackPanel Name="RadialPanel" Spacing="16" IsVisible="False">
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="燕环轮盘尺寸与动画" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="轮盘整体半径 (像素)" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <NumericUpDown Name="RadialRadiusInput" Grid.Column="1" Value="170" Minimum="120" Maximum="260" Increment="10" Width="100"/>
+                                </Grid>
+
+                                <Rectangle Height="1" Fill="{DynamicResource BrushSeparator}"/>
+
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="内圈 8 格 / 外圈 16 格双环布局" Foreground="{DynamicResource BrushTextMain}" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <ToggleSwitch Name="RadialDoubleRingToggle" IsChecked="True" Grid.Column="1" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 8. ABOUT PANEL -->
+                    <StackPanel Name="AboutPanel" Spacing="16" IsVisible="False">
+                        <Border Background="{DynamicResource BrushCardBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="20">
+                            <StackPanel Spacing="12" HorizontalAlignment="Center">
+                                <Border Width="64" Height="64" CornerRadius="16" Background="{DynamicResource BrushAccent}" HorizontalAlignment="Center">
+                                    <Path Data="{local:VectorIcon settings}" Fill="White" Stretch="Uniform" Width="36" Height="36" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="燕子 (Yanzi) for macOS" Foreground="{DynamicResource BrushTextMain}" FontSize="17" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                <TextBlock Text="版本: v0.1.0 (Build 2026.08)" Foreground="{DynamicResource BrushTextSec}" FontSize="12" HorizontalAlignment="Center"/>
+                                
+                                <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,8,0,0">
+                                    <Button Content="检查更新..." Click="CheckUpdate_Click"/>
+                                    <Button Content="GitHub 仓库" Click="OpenGitHub_Click"/>
+                                    <Button Content="官方网站" Click="OpenWebsite_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Panel>
             </ScrollViewer>
-        </DockPanel>
-    </Border>
+
+            <!-- Bottom Action Footer -->
+            <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
+                <TextBlock Name="StatusToast" Text="" Foreground="#FF22C55E" FontSize="12" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="保存并应用" Click="Save_Click" Width="110" HorizontalContentAlignment="Center" Background="{DynamicResource BrushAccent}" Foreground="White" Margin="0,0,10,0"/>
+                <Button Grid.Column="2" Content="关闭" Click="Close_Click" Width="80" HorizontalContentAlignment="Center"/>
+            </Grid>
+        </Grid>
+        </Border>
+    </Grid>
 </Window>

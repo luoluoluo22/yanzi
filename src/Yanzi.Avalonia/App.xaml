@@ -1,7 +1,58 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="Yanzi.Avalonia.App"
-             RequestedThemeVariant="Dark">
+             x:Class="Yanzi.Avalonia.App">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="BrushBG" Color="#FF161616"/>
+                    <SolidColorBrush x:Key="BrushWindowBG" Color="#F2141414"/>
+                    <SolidColorBrush x:Key="BrushSidebarBG" Color="#E61A1A1A"/>
+                    <SolidColorBrush x:Key="BrushCardBG" Color="#18FFFFFF"/>
+                    <SolidColorBrush x:Key="BrushBorder" Color="#28FFFFFF"/>
+                    <SolidColorBrush x:Key="BrushAccent" Color="#FF3B82F6"/>
+                    <SolidColorBrush x:Key="BrushAccentHover" Color="#FF2563EB"/>
+                    <SolidColorBrush x:Key="BrushAccentText" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="BrushTextMain" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="BrushTextSec" Color="#FF9CA3AF"/>
+                    <SolidColorBrush x:Key="BrushTextMuted" Color="#FF6B7280"/>
+                    <SolidColorBrush x:Key="BrushInputBG" Color="#20000000"/>
+                    <SolidColorBrush x:Key="BrushListViewItemSelectedBG" Color="#1E3B82F6"/>
+                    <SolidColorBrush x:Key="BrushListViewItemMouseOver" Color="#12FFFFFF"/>
+                    <SolidColorBrush x:Key="BrushSecondaryBtnBG" Color="#1FFFFFFF"/>
+                    <SolidColorBrush x:Key="BrushSecondaryBtnBorder" Color="#28FFFFFF"/>
+                    <SolidColorBrush x:Key="BrushSeparator" Color="#18FFFFFF"/>
+                    <SolidColorBrush x:Key="BrushRadialOuterBG" Color="#AA101010"/>
+                    <SolidColorBrush x:Key="BrushRadialInnerBG" Color="#CC101010"/>
+                    <SolidColorBrush x:Key="BrushRadialCenterBG" Color="#F2161616"/>
+                    <SolidColorBrush x:Key="BrushRadialSlotHover" Color="#1AFFFFFF"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="BrushBG" Color="#FFF9FAFB"/>
+                    <SolidColorBrush x:Key="BrushWindowBG" Color="#F5F9FAFB"/>
+                    <SolidColorBrush x:Key="BrushSidebarBG" Color="#E6F3F4F6"/>
+                    <SolidColorBrush x:Key="BrushCardBG" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="BrushBorder" Color="#FFE5E7EB"/>
+                    <SolidColorBrush x:Key="BrushAccent" Color="#FF2563EB"/>
+                    <SolidColorBrush x:Key="BrushAccentHover" Color="#FF1D4ED8"/>
+                    <SolidColorBrush x:Key="BrushAccentText" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="BrushTextMain" Color="#FF111827"/>
+                    <SolidColorBrush x:Key="BrushTextSec" Color="#FF4B5563"/>
+                    <SolidColorBrush x:Key="BrushTextMuted" Color="#FF9CA3AF"/>
+                    <SolidColorBrush x:Key="BrushInputBG" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="BrushListViewItemSelectedBG" Color="#202563EB"/>
+                    <SolidColorBrush x:Key="BrushListViewItemMouseOver" Color="#0D000000"/>
+                    <SolidColorBrush x:Key="BrushSecondaryBtnBG" Color="#FFF3F4F6"/>
+                    <SolidColorBrush x:Key="BrushSecondaryBtnBorder" Color="#FFE5E7EB"/>
+                    <SolidColorBrush x:Key="BrushSeparator" Color="#15000000"/>
+                    <SolidColorBrush x:Key="BrushRadialOuterBG" Color="#AAF3F4F6"/>
+                    <SolidColorBrush x:Key="BrushRadialInnerBG" Color="#CCF3F4F6"/>
+                    <SolidColorBrush x:Key="BrushRadialCenterBG" Color="#F2FFFFFF"/>
+                    <SolidColorBrush x:Key="BrushRadialSlotHover" Color="#1F000000"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
     <Application.Styles>
         <FluentTheme/>
     </Application.Styles>

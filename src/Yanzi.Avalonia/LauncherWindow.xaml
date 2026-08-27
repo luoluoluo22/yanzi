@@ -19,9 +19,9 @@
         WindowStartupLocation="CenterScreen"
         Deactivated="Window_Deactivated">
 
-    <Border Background="#E61A1A1A"
+    <Border Background="{DynamicResource BrushWindowBG}"
             CornerRadius="18"
-            BorderBrush="#2CFFFFFF"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1.5"
             ClipToBounds="True">
         <Border.BoxShadow>
@@ -62,23 +62,23 @@
                 </Border>
 
                 <!-- Search Container -->
-                <Border Grid.Row="2" Height="48" CornerRadius="12" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1.2" Padding="14,0" Margin="0,0,0,12">
+                <Border Grid.Row="2" Height="48" CornerRadius="12" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.2" Padding="14,0" Margin="0,0,0,12">
                     <Grid ColumnDefinitions="Auto,*,Auto">
                         <!-- Search Icon -->
-                        <Path Grid.Column="0" Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L19.71,19L18.3,20.41L13.03,15.14C11.9,16.1 10.42,16.7 8.5,16.7C3.8,16.7 0,12.9 0,8.2C0,3.5 3.8,0.2 8.5,0.2Z"
-                              Fill="#A0FFFFFF" Width="14" Height="14" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <Path Grid.Column="0" Data="{local:VectorIcon search}"
+                              Fill="{DynamicResource BrushTextSec}" Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,12,0"/>
                         
                         <!-- Search TextBox Input -->
                         <TextBox Grid.Column="1" Name="SearchInput"
                                  Text="{Binding SearchText, Mode=TwoWay}"
                                  Watermark="输入搜索内容，支持应用、文件、小程序..."
                                  Background="Transparent" BorderThickness="0"
-                                 Foreground="White" FontSize="15" FontWeight="Normal"
-                                 VerticalAlignment="Center" CaretBrush="White"/>
+                                 Foreground="{DynamicResource BrushTextMain}" FontSize="15" FontWeight="Normal"
+                                 VerticalAlignment="Center"/>
                         
                         <!-- Execution Arrow Button -->
                         <Button Grid.Column="2" Width="28" Height="28" Background="Transparent" BorderThickness="0" CornerRadius="6" Command="{Binding ExecuteSelectedCommand}" VerticalAlignment="Center">
-                            <Path Data="M5,12L12,5L19,12M12,5V19" Fill="#A0FFFFFF" Width="12" Height="12" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Path Data="{local:VectorIcon arrow-right}" Fill="{DynamicResource BrushTextSec}" Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
                     </Grid>
                 </Border>
