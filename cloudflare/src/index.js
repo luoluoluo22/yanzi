@@ -5440,106 +5440,134 @@ async function seedWishWallData(env) {
 
   // 1. 插入排行榜种子
   await env.DB.batch([
-    env.DB.prepare("INSERT OR IGNORE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+    env.DB.prepare("INSERT OR REPLACE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .bind("seed_u1", "燕子核心工坊", 320, 2, 6, now),
-    env.DB.prepare("INSERT OR IGNORE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+    env.DB.prepare("INSERT OR REPLACE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .bind("seed_u2", "极客阿杰", 210, 1, 4, now),
-    env.DB.prepare("INSERT OR IGNORE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+    env.DB.prepare("INSERT OR REPLACE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .bind("seed_u3", "云端筑梦师", 185, 3, 3, now),
-    env.DB.prepare("INSERT OR IGNORE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+    env.DB.prepare("INSERT OR REPLACE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .bind("seed_u4", "星野代码", 120, 1, 2, now),
-    env.DB.prepare("INSERT OR IGNORE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+    env.DB.prepare("INSERT OR REPLACE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .bind("seed_u5", "字节效率官", 95, 2, 1, now),
-    env.DB.prepare("INSERT OR IGNORE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+    env.DB.prepare("INSERT OR REPLACE INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .bind("seed_u6", "小燕飞飞", 65, 4, 0, now)
   ]);
 
   // 2. 插入种子心愿与方案回复
+  const insertWish = env.DB.prepare(`
+    INSERT OR REPLACE INTO wishes (id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertReply = env.DB.prepare(`
+    INSERT OR REPLACE INTO wish_replies (id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
   // 心愿 1: 表格转 Markdown
   const w1_id = "wsh_table_md";
   const r1_id = "rep_table_md";
-  await env.DB.prepare(`
-    INSERT INTO wishes (id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at)
-    VALUES (?, 'seed_u6', '小燕飞飞', 'Excel / 网页表格一键转 Markdown 表格与精致卡片', '经常需要把网页或 Excel 里的表格发给同事，希望选中文本后燕选或轮盘一键转换成标准的 Markdown Table，或者直接生成居中对齐的纯文本表格。', '办公提效', 'accepted', ?, 50, 1, ?, ?)
-  `).bind(w1_id, r1_id, d5, d5).run();
+  await insertWish.bind(
+    w1_id, "seed_u6", "小燕飞飞", "Excel / 网页表格一键转 Markdown 表格与精致卡片",
+    "经常需要把网页或 Excel 里的表格发给同事，希望选中文本后燕选或轮盘一键转换成标准的 Markdown Table，或者直接生成居中对齐的纯文本表格。",
+    "办公提效", "accepted", r1_id, 50, 1, d5, d5
+  ).run();
 
-  await env.DB.prepare(`
-    INSERT INTO wish_replies (id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at)
-    VALUES (?, ?, 'seed_u2', '极客阿杰', '已经写好了一个轻量级的 C# 正则换行解析小程序，支持制表符 \\t 与空格智能对齐，粘贴即可转为标准 Markdown！', '// 燕子 C# 小程序: 剪贴板表格转 Markdown\nusing System.Text;\nusing System.Text.RegularExpressions;\n\nstring text = Context.GetSelectedText();\nif (string.IsNullOrWhiteSpace(text)) return;\n\nvar lines = text.Split(new[] { \'\\r\', \'\\n\' }, StringSplitOptions.RemoveEmptyEntries);\nvar sb = new StringBuilder();\nfor (int i = 0; i < lines.Length; i++) {\n    var cells = Regex.Split(lines[i], @"\\t+|\\s{2,}");\n    sb.AppendLine("| " + string.Join(" | ", cells) + " |");\n    if (i == 0) {\n        sb.AppendLine("| " + string.Join(" | ", cells.Select(_ => "---")) + " |");\n    }\n}\nContext.SetClipboardText(sb.ToString());\nContext.ShowToast("表格已转换为 Markdown 并复制到剪贴板！");', 1, d5)
-  `).bind(r1_id, w1_id).run();
+  await insertReply.bind(
+    r1_id, w1_id, "seed_u2", "极客阿杰",
+    "已经写好了一个轻量级的 C# 正则换行解析小程序，支持制表符 \\t 与空格智能对齐，粘贴即可转为标准 Markdown！",
+    "// 燕子 C# 小程序: 剪贴板表格转 Markdown\nusing System.Text;\nusing System.Text.RegularExpressions;\n\nstring text = Context.GetSelectedText();\nif (string.IsNullOrWhiteSpace(text)) return;\n\nvar lines = text.Split(new[] { '\\r', '\\n' }, StringSplitOptions.RemoveEmptyEntries);\nvar sb = new StringBuilder();\nfor (int i = 0; i < lines.Length; i++) {\n    var cells = Regex.Split(lines[i], @\"\\t+|\\s{2,}\");\n    sb.AppendLine(\"| \" + string.Join(\" | \", cells) + \" |\");\n    if (i == 0) {\n        sb.AppendLine(\"| \" + string.Join(\" | \", cells.Select(_ => \"---\")) + \" |\");\n    }\n}\nContext.SetClipboardText(sb.ToString());\nContext.ShowToast(\"表格已转换为 Markdown 并复制到剪贴板！\");",
+    1, d5
+  ).run();
 
   // 心愿 2: JSON 格式化
   const w2_id = "wsh_json_fmt";
   const r2_id = "rep_json_fmt";
-  await env.DB.prepare(`
-    INSERT INTO wishes (id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at)
-    VALUES (?, 'seed_u4', '晨曦代码', '剪贴板 JSON 一键格式化、压缩并校验语法', '复制一段压缩或混乱的 JSON 字符串后，一划即直达美化排版，如果格式错误能标出错误行号并弹窗提示。', '开发编程', 'accepted', ?, 50, 1, ?, ?)
-  `).bind(w2_id, r2_id, d4, d4).run();
+  await insertWish.bind(
+    w2_id, "seed_u4", "晨曦代码", "剪贴板 JSON 一键格式化、压缩并校验语法",
+    "复制一段压缩或混乱的 JSON 字符串后，一划即直达美化排版，如果格式错误能标出错误行号并弹窗提示。",
+    "开发编程", "accepted", r2_id, 50, 1, d4, d4
+  ).run();
 
-  await env.DB.prepare(`
-    INSERT INTO wish_replies (id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at)
-    VALUES (?, ?, 'seed_u3', '云端筑梦师', '采用 .NET System.Text.Json 高性能解析，支持 2 空格美化与单行压缩双模式切换。', '// JSON 格式化与语法校验小程序\nusing System.Text.Json;\n\ntry {\n    string input = Context.GetClipboardText();\n    using var doc = JsonDocument.Parse(input);\n    string formatted = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });\n    Context.SetClipboardText(formatted);\n    Context.ShowToast("JSON 格式化成功！");\n} catch (Exception ex) {\n    Context.ShowToast("JSON 格式错误: " + ex.Message);\n}', 1, d4)
-  `).bind(r2_id, w2_id).run();
+  await insertReply.bind(
+    r2_id, w2_id, "seed_u3", "云端筑梦师",
+    "采用 .NET System.Text.Json 高性能解析，支持 2 空格美化与单行压缩双模式切换。",
+    "// JSON 格式化与语法校验小程序\nusing System.Text.Json;\n\ntry {\n    string input = Context.GetClipboardText();\n    using var doc = JsonDocument.Parse(input);\n    string formatted = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });\n    Context.SetClipboardText(formatted);\n    Context.ShowToast(\"JSON 格式化成功！\");\n} catch (Exception ex) {\n    Context.ShowToast(\"JSON 格式错误: \" + ex.Message);\n}",
+    1, d4
+  ).run();
 
   // 心愿 3: 桌面临时截图归档
   const w3_id = "wsh_clean_desktop";
   const r3_id = "rep_clean_desktop";
-  await env.DB.prepare(`
-    INSERT INTO wishes (id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at)
-    VALUES (?, 'seed_u5', '设计喵', '一键清理 Windows 桌面临时截图并按月份自动归档', '桌面总是一堆微信截图和系统截屏（Screenshot_ 开头或微信截图.png），希望一键归档到 文档/截图归档/2026-08/，保持桌面清爽干净。', '系统工具', 'answered', NULL, 50, 1, ?, ?)
-  `).bind(w3_id, d3, d3).run();
+  await insertWish.bind(
+    w3_id, "seed_u5", "设计喵", "一键清理 Windows 桌面临时截图并按月份自动归档",
+    "桌面总是一堆微信截图和系统截屏（Screenshot_ 开头或微信截图.png），希望一键归档到 文档/截图归档/2026-08/，保持桌面清爽干净。",
+    "系统工具", "answered", null, 50, 1, d3, d3
+  ).run();
 
-  await env.DB.prepare(`
-    INSERT INTO wish_replies (id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at)
-    VALUES (?, ?, 'seed_u4', '星野代码', '提供了一个安全归档脚本，自动扫描桌面截图匹配模式并安全移动，遇到同名自动加序号。', '// 桌面截图智能归档小程序\nstring desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);\nstring archiveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "截图归档", DateTime.Now.ToString("yyyy-MM"));\nDirectory.CreateDirectory(archiveDir);\n\nvar files = Directory.GetFiles(desktop, "*.*")\n    .Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase))\n    .Where(f => Path.GetFileName(f).StartsWith("Screenshot") || Path.GetFileName(f).Contains("截图"));\n\nint count = 0;\nforeach (var file in files) {\n    string dest = Path.Combine(archiveDir, Path.GetFileName(file));\n    File.Move(file, dest);\n    count++;\n}\nContext.ShowToast($"已成功归档 {count} 张桌面截图！");', 0, d3)
-  `).bind(r3_id, w3_id).run();
+  await insertReply.bind(
+    r3_id, w3_id, "seed_u4", "星野代码",
+    "提供了一个安全归档脚本，自动扫描桌面截图匹配模式并安全移动，遇到同名自动加序号。",
+    "// 桌面截图智能归档小程序\nstring desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);\nstring archiveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), \"截图归档\", DateTime.Now.ToString(\"yyyy-MM\"));\nDirectory.CreateDirectory(archiveDir);\n\nvar files = Directory.GetFiles(desktop, \"*.*\")\n    .Where(f => f.EndsWith(\".png\", StringComparison.OrdinalIgnoreCase) || f.EndsWith(\".jpg\", StringComparison.OrdinalIgnoreCase))\n    .Where(f => Path.GetFileName(f).StartsWith(\"Screenshot\") || Path.GetFileName(f).Contains(\"截图\"));\n\nint count = 0;\nforeach (var file in files) {\n    string dest = Path.Combine(archiveDir, Path.GetFileName(file));\n    File.Move(file, dest);\n    count++;\n}\nContext.ShowToast($\"已成功归档 {count} 张桌面截图！\");",
+    0, d3
+  ).run();
 
   // 心愿 4: 屏幕取色拾色器
   const w4_id = "wsh_color_picker";
   const r4_id = "rep_color_picker";
-  await env.DB.prepare(`
-    INSERT INTO wishes (id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at)
-    VALUES (?, 'seed_u6', 'UI设计大白', '屏幕实时拾色器，自动复制 HEX / RGB / HSL 并发声提示', '鼠标移动到屏幕任意像素点，长按轮盘或快捷键取色并复制到剪贴板，支持在 HEX(#3b82f6) 和 rgba(59,130,246,1) 格式之间灵活切换。', '办公提效', 'accepted', ?, 50, 1, ?, ?)
-  `).bind(w4_id, r4_id, d2, d2).run();
+  await insertWish.bind(
+    w4_id, "seed_u6", "UI设计大白", "屏幕实时拾色器，自动复制 HEX / RGB / HSL 并发声提示",
+    "鼠标移动到屏幕任意像素点，长按轮盘或快捷键取色并复制到剪贴板，支持在 HEX(#3b82f6) 和 rgba(59,130,246,1) 格式之间灵活切换。",
+    "办公提效", "accepted", r4_id, 50, 1, d2, d2
+  ).run();
 
-  await env.DB.prepare(`
-    INSERT INTO wish_replies (id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at)
-    VALUES (?, ?, 'seed_u1', '燕子核心工坊', '已封装基于 GDI+ GetPixel 的毫秒级拾色小程序，并支持色值转换与音效反馈！', '// 屏幕拾色取色器\nvar pos = Context.GetCursorPosition();\nusing var bmp = new Bitmap(1, 1);\nusing var g = Graphics.FromImage(bmp);\ng.CopyFromScreen(pos.X, pos.Y, 0, 0, new Size(1, 1));\nColor color = bmp.GetPixel(0, 0);\n\nstring hex = $"#{color.R:X2}{color.G:X2}{color.B:X2}";\nContext.SetClipboardText(hex);\nContext.ShowToast($"🎨 已获取颜色: {hex}");', 1, d2)
-  `).bind(r4_id, w4_id).run();
+  await insertReply.bind(
+    r4_id, w4_id, "seed_u1", "燕子核心工坊",
+    "已封装基于 GDI+ GetPixel 的毫秒级拾色小程序，并支持色值转换与音效反馈！",
+    "// 屏幕拾色取色器\nvar pos = Context.GetCursorPosition();\nusing var bmp = new Bitmap(1, 1);\nusing var g = Graphics.FromImage(bmp);\ng.CopyFromScreen(pos.X, pos.Y, 0, 0, new Size(1, 1));\nColor color = bmp.GetPixel(0, 0);\n\nstring hex = $\"#{color.R:X2}{color.G:X2}{color.B:X2}\";\nContext.SetClipboardText(hex);\nContext.ShowToast($\"🎨 已获取颜色: {hex}\");",
+    1, d2
+  ).run();
 
   // 心愿 5: 选中文本字数统计
   const w5_id = "wsh_word_count";
-  await env.DB.prepare(`
-    INSERT INTO wishes (id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at)
-    VALUES (?, 'seed_u6', '文字旅人', '选中文本字数统计、阅读时长预估与敏感词筛查', '写文章和公众号文案时，划选文本立刻展示中文字数、英文词数、段落数、代码行数以及预估朗读时间。', '文本处理', 'open', NULL, 50, 0, ?, ?)
-  `).bind(w5_id, d1, d1).run();
+  await insertWish.bind(
+    w5_id, "seed_u6", "文字旅人", "选中文本字数统计、阅读时长预估与敏感词筛查",
+    "写文章和公众号文案时，划选文本立刻展示中文字数、英文词数、段落数、代码行数以及预估朗读时间。",
+    "文本处理", "open", null, 50, 0, d1, d1
+  ).run();
 
   // 心愿 6: 临时二维码
   const w6_id = "wsh_qr_code";
   const r6_id = "rep_qr_code";
-  await env.DB.prepare(`
-    INSERT INTO wishes (id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at)
-    VALUES (?, 'seed_u3', '跨端达人', '一键生成当前选中文本或网址的临时二维码，手机燕子扫码直传背包', '电脑上看到的好文章、下载链接或 Wi-Fi 密码，一键在屏幕中央弹出高对比度二维码，手机端燕子扫一扫瞬间接收进随身背包。', '办公提效', 'accepted', ?, 50, 1, ?, ?)
-  `).bind(w6_id, r6_id, d1, d1).run();
+  await insertWish.bind(
+    w6_id, "seed_u3", "跨端达人", "一键生成当前选中文本或网址的临时二维码，手机燕子扫码直传背包",
+    "电脑上看到的好文章、下载链接或 Wi-Fi 密码，一键在屏幕中央弹出高对比度二维码，手机端燕子扫一扫瞬间接收进随身背包。",
+    "办公提效", "accepted", r6_id, 50, 1, d1, d1
+  ).run();
 
-  await env.DB.prepare(`
-    INSERT INTO wish_replies (id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at)
-    VALUES (?, ?, 'seed_u1', '燕子核心工坊', '集成轻量纯 C# 二维码渲染器，无需任何第三方 DLL 依赖，0.01 秒极速展示！', '// 纯原生二维码生成小程序\nstring content = Context.GetSelectedText() ?? Context.GetClipboardText();\nif (string.IsNullOrWhiteSpace(content)) return;\n\nContext.ShowQrCodeDialog(content, "扫码直传燕子手机版");', 1, d1)
-  `).bind(r6_id, w6_id).run();
+  await insertReply.bind(
+    r6_id, w6_id, "seed_u1", "燕子核心工坊",
+    "集成轻量纯 C# 二维码渲染器，无需任何第三方 DLL 依赖，0.01 秒极速展示！",
+    "// 纯原生二维码生成小程序\nstring content = Context.GetSelectedText() ?? Context.GetClipboardText();\nif (string.IsNullOrWhiteSpace(content)) return;\n\nContext.ShowQrCodeDialog(content, \"扫码直传燕子手机版\");",
+    1, d1
+  ).run();
 
   // 心愿 7: 内存释放工具 (征集中)
   const w7_id = "wsh_mem_cleaner";
-  await env.DB.prepare(`
-    INSERT INTO wishes (id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at)
-    VALUES (?, 'seed_u2', '硬核玩家', 'Windows 待机内存与未释放工作集一键整理小工具', '打完大型 3A 游戏或跑完大型编译后内存占用居高不下，希望有个极简小程序调用 SetProcessWorkingSetSize 释放无用内存。', '系统工具', 'open', NULL, 50, 0, ?, ?)
-  `).bind(w7_id, now, now).run();
+  await insertWish.bind(
+    w7_id, "seed_u2", "硬核玩家", "Windows 待机内存与未释放工作集一键整理小工具",
+    "打完大型 3A 游戏或跑完大型编译后内存占用居高不下，希望有个极简小程序调用 SetProcessWorkingSetSize 释放无用内存。",
+    "系统工具", "open", null, 50, 0, now, now
+  ).run();
 
   // 心愿 8: 视频高清封面提取 (征集中)
   const w8_id = "wsh_video_cover";
-  await env.DB.prepare(`
-    INSERT INTO wishes (id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at)
-    VALUES (?, 'seed_u5', '剪辑师阿伟', '复制 B 站 / YouTube 视频链接一键提取 4K 最高清封面', '剪贴板只要有视频链接，一键调用开放接口提取官方上传的最高分辨率封面原图并自动保存到下载目录。', '媒体影音', 'open', NULL, 50, 0, ?, ?)
-  `).bind(w8_id, now, now).run();
+  await insertWish.bind(
+    w8_id, "seed_u5", "剪辑师阿伟", "复制 B 站 / YouTube 视频链接一键提取 4K 最高清封面",
+    "剪贴板只要有视频链接，一键调用开放接口提取官方上传的最高分辨率封面原图并自动保存到下载目录。",
+    "媒体影音", "open", null, 50, 0, now, now
+  ).run();
 }
 
 async function addPoints(env, userId, username, amount, actionType, description, referenceId = null) {
@@ -5611,8 +5639,8 @@ async function listWishes(env, { status = "all", category = "all", search = "", 
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const countSql = `SELECT COUNT(*) as total FROM wishes ${whereClause}`;
-  const totalRow = await env.DB.prepare(countSql).bind(...bindings).first();
-  const total = totalRow?.total || 0;
+  let totalRow = await env.DB.prepare(countSql).bind(...bindings).first();
+  let total = totalRow?.total || 0;
 
   const offset = (page - 1) * limit;
   const listSql = `
@@ -5624,7 +5652,15 @@ async function listWishes(env, { status = "all", category = "all", search = "", 
       created_at DESC
     LIMIT ? OFFSET ?
   `;
-  const { results: wishes } = await env.DB.prepare(listSql).bind(...bindings, limit, offset).all();
+  let { results: wishes } = await env.DB.prepare(listSql).bind(...bindings, limit, offset).all();
+
+  if ((!wishes || wishes.length === 0) && status === "all" && category === "all" && !search) {
+    await seedWishWallData(env).catch(() => {});
+    totalRow = await env.DB.prepare(countSql).bind(...bindings).first();
+    total = totalRow?.total || 0;
+    const retry = await env.DB.prepare(listSql).bind(...bindings, limit, offset).all();
+    wishes = retry.results || [];
+  }
 
   return { wishes: wishes || [], total, page, limit };
 }
