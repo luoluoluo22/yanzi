@@ -100,12 +100,12 @@
                             <Setter Property="BorderBrush" Value="Transparent"/>
                         </Style>
                         <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
-                            <Setter Property="Background" Value="#10FFFFFF"/>
-                            <Setter Property="BorderBrush" Value="#15FFFFFF"/>
+                            <Setter Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
+                            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}"/>
                         </Style>
                         <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                            <Setter Property="Background" Value="#1A3B82F6"/>
-                            <Setter Property="BorderBrush" Value="#FF3B82F6"/>
+                            <Setter Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}"/>
+                            <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}"/>
                         </Style>
                     </ListBox.Styles>
 
@@ -130,16 +130,16 @@
                                     <!-- Middle Details -->
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13.5" FontWeight="SemiBold"/>
-                                            <Border CornerRadius="6" Background="#20FFFFFF" Padding="6,2">
-                                                <TextBlock Text="{Binding KindText}" Foreground="#A0FFFFFF" FontSize="9"/>
+                                            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold"/>
+                                            <Border CornerRadius="6" Background="{DynamicResource BrushSecondaryBtnBG}" Padding="6,2">
+                                                <TextBlock Text="{Binding KindText}" Foreground="{DynamicResource BrushTextSec}" FontSize="9"/>
                                             </Border>
                                         </StackPanel>
-                                        <TextBlock Text="{Binding Subtitle}" Foreground="#88FFFFFF" FontSize="11" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,2,0,0"/>
                                     </StackPanel>
 
                                     <!-- Right aligned kind category indicator -->
-                                    <TextBlock Grid.Column="2" Text="{Binding CategoryText}" Foreground="#55FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding CategoryText}" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 </Grid>
                             </Border>
                         </DataTemplate>
@@ -150,21 +150,21 @@
                 <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Height="30" VerticalAlignment="Center">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
                         <!-- Add Button '+' -->
-                        <Button Width="26" Height="26" Background="#1DFFFFFF" BorderThickness="0" CornerRadius="13" Command="{Binding ToggleEditorCommand}" ToolTip.Tip="新建自定义小程序 (Cmd+E)">
-                            <TextBlock Text="＋" Foreground="White" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Button Width="26" Height="26" Background="{DynamicResource BrushSecondaryBtnBG}" BorderThickness="0" CornerRadius="13" Command="{Binding ToggleEditorCommand}" ToolTip.Tip="新建自定义小程序 (Cmd+E)">
+                            <TextBlock Text="＋" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
                         <!-- Menu '≡' Button -->
-                        <Button Width="26" Height="26" Background="#1DFFFFFF" BorderThickness="0" CornerRadius="6" Click="OnMenuButtonClick">
-                            <TextBlock Text="≡" Foreground="White" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Button Width="26" Height="26" Background="{DynamicResource BrushSecondaryBtnBG}" BorderThickness="0" CornerRadius="6" Click="OnMenuButtonClick">
+                            <TextBlock Text="≡" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             <Button.ContextMenu>
-                                <ContextMenu Name="MainMenu" Background="#F01C1C1C" BorderBrush="#30FFFFFF" BorderThickness="1" CornerRadius="10">
-                                    <MenuItem Header="切换分类标签" InputGesture="Tab" Click="OnCycleTabClick" Foreground="White"/>
-                                    <MenuItem Header="在访达中显示" InputGesture="Cmd+Enter" Click="OnOpenSelectedInFinderClick" Foreground="White"/>
-                                    <MenuItem Header="新建/编辑小程序" InputGesture="Cmd+E" Click="OnToggleEditorClick" Foreground="White"/>
-                                    <Separator Background="#20FFFFFF"/>
-                                    <MenuItem Header="系统偏好设置..." InputGesture="Cmd+," Click="OnOpenSettingsClick" Foreground="White"/>
-                                    <Separator Background="#20FFFFFF"/>
-                                    <MenuItem Header="退出燕子" InputGesture="Cmd+Q" Click="OnExitClick" Foreground="White"/>
+                                <ContextMenu Name="MainMenu" Background="{DynamicResource BrushWindowBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10">
+                                    <MenuItem Header="切换分类标签" InputGesture="Tab" Click="OnCycleTabClick" Foreground="{DynamicResource BrushTextMain}"/>
+                                    <MenuItem Header="在访达中显示" InputGesture="Cmd+Enter" Click="OnOpenSelectedInFinderClick" Foreground="{DynamicResource BrushTextMain}"/>
+                                    <MenuItem Header="新建/编辑小程序" InputGesture="Cmd+E" Click="OnToggleEditorClick" Foreground="{DynamicResource BrushTextMain}"/>
+                                    <Separator Background="{DynamicResource BrushSeparator}"/>
+                                    <MenuItem Header="系统偏好设置..." InputGesture="Cmd+," Click="OnOpenSettingsClick" Foreground="{DynamicResource BrushTextMain}"/>
+                                    <Separator Background="{DynamicResource BrushSeparator}"/>
+                                    <MenuItem Header="退出燕子" InputGesture="Cmd+Q" Click="OnExitClick" Foreground="{DynamicResource BrushTextMain}"/>
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>
@@ -173,44 +173,43 @@
                     <!-- Operation hints (Middle & Right) -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,0,8,0">
                         <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <Border CornerRadius="3" Background="#1DFFFFFF" Padding="4,1">
-                                <TextBlock Text="↵" Foreground="#A0FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            <Border CornerRadius="3" Background="{DynamicResource BrushSecondaryBtnBG}" Padding="4,1">
+                                <TextBlock Text="↵" Foreground="{DynamicResource BrushTextSec}" FontSize="10" FontWeight="SemiBold"/>
                             </Border>
-                            <TextBlock Text="执行" Foreground="#66FFFFFF" FontSize="11"/>
+                            <TextBlock Text="执行" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <Border CornerRadius="3" Background="#1DFFFFFF" Padding="4,1">
-                                <TextBlock Text="⌘↵" Foreground="#A0FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            <Border CornerRadius="3" Background="{DynamicResource BrushSecondaryBtnBG}" Padding="4,1">
+                                <TextBlock Text="⌘↵" Foreground="{DynamicResource BrushTextSec}" FontSize="10" FontWeight="SemiBold"/>
                             </Border>
-                            <TextBlock Text="访达" Foreground="#66FFFFFF" FontSize="11"/>
+                            <TextBlock Text="访达" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <Border CornerRadius="3" Background="#1DFFFFFF" Padding="4,1">
-                                <TextBlock Text="Tab" Foreground="#A0FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            <Border CornerRadius="3" Background="{DynamicResource BrushSecondaryBtnBG}" Padding="4,1">
+                                <TextBlock Text="Tab" Foreground="{DynamicResource BrushTextSec}" FontSize="10" FontWeight="SemiBold"/>
                             </Border>
-                            <TextBlock Text="切换" Foreground="#66FFFFFF" FontSize="11"/>
+                            <TextBlock Text="切换" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <Border CornerRadius="3" Background="#1DFFFFFF" Padding="4,1">
-                                <TextBlock Text="⎋" Foreground="#A0FFFFFF" FontSize="10" FontWeight="SemiBold"/>
+                            <Border CornerRadius="3" Background="{DynamicResource BrushSecondaryBtnBG}" Padding="4,1">
+                                <TextBlock Text="⎋" Foreground="{DynamicResource BrushTextSec}" FontSize="10" FontWeight="SemiBold"/>
                             </Border>
-                            <TextBlock Text="关闭" Foreground="#66FFFFFF" FontSize="11"/>
+                            <TextBlock Text="关闭" Foreground="{DynamicResource BrushTextSec}" FontSize="11"/>
                         </StackPanel>
                     </StackPanel>
                 </Grid>
 
             </Grid>
 
-            <!-- RIGHT COLUMN: Slide-out JSON Custom Extension Editor (Width 360) -->
             <!-- RIGHT COLUMN: Slide-out Editor Panel (Width 360) -->
-            <Border Grid.Column="1" Background="#FF111111" BorderBrush="#2CFFFFFF" BorderThickness="1,0,0,0" Padding="20,16">
+            <Border Grid.Column="1" Background="{DynamicResource BrushSidebarBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1,0,0,0" Padding="20,16">
                 <Panel>
                     <!-- 1. DEDICATED GRAPHICAL SNIPPET EDITOR PANEL -->
                     <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding IsSnippetEditor}">
                         <!-- Editor Header -->
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
                             <TextBlock Text="{Binding EditorTitle}" Foreground="#FF8B5CF6" FontSize="15" FontWeight="Bold"/>
-                            <TextBlock Text="配置您的快捷文本短语和触发简写指令" Foreground="#88FFFFFF" FontSize="11" TextWrapping="Wrap"/>
+                            <TextBlock Text="配置您的快捷文本短语和触发简写指令" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
                         </StackPanel>
 
                         <!-- Form ScrollViewer -->
@@ -218,32 +217,32 @@
                             <StackPanel Spacing="12">
                                 <!-- Name -->
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="短语名称" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
-                                    <TextBox Text="{Binding SnippetName, Mode=TwoWay}" Watermark="例如: 我的常用邮箱, 快捷问候" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                    <TextBlock Text="短语名称" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetName, Mode=TwoWay}" Watermark="例如: 我的常用邮箱, 快捷问候" Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
                                 </StackPanel>
 
                                 <!-- Abbreviation -->
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="触发缩写 (在任何其他应用中输入此缩写+空格触发)" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
-                                    <TextBox Text="{Binding SnippetAbbreviation, Mode=TwoWay}" Watermark="例如: em, email" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                    <TextBlock Text="触发缩写 (在任何其他应用中输入此缩写+空格触发)" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetAbbreviation, Mode=TwoWay}" Watermark="例如: em, email" Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
                                 </StackPanel>
 
                                 <!-- Icon -->
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="图标 (Emoji)" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
-                                    <TextBox Text="{Binding SnippetIcon, Mode=TwoWay}" Watermark="例如: 📝, ✉️, 💬" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                    <TextBlock Text="图标 (Emoji)" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetIcon, Mode=TwoWay}" Watermark="例如: 📝, ✉️, 💬" Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
                                 </StackPanel>
 
                                 <!-- Description -->
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="短语描述" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
-                                    <TextBox Text="{Binding SnippetDescription, Mode=TwoWay}" Watermark="可选描述" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
+                                    <TextBlock Text="短语描述" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetDescription, Mode=TwoWay}" Watermark="可选描述" Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6"/>
                                 </StackPanel>
 
                                 <!-- Snippet Content -->
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="短语内容 (小程序替换后的完整文本)" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
-                                    <TextBox Text="{Binding SnippetText, Mode=TwoWay}" Watermark="输入要自动粘贴的完整内容..." Height="110" AcceptsReturn="True" TextWrapping="Wrap" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6" VerticalContentAlignment="Top"/>
+                                    <TextBlock Text="短语内容 (小程序替换后的完整文本)" Foreground="{DynamicResource BrushTextSec}" FontSize="11" FontWeight="Medium"/>
+                                    <TextBox Text="{Binding SnippetText, Mode=TwoWay}" Watermark="输入要自动粘贴的完整内容..." Height="110" AcceptsReturn="True" TextWrapping="Wrap" Foreground="{DynamicResource BrushTextMain}" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6" VerticalContentAlignment="Top"/>
                                 </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
@@ -267,11 +266,11 @@
                         <!-- Editor Header -->
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
                             <TextBlock Text="{Binding EditorTitle}" Foreground="#FF10B981" FontSize="15" FontWeight="Bold"/>
-                            <TextBlock Text="定义小程序名称、图标和 AppleScript 苹果脚本内容" Foreground="#88FFFFFF" FontSize="11" TextWrapping="Wrap"/>
+                            <TextBlock Text="定义小程序名称、图标和 AppleScript 苹果脚本内容" Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
                         </StackPanel>
 
                         <!-- JSON Editor -->
-                        <ScrollViewer Grid.Row="1" Background="#1D000000" CornerRadius="8" Padding="6" Margin="0,0,0,14">
+                        <ScrollViewer Grid.Row="1" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,0,0,14">
                             <TextBox Name="JsonEditorInput"
                                      Text="{Binding EditorJsonText, Mode=TwoWay}"
                                      AcceptsReturn="True"
@@ -280,8 +279,7 @@
                                      FontSize="12"
                                      Background="Transparent"
                                      BorderThickness="0"
-                                     Foreground="#FF10B981"
-                                     CaretBrush="White"/>
+                                     Foreground="{DynamicResource BrushTextMain}"/>
                         </ScrollViewer>
 
                         <!-- Action Buttons -->
@@ -306,8 +304,8 @@
     <Window.Styles>
         <!-- Tab button styling -->
         <Style Selector="Button.tab">
-            <Setter Property="Background" Value="#1DFFFFFF"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
             <Setter Property="FontSize" Value="11.5"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Padding" Value="10,6"/>
@@ -316,16 +314,16 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.tab:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#30FFFFFF"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
         </Style>
         <Style Selector="Button.tab.active">
-            <Setter Property="Background" Value="#FF3B82F6"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource BrushAccent}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushAccentText}"/>
         </Style>
         <Style Selector="Button.tab.active:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#FF2563EB"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource BrushAccentHover}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushAccentText}"/>
         </Style>
 
         <!-- Editor Action Buttons -->
@@ -337,23 +335,23 @@
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
         <Style Selector="Button.action-btn.save">
-            <Setter Property="Background" Value="#FF3B82F6"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource BrushAccent}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushAccentText}"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.action-btn.save:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#FF2563EB"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource BrushAccentHover}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushAccentText}"/>
         </Style>
         <Style Selector="Button.action-btn.cancel">
-            <Setter Property="Background" Value="#1DFFFFFF"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
             <Setter Property="Margin" Value="8,0,0,0"/>
         </Style>
         <Style Selector="Button.action-btn.cancel:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#30FFFFFF"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
         </Style>
 
         <!-- Red Delete Button Style -->

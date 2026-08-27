@@ -30,8 +30,8 @@
         <Ellipse Width="352" Height="352"
                  Canvas.Left="{Binding MainOuterEllipseX}"
                  Canvas.Top="{Binding MainOuterEllipseY}"
-                 Fill="#AA101010"
-                 Stroke="#22FFFFFF"
+                 Fill="{DynamicResource BrushRadialOuterBG}"
+                 Stroke="{DynamicResource BrushRadialBorder}"
                  StrokeThickness="1"/>
 
         <ItemsControl ItemsSource="{Binding OuterItems}"
@@ -65,7 +65,7 @@
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <Path Data="{Binding GeometryData}" 
-                          Stroke="#22FFFFFF" StrokeThickness="1"/>
+                          Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
@@ -74,8 +74,8 @@
         <Ellipse Width="220" Height="220"
                  Canvas.Left="{Binding MainInnerEllipseX}"
                  Canvas.Top="{Binding MainInnerEllipseY}"
-                 Fill="#CC101010"
-                 Stroke="#22FFFFFF"
+                 Fill="{DynamicResource BrushRadialInnerBG}"
+                 Stroke="{DynamicResource BrushRadialBorder}"
                  StrokeThickness="1"/>
 
         <ItemsControl ItemsSource="{Binding Items}"
@@ -109,7 +109,7 @@
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
                     <Path Data="{Binding GeometryData}" 
-                          Stroke="#2DFFFFFF" StrokeThickness="1"/>
+                          Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
@@ -118,8 +118,8 @@
         <Ellipse Width="52" Height="52"
                  Canvas.Left="{Binding CenterCircleX}"
                  Canvas.Top="{Binding CenterCircleY}"
-                 Fill="#F2161616"
-                 Stroke="#33FFFFFF"
+                 Fill="{DynamicResource BrushRadialCenterBG}"
+                 Stroke="{DynamicResource BrushRadialBorderActive}"
                  StrokeThickness="1"/>
 
         <!-- Center Text -->
@@ -127,7 +127,7 @@
                     Canvas.Top="{Binding CenterTextY}"
                     Width="160">
             <TextBlock Text="{Binding CenterPrimaryText}"
-                       Foreground="White"
+                       Foreground="{DynamicResource BrushRadialText}"
                        FontSize="16"
                        FontWeight="SemiBold"
                        HorizontalAlignment="Center"/>
@@ -135,7 +135,7 @@
 
         <!-- Active Title -->
         <TextBlock Text="{Binding ActiveTitle}"
-                   Foreground="White"
+                   Foreground="{DynamicResource BrushRadialTextMuted}"
                    FontSize="11"
                    Width="220"
                    Canvas.Left="{Binding ActiveTitleX}"
@@ -169,12 +169,12 @@
                         </Border.RenderTransform>
                         <Grid>
                             <!-- Empty Slot Hover Background -->
-                            <Ellipse Width="32" Height="32" Fill="#20FFFFFF"
+                            <Ellipse Width="32" Height="32" Fill="{DynamicResource BrushRadialSlotHover}"
                                      IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                             
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <!-- Add Icon for Empty Slots -->
-                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="16"
+                                <TextBlock Text="➕" Foreground="{DynamicResource BrushRadialTextMuted}" FontSize="16"
                                            HorizontalAlignment="Center"
                                            IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 
@@ -182,7 +182,7 @@
                                 <Grid Width="22" Height="22" HorizontalAlignment="Center"
                                       IsVisible="{Binding IsNotEmpty}">
                                     <TextBlock Text="{Binding DisplayGlyph}" 
-                                               Foreground="White" FontSize="11"
+                                               Foreground="{DynamicResource BrushRadialText}" FontSize="11"
                                                IsVisible="{Binding !HasRealIcon}"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     <Image Source="{Binding RealIcon}"
@@ -192,7 +192,7 @@
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}" 
-                                           Foreground="White"
+                                           Foreground="{DynamicResource BrushRadialText}"
                                            FontSize="8" Width="44" TextAlignment="Center"
                                            Margin="0,4,0,0"
                                            IsVisible="{Binding IsNotEmpty}"/>
@@ -229,18 +229,18 @@
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                         </Border.RenderTransform>
                         <Grid>
-                            <Ellipse Width="40" Height="40" Fill="#20FFFFFF"
+                            <Ellipse Width="40" Height="40" Fill="{DynamicResource BrushRadialSlotHover}"
                                      IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                             
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="20"
+                                <TextBlock Text="➕" Foreground="{DynamicResource BrushRadialTextMuted}" FontSize="20"
                                            HorizontalAlignment="Center"
                                            IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 
                                 <Grid Width="28" Height="28" HorizontalAlignment="Center"
                                       IsVisible="{Binding IsNotEmpty}">
                                     <TextBlock Text="{Binding DisplayGlyph}" 
-                                               Foreground="White" FontSize="14"
+                                               Foreground="{DynamicResource BrushRadialText}" FontSize="14"
                                                IsVisible="{Binding !HasRealIcon}"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     <Image Source="{Binding RealIcon}"
@@ -250,7 +250,7 @@
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}" 
-                                           Foreground="White"
+                                           Foreground="{DynamicResource BrushRadialText}"
                                            FontSize="9" Width="50" TextAlignment="Center"
                                            Margin="0,4,0,0"
                                            IsVisible="{Binding IsNotEmpty}"/>
@@ -268,8 +268,8 @@
             <Ellipse Width="200" Height="200"
                      Canvas.Left="{Binding ChildRingEllipseX}"
                      Canvas.Top="{Binding ChildRingEllipseY}"
-                     Fill="#BB101010"
-                     Stroke="#33FFFFFF"
+                     Fill="{DynamicResource BrushRadialOuterBG}"
+                     Stroke="{DynamicResource BrushRadialBorderActive}"
                      StrokeThickness="1"/>
             <ItemsControl ItemsSource="{Binding ChildItems}"
                           Width="{Binding OverlayWidth}"
@@ -292,14 +292,14 @@
             <Ellipse Width="52" Height="52"
                      Canvas.Left="{Binding ChildRingCenterEllipseX}"
                      Canvas.Top="{Binding ChildRingCenterEllipseY}"
-                     Fill="#F2161616"
-                     Stroke="#33FFFFFF"
+                     Fill="{DynamicResource BrushRadialCenterBG}"
+                     Stroke="{DynamicResource BrushRadialBorderActive}"
                      StrokeThickness="1"/>
             <TextBlock Text="{Binding ChildRingTitle}"
                        Canvas.Left="{Binding ChildRingTitleX}"
                        Canvas.Top="{Binding ChildRingTitleY}"
                        Width="150" TextAlignment="Center"
-                       Foreground="White" FontSize="15" FontWeight="SemiBold"/>
+                       Foreground="{DynamicResource BrushRadialText}" FontSize="15" FontWeight="SemiBold"/>
             
             <ItemsControl ItemsSource="{Binding ChildItems}"
                           Width="{Binding OverlayWidth}"
@@ -326,16 +326,16 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <Ellipse Width="36" Height="36" Fill="#20FFFFFF"
+                                <Ellipse Width="36" Height="36" Fill="{DynamicResource BrushRadialSlotHover}"
                                          IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="18"
+                                    <TextBlock Text="➕" Foreground="{DynamicResource BrushRadialTextMuted}" FontSize="18"
                                                HorizontalAlignment="Center"
                                                IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                     <Grid Width="24" Height="24" HorizontalAlignment="Center"
                                           IsVisible="{Binding IsNotEmpty}">
                                         <TextBlock Text="{Binding DisplayGlyph}" 
-                                                   Foreground="White" FontSize="11"
+                                                   Foreground="{DynamicResource BrushRadialText}" FontSize="11"
                                                    IsVisible="{Binding !HasRealIcon}"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         <Image Source="{Binding RealIcon}"
@@ -345,7 +345,7 @@
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}" 
-                                               Foreground="White"
+                                               Foreground="{DynamicResource BrushRadialText}"
                                                FontSize="8" Width="46" TextAlignment="Center"
                                                Margin="0,4,0,0"
                                                IsVisible="{Binding IsNotEmpty}"/>
@@ -363,8 +363,8 @@
             <Ellipse Width="160" Height="160"
                       Canvas.Left="{Binding GrandChildRingEllipseX}"
                       Canvas.Top="{Binding GrandChildRingEllipseY}"
-                      Fill="#BB101010"
-                      Stroke="#33FFFFFF"
+                      Fill="{DynamicResource BrushRadialOuterBG}"
+                      Stroke="{DynamicResource BrushRadialBorderActive}"
                       StrokeThickness="1"/>
             <ItemsControl ItemsSource="{Binding GrandChildItems}"
                           Width="{Binding OverlayWidth}"
@@ -387,14 +387,14 @@
             <Ellipse Width="44" Height="44"
                       Canvas.Left="{Binding GrandChildRingCenterEllipseX}"
                       Canvas.Top="{Binding GrandChildRingCenterEllipseY}"
-                      Fill="#F2161616"
-                      Stroke="#33FFFFFF"
+                      Fill="{DynamicResource BrushRadialCenterBG}"
+                      Stroke="{DynamicResource BrushRadialBorderActive}"
                       StrokeThickness="1"/>
             <TextBlock Text="{Binding GrandChildRingTitle}"
                        Canvas.Left="{Binding GrandChildRingTitleX}"
                        Canvas.Top="{Binding GrandChildRingTitleY}"
                        Width="128" TextAlignment="Center"
-                       Foreground="White" FontSize="13" FontWeight="SemiBold"/>
+                       Foreground="{DynamicResource BrushRadialText}" FontSize="13" FontWeight="SemiBold"/>
 
             <ItemsControl ItemsSource="{Binding GrandChildItems}"
                           Width="{Binding OverlayWidth}"
@@ -421,16 +421,16 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <Ellipse Width="32" Height="32" Fill="#20FFFFFF"
+                                <Ellipse Width="32" Height="32" Fill="{DynamicResource BrushRadialSlotHover}"
                                          IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="16"
+                                    <TextBlock Text="➕" Foreground="{DynamicResource BrushRadialTextMuted}" FontSize="16"
                                                HorizontalAlignment="Center"
                                                IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                     <Grid Width="20" Height="20" HorizontalAlignment="Center"
                                           IsVisible="{Binding IsNotEmpty}">
                                         <TextBlock Text="{Binding DisplayGlyph}" 
-                                                   Foreground="White" FontSize="9"
+                                                   Foreground="{DynamicResource BrushRadialText}" FontSize="9"
                                                    IsVisible="{Binding !HasRealIcon}"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         <Image Source="{Binding RealIcon}"
@@ -440,7 +440,7 @@
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
-                                               Foreground="White"
+                                               Foreground="{DynamicResource BrushRadialText}"
                                                FontSize="8" Width="44" TextAlignment="Center"
                                                Margin="0,4,0,0"
                                                IsVisible="{Binding IsNotEmpty}"/>

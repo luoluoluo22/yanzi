@@ -16,9 +16,9 @@
 
     <Window.Styles>
         <Style Selector="RadioButton.tabChip">
-            <Setter Property="Background" Value="#27272A"/>
-            <Setter Property="Foreground" Value="#A1A1AA"/>
-            <Setter Property="BorderBrush" Value="#3F3F46"/>
+            <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushSecondaryBtnBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="14"/>
             <Setter Property="Padding" Value="14,5"/>
@@ -40,17 +40,17 @@
             </Setter>
         </Style>
         <Style Selector="RadioButton.tabChip:checked">
-            <Setter Property="Background" Value="#2563EB"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderBrush" Value="#3B82F6"/>
+            <Setter Property="Background" Value="{DynamicResource BrushAccent}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushAccentText}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
     </Window.Styles>
 
     <Border CornerRadius="18"
             BorderThickness="1.2"
-            BorderBrush="#2DFFFFFF"
-            Background="#FA18181B"
+            BorderBrush="{DynamicResource BrushBorder}"
+            Background="{DynamicResource BrushWindowBG}"
             Padding="22"
             PointerPressed="Window_PointerPressed">
         <DockPanel LastChildFill="True">
@@ -60,11 +60,11 @@
                 <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Spacing="3">
                         <TextBlock Text="{Binding TitleText}"
-                                   Foreground="White"
+                                   Foreground="{DynamicResource BrushTextMain}"
                                    FontSize="18"
                                    FontWeight="Bold"/>
                         <TextBlock Text="选择要绑定到此插槽的 macOS 应用程序、系统动作或自定义小程序"
-                                   Foreground="#71717A"
+                                   Foreground="{DynamicResource BrushTextSec}"
                                    FontSize="12"/>
                     </StackPanel>
                     
@@ -73,18 +73,18 @@
                             CornerRadius="8" Cursor="Hand"
                             Click="Close_Click" ToolTip.Tip="关闭">
                         <Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"
-                              Fill="#88FFFFFF" Width="12" Height="12" Stretch="Uniform"/>
+                              Fill="{DynamicResource BrushTextSec}" Width="12" Height="12" Stretch="Uniform"/>
                     </Button>
                 </Grid>
 
                 <!-- Search Input Bar -->
-                <Border Height="40" Background="#27272A" CornerRadius="10" BorderBrush="#3F3F46" BorderThickness="1" Padding="12,0">
+                <Border Height="40" Background="{DynamicResource BrushInputBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="12,0">
                     <Grid ColumnDefinitions="Auto,*">
-                        <TextBlock Text="🔍" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#A1A1AA"/>
+                        <TextBlock Text="🔍" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource BrushTextSec}"/>
                         <TextBox x:Name="SearchBox" Grid.Column="1"
                                  Background="Transparent" BorderThickness="0"
                                  Watermark="搜索应用名称、系统动作、快捷短语或关键词..."
-                                 Foreground="White" FontSize="13"
+                                 Foreground="{DynamicResource BrushTextMain}" FontSize="13"
                                  VerticalContentAlignment="Center"
                                  Padding="0"
                                  TextChanged="SearchBox_TextChanged"
@@ -108,21 +108,21 @@
             <!-- Bottom Action Buttons -->
             <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
                 <Button Content="📁 浏览本地应用/文件..." Click="AddLocalFile_Click"
-                        Background="#27272A" Foreground="White" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
+                        Background="{DynamicResource BrushSecondaryBtnBG}" Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
                 <Button x:Name="CopyPromptButton" Content="📋 复制小程序提示词" Click="CopyPrompt_Click"
-                        Background="#27272A" Foreground="#D4D4D8" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
+                        Background="{DynamicResource BrushSecondaryBtnBG}" Foreground="{DynamicResource BrushTextSec}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
                 <Button x:Name="DeleteCommandButton" Content="🗑️ 清空此插槽" Click="DeleteCommand_Click"
-                        Background="#27272A" Foreground="#F87171" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
+                        Background="{DynamicResource BrushSecondaryBtnBG}" Foreground="#FFF87171" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
                 <Button Content="确定添加到插槽" Click="Confirm_Click"
-                        Background="#3B82F6" Foreground="White" FontWeight="SemiBold" CornerRadius="8" Padding="18,7" FontSize="12.5"/>
+                        Background="{DynamicResource BrushAccent}" Foreground="White" FontWeight="SemiBold" CornerRadius="8" Padding="18,7" FontSize="12.5"/>
             </StackPanel>
 
             <!-- Main Items List -->
             <Border Margin="0,12,0,0"
-                    Background="#141417"
+                    Background="{DynamicResource BrushCardBG}"
                     CornerRadius="12"
                     BorderThickness="1"
-                    BorderBrush="#27272A">
+                    BorderBrush="{DynamicResource BrushBorder}">
                 <ListBox x:Name="ResultList"
                          ItemsSource="{Binding FilteredResults}"
                          SelectionMode="Single"
@@ -136,7 +136,10 @@
                             <Setter Property="Margin" Value="4,2"/>
                         </Style>
                         <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                            <Setter Property="Background" Value="#2563EB"/>
+                            <Setter Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}"/>
+                        </Style>
+                        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                            <Setter Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
                         </Style>
                     </ListBox.Styles>
                     <ListBox.ItemTemplate>
@@ -144,24 +147,24 @@
                             <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
                                 <!-- Icon / Glyph -->
                                 <Border Grid.Column="0" Width="36" Height="36" CornerRadius="8"
-                                        Background="#27272A" Margin="0,0,12,0" ClipToBounds="True">
+                                        Background="{DynamicResource BrushSecondaryBtnBG}" Margin="0,0,12,0" ClipToBounds="True">
                                     <Grid>
                                         <Image Source="{Binding Icon}" Width="36" Height="36" Stretch="Uniform"
                                                IsVisible="{Binding HasIcon}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         <TextBlock Text="{Binding Glyph}" FontSize="16"
                                                    IsVisible="{Binding !HasIcon}"
-                                                   Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                   Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                 </Border>
 
                                 <!-- Title & Description -->
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                     <TextBlock Text="{Binding Title}"
-                                               Foreground="White"
+                                               Foreground="{DynamicResource BrushTextMain}"
                                                FontSize="13.5"
                                                FontWeight="SemiBold"/>
                                     <TextBlock Text="{Binding Description}"
-                                               Foreground="#A1A1AA"
+                                               Foreground="{DynamicResource BrushTextSec}"
                                                FontSize="11"
                                                TextTrimming="CharacterEllipsis"
                                                MaxWidth="420"/>

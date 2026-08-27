@@ -25,6 +25,11 @@
                     <SolidColorBrush x:Key="BrushRadialOuterBG" Color="#AA101010"/>
                     <SolidColorBrush x:Key="BrushRadialInnerBG" Color="#CC101010"/>
                     <SolidColorBrush x:Key="BrushRadialCenterBG" Color="#F2161616"/>
+                    <SolidColorBrush x:Key="BrushRadialBorder" Color="#22FFFFFF"/>
+                    <SolidColorBrush x:Key="BrushRadialBorderActive" Color="#33FFFFFF"/>
+                    <SolidColorBrush x:Key="BrushRadialBorderSec" Color="#2DFFFFFF"/>
+                    <SolidColorBrush x:Key="BrushRadialText" Color="White"/>
+                    <SolidColorBrush x:Key="BrushRadialTextMuted" Color="#80FFFFFF"/>
                     <SolidColorBrush x:Key="BrushRadialSlotHover" Color="#1AFFFFFF"/>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
@@ -48,6 +53,11 @@
                     <SolidColorBrush x:Key="BrushRadialOuterBG" Color="#AAF3F4F6"/>
                     <SolidColorBrush x:Key="BrushRadialInnerBG" Color="#CCF3F4F6"/>
                     <SolidColorBrush x:Key="BrushRadialCenterBG" Color="#F2FFFFFF"/>
+                    <SolidColorBrush x:Key="BrushRadialBorder" Color="#FFB9B9B9"/>
+                    <SolidColorBrush x:Key="BrushRadialBorderActive" Color="#FF8E8E8E"/>
+                    <SolidColorBrush x:Key="BrushRadialBorderSec" Color="#FFD6D6D6"/>
+                    <SolidColorBrush x:Key="BrushRadialText" Color="#FF111827"/>
+                    <SolidColorBrush x:Key="BrushRadialTextMuted" Color="#FF6B7280"/>
                     <SolidColorBrush x:Key="BrushRadialSlotHover" Color="#1F000000"/>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
