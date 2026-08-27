@@ -108,14 +108,26 @@
   // 2. 渲染顶部星辰大海胶囊轨道流
   function renderGalaxyOrbitStream(wishes) {
     const orbitContainer = document.getElementById("galaxy-orbit-stream");
-    if (!orbitContainer || !wishes || wishes.length === 0) return;
+    if (!orbitContainer) return;
+
+    if (!wishes || wishes.length === 0) {
+      orbitContainer.innerHTML = `
+        <div style="display: flex; justify-content: center; align-items: center; min-height: 140px; color: #94a3b8; text-align: center;">
+          <div style="background: rgba(30, 41, 59, 0.45); border: 1px dashed rgba(148, 163, 184, 0.25); border-radius: 9999px; padding: 0.75rem 2rem; backdrop-filter: blur(10px); display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.25rem;">🌌</span>
+            <span style="font-size: 0.92rem; color: #cbd5e1;">心愿星海虚位以待 · 点击上方「发布心愿」，点亮第一颗璀璨星辰！</span>
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     const row1 = wishes.slice(0, Math.ceil(wishes.length / 2));
     const row2 = wishes.slice(Math.ceil(wishes.length / 2));
 
     function makeNodes(list) {
-      // 循环两次以实现 CSS 无缝平滑循环漂移
-      const fullList = [...list, ...list, ...list];
+      // 循环以实现 CSS 无缝平滑循环漂移
+      const fullList = list.length < 4 ? [...list, ...list, ...list, ...list] : [...list, ...list];
       return fullList.map((item) => {
         const isAccepted = item.status === "accepted";
         const isAnswered = item.status === "answered";
@@ -222,97 +234,6 @@
     }
   }
 
-  const FALLBACK_SEED_WISHES = [
-    {
-      id: "wsh_table_md",
-      username: "小燕飞飞",
-      title: "Excel / 网页表格一键转 Markdown 表格与精致卡片",
-      description: "经常需要把网页或 Excel 里的表格发给同事，希望选中文本后燕选或轮盘一键转换成标准的 Markdown Table，或者直接生成居中对齐的纯文本表格。",
-      category: "办公提效",
-      status: "accepted",
-      reply_count: 1,
-      reward_points: 50,
-      created_at: new Date(Date.now() - 3600000 * 48).toISOString()
-    },
-    {
-      id: "wsh_json_fmt",
-      username: "晨曦代码",
-      title: "剪贴板 JSON 一键格式化、压缩并校验语法",
-      description: "复制一段压缩或混乱的 JSON 字符串后，一划即直达美化排版，如果格式错误能标出错误行号并弹窗提示。",
-      category: "开发编程",
-      status: "accepted",
-      reply_count: 1,
-      reward_points: 50,
-      created_at: new Date(Date.now() - 3600000 * 36).toISOString()
-    },
-    {
-      id: "wsh_clean_desktop",
-      username: "设计喵",
-      title: "一键清理 Windows 桌面临时截图并按月份自动归档",
-      description: "桌面总是一堆微信截图和系统截屏（Screenshot_ 开头或微信截图.png），希望一键归档到 文档/截图归档/2026-08/，保持桌面清爽干净。",
-      category: "系统工具",
-      status: "answered",
-      reply_count: 1,
-      reward_points: 50,
-      created_at: new Date(Date.now() - 3600000 * 18).toISOString()
-    },
-    {
-      id: "wsh_color_picker",
-      username: "UI设计大白",
-      title: "屏幕实时拾色器，自动复制 HEX / RGB / HSL 并发声提示",
-      description: "鼠标移动到屏幕任意像素点，长按轮盘或快捷键取色并复制到剪贴板，支持在 HEX(#3b82f6) 和 rgba(59,130,246,1) 格式之间灵活切换。",
-      category: "办公提效",
-      status: "accepted",
-      reply_count: 1,
-      reward_points: 50,
-      created_at: new Date(Date.now() - 3600000 * 6).toISOString()
-    },
-    {
-      id: "wsh_word_count",
-      username: "文字旅人",
-      title: "选中文本字数统计、阅读时长预估与敏感词筛查",
-      description: "写文章和公众号文案时，划选文本立刻展示中文字数、英文词数、段落数、代码行数以及预估朗读时间。",
-      category: "文本处理",
-      status: "open",
-      reply_count: 0,
-      reward_points: 50,
-      created_at: new Date(Date.now() - 3600000 * 2).toISOString()
-    },
-    {
-      id: "wsh_qr_code",
-      username: "跨端达人",
-      title: "一键生成当前选中文本或网址的临时二维码，手机燕子扫码直传背包",
-      description: "电脑上看到的好文章、下载链接或 Wi-Fi 密码，一键在屏幕中央弹出高对比度二维码，手机端燕子扫一扫瞬间接收进随身背包。",
-      category: "办公提效",
-      status: "accepted",
-      reply_count: 1,
-      reward_points: 50,
-      created_at: new Date(Date.now() - 3600000 * 2).toISOString()
-    },
-    {
-      id: "wsh_mem_cleaner",
-      username: "硬核玩家",
-      title: "Windows 待机内存与未释放工作集一键整理小工具",
-      description: "打完大型 3A 游戏或跑完大型编译后内存占用居高不下，希望有个极简小程序调用 SetProcessWorkingSetSize 释放无用内存。",
-      category: "系统工具",
-      status: "open",
-      reply_count: 0,
-      reward_points: 50,
-      created_at: new Date().toISOString()
-    },
-    {
-      id: "wsh_video_cover",
-      username: "剪辑师阿伟",
-      title: "复制 B 站 / YouTube 视频链接一键提取 4K 最高清封面",
-      description: "剪贴板只要有视频链接，一键调用开放接口提取官方上传的最高分辨率封面原图并自动保存到下载目录。",
-      category: "媒体影音",
-      status: "open",
-      reply_count: 0,
-      reward_points: 50,
-      created_at: new Date().toISOString()
-    }
-  ];
-
   // 拉取心愿列表
   async function loadWishes() {
     const container = document.getElementById("wish-cards-list");
@@ -329,30 +250,19 @@
       const res = await fetch(url);
       const data = await res.json();
 
-      let wishes = (data.ok && Array.isArray(data.wishes) && data.wishes.length > 0) ? data.wishes : null;
-
-      // 如果云端刚初始化未返回数据，自动使用高质量种子数据
-      if (!wishes) {
-        let filtered = FALLBACK_SEED_WISHES;
-        if (currentStatus !== "all") {
-          filtered = filtered.filter(w => w.status === currentStatus);
-        }
-        if (currentCategory !== "all") {
-          filtered = filtered.filter(w => w.category === currentCategory);
-        }
-        if (currentSearch) {
-          filtered = filtered.filter(w => w.title.includes(currentSearch) || w.description.includes(currentSearch));
-        }
-        wishes = filtered;
-      }
+      const wishes = (data.ok && Array.isArray(data.wishes)) ? data.wishes : [];
+      allWishesCache = wishes;
+      renderGalaxyOrbitStream(wishes);
 
       if (wishes.length === 0) {
         container.innerHTML = `
           <div class="wish-empty-state" style="grid-column: 1 / -1;">
-            <p style="font-size: 2rem; margin-bottom: 0.5rem;">🎋</p>
-            <h4 style="color:#e2e8f0; margin-bottom: 0.5rem;">暂无匹配的心愿需求</h4>
-            <p>成为第一个提出该分类小程序心愿的人，发布即可获得 +5 积分奖励！</p>
-            <button class="wish-primary-btn" style="margin-top: 1rem;" onclick="document.getElementById('wish-publish-btn').click()">
+            <p style="font-size: 2.2rem; margin-bottom: 0.5rem;">🎋</p>
+            <h4 style="color:#e2e8f0; margin-bottom: 0.5rem; font-size: 1.15rem;">暂无匹配的心愿需求</h4>
+            <p style="color:#94a3b8; max-width: 480px; margin: 0 auto 1.25rem; font-size: 0.9rem;">
+              成为第一个提出小程序心愿的人，发布即可获得 +5 积分奖励！社区开发者将为你量身定制代码方案。
+            </p>
+            <button class="wish-primary-btn" style="padding: 0.6rem 1.4rem; font-size: 0.9rem;" onclick="document.getElementById('wish-publish-btn').click()">
               ＋ 发布第一个心愿
             </button>
           </div>
@@ -360,16 +270,14 @@
         return;
       }
 
-      allWishesCache = wishes;
-      renderGalaxyOrbitStream(wishes);
       renderWishCards(wishes, container);
     } catch (err) {
-      let filtered = FALLBACK_SEED_WISHES;
-      if (currentStatus !== "all") filtered = filtered.filter(w => w.status === currentStatus);
-      if (currentCategory !== "all") filtered = filtered.filter(w => w.category === currentCategory);
-      allWishesCache = filtered;
-      renderGalaxyOrbitStream(filtered);
-      renderWishCards(filtered, container);
+      renderGalaxyOrbitStream([]);
+      container.innerHTML = `
+        <div class="wish-empty-state" style="grid-column: 1 / -1;">
+          <p style="color:#ef4444;">❌ 加载心愿列表失败，请检查网络后重试</p>
+        </div>
+      `;
     }
   }
 
@@ -436,59 +344,6 @@
     });
   }
 
-  const FALLBACK_SEED_REPLIES = {
-    "wsh_table_md": [
-      {
-        id: "rep_table_md",
-        username: "极客阿杰",
-        content: "已经写好了一个轻量级的 C# 正则换行解析小程序，支持制表符 \\t 与空格智能对齐，粘贴即可转为标准 Markdown！",
-        code_snippet: "// 燕子 C# 小程序: 剪贴板表格转 Markdown\nusing System.Text;\nusing System.Text.RegularExpressions;\n\nstring text = Context.GetSelectedText();\nif (string.IsNullOrWhiteSpace(text)) return;\n\nvar lines = text.Split(new[] { '\\r', '\\n' }, StringSplitOptions.RemoveEmptyEntries);\nvar sb = new StringBuilder();\nfor (int i = 0; i < lines.Length; i++) {\n    var cells = Regex.Split(lines[i], @\"\\t+|\\s{2,}\");\n    sb.AppendLine(\"| \" + string.Join(\" | \", cells) + \" |\");\n    if (i == 0) {\n        sb.AppendLine(\"| \" + string.Join(\" | \", cells.Select(_ => \"---\")) + \" |\");\n    }\n}\nContext.SetClipboardText(sb.ToString());\nContext.ShowToast(\"表格已转换为 Markdown 并复制到剪贴板！\");",
-        is_accepted: 1,
-        created_at: new Date(Date.now() - 3600000 * 48).toISOString()
-      }
-    ],
-    "wsh_json_fmt": [
-      {
-        id: "rep_json_fmt",
-        username: "云端筑梦师",
-        content: "采用 .NET System.Text.Json 高性能解析，支持 2 空格美化与单行压缩双模式切换。",
-        code_snippet: "// JSON 格式化与语法校验小程序\nusing System.Text.Json;\n\ntry {\n    string input = Context.GetClipboardText();\n    using var doc = JsonDocument.Parse(input);\n    string formatted = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });\n    Context.SetClipboardText(formatted);\n    Context.ShowToast(\"JSON 格式化成功！\");\n} catch (Exception ex) {\n    Context.ShowToast(\"JSON 格式错误: \" + ex.Message);\n}",
-        is_accepted: 1,
-        created_at: new Date(Date.now() - 3600000 * 36).toISOString()
-      }
-    ],
-    "wsh_clean_desktop": [
-      {
-        id: "rep_clean_desktop",
-        username: "星野代码",
-        content: "提供了一个安全归档脚本，自动扫描桌面截图匹配模式并安全移动，遇到同名自动加序号。",
-        code_snippet: "// 桌面截图智能归档小程序\nstring desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);\nstring archiveDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), \"截图归档\", DateTime.Now.ToString(\"yyyy-MM\"));\nDirectory.CreateDirectory(archiveDir);\n\nvar files = Directory.GetFiles(desktop, \"*.*\")\n    .Where(f => f.EndsWith(\".png\", StringComparison.OrdinalIgnoreCase) || f.EndsWith(\".jpg\", StringComparison.OrdinalIgnoreCase))\n    .Where(f => Path.GetFileName(f).StartsWith(\"Screenshot\") || Path.GetFileName(f).Contains(\"截图\"));\n\nint count = 0;\nforeach (var file in files) {\n    string dest = Path.Combine(archiveDir, Path.GetFileName(file));\n    File.Move(file, dest);\n    count++;\n}\nContext.ShowToast($\"已成功归档 {count} 张桌面截图！\");",
-        is_accepted: 0,
-        created_at: new Date(Date.now() - 3600000 * 18).toISOString()
-      }
-    ],
-    "wsh_color_picker": [
-      {
-        id: "rep_color_picker",
-        username: "燕子核心工坊",
-        content: "已封装基于 GDI+ GetPixel 的毫秒级拾色小程序，并支持色值转换与音效反馈！",
-        code_snippet: "// 屏幕拾色取色器\nvar pos = Context.GetCursorPosition();\nusing var bmp = new Bitmap(1, 1);\nusing var g = Graphics.FromImage(bmp);\ng.CopyFromScreen(pos.X, pos.Y, 0, 0, new Size(1, 1));\nColor color = bmp.GetPixel(0, 0);\n\nstring hex = $\"#{color.R:X2}{color.G:X2}{color.B:X2}\";\nContext.SetClipboardText(hex);\nContext.ShowToast($\"🎨 已获取颜色: {hex}\");",
-        is_accepted: 1,
-        created_at: new Date(Date.now() - 3600000 * 6).toISOString()
-      }
-    ],
-    "wsh_qr_code": [
-      {
-        id: "rep_qr_code",
-        username: "燕子核心工坊",
-        content: "集成轻量纯 C# 二维码渲染器，无需任何第三方 DLL 依赖，0.01 秒极速展示！",
-        code_snippet: "// 纯原生二维码生成小程序\nstring content = Context.GetSelectedText() ?? Context.GetClipboardText();\nif (string.IsNullOrWhiteSpace(content)) return;\n\nContext.ShowQrCodeDialog(content, \"扫码直传燕子手机版\");",
-        is_accepted: 1,
-        created_at: new Date(Date.now() - 3600000 * 2).toISOString()
-      }
-    ]
-  };
-
   // 打开心愿详情与回复抽屉
   async function openWishDetailModal(wishId) {
     activeWishId = wishId;
@@ -508,19 +363,11 @@
       const data = await res.json();
       if (data.ok && data.wish) {
         renderWishDetail(data.wish, data.replies || [], modalBody);
-        return;
+      } else {
+        modalBody.innerHTML = `<p style="color:#ef4444; text-align:center; padding:2rem 0;">${data.message || "心愿不存在或已被移除"}</p>`;
       }
     } catch (err) {
-      console.warn("fetch wish detail error, fallback to seed:", err);
-    }
-
-    // 优雅回退到本地种子数据
-    const fallbackWish = FALLBACK_SEED_WISHES.find(w => w.id === wishId);
-    if (fallbackWish) {
-      const fallbackReplies = FALLBACK_SEED_REPLIES[wishId] || [];
-      renderWishDetail(fallbackWish, fallbackReplies, modalBody);
-    } else {
-      modalBody.innerHTML = `<p style="color:#ef4444; text-align:center; padding:2rem 0;">无法获取心愿详情，请稍后重试</p>`;
+      modalBody.innerHTML = `<p style="color:#ef4444; text-align:center; padding:2rem 0;">网络请求失败，请稍后重试</p>`;
     }
   }
 
@@ -797,15 +644,6 @@
     }
   }
 
-  const FALLBACK_LEADERBOARD = [
-    { username: "燕子核心工坊", points: 320, accepted_count: 6 },
-    { username: "极客阿杰", points: 210, accepted_count: 4 },
-    { username: "云端筑梦师", points: 185, accepted_count: 3 },
-    { username: "星野代码", points: 120, accepted_count: 2 },
-    { username: "字节效率官", points: 95, accepted_count: 1 },
-    { username: "小燕飞飞", points: 65, accepted_count: 0 }
-  ];
-
   // 拉取贡献榜
   async function loadLeaderboard() {
     const listEl = document.getElementById("wish-leaderboard-list");
@@ -814,7 +652,17 @@
     try {
       const res = await fetch(`${API_BASE}/v1/wishes/leaderboard`);
       const data = await res.json();
-      let list = (data.ok && Array.isArray(data.leaderboard) && data.leaderboard.length > 0) ? data.leaderboard : FALLBACK_LEADERBOARD;
+      const list = (data.ok && Array.isArray(data.leaderboard)) ? data.leaderboard : [];
+
+      if (list.length === 0) {
+        listEl.innerHTML = `
+          <div style="color: #64748b; font-size: 0.85rem; text-align: center; padding: 1.5rem 0.5rem; line-height: 1.6;">
+            🏆 暂无积分排行数据<br>
+            <span style="font-size: 0.78rem; color: #475569;">发布心愿或提供代码方案，赢取积分上榜！</span>
+          </div>
+        `;
+        return;
+      }
 
       let html = "";
       list.forEach((user, idx) => {
@@ -837,24 +685,7 @@
 
       listEl.innerHTML = html;
     } catch (e) {
-      let html = "";
-      FALLBACK_LEADERBOARD.forEach((user, idx) => {
-        const rank = idx + 1;
-        const rankClass = rank === 1 ? "rank-1" : rank === 2 ? "rank-2" : rank === 3 ? "rank-3" : "";
-        html += `
-          <div class="wish-rank-item">
-            <div class="wish-rank-left">
-              <span class="wish-rank-num ${rankClass}">${rank}</span>
-              <span class="wish-rank-user">${escapeHtml(user.username)}</span>
-            </div>
-            <div class="wish-rank-points">
-              <span>✨ ${user.points || 0}</span>
-              <span style="font-size:0.75rem; color:#64748b; font-weight:normal;">(${user.accepted_count || 0}采纳)</span>
-            </div>
-          </div>
-        `;
-      });
-      listEl.innerHTML = html;
+      listEl.innerHTML = `<div style="color:#64748b;font-size:0.85rem;text-align:center;padding:1rem;">排行榜加载失败</div>`;
     }
   }
 
