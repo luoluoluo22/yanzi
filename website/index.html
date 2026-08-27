@@ -79,7 +79,7 @@
         </p>
         <div class="hero-actions js-platform-hero-actions" style="flex-wrap: wrap; justify-content: flex-start;">
           <div class="split-button-container js-split-download-container" data-container-role="hero">
-            <a class="button primary js-primary-download-btn" href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载 (蓝奏云)</a>
+            <a class="button primary js-primary-download-btn" href="https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v0.3.19/Yanzi-win-Setup-0.3.19.exe">window 下载</a>
             <button class="button primary split-button-arrow js-download-dropdown-toggle" type="button" aria-haspopup="true" aria-expanded="false" title="更多下载与平台切换">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
             </button>
@@ -455,7 +455,7 @@
         <span id="download-meta">一键安装，开箱即用 | Windows 10 / 11 </span>
         <div style="display: flex; gap: 10px; margin: 15px 0; justify-content: center; flex-wrap: wrap;">
           <div class="split-button-container js-split-download-container" data-container-role="panel">
-            <a class="button primary js-primary-download-btn" id="download-button" href="https://wwbnh.lanzout.com/b0pnkaj6j">免费下载 (蓝奏云)</a>
+            <a class="button primary js-primary-download-btn" id="download-button" href="https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v0.3.19/Yanzi-win-Setup-0.3.19.exe">window 下载</a>
             <button class="button primary split-button-arrow js-download-dropdown-toggle" type="button" aria-haspopup="true" aria-expanded="false" title="更多下载与平台切换">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
             </button>
@@ -562,12 +562,13 @@
           heroMeta: "Windows 10/11",
           title: "燕子启动器 for Windows（完全免费）",
           metaText: "一键安装，开箱即用 | Windows 10 / 11",
-          primaryLabel: "免费下载 (蓝奏云)",
-          primaryUrl: "https://wwbnh.lanzout.com/b0pnkaj6j",
+          primaryLabel: "window 下载",
+          primaryUrl: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v0.3.19/Yanzi-win-Setup-0.3.19.exe",
           links: [
+            { label: "镜像下载 (极速 .exe)", url: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v0.3.19/Yanzi-win-Setup-0.3.19.exe", badge: "免翻墙" },
+            { label: "GitHub 下载 (.exe)", url: "https://github.com/luoluoluo22/yanzi/releases/download/v0.3.19/Yanzi-win-Setup-0.3.19.exe" },
+            { label: "蓝奏云网盘下载", url: "https://wwbnh.lanzout.com/b0pnkaj6j" },
             { label: "夸克网盘下载", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh" },
-            { label: "镜像下载 (极速)", url: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v0.3.19/Yanzi-win-Setup-0.3.19.exe", badge: "免翻墙" },
-            { label: "GitHub 下载", url: "https://github.com/luoluoluo22/yanzi/releases/download/v0.3.19/Yanzi-win-Setup-0.3.19.exe" },
             { label: "便携免安装版 (.zip)", url: "https://github.com/luoluoluo22/yanzi/releases/download/v0.3.19/Yanzi-win-Portable-0.3.19.zip" }
           ]
         },
@@ -584,7 +585,8 @@
           links: [
             { label: "镜像下载 (极速 .dmg)", url: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.dmg", badge: "极速" },
             { label: "GitHub 下载 (.dmg)", url: "https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.dmg" },
-            { label: "免安装便携版 (.zip)", url: "https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.zip" }
+            { label: "免安装便携版 (.zip)", url: "https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.zip" },
+            { label: "夸克网盘下载", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh" }
           ]
         },
         android: {
@@ -621,16 +623,16 @@
               config.links = [
                 { label: `镜像下载 (极速 .dmg)`, url: p.mirror_url, badge: "极速" },
                 { label: `GitHub 下载 (.dmg)`, url: p.download_url },
+                { label: "免安装便携版 (.zip)", url: `https://github.com/luoluoluo22/yanzi/releases/download/macos-v${p.version || ver}/Yanzi-macos-v${p.version || ver}.zip` },
                 { label: "夸克网盘下载", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh" }
               ];
             } else if (key === "windows") {
-              if (remoteUpdateData.download_url) {
-                config.primaryUrl = remoteUpdateData.download_url;
-              }
+              config.primaryUrl = p.mirror_url || p.download_url || config.primaryUrl;
               config.links = [
+                { label: `镜像下载 (极速 .exe)`, url: p.mirror_url, badge: "免翻墙" },
+                { label: `GitHub 下载 (.exe)`, url: p.download_url },
+                { label: "蓝奏云网盘下载", url: p.lanzou_url || "https://wwbnh.lanzout.com/b0pnkaj6j" },
                 { label: `夸克网盘下载`, url: p.quark_url || "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh" },
-                { label: `镜像下载 (极速)`, url: p.mirror_url, badge: "免翻墙" },
-                { label: `GitHub 下载`, url: p.download_url },
                 { label: `便携免安装版 (.zip)`, url: p.portable_url || `https://github.com/luoluoluo22/yanzi/releases/download/v${ver}/Yanzi-win-Portable-${ver}.zip` }
               ];
             }
@@ -666,11 +668,7 @@
           if (config.key === "mac") {
             btn.innerHTML = `${APPLE_SVG}mac 下载`;
           } else if (config.key === "windows") {
-            if (btn.id === "download-button" && remoteUpdateData && remoteUpdateData.file_name) {
-              btn.textContent = `蓝奏云: ${remoteUpdateData.file_name}`;
-            } else {
-              btn.textContent = "免费下载 (蓝奏云)";
-            }
+            btn.textContent = "window 下载";
           } else {
             btn.textContent = config.primaryLabel;
           }
