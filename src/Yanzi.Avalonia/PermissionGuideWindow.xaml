@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Yanzi.Avalonia"
         x:Class="Yanzi.Avalonia.PermissionGuideWindow"
         Title="燕子启动器 - 系统权限与授权指引"
         Width="640"
@@ -15,9 +16,9 @@
         Focusable="True"
         PointerPressed="Window_PointerPressed">
     <Border CornerRadius="18"
-            BorderThickness="1"
-            BorderBrush="#3DFFFFFF"
-            Background="#F21E1E22"
+            BorderThickness="1.2"
+            BorderBrush="{DynamicResource BrushBorder}"
+            Background="{DynamicResource BrushWindowBG}"
             Padding="24">
         <DockPanel LastChildFill="True">
             <!-- Header -->
@@ -26,13 +27,13 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="🛡️" FontSize="18" VerticalAlignment="Center"/>
                         <TextBlock Text="macOS 系统权限与授权指引"
-                                   Foreground="White"
+                                   Foreground="{DynamicResource BrushTextMain}"
                                    FontSize="18"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
                     </StackPanel>
                     <TextBlock Text="授予必要的系统权限以启用全局鼠标长按、轮盘拖拽与手势"
-                               Foreground="#99FFFFFF"
+                               Foreground="{DynamicResource BrushTextSec}"
                                FontSize="11"/>
                 </StackPanel>
                 <Button Content="✕"
@@ -45,24 +46,24 @@
                         DockPanel.Dock="Right"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top"
-                        Background="#20FFFFFF"
-                        Foreground="#AAFFFFFF"
+                        Background="{DynamicResource BrushSecondaryBtnBG}"
+                        Foreground="{DynamicResource BrushTextSec}"
                         CornerRadius="14"/>
             </DockPanel>
 
             <!-- Bottom Action Bar -->
-            <Border DockPanel.Dock="Bottom" Margin="0,16,0,0" Padding="0,12,0,0" BorderThickness="0,1,0,0" BorderBrush="#1AFFFFFF">
+            <Border DockPanel.Dock="Bottom" Margin="0,16,0,0" Padding="0,12,0,0" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BrushBorder}">
                 <DockPanel>
                     <TextBlock x:Name="StatusMessageText"
                                Text="请按照指引开启权限，开启后点击「检查并重新连接」"
-                               Foreground="#B0FFFFFF"
+                               Foreground="{DynamicResource BrushTextSec}"
                                FontSize="11"
                                VerticalAlignment="Center"
                                DockPanel.Dock="Left"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" DockPanel.Dock="Right">
                         <Button Content="🔄 检查并重新连接"
                                 Click="CheckAndReconnect_Click"
-                                Background="#2A7BDE"
+                                Background="{DynamicResource BrushAccent}"
                                 Foreground="White"
                                 FontWeight="Medium"
                                 Padding="14,6"
@@ -81,15 +82,15 @@
             <Grid ColumnDefinitions="240,16,*">
                 <!-- Left Column: Instructions Guide -->
                 <Border Grid.Column="0"
-                        Background="#12FFFFFF"
-                        BorderBrush="#1AFFFFFF"
+                        Background="{DynamicResource BrushCardBG}"
+                        BorderBrush="{DynamicResource BrushBorder}"
                         BorderThickness="1"
                         CornerRadius="12"
                         Padding="14">
                     <DockPanel LastChildFill="True">
                         <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" Spacing="6">
                             <TextBlock Text="💡 提示：若设置列表中未出现燕子，请点击下方在访达中定位并直接拖拽入列表"
-                                       Foreground="#80FFFFFF"
+                                       Foreground="{DynamicResource BrushTextSec}"
                                        FontSize="10"
                                        TextWrapping="Wrap"/>
                             <Button Content="📁 在访达中定位应用"
@@ -97,35 +98,35 @@
                                     HorizontalAlignment="Stretch"
                                     HorizontalContentAlignment="Center"
                                     FontSize="11"
-                                    Background="#25FFFFFF"
+                                    Background="{DynamicResource BrushSecondaryBtnBG}"
                                     CornerRadius="6"
                                     Padding="0,6"/>
                         </StackPanel>
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel Spacing="12">
-                                <TextBlock Text="📖 操作指南" Foreground="#E0FFFFFF" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock Text="📖 操作指南" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
                                 
-                                <Border Background="#1A000000" CornerRadius="8" Padding="10">
+                                <Border Background="{DynamicResource BrushInputBG}" CornerRadius="8" Padding="10">
                                     <StackPanel Spacing="4">
-                                        <TextBlock Text="步骤 1" Foreground="#4A90E2" FontSize="11" FontWeight="Bold"/>
+                                        <TextBlock Text="步骤 1" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="Bold"/>
                                         <TextBlock Text="点击右侧对应权限的「打开系统设置」按钮，系统将自动跳转至对应的隐私面板。"
-                                                   Foreground="#CCCCCC" FontSize="11" TextWrapping="Wrap"/>
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
                                     </StackPanel>
                                 </Border>
 
-                                <Border Background="#1A000000" CornerRadius="8" Padding="10">
+                                <Border Background="{DynamicResource BrushInputBG}" CornerRadius="8" Padding="10">
                                     <StackPanel Spacing="4">
-                                        <TextBlock Text="步骤 2" Foreground="#4A90E2" FontSize="11" FontWeight="Bold"/>
+                                        <TextBlock Text="步骤 2" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="Bold"/>
                                         <TextBlock Text="在设置列表中找到「Yanzi」或「燕子启动器」并将右侧开关打开（允许）。"
-                                                   Foreground="#CCCCCC" FontSize="11" TextWrapping="Wrap"/>
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
                                     </StackPanel>
                                 </Border>
 
-                                <Border Background="#1A000000" CornerRadius="8" Padding="10">
+                                <Border Background="{DynamicResource BrushInputBG}" CornerRadius="8" Padding="10">
                                     <StackPanel Spacing="4">
-                                        <TextBlock Text="步骤 3" Foreground="#4A90E2" FontSize="11" FontWeight="Bold"/>
+                                        <TextBlock Text="步骤 3" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="Bold"/>
                                         <TextBlock Text="回到本窗口，点击右下方「检查并重新连接」，服务即可即时生效，无需重启！"
-                                                   Foreground="#CCCCCC" FontSize="11" TextWrapping="Wrap"/>
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="11" TextWrapping="Wrap"/>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -136,12 +137,12 @@
                 <!-- Right Column: Permission Status Cards -->
                 <StackPanel Grid.Column="2" Spacing="12">
                     <!-- Accessibility Permission Card -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="12" Padding="14">
+                    <Border Background="{DynamicResource BrushCardBG}" BorderThickness="1" BorderBrush="{DynamicResource BrushBorder}" CornerRadius="12" Padding="14">
                         <StackPanel Spacing="10">
                             <DockPanel>
                                 <StackPanel Spacing="2" DockPanel.Dock="Left">
-                                    <TextBlock Text="1. 辅助功能 (Accessibility)" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
-                                    <TextBlock Text="用于捕获全局按键、模拟输入与无缝交互" Foreground="#80FFFFFF" FontSize="10"/>
+                                    <TextBlock Text="1. 辅助功能 (Accessibility)" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="用于捕获全局按键、模拟输入与无缝交互" Foreground="{DynamicResource BrushTextSec}" FontSize="10"/>
                                 </StackPanel>
                                 <Border x:Name="AccessibilityBadge"
                                         DockPanel.Dock="Right"
@@ -167,7 +168,7 @@
                                 <Button Content="一键请求授权"
                                         Click="RequestAccessibility_Click"
                                         FontSize="11"
-                                        Background="#20FFFFFF"
+                                        Background="{DynamicResource BrushSecondaryBtnBG}"
                                         Padding="12,6"
                                         CornerRadius="6"/>
                             </StackPanel>
@@ -175,12 +176,12 @@
                     </Border>
 
                     <!-- Input Monitoring Permission Card -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="12" Padding="14">
+                    <Border Background="{DynamicResource BrushCardBG}" BorderThickness="1" BorderBrush="{DynamicResource BrushBorder}" CornerRadius="12" Padding="14">
                         <StackPanel Spacing="10">
                             <DockPanel>
                                 <StackPanel Spacing="2" DockPanel.Dock="Left">
-                                    <TextBlock Text="2. 输入监控 (Input Monitoring)" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
-                                    <TextBlock Text="用于全局右键长按呼出背包、拖拽轮盘与手势" Foreground="#80FFFFFF" FontSize="10"/>
+                                    <TextBlock Text="2. 输入监控 (Input Monitoring)" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="用于全局右键长按呼出背包、拖拽轮盘与手势" Foreground="{DynamicResource BrushTextSec}" FontSize="10"/>
                                 </StackPanel>
                                 <Border x:Name="InputMonitoringBadge"
                                         DockPanel.Dock="Right"
@@ -206,7 +207,7 @@
                                 <Button Content="一键请求授权"
                                         Click="RequestInputMonitoring_Click"
                                         FontSize="11"
-                                        Background="#20FFFFFF"
+                                        Background="{DynamicResource BrushSecondaryBtnBG}"
                                         Padding="12,6"
                                         CornerRadius="6"/>
                             </StackPanel>

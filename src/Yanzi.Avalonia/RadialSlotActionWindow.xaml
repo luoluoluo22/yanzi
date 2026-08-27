@@ -172,8 +172,8 @@
 
                                 <!-- Category Badge -->
                                 <Border Grid.Column="2" CornerRadius="6" Background="{Binding TagBackground}"
-                                        Padding="7,3" VerticalAlignment="Center" Margin="6,0,0,0">
-                                    <TextBlock Text="{Binding CategoryTag}" Foreground="#E4E4E7" FontSize="10.5" FontWeight="Medium"/>
+                                         Padding="7,3" VerticalAlignment="Center" Margin="6,0,0,0">
+                                    <TextBlock Text="{Binding CategoryTag}" Foreground="{Binding TagForeground}" FontSize="10.5" FontWeight="SemiBold"/>
                                 </Border>
                             </Grid>
                         </DataTemplate>

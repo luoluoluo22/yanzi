@@ -19,6 +19,7 @@ public class SlotActionItemViewModel
     public Bitmap? Icon { get; }
     public bool HasIcon => Icon != null;
     public string TagBackground { get; }
+    public string TagForeground { get; }
 
     public SlotActionItemViewModel(CommandItem command)
     {
@@ -33,7 +34,8 @@ public class SlotActionItemViewModel
         {
             Category = "Apps";
             CategoryTag = "应用程序";
-            TagBackground = "#1E3A8A";
+            TagBackground = "#203B82F6";
+            TagForeground = "#FF3B82F6";
             if (!string.IsNullOrEmpty(command.ApplicationName))
             {
                 Icon = MacIconExtractor.GetCachedBitmap(command.ApplicationName);
@@ -43,19 +45,22 @@ public class SlotActionItemViewModel
         {
             Category = "Shortcuts";
             CategoryTag = "系统动作";
-            TagBackground = "#065F46";
+            TagBackground = "#2010B981";
+            TagForeground = "#FF10B981";
         }
         else if (command.ActionKind == CommandActionKind.Snippet)
         {
             Category = "Custom";
             CategoryTag = "快捷短语";
-            TagBackground = "#78350F";
+            TagBackground = "#20EC4899";
+            TagForeground = "#FFEC4899";
         }
         else
         {
             Category = "Custom";
             CategoryTag = "自定义小程序";
-            TagBackground = "#581C87";
+            TagBackground = "#208B5CF6";
+            TagForeground = "#FF8B5CF6";
         }
     }
 }
