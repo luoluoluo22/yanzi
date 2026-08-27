@@ -5341,81 +5341,89 @@ async function getYanmStateViewUrl(env, userId) {
 // ==========================================
 
 let _wishWallTablesInitialized = false;
+let _wishWallSeeded = false;
 
 async function ensureWishWallTables(env) {
-  if (_wishWallTablesInitialized) return;
-  try {
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS wishes (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        username TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT NOT NULL,
-        category TEXT NOT NULL DEFAULT '通用',
-        status TEXT NOT NULL DEFAULT 'open',
-        accepted_reply_id TEXT,
-        reward_points INTEGER NOT NULL DEFAULT 50,
-        reply_count INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `).run();
+  if (!_wishWallTablesInitialized) {
+    try {
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS wishes (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          username TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          category TEXT NOT NULL DEFAULT '通用',
+          status TEXT NOT NULL DEFAULT 'open',
+          accepted_reply_id TEXT,
+          reward_points INTEGER NOT NULL DEFAULT 50,
+          reply_count INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      `).run();
 
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS wish_replies (
-        id TEXT PRIMARY KEY,
-        wish_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        username TEXT NOT NULL,
-        content TEXT NOT NULL,
-        code_snippet TEXT,
-        is_accepted INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL
-      )
-    `).run();
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS wish_replies (
+          id TEXT PRIMARY KEY,
+          wish_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          username TEXT NOT NULL,
+          content TEXT NOT NULL,
+          code_snippet TEXT,
+          is_accepted INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        )
+      `).run();
 
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS user_points (
-        user_id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        points INTEGER NOT NULL DEFAULT 0,
-        wishes_count INTEGER NOT NULL DEFAULT 0,
-        accepted_count INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT NOT NULL
-      )
-    `).run();
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS user_points (
+          user_id TEXT PRIMARY KEY,
+          username TEXT NOT NULL,
+          points INTEGER NOT NULL DEFAULT 0,
+          wishes_count INTEGER NOT NULL DEFAULT 0,
+          accepted_count INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL
+        )
+      `).run();
 
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS point_transactions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        amount INTEGER NOT NULL,
-        action_type TEXT NOT NULL,
-        description TEXT NOT NULL,
-        reference_id TEXT,
-        created_at TEXT NOT NULL
-      )
-    `).run();
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS point_transactions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          amount INTEGER NOT NULL,
+          action_type TEXT NOT NULL,
+          description TEXT NOT NULL,
+          reference_id TEXT,
+          created_at TEXT NOT NULL
+        )
+      `).run();
 
-    await env.DB.prepare(`
-      CREATE INDEX IF NOT EXISTS idx_wishes_status_created ON wishes (status, created_at DESC)
-    `).run().catch(() => {});
+      await env.DB.prepare(`
+        CREATE INDEX IF NOT EXISTS idx_wishes_status_created ON wishes (status, created_at DESC)
+      `).run().catch(() => {});
 
-    await env.DB.prepare(`
-      CREATE INDEX IF NOT EXISTS idx_wish_replies_wish_id ON wish_replies (wish_id, created_at ASC)
-    `).run().catch(() => {});
+      await env.DB.prepare(`
+        CREATE INDEX IF NOT EXISTS idx_wish_replies_wish_id ON wish_replies (wish_id, created_at ASC)
+      `).run().catch(() => {});
 
-    await env.DB.prepare(`
-      CREATE INDEX IF NOT EXISTS idx_user_points_rank ON user_points (points DESC, accepted_count DESC)
-    `).run().catch(() => {});
+      await env.DB.prepare(`
+        CREATE INDEX IF NOT EXISTS idx_user_points_rank ON user_points (points DESC, accepted_count DESC)
+      `).run().catch(() => {});
 
-    _wishWallTablesInitialized = true;
+      _wishWallTablesInitialized = true;
+    } catch (err) {
+      console.error("Failed to ensure wish wall tables:", err);
+    }
+  }
 
-    // 自动播种初始种子心愿与榜单数据
-    await seedWishWallData(env).catch(e => console.warn("seedWishWallData error:", e));
-  } catch (err) {
-    console.error("Failed to ensure wish wall tables:", err);
+  if (!_wishWallSeeded) {
+    try {
+      await seedWishWallData(env);
+      _wishWallSeeded = true;
+    } catch (e) {
+      console.warn("seedWishWallData error:", e);
+    }
   }
 }
 
