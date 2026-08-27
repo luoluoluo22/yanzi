@@ -663,39 +663,116 @@ async function handleRequest(request, env) {
         throw new Error(`GitHub API returned status ${ghResponse.status}`);
       }
       const data = await ghResponse.json();
+      const assets = data.assets || [];
+      const version = data.tag_name ? data.tag_name.replace(/^v/, "") : "0.3.19";
 
-      // 寻找 .exe 结尾的 asset 作为 Windows 的安装包
-      const winAsset = (data.assets || []).find(asset => asset.name.endsWith(".exe"));
-      const version = data.tag_name ? data.tag_name.replace(/^v/, "") : "";
+      // 提取多平台构建产物
+      const winSetupAsset = assets.find(asset => asset.name.endsWith(".exe")) || null;
+      const winPortableAsset = assets.find(asset => asset.name.includes("Portable") && asset.name.endsWith(".zip")) || null;
+      const macAsset = assets.find(asset => asset.name.endsWith(".dmg") || asset.name.includes("osx") || asset.name.includes("mac")) || null;
+      const androidAsset = assets.find(asset => asset.name.endsWith(".apk")) || null;
+
+      const defaultWinFileName = winSetupAsset ? winSetupAsset.name : `Yanzi-win-Setup-${version}.exe`;
+      const defaultWinDownloadUrl = winSetupAsset ? winSetupAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${version}/${defaultWinFileName}`;
+      const defaultMacFileName = macAsset ? macAsset.name : `Yanzi-${version}.dmg`;
+      const defaultMacDownloadUrl = macAsset ? macAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${version}/${defaultMacFileName}`;
+
+      const requestedPlatform = (url.searchParams.get("platform") || "windows").toLowerCase();
+
+      const platforms = {
+        windows: {
+          name: "Windows",
+          version: version,
+          file_name: defaultWinFileName,
+          download_url: defaultWinDownloadUrl,
+          mirror_url: `https://ghfast.top/${defaultWinDownloadUrl}`,
+          portable_url: winPortableAsset ? winPortableAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${version}/Yanzi-win-Portable-${version}.zip`,
+          lanzou_url: "https://wwbnh.lanzout.com/b0pnkaj6j",
+          quark_url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh",
+          has_asset: Boolean(winSetupAsset)
+        },
+        mac: {
+          name: "macOS",
+          version: version,
+          file_name: defaultMacFileName,
+          download_url: defaultMacDownloadUrl,
+          mirror_url: `https://ghfast.top/${defaultMacDownloadUrl}`,
+          has_asset: Boolean(macAsset)
+        },
+        android: {
+          name: "Android",
+          version: "0.2.24",
+          file_name: androidAsset ? androidAsset.name : "Yanzi-android-v0.2.24.apk",
+          download_url: "https://wwbnh.lanzout.com/b0pnm6z2j",
+          has_asset: Boolean(androidAsset)
+        }
+      };
+
+      const selectedPlatform = platforms[requestedPlatform] || platforms.windows;
 
       const payload = {
         channel: "stable",
         version: version,
         title: data.name || `燕子启动器 v${version}`,
         notes: data.body || "",
-        download_url: winAsset ? winAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/${data.tag_name}/Yanzi-win-Setup-${version}.exe`,
-        file_name: winAsset ? winAsset.name : `Yanzi-win-Setup-${version}.exe`,
+        download_url: selectedPlatform.download_url,
+        file_name: selectedPlatform.file_name,
         download_code: "",
         provider: "github",
         sha256: "",
-        published_at: data.published_at || new Date().toISOString()
+        published_at: data.published_at || new Date().toISOString(),
+        platforms: platforms
       };
 
       return withCors(json(payload));
     } catch (err) {
       console.error("Fetch GitHub releases failed:", err);
-      // 容错：如果 GitHub 接口报错，返回一个兜底的 0.2.15 配置
+      // 容错：如果 GitHub 接口报错，返回兜底配置
+      const fallbackVersion = "0.3.19";
+      const fallbackWinUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${fallbackVersion}/Yanzi-win-Setup-${fallbackVersion}.exe`;
+      const fallbackMacUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${fallbackVersion}/Yanzi-${fallbackVersion}.dmg`;
+      
+      const fallbackPlatforms = {
+        windows: {
+          name: "Windows",
+          version: fallbackVersion,
+          file_name: `Yanzi-win-Setup-${fallbackVersion}.exe`,
+          download_url: fallbackWinUrl,
+          mirror_url: `https://ghfast.top/${fallbackWinUrl}`,
+          portable_url: `https://github.com/luoluoluo22/yanzi/releases/download/v${fallbackVersion}/Yanzi-win-Portable-${fallbackVersion}.zip`,
+          lanzou_url: "https://wwbnh.lanzout.com/b0pnkaj6j",
+          quark_url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh",
+          has_asset: true
+        },
+        mac: {
+          name: "macOS",
+          version: fallbackVersion,
+          file_name: `Yanzi-${fallbackVersion}.dmg`,
+          download_url: fallbackMacUrl,
+          mirror_url: `https://ghfast.top/${fallbackMacUrl}`,
+          has_asset: false
+        },
+        android: {
+          name: "Android",
+          version: "0.2.24",
+          file_name: "Yanzi-android-v0.2.24.apk",
+          download_url: "https://wwbnh.lanzout.com/b0pnm6z2j",
+          has_asset: true
+        }
+      };
+
       return withCors(json({
         channel: "stable",
-        version: "0.3.5",
-        title: "燕子启动器 v0.3.5",
+        version: fallbackVersion,
+        title: `燕子启动器 v${fallbackVersion}`,
         notes: "从 GitHub 抓取最新版失败，已启用本地缓存兜底",
-        download_url: "https://github.com/luoluoluo22/yanzi/releases/download/v0.3.5/Yanzi-win-Setup-0.3.5.exe",
-        file_name: "Yanzi-win-Setup-0.3.5.exe",
+        download_url: fallbackWinUrl,
+        file_name: `Yanzi-win-Setup-${fallbackVersion}.exe`,
         download_code: "",
         provider: "github",
         sha256: "",
-        published_at: "2026-08-20T02:00:00Z"
+        published_at: "2026-08-25T00:00:00Z",
+        platforms: fallbackPlatforms
       }));
     }
   }
