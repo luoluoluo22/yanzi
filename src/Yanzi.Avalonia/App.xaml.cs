@@ -88,7 +88,7 @@ public partial class App : Application
             var bitmap = new global::Avalonia.Media.Imaging.Bitmap(stream);
             WriteLog($"CreateTrayIcon: Bitmap loaded. Size={bitmap.Size}");
 
-            var openLauncherMenuItem = new NativeMenuItem("打开主启动器")
+            var openLauncherMenuItem = new NativeMenuItem("打开仓库")
             {
                 Gesture = KeyGesture.Parse("alt+space")
             };
@@ -184,7 +184,7 @@ public partial class App : Application
         UpdateTrayMenuState();
     }
 
-    private void OpenSettings()
+    public void OpenSettings()
     {
         if (_mainWindow == null)
             return;

@@ -123,6 +123,22 @@ public partial class RadialMenuItemViewModel : ObservableObject
     public string? DisplayGlyph => Command?.Glyph;
     public bool UseGlyphIcon => !string.IsNullOrWhiteSpace(DisplayGlyph) && !HasRealIcon;
     public string Title => Command?.Title ?? ChildPageTitle;
+    public string DisplayTitle => string.IsNullOrWhiteSpace(Title) ? "添加" : Title;
+
+    public IBrush AccentBrush
+    {
+        get
+        {
+            if (IsEmpty) return new SolidColorBrush(Color.Parse("#14FFFFFF"));
+            if (HasRealIcon || HasImageIcon) return new SolidColorBrush(Color.Parse("#00000000"));
+            if (!string.IsNullOrWhiteSpace(Command?.AccentColor))
+            {
+                if (Color.TryParse(Command.AccentColor, out var col))
+                    return new SolidColorBrush(col);
+            }
+            return new SolidColorBrush(Color.Parse("#FF1E293B"));
+        }
+    }
 
     public RadialMenuItemViewModel(string ownerPageId, int index, CommandItem? command, string childPageId,
                                    string childPageTitle, double x, double y, double angleDegrees, RadialMenuRing ring,

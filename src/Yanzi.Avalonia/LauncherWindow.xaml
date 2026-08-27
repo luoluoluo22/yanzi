@@ -37,7 +37,7 @@
                     <Button Classes="tab" Classes.active="{Binding IsAllActive}" Content="全部 1" Click="OnTabClick" Tag="All"/>
                     <Button Classes="tab" Classes.active="{Binding IsAppActive}" Content="应用 2" Click="OnTabClick" Tag="App"/>
                     <Button Classes="tab" Classes.active="{Binding IsFileActive}" Content="文件 3" Click="OnTabClick" Tag="File"/>
-                    <Button Classes="tab" Classes.active="{Binding IsExtensionActive}" Content="扩展 4" Click="OnTabClick" Tag="Extension"/>
+                    <Button Classes="tab" Classes.active="{Binding IsExtensionActive}" Content="小程序 4" Click="OnTabClick" Tag="Extension"/>
                     <Button Classes="tab" Classes.active="{Binding IsClipboardActive}" Content="剪贴 5" Click="OnTabClick" Tag="Clipboard"/>
                     <Button Classes="tab" Classes.active="{Binding IsSnippetActive}" Content="短语 6" Click="OnTabClick" Tag="Snippet"/>
                     <Button Classes="tab" Content="＋" Command="{Binding ToggleEditorCommand}"/>
@@ -54,7 +54,7 @@
                         PointerPressed="OnAccessibilityWarningClick"
                         Cursor="Hand">
                     <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0" Text="⚠️ 燕子启动器未获得 macOS 辅助功能 (Accessibility) 权限，全局热键与快捷短语将失效。点击在此开启引导。"
+                        <TextBlock Grid.Column="0" Text="⚠️ 燕子未获得 macOS 辅助功能 (Accessibility) 权限，全局热键与快捷短语将失效。点击在此开启引导。"
                                    Foreground="White" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" TextWrapping="Wrap"/>
                         <Path Grid.Column="1" Data="M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z"
                               Fill="White" Width="10" Height="10" Stretch="Uniform" VerticalAlignment="Center" Margin="6,0,0,0"/>
@@ -71,7 +71,7 @@
                         <!-- Search TextBox Input -->
                         <TextBox Grid.Column="1" Name="SearchInput"
                                  Text="{Binding SearchText, Mode=TwoWay}"
-                                 Watermark="输入搜索内容，支持应用、文件、扩展..."
+                                 Watermark="输入搜索内容，支持应用、文件、小程序..."
                                  Background="Transparent" BorderThickness="0"
                                  Foreground="White" FontSize="15" FontWeight="Normal"
                                  VerticalAlignment="Center" CaretBrush="White"/>
@@ -220,7 +220,7 @@
 
                                 <!-- Snippet Content -->
                                 <StackPanel Spacing="4">
-                                    <TextBlock Text="短语内容 (扩展替换后的完整文本)" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
+                                    <TextBlock Text="短语内容 (小程序替换后的完整文本)" Foreground="#A0FFFFFF" FontSize="11" FontWeight="Medium"/>
                                     <TextBox Text="{Binding SnippetText, Mode=TwoWay}" Watermark="输入要自动粘贴的完整内容..." Height="110" AcceptsReturn="True" TextWrapping="Wrap" Foreground="White" Background="#1DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="6" Padding="8,6" VerticalContentAlignment="Top"/>
                                 </StackPanel>
                             </StackPanel>
@@ -245,7 +245,7 @@
                         <!-- Editor Header -->
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
                             <TextBlock Text="{Binding EditorTitle}" Foreground="#FF10B981" FontSize="15" FontWeight="Bold"/>
-                            <TextBlock Text="定义扩展名称、图标和 AppleScript 苹果脚本内容" Foreground="#88FFFFFF" FontSize="11" TextWrapping="Wrap"/>
+                            <TextBlock Text="定义小程序名称、图标和 AppleScript 苹果脚本内容" Foreground="#88FFFFFF" FontSize="11" TextWrapping="Wrap"/>
                         </StackPanel>
 
                         <!-- JSON Editor -->
@@ -271,7 +271,7 @@
                                 </Button>
                                 <Button Grid.Column="1" Content="删除" Classes="action-btn delete" Command="{Binding DeleteCustomExtensionCommand}" IsVisible="{Binding IsDeleteMode}" Margin="8,0,0,0"/>
                                 <Button Grid.Column="2" Content="关闭" Classes="action-btn cancel" Command="{Binding ToggleEditorCommand}"/>
-                                <Button Grid.Column="3" Content="复制写扩展提示词" Classes="action-btn cancel" Command="{Binding CopyPromptCommand}"/>
+                                <Button Grid.Column="3" Content="复制小程序提示词" Classes="action-btn cancel" Command="{Binding CopyPromptCommand}"/>
                             </Grid>
                         </Grid>
                     </Grid>

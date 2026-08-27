@@ -74,8 +74,8 @@
                     <!-- Launcher Hotkey Settings -->
                     <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="10" Padding="14">
                         <StackPanel Spacing="12">
-                            <TextBlock Text="主启动器快捷键" Foreground="White" FontSize="14" FontWeight="Medium"/>
-                            <TextBlock Text="设置全局唤醒主启动器的快捷键" Foreground="#80FFFFFF" FontSize="10"/>
+                            <TextBlock Text="仓库快捷键" Foreground="White" FontSize="14" FontWeight="Medium"/>
+                            <TextBlock Text="设置全局唤醒仓库的快捷键" Foreground="#80FFFFFF" FontSize="10"/>
                             <TextBlock x:Name="AccessibilityWarning" 
                                        Text="⚠️ 燕子启动器未获得 macOS 辅助功能 (Accessibility) 权限，快捷键可能不起作用。请在系统设置 -> 隐私与安全 -> 辅助功能 中启用它。" 
                                        Foreground="#FFF87171" 

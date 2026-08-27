@@ -33,6 +33,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private bool _isContentVisible;
     private bool _isPanelActive;
     private int _visibilityVersion;
+    private bool _isActionWindowOpen;
 
     private double _panelLeft;
     private double _panelTop;
@@ -73,6 +74,13 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         private set => SetField(ref _activeTitle, value);
     }
 
+    private string _contextSectionTitle = "应用专属 • 默认";
+    public string ContextSectionTitle
+    {
+        get => _contextSectionTitle;
+        private set => SetField(ref _contextSectionTitle, value);
+    }
+
     public string PageTitle => "控制面板";
 
     public static readonly StyledProperty<bool> IsPinnedProperty =
@@ -86,6 +94,18 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     public ObservableCollection<RadialMenuItemViewModel> GlobalSlots { get; } = [];
     public ObservableCollection<RadialMenuItemViewModel> ContextSlots { get; } = [];
+
+    static QuickPanelWindow()
+    {
+        IsPinnedProperty.Changed.AddClassHandler<QuickPanelWindow>((w, e) =>
+        {
+            if (e.NewValue is bool isPinned && w._radialSettings != null)
+            {
+                w._radialSettings.IsPinned = isPinned;
+                w._radialSettings.Save();
+            }
+        });
+    }
 
     public QuickPanelWindow()
         : this(new RadialMenuSettings(), new DisabledCommandActionExecutor(), null!)
@@ -107,6 +127,18 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         IsContentVisible = false;
         Opacity = 0;
         _isPanelActive = false;
+        IsPinned = _radialSettings.IsPinned;
+
+        // Eagerly load and cache slot items and native icons at startup
+        LoadSlots();
+        if (_mainWindow != null)
+        {
+            var preloadTargets = _mainWindow.GetDefaultCommands(string.Empty)
+                .Where(c => c.ActionKind == CommandActionKind.LaunchApplication && !string.IsNullOrEmpty(c.ApplicationName))
+                .Select(c => c.ApplicationName!)
+                .ToList();
+            MacIconExtractor.PreloadIcons(preloadTargets);
+        }
     }
 
     private void InitializeComponent()
@@ -222,8 +254,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         ClearActiveItem();
         var visibilityVersion = ++_visibilityVersion;
 
+        var frontApp = MacIconExtractor.GetFrontmostApplicationName();
+        ContextSectionTitle = string.IsNullOrWhiteSpace(frontApp) ? "应用专属 • 默认" : $"应用专属 • {frontApp}";
+
         PrepareOverlayForActivation(activation);
-        LoadSlots();
+        if (GlobalSlots.Count == 0 || ContextSlots.Count == 0)
+        {
+            LoadSlots();
+        }
         ActiveTitle = "取消";
 
         if (!IsVisible)
@@ -290,8 +328,23 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         _activeActivationSource = RadialMenuActivationSource.Unknown;
     }
 
+    private bool _isContextMenuOpen;
+    private DateTime _lastContextMenuClosedAt = DateTime.MinValue;
+    private static CommandItem? _copiedSlotCommand;
+    private static bool _isCutSlot;
+    private static RadialMenuItemViewModel? _cutSourceItem;
+    private RadialMenuItemViewModel? _draggedSlot;
+    private Point _dragStartPoint;
+    private bool _isDraggingInternalSlot;
+
     private void Window_Deactivated(object? sender, EventArgs e)
     {
+        if (_isActionWindowOpen || _isContextMenuOpen || _isDraggingInternalSlot)
+            return;
+
+        if (DateTime.UtcNow - _lastContextMenuClosedAt <= TimeSpan.FromMilliseconds(300))
+            return;
+
         if (!IsPinned)
             HidePanel();
     }
@@ -320,11 +373,123 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
 
         var position = e.GetPosition(this);
+        var pointer = e.GetCurrentPoint(this);
+
+        if (pointer.Properties.IsLeftButtonPressed && _draggedSlot != null && !_draggedSlot.IsEmpty)
+        {
+            var diff = position - _dragStartPoint;
+            if (Math.Abs(diff.X) > 6 || Math.Abs(diff.Y) > 6)
+            {
+                _isDraggingInternalSlot = true;
+                var hoverTarget = FindSlotAtPosition(position);
+                if (hoverTarget != null)
+                {
+                    SetActiveItem(hoverTarget);
+                    ActiveTitle = hoverTarget.IsEmpty
+                        ? $"移动到空槽位"
+                        : (ReferenceEquals(hoverTarget, _draggedSlot) ? $"拖拽中：「{_draggedSlot.Title}」" : $"与「{hoverTarget.Title}」互换");
+                }
+                else
+                {
+                    ActiveTitle = $"拖拽中：「{_draggedSlot.Title}」";
+                }
+                return;
+            }
+        }
+
         UpdateSelection(position);
     }
 
     private void Window_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_isDraggingInternalSlot && _draggedSlot != null)
+        {
+            var releasePos = e.GetPosition(this);
+            var targetSlot = FindSlotAtPosition(releasePos);
+
+            if (targetSlot != null && !ReferenceEquals(targetSlot, _draggedSlot))
+            {
+                SwapOrMoveSlots(_draggedSlot, targetSlot);
+            }
+            else
+            {
+                ActiveTitle = _draggedSlot.Title;
+            }
+
+            _isDraggingInternalSlot = false;
+            _draggedSlot = null;
+            e.Handled = true;
+            return;
+        }
+
+        if (_draggedSlot != null && !_isDraggingInternalSlot)
+        {
+            var item = _draggedSlot;
+            _draggedSlot = null;
+
+            SetActiveItem(item);
+            if (item.Command != null)
+            {
+                ExecuteCommand(item.Command);
+            }
+            else
+            {
+                OpenSlotActionWindow(item);
+            }
+            e.Handled = true;
+            return;
+        }
+
+        _draggedSlot = null;
+        _isDraggingInternalSlot = false;
+    }
+
+    private RadialMenuItemViewModel? FindSlotAtPosition(Point position)
+    {
+        var hit = this.InputHitTest(position);
+        if (hit is Control control)
+        {
+            var parent = control;
+            while (parent != null)
+            {
+                if (parent.DataContext is RadialMenuItemViewModel slotItem)
+                {
+                    return slotItem;
+                }
+                parent = parent.Parent as Control;
+            }
+        }
+        return null;
+    }
+
+    private void SwapOrMoveSlots(RadialMenuItemViewModel source, RadialMenuItemViewModel target)
+    {
+        var sourceKey = source.OwnerPageId;
+        var targetKey = target.OwnerPageId;
+
+        var sourceExtId = source.Command?.ExtensionId ?? string.Empty;
+        var targetExtId = target.Command?.ExtensionId ?? string.Empty;
+
+        if (!_radialSettings.Slots.TryGetValue(sourceKey, out var sourceSlot))
+        {
+            sourceSlot = new RadialMenuSlotSettings();
+            _radialSettings.Slots[sourceKey] = sourceSlot;
+        }
+        if (!_radialSettings.Slots.TryGetValue(targetKey, out var targetSlot))
+        {
+            targetSlot = new RadialMenuSlotSettings();
+            _radialSettings.Slots[targetKey] = targetSlot;
+        }
+
+        sourceSlot.ExtensionId = targetExtId;
+        targetSlot.ExtensionId = sourceExtId;
+
+        _radialSettings.Save();
+        LoadSlots();
+
+        ActiveTitle = string.IsNullOrEmpty(targetExtId)
+            ? $"已移动「{source.Title}」"
+            : $"已互换「{source.Title}」与「{target.Title}」";
     }
 
     private void Slot_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -332,20 +497,126 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (sender is not Border { DataContext: RadialMenuItemViewModel item })
             return;
 
-        e.Handled = true;
-        SetActiveItem(item);
-
         var pressedPoint = e.GetCurrentPoint(this);
         if (pressedPoint.Properties.IsRightButtonPressed)
         {
-            OpenSlotActionWindow(item);
+            e.Handled = true;
+            SetActiveItem(item);
+            ShowSlotContextMenu(sender as Control, item);
             return;
         }
 
-        if (item.Command != null)
+        if (pressedPoint.Properties.IsLeftButtonPressed)
         {
-            ExecuteCommand(item.Command);
+            _draggedSlot = item;
+            _dragStartPoint = pressedPoint.Position;
+            _isDraggingInternalSlot = false;
+            e.Handled = true;
         }
+    }
+
+    private void ShowSlotContextMenu(Control? target, RadialMenuItemViewModel item)
+    {
+        if (target == null) return;
+
+        var menu = new ContextMenu();
+        _isContextMenuOpen = true;
+
+        menu.Closed += (_, _) =>
+        {
+            _isContextMenuOpen = false;
+            _lastContextMenuClosedAt = DateTime.UtcNow;
+        };
+
+        if (!item.IsEmpty && item.Command != null)
+        {
+            var launchItem = new MenuItem { Header = $"🚀 启动「{item.Title}」" };
+            launchItem.Click += (_, _) => ExecuteCommand(item.Command);
+            menu.Items.Add(launchItem);
+
+            menu.Items.Add(new Separator());
+
+            var editItem = new MenuItem { Header = "✏️ 修改插槽小程序..." };
+            editItem.Click += (_, _) => OpenSlotActionWindow(item);
+            menu.Items.Add(editItem);
+
+            var copyItem = new MenuItem { Header = "📋 复制小程序" };
+            copyItem.Click += (_, _) =>
+            {
+                _copiedSlotCommand = item.Command;
+                _isCutSlot = false;
+                _cutSourceItem = null;
+                ActiveTitle = $"已复制：{item.Title}";
+            };
+            menu.Items.Add(copyItem);
+
+            var cutItem = new MenuItem { Header = "✂️ 剪切小程序" };
+            cutItem.Click += (_, _) =>
+            {
+                _copiedSlotCommand = item.Command;
+                _isCutSlot = true;
+                _cutSourceItem = item;
+                ActiveTitle = $"已剪切：{item.Title}";
+            };
+            menu.Items.Add(cutItem);
+        }
+        else
+        {
+            var addItem = new MenuItem { Header = "➕ 添加小程序到此插槽..." };
+            addItem.Click += (_, _) => OpenSlotActionWindow(item);
+            menu.Items.Add(addItem);
+        }
+
+        if (_copiedSlotCommand != null)
+        {
+            var pasteItem = new MenuItem { Header = $"📥 粘贴「{_copiedSlotCommand.Title}」" };
+            pasteItem.Click += (_, _) =>
+            {
+                AssignCommandToSlot(item, _copiedSlotCommand);
+                if (_isCutSlot && _cutSourceItem != null && !ReferenceEquals(_cutSourceItem, item))
+                {
+                    RemoveCommandFromSlot(_cutSourceItem);
+                    _isCutSlot = false;
+                    _cutSourceItem = null;
+                    _copiedSlotCommand = null;
+                }
+            };
+            menu.Items.Add(pasteItem);
+        }
+
+        if (!item.IsEmpty && item.Command != null)
+        {
+            string? targetPath = null;
+            if (!string.IsNullOrEmpty(item.Command.ApplicationName))
+            {
+                if (item.Command.ApplicationName.StartsWith("/"))
+                    targetPath = item.Command.ApplicationName;
+                else
+                    targetPath = MacIconExtractor.GetApplicationPath(item.Command.ApplicationName);
+            }
+
+            if (!string.IsNullOrEmpty(targetPath))
+            {
+                var revealItem = new MenuItem { Header = "📁 在访达中显示" };
+                revealItem.Click += (_, _) =>
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start("open", $"-R \"{targetPath}\"");
+                    }
+                    catch { }
+                };
+                menu.Items.Add(revealItem);
+            }
+
+            menu.Items.Add(new Separator());
+
+            var removeItem = new MenuItem { Header = "🗑️ 清空插槽" };
+            removeItem.Click += (_, _) => RemoveCommandFromSlot(item);
+            menu.Items.Add(removeItem);
+        }
+
+        menu.Open(target);
     }
 
     private void Slot_PointerEntered(object? sender, PointerEventArgs e)
@@ -373,8 +644,10 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void OpenSlotActionWindow(RadialMenuItemViewModel item)
     {
+        _isActionWindowOpen = true;
+
         var window = new RadialSlotActionWindow(
-            item.IsEmpty ? "搜索扩展" : "修改槽位",
+            item.IsEmpty ? "搜索小程序 / 添加到插槽" : "修改插槽小程序",
             _mainWindow.GetRadialMenuCommandCandidates,
             command => AssignCommandToSlot(item, command),
             () => { }, // Sub-pages are not used in Grid panel
@@ -383,7 +656,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             allowDeleteCommand: item.Command != null,
             allowDeleteChildPage: false);
 
-        window.Show(this);
+        window.Closed += (_, _) =>
+        {
+            _isActionWindowOpen = false;
+        };
+
+        window.Show();
         window.Activate();
     }
 
@@ -396,6 +674,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             _radialSettings.Slots[slotKey] = slot;
         }
         slot.ExtensionId = command.ExtensionId;
+        _radialSettings.Save();
         LoadSlots();
         ActiveTitle = $"已设置：{command.Title}";
     }
@@ -403,17 +682,38 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private void RemoveCommandFromSlot(RadialMenuItemViewModel item)
     {
         var slotKey = item.OwnerPageId;
-        if (_radialSettings.Slots.TryGetValue(slotKey, out var slot))
+        if (!_radialSettings.Slots.TryGetValue(slotKey, out var slot))
         {
-            slot.ExtensionId = null;
+            slot = new RadialMenuSlotSettings();
+            _radialSettings.Slots[slotKey] = slot;
         }
+        slot.ExtensionId = string.Empty;
+        _radialSettings.Save();
         LoadSlots();
-        ActiveTitle = "已删除扩展";
+        ActiveTitle = "已清空插槽";
     }
 
     private void CloseButton_Click(object? sender, RoutedEventArgs e)
     {
         HidePanel();
+    }
+
+    private void SettingsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        HidePanel();
+        if (Application.Current is App app)
+        {
+            app.OpenSettings();
+        }
+    }
+
+    private void MobileMessages_Click(object? sender, RoutedEventArgs e)
+    {
+        ActiveTitle = "手机消息暂未连接";
+    }
+
+    private void HubSearchBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
     }
 
     private void LoadSlots()
@@ -429,9 +729,23 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             var key = $"quickpanel_global_{i}";
             CommandItem? command = null;
-            if (_radialSettings.Slots.TryGetValue(key, out var slot) && !string.IsNullOrEmpty(slot.ExtensionId))
+            if (_radialSettings.Slots.TryGetValue(key, out var slot))
             {
-                command = allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, slot.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(slot.ExtensionId))
+                {
+                    command = allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, slot.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                    if (command == null && slot.ExtensionId.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var appName = slot.ExtensionId.Substring(4);
+                        command = new CommandItem
+                        {
+                            ExtensionId = slot.ExtensionId,
+                            Title = appName,
+                            ActionKind = CommandActionKind.LaunchApplication,
+                            ApplicationName = appName
+                        };
+                    }
+                }
             }
             else if (i < defaultCommands.Count)
             {
@@ -443,7 +757,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             
             if (command != null && command.ActionKind == CommandActionKind.LaunchApplication && !string.IsNullOrEmpty(command.ApplicationName))
             {
-                LoadNativeIconForViewModelAsync(vm, command.ApplicationName);
+                var cached = MacIconExtractor.GetCachedBitmap(command.ApplicationName);
+                if (cached != null)
+                {
+                    vm.RealIcon = cached;
+                }
+                else
+                {
+                    LoadNativeIconForViewModelAsync(vm, command.ApplicationName);
+                }
             }
         }
 
@@ -452,13 +774,23 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             var key = $"quickpanel_context_{i}";
             CommandItem? command = null;
-            if (_radialSettings.Slots.TryGetValue(key, out var slot) && !string.IsNullOrEmpty(slot.ExtensionId))
+            if (_radialSettings.Slots.TryGetValue(key, out var slot))
             {
-                command = allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, slot.ExtensionId, StringComparison.OrdinalIgnoreCase));
-            }
-            else if (i + 6 < defaultCommands.Count)
-            {
-                command = defaultCommands[i + 6];
+                if (!string.IsNullOrEmpty(slot.ExtensionId))
+                {
+                    command = allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, slot.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                    if (command == null && slot.ExtensionId.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var appName = slot.ExtensionId.Substring(4);
+                        command = new CommandItem
+                        {
+                            ExtensionId = slot.ExtensionId,
+                            Title = appName,
+                            ActionKind = CommandActionKind.LaunchApplication,
+                            ApplicationName = appName
+                        };
+                    }
+                }
             }
 
             var vm = new RadialMenuItemViewModel(key, i, command, string.Empty, string.Empty, 0, 0, 0, RadialMenuRing.Outer);
@@ -466,7 +798,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             
             if (command != null && command.ActionKind == CommandActionKind.LaunchApplication && !string.IsNullOrEmpty(command.ApplicationName))
             {
-                LoadNativeIconForViewModelAsync(vm, command.ApplicationName);
+                var cached = MacIconExtractor.GetCachedBitmap(command.ApplicationName);
+                if (cached != null)
+                {
+                    vm.RealIcon = cached;
+                }
+                else
+                {
+                    LoadNativeIconForViewModelAsync(vm, command.ApplicationName);
+                }
             }
         }
     }
@@ -475,11 +815,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            var pngBytes = await Task.Run(() => MacIconExtractor.GetFileIconPngBytes(path));
-            if (pngBytes != null && pngBytes.Length > 0)
+            var bitmap = await Task.Run(() => MacIconExtractor.GetCachedBitmap(path));
+            if (bitmap != null)
             {
-                using var ms = new System.IO.MemoryStream(pngBytes);
-                var bitmap = new global::Avalonia.Media.Imaging.Bitmap(ms);
                 Dispatcher.UIThread.Post(() => vm.RealIcon = bitmap);
             }
         }
@@ -531,7 +869,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         _activeItem.IsHovered = true;
         _activeItem.IsSelected = true;
-        ActiveTitle = string.IsNullOrWhiteSpace(_activeItem.Title) ? "松开或右键可配置扩展" : _activeItem.Title;
+        ActiveTitle = string.IsNullOrWhiteSpace(_activeItem.Title) ? "松开或右键可配置小程序" : _activeItem.Title;
     }
 
     private void ClearActiveItem()
@@ -551,22 +889,22 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         double localX = position.X - PanelLeft;
         double localY = position.Y - PanelTop;
 
-        if (localX >= 56 && localX < 356)
+        if (localX >= 42 && localX < 284)
         {
-            if (localY >= 64 && localY < 292)
+            if (localY >= 40 && localY < 250)
             {
-                int col = (int)((localX - 56) / 75);
-                int row = (int)((localY - 64) / 76);
+                int col = (int)((localX - 44) / 58);
+                int row = (int)((localY - 40) / 70);
                 col = Math.Clamp(col, 0, 3);
                 row = Math.Clamp(row, 0, 2);
                 int index = row * 4 + col;
                 if (index >= 0 && index < GlobalSlots.Count)
                     return GlobalSlots[index];
             }
-            else if (localY >= 332 && localY < 560)
+            else if (localY >= 275 && localY < 485)
             {
-                int col = (int)((localX - 56) / 75);
-                int row = (int)((localY - 332) / 76);
+                int col = (int)((localX - 44) / 58);
+                int row = (int)((localY - 275) / 70);
                 col = Math.Clamp(col, 0, 3);
                 row = Math.Clamp(row, 0, 2);
                 int index = row * 4 + col;
@@ -633,29 +971,29 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         var bounds = screen.Bounds;
         
-        // Window bounds including shadow padding
-        int windowWidth = 466;
-        int windowHeight = 680;
-        PanelLeft = 50;
-        PanelTop = 50;
+        // Window bounds including shadow padding (40px on all sides)
+        int windowWidth = 364;
+        int windowHeight = 640;
+        PanelLeft = 40;
+        PanelTop = 40;
 
         // Calculate top-left of the PANEL on screen
-        double panelScreenLeft = screenPoint.X - 183;
-        double panelScreenTop = screenPoint.Y - 290;
+        double panelScreenLeft = screenPoint.X - 142;
+        double panelScreenTop = screenPoint.Y - 280;
         
         // Clamp PANEL inside screen bounds with 10px margin
-        panelScreenLeft = Math.Clamp(panelScreenLeft, bounds.X + 10, bounds.X + bounds.Width - 366 - 10);
-        panelScreenTop = Math.Clamp(panelScreenTop, bounds.Y + 10, bounds.Y + bounds.Height - 580 - 10);
+        panelScreenLeft = Math.Clamp(panelScreenLeft, bounds.X + 10, bounds.X + bounds.Width - 284 - 10);
+        panelScreenTop = Math.Clamp(panelScreenTop, bounds.Y + 10, bounds.Y + bounds.Height - 560 - 10);
 
         // Window position is panel position minus the shadow padding
-        Position = new PixelPoint((int)panelScreenLeft - 50, (int)panelScreenTop - 50);
+        Position = new PixelPoint((int)panelScreenLeft - 40, (int)panelScreenTop - 40);
         
         Width = windowWidth;
         Height = windowHeight;
         OverlayWidth = windowWidth;
         OverlayHeight = windowHeight;
         
-        SetRadialCenter(new Point(233, 340));
+        SetRadialCenter(new Point(182, 320));
     }
 
     private void SetRadialCenter(Point center)
@@ -667,7 +1005,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     {
         double localX = position.X - PanelLeft;
         double localY = position.Y - PanelTop;
-        return localX < -40 || localX > 406 || localY < -40 || localY > 620;
+        return localX < -30 || localX > 314 || localY < -30 || localY > 590;
     }
 
     private bool HasMovedAwayFromCenter(Point position)

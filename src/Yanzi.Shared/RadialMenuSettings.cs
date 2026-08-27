@@ -24,9 +24,64 @@ public class RadialMenuSettings
     public bool TriggerTrackpadGesture { get; set; }
     public int TrackpadGestureFingerCount { get; set; } = 3;
     public string TrackpadTriggerMode { get; set; } = TrackpadTriggerModes.SecondaryClickLongPress;
+    public bool IsPinned { get; set; } = false;
     public string SelectedPageId { get; set; } = string.Empty;
     public List<RadialMenuPageSettings> Pages { get; set; } = [];
     public Dictionary<string, RadialMenuSlotSettings> Slots { get; set; } = new();
+
+    private static readonly string SettingsFilePath = System.IO.Path.Combine(
+        System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile),
+        ".yanzi_radial_settings.json");
+
+    public static RadialMenuSettings Load()
+    {
+        try
+        {
+            if (System.IO.File.Exists(SettingsFilePath))
+            {
+                var json = System.IO.File.ReadAllText(SettingsFilePath);
+                var settings = System.Text.Json.JsonSerializer.Deserialize<RadialMenuSettings>(json);
+                if (settings != null)
+                {
+                    if (settings.Pages.Count == 0)
+                    {
+                        settings.Pages.Add(new RadialMenuPageSettings { Id = "default", Name = "燕环" });
+                    }
+                    return settings;
+                }
+            }
+        }
+        catch (System.Exception ex)
+        {
+            System.Console.WriteLine($"[RadialMenuSettings] Failed to load: {ex.Message}");
+        }
+
+        var defaultSettings = new RadialMenuSettings
+        {
+            Enabled = true,
+            TriggerRightButtonLongPress = true,
+            TriggerRightButtonDrag = true,
+            RadiusPixels = 110,
+            DeadZonePixels = 30,
+            DragThresholdPixels = 30
+        };
+        defaultSettings.Pages.Add(new RadialMenuPageSettings { Id = "default", Name = "燕环" });
+        return defaultSettings;
+    }
+
+    public void Save()
+    {
+        try
+        {
+            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            var json = System.Text.Json.JsonSerializer.Serialize(this, options);
+            System.IO.File.WriteAllText(SettingsFilePath, json);
+        }
+        catch (System.Exception ex)
+        {
+            System.Console.WriteLine($"[RadialMenuSettings] Failed to save: {ex.Message}");
+        }
+    }
 }
 
 public static class TrackpadTriggerModes
