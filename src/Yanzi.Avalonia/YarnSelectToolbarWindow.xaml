@@ -1,0 +1,88 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Yanzi.Avalonia"
+        xmlns:shared="clr-namespace:Yanzi.Shared;assembly=Yanzi.Shared"
+        x:Class="Yanzi.Avalonia.YarnSelectToolbarWindow"
+        Title="燕选 - 划词快捷工具栏"
+        Width="380"
+        Height="54"
+        SystemDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        TransparencyBackgroundFallback="Transparent"
+        ExtendClientAreaToDecorationsHint="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        Focusable="False"
+        Deactivated="Window_Deactivated">
+
+    <Border Background="{DynamicResource BrushWindowBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
+            BorderThickness="1.2"
+            CornerRadius="27"
+            Padding="8,4"
+            Margin="6">
+        <Border.BoxShadow>
+            <BoxShadows>0 8 28 0 #A0000000</BoxShadows>
+        </Border.BoxShadow>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4">
+            <!-- 1. Search Action -->
+            <Button Classes="pill-btn" ToolTip.Tip="在浏览器中搜索选中文本" Click="OnSearchClick">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <Path Data="{local:VectorIcon search}" Fill="{DynamicResource BrushAccent}" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center"/>
+                    <TextBlock Text="搜索" Foreground="{DynamicResource BrushTextMain}" FontSize="11.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <!-- 2. Translate Action -->
+            <Button Classes="pill-btn" ToolTip.Tip="中英文即时互译" Click="OnTranslateClick">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <Path Data="{local:VectorIcon translate}" Fill="#FF10B981" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center"/>
+                    <TextBlock Text="翻译" Foreground="{DynamicResource BrushTextMain}" FontSize="11.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <!-- 3. AI Summarize / Explain -->
+            <Button Classes="pill-btn" ToolTip.Tip="AI 智能解释与总结" Click="OnAiExplainClick">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <Path Data="{local:VectorIcon ai}" Fill="#FF8B5CF6" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center"/>
+                    <TextBlock Text="AI 解释" Foreground="{DynamicResource BrushTextMain}" FontSize="11.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <!-- 4. Copy Action -->
+            <Button Classes="pill-btn" ToolTip.Tip="复制选中文本" Click="OnCopyClick">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <Path Data="{local:VectorIcon copy}" Fill="#FF3B82F6" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center"/>
+                    <TextBlock Text="复制" Foreground="{DynamicResource BrushTextMain}" FontSize="11.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <!-- 5. Open in Launcher -->
+            <Button Classes="pill-btn" ToolTip.Tip="在燕子仓库中搜索" Click="OnOpenInLauncherClick">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                    <Path Data="{local:VectorIcon dashboard}" Fill="#FFF97316" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center"/>
+                    <TextBlock Text="仓库" Foreground="{DynamicResource BrushTextMain}" FontSize="11.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+        </StackPanel>
+    </Border>
+
+    <Window.Styles>
+        <Style Selector="Button.pill-btn">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="14"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.pill-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
+        </Style>
+        <Style Selector="Button.pill-btn:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}"/>
+        </Style>
+    </Window.Styles>
+</Window>

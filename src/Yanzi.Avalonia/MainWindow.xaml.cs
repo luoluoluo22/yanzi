@@ -27,6 +27,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isClosing;
     private QuickPanelWindow? _quickPanel;
     private LauncherWindow? _launcherWindow;
+    private YarnSelectToolbarWindow? _yarnSelectToolbar;
 
     public ClipboardMonitorService ClipboardMonitor { get; private set; } = null!;
 
@@ -216,6 +217,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ClipboardMonitor.Start();
         
         _launcherWindow = new LauncherWindow(_commandActionExecutor, this);
+        _yarnSelectToolbar = new YarnSelectToolbarWindow(this);
         
         DataContext = this;
 
@@ -240,6 +242,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ClipboardMonitor.Stop();
             _quickPanel?.Close();
             _launcherWindow?.Close();
+            _yarnSelectToolbar?.Close();
         };
     }
 
@@ -340,12 +343,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         yield return Shortcut("cut", "剪切", "⌘X", "x");
         yield return Shortcut("select-all", "全选", "⌘A", "a");
         yield return Shortcut("screenshot", "屏幕截图", "📸", "4", command: true, shift: true);
+        yield return Shortcut("spotlight", "聚焦搜索", "🔍", "space", command: true);
         yield return Script("lock-screen", "锁定屏幕", "🔒", "tell application \"System Events\" to keystroke \"q\" using {command down, control down}");
+        yield return Script("toggle-mute", "静音切换", "🔇", "set volume output muted (not (output muted of (get volume settings)))");
         yield return App("safari", "Safari 浏览器", "🧭", "Safari");
         yield return App("terminal", "终端", "💻", "Terminal");
         yield return App("finder", "访达", "📁", "Finder");
         yield return Script("open-downloads", "下载文件夹", "📥", "do shell script \"open ~/Downloads\"");
         yield return Script("open-trash", "废纸篓", "🗑️", "do shell script \"open ~/.Trash\"");
+        yield return Script("snap-left", "左半分屏", "◧", "tell application \"System Events\" to keystroke \"f\" using {control down, command down}");
+        yield return Script("ai-chat", "AI 智能助手", "🤖", "do shell script \"open https://chat.deepseek.com\"");
     }
 
     private static CommandItem Shortcut(
@@ -536,6 +543,37 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _launcherWindow.Activate();
             _launcherWindow.FindControl<TextBox>("SearchInput")?.Focus();
         }
+    }
+
+    public void ShowLauncherWithQuery(string query)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => ShowLauncherWithQuery(query));
+            return;
+        }
+
+        if (_launcherWindow == null) return;
+        _launcherWindow.SearchText = query;
+        _launcherWindow.Show();
+        _launcherWindow.Activate();
+        var searchInput = _launcherWindow.FindControl<TextBox>("SearchInput");
+        if (searchInput != null)
+        {
+            searchInput.Focus();
+            searchInput.CaretIndex = query.Length;
+        }
+    }
+
+    public void ShowYarnSelectToolbar(Point position, string text)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => ShowYarnSelectToolbar(position, text));
+            return;
+        }
+
+        _yarnSelectToolbar?.ShowAt(position, text);
     }
 
     private void GlobalInputTriggerListener_ActivationRequested(object? sender, RadialMenuActivationEventArgs e)
