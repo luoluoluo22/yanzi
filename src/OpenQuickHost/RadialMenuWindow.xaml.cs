@@ -3353,6 +3353,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         finally
         {
             _editInteractionActive = false;
+            EnsureActivatedForEdit();
             UpdateCenterText();
         }
     }
@@ -3370,7 +3371,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         finally
         {
-            _editModeLocked = false;
+            _editInteractionActive = false;
+            EnsureActivatedForEdit();
             UpdateCenterText();
         }
     }
@@ -3380,6 +3382,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         HostAssets.AppendLog($"[SetSimulatedKeyLog] SetSimulatedKeyForTarget: page={target.PageId}, index={target.Index}");
         _isOpeningSubDialog = true;
         _editInteractionActive = true;
+        EnsureActivatedForEdit();
         try
         {
             const string simulatedPrefix = "keysim::";
@@ -3431,7 +3434,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             _editInteractionActive = false;
             if (IsVisible && !_mainWindow.IsRadialPickerMode)
             {
-                Activate();
+                EnsureActivatedForEdit();
                 _selectionTimer.Start();
             }
         }
@@ -3439,7 +3442,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void ClearCommandFromTarget(RadialEditTarget target)
     {
+        EnsureActivatedForEdit();
         SaveRadialSlotCommand(target.PageId, target.Index, null, null);
+        ActiveTitle = "已清空槽位内容";
     }
 
     private async void EditSlotContentFromTarget(RadialEditTarget target)
@@ -3486,13 +3491,15 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         finally
         {
-            _editModeLocked = false;
+            _editInteractionActive = false;
+            EnsureActivatedForEdit();
             UpdateCenterText();
         }
     }
 
     private void ClearSlotContentFromTarget(RadialEditTarget target)
     {
+        EnsureActivatedForEdit();
         if (target.Item.HasChildPage)
         {
             ClearChildPageFromTarget(target);
@@ -3501,6 +3508,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             ClearCommandFromTarget(target);
         }
+        ActiveTitle = "已清空槽位内容";
     }
 
     private void CutRadialSlot(RadialEditTarget target)
@@ -4490,9 +4498,15 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private void EnsureActivatedForEdit()
     {
         _wasActivatedForEdit = true;
+        _editModeLocked = true;
         try
         {
+            if (!IsVisible)
+            {
+                Show();
+            }
             Activate();
+            UpdateEditModeState();
         }
         catch
         {
