@@ -106,17 +106,9 @@ public sealed class YanmBridgeService
             return;
         }
 
-        _ = dispatcher.BeginInvoke(new Action(() =>
-        {
-            try
-            {
-                _sendReply(componentId, invokeId, ok, result, error);
-            }
-            catch (Exception ex)
-            {
-                _log($"Yanm: send reply failed, component={componentId}, invoke={invokeId}, error={ex.Message}");
-            }
-        }));
+        UiDispatcher.Post(
+            () => _sendReply(componentId, invokeId, ok, result, error),
+            onError: ex => _log($"Yanm: send reply failed, component={componentId}, invoke={invokeId}, error={ex.Message}"));
     }
 
     private object? Dispatch(string method, string componentId, YanmComponentSettings component, JsonElement args)

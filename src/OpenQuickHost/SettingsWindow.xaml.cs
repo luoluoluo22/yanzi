@@ -28,7 +28,7 @@ namespace OpenQuickHost;
 
 public partial class SettingsWindow : Window, INotifyPropertyChanged
 {
-    private const string RadialSimulatedKeyPrefix = "keysim::";
+    private const string RadialSimulatedKeyPrefix = ExtensionIdPrefixes.SimulatedKey;
     private const int WmKeyDown = 0x0100;
     private const int WmKeyUp = 0x0101;
     private const int WmSysKeyDown = 0x0104;
@@ -3420,10 +3420,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         // 1x1 区域位于窗口左上角（系统拥有区域对象的生命周期，无需删除）
-        var region = RadialMenuNativeMethods.CreateRectRgn(0, 0, 1, 1);
+        var region = Win32Native.CreateRectRgn(0, 0, 1, 1);
         if (region != IntPtr.Zero)
         {
-            RadialMenuNativeMethods.SetWindowRgn(hwnd, region, false);
+            Win32Native.SetWindowRgn(hwnd, region, false);
         }
 
         HostAssets.AppendLog("SettingsWindow: hidden pre-render show (1x1 window region).");
@@ -3446,7 +3446,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (IsVisible)
             {
                 // 移除裁剪区域，窗口立即以已呈现的完整帧出现
-                RadialMenuNativeMethods.SetWindowRgn(hwnd, IntPtr.Zero, true);
+                Win32Native.SetWindowRgn(hwnd, IntPtr.Zero, true);
                 ShowActivated = previousShowActivated;
                 HostAssets.AppendLog("SettingsWindow: hidden pre-render done, region cleared.");
                 onScreenReady();
@@ -5282,7 +5282,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             var index = JsonSerializer.Deserialize<WebDavSyncIndex>(
                 File.ReadAllText(HostAssets.WebDavSyncStatePath),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new WebDavSyncIndex();
+                JsonDefaults.CaseInsensitive) ?? new WebDavSyncIndex();
             var active = index.Items.Count(static item => !item.Deleted && !item.Purged);
             var deleted = index.Items.Count(static item => item.Deleted && !item.Purged);
             var purged = index.Items.Count(static item => item.Purged);
@@ -10049,7 +10049,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             openTarget: result.FullPath,
             keywords: [result.FullPath, result.DirectoryPath, result.Name],
             source: CommandSource.File,
-            extensionId: $"result::{result.FullPath}",
+            extensionId: $"{ExtensionIdPrefixes.SearchResult}{result.FullPath}",
             resultKind: result.IsFolder ? ResultItemKind.Folder : ResultItemKind.File,
             resultProviderTitle: "Everything 文件",
             iconSourceOverride: NativeFileIconService.GetIcon(result.FullPath, result.IsFolder));
@@ -10791,9 +10791,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 : displayTitleOverride.Trim();
         }
 
-        if (extensionId.StartsWith("result::", StringComparison.OrdinalIgnoreCase))
+        if (extensionId.StartsWith(ExtensionIdPrefixes.SearchResult, StringComparison.OrdinalIgnoreCase))
         {
-            var path = extensionId["result::".Length..];
+            var path = extensionId[ExtensionIdPrefixes.SearchResult.Length..];
             var title = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             return string.IsNullOrWhiteSpace(title) ? path : title;
         }

@@ -1175,8 +1175,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var oShowInTaskbar = _radialMenu.ShowInTaskbar;
                     var oOpacity = _radialMenu.Opacity;
 
-                    _radialMenu.Left = -10000;
-                    _radialMenu.Top = -10000;
+                    _radialMenu.Left = OverlayWindowManager.OffScreenCoordinate;
+                    _radialMenu.Top = OverlayWindowManager.OffScreenCoordinate;
                     _radialMenu.ShowActivated = false;
                     _radialMenu.ShowInTaskbar = false;
                     _radialMenu.Opacity = 0;
@@ -1198,8 +1198,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var oShowInTaskbar = _quickPanel.ShowInTaskbar;
                     var oOpacity = _quickPanel.Opacity;
 
-                    _quickPanel.Left = -10000;
-                    _quickPanel.Top = -10000;
+                    _quickPanel.Left = OverlayWindowManager.OffScreenCoordinate;
+                    _quickPanel.Top = OverlayWindowManager.OffScreenCoordinate;
                     _quickPanel.ShowActivated = false;
                     _quickPanel.ShowInTaskbar = false;
                     _quickPanel.Opacity = 0;
@@ -2835,6 +2835,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
     private async void RunSelectedCommand()
+    {
+        // async void 的异常不会经过正常 await 链，未捕获时依赖全局吞异常兜底，
+        // 表现为"点了没反应"。核心执行路径必须在本地兜底并给出可见反馈。
+        try
+        {
+            await RunSelectedCommandCore();
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"RunSelectedCommand failed: {ex}");
+            LastRunMessage = $"执行失败：{ex.Message}";
+        }
+    }
+
+    private async Task RunSelectedCommandCore()
     {
         if (IsRadialPickerMode)
         {

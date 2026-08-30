@@ -1362,16 +1362,9 @@ public class InputHookService
 
     private static void DispatchToUi(Action action)
     {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher == null)
-        {
-            return;
-        }
-
         // 统一走 BeginInvoke：钩子回调本身就跑在 UI 线程，若在此内联执行完整的
         // 面板 Show/布局，低级钩子回调会超时导致 Windows 静默摘钩、全局输入掉帧。
-        // 所有调用点均为无返回值的事件派发，异步化无语义影响。
-        _ = dispatcher.BeginInvoke(new Action(() => InvokeSafely(action)), DispatcherPriority.Input);
+        UiDispatcher.Post(action);
     }
 
     private static void InvokeSafely(Action action)

@@ -787,8 +787,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             BuildItems(settings.RadiusPixels);
 
             Opacity = 0;
-            Left = -10000;
-            Top = -10000;
+            Left = OverlayWindowManager.OffScreenCoordinate;
+            Top = OverlayWindowManager.OffScreenCoordinate;
             Show();
             UpdateLayout();
             Hide();
@@ -803,7 +803,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public void ShowAtMouse(System.Drawing.Point? anchorPoint = null)
     {
-        HostAssets.AppendLog($"[RadialResidualDebug] ShowAtMouse start: isVisible={IsVisible}, _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, anchor={anchorPoint}.");
+        HostAssets.AppendDebug($"[RadialResidualDebug] ShowAtMouse start: isVisible={IsVisible}, _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, anchor={anchorPoint}.");
 
         Width = NormalWindowSize;
         Height = NormalWindowSize;
@@ -840,26 +840,26 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         // 获取鼠标所在位置的顶级窗口，而不是当前前台窗口（更符合直觉）
         _previousForegroundWindow = IntPtr.Zero;
-        if (RadialMenuNativeMethods.GetCursorPos(out var pt))
+        if (Win32Native.GetCursorPos(out var pt))
         {
-            var hwndUnderMouse = RadialMenuNativeMethods.WindowFromPoint(pt);
+            var hwndUnderMouse = Win32Native.WindowFromPoint(pt);
             if (hwndUnderMouse != IntPtr.Zero)
             {
-                _previousForegroundWindow = RadialMenuNativeMethods.GetAncestor(hwndUnderMouse, RadialMenuNativeMethods.GA_ROOT);
+                _previousForegroundWindow = Win32Native.GetAncestor(hwndUnderMouse, Win32Native.GA_ROOT);
             }
         }
         
         // 兜底方案
         if (_previousForegroundWindow == IntPtr.Zero)
         {
-            _previousForegroundWindow = RadialMenuNativeMethods.GetForegroundWindow();
+            _previousForegroundWindow = Win32Native.GetForegroundWindow();
         }
         _activeProcessName = null;
         if (_previousForegroundWindow != IntPtr.Zero)
         {
             try
             {
-                RadialMenuNativeMethods.GetWindowThreadProcessId(_previousForegroundWindow, out var processId);
+                Win32Native.GetWindowThreadProcessId(_previousForegroundWindow, out var processId);
                 using var process = System.Diagnostics.Process.GetProcessById((int)processId);
                 var name = process.ProcessName;
                 // 跳过轮盘宿主自身，避免把 OpenQuickHost 识别为目标应用
@@ -995,7 +995,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             var helper = new System.Windows.Interop.WindowInteropHelper(this);
             var handle = helper.Handle;
-            if (handle == IntPtr.Zero || !RadialMenuNativeMethods.GetWindowRect(handle, out var rect))
+            if (handle == IntPtr.Zero || !Win32Native.GetWindowRect(handle, out var rect))
             {
                 return;
             }
@@ -1189,11 +1189,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             if (_wasActivatedForEdit && _previousForegroundWindow != IntPtr.Zero)
             {
-                var restored = RadialMenuNativeMethods.SetForegroundWindow(_previousForegroundWindow);
+                var restored = Win32Native.SetForegroundWindow(_previousForegroundWindow);
                 HostAssets.AppendLog($"Radial menu restore foreground: restored={restored}, {DescribeWindow(_previousForegroundWindow)}.");
             }
 
-            var currentForeground = RadialMenuNativeMethods.GetForegroundWindow();
+            var currentForeground = Win32Native.GetForegroundWindow();
             HostAssets.AppendLog($"Radial menu execute ready: foreground={DescribeWindow(currentForeground)}, source={launchSource}, command={command.Title}.");
             var input = string.Empty;
             if (command.ShouldCaptureSelectedInput)
@@ -1229,8 +1229,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         var titleBuilder = new StringBuilder(256);
-        _ = RadialMenuNativeMethods.GetWindowText(hwnd, titleBuilder, titleBuilder.Capacity);
-        _ = RadialMenuNativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
+        _ = Win32Native.GetWindowText(hwnd, titleBuilder, titleBuilder.Capacity);
+        _ = Win32Native.GetWindowThreadProcessId(hwnd, out var processId);
         return $"hwnd=0x{hwnd.ToInt64():X}, pid={processId}, title=\"{titleBuilder}\"";
     }
 
@@ -1262,7 +1262,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void BuildItems(int radius)
     {
-        HostAssets.AppendLog($"[RadialResidualDebug] BuildItems start: _currentPageId={_currentPageId}, _editModeLocked={_editModeLocked}, SubRings.Count before={SubRings.Count}.");
+        HostAssets.AppendDebug($"[RadialResidualDebug] BuildItems start: _currentPageId={_currentPageId}, _editModeLocked={_editModeLocked}, SubRings.Count before={SubRings.Count}.");
         var effectiveRadius = Math.Clamp(radius - 10, 82, 96);
         Items.Clear();
         MiddleItems.Clear();
@@ -1397,7 +1397,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         UpdateOuterWheelVisibility();
-        HostAssets.AppendLog($"[RadialResidualDebug] BuildItems end: Items={Items.Count}, MiddleItems={MiddleItems.Count}, OuterItems={OuterItems.Count}, SubRings={SubRings.Count}.");
+        HostAssets.AppendDebug($"[RadialResidualDebug] BuildItems end: Items={Items.Count}, MiddleItems={MiddleItems.Count}, OuterItems={OuterItems.Count}, SubRings={SubRings.Count}.");
     }
 
     private void UpdateOuterWheelVisibility()
@@ -1407,7 +1407,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         IsOuterWheelVisible = (!_editModeLocked) && _isOuterRingHoverActive;
         if (old != IsOuterWheelVisible)
         {
-            HostAssets.AppendLog($"[RadialOuterLog] UpdateOuterWheelVisibility changed: locked={_editModeLocked}, hoverActive={_isOuterRingHoverActive} => IsOuterWheelVisible={IsOuterWheelVisible}");
+            HostAssets.AppendDebug($"[RadialOuterLog] UpdateOuterWheelVisibility changed: locked={_editModeLocked}, hoverActive={_isOuterRingHoverActive} => IsOuterWheelVisible={IsOuterWheelVisible}");
         }
     }
 
@@ -1581,7 +1581,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var outerItem = OuterItems.ElementAtOrDefault(outerIndex);
             SetSelectedItem(outerItem);
             ActiveTitle = ResolveActiveTitle(outerItem?.Command?.Title, outerItem?.Command == null);
-            HostAssets.AppendLog($"[RadialOuterLog] outerHit: dist={distance:0.#}, outerIdx={outerIndex}, outerItem={outerItem?.Title ?? "empty"}, isSel={outerItem?.IsSelected}, isSecVis={outerItem?.IsSectorVisible}, op={outerItem?.SectorOpacity}, brush={outerItem?.SectorBrush?.GetType().Name}");
+            HostAssets.AppendDebug($"[RadialOuterLog] outerHit: dist={distance:0.#}, outerIdx={outerIndex}, outerItem={outerItem?.Title ?? "empty"}, isSel={outerItem?.IsSelected}, isSecVis={outerItem?.IsSectorVisible}, op={outerItem?.SectorOpacity}, brush={outerItem?.SectorBrush?.GetType().Name}");
             if (!string.IsNullOrWhiteSpace(outerItem?.ChildPageId))
             {
                 ActiveTitle = _editModeLocked ? $"子环：{outerItem.ChildPageTitle}" : $"展开：{outerItem.ChildPageTitle}";
@@ -1659,9 +1659,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             var helper = new System.Windows.Interop.WindowInteropHelper(this);
             var hwnd = helper.Handle;
-            if (hwnd != IntPtr.Zero && RadialMenuNativeMethods.GetCursorPos(out var pt))
+            if (hwnd != IntPtr.Zero && Win32Native.GetCursorPos(out var pt))
             {
-                if (RadialMenuNativeMethods.ScreenToClient(hwnd, ref pt))
+                if (Win32Native.ScreenToClient(hwnd, ref pt))
                 {
                     var dpi = VisualTreeHelper.GetDpi(this);
                     var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
@@ -2097,7 +2097,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         if (string.IsNullOrWhiteSpace(parent.ChildPageId) || visitedPageIds.Contains(parent.ChildPageId) || level > 3)
         {
-            HostAssets.AppendLog($"[EditModeDebug] RecursivelyBuildSubRings skipped: childPageId={parent.ChildPageId}, visited={visitedPageIds.Contains(parent.ChildPageId ?? string.Empty)}, level={level}");
+            HostAssets.AppendDebug($"[EditModeDebug] RecursivelyBuildSubRings skipped: childPageId={parent.ChildPageId}, visited={visitedPageIds.Contains(parent.ChildPageId ?? string.Empty)}, level={level}");
             return;
         }
 
@@ -2114,7 +2114,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        HostAssets.AppendLog($"[EditModeDebug] RecursivelyBuildSubRings: childPageId={parent.ChildPageId}, itemsCount={items.Count}, cX={cX:F1}, cY={cY:F1}, level={level}");
+        HostAssets.AppendDebug($"[EditModeDebug] RecursivelyBuildSubRings: childPageId={parent.ChildPageId}, itemsCount={items.Count}, cX={cX:F1}, cY={cY:F1}, level={level}");
 
         var ring = new RadialMenuNestedRingViewModel
         {
@@ -3021,16 +3021,16 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         try
         {
             var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            RadialMenuNativeMethods.SetForegroundWindow(hwnd);
+            Win32Native.SetForegroundWindow(hwnd);
 
-            uint flags = RadialMenuNativeMethods.MB_YESNO |
-                         RadialMenuNativeMethods.MB_ICONWARNING |
-                         RadialMenuNativeMethods.MB_DEFBUTTON2 |
-                         RadialMenuNativeMethods.MB_SETFOREGROUND |
-                         RadialMenuNativeMethods.MB_TOPMOST;
+            uint flags = Win32Native.MB_YESNO |
+                         Win32Native.MB_ICONWARNING |
+                         Win32Native.MB_DEFBUTTON2 |
+                         Win32Native.MB_SETFOREGROUND |
+                         Win32Native.MB_TOPMOST;
 
-            int result = RadialMenuNativeMethods.MessageBox(hwnd, message, title, flags);
-            return result == RadialMenuNativeMethods.IDYES;
+            int result = Win32Native.MessageBox(hwnd, message, title, flags);
+            return result == Win32Native.IDYES;
         }
         finally
         {
@@ -3507,7 +3507,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
             var effectiveId = !string.IsNullOrWhiteSpace(result.Command.ExtensionId)
                 ? result.Command.ExtensionId
-                : (!string.IsNullOrWhiteSpace(result.Command.OpenTarget) ? $"result::{result.Command.OpenTarget}" : null);
+                : (!string.IsNullOrWhiteSpace(result.Command.OpenTarget) ? $"{ExtensionIdPrefixes.SearchResult}{result.Command.OpenTarget}" : null);
 
             if (string.IsNullOrWhiteSpace(effectiveId))
             {
@@ -3589,7 +3589,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         BeginModalChildDialog();
         try
         {
-            const string simulatedPrefix = "keysim::";
+            const string simulatedPrefix = ExtensionIdPrefixes.SimulatedKey;
             var currentExtensionId = target.Item.Command?.ExtensionId ?? string.Empty;
             var initialShortcut = currentExtensionId.StartsWith(simulatedPrefix, StringComparison.OrdinalIgnoreCase)
                 ? currentExtensionId[simulatedPrefix.Length..]
@@ -3674,7 +3674,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            const string simulatedPrefix = "keysim::";
+            const string simulatedPrefix = ExtensionIdPrefixes.SimulatedKey;
             if (command.ExtensionId.StartsWith(simulatedPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 SetSimulatedKeyForTarget(target);
@@ -4660,7 +4660,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public new void Hide()
     {
-        HostAssets.AppendLog($"[RadialResidualDebug] Hide called: _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, Opacity={Opacity}.");
+        HostAssets.AppendDebug($"[RadialResidualDebug] Hide called: _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, Opacity={Opacity}.");
         // 停掉 16ms 选中定时器：否则窗口停靠到 -32000 后仍以 60Hz 空转（CPU 尖峰 + 日志膨胀）。
         // ShowAtMouse 呼出时会重新 Start。
         _selectionTimer.Stop();
@@ -4668,7 +4668,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             try
             {
-                RadialMenuNativeMethods.SetForegroundWindow(_previousForegroundWindow);
+                Win32Native.SetForegroundWindow(_previousForegroundWindow);
             }
             catch { }
         }
@@ -4704,7 +4704,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         OverlayWindowManager.SafeHideAndPark(this);
         MemoryOptimizationService.OptimizeMemoryInBackground();
-        HostAssets.AppendLog($"[RadialResidualDebug] Hide finished: Left={Left}, Top={Top}, SubRings.Count={SubRings.Count}.");
+        HostAssets.AppendDebug($"[RadialResidualDebug] Hide finished: Left={Left}, Top={Top}, SubRings.Count={SubRings.Count}.");
     }
 
     private void EnsureNoActivateStyle()
@@ -4728,23 +4728,23 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            var style = RadialMenuNativeMethods.GetWindowLongPtr(hwnd, RadialMenuNativeMethods.GWL_EXSTYLE).ToInt64();
+            var style = Win32Native.GetWindowLongPtr(hwnd, Win32Native.GWL_EXSTYLE).ToInt64();
             var newStyle = enabled
-                ? style | RadialMenuNativeMethods.WS_EX_TRANSPARENT
-                : style & ~RadialMenuNativeMethods.WS_EX_TRANSPARENT;
+                ? style | Win32Native.WS_EX_TRANSPARENT
+                : style & ~Win32Native.WS_EX_TRANSPARENT;
             if (newStyle == style)
             {
                 return;
             }
 
-            RadialMenuNativeMethods.SetWindowLongPtr(hwnd, RadialMenuNativeMethods.GWL_EXSTYLE, new IntPtr(newStyle));
+            Win32Native.SetWindowLongPtr(hwnd, Win32Native.GWL_EXSTYLE, new IntPtr(newStyle));
             // 通知系统重新套用扩展样式，立即刷新鼠标命中测试结果
-            RadialMenuNativeMethods.SetWindowPos(
+            Win32Native.SetWindowPos(
                 hwnd,
-                RadialMenuNativeMethods.HWND_TOPMOST,
+                Win32Native.HWND_TOPMOST,
                 0, 0, 0, 0,
-                RadialMenuNativeMethods.SWP_NOMOVE | RadialMenuNativeMethods.SWP_NOSIZE |
-                RadialMenuNativeMethods.SWP_NOACTIVATE | RadialMenuNativeMethods.SWP_FRAMECHANGED);
+                Win32Native.SWP_NOMOVE | Win32Native.SWP_NOSIZE |
+                Win32Native.SWP_NOACTIVATE | Win32Native.SWP_FRAMECHANGED);
             HostAssets.AppendLog($"[SetSimulatedKeyLog] Radial window mouse click-through: {enabled}.");
         }
         catch (Exception ex)
@@ -5164,100 +5164,6 @@ public enum RadialMenuRing
 }
 
 internal sealed record RadialSlotPayload(string? ExtensionId, string? DisplayTitle, string? ChildPageId);
-
-internal static partial class RadialMenuNativeMethods
-{
-    public const int GWL_EXSTYLE = -20;
-    public const long WS_EX_TOOLWINDOW = 0x00000080L;
-    public const long WS_EX_NOACTIVATE = 0x08000000L;
-    public const long WS_EX_TRANSPARENT = 0x00000020L;
-
-    public static readonly IntPtr HWND_TOPMOST = new(-1);
-    public const uint SWP_NOSIZE = 0x0001;
-    public const uint SWP_NOMOVE = 0x0002;
-    public const uint SWP_NOACTIVATE = 0x0010;
-    public const uint SWP_FRAMECHANGED = 0x0020;
-
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
-    public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
-
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
-    public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
-
-    [DllImport("gdi32.dll")]
-    public static extern IntPtr CreateRectRgn(int x1, int y1, int x2, int y2);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool SetWindowRgn(IntPtr hWnd, IntPtr hRgn, [MarshalAs(UnmanagedType.Bool)] bool bRedraw);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-
-    [DllImport("user32.dll")]
-    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern bool DestroyIcon(IntPtr handle);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool GetCursorPos(out POINT lpPoint);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
-
-    [DllImport("user32.dll")]
-    public static extern IntPtr WindowFromPoint(POINT Point);
-
-    [DllImport("user32.dll", ExactSpelling = true)]
-    public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
-
-    public const uint GA_ROOT = 2;
-
-    [DllImport("user32.dll", EntryPoint = "MessageBoxW", CharSet = CharSet.Unicode)]
-    public static extern int MessageBox(IntPtr hWnd, string lpText, string lpCaption, uint uType);
-
-    public const uint MB_YESNO = 0x00000004;
-    public const uint MB_ICONWARNING = 0x00000030;
-    public const uint MB_ICONQUESTION = 0x00000020;
-    public const uint MB_DEFBUTTON2 = 0x00000100;
-    public const uint MB_SETFOREGROUND = 0x00010000;
-    public const uint MB_TOPMOST = 0x00040000;
-    public const int IDYES = 6;
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct POINT
-    {
-        public int X;
-        public int Y;
-    }
-}
 
 public class PaginationDotViewModel : INotifyPropertyChanged
 {

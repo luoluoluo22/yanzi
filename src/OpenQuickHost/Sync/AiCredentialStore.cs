@@ -163,16 +163,7 @@ public static class AiCredentialStore
         var bytes = JsonSerializer.SerializeToUtf8Bytes(bag, JsonOptions);
         var protectedBytes = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
         // 原子写：写入中断不再导致整个密钥包损坏丢失。
-        var tempPath = SecretPath + ".tmp";
-        File.WriteAllBytes(tempPath, protectedBytes);
-        try
-        {
-            File.Replace(tempPath, SecretPath, destinationBackupFileName: null);
-        }
-        catch (IOException)
-        {
-            File.Move(tempPath, SecretPath, overwrite: true);
-        }
+        SafeFile.AtomicWriteBytes(SecretPath, protectedBytes);
     }
 
     private sealed class AiCredentialBag

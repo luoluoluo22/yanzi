@@ -289,27 +289,11 @@ public static class AppSettingsStore
     {
         AiCredentialStore.RemovePlaintext(settings);
         var json = JsonSerializer.Serialize(settings, JsonOptions);
-        // 原子写：先写临时文件再替换，避免进程崩溃/断电留下半截 JSON。
-        var tempPath = SettingsPath + ".tmp";
-        File.WriteAllText(tempPath, json);
-        try
-        {
-            File.Replace(tempPath, SettingsPath, destinationBackupFileName: null);
-        }
-        catch (IOException)
-        {
-            // Replace 在跨文件系统或目标被占用等场景可能失败，退回移动覆盖。
-            File.Move(tempPath, SettingsPath, overwrite: true);
-        }
+        SafeFile.AtomicWriteText(SettingsPath, json);
         UpdateCache(settings);
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true
-    };
+    private static readonly JsonSerializerOptions JsonOptions = JsonDefaults.CamelCaseIndented;
 
     private static AppSettings Normalize(AppSettings settings)
     {

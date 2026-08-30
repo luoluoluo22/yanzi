@@ -120,17 +120,28 @@ public static class HostAssets
 
     public static void AppendRecent(string title)
     {
-        try
+        EnsureCreated();
+        SafeFile.TryAppendAllText(
+            RecentCommandsPath,
+            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {title}");
+    }
+
+    /// <summary>
+    /// 热路径调试日志开关：设置环境变量 YANZI_VERBOSE_LOG=1 后才输出。
+    /// 轮盘每 tick 的命中/可见性日志等会以约 60 行/秒撑爆 host.log，默认必须静默。
+    /// </summary>
+    public static bool VerboseLogEnabled { get; } =
+        string.Equals(Environment.GetEnvironmentVariable("YANZI_VERBOSE_LOG"), "1", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>调试级日志：仅在 VerboseLogEnabled 时入队，热路径调用无 IO/队列开销（除一次属性读）。</summary>
+    public static void AppendDebug(string message)
+    {
+        if (!VerboseLogEnabled)
         {
-            EnsureCreated();
-            File.AppendAllText(
-                RecentCommandsPath,
-                $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {title}");
+            return;
         }
-        catch
-        {
-            // 日志文件被杀软/日志查看器占用时静默放弃，绝不打断命令启动主流程
-        }
+
+        AppendLog(message);
     }
 
     public static void AppendLog(string message)
@@ -158,14 +169,13 @@ public static class HostAssets
 
             EnsureCreated();
             RotateFileIfTooLarge(DevDebugLogPath, MaxLogFileBytes);
-            File.AppendAllText(
+            SafeFile.TryAppendAllText(
                 DevDebugLogPath,
                 $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
         }
         catch
         {
-            // 多线程并发追加/轮转竞争或文件被占用时静默放弃；
-            // 这里抛出的异常会顶替调用方的业务异常（如在 catch 路径中调用）
+            // 轮转竞争等异常静默放弃：这里抛出的异常会顶替调用方的业务异常
         }
     }
 
@@ -175,7 +185,7 @@ public static class HostAssets
         {
             EnsureCreated();
             RotateFileIfTooLarge(CloudSyncDiagnosticsLogPath, MaxLogFileBytes);
-            File.AppendAllText(
+            SafeFile.TryAppendAllText(
                 CloudSyncDiagnosticsLogPath,
                 $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
         }

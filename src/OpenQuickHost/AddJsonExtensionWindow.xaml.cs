@@ -447,7 +447,10 @@ public partial class AddJsonExtensionWindow : Window
                         UseShellExecute = true
                     });
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"AddJsonExtension: failed to open edge://extensions: {ex.Message}");
+                }
             }
 
             System.Windows.MessageBox.Show(
@@ -494,7 +497,10 @@ public partial class AddJsonExtensionWindow : Window
             var dir3 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\browser-extension"));
             if (Directory.Exists(dir3)) return dir3;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"AddJsonExtension: browser-extension dir probe failed: {ex.Message}");
+        }
 
         return null;
     }

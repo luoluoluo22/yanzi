@@ -341,16 +341,10 @@ public partial class App : WpfApplication
     }
 
     [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
     private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr hwndInsertAfter, int x, int y, int cx, int cy, uint flags);
 
     private const int DwmwaUseImmersiveDarkMode = 20;
     private const int DwmwaUseImmersiveDarkModeOld = 19;
@@ -376,9 +370,6 @@ public partial class App : WpfApplication
         window.Dispatcher.BeginInvoke(new Action(() => UpdateWindowDwmTheme(window, forceNonClientRepaint: false)), System.Windows.Threading.DispatcherPriority.Background);
     }
 
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
-    
     [DllImport("user32.dll", EntryPoint = "SetClassLongPtr", CharSet = CharSet.Auto)]
     private static extern IntPtr SetClassLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
@@ -448,11 +439,11 @@ public partial class App : WpfApplication
             return;
         }
 
-        SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        Win32Native.SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
         // 额外发送 WM_NCACTIVATE 消息，强制非客户区（标题栏）立刻重绘，解决主题切换时标题栏变色不瞬间的问题
-        SendMessage(handle, WM_NCACTIVATE, IntPtr.Zero, IntPtr.Zero);
-        SendMessage(handle, WM_NCACTIVATE, new IntPtr(1), IntPtr.Zero);
+        Win32Native.SendMessage(handle, WM_NCACTIVATE, IntPtr.Zero, IntPtr.Zero);
+        Win32Native.SendMessage(handle, WM_NCACTIVATE, new IntPtr(1), IntPtr.Zero);
     }
 
     private static void UpdateAllWindowDwmThemes()
@@ -842,7 +833,7 @@ public partial class App : WpfApplication
                     var helper = new System.Windows.Interop.WindowInteropHelper(window);
                     if (helper.Handle != IntPtr.Zero)
                     {
-                        SetForegroundWindow(helper.Handle);
+                        Win32Native.SetForegroundWindow(helper.Handle);
                     }
                     menu.IsOpen = true;
                 }

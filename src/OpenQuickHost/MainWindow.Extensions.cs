@@ -382,11 +382,7 @@ public partial class MainWindow
             Icon = "mdi:magnify"
         };
 
-        return JsonSerializer.Serialize(manifest, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true
-        });
+        return JsonSerializer.Serialize(manifest, JsonDefaults.CamelCaseIndented);
     }
 
     private CommandItem ResolveRunnableCommand(CommandItem command)
@@ -463,11 +459,7 @@ public partial class MainWindow
 
         HostAssets.AppendLog($"[IconLog] CreateQuickOpenExtensionFromPath: inputPath='{path}', fullPath='{fullPath}', displayName='{displayName}', iconPath='{iconPath}'.");
 
-        var json = JsonSerializer.Serialize(manifest, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true
-        });
+        var json = JsonSerializer.Serialize(manifest, JsonDefaults.CamelCaseIndented);
 
         var command = PersistJsonExtensionFromDialog(json, isEditMode: false);
         QueueBackgroundWebDavSync("extension-drag-import");
@@ -708,7 +700,7 @@ public partial class MainWindow
             return command;
         }
 
-        const string simulatedKeyPrefix = "keysim::";
+        const string simulatedKeyPrefix = ExtensionIdPrefixes.SimulatedKey;
         if (extensionId.StartsWith(simulatedKeyPrefix, StringComparison.OrdinalIgnoreCase))
         {
             var shortcut = extensionId[simulatedKeyPrefix.Length..].Trim();
@@ -731,7 +723,7 @@ public partial class MainWindow
                 iconReference: "mdi:shortcut");
         }
 
-        const string filePrefix = "result::";
+        const string filePrefix = ExtensionIdPrefixes.SearchResult;
         if (!extensionId.StartsWith(filePrefix, StringComparison.OrdinalIgnoreCase))
         {
             return null;
@@ -768,7 +760,7 @@ public partial class MainWindow
 
     private async Task<bool> TryExecuteSimulatedKeystrokeAsync(CommandItem runnable)
     {
-        const string simulatedKeyPrefix = "keysim::";
+        const string simulatedKeyPrefix = ExtensionIdPrefixes.SimulatedKey;
         if (!runnable.ExtensionId.StartsWith(simulatedKeyPrefix, StringComparison.OrdinalIgnoreCase))
         {
             return false;
@@ -1066,7 +1058,7 @@ public partial class MainWindow
             openTarget: result.FullPath,
             keywords: [result.FullPath, result.DirectoryPath, result.Name],
             source: CommandSource.File,
-            extensionId: $"result::{result.FullPath}",
+            extensionId: $"{ExtensionIdPrefixes.SearchResult}{result.FullPath}",
             resultKind: result.IsFolder ? ResultItemKind.Folder : ResultItemKind.File,
             resultProviderTitle: "Everything 文件",
             iconSourceOverride: NativeFileIconService.GetIcon(result.FullPath, result.IsFolder));

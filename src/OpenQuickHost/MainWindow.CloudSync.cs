@@ -2533,7 +2533,7 @@ public partial class MainWindow
             }
             var index = JsonSerializer.Deserialize<WebDavSyncIndex>(
                 File.ReadAllText(HostAssets.WebDavSyncStatePath),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                JsonDefaults.CaseInsensitive);
             return (index?.Items ?? [])
                 .Where(static item => item.Deleted || item.Purged)
                 .Select(static item => item.ExtensionId)
@@ -2727,19 +2727,7 @@ public partial class MainWindow
 
     private static void RunOnUi(Action action)
     {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher == null)
-        {
-            return;
-        }
-
-        if (dispatcher.CheckAccess())
-        {
-            action();
-            return;
-        }
-
-        _ = dispatcher.BeginInvoke(action);
+        UiDispatcher.Post(action);
     }
 
     private static void MergeLegacyWebDavSnapshot(
@@ -6625,11 +6613,7 @@ public partial class MainWindow
             }
 
             var manifestJson = await File.ReadAllTextAsync(manifestPath);
-            var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(manifestJson, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                PropertyNameCaseInsensitive = true
-            });
+            var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(manifestJson, JsonDefaults.CamelCaseIndented);
 
             if (manifest == null || string.IsNullOrWhiteSpace(manifest.Id) || string.IsNullOrWhiteSpace(manifest.Name))
             {

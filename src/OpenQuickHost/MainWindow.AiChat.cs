@@ -794,6 +794,18 @@ public partial class MainWindow
 
     private async void SubmitAiChatMessage()
     {
+        try
+        {
+            await SubmitAiChatMessageCore();
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SubmitAiChatMessage failed: {ex}");
+        }
+    }
+
+    private async Task SubmitAiChatMessageCore()
+    {
         var userInput = AiChatInputText.Trim();
         if (string.IsNullOrEmpty(userInput) && _aiChatAttachments.Count == 0)
         {
@@ -1366,10 +1378,7 @@ public partial class MainWindow
             throw new InvalidOperationException($"{(int)response.StatusCode} {response.ReasonPhrase}");
         }
 
-        var parsed = JsonSerializer.Deserialize<AiChatCompletionResponse>(body, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        var parsed = JsonSerializer.Deserialize<AiChatCompletionResponse>(body, JsonDefaults.CaseInsensitive);
 
         var content = parsed?.Choices?
             .Select(c => c.Message?.Content)

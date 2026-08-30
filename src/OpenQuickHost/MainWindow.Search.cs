@@ -1452,7 +1452,7 @@ public partial class MainWindow
             openTarget: result.OpenTarget,
             keywords: result.Keywords,
             source: CommandSource.File,
-            extensionId: $"result::{result.Id}",
+            extensionId: $"{ExtensionIdPrefixes.SearchResult}{result.Id}",
             resultKind: result.Kind,
             resultProviderTitle: result.ProviderTitle);
     }

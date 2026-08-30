@@ -411,7 +411,11 @@ public static class ScriptExtensionRunner
                 File.WriteAllText(Path.Combine(command.ExtensionDirectoryPath, "debug.log"), $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] COMPILATION ERROR:{Environment.NewLine}{error}");
             }
         }
-        catch { }
+        catch (Exception logEx)
+        {
+            // 编译错误日志写失败 = 扩展开发者拿不到错误信息，必须留痕
+            HostAssets.AppendLog($"ScriptRunner: failed to write compile debug.log: {logEx.Message}");
+        }
 
         if (useNativeWindowMode)
         {
@@ -813,7 +817,10 @@ public static class ScriptExtensionRunner
                         File.AppendAllText(Path.Combine(command.ExtensionDirectoryPath, "debug.log"), $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] RUNTIME EXCEPTION:{Environment.NewLine}{ex}{Environment.NewLine}");
                     }
                 }
-                catch { }
+                catch (Exception logEx)
+                {
+                    HostAssets.AppendLog($"ScriptRunner: failed to write runtime debug.log: {logEx.Message}");
+                }
 
                 var result = new ScriptExecutionResult(false, string.Empty, ex.ToString(), -1);
                 ready.TrySetResult(result);
@@ -1345,10 +1352,7 @@ public static class ScriptExtensionRunner
         try
         {
             var json = await File.ReadAllTextAsync(stateUpdatePath, cancellationToken);
-            var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonDefaults.CaseInsensitive);
             return payload != null
                 ? new Dictionary<string, string>(payload, StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1480,10 +1484,7 @@ public static class ScriptExtensionRunner
                 }
 
                 var json = await File.ReadAllTextAsync(contextPath);
-                return JsonSerializer.Deserialize<YanziActionContext>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                }) ?? throw new InvalidOperationException("Failed to read Yanzi context.");
+                return JsonSerializer.Deserialize<YanziActionContext>(json, JsonDefaults.CaseInsensitive) ?? throw new InvalidOperationException("Failed to read Yanzi context.");
             }
 
             private async Task FlushStateUpdatesAsync()

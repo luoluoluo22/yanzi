@@ -454,11 +454,8 @@ public static class KeyboardDoubleTapService
                 CancelForegroundAltMenuMode();
             }
 
-            // 退出阶段 Application.Current 可能为 null；面板切换走 BeginInvoke，
-            // 避免完整 UI 布局内联在 WH_KEYBOARD_LL 回调里执行
-            System.Windows.Application.Current?.Dispatcher.BeginInvoke(
-                DispatcherPriority.Input,
-                () => _onDoubleTap?.Invoke(releasedKind.ToString()));
+            // 面板切换经统一派发，避免完整 UI 布局内联在 WH_KEYBOARD_LL 回调里执行
+            UiDispatcher.Post(() => _onDoubleTap?.Invoke(releasedKind.ToString()));
             return shouldSuppress;
         }
 

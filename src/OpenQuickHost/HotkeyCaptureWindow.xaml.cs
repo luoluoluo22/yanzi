@@ -98,7 +98,7 @@ public partial class HotkeyCaptureWindow : Window
                 Focus();
                 Keyboard.Focus(this);
             }, System.Windows.Threading.DispatcherPriority.Input);
-            HostAssets.AppendLog($"[HotkeyCaptureLog] Loaded: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Loaded: hwnd=0x{hwnd:X}, foreHwnd=0x{Win32Native.GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
         };
         Unloaded += (_, _) =>
         {
@@ -121,7 +121,7 @@ public partial class HotkeyCaptureWindow : Window
                 Focus();
                 Keyboard.Focus(this);
             }, System.Windows.Threading.DispatcherPriority.Input);
-            HostAssets.AppendLog($"[HotkeyCaptureLog] ContentRendered: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
+            HostAssets.AppendLog($"[HotkeyCaptureLog] ContentRendered: hwnd=0x{hwnd:X}, foreHwnd=0x{Win32Native.GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
         };
         Activated += (_, _) =>
         {
@@ -129,7 +129,7 @@ public partial class HotkeyCaptureWindow : Window
         };
         Deactivated += (_, _) =>
         {
-            HostAssets.AppendLog($"[HotkeyCaptureLog] Deactivated: foreHwnd=0x{GetForegroundWindow():X}");
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Deactivated: foreHwnd=0x{Win32Native.GetForegroundWindow():X}");
             ResetModifierTracking();
         };
         GotKeyboardFocus += (_, e) =>
@@ -142,7 +142,7 @@ public partial class HotkeyCaptureWindow : Window
         };
         PreviewMouseDown += (_, _) =>
         {
-            HostAssets.AppendLog($"[HotkeyCaptureLog] PreviewMouseDown: foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}");
+            HostAssets.AppendLog($"[HotkeyCaptureLog] PreviewMouseDown: foreHwnd=0x{Win32Native.GetForegroundWindow():X}, IsActive={IsActive}");
         };
 
         HostAssets.AppendLog($"Hotkey capture dialog opened: title={title}, initialValue={initialValue ?? string.Empty}, initialDisplayName={initialDisplayName ?? string.Empty}, allowEmpty={allowEmpty}, allowDoubleTap={allowDoubleTap}, allowModifierless={allowModifierless}.");
@@ -160,7 +160,7 @@ public partial class HotkeyCaptureWindow : Window
         ForceSetForeground(hwnd);
         _source = (HwndSource?)PresentationSource.FromVisual(this);
         _source?.AddHook(WndProc);
-        HostAssets.AppendLog($"[HotkeyCaptureLog] OnSourceInitialized: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}");
+        HostAssets.AppendLog($"[HotkeyCaptureLog] OnSourceInitialized: hwnd=0x{hwnd:X}, foreHwnd=0x{Win32Native.GetForegroundWindow():X}");
     }
 
     protected override void OnClosed(EventArgs e)
@@ -283,19 +283,14 @@ public partial class HotkeyCaptureWindow : Window
         return CallNextHookEx(_keyboardHookHandle, nCode, wParam, lParam);
     }
 
-    private const int WM_MOUSEACTIVATE = 0x0021;
-    private const int MA_ACTIVATE = 1;
-    private const int GWL_EXSTYLE = -20;
-    private const int WS_EX_NOACTIVATE = 0x08000000;
-
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         // 关键：拦截 WM_MOUSEACTIVATE，通知 Windows 在激活窗口的同时，直接无损派发鼠标点击给按钮控件！
         // 彻底解决“必须先点标题栏激活，点按钮才生效”的问题！
-        if (msg == WM_MOUSEACTIVATE)
+        if (msg == Win32Native.WM_MOUSEACTIVATE)
         {
             handled = true;
-            return (IntPtr)MA_ACTIVATE;
+            return (IntPtr)Win32Native.MA_ACTIVATE;
         }
 
         if (msg != WM_KEYDOWN && msg != WM_SYSKEYDOWN)
@@ -332,36 +327,6 @@ public partial class HotkeyCaptureWindow : Window
         return HotkeyHelper.GetCurrentPhysicalModifiers();
     }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern IntPtr SetActiveWindow(IntPtr hWnd);
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern IntPtr SetFocus(IntPtr hWnd);
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool BringWindowToTop(IntPtr hWnd);
-
-    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLong")]
-    private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
-
-    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLong")]
-    private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
 
@@ -370,48 +335,42 @@ public partial class HotkeyCaptureWindow : Window
         if (hWnd == IntPtr.Zero) return;
         try
         {
-            var exStyle = GetWindowLong32(hWnd, GWL_EXSTYLE);
-            if ((exStyle & WS_EX_NOACTIVATE) != 0)
+            // 统一走 Win32Native 的 64 位安全包装，避免 32 位 SetWindowLong 在 x64 下静默失败
+            var exStyle = Win32Native.GetWindowLongPtr(hWnd, Win32Native.GWL_EXSTYLE).ToInt64();
+            if ((exStyle & Win32Native.WS_EX_NOACTIVATE) != 0)
             {
-                SetWindowLong32(hWnd, GWL_EXSTYLE, exStyle & ~WS_EX_NOACTIVATE);
+                Win32Native.SetWindowLongPtr(hWnd, Win32Native.GWL_EXSTYLE, new IntPtr(exStyle & ~Win32Native.WS_EX_NOACTIVATE));
             }
         }
         catch { }
     }
-
-    private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
-    private const uint SWP_NOMOVE = 0x0002;
-    private const uint SWP_NOSIZE = 0x0001;
-    private const uint SWP_SHOWWINDOW = 0x0040;
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
     public static void ForceSetForeground(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return;
         try
         {
-            keybd_event(0, 0, 0, UIntPtr.Zero);
-            SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-            var foreHwnd = GetForegroundWindow();
-            var foreThread = GetWindowThreadProcessId(foreHwnd, out _);
+            Win32Native.keybd_event(0, 0, 0, UIntPtr.Zero);
+            Win32Native.SetWindowPos(hWnd, Win32Native.HWND_TOPMOST, 0, 0, 0, 0,
+                Win32Native.SWP_NOMOVE | Win32Native.SWP_NOSIZE | Win32Native.SWP_SHOWWINDOW);
+            var foreHwnd = Win32Native.GetForegroundWindow();
+            var foreThread = Win32Native.GetWindowThreadProcessId(foreHwnd, out _);
             var curThread = GetCurrentThreadId();
             if (foreThread != 0 && foreThread != curThread)
             {
-                AttachThreadInput(curThread, foreThread, true);
-                BringWindowToTop(hWnd);
-                SetForegroundWindow(hWnd);
-                SetActiveWindow(hWnd);
-                SetFocus(hWnd);
-                AttachThreadInput(curThread, foreThread, false);
+                Win32Native.AttachThreadInput(curThread, foreThread, true);
+                Win32Native.BringWindowToTop(hWnd);
+                Win32Native.SetForegroundWindow(hWnd);
+                Win32Native.SetActiveWindow(hWnd);
+                Win32Native.SetFocus(hWnd);
+                Win32Native.AttachThreadInput(curThread, foreThread, false);
             }
             else
             {
-                BringWindowToTop(hWnd);
-                SetForegroundWindow(hWnd);
-                SetActiveWindow(hWnd);
-                SetFocus(hWnd);
+                Win32Native.BringWindowToTop(hWnd);
+                Win32Native.SetForegroundWindow(hWnd);
+                Win32Native.SetActiveWindow(hWnd);
+                Win32Native.SetFocus(hWnd);
             }
         }
         catch (Exception ex)

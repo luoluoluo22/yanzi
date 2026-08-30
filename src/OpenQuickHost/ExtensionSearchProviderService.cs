@@ -246,10 +246,7 @@ internal sealed class ScriptResultProvider : IExtensionResultProvider
                 };
             }
 
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            };
+            var options = JsonDefaults.CaseInsensitive;
 
             if (json.StartsWith('{'))
             {

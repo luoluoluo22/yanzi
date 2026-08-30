@@ -234,16 +234,7 @@ public static class ExtensionRecycleBinService
         EnsureStorage();
         var json = JsonSerializer.Serialize(index, JsonOptions);
         // 原子写：索引写坏会让所有回收条目“消失且不可还原”（目录在、索引无）
-        var tempPath = HostAssets.ExtensionRecycleBinIndexPath + ".tmp";
-        File.WriteAllText(tempPath, json);
-        try
-        {
-            File.Replace(tempPath, HostAssets.ExtensionRecycleBinIndexPath, destinationBackupFileName: null);
-        }
-        catch (IOException)
-        {
-            File.Move(tempPath, HostAssets.ExtensionRecycleBinIndexPath, overwrite: true);
-        }
+        SafeFile.AtomicWriteText(HostAssets.ExtensionRecycleBinIndexPath, json);
     }
 
     private static void EnsureStorage()
