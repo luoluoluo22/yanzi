@@ -196,7 +196,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             {
                 return;
             }
-            if (_editModeLocked || _wasActivatedForEdit || _isOpeningSubDialog || _editInteractionActive)
+            if (_editModeLocked || _isOpeningSubDialog || _editInteractionActive)
             {
                 return;
             }
@@ -1226,7 +1226,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
-            Items.Add(new RadialMenuItemViewModel(
+            var vm = new RadialMenuItemViewModel(
                 _currentPageId,
                 index,
                 command,
@@ -1238,7 +1238,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Inner,
                 CreateSectorGeometry(center.X, center.Y, 36, 100, angleDegrees - 22.5, angleDegrees + 22.5),
                 center.X,
-                center.Y));
+                center.Y)
+            {
+                IsEditMode = _editModeLocked
+            };
+            Items.Add(vm);
         }
 
         // 3. 第 2 层：中间层 16 槽位 (100 ~ 165)
@@ -1252,7 +1256,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
-            MiddleItems.Add(new RadialMenuItemViewModel(
+            var vm = new RadialMenuItemViewModel(
                 _currentPageId,
                 index,
                 command,
@@ -1264,7 +1268,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Middle,
                 CreateSectorGeometry(center.X, center.Y, 100, 165, angleDegrees - 11.25, angleDegrees + 11.25),
                 center.X,
-                center.Y));
+                center.Y)
+            {
+                IsEditMode = _editModeLocked
+            };
+            MiddleItems.Add(vm);
         }
 
         // 4. 第 3 层：最外层 8 方向槽位 (165 ~ 280，向外柔和渐变消融)
@@ -1278,7 +1286,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
-            OuterItems.Add(new RadialMenuItemViewModel(
+            var vm = new RadialMenuItemViewModel(
                 _currentPageId,
                 index,
                 command,
@@ -1290,7 +1298,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Outer,
                 CreateSectorGeometry(center.X, center.Y, 165, 280, angleDegrees - 22.5, angleDegrees + 22.5),
                 center.X,
-                center.Y));
+                center.Y)
+            {
+                IsEditMode = _editModeLocked
+            };
+            OuterItems.Add(vm);
         }
 
         var currentIndex = _topLevelPages.FindIndex(page => page.Id.Equals(_currentPageId, StringComparison.OrdinalIgnoreCase));
@@ -2823,38 +2835,49 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         _isOpeningSubDialog = true;
         _editInteractionActive = true;
-        var defaultProcess = page.ContextProcessName ?? _activeProcessName ?? "explorer";
-        var initialList = string.IsNullOrWhiteSpace(page.ContextProcessName)
-            ? new List<string>()
-            : new List<string> { page.ContextProcessName };
-
-        var inputWindow = new ProcessPickerWindow("绑定应用", $"请选择【{page.Name}】绑定的专属应用进程（留空表示全局通用）：", defaultProcess, initialList);
-        if (inputWindow.ShowDialog() == true)
+        BeginModalChildDialog();
+        try
         {
-            var selected = inputWindow.Blacklist.FirstOrDefault()?.ProcessName;
-            var settings = AppSettingsStore.Load();
-            var targetPage = settings.RadialMenu?.Pages?.FirstOrDefault(p => p.Id.Equals(page.Id, StringComparison.OrdinalIgnoreCase));
-            if (targetPage != null)
+            var defaultProcess = page.ContextProcessName ?? _activeProcessName ?? "explorer";
+            var initialList = string.IsNullOrWhiteSpace(page.ContextProcessName)
+                ? new List<string>()
+                : new List<string> { page.ContextProcessName };
+
+            var inputWindow = new ProcessPickerWindow("绑定应用", $"请选择【{page.Name}】绑定的专属应用进程（留空表示全局通用）：", defaultProcess, initialList)
             {
-                targetPage.ContextProcessName = string.IsNullOrWhiteSpace(selected) ? null : selected;
-                targetPage.ContextDisplayName = string.IsNullOrWhiteSpace(selected) ? null : selected;
-                AppSettingsStore.Save(settings);
-                LoadRadialMenuPages();
-                ExpandAllSubRingsInEditMode();
-                SetActiveRadial(targetPage.Id);
-                ActiveTitle = string.IsNullOrWhiteSpace(selected)
-                    ? $"已将【{page.Name}】设为全局通用轮盘"
-                    : $"已将【{page.Name}】绑定到应用：{selected}";
-                HostAssets.AppendLog($"[RadialMenuLog] Radial page process bound: page={page.Name}, process={selected ?? "(Global)"}");
+                Owner = this,
+                Topmost = true
+            };
+            if (inputWindow.ShowDialog() == true)
+            {
+                var selected = inputWindow.Blacklist.FirstOrDefault()?.ProcessName;
+                var settings = AppSettingsStore.Load();
+                var targetPage = settings.RadialMenu?.Pages?.FirstOrDefault(p => p.Id.Equals(page.Id, StringComparison.OrdinalIgnoreCase));
+                if (targetPage != null)
+                {
+                    targetPage.ContextProcessName = string.IsNullOrWhiteSpace(selected) ? null : selected;
+                    targetPage.ContextDisplayName = string.IsNullOrWhiteSpace(selected) ? null : selected;
+                    AppSettingsStore.Save(settings);
+                    LoadRadialMenuPages();
+                    ExpandAllSubRingsInEditMode();
+                    SetActiveRadial(targetPage.Id);
+                    ActiveTitle = string.IsNullOrWhiteSpace(selected)
+                        ? $"已将【{page.Name}】设为全局通用轮盘"
+                        : $"已将【{page.Name}】绑定到应用：{selected}";
+                    HostAssets.AppendLog($"[RadialMenuLog] Radial page process bound: page={page.Name}, process={selected ?? "(Global)"}");
+                }
             }
         }
-
-        _isOpeningSubDialog = false;
-        _editInteractionActive = false;
-        if (IsVisible && !_mainWindow.IsRadialPickerMode)
+        finally
         {
-            Activate();
-            _selectionTimer.Start();
+            EndModalChildDialog();
+            _isOpeningSubDialog = false;
+            _editInteractionActive = false;
+            if (IsVisible && !_mainWindow.IsRadialPickerMode)
+            {
+                Activate();
+                _selectionTimer.Start();
+            }
         }
     }
 
@@ -2949,6 +2972,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         _isOpeningSubDialog = true;
         _editInteractionActive = true;
+        BeginModalChildDialog();
         try
         {
             var settings = AppSettingsStore.Load();
@@ -2962,6 +2986,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
             var dialog = new SimpleTextInputWindow("重命名轮盘", "输入新的轮盘名称。", page.Name)
             {
+                Owner = this,
                 Topmost = true,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen
             };
@@ -2985,6 +3010,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         finally
         {
+            EndModalChildDialog();
             _isOpeningSubDialog = false;
             _editInteractionActive = false;
             if (IsVisible && !_mainWindow.IsRadialPickerMode)
@@ -3016,6 +3042,17 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         if (CenterMainWheelContainer != null)
         {
             CenterMainWheelContainer.Visibility = _editModeLocked ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        foreach (var item in Items) item.IsEditMode = _editModeLocked;
+        foreach (var item in MiddleItems) item.IsEditMode = _editModeLocked;
+        foreach (var item in OuterItems) item.IsEditMode = _editModeLocked;
+        foreach (var item in ChildItems) item.IsEditMode = _editModeLocked;
+        foreach (var item in GrandChildItems) item.IsEditMode = _editModeLocked;
+        foreach (var item in GreatGrandChildItems) item.IsEditMode = _editModeLocked;
+        foreach (var ring in SubRings)
+        {
+            foreach (var item in ring.Items) item.IsEditMode = _editModeLocked;
         }
 
         if (_editModeLocked)
@@ -3147,6 +3184,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         setSimulatedKeyItem.Click += (_, _) =>
         {
             _isOpeningSubDialog = true;
+            // 在模态录制窗口打开前同步关闭菜单，确保弹层销毁与鼠标捕获释放先于 ShowDialog 完成
+            if (parentMenu is ContextMenu addMenu && addMenu.IsOpen)
+            {
+                addMenu.IsOpen = false;
+            }
             Dispatcher.BeginInvoke(new Action(() => SetSimulatedKeyForTarget(target)));
         };
         parentMenu.Items.Add(setSimulatedKeyItem);
@@ -3381,12 +3423,32 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// 模态子对话框统一入场：释放残留鼠标捕获，并让轮盘整窗对鼠标穿透。
+    /// </summary>
+    private void BeginModalChildDialog()
+    {
+        // 释放可能残留在轮盘/菜单弹层上的 WPF 鼠标捕获，避免模态对话框客户区收不到鼠标消息
+        Mouse.Capture(null);
+        // 编辑锁定模式下轮盘全屏遮罩会吃掉对话框区域的鼠标点击，对话框期间整窗穿透
+        SetMouseClickThrough(true);
+    }
+
+    /// <summary>
+    /// 模态子对话框统一退场：恢复轮盘鼠标命中。
+    /// </summary>
+    private void EndModalChildDialog()
+    {
+        SetMouseClickThrough(false);
+    }
+
     private void SetSimulatedKeyForTarget(RadialEditTarget target)
     {
         HostAssets.AppendLog($"[SetSimulatedKeyLog] SetSimulatedKeyForTarget: page={target.PageId}, index={target.Index}");
         _isOpeningSubDialog = true;
         _editInteractionActive = true;
-        EnsureActivatedForEdit();
+        IsHitTestVisible = false;
+        BeginModalChildDialog();
         try
         {
             const string simulatedPrefix = "keysim::";
@@ -3404,6 +3466,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 allowDoubleTap: false,
                 allowModifierless: true)
             {
+                // 显式父子关系：保证对话框永远位于轮盘覆盖层之上，并在关闭后归还焦点
                 Owner = this,
                 Topmost = true,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen
@@ -3434,6 +3497,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         finally
         {
+            EndModalChildDialog();
+            IsHitTestVisible = true;
             _isOpeningSubDialog = false;
             _editInteractionActive = false;
             if (IsVisible && !_mainWindow.IsRadialPickerMode)
@@ -4505,10 +4570,50 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         this.ApplyNoActivateToolWindowStyle();
     }
 
+    /// <summary>
+    /// 临时开启/关闭整窗鼠标穿透 (WS_EX_TRANSPARENT)。
+    /// 编辑锁定模式下轮盘是带全屏不透明遮罩的 Topmost 覆盖层，会参与系统鼠标命中测试；
+    /// 模态子对话框（模拟按键录制等）打开期间必须让本窗口对鼠标完全穿透，否则落在本窗口
+    /// 矩形内的鼠标点击会被吞掉，表现为对话框确认/取消按钮点不动（键盘与非客户区仍正常）。
+    /// </summary>
+    private void SetMouseClickThrough(bool enabled)
+    {
+        try
+        {
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var style = RadialMenuNativeMethods.GetWindowLongPtr(hwnd, RadialMenuNativeMethods.GWL_EXSTYLE).ToInt64();
+            var newStyle = enabled
+                ? style | RadialMenuNativeMethods.WS_EX_TRANSPARENT
+                : style & ~RadialMenuNativeMethods.WS_EX_TRANSPARENT;
+            if (newStyle == style)
+            {
+                return;
+            }
+
+            RadialMenuNativeMethods.SetWindowLongPtr(hwnd, RadialMenuNativeMethods.GWL_EXSTYLE, new IntPtr(newStyle));
+            // 通知系统重新套用扩展样式，立即刷新鼠标命中测试结果
+            RadialMenuNativeMethods.SetWindowPos(
+                hwnd,
+                RadialMenuNativeMethods.HWND_TOPMOST,
+                0, 0, 0, 0,
+                RadialMenuNativeMethods.SWP_NOMOVE | RadialMenuNativeMethods.SWP_NOSIZE |
+                RadialMenuNativeMethods.SWP_NOACTIVATE | RadialMenuNativeMethods.SWP_FRAMECHANGED);
+            HostAssets.AppendLog($"[SetSimulatedKeyLog] Radial window mouse click-through: {enabled}.");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[SetSimulatedKeyLog] SetMouseClickThrough({enabled}) error: {ex.Message}");
+        }
+    }
+
     private void EnsureActivatedForEdit()
     {
         _wasActivatedForEdit = true;
-        _editModeLocked = true;
         try
         {
             if (!IsVisible)
@@ -4818,11 +4923,27 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
         return brush;
     }
 
-    public double SectorOpacity => Ring == RadialMenuRing.Outer
-        ? 1.0
-        : (IsSelected ? 0.58 : IsHovered ? 0.44 : 0.0);
+    private bool _isEditMode;
+    public bool IsEditMode
+    {
+        get => _isEditMode;
+        set
+        {
+            if (_isEditMode == value) return;
+            _isEditMode = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ShouldShowEmptyPlaceholder));
+            OnPropertyChanged(nameof(SectorOpacity));
+            OnPropertyChanged(nameof(IsSectorVisible));
+            OnPropertyChanged(nameof(SectorBrush));
+        }
+    }
 
-    public bool IsSectorVisible => SectorGeometry != null && (Ring == RadialMenuRing.Outer ? (IsSelected || IsHovered || !IsEmpty) : (!IsEmpty || IsHovered || IsSelected));
+    public double SectorOpacity => Ring == RadialMenuRing.Outer
+        ? (IsEmpty ? 0.0 : 1.0)
+        : (IsEmpty ? 0.0 : (IsSelected ? 0.58 : IsHovered ? 0.44 : 0.0));
+
+    public bool IsSectorVisible => SectorGeometry != null && !IsEmpty && (Ring == RadialMenuRing.Outer ? (IsSelected || IsHovered) : true);
 
     public double Scale => 1.0;
 
@@ -4907,12 +5028,23 @@ internal static partial class RadialMenuNativeMethods
     public const int GWL_EXSTYLE = -20;
     public const long WS_EX_TOOLWINDOW = 0x00000080L;
     public const long WS_EX_NOACTIVATE = 0x08000000L;
+    public const long WS_EX_TRANSPARENT = 0x00000020L;
+
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOACTIVATE = 0x0010;
+    public const uint SWP_FRAMECHANGED = 0x0020;
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

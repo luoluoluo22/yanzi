@@ -76,12 +76,14 @@
                            FontSize="{DynamicResource FontSizeSmallPlus}"
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
-                <Button Grid.Column="1"
+                <Button x:Name="RetryButton"
+                        Grid.Column="1"
                         Content="重新录制"
                         Style="{StaticResource SecondaryBtn}"
                         Width="96"
                         Margin="0,0,10,0"
-                        Click="RetryButton_Click" />
+                        Click="RetryButton_Click"
+                        PreviewMouseLeftButtonDown="Button_PreviewMouseLeftButtonDown" />
                 <Button x:Name="ClearButton"
                         Grid.Column="2"
                         Content="清空"
@@ -89,13 +91,16 @@
                         Width="90"
                         Margin="0,0,10,0"
                         Visibility="Collapsed"
-                        Click="ClearButton_Click" />
-                <Button Grid.Column="3"
+                        Click="ClearButton_Click"
+                        PreviewMouseLeftButtonDown="Button_PreviewMouseLeftButtonDown" />
+                <Button x:Name="CancelButton"
+                        Grid.Column="3"
                         Content="取消"
                         Style="{StaticResource SecondaryBtn}"
                         Width="90"
                         Margin="0,0,10,0"
-                        Click="CancelButton_Click" />
+                        Click="CancelButton_Click"
+                        PreviewMouseLeftButtonDown="Button_PreviewMouseLeftButtonDown" />
                 <Button x:Name="ConfirmButton"
                         Grid.Column="4"
                         Content="确认"
@@ -103,7 +108,8 @@
                         Width="90"
                         IsEnabled="False"
                         IsDefault="True"
-                        Click="ConfirmButton_Click" />
+                        Click="ConfirmButton_Click"
+                        PreviewMouseLeftButtonDown="Button_PreviewMouseLeftButtonDown" />
             </Grid>
         </Grid>
     </Border>

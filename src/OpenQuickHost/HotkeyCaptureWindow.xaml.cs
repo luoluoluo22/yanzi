@@ -83,12 +83,22 @@ public partial class HotkeyCaptureWindow : Window
         Loaded += (_, _) =>
         {
             var hwnd = new WindowInteropHelper(this).Handle;
-            HostAssets.AppendLog($"[HotkeyCaptureLog] Loaded: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
+            EnsureDirectActivateStyle(hwnd);
             ForceSetForeground(hwnd);
             Activate();
             Focus();
             Keyboard.Focus(this);
             InstallKeyboardHook();
+            Dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(30);
+                var h = new WindowInteropHelper(this).Handle;
+                ForceSetForeground(h);
+                Activate();
+                Focus();
+                Keyboard.Focus(this);
+            }, System.Windows.Threading.DispatcherPriority.Input);
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Loaded: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
         };
         Unloaded += (_, _) =>
         {
@@ -97,11 +107,21 @@ public partial class HotkeyCaptureWindow : Window
         ContentRendered += (_, _) =>
         {
             var hwnd = new WindowInteropHelper(this).Handle;
-            HostAssets.AppendLog($"[HotkeyCaptureLog] ContentRendered: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
+            EnsureDirectActivateStyle(hwnd);
             ForceSetForeground(hwnd);
             Activate();
             Focus();
             Keyboard.Focus(this);
+            Dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(50);
+                var h = new WindowInteropHelper(this).Handle;
+                ForceSetForeground(h);
+                Activate();
+                Focus();
+                Keyboard.Focus(this);
+            }, System.Windows.Threading.DispatcherPriority.Input);
+            HostAssets.AppendLog($"[HotkeyCaptureLog] ContentRendered: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
         };
         Activated += (_, _) =>
         {
@@ -136,10 +156,11 @@ public partial class HotkeyCaptureWindow : Window
     {
         base.OnSourceInitialized(e);
         var hwnd = new WindowInteropHelper(this).Handle;
-        HostAssets.AppendLog($"[HotkeyCaptureLog] OnSourceInitialized: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}");
+        EnsureDirectActivateStyle(hwnd);
         ForceSetForeground(hwnd);
         _source = (HwndSource?)PresentationSource.FromVisual(this);
         _source?.AddHook(WndProc);
+        HostAssets.AppendLog($"[HotkeyCaptureLog] OnSourceInitialized: hwnd=0x{hwnd:X}, foreHwnd=0x{GetForegroundWindow():X}");
     }
 
     protected override void OnClosed(EventArgs e)
@@ -262,8 +283,21 @@ public partial class HotkeyCaptureWindow : Window
         return CallNextHookEx(_keyboardHookHandle, nCode, wParam, lParam);
     }
 
+    private const int WM_MOUSEACTIVATE = 0x0021;
+    private const int MA_ACTIVATE = 1;
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        // 关键：拦截 WM_MOUSEACTIVATE，通知 Windows 在激活窗口的同时，直接无损派发鼠标点击给按钮控件！
+        // 彻底解决“必须先点标题栏激活，点按钮才生效”的问题！
+        if (msg == WM_MOUSEACTIVATE)
+        {
+            handled = true;
+            return (IntPtr)MA_ACTIVATE;
+        }
+
         if (msg != WM_KEYDOWN && msg != WM_SYSKEYDOWN)
         {
             return IntPtr.Zero;
@@ -302,6 +336,12 @@ public partial class HotkeyCaptureWindow : Window
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SetActiveWindow(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SetFocus(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -313,14 +353,47 @@ public partial class HotkeyCaptureWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool BringWindowToTop(IntPtr hWnd);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+    private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+    private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
+
+    private static void EnsureDirectActivateStyle(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return;
+        try
+        {
+            var exStyle = GetWindowLong32(hWnd, GWL_EXSTYLE);
+            if ((exStyle & WS_EX_NOACTIVATE) != 0)
+            {
+                SetWindowLong32(hWnd, GWL_EXSTYLE, exStyle & ~WS_EX_NOACTIVATE);
+            }
+        }
+        catch { }
+    }
+
+    private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
     public static void ForceSetForeground(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return;
         try
         {
+            keybd_event(0, 0, 0, UIntPtr.Zero);
+            SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
             var foreHwnd = GetForegroundWindow();
             var foreThread = GetWindowThreadProcessId(foreHwnd, out _);
             var curThread = GetCurrentThreadId();
@@ -329,17 +402,34 @@ public partial class HotkeyCaptureWindow : Window
                 AttachThreadInput(curThread, foreThread, true);
                 BringWindowToTop(hWnd);
                 SetForegroundWindow(hWnd);
+                SetActiveWindow(hWnd);
+                SetFocus(hWnd);
                 AttachThreadInput(curThread, foreThread, false);
             }
             else
             {
                 BringWindowToTop(hWnd);
                 SetForegroundWindow(hWnd);
+                SetActiveWindow(hWnd);
+                SetFocus(hWnd);
             }
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog($"[HotkeyCaptureLog] ForceSetForeground error: {ex.Message}");
+        }
+    }
+
+    private void Button_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.IsEnabled)
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Button_PreviewMouseLeftButtonDown: {btn.Name}");
+            if (ReferenceEquals(btn, ConfirmButton)) ConfirmButton_Click(btn, e);
+            else if (ReferenceEquals(btn, RetryButton)) RetryButton_Click(btn, e);
+            else if (ReferenceEquals(btn, ClearButton)) ClearButton_Click(btn, e);
+            else if (ReferenceEquals(btn, CancelButton)) CancelButton_Click(btn, e);
+            e.Handled = true;
         }
     }
 
@@ -406,6 +496,15 @@ public partial class HotkeyCaptureWindow : Window
         ConfirmButton.IsEnabled = true;
         _capturedChordDuringModifierPress = true;
         HostAssets.AppendLog($"Hotkey capture recorded shortcut: {ShortcutText}.");
+
+        Dispatcher.InvokeAsync(() =>
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            ForceSetForeground(hwnd);
+            ConfirmButton.Focus();
+            Keyboard.Focus(ConfirmButton);
+        }, System.Windows.Threading.DispatcherPriority.Input);
+
         return true;
     }
 
