@@ -909,8 +909,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         // 显示后立即按物理像素校正中心：WPF 对 Left/Top 的 DPI 解释随窗口所在显示器而变，
-        // 初始 DIP 估算可能被再次缩放，轮盘会偏离右键按下点（多屏混合缩放必现）
-        CenterOnAnchorPhysically();
+        // 初始 DIP 估算可能被再次缩放，轮盘会偏离右键按下点（多屏混合缩放必现）。
+        // 第二轮在渲染帧后再校一次：跨 DPI 显示器呼出时 WM_DPICHANGED 的建议矩形
+        // 会异步再调整位置，单次同步校正会被它覆盖（用户日志 delta 恒为 (0,-264) 的来源）。
+        CenterOnAnchorPhysically("show-sync");
+        Dispatcher.BeginInvoke(new Action(() => CenterOnAnchorPhysically("post-render")), DispatcherPriority.Render);
 
         _selectionTimer.Start();
         UpdateSelectionFromCursor();
@@ -941,11 +944,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         // WPF 对 Left/Top 的解释取决于窗口“当前所在位置的 DPI”，而窗口隐藏时停靠在
         // -32000（另一个 DPI 上下文）。用目标显示器 DPI 换算的 DIP 在两个上下文缩放比
         // 不一致时会被再次缩放，轮盘中心偏离锚点（被拉向屏幕原点方向）。
-        // 因此初始估算用窗口当前 DPI，并在显示后再做一次物理像素校正（CenterOnAnchorPhysically）。
+        // 因此初始估算用窗口当前 DPI，并在显示后再做物理像素校正（含渲染帧后自愈第二轮）。
         var windowDpi = GetWindowDpiScale();
         var size = GetMenuSize();
         Left = _centerPixels.X / windowDpi - size.Width / 2;
         Top = _centerPixels.Y / windowDpi - size.Height / 2;
+        HostAssets.AppendLog($"[RadialMenuLog] Placement intent: anchor=({_centerPixels.X},{_centerPixels.Y}), left={Left:F1}, top={Top:F1}, size=({size.Width:F0}x{size.Height:F0}), windowDpi={windowDpi:F2}.");
     }
 
     private double GetWindowDpiScale()
@@ -986,10 +990,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     /// <summary>
     /// 物理像素校正：实测窗口当前物理中心与锚点的偏差，按窗口当前 DPI 折回 DIP 修正 Left/Top。
-    /// 不依赖任何 DPI 假设——无论 WPF 用哪个上下文解释 Left/Top，测多少补多少，
-    /// 彻底解决多显示器混合缩放/非 100% 缩放下轮盘中心偏离右键按下点的问题。
+    /// 不依赖任何 DPI 假设——无论 WPF 用哪个上下文解释 Left/Top，测多少补多少。
+    /// 用户日志显示跨 DPI 显示器呼出时 delta 恒为 (0,-264)：Show 过程中 WM_DPICHANGED
+    /// 的系统建议矩形会异步再调整一次位置，因此校正必须在渲染帧后再补一轮自愈。
     /// </summary>
-    private void CenterOnAnchorPhysically()
+    private void CenterOnAnchorPhysically(string pass)
     {
         try
         {
@@ -1004,15 +1009,16 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var currentCenterY = (rect.Top + rect.Bottom) / 2.0;
             var deltaX = _centerPixels.X - currentCenterX;
             var deltaY = _centerPixels.Y - currentCenterY;
+            var windowDpi = GetWindowDpiScale();
+            HostAssets.AppendLog($"[RadialMenuLog] Center check ({pass}): anchor=({_centerPixels.X},{_centerPixels.Y}), rect=({rect.Left},{rect.Top})-({rect.Right},{rect.Bottom}), center=({currentCenterX:F0},{currentCenterY:F0}), delta=({deltaX:F0},{deltaY:F0}), dpi={windowDpi:F2}, state={WindowState}.");
             if (Math.Abs(deltaX) < 1 && Math.Abs(deltaY) < 1)
             {
                 return;
             }
 
-            var windowDpi = GetWindowDpiScale();
             Left += deltaX / windowDpi;
             Top += deltaY / windowDpi;
-            HostAssets.AppendLog($"[RadialMenuLog] Center corrected physically: anchor=({_centerPixels.X},{_centerPixels.Y}), was=({currentCenterX:F0},{currentCenterY:F0}), delta=({deltaX:F0},{deltaY:F0}), dpi={windowDpi:F2}.");
+            HostAssets.AppendLog($"[RadialMenuLog] Center corrected ({pass}): moved by ({deltaX / windowDpi:F1},{deltaY / windowDpi:F1}) DIP.");
         }
         catch (Exception ex)
         {
@@ -4102,7 +4108,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             LoadRadialMenuPages();
             SubRings.Clear();
             PositionAroundCursor();
-            CenterOnAnchorPhysically();
+            CenterOnAnchorPhysically("exit-edit");
             BuildItems((AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
             UpdateEditModeState();
             HostAssets.AppendLog($"[EditPerf] Exited edit mode.");
