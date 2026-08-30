@@ -908,6 +908,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             Show();
         }
 
+        // 显示后立即按物理像素校正中心：WPF 对 Left/Top 的 DPI 解释随窗口所在显示器而变，
+        // 初始 DIP 估算可能被再次缩放，轮盘会偏离右键按下点（多屏混合缩放必现）
+        CenterOnAnchorPhysically();
+
         _selectionTimer.Start();
         UpdateSelectionFromCursor();
 
@@ -934,10 +938,86 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private void PositionAroundCursor()
     {
         var screenCtx = ScreenHelper.GetScreenContextAtPoint(new System.Windows.Point(_centerPixels.X, _centerPixels.Y));
-        var centerDips = ScreenHelper.PhysicalToDip(new System.Windows.Point(_centerPixels.X, _centerPixels.Y), screenCtx.DpiScale);
+        // WPF 对 Left/Top 的解释取决于窗口“当前所在位置的 DPI”，而窗口隐藏时停靠在
+        // -32000（另一个 DPI 上下文）。用目标显示器 DPI 换算的 DIP 在两个上下文缩放比
+        // 不一致时会被再次缩放，轮盘中心偏离锚点（被拉向屏幕原点方向）。
+        // 因此初始估算用窗口当前 DPI，并在显示后再做一次物理像素校正（CenterOnAnchorPhysically）。
+        var windowDpi = GetWindowDpiScale();
         var size = GetMenuSize();
-        Left = centerDips.X - size.Width / 2;
-        Top = centerDips.Y - size.Height / 2;
+        Left = _centerPixels.X / windowDpi - size.Width / 2;
+        Top = _centerPixels.Y / windowDpi - size.Height / 2;
+    }
+
+    private double GetWindowDpiScale()
+    {
+        try
+        {
+            var helper = new System.Windows.Interop.WindowInteropHelper(this);
+            var handle = helper.Handle;
+            if (handle != IntPtr.Zero)
+            {
+                var dpi = ScreenHelper.GetDpiForWindow(handle);
+                if (dpi > 0)
+                {
+                    return dpi / 96.0;
+                }
+            }
+        }
+        catch
+        {
+            // 兜底走 VisualTreeHelper
+        }
+
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            if (dpi.DpiScaleX > 0)
+            {
+                return dpi.DpiScaleX;
+            }
+        }
+        catch
+        {
+            // 最终兜底 1.0
+        }
+
+        return 1.0;
+    }
+
+    /// <summary>
+    /// 物理像素校正：实测窗口当前物理中心与锚点的偏差，按窗口当前 DPI 折回 DIP 修正 Left/Top。
+    /// 不依赖任何 DPI 假设——无论 WPF 用哪个上下文解释 Left/Top，测多少补多少，
+    /// 彻底解决多显示器混合缩放/非 100% 缩放下轮盘中心偏离右键按下点的问题。
+    /// </summary>
+    private void CenterOnAnchorPhysically()
+    {
+        try
+        {
+            var helper = new System.Windows.Interop.WindowInteropHelper(this);
+            var handle = helper.Handle;
+            if (handle == IntPtr.Zero || !RadialMenuNativeMethods.GetWindowRect(handle, out var rect))
+            {
+                return;
+            }
+
+            var currentCenterX = (rect.Left + rect.Right) / 2.0;
+            var currentCenterY = (rect.Top + rect.Bottom) / 2.0;
+            var deltaX = _centerPixels.X - currentCenterX;
+            var deltaY = _centerPixels.Y - currentCenterY;
+            if (Math.Abs(deltaX) < 1 && Math.Abs(deltaY) < 1)
+            {
+                return;
+            }
+
+            var windowDpi = GetWindowDpiScale();
+            Left += deltaX / windowDpi;
+            Top += deltaY / windowDpi;
+            HostAssets.AppendLog($"[RadialMenuLog] Center corrected physically: anchor=({_centerPixels.X},{_centerPixels.Y}), was=({currentCenterX:F0},{currentCenterY:F0}), delta=({deltaX:F0},{deltaY:F0}), dpi={windowDpi:F2}.");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[RadialMenuLog] CenterOnAnchorPhysically failed: {ex.Message}");
+        }
     }
 
     private System.Windows.Size GetMenuSize()
@@ -4022,6 +4102,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             LoadRadialMenuPages();
             SubRings.Clear();
             PositionAroundCursor();
+            CenterOnAnchorPhysically();
             BuildItems((AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
             UpdateEditModeState();
             HostAssets.AppendLog($"[EditPerf] Exited edit mode.");
@@ -5106,6 +5187,26 @@ internal static partial class RadialMenuNativeMethods
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    [DllImport("gdi32.dll")]
+    public static extern IntPtr CreateRectRgn(int x1, int y1, int x2, int y2);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowRgn(IntPtr hWnd, IntPtr hRgn, [MarshalAs(UnmanagedType.Bool)] bool bRedraw);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

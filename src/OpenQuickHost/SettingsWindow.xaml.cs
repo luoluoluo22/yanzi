@@ -3380,7 +3380,101 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SettingsWindow_BoundsChanged(object? sender, EventArgs e)
     {
+        // 隐形预渲染期间窗口位置虽不变，但保守起见跳过持久化
+        if (_isHiddenPreRender)
+        {
+            return;
+        }
+
         PersistWindowBoundsDebounced();
+    }
+
+    private bool _isHiddenPreRender;
+
+    /// <summary>
+    /// 以“隐形预渲染”方式显示：窗口停在真实位置，但用 1x1 的窗口区域把自己裁剪到不可见，
+    /// 等 WPF 呈现首帧后移除区域立即完整显示。
+    /// 两种会闪白的做法都要避开：
+    /// 1. 直接 Show —— DWM 会在 WPF 呈现首帧前合成未初始化的白色表面（内容区闪白）；
+    /// 2. 停靠 -32000 等屏幕外坐标 —— 那是系统停放最小化窗口的位置，DWM 对完全离屏的
+    ///    窗口暂停合成，移回屏幕时同样会闪一帧白。
+    /// 窗口区域只是合成裁剪，表面内容始终在正常合成路径上，移除区域展示的就是已呈现的帧。
+    /// </summary>
+    public void ShowOffscreen(Action onScreenReady)
+    {
+        if (IsVisible)
+        {
+            onScreenReady();
+            return;
+        }
+
+        var previousShowActivated = ShowActivated;
+        ShowActivated = false; // 预渲染阶段不抢焦点，显示时再激活
+        _isHiddenPreRender = true;
+
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
+            hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        }
+
+        // 1x1 区域位于窗口左上角（系统拥有区域对象的生命周期，无需删除）
+        var region = RadialMenuNativeMethods.CreateRectRgn(0, 0, 1, 1);
+        if (region != IntPtr.Zero)
+        {
+            RadialMenuNativeMethods.SetWindowRgn(hwnd, region, false);
+        }
+
+        HostAssets.AppendLog("SettingsWindow: hidden pre-render show (1x1 window region).");
+        Show();
+
+        EventHandler? onRendering = null;
+        var settled = false;
+        void SettleOnScreen()
+        {
+            // 渲染回调与兜底定时器可能都会触发，只结算一次
+            if (settled)
+            {
+                return;
+            }
+
+            settled = true;
+            CompositionTarget.Rendering -= onRendering;
+            _isHiddenPreRender = false;
+
+            if (IsVisible)
+            {
+                // 移除裁剪区域，窗口立即以已呈现的完整帧出现
+                RadialMenuNativeMethods.SetWindowRgn(hwnd, IntPtr.Zero, true);
+                ShowActivated = previousShowActivated;
+                HostAssets.AppendLog("SettingsWindow: hidden pre-render done, region cleared.");
+                onScreenReady();
+            }
+        }
+
+        var renderingTicks = 0;
+        onRendering = (_, _) =>
+        {
+            // 第一个 Rendering 回调发生在首帧渲染之前，跳过它，
+            // 在第二个合成回调里显示（此时表面已呈现过至少一帧）
+            renderingTicks++;
+            if (renderingTicks < 2)
+            {
+                return;
+            }
+
+            CompositionTarget.Rendering -= onRendering;
+            Dispatcher.BeginInvoke(SettleOnScreen, DispatcherPriority.Render);
+        };
+        CompositionTarget.Rendering += onRendering;
+
+        // 兜底：渲染回调异常/被阻塞时最迟 300ms 显示
+        _ = Task.Delay(300).ContinueWith(
+            _ => Dispatcher.BeginInvoke(SettleOnScreen),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private void SettingsWindow_Closing(object? sender, CancelEventArgs e)

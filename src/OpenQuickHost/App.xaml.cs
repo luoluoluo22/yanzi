@@ -368,10 +368,12 @@ public partial class App : WpfApplication
             return;
         }
 
-        UpdateWindowDwmTheme(window);
+        // 初次加载不做 NC 强刷：DWM 暗色属性已在显示前应用过，
+        // 这里的 WM_NCACTIVATE 0→1 切换会让已可见窗口的标题栏肉眼可见地闪一下
+        UpdateWindowDwmTheme(window, forceNonClientRepaint: false);
 
         // 延迟异步再次更新，防止在窗口首次呈现时，DWM 设置被操作系统的默认绘制所覆盖
-        window.Dispatcher.BeginInvoke(new Action(() => UpdateWindowDwmTheme(window)), System.Windows.Threading.DispatcherPriority.Background);
+        window.Dispatcher.BeginInvoke(new Action(() => UpdateWindowDwmTheme(window, forceNonClientRepaint: false)), System.Windows.Threading.DispatcherPriority.Background);
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
@@ -400,7 +402,7 @@ public partial class App : WpfApplication
     private const int WHITE_BRUSH = 0;
     private const int BLACK_BRUSH = 4;
 
-    internal static void UpdateWindowDwmTheme(Window window)
+    internal static void UpdateWindowDwmTheme(Window window, bool forceNonClientRepaint = true)
     {
         var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
         if (handle == IntPtr.Zero)
@@ -438,9 +440,16 @@ public partial class App : WpfApplication
             _ = DwmSetWindowAttribute(handle, DwmwaCaptionColor, ref captionColor, sizeof(int));
         }
         
-        // Force the OS to redraw the non-client area immediately
+        // Force the OS to redraw the non-client area immediately.
+        // 仅在主题切换等场景需要；窗口初次加载/显示期间强刷会让 WM_NCACTIVATE
+        // 0→1 切换在可见窗口上造成标题栏闪烁。
+        if (!forceNonClientRepaint)
+        {
+            return;
+        }
+
         SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-        
+
         // 额外发送 WM_NCACTIVATE 消息，强制非客户区（标题栏）立刻重绘，解决主题切换时标题栏变色不瞬间的问题
         SendMessage(handle, WM_NCACTIVATE, IntPtr.Zero, IntPtr.Zero);
         SendMessage(handle, WM_NCACTIVATE, new IntPtr(1), IntPtr.Zero);
@@ -1276,15 +1285,25 @@ public partial class App : WpfApplication
             if (!_settingsWindow.IsVisible)
             {
                 HostAssets.AppendLog($"Settings window is not visible before Show(). opacity={_settingsWindow.Opacity}, visibility={_settingsWindow.Visibility}.");
-                _settingsWindow.Show();
-                HostAssets.AppendLog($"Settings window shown. opacity={_settingsWindow.Opacity}, visibility={_settingsWindow.Visibility}.");
-            }
 
-            _settingsWindow.Opacity = 1;
-            _settingsWindow.NavigateTo(sectionKey);
-            _settingsWindow.Activate();
-            _settingsWindow.Focus();
-            HostAssets.AppendLog($"Settings window activated. opacity={_settingsWindow.Opacity}, active={_settingsWindow.IsActive}.");
+                // 离屏预渲染：窗口先在屏幕外完成首帧渲染，再回到原位置。
+                // 直接 Show 会让 DWM 在 WPF 呈现首帧前合成未初始化的白色表面（闪白）。
+                // NavigateTo 的重活在离屏阶段同步执行，首个可见帧即为完整的目标分区界面。
+                _settingsWindow.ShowOffscreen(() =>
+                {
+                    _settingsWindow.Activate();
+                    _settingsWindow.Focus();
+                });
+                _settingsWindow.NavigateTo(sectionKey);
+            }
+            else
+            {
+                _settingsWindow.Opacity = 1;
+                _settingsWindow.NavigateTo(sectionKey);
+                _settingsWindow.Activate();
+                _settingsWindow.Focus();
+                HostAssets.AppendLog($"Settings window activated. opacity={_settingsWindow.Opacity}, active={_settingsWindow.IsActive}.");
+            }
         }
         catch (Exception ex)
         {
@@ -1292,10 +1311,16 @@ public partial class App : WpfApplication
             try
             {
                 _settingsWindow = new SettingsWindow(mainWindow);
-                _settingsWindow.Show();
+                var helper = new System.Windows.Interop.WindowInteropHelper(_settingsWindow);
+                helper.EnsureHandle();
+                UpdateWindowDwmTheme(_settingsWindow);
+
+                _settingsWindow.ShowOffscreen(() =>
+                {
+                    _settingsWindow.Activate();
+                    _settingsWindow.Focus();
+                });
                 _settingsWindow.NavigateTo(sectionKey);
-                _settingsWindow.Activate();
-                _settingsWindow.Focus();
             }
             catch (Exception ex2)
             {

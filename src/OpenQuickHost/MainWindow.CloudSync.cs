@@ -2708,14 +2708,38 @@ public partial class MainWindow
 
     private void ShowSettingsCloudSyncProgressToast(string message)
     {
-        var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
-        settingsWindow?.ShowCloudSyncProgressToast(message);
+        // 可能从后台同步线程调用：Application.Windows 与窗口操作必须在 UI 线程
+        RunOnUi(() =>
+        {
+            var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+            settingsWindow?.ShowCloudSyncProgressToast(message);
+        });
     }
 
     private void HideSettingsCloudSyncProgressToast()
     {
-        var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
-        settingsWindow?.HideCloudSyncProgressToast();
+        RunOnUi(() =>
+        {
+            var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+            settingsWindow?.HideCloudSyncProgressToast();
+        });
+    }
+
+    private static void RunOnUi(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            return;
+        }
+
+        if (dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(action);
     }
 
     private static void MergeLegacyWebDavSnapshot(
