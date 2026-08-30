@@ -111,6 +111,12 @@ internal sealed class FolderResultProvider : IExtensionResultProvider
             });
         }
 
+        // 递归遍历可能扫整棵目录树（大目录可达数十秒），绝不能在 UI 线程同步执行
+        return Task.Run(() => SearchCore(provider, rootPath, query, cancellationToken), cancellationToken);
+    }
+
+    private static ResultProviderResponse SearchCore(CommandSearchProviderDefinition provider, string rootPath, string query, CancellationToken cancellationToken)
+    {
         var normalizedQuery = (query ?? string.Empty).Trim();
         var results = new List<ResultProviderItem>();
         var maxResults = Math.Clamp(provider.MaxResults, 1, 512);
@@ -119,6 +125,7 @@ internal sealed class FolderResultProvider : IExtensionResultProvider
 
         while (pendingDirectories.Count > 0 && results.Count < maxResults)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var currentDirectory = pendingDirectories.Pop();
             try
             {
@@ -172,11 +179,11 @@ internal sealed class FolderResultProvider : IExtensionResultProvider
             }
         }
 
-        return Task.FromResult(new ResultProviderResponse
+        return new ResultProviderResponse
         {
             Success = true,
             Results = results
-        });
+        };
     }
 
     private static bool IsMatch(string path, string query)

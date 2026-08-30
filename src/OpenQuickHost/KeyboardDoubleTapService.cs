@@ -220,7 +220,21 @@ public static class KeyboardDoubleTapService
         return SetWindowsHookEx(WhKeyboardLl, proc, IntPtr.Zero, 0);
     }
 
+    // 钩子回调由 user32 反向调用：异常逃出回调边界会直接进程 fail-fast，外层兜底后放行事件。
     private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        try
+        {
+            return HookCallbackCore(nCode, wParam, lParam);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[KeyboardDoubleTap] HookCallback exception: {ex.Message}");
+            return CallNextHookEx(_hookId, nCode, wParam, lParam);
+        }
+    }
+
+    private static IntPtr HookCallbackCore(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
         {
@@ -440,7 +454,11 @@ public static class KeyboardDoubleTapService
                 CancelForegroundAltMenuMode();
             }
 
-            System.Windows.Application.Current.Dispatcher.Invoke(() => _onDoubleTap?.Invoke(releasedKind.ToString()));
+            // 退出阶段 Application.Current 可能为 null；面板切换走 BeginInvoke，
+            // 避免完整 UI 布局内联在 WH_KEYBOARD_LL 回调里执行
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(
+                DispatcherPriority.Input,
+                () => _onDoubleTap?.Invoke(releasedKind.ToString()));
             return shouldSuppress;
         }
 
@@ -543,7 +561,7 @@ public static class KeyboardDoubleTapService
 
     private static bool IsYanmAllowedForForegroundProcess()
     {
-        var settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
+        var settings = AppSettingsStore.LoadCached().Yanm ?? new YanmSettings();
         var processName = GetForegroundProcessName();
         var allowed = ProcessHelper.IsProcessAllowed(processName, settings.WhitelistedProcesses, settings.BlacklistedProcesses);
         if (!allowed)
@@ -683,8 +701,11 @@ public static class KeyboardDoubleTapService
     private static void CancelForegroundAltMenuMode()
     {
         const uint keyEventKeyUp = 0x0002;
-        keybd_event((byte)VkEscape, 0, 0, UIntPtr.Zero);
-        keybd_event((byte)VkEscape, 0, keyEventKeyUp, UIntPtr.Zero);
+        // 标记为合成输入：OS 正常收到 Esc 以关闭 Alt 菜单模式，但 InputHookService 的钩子
+        // 不再把它误判为用户 Esc 去触发 OnGlobalEscapePressed（那会取消进行中的长按/手势/轮盘）。
+        var marker = (UIntPtr)InputHookService.SyntheticInputMarker;
+        keybd_event((byte)VkEscape, 0, 0, marker);
+        keybd_event((byte)VkEscape, 0, keyEventKeyUp, marker);
     }
 
     private static void ReleaseVirtualKey(int vkCode)

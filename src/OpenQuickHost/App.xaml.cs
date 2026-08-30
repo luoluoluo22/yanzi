@@ -499,9 +499,33 @@ public partial class App : WpfApplication
         }
     }
 
-    protected override void OnExit(WpfExitEventArgs e)
+    private static readonly TimeSpan UiCallbackTimeout = TimeSpan.FromSeconds(90);
+
+    /// <summary>
+    /// 在 UI 线程执行异步工作并把结果/异常完整带回 API 请求线程。
+    /// 旧实现 `Dispatcher.Invoke(async () => tcs.SetResult(...))` 的 async lambda 实为 async void：
+    /// 内部一旦抛异常会被全局处理器吞掉，TCS 永不完成且无超时，API 请求永久挂起。
+    /// </summary>
+    private static Task<T> InvokeOnUiForResultAsync<T>(MainWindow window, Func<Task<T>> work, string operationName)
     {
-        DispatcherUnhandledException -= App_DispatcherUnhandledException;
+        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = window.Dispatcher.InvokeAsync(async () =>
+        {
+            try
+            {
+                tcs.TrySetResult(await work());
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"[AgentApi] UI callback '{operationName}' failed: {ex.Message}");
+                tcs.TrySetException(ex);
+            }
+        });
+        return tcs.Task.WaitAsync(UiCallbackTimeout);
+    }
+
+    protected override void OnExit(WpfExitEventArgs e)
+    {        DispatcherUnhandledException -= App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
         TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
         SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
@@ -653,36 +677,28 @@ public partial class App : WpfApplication
                 },
                 (id) =>
                 {
-                    var tcs = new TaskCompletionSource<(bool ok, string message)>();
-                    window.Dispatcher.Invoke(async () => tcs.SetResult(await window.PublishExtensionFromSettingsAsync(id)));
-                    return tcs.Task;
+                    return InvokeOnUiForResultAsync(window, () => window.PublishExtensionFromSettingsAsync(id), "publish-extension");
                 },
                 (id) =>
                 {
-                    var tcs = new TaskCompletionSource<(bool ok, string message)>();
-                    window.Dispatcher.Invoke(async () => tcs.SetResult(await window.UnpublishExtensionFromSettingsAsync(id)));
-                    return tcs.Task;
+                    return InvokeOnUiForResultAsync(window, () => window.UnpublishExtensionFromSettingsAsync(id), "unpublish-extension");
                 },
                 (id) =>
                 {
-                    var tcs = new TaskCompletionSource<(bool ok, string message)>();
-                    window.Dispatcher.Invoke(async () => tcs.SetResult(await window.InstallStoreExtensionAsync(id)));
-                    return tcs.Task;
+                    return InvokeOnUiForResultAsync(window, () => window.InstallStoreExtensionAsync(id), "install-store-extension");
                 },
                 () =>
                 {
-                    var tcs = new TaskCompletionSource<OpenQuickHost.Sync.AuthMeResponse?>();
-                    window.Dispatcher.Invoke(async () =>
+                    return InvokeOnUiForResultAsync(window, async () =>
                     {
                         var client = window.CloudSyncClient;
-                        if (client == null) tcs.SetResult(null);
-                        else tcs.SetResult(await client.GetMeAsync());
-                    });
-                    return tcs.Task;
+                        return client == null ? null : await client.GetMeAsync();
+                    }, "get-me");
                 },
                 (title, message) =>
                 {
-                    window.Dispatcher.Invoke(() => System.Windows.MessageBox.Show(message, title));
+                    // 改为非阻塞：远程触发的提示框不应霸占 UI 线程并让其它 API 请求排队
+                    window.Dispatcher.BeginInvoke(() => System.Windows.MessageBox.Show(message, title));
                     return Task.CompletedTask;
                 },
                 async (title, message) =>

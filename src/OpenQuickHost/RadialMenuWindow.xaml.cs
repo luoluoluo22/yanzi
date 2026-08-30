@@ -1333,6 +1333,13 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void UpdateSelectionFromCursor(System.Windows.Point? preCalculatedPoint = null)
     {
+        // 窗口已被停靠到屏外（Hide 后定时器可能仍存活一两拍）时直接短路，
+        // 避免每 tick 空转打日志、刷属性
+        if (!IsVisible)
+        {
+            return;
+        }
+
         if (_editInteractionActive)
         {
             IsGuideLineVisible = false;
@@ -1391,17 +1398,23 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                         var outerIdx = ring.SelectedItem.Index - RadialMenuSettings.InnerSlotCount;
                         if (outerIdx >= 0 && outerIdx < ring.OuterItems.Count)
                         {
-                            if (!_editModeLocked)
+                            if (!_editModeLocked && !string.IsNullOrWhiteSpace(ring.SelectedItem.ChildPageId))
                             {
-                                ClearSubRingsAboveLevel(ring.Level + 1);
-                                if (!string.IsNullOrWhiteSpace(ring.SelectedItem.ChildPageId))
+                                var (expectedX, expectedY) = ComputeSubRingCenter(ring.SelectedItem, ring.CenterX, ring.CenterY, ring.Level + 1);
+                                // 目标子环已存在且位置一致时跳过清空重建（每 tick 都会走到这里）
+                                if (!HasSubRingAtLevel(ring.Level + 1, ring.SelectedItem.ChildPageId, expectedX, expectedY))
                                 {
+                                    ClearSubRingsAboveLevel(ring.Level + 1);
                                     var slotCenterX = ring.SelectedItem.X + 25;
                                     var slotCenterY = ring.SelectedItem.Y + 20;
                                     var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { _currentPageId };
                                     foreach (var r in SubRings.Take(i + 1)) visited.Add(r.PageId);
                                     RecursivelyBuildSubRings(ring.SelectedItem, ring.CenterX, ring.CenterY, slotCenterX, slotCenterY, ring.SelectedItem.AngleDegrees, ring.Level + 1, visited);
                                 }
+                            }
+                            else if (!_editModeLocked)
+                            {
+                                ClearSubRingsAboveLevel(ring.Level + 1);
                             }
                         }
                     }
@@ -1410,17 +1423,22 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                         var innerIdx = ring.SelectedItem.Index;
                         if (innerIdx >= 0 && innerIdx < ring.Items.Count)
                         {
-                            if (!_editModeLocked)
+                            if (!_editModeLocked && !string.IsNullOrWhiteSpace(ring.SelectedItem.ChildPageId))
                             {
-                                ClearSubRingsAboveLevel(ring.Level + 1);
-                                if (!string.IsNullOrWhiteSpace(ring.SelectedItem.ChildPageId))
+                                var (expectedX, expectedY) = ComputeSubRingCenter(ring.SelectedItem, ring.CenterX, ring.CenterY, ring.Level + 1);
+                                if (!HasSubRingAtLevel(ring.Level + 1, ring.SelectedItem.ChildPageId, expectedX, expectedY))
                                 {
+                                    ClearSubRingsAboveLevel(ring.Level + 1);
                                     var slotCenterX = ring.SelectedItem.X + 32;
                                     var slotCenterY = ring.SelectedItem.Y + 25;
                                     var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { _currentPageId };
                                     foreach (var r in SubRings.Take(i + 1)) visited.Add(r.PageId);
                                     RecursivelyBuildSubRings(ring.SelectedItem, ring.CenterX, ring.CenterY, slotCenterX, slotCenterY, ring.SelectedItem.AngleDegrees, ring.Level + 1, visited);
                                 }
+                            }
+                            else if (!_editModeLocked)
+                            {
+                                ClearSubRingsAboveLevel(ring.Level + 1);
                             }
                         }
                     }
@@ -1970,6 +1988,31 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private (double X, double Y) ComputeSubRingCenter(RadialMenuItemViewModel parent, double parentCenterX, double parentCenterY, int level)
+    {
+        var angle = parent.AngleDegrees * Math.PI / 180.0;
+
+        // 动态交错轨道算法：
+        // 1. 如果父级是独立大轮盘（level == 1），子环统一靠外圈 350px 展开，确保大轮盘自身 3 层槽位完整展示且不与子环发生物理重叠；
+        // 2. 如果父级是普通子环（level > 1），二级子环紧贴上一级子环展开（180px）。
+        double offsetDistance = (level == 1)
+            ? (parent.Index % 2 == 0 ? 350 : 380)
+            : (parent.Index % 2 == 0 ? 180 : 210);
+
+        double cX = parentCenterX + Math.Cos(angle) * offsetDistance;
+        double cY = parentCenterY + Math.Sin(angle) * offsetDistance;
+        ClampRingCenter(ref cX, ref cY, 112);
+        return (cX, cY);
+    }
+
+    private bool HasSubRingAtLevel(int level, string pageId, double centerX, double centerY)
+    {
+        return SubRings.Count == level &&
+            string.Equals(SubRings[level - 1].PageId, pageId, StringComparison.OrdinalIgnoreCase) &&
+            Math.Abs(SubRings[level - 1].CenterX - centerX) < 0.5 &&
+            Math.Abs(SubRings[level - 1].CenterY - centerY) < 0.5;
+    }
+
     private void RecursivelyBuildSubRings(RadialMenuItemViewModel parent, double parentCenterX, double parentCenterY, double parentSlotCenterX, double parentSlotCenterY, double parentAngleDegrees, int level, HashSet<string> visitedPageIds)
     {
         if (string.IsNullOrWhiteSpace(parent.ChildPageId) || visitedPageIds.Contains(parent.ChildPageId) || level > 3)
@@ -1981,18 +2024,16 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         visitedPageIds.Add(parent.ChildPageId);
 
         var items = _mainWindow.GetRadialMenuItems(parent.ChildPageId);
-        var angle = parentAngleDegrees * Math.PI / 180.0;
-        
-        // 动态交错轨道算法：
-        // 1. 如果父级是独立大轮盘（level == 1），子环统一靠外圈 350px 展开，确保大轮盘自身 3 层槽位完整展示且不与子环发生物理重叠；
-        // 2. 如果父级是普通子环（level > 1），二级子环紧贴上一级子环展开（180px）。
-        double offsetDistance = (level == 1)
-            ? (parent.Index % 2 == 0 ? 350 : 380)
-            : (parent.Index % 2 == 0 ? 180 : 210);
 
-        double cX = parentCenterX + Math.Cos(angle) * offsetDistance;
-        double cY = parentCenterY + Math.Sin(angle) * offsetDistance;
-        ClampRingCenter(ref cX, ref cY, 112);
+        var (cX, cY) = ComputeSubRingCenter(parent, parentCenterX, parentCenterY, level);
+
+        // 幂等守卫：16ms 选中定时器每 tick 都会走到这里，目标层级/页面/位置都一致时
+        // 跳过整棵子树的重建（清空+新建+全量重布局），否则悬停子环槽位就会持续卡顿
+        if (HasSubRingAtLevel(level, parent.ChildPageId, cX, cY))
+        {
+            return;
+        }
+
         HostAssets.AppendLog($"[EditModeDebug] RecursivelyBuildSubRings: childPageId={parent.ChildPageId}, itemsCount={items.Count}, cX={cX:F1}, cY={cY:F1}, level={level}");
 
         var ring = new RadialMenuNestedRingViewModel
@@ -2052,9 +2093,6 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        ClearSubRingsAboveLevel(level);
-
-        var items = _mainWindow.GetRadialMenuItems(parent.ChildPageId);
         var angle = parentAngleDegrees * Math.PI / 180.0;
         double offsetDistance = 180;
         if (level == 1)
@@ -2075,6 +2113,21 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         double cX = parentCenterX + Math.Cos(angle) * offsetDistance;
         double cY = parentCenterY + Math.Sin(angle) * offsetDistance;
         ClampRingCenter(ref cX, ref cY, 112);
+
+        // 幂等守卫：16ms 选中定时器每 tick 都会到这里，同层级同页面同位置且无更深子环时
+        // 直接跳过重建（否则每秒 60 次 清空+新建+全量重布局+磁盘读设置，悬停即卡顿）。
+        var existing = SubRings.Count == level ? SubRings.ElementAtOrDefault(level - 1) : null;
+        if (existing != null &&
+            string.Equals(existing.PageId, parent.ChildPageId, StringComparison.OrdinalIgnoreCase) &&
+            Math.Abs(existing.CenterX - cX) < 0.5 &&
+            Math.Abs(existing.CenterY - cY) < 0.5)
+        {
+            return;
+        }
+
+        ClearSubRingsAboveLevel(level);
+
+        var items = _mainWindow.GetRadialMenuItems(parent.ChildPageId);
 
         var ring = new RadialMenuNestedRingViewModel
         {
@@ -3398,6 +3451,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         finally
         {
+            // 必须复位，否则菜单 Closed 处理器的 !_isOpeningSubDialog 永远为 false，
+            // _editInteractionActive 卡 true → 轮盘失焦不隐藏、Esc 关不掉、选中逻辑冻结
+            _isOpeningSubDialog = false;
             _editInteractionActive = false;
             EnsureActivatedForEdit();
             UpdateCenterText();
@@ -3417,6 +3473,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         finally
         {
+            // 同上：不复位会导致轮盘进入“冻结”死状态
+            _isOpeningSubDialog = false;
             _editInteractionActive = false;
             EnsureActivatedForEdit();
             UpdateCenterText();
@@ -4522,6 +4580,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     public new void Hide()
     {
         HostAssets.AppendLog($"[RadialResidualDebug] Hide called: _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, Opacity={Opacity}.");
+        // 停掉 16ms 选中定时器：否则窗口停靠到 -32000 后仍以 60Hz 空转（CPU 尖峰 + 日志膨胀）。
+        // ShowAtMouse 呼出时会重新 Start。
+        _selectionTimer.Stop();
         if (_wasActivatedForEdit && _previousForegroundWindow != IntPtr.Zero)
         {
             try

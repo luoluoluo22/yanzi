@@ -1131,13 +1131,46 @@ public static class ScriptExtensionRunner
         HostAssets.AppendLog(
             $"ScriptRunner process started: label={label}, file={startInfo.FileName}, args={argumentText}, pid={process.Id}, workingDir={startInfo.WorkingDirectory}");
         Task<string>? outputTask = startInfo.RedirectStandardOutput
-            ? process.StandardOutput.ReadToEndAsync(cancellationToken)
+            ? process.StandardOutput.ReadToEndAsync(CancellationToken.None)
             : null;
         Task<string>? errorTask = startInfo.RedirectStandardError
-            ? process.StandardError.ReadToEndAsync(cancellationToken)
+            ? process.StandardError.ReadToEndAsync(CancellationToken.None)
             : null;
 
-        await process.WaitForExitAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // 取消（新输入/退出）时必须杀掉子进程并排空管道，否则孤儿进程堆积、
+            // 输出管道写满后子进程永久阻塞
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    await process.WaitForExitAsync(CancellationToken.None);
+                }
+            }
+            catch (Exception killEx)
+            {
+                HostAssets.AppendLog($"ScriptRunner kill on cancel failed: label={label}, pid={process.Id}, error={killEx.Message}");
+            }
+
+            try
+            {
+                if (outputTask != null) await outputTask;
+                if (errorTask != null) await errorTask;
+            }
+            catch
+            {
+                // 管道读取失败不影响取消流程
+            }
+
+            HostAssets.AppendLog($"ScriptRunner process cancelled: label={label}, pid={process.Id}.");
+            throw;
+        }
 
         var output = outputTask == null ? string.Empty : (await outputTask).Trim();
         var error = errorTask == null ? string.Empty : (await errorTask).Trim();

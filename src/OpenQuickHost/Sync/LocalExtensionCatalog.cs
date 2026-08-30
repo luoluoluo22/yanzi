@@ -138,7 +138,15 @@ public static class LocalExtensionCatalog
     {
         try
         {
-            return Directory.GetDirectories(CatalogRootPath);
+            // 跳过点前缀目录：它们是安装/升级的临时与备份目录（.yanzi-install-* / .yanzi-old-*），
+            // 里面的 manifest.json 不应被当成独立扩展扫进列表
+            return Directory.GetDirectories(CatalogRootPath)
+                .Where(directory =>
+                {
+                    var name = Path.GetFileName(directory);
+                    return name == null || !name.StartsWith(".", StringComparison.Ordinal);
+                })
+                .ToList();
         }
         catch (Exception ex)
         {

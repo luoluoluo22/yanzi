@@ -1205,7 +1205,17 @@ public sealed class WebDavSyncService
     private static void SaveLocalIndex(WebDavSyncIndex index)
     {
         var json = JsonSerializer.Serialize(index, JsonOptions);
-        File.WriteAllText(HostAssets.WebDavSyncStatePath, json);
+        // 原子写：状态文件写坏会让删除墓碑丢失 → 已删除的扩展在下次同步时“复活”
+        var tempPath = HostAssets.WebDavSyncStatePath + ".tmp";
+        File.WriteAllText(tempPath, json);
+        try
+        {
+            File.Replace(tempPath, HostAssets.WebDavSyncStatePath, destinationBackupFileName: null);
+        }
+        catch (IOException)
+        {
+            File.Move(tempPath, HostAssets.WebDavSyncStatePath, overwrite: true);
+        }
     }
 
     public static void MarkExtensionDeletedLocally(string extensionId, string? version = null)

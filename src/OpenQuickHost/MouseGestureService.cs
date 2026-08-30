@@ -53,6 +53,9 @@ public static class MouseGestureService
     private const uint MouseeventfMiddleUp = 0x0040;
 
     private static readonly IntPtr SyntheticExtraInfo = (IntPtr)0x59414E5A; // "YANZ"
+
+    /// <summary>手势服务合成事件标记，供其它钩子服务互认过滤。</summary>
+    internal static IntPtr GestureSyntheticMarker => SyntheticExtraInfo;
     private static readonly LowLevelMouseProc MouseProc = HookCallback;
     private static IntPtr _hookId;
     private static bool _isRunning;
@@ -91,7 +94,7 @@ public static class MouseGestureService
     {
         get
         {
-            var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.Load().MouseGestureTriggerMode);
+            var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.LoadCached().MouseGestureTriggerMode);
             return string.Equals(activeTrigger, "right-drag", StringComparison.OrdinalIgnoreCase);
         }
     }
@@ -100,7 +103,7 @@ public static class MouseGestureService
     {
         get
         {
-            var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.Load().MouseGestureTriggerMode);
+            var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.LoadCached().MouseGestureTriggerMode);
             return string.Equals(activeTrigger, "middle-drag", StringComparison.OrdinalIgnoreCase);
         }
     }
@@ -109,7 +112,7 @@ public static class MouseGestureService
     {
         get
         {
-            var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.Load().MouseGestureTriggerMode);
+            var activeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.LoadCached().MouseGestureTriggerMode);
             return string.Equals(activeTrigger, "ctrl-left-drag", StringComparison.OrdinalIgnoreCase);
         }
     }
@@ -328,7 +331,21 @@ public static class MouseGestureService
         return registrations.Count;
     }
 
-    private static unsafe IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    // 钩子回调由 user32 反向调用：异常逃出回调边界会直接进程 fail-fast，外层兜底后放行事件。
+    private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        try
+        {
+            return HookCallbackCore(nCode, wParam, lParam);
+        }
+        catch (Exception ex)
+        {
+            Log("error", $"HookCallback exception: {ex.Message}");
+            return CallNextHookEx(_hookId, nCode, wParam, lParam);
+        }
+    }
+
+    private static unsafe IntPtr HookCallbackCore(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode < 0)
         {
@@ -345,8 +362,9 @@ public static class MouseGestureService
 
         // 2. Unsafe 零分配指针读取
         var data = *(MSLLHOOKSTRUCT*)lParam;
-        // 仅过滤燕子自身重放的模拟事件，允许 ToDesk、向日葵等远程控制软件注入的真实用户鼠标事件
-        if (data.dwExtraInfo == SyntheticExtraInfo)
+        // 过滤燕子自身与 InputHookService 的合成重放事件（两个服务互认，避免把对方的
+        // 重放当作用户输入再次触发状态机），允许 ToDesk、向日葵等远程控制软件注入的真实用户鼠标事件
+        if (data.dwExtraInfo == SyntheticExtraInfo || data.dwExtraInfo == InputHookService.SyntheticInputMarker)
         {
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
@@ -357,7 +375,7 @@ public static class MouseGestureService
                 _leftDown = true;
                 if (_rightDown)
                 {
-                    if (AppSettingsStore.Load().MouseGestureEnableRockerActions && !ShouldBypassGesture(data.pt))
+                    if (AppSettingsStore.LoadCached().MouseGestureEnableRockerActions && !ShouldBypassGesture(data.pt))
                     {
                         HandleRockerGesture("rocker-right-left", data.pt);
                         _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
@@ -435,7 +453,7 @@ public static class MouseGestureService
                     break;
                 }
 
-                if (_leftDown && AppSettingsStore.Load().MouseGestureEnableRockerActions)
+                if (_leftDown && AppSettingsStore.LoadCached().MouseGestureEnableRockerActions)
                 {
                     HandleRockerGesture("rocker-left-right", data.pt);
                     _ = CallNextHookEx(_hookId, nCode, wParam, lParam);
@@ -562,7 +580,7 @@ public static class MouseGestureService
                 break;
 
             case WmMouseWheel:
-                if ((_rightDown || _middleDown || _ctrlLeftDown) && AppSettingsStore.Load().MouseGestureEnableWheelActions && !ShouldBypassGesture(data.pt))
+                if ((_rightDown || _middleDown || _ctrlLeftDown) && AppSettingsStore.LoadCached().MouseGestureEnableWheelActions && !ShouldBypassGesture(data.pt))
                 {
                     var delta = (short)((data.mouseData >> 16) & 0xFFFF);
                     var action = delta > 0 ? "wheel-up" : "wheel-down";
@@ -1039,7 +1057,7 @@ public static class MouseGestureService
 
     private static bool IsProcessBlacklisted(POINT pt)
     {
-        var blacklisted = AppSettingsStore.Load().MouseGestureBlacklistedProcesses;
+        var blacklisted = AppSettingsStore.LoadCached().MouseGestureBlacklistedProcesses;
         if (blacklisted == null || blacklisted.Count == 0)
         {
             return false;
@@ -1104,7 +1122,9 @@ public static class MouseGestureService
                     wScan = 0,
                     dwFlags = flags,
                     time = 0,
-                    dwExtraInfo = IntPtr.Zero
+                    // 标记为合成输入：InputHookService 的键盘钩子据此放行，
+                    // 不会把 Ctrl+Tab / Alt+← 等手势快捷键误判为用户按键
+                    dwExtraInfo = SyntheticExtraInfo
                 }
             }
         };

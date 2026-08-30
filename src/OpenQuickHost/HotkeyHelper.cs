@@ -56,7 +56,7 @@ public static class HotkeyHelper
     }
 
     /// <summary>
-    /// 将单个 Key 格式化为用户友好的文本（如 D1 -> 1, NumPad1 -> Num1）
+    /// 将单个 Key 格式化为用户友好的文本（如 D1 -> 1, NumPad1 -> Num1, LeftCtrl -> Ctrl）
     /// </summary>
     public static string FormatKey(Key key)
     {
@@ -72,14 +72,29 @@ public static class HotkeyHelper
 
         return key switch
         {
+            Key.LeftCtrl or Key.RightCtrl => "Ctrl",
+            Key.LeftAlt or Key.RightAlt => "Alt",
+            Key.LeftShift or Key.RightShift => "Shift",
+            Key.LWin or Key.RWin => "Win",
             Key.Space => "Space",
             Key.Return => "Enter",
             Key.Escape => "Esc",
             Key.Tab => "Tab",
             Key.Back => "Backspace",
+            Key.Delete => "Delete",
+            Key.Insert => "Insert",
+            Key.Home => "Home",
+            Key.End => "End",
             Key.Next => "PageDown",
             Key.Prior => "PageUp",
+            Key.Up => "Up",
+            Key.Down => "Down",
+            Key.Left => "Left",
+            Key.Right => "Right",
             Key.Capital => "CapsLock",
+            Key.PrintScreen => "PrintScreen",
+            Key.Scroll => "ScrollLock",
+            Key.Pause => "Pause",
             Key.OemTilde => "~",
             Key.OemMinus => "-",
             Key.OemPlus => "=",
@@ -96,22 +111,26 @@ public static class HotkeyHelper
     }
 
     /// <summary>
-    /// 将修饰键与按键组合格式化为标准快捷键字符串（如 "Ctrl+Alt+K"）
+    /// 将修饰键与按键组合格式化为标准快捷键字符串（如 "Ctrl", "Alt", "Win", "Ctrl+Alt", "Ctrl+C", "F5" 等）
     /// </summary>
     public static string? FormatHotkey(ModifierKeys modifiers, Key key)
     {
-        if (IsModifierKey(key) || key == Key.None)
+        var parts = new List<string>(4);
+        if (modifiers.HasFlag(ModifierKeys.Control) || key is Key.LeftCtrl or Key.RightCtrl) parts.Add("Ctrl");
+        if (modifiers.HasFlag(ModifierKeys.Shift) || key is Key.LeftShift or Key.RightShift) parts.Add("Shift");
+        if (modifiers.HasFlag(ModifierKeys.Alt) || key is Key.LeftAlt or Key.RightAlt) parts.Add("Alt");
+        if (modifiers.HasFlag(ModifierKeys.Windows) || key is Key.LWin or Key.RWin) parts.Add("Win");
+
+        if (!IsModifierKey(key) && key != Key.None)
+        {
+            parts.Add(FormatKey(key));
+        }
+
+        if (parts.Count == 0)
         {
             return null;
         }
 
-        var parts = new List<string>(4);
-        if (modifiers.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
-        if (modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
-        if (modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
-        if (modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
-
-        parts.Add(FormatKey(key));
         return string.Join("+", parts);
     }
 }

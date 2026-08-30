@@ -42,10 +42,16 @@ public class InputHookService
     private const uint MOUSEEVENTF_XUP = 0x0100;
 
     private static LowLevelMouseProc _mouseProc = MouseHookCallback;
-    private static LowLevelKeyboardProc _keyboardProc = KeyboardHookCallback;
+    private static LowLevelKeyboardProc _keyboardProc = KeyboardHookCallbackSafe;
     private static IntPtr _mouseHookID = IntPtr.Zero;
     private static IntPtr _keyboardHookID = IntPtr.Zero;
     private static readonly IntPtr SYNTHETIC_EXTRA_INFO = new(0x51554943); // "QUIC"
+
+    /// <summary>
+    /// 合成输入统一标记：本服务与其它输入服务（手势重放、双击 Alt 的 Esc 注入等）
+    /// 注入的事件都带此标记，钩子据此放行，不会把合成事件误判为用户输入。
+    /// </summary>
+    internal static IntPtr SyntheticInputMarker => SYNTHETIC_EXTRA_INFO;
     private static System.Threading.Timer? _longPressTimer;
     private static Action? _onLongPressRelease;
     private static Action? _onRadialRelease;
@@ -68,6 +74,8 @@ public class InputHookService
     private static bool _releaseShouldExecute;
     private static bool _leftButtonDownSwallowed;
     private static bool _rightButtonDownSwallowed;
+    // 摇摆取消/ESC 熔断后置位：右键松开时只吞不重放，否则会弹出系统上下文菜单
+    private static bool _rightUpSuppressReplay;
     private static bool _middleButtonDownSwallowed;
     private static bool _x1ButtonDownSwallowed;
     private static bool _x2ButtonDownSwallowed;
@@ -323,8 +331,42 @@ public class InputHookService
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
-    private static unsafe IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    // 钩子回调由 user32 反向调用：托管异常逃出回调边界不经过 Dispatcher，
+    // App_DispatcherUnhandledException 接不住，会直接进程 fail-fast 闪退。外层兜底后放行事件。
+    private static IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
+        try
+        {
+            return MouseHookCallbackCore(nCode, wParam, lParam);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[InputHook] MouseHookCallback exception: {ex}");
+            return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
+        }
+    }
+
+    private static IntPtr KeyboardHookCallbackSafe(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        try
+        {
+            return KeyboardHookCallbackCore(nCode, wParam, lParam);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[InputHook] KeyboardHookCallback exception: {ex}");
+            return CallNextHookEx(_keyboardHookID, nCode, wParam, lParam);
+        }
+    }
+
+    private static unsafe IntPtr MouseHookCallbackCore(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        // Stop()/暂停失败导致钩子残留时，不再吞事件或呼出面板，只透传
+        if (!_isEnabled)
+        {
+            return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
+        }
+
         if (nCode >= 0)
         {
             var message = (int)wParam;
@@ -341,8 +383,9 @@ public class InputHookService
 
             // 2. Unsafe 零分配指针读取（消除堆内存 GC 停顿）
             var mouse = *(MSLLHOOKSTRUCT*)lParam;
-            // 仅过滤自身重放的事件，允许 ToDesk、向日葵等远程桌面模拟发送的真实鼠标事件
-            if (mouse.dwExtraInfo == SYNTHETIC_EXTRA_INFO)
+            // 过滤自身与手势服务的合成重放事件（两个服务的注入互相认可以免状态污染），
+            // 允许 ToDesk、向日葵等远程桌面模拟发送的真实鼠标事件
+            if (mouse.dwExtraInfo == SYNTHETIC_EXTRA_INFO || mouse.dwExtraInfo == MouseGestureService.GestureSyntheticMarker)
             {
                 return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
             }
@@ -374,6 +417,7 @@ public class InputHookService
                     _dragTriggered = false;
                     _releaseShouldExecute = false;
                     _rightButtonDownSwallowed = true; // 确保右键松开时不弹系统菜单
+                    _rightUpSuppressReplay = true; // 松开时只吞，不重放合成右击（否则菜单照样弹出）
                     _leftButtonDownSwallowed = true;
                     _activeTriggerTarget = ActiveTriggerTarget.None;
                     MouseGestureService.CancelCurrentGesture("rocker-left-click");
@@ -549,7 +593,9 @@ public class InputHookService
             {
                 _rightButtonDown = false;
                 HostAssets.AppendLog($"Input hook: right button up, tracked={_trackedButton}, releaseShouldExecute={_releaseShouldExecute}, rightDownSwallowed={_rightButtonDownSwallowed}.");
-                var shouldReplayShortClick = _rightButtonDownSwallowed && !_releaseShouldExecute;
+                var suppressReplay = _rightUpSuppressReplay;
+                _rightUpSuppressReplay = false;
+                var shouldReplayShortClick = _rightButtonDownSwallowed && !_releaseShouldExecute && !suppressReplay;
                 var shouldSwallow = _rightButtonDownSwallowed || _releaseShouldExecute;
                 if (EndTracking(TrackedMouseButton.Right))
                 {
@@ -624,13 +670,20 @@ public class InputHookService
 
     public static event Action? OnGlobalEscapePressed;
 
-    private static unsafe IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    private static unsafe IntPtr KeyboardHookCallbackCore(int nCode, IntPtr wParam, IntPtr lParam)
     {
+        // Stop()/暂停失败导致钩子残留时，只透传不再吞键
+        if (!_isEnabled)
+        {
+            return CallNextHookEx(_keyboardHookID, nCode, wParam, lParam);
+        }
+
         if (nCode >= 0)
         {
             var message = (int)wParam;
             var keyboard = *(KBDLLHOOKSTRUCT*)lParam;
-            if (keyboard.dwExtraInfo == SYNTHETIC_EXTRA_INFO)
+            // 过滤自身与手势服务的合成注入（如双击 Alt 的 Esc、手势快捷键），不当作用户按键处理
+            if (keyboard.dwExtraInfo == SYNTHETIC_EXTRA_INFO || keyboard.dwExtraInfo == MouseGestureService.GestureSyntheticMarker)
             {
                 return CallNextHookEx(_keyboardHookID, nCode, wParam, lParam);
             }
@@ -647,6 +700,7 @@ public class InputHookService
                     _dragTriggered = false;
                     _releaseShouldExecute = false;
                     _rightButtonDownSwallowed = true;
+                    _rightUpSuppressReplay = true;
                     _activeTriggerTarget = ActiveTriggerTarget.None;
                     HostAssets.AppendLog("Input hook: Escape key pressed, aborted long press tracking.");
                 }
@@ -714,7 +768,9 @@ public class InputHookService
                             wScan = 0,
                             dwFlags = 0, // Key down
                             time = 0,
-                            dwExtraInfo = IntPtr.Zero
+                            // 必须带自身合成标记：否则自己的键盘钩子会把它当作用户输入，
+                            // 再次触发呼出→再注入→无限循环（轮盘永久闪烁）
+                            dwExtraInfo = SYNTHETIC_EXTRA_INFO
                         }
                     }
                 },
@@ -729,7 +785,7 @@ public class InputHookService
                             wScan = 0,
                             dwFlags = 2, // KEYEVENTF_KEYUP
                             time = 0,
-                            dwExtraInfo = IntPtr.Zero
+                            dwExtraInfo = SYNTHETIC_EXTRA_INFO
                         }
                     }
                 }
@@ -996,6 +1052,7 @@ public class InputHookService
         if (button == TrackedMouseButton.Right)
         {
             _rightButtonDownSwallowed = false;
+            _rightUpSuppressReplay = false;
         }
         else if (button == TrackedMouseButton.Middle)
         {
@@ -1025,6 +1082,7 @@ public class InputHookService
         _releaseShouldExecute = false;
         _leftButtonDownSwallowed = false;
         _rightButtonDownSwallowed = false;
+        _rightUpSuppressReplay = false;
         _middleButtonDownSwallowed = false;
         _x1ButtonDownSwallowed = false;
         _x2ButtonDownSwallowed = false;
@@ -1310,13 +1368,10 @@ public class InputHookService
             return;
         }
 
-        if (dispatcher.CheckAccess())
-        {
-            InvokeSafely(action);
-            return;
-        }
-
-        _ = dispatcher.BeginInvoke(new Action(() => InvokeSafely(action)));
+        // 统一走 BeginInvoke：钩子回调本身就跑在 UI 线程，若在此内联执行完整的
+        // 面板 Show/布局，低级钩子回调会超时导致 Windows 静默摘钩、全局输入掉帧。
+        // 所有调用点均为无返回值的事件派发，异步化无语义影响。
+        _ = dispatcher.BeginInvoke(new Action(() => InvokeSafely(action)), DispatcherPriority.Input);
     }
 
     private static void InvokeSafely(Action action)

@@ -155,47 +155,153 @@ public static class AppSettingsStore
     public static string SettingsPath =>
         HostAssets.ResolveDataFilePath("appsettings.local.json");
 
-    public static AppSettings Load()
+    // 设置文件的所有读写串行化：调用方横跨 UI 线程、云同步后台与本地 HTTP API 线程，
+    // 并发 WriteAllText 会互相抛 IOException 导致保存静默丢失。
+    private static readonly object SettingsIoLock = new();
+
+    // 供低级钩子回调等高频路径使用的短 TTL 缓存；LL 钩子回调内直接读盘会超出
+    // LowLevelHooksTimeout，Windows 会静默摘除钩子（表现为所有触发器集体失灵）。
+    private const int SettingsCacheTtlMs = 1500;
+    private static AppSettings? _cachedSettings;
+    private static long _cachedSettingsTimestampTicks;
+
+    /// <summary>
+    /// 高频路径专用：短 TTL 缓存读取（≤1.5s 磁盘刷新一次）。
+    /// 注意：可能返回共享实例，调用方只读，禁止修改返回对象。
+    /// </summary>
+    public static AppSettings LoadCached()
     {
-        if (!File.Exists(SettingsPath))
+        var cached = _cachedSettings;
+        if (cached != null && Environment.TickCount64 - _cachedSettingsTimestampTicks < SettingsCacheTtlMs)
         {
-            var defaults = Normalize(new AppSettings());
-            AiCredentialStore.ImportPlaintextAndHydrate(defaults);
-            return defaults;
+            return cached;
         }
 
+        lock (SettingsIoLock)
+        {
+            if (_cachedSettings != null && Environment.TickCount64 - _cachedSettingsTimestampTicks < SettingsCacheTtlMs)
+            {
+                return _cachedSettings;
+            }
+
+            var settings = Load();
+            _cachedSettings = settings;
+            _cachedSettingsTimestampTicks = Environment.TickCount64;
+            return settings;
+        }
+    }
+
+    private static void UpdateCache(AppSettings settings)
+    {
+        _cachedSettings = settings;
+        _cachedSettingsTimestampTicks = Environment.TickCount64;
+    }
+
+    public static AppSettings Load()
+    {
+        lock (SettingsIoLock)
+        {
+            if (!File.Exists(SettingsPath))
+            {
+                var defaults = Normalize(new AppSettings());
+                TryImportPlaintextCredentials(defaults);
+                UpdateCache(defaults);
+                return defaults;
+            }
+
+            try
+            {
+                var json = File.ReadAllText(SettingsPath);
+                var settings = Normalize(JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings());
+                TryImportPlaintextCredentials(settings);
+                UpdateCache(settings);
+                return settings;
+            }
+            catch (Exception ex)
+            {
+                // 配置损坏（写一半崩溃/断电等）时保留坏文件供人工恢复，避免随后任何一次
+                // Save 用默认值把它永久覆盖；随后返回默认配置让应用可用。
+                HostAssets.AppendLog($"[AppSettingsStore] Load failed, settings reset to defaults: {ex.Message}");
+                TryPreserveCorruptSettingsFile();
+                var defaults = Normalize(new AppSettings());
+                TryImportPlaintextCredentials(defaults);
+                UpdateCache(defaults);
+                return defaults;
+            }
+        }
+    }
+
+    private static void TryImportPlaintextCredentials(AppSettings settings)
+    {
         try
         {
-            var json = File.ReadAllText(SettingsPath);
-            var settings = Normalize(JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings());
-            var migrated = AiCredentialStore.ImportPlaintextAndHydrate(settings);
-            if (migrated)
+            if (AiCredentialStore.ImportPlaintextAndHydrate(settings))
             {
                 WriteSanitizedSettings(settings);
             }
-            return settings;
+        }
+        catch (Exception ex)
+        {
+            // 凭据迁移/写凭据文件失败不应拖垮整个 Load（历史上会让 Load 返回默认配置）。
+            HostAssets.AppendLog($"[AppSettingsStore] Credential hydration skipped: {ex.Message}");
+        }
+    }
+
+    private static void TryPreserveCorruptSettingsFile()
+    {
+        try
+        {
+            if (!File.Exists(SettingsPath))
+            {
+                return;
+            }
+
+            var backup = SettingsPath + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            File.Copy(SettingsPath, backup, overwrite: true);
+            HostAssets.AppendLog($"[AppSettingsStore] Corrupt settings preserved: {backup}");
         }
         catch
         {
-            var defaults = Normalize(new AppSettings());
-            AiCredentialStore.ImportPlaintextAndHydrate(defaults);
-            return defaults;
+            // 保留失败也继续返回默认值，应用可用性优先。
         }
     }
 
     public static void Save(AppSettings settings)
     {
-        settings = Normalize(settings);
-        AiCredentialStore.Capture(settings);
-        WriteSanitizedSettings(settings);
-        HostAssets.AppendLog($"[AppSettingsStore] Saved settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
+        lock (SettingsIoLock)
+        {
+            settings = Normalize(settings);
+            try
+            {
+                AiCredentialStore.Capture(settings);
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"[AppSettingsStore] Credential capture failed: {ex.Message}");
+            }
+
+            WriteSanitizedSettings(settings);
+            HostAssets.AppendLog($"[AppSettingsStore] Saved settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
+        }
     }
 
     private static void WriteSanitizedSettings(AppSettings settings)
     {
         AiCredentialStore.RemovePlaintext(settings);
         var json = JsonSerializer.Serialize(settings, JsonOptions);
-        File.WriteAllText(SettingsPath, json);
+        // 原子写：先写临时文件再替换，避免进程崩溃/断电留下半截 JSON。
+        var tempPath = SettingsPath + ".tmp";
+        File.WriteAllText(tempPath, json);
+        try
+        {
+            File.Replace(tempPath, SettingsPath, destinationBackupFileName: null);
+        }
+        catch (IOException)
+        {
+            // Replace 在跨文件系统或目标被占用等场景可能失败，退回移动覆盖。
+            File.Move(tempPath, SettingsPath, overwrite: true);
+        }
+        UpdateCache(settings);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

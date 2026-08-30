@@ -66,12 +66,51 @@ public static class ExtensionInstallService
             manifest = await LocalizeRemoteIconAsync(tempDirectory, manifest, cancellationToken);
 
             var targetDirectory = Path.Combine(HostAssets.ExtensionsPath, manifest.Id);
+            // 升级采用“旧目录先挪走 → 新目录就位 → 删旧”的顺序：直接 Delete 后 Move 之间
+            // 一旦崩溃/断电，扩展会凭空消失且无任何恢复手段。
+            // 备份目录用点前缀命名，扩展目录扫描会跳过（见 LocalExtensionCatalog）。
+            string? backupDirectory = null;
             if (Directory.Exists(targetDirectory))
             {
-                Directory.Delete(targetDirectory, recursive: true);
+                backupDirectory = Path.Combine(
+                    HostAssets.ExtensionsPath,
+                    $".yanzi-old-{manifest.Id:N}-{DateTime.Now:yyyyMMdd-HHmmss}");
+                Directory.Move(targetDirectory, backupDirectory);
             }
 
-            Directory.Move(tempDirectory, targetDirectory);
+            try
+            {
+                Directory.Move(tempDirectory, targetDirectory);
+            }
+            catch
+            {
+                // 新目录就位失败时把旧目录挪回来，保持升级前的状态
+                if (backupDirectory != null && !Directory.Exists(targetDirectory))
+                {
+                    try
+                    {
+                        Directory.Move(backupDirectory, targetDirectory);
+                    }
+                    catch
+                    {
+                        // 回滚失败时保留备份目录，避免数据被误删
+                    }
+                }
+                throw;
+            }
+
+            if (backupDirectory != null && Directory.Exists(backupDirectory))
+            {
+                try
+                {
+                    Directory.Delete(backupDirectory, recursive: true);
+                }
+                catch
+                {
+                    // 清理失败只留下垃圾目录，不影响升级结果
+                }
+            }
+
             return new ExtensionInstallResult(
                 manifest.Id,
                 manifest.Name,

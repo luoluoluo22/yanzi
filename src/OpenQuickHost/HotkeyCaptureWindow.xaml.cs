@@ -465,6 +465,18 @@ public partial class HotkeyCaptureWindow : Window
         {
             _pendingModifierKey = key;
             _capturedChordDuringModifierPress = false;
+            if (_allowModifierless)
+            {
+                var shortcut = BuildShortcutText(modifiers, key);
+                if (!string.IsNullOrWhiteSpace(shortcut))
+                {
+                    ShortcutText = shortcut;
+                    CapturedHotkeyText.Text = ShortcutText;
+                    SyncDisplayNameFromShortcut();
+                    ConfirmButton.IsEnabled = true;
+                    HostAssets.AppendLog($"Hotkey capture recorded modifier shortcut: {ShortcutText}.");
+                }
+            }
             return true;
         }
 

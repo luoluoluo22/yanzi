@@ -427,11 +427,11 @@ public sealed class WindowSnapAssistService : IDisposable
         try
         {
             // Get the window's icon (small icon first, then large)
-            var icon = SendMessage(hwnd, WmGeticon, IconSmall2, IntPtr.Zero);
+            var icon = SendMessageHungSafe(hwnd, WmGeticon, (IntPtr)IconSmall2, IntPtr.Zero);
             if (icon == IntPtr.Zero)
-                icon = SendMessage(hwnd, WmGeticon, IconSmall, IntPtr.Zero);
+                icon = SendMessageHungSafe(hwnd, WmGeticon, (IntPtr)IconSmall, IntPtr.Zero);
             if (icon == IntPtr.Zero)
-                icon = SendMessage(hwnd, WmGeticon, IconBig, IntPtr.Zero);
+                icon = SendMessageHungSafe(hwnd, WmGeticon, (IntPtr)IconBig, IntPtr.Zero);
             if (icon == IntPtr.Zero)
                 icon = GetClassLongPtr(hwnd, GclHiconSm);
             if (icon == IntPtr.Zero)
@@ -1200,6 +1200,30 @@ public sealed class WindowSnapAssistService : IDisposable
 
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, IntPtr lParam);
+
+    private const uint SmtoAbortIfHung = 0x0002;
+
+    // 带超时的跨线程消息：目标进程挂起（未响应窗口很常见）时 SendMessage 会无限期阻塞
+    // 本应用 UI 线程，导致整个启动器跟着“未响应”
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
+    private static IntPtr SendMessageHungSafe(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam)
+    {
+        try
+        {
+            if (SendMessageTimeout(hWnd, msg, wParam, lParam, SmtoAbortIfHung, 200, out var result) == IntPtr.Zero)
+            {
+                return IntPtr.Zero;
+            }
+            return result;
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
 
     [DllImport("user32.dll", EntryPoint = "GetClassLongPtrW")]
     private static extern IntPtr GetClassLongPtr(IntPtr hWnd, int nIndex);

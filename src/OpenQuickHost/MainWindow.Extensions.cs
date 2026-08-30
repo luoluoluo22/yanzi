@@ -766,7 +766,7 @@ public partial class MainWindow
             iconSourceOverride: NativeFileIconService.GetIcon(path, isFolder));
     }
 
-    private bool TryExecuteSimulatedKeystroke(CommandItem runnable)
+    private async Task<bool> TryExecuteSimulatedKeystrokeAsync(CommandItem runnable)
     {
         const string simulatedKeyPrefix = "keysim::";
         if (!runnable.ExtensionId.StartsWith(simulatedKeyPrefix, StringComparison.OrdinalIgnoreCase))
@@ -784,6 +784,14 @@ public partial class MainWindow
 
         try
         {
+            // 模拟按键必须发给“用户此刻的目标窗口”：启动器自己持有焦点时不先收起，
+            // SendInput 会把组合键打进启动器自己的搜索框
+            if (IsVisible)
+            {
+                HideToTray();
+                await Task.Delay(150);
+            }
+
             var sent = SendSimulatedKeystroke(modifiers, key, out var inputCount, out var lastError);
             HostAssets.AppendLog($"Simulated keystroke SendInput: shortcut={shortcut}, sent={sent}/{inputCount}, inputSize={Marshal.SizeOf<INPUT>()}, lastError={lastError}.");
             if (sent != inputCount)
@@ -824,42 +832,83 @@ public partial class MainWindow
         for (var index = 0; index < segments.Length; index++)
         {
             var segment = segments[index];
-            var isLast = index == segments.Length - 1;
-            if (!isLast)
+            var lower = segment.ToLowerInvariant();
+
+            switch (lower)
             {
-                switch (segment.ToLowerInvariant())
-                {
-                    case "ctrl":
-                    case "control":
-                        modifiers |= ModControl;
-                        continue;
-                    case "alt":
-                        modifiers |= ModAlt;
-                        continue;
-                    case "shift":
-                        modifiers |= ModShift;
-                        continue;
-                    case "win":
-                    case "windows":
-                        modifiers |= ModWin;
-                        continue;
-                    default:
-                        return false;
-                }
+                case "ctrl":
+                case "control":
+                case "lctrl":
+                case "rctrl":
+                case "leftctrl":
+                case "rightctrl":
+                    modifiers |= ModControl;
+                    continue;
+                case "alt":
+                case "menu":
+                case "lalt":
+                case "ralt":
+                case "leftalt":
+                case "rightalt":
+                    modifiers |= ModAlt;
+                    continue;
+                case "shift":
+                case "lshift":
+                case "rshift":
+                case "leftshift":
+                case "rightshift":
+                    modifiers |= ModShift;
+                    continue;
+                case "win":
+                case "windows":
+                case "lwin":
+                case "rwin":
+                case "leftwin":
+                case "rightwin":
+                    modifiers |= ModWin;
+                    continue;
+            }
+
+            if (key != Key.None)
+            {
+                // 已经指定过一个主按键，不支持多个普通主按键组合
+                return false;
             }
 
             try
             {
-                key = segment.ToLowerInvariant() switch
+                key = lower switch
                 {
                     "space" => Key.Space,
-                    "enter" => Key.Enter,
+                    "enter" or "return" => Key.Enter,
                     "tab" => Key.Tab,
                     "esc" or "escape" => Key.Escape,
-                    "backspace" => Key.Back,
-                    "pagedown" => Key.Next,
-                    "pageup" => Key.Prior,
+                    "backspace" or "back" => Key.Back,
+                    "delete" or "del" => Key.Delete,
+                    "insert" or "ins" => Key.Insert,
+                    "home" => Key.Home,
+                    "end" => Key.End,
+                    "pagedown" or "pgdn" => Key.Next,
+                    "pageup" or "pgup" => Key.Prior,
                     "capslock" => Key.Capital,
+                    "up" => Key.Up,
+                    "down" => Key.Down,
+                    "left" => Key.Left,
+                    "right" => Key.Right,
+                    "printscreen" or "prtsc" or "snapshot" => Key.PrintScreen,
+                    "scrolllock" => Key.Scroll,
+                    "pause" => Key.Pause,
+                    "~" => Key.OemTilde,
+                    "-" => Key.OemMinus,
+                    "=" => Key.OemPlus,
+                    "[" => Key.OemOpenBrackets,
+                    "]" => Key.Oem6,
+                    "\\" => Key.Oem5,
+                    ";" => Key.Oem1,
+                    "'" => Key.Oem7,
+                    "," => Key.OemComma,
+                    "." => Key.OemPeriod,
+                    "/" => Key.OemQuestion,
                     _ => (Key)new KeyConverter().ConvertFromInvariantString(segment)!
                 };
             }
@@ -869,50 +918,77 @@ public partial class MainWindow
             }
         }
 
-        return key != Key.None;
+        return modifiers != 0 || key != Key.None;
     }
 
     private static uint SendSimulatedKeystroke(uint modifiers, Key key, out int inputCount, out int lastError)
     {
-        var virtualKeys = new List<ushort>(5);
+        var modKeys = new List<ushort>(4);
         if ((modifiers & ModControl) != 0)
         {
-            virtualKeys.Add(0x11);
+            modKeys.Add(0x11); // VK_CONTROL
         }
 
         if ((modifiers & ModAlt) != 0)
         {
-            virtualKeys.Add(0x12);
+            modKeys.Add(0x12); // VK_MENU
         }
 
         if ((modifiers & ModShift) != 0)
         {
-            virtualKeys.Add(0x10);
+            modKeys.Add(0x10); // VK_SHIFT
         }
 
         if ((modifiers & ModWin) != 0)
         {
-            virtualKeys.Add(0x5B);
+            modKeys.Add(0x5B); // VK_LWIN
         }
 
-        virtualKeys.Add((ushort)KeyInterop.VirtualKeyFromKey(key));
+        var inputs = new List<INPUT>(8);
 
-        var inputs = new List<INPUT>(virtualKeys.Count * 2);
-        for (var index = 0; index < virtualKeys.Count - 1; index++)
+        if (key != Key.None)
         {
-            inputs.Add(CreateKeyInput(virtualKeys[index], keyUp: false));
+            var mainVk = (ushort)KeyInterop.VirtualKeyFromKey(key);
+
+            // 1. 先按下所有修饰键
+            foreach (var modVk in modKeys)
+            {
+                inputs.Add(CreateKeyInput(modVk, keyUp: false));
+            }
+
+            // 2. 按下并释放主按键
+            inputs.Add(CreateKeyInput(mainVk, keyUp: false));
+            inputs.Add(CreateKeyInput(mainVk, keyUp: true));
+
+            // 3. 逆序释放所有修饰键
+            for (var index = modKeys.Count - 1; index >= 0; index--)
+            {
+                inputs.Add(CreateKeyInput(modKeys[index], keyUp: true));
+            }
         }
-
-        var mainKey = virtualKeys[^1];
-        inputs.Add(CreateKeyInput(mainKey, keyUp: false));
-        inputs.Add(CreateKeyInput(mainKey, keyUp: true));
-
-        for (var index = virtualKeys.Count - 2; index >= 0; index--)
+        else
         {
-            inputs.Add(CreateKeyInput(virtualKeys[index], keyUp: true));
+            // 纯修饰键模拟（如单 Ctrl、单 Alt、单 Win、单 Shift 或 Ctrl+Alt 等）
+            // 1. 顺序按下所有修饰键
+            foreach (var modVk in modKeys)
+            {
+                inputs.Add(CreateKeyInput(modVk, keyUp: false));
+            }
+
+            // 2. 逆序释放所有修饰键
+            for (var index = modKeys.Count - 1; index >= 0; index--)
+            {
+                inputs.Add(CreateKeyInput(modKeys[index], keyUp: true));
+            }
         }
 
         inputCount = inputs.Count;
+        if (inputCount == 0)
+        {
+            lastError = 0;
+            return 0;
+        }
+
         var sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         lastError = Marshal.GetLastWin32Error();
         return sent;
@@ -1277,9 +1353,16 @@ public partial class MainWindow
                 UnregisterYanmHotkey();
                 UnregisterRadialHotkey();
                 UnregisterWindowSnapAssistHotkey();
+                InputHookService.Stop();
                 KeyboardDoubleTapService.Stop();
                 YanyuTriggerService.Stop();
                 YarnSelectService.Stop();
+                MouseGestureService.Stop();
+                _windowBoundExtensionsService.Stop();
+                _windowSnapAssistService.Stop();
+                _mobileMessageBridgeCts?.Cancel();
+                _desktopPresenceHeartbeatTimer.Stop();
+                _mobileMessagePollTimer.Stop();
                 _source.RemoveHook(WndProc);
             }
 

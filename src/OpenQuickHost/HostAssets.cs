@@ -120,10 +120,17 @@ public static class HostAssets
 
     public static void AppendRecent(string title)
     {
-        EnsureCreated();
-        File.AppendAllText(
-            RecentCommandsPath,
-            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {title}");
+        try
+        {
+            EnsureCreated();
+            File.AppendAllText(
+                RecentCommandsPath,
+                $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {title}");
+        }
+        catch
+        {
+            // 日志文件被杀软/日志查看器占用时静默放弃，绝不打断命令启动主流程
+        }
     }
 
     public static void AppendLog(string message)
@@ -142,25 +149,40 @@ public static class HostAssets
 
     public static void AppendDevLog(string message)
     {
-        if (!Directory.Exists(DevWorkspacePath))
+        try
         {
-            return;
-        }
+            if (!Directory.Exists(DevWorkspacePath))
+            {
+                return;
+            }
 
-        EnsureCreated();
-        RotateFileIfTooLarge(DevDebugLogPath, MaxLogFileBytes);
-        File.AppendAllText(
-            DevDebugLogPath,
-            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+            EnsureCreated();
+            RotateFileIfTooLarge(DevDebugLogPath, MaxLogFileBytes);
+            File.AppendAllText(
+                DevDebugLogPath,
+                $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+        }
+        catch
+        {
+            // 多线程并发追加/轮转竞争或文件被占用时静默放弃；
+            // 这里抛出的异常会顶替调用方的业务异常（如在 catch 路径中调用）
+        }
     }
 
     public static void AppendCloudSyncDiagnosticLog(string message)
     {
-        EnsureCreated();
-        RotateFileIfTooLarge(CloudSyncDiagnosticsLogPath, MaxLogFileBytes);
-        File.AppendAllText(
-            CloudSyncDiagnosticsLogPath,
-            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+        try
+        {
+            EnsureCreated();
+            RotateFileIfTooLarge(CloudSyncDiagnosticsLogPath, MaxLogFileBytes);
+            File.AppendAllText(
+                CloudSyncDiagnosticsLogPath,
+                $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+        }
+        catch
+        {
+            // 同上：诊断日志自身失败绝不能打断云同步重试流程或顶替真实异常
+        }
         AppendLog($"[CloudSyncDiag] {message}");
     }
 

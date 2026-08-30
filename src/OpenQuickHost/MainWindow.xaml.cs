@@ -417,18 +417,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             HostAssets.AppendLog("Window snap assist disabled by user via context menu.");
         };
 
-        Closing += (s, e) =>
-        {
-            InputHookService.Stop();
-            KeyboardDoubleTapService.Stop();
-            YanyuTriggerService.Stop();
-            YarnSelectService.Stop();
-            _windowBoundExtensionsService.Stop();
-            _windowSnapAssistService.Stop();
-            _mobileMessageBridgeCts?.Cancel();
-            _desktopPresenceHeartbeatTimer.Stop();
-            _mobileMessagePollTimer.Stop();
-        };
+        // 注意：不要在 Closing 里停监听服务——关到托盘时 Closing 会被 e.Cancel=true 取消，
+        // 但取消的 Closing 照样触发事件；停了之后托盘常驻却所有触发器失效直到重启。
+        // 真正的退出清理在 MainWindow_Closing 的 AllowClose 分支与 App.OnExit。
 
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
@@ -2930,7 +2921,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (TryExecuteSimulatedKeystroke(runnable))
+        if (await TryExecuteSimulatedKeystrokeAsync(runnable))
         {
             return;
         }

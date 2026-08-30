@@ -11,7 +11,18 @@ public static class AiCredentialStore
 {
     private static string SecretPath => HostAssets.ResolveDataFilePath("ai-credentials.dat");
 
+    // 并发 Save 会互相覆盖（读旧 bag → 合并 → 写回，后写者丢掉前者新增的 Key），全部串行化。
+    private static readonly object BagIoLock = new();
+
     public static bool ImportPlaintextAndHydrate(AppSettings settings)
+    {
+        lock (BagIoLock)
+        {
+            return ImportPlaintextAndHydrateCore(settings);
+        }
+    }
+
+    private static bool ImportPlaintextAndHydrateCore(AppSettings settings)
     {
         var bag = Load();
         var importedPlaintext = false;
@@ -57,30 +68,33 @@ public static class AiCredentialStore
 
     public static void Capture(AppSettings settings)
     {
-        var bag = Load();
-        bag.LegacyApiKey = settings.AiApiKey?.Trim() ?? string.Empty;
-
-        var activeProviderIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var provider in settings.AiServiceProviders ?? [])
+        lock (BagIoLock)
         {
-            var id = provider.Id?.Trim() ?? string.Empty;
-            if (id.Length == 0) continue;
-            activeProviderIds.Add(id);
-            if (string.IsNullOrWhiteSpace(provider.ApiKey))
-            {
-                bag.ProviderApiKeys.Remove(id);
-            }
-            else
-            {
-                bag.ProviderApiKeys[id] = provider.ApiKey.Trim();
-            }
-        }
+            var bag = Load();
+            bag.LegacyApiKey = settings.AiApiKey?.Trim() ?? string.Empty;
 
-        foreach (var staleId in bag.ProviderApiKeys.Keys.Where(id => !activeProviderIds.Contains(id)).ToArray())
-        {
-            bag.ProviderApiKeys.Remove(staleId);
+            var activeProviderIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var provider in settings.AiServiceProviders ?? [])
+            {
+                var id = provider.Id?.Trim() ?? string.Empty;
+                if (id.Length == 0) continue;
+                activeProviderIds.Add(id);
+                if (string.IsNullOrWhiteSpace(provider.ApiKey))
+                {
+                    bag.ProviderApiKeys.Remove(id);
+                }
+                else
+                {
+                    bag.ProviderApiKeys[id] = provider.ApiKey.Trim();
+                }
+            }
+
+            foreach (var staleId in bag.ProviderApiKeys.Keys.Where(id => !activeProviderIds.Contains(id)).ToArray())
+            {
+                bag.ProviderApiKeys.Remove(staleId);
+            }
+            Save(bag);
         }
-        Save(bag);
     }
 
     public static void RemovePlaintext(AppSettings settings)
@@ -148,7 +162,17 @@ public static class AiCredentialStore
         Directory.CreateDirectory(Path.GetDirectoryName(SecretPath)!);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(bag, JsonOptions);
         var protectedBytes = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
-        File.WriteAllBytes(SecretPath, protectedBytes);
+        // 原子写：写入中断不再导致整个密钥包损坏丢失。
+        var tempPath = SecretPath + ".tmp";
+        File.WriteAllBytes(tempPath, protectedBytes);
+        try
+        {
+            File.Replace(tempPath, SecretPath, destinationBackupFileName: null);
+        }
+        catch (IOException)
+        {
+            File.Move(tempPath, SecretPath, overwrite: true);
+        }
     }
 
     private sealed class AiCredentialBag

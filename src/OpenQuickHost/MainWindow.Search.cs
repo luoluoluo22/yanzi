@@ -1385,7 +1385,17 @@ public partial class MainWindow
             return;
         }
 
-        var response = await ExtensionSearchProviderService.SearchAsync(providerCommand, searchProvider, query, session.Token);
+        ResultProviderResponse response;
+        try
+        {
+            response = await ExtensionSearchProviderService.SearchAsync(providerCommand, searchProvider, query, session.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // 新输入取消了本次搜索（含后台目录遍历中断），静默放弃本批结果
+            return;
+        }
+
         if (!_searchPipelineManager.IsActive(session) ||
             !string.Equals(_activeFilterScopeKey, scopeKey, StringComparison.OrdinalIgnoreCase))
         {

@@ -62,7 +62,30 @@ public sealed class YanmBridgeService
 
         var invokeId = GetString(root, "id");
         var method = GetString(root, "method");
-        var args = root.TryGetProperty("args", out var argsProperty) ? argsProperty : default;
+        var args = root.TryGetProperty("args", out var argsProperty) ? argsProperty.Clone() : default;
+
+        // web.fetch 是同步 HTTP（超时可达 8 秒），必须离开 UI 线程执行，否则组件一发起
+        // 网络请求整个应用就冻结；其余能力都是本地快速操作，保持原同步路径。
+        // 注意 args 必须 Clone：调用方的 JsonDocument 离开 using 后即销毁。
+        if (string.Equals(method, "web.fetch", StringComparison.Ordinal))
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            var componentTitle = component.Title;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var result = Dispatch(method, componentId, component, args);
+                    SendReplyOnUi(dispatcher, componentId, invokeId, true, result, null);
+                }
+                catch (Exception ex)
+                {
+                    _log($"Yanm: invoke failed, component={componentTitle}, method={method}, error={ex.Message}");
+                    SendReplyOnUi(dispatcher, componentId, invokeId, false, null, ex.Message);
+                }
+            });
+            return;
+        }
 
         try
         {
@@ -74,6 +97,26 @@ public sealed class YanmBridgeService
             _log($"Yanm: invoke failed, component={component.Title}, method={method}, error={ex.Message}");
             _sendReply(componentId, invokeId, false, null, ex.Message);
         }
+    }
+
+    private void SendReplyOnUi(System.Windows.Threading.Dispatcher? dispatcher, string componentId, string invokeId, bool ok, object? result, string? error)
+    {
+        if (dispatcher == null)
+        {
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(new Action(() =>
+        {
+            try
+            {
+                _sendReply(componentId, invokeId, ok, result, error);
+            }
+            catch (Exception ex)
+            {
+                _log($"Yanm: send reply failed, component={componentId}, invoke={invokeId}, error={ex.Message}");
+            }
+        }));
     }
 
     private object? Dispatch(string method, string componentId, YanmComponentSettings component, JsonElement args)
