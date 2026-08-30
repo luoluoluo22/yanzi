@@ -3397,6 +3397,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 allowDoubleTap: false,
                 allowModifierless: true)
             {
+                Owner = this,
                 Topmost = true,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen
             };

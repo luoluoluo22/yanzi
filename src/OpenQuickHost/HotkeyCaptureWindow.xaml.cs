@@ -250,7 +250,7 @@ public partial class HotkeyCaptureWindow : Window
                     {
                         HostAssets.AppendLog($"[HotkeyCaptureLog] LLHook KeyUp: vk=0x{vkCode:X}, key={key}");
                         var handled = HandleCapturedKeyUp(key);
-                        if (handled)
+                        if (_allowDoubleTap && handled)
                         {
                             return (IntPtr)1;
                         }
@@ -356,6 +356,13 @@ public partial class HotkeyCaptureWindow : Window
     private bool HandleCapturedKey(Key key, ModifierKeys modifiers)
     {
         ErrorText.Visibility = Visibility.Collapsed;
+
+        if (key is Key.Return or Key.Enter && modifiers == ModifierKeys.None && !string.IsNullOrWhiteSpace(ShortcutText))
+        {
+            HostAssets.AppendLog("Hotkey capture confirmed by Enter key.");
+            ConfirmButton_Click(this, new RoutedEventArgs());
+            return true;
+        }
 
         if (key is Key.Escape && modifiers == ModifierKeys.None)
         {

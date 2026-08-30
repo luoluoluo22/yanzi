@@ -102,6 +102,7 @@
                         Style="{StaticResource PrimaryBtn}"
                         Width="90"
                         IsEnabled="False"
+                        IsDefault="True"
                         Click="ConfirmButton_Click" />
             </Grid>
         </Grid>
