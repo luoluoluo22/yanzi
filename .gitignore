@@ -59,3 +59,4 @@ env.md
 *环境变量*
 *.token*
 *.secret*
+.tmp-repro/

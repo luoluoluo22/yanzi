@@ -953,13 +953,53 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     }
 
     private const int WmDpiChanged = 0x02E1;
+    private double _lastWindowDpi = 1.0;
+    private (double X, double Y) _pendingDpiCenter;
 
     private IntPtr RadialWindowWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WmDpiChanged && IsVisible)
         {
-            // 让 WPF 先完成按建议矩形的尺寸/位置调整与重排，再按锚点拉回中心
-            Dispatcher.BeginInvoke(new Action(() => CenterOnAnchorPhysically("dpi-changed")), DispatcherPriority.Render);
+            // 运行期改变显示缩放：所有窗口按建议矩形重排后，旧锚点的物理坐标
+            // 在新缩放世界里对应的是另一个视觉位置，轮盘会"跳"离用户看到的位置。
+            // 记录显示器原点+新旧 DPI 比例，渲染帧末把轮盘放回"视觉位置不变"的新坐标，
+            // 并按新工作区重新钳制高度。
+            try
+            {
+                var newDpi = (wParam.ToInt32() & 0xFFFF) / 96.0;
+                var oldDpi = _lastWindowDpi > 0 ? _lastWindowDpi : newDpi;
+                if (Win32Native.GetWindowRect(hwnd, out var rect) &&
+                    Win32Native.MonitorFromWindow(hwnd, Win32Native.MonitorDefaultToNearest) is var hMon &&
+                    hMon != IntPtr.Zero)
+                {
+                    var mi = new Win32Native.MONITORINFO();
+                    mi.cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Win32Native.MONITORINFO>();
+                    if (newDpi > 0 && Win32Native.GetMonitorInfo(hMon, ref mi))
+                    {
+                        var oldCx = (rect.Left + rect.Right) / 2.0;
+                        var oldCy = (rect.Top + rect.Bottom) / 2.0;
+                        var ratio = newDpi / oldDpi;
+                        _pendingDpiCenter = (
+                            mi.rcMonitor.Left + (oldCx - mi.rcMonitor.Left) * ratio,
+                            mi.rcMonitor.Top + (oldCy - mi.rcMonitor.Top) * ratio);
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            if (!IsVisible)
+                            {
+                                return;
+                            }
+
+                            var workAreaHeightDip = (mi.rcWork.Bottom - mi.rcWork.Top) / newDpi;
+                            Height = Math.Min(NormalWindowSize, Math.Max(600, workAreaHeightDip));
+                            CenterOnPhysically(_pendingDpiCenter.X, _pendingDpiCenter.Y, "dpi-changed");
+                        }), DispatcherPriority.Render);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"[RadialMenuLog] DPI change recenter failed: {ex.Message}");
+            }
         }
 
         return IntPtr.Zero;
@@ -1017,12 +1057,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 物理像素校正：实测窗口当前物理中心与锚点的偏差，按窗口当前 DPI 折回 DIP 修正 Left/Top。
+    /// 物理像素校正：实测窗口当前物理中心与目标点的偏差，按窗口当前 DPI 折回 DIP 修正 Left/Top。
     /// 不依赖任何 DPI 假设——无论 WPF 用哪个上下文解释 Left/Top，测多少补多少。
-    /// 用户日志显示跨 DPI 显示器呼出时 delta 恒为 (0,-264)：Show 过程中 WM_DPICHANGED
-    /// 的系统建议矩形会异步再调整一次位置，因此校正必须在渲染帧后再补一轮自愈。
     /// </summary>
-    private void CenterOnAnchorPhysically(string pass)
+    private void CenterOnPhysically(double targetX, double targetY, string pass)
     {
         try
         {
@@ -1035,10 +1073,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
             var currentCenterX = (rect.Left + rect.Right) / 2.0;
             var currentCenterY = (rect.Top + rect.Bottom) / 2.0;
-            var deltaX = _centerPixels.X - currentCenterX;
-            var deltaY = _centerPixels.Y - currentCenterY;
+            var deltaX = targetX - currentCenterX;
+            var deltaY = targetY - currentCenterY;
             var windowDpi = GetWindowDpiScale();
-            HostAssets.AppendLog($"[RadialMenuLog] Center check ({pass}): anchor=({_centerPixels.X},{_centerPixels.Y}), rect=({rect.Left},{rect.Top})-({rect.Right},{rect.Bottom}), center=({currentCenterX:F0},{currentCenterY:F0}), delta=({deltaX:F0},{deltaY:F0}), dpi={windowDpi:F2}, state={WindowState}.");
+            _lastWindowDpi = windowDpi;
+            HostAssets.AppendLog($"[RadialMenuLog] Center check ({pass}): target=({targetX:F0},{targetY:F0}), rect=({rect.Left},{rect.Top})-({rect.Right},{rect.Bottom}), center=({currentCenterX:F0},{currentCenterY:F0}), delta=({deltaX:F0},{deltaY:F0}), dpi={windowDpi:F2}, state={WindowState}.");
             if (Math.Abs(deltaX) < 1 && Math.Abs(deltaY) < 1)
             {
                 return;
@@ -1050,8 +1089,13 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"[RadialMenuLog] CenterOnAnchorPhysically failed: {ex.Message}");
+            HostAssets.AppendLog($"[RadialMenuLog] CenterOnPhysically failed: {ex.Message}");
         }
+    }
+
+    private void CenterOnAnchorPhysically(string pass)
+    {
+        CenterOnPhysically(_centerPixels.X, _centerPixels.Y, pass);
     }
 
     private System.Windows.Size GetMenuSize()
