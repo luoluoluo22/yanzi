@@ -960,28 +960,29 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         if (msg == WmDpiChanged && IsVisible)
         {
-            // 运行期改变显示缩放：所有窗口按建议矩形重排后，旧锚点的物理坐标
-            // 在新缩放世界里对应的是另一个视觉位置，轮盘会"跳"离用户看到的位置。
-            // 记录显示器原点+新旧 DPI 比例，渲染帧末把轮盘放回"视觉位置不变"的新坐标，
-            // 并按新工作区重新钳制高度。
+            // 运行期改变显示缩放：窗口按建议矩形重排后，锚点的物理坐标在新缩放世界里
+            // 对应另一个视觉位置，轮盘会"跳"离用户所见位置。按显示器原点+新旧 DPI 比例
+            // 重映射锚点，渲染帧末把窗口放回"视觉位置不变"的新坐标，并重新钳制高度。
+            // （官方指引：尺寸以 WM_DPICHANGED lParam 的建议矩形为准，这里直接让 WPF
+            //   完成其默认处理，再由物理校正把中心对齐到重映射后的锚点。）
             try
             {
                 var newDpi = (wParam.ToInt32() & 0xFFFF) / 96.0;
                 var oldDpi = _lastWindowDpi > 0 ? _lastWindowDpi : newDpi;
-                if (Win32Native.GetWindowRect(hwnd, out var rect) &&
+                _lastWindowDpi = newDpi;
+                if (newDpi > 0 &&
                     Win32Native.MonitorFromWindow(hwnd, Win32Native.MonitorDefaultToNearest) is var hMon &&
                     hMon != IntPtr.Zero)
                 {
                     var mi = new Win32Native.MONITORINFO();
                     mi.cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Win32Native.MONITORINFO>();
-                    if (newDpi > 0 && Win32Native.GetMonitorInfo(hMon, ref mi))
+                    if (Win32Native.GetMonitorInfo(hMon, ref mi))
                     {
-                        var oldCx = (rect.Left + rect.Right) / 2.0;
-                        var oldCy = (rect.Top + rect.Bottom) / 2.0;
                         var ratio = newDpi / oldDpi;
-                        _pendingDpiCenter = (
-                            mi.rcMonitor.Left + (oldCx - mi.rcMonitor.Left) * ratio,
-                            mi.rcMonitor.Top + (oldCy - mi.rcMonitor.Top) * ratio);
+                        // 锚点重映射：相对显示器原点的物理偏移按 DPI 比例缩放（视觉位置不变）
+                        _centerPixels = new System.Drawing.Point(
+                            (int)Math.Round(mi.rcMonitor.Left + (_centerPixels.X - mi.rcMonitor.Left) * ratio),
+                            (int)Math.Round(mi.rcMonitor.Top + (_centerPixels.Y - mi.rcMonitor.Top) * ratio));
                         Dispatcher.BeginInvoke(new Action(() =>
                         {
                             if (!IsVisible)
@@ -991,7 +992,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
                             var workAreaHeightDip = (mi.rcWork.Bottom - mi.rcWork.Top) / newDpi;
                             Height = Math.Min(NormalWindowSize, Math.Max(600, workAreaHeightDip));
-                            CenterOnPhysically(_pendingDpiCenter.X, _pendingDpiCenter.Y, "dpi-changed");
+                            CenterOnPhysically(_centerPixels.X, _centerPixels.Y, "dpi-changed");
                         }), DispatcherPriority.Render);
                     }
                 }
@@ -1007,17 +1008,31 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void PositionAroundCursor()
     {
-        var screenCtx = ScreenHelper.GetScreenContextAtPoint(new System.Windows.Point(_centerPixels.X, _centerPixels.Y));
-        // WPF 对 Left/Top 的解释取决于窗口“当前所在位置的 DPI”，而窗口隐藏时停靠在
-        // -32000（另一个 DPI 上下文）。用目标显示器 DPI 换算的 DIP 在两个上下文缩放比
-        // 不一致时会被再次缩放，轮盘中心偏离锚点（被拉向屏幕原点方向）。
-        // 因此初始估算用窗口当前 DPI，并在显示后再做物理像素校正（含渲染帧后自愈第二轮）。
-        // 尺寸用 Width/Height DP（刚赋值，Actual 尚未随布局刷新）。
+        // 关键：不用 WPF 的 Left/Top 属性放置！
+        // dotnet/wpf#3105（Open/Future）：PerMonitorV2 下 Left/Top 会被 WPF 按
+        // "窗口当前所在显示器 DPI 与目标显示器 DPI 的比值"再缩放一次，跨屏呼出必然错位。
+        // 改用 Win32 SetWindowPos 直接以物理像素定位——坐标含义无歧义，绕开该缺陷。
+        // 只定位不改变大小（NOSIZE）：尺寸交给 WPF 的 DPI 机制按 Width/Height DP 管理，
+        // 初始的中心误差由 CenterOnPhysically 在显示后按物理像素校正兜底。
         var windowDpi = GetWindowDpiScale();
-        var size = new System.Windows.Size(Width, Height);
-        Left = _centerPixels.X / windowDpi - size.Width / 2;
-        Top = _centerPixels.Y / windowDpi - size.Height / 2;
-        HostAssets.AppendLog($"[RadialMenuLog] Placement intent: anchor=({_centerPixels.X},{_centerPixels.Y}), left={Left:F1}, top={Top:F1}, size=({size.Width:F0}x{size.Height:F0}), windowDpi={windowDpi:F2}.");
+        var widthPhys = Width * windowDpi;
+        var heightPhys = Height * windowDpi;
+        var targetLeft = (int)Math.Round(_centerPixels.X - widthPhys / 2);
+        var targetTop = (int)Math.Round(_centerPixels.Y - heightPhys / 2);
+        HostAssets.AppendLog($"[RadialMenuLog] Placement intent (physical): anchor=({_centerPixels.X},{_centerPixels.Y}), left={targetLeft}, top={targetTop}, size=({widthPhys:F0}x{heightPhys:F0}), windowDpi={windowDpi:F2}.");
+        var helper = new System.Windows.Interop.WindowInteropHelper(this);
+        var handle = helper.Handle;
+        if (handle != IntPtr.Zero)
+        {
+            Win32Native.SetWindowPos(
+                handle,
+                IntPtr.Zero,
+                targetLeft,
+                targetTop,
+                0,
+                0,
+                Win32Native.SWP_NOSIZE | Win32Native.SWP_NOZORDER | Win32Native.SWP_NOACTIVATE);
+        }
     }
 
     private double GetWindowDpiScale()
@@ -1083,9 +1098,19 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            Left += deltaX / windowDpi;
-            Top += deltaY / windowDpi;
-            HostAssets.AppendLog($"[RadialMenuLog] Center corrected ({pass}): moved by ({deltaX / windowDpi:F1},{deltaY / windowDpi:F1}) DIP.");
+            // 纯物理像素修正（SetWindowPos 直改位置），全程零 DPI 换算——
+            // 不经过 WPF Left/Top 属性路径，天然免疫 dotnet/wpf#3105 的跨屏缩放
+            var targetLeft = (int)Math.Round(rect.Left + deltaX);
+            var targetTop = (int)Math.Round(rect.Top + deltaY);
+            Win32Native.SetWindowPos(
+                handle,
+                IntPtr.Zero,
+                targetLeft,
+                targetTop,
+                0,
+                0,
+                Win32Native.SWP_NOSIZE | Win32Native.SWP_NOZORDER | Win32Native.SWP_NOACTIVATE);
+            HostAssets.AppendLog($"[RadialMenuLog] Center corrected ({pass}): moved to ({targetLeft},{targetTop}) physical.");
         }
         catch (Exception ex)
         {
