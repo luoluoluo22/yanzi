@@ -58,6 +58,14 @@ public static class HotkeyHelper
 
         return key switch
         {
+            Key.Space => "Space",
+            Key.Return => "Enter",
+            Key.Escape => "Esc",
+            Key.Tab => "Tab",
+            Key.Back => "Backspace",
+            Key.Next => "PageDown",
+            Key.Prior => "PageUp",
+            Key.Capital => "CapsLock",
             Key.OemTilde => "~",
             Key.OemMinus => "-",
             Key.OemPlus => "=",
