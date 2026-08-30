@@ -110,6 +110,7 @@ public partial class HotkeyCaptureWindow : Window
         Deactivated += (_, _) =>
         {
             HostAssets.AppendLog($"[HotkeyCaptureLog] Deactivated: foreHwnd=0x{GetForegroundWindow():X}");
+            ResetModifierTracking();
         };
         GotKeyboardFocus += (_, e) =>
         {
@@ -181,6 +182,12 @@ public partial class HotkeyCaptureWindow : Window
         }
     }
 
+    private bool _isLWinDown;
+    private bool _isRWinDown;
+    private bool _isAltDown;
+    private bool _isCtrlDown;
+    private bool _isShiftDown;
+
     private IntPtr LowLevelKeyboardCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
@@ -191,24 +198,43 @@ public partial class HotkeyCaptureWindow : Window
 
             if (isKeyDown || isKeyUp)
             {
+                var hookStruct = System.Runtime.InteropServices.Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+                var vkCode = (int)hookStruct.vkCode;
+                var key = KeyInterop.KeyFromVirtualKey(vkCode);
+
+                // 显式维护物理修饰键状态（特别是 Win 键，由于被钩子吃掉后系统消息队列不会记录，必须在钩子中实时追踪）
+                if (vkCode is 0x5B) _isLWinDown = isKeyDown;
+                else if (vkCode is 0x5C) _isRWinDown = isKeyDown;
+                else if (vkCode is 0x12 or 0xA4 or 0xA5) _isAltDown = isKeyDown;
+                else if (vkCode is 0x11 or 0xA2 or 0xA3) _isCtrlDown = isKeyDown;
+                else if (vkCode is 0x10 or 0xA0 or 0xA1) _isShiftDown = isKeyDown;
+
                 // 如果用户正在编辑显示名称文本框，放行所有输入
                 if (IsEditingDisplayName())
                 {
                     return CallNextHookEx(_keyboardHookHandle, nCode, wParam, lParam);
                 }
 
-                var hookStruct = System.Runtime.InteropServices.Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
-                var vkCode = (int)hookStruct.vkCode;
-                var key = KeyInterop.KeyFromVirtualKey(vkCode);
-
                 if (key != Key.None)
                 {
                     if (isKeyDown)
                     {
                         var modifiers = GetCurrentModifiers();
-                        if ((hookStruct.flags & LLKHF_ALTDOWN) != 0 && !modifiers.HasFlag(ModifierKeys.Alt))
+                        if (_isLWinDown || _isRWinDown)
+                        {
+                            modifiers |= ModifierKeys.Windows;
+                        }
+                        if (_isAltDown || (hookStruct.flags & LLKHF_ALTDOWN) != 0)
                         {
                             modifiers |= ModifierKeys.Alt;
+                        }
+                        if (_isCtrlDown)
+                        {
+                            modifiers |= ModifierKeys.Control;
+                        }
+                        if (_isShiftDown)
+                        {
+                            modifiers |= ModifierKeys.Shift;
                         }
 
                         HostAssets.AppendLog($"[HotkeyCaptureLog] LLHook KeyDown: vk=0x{vkCode:X}, key={key}, modifiers={modifiers}, flags=0x{hookStruct.flags:X}");
@@ -216,7 +242,7 @@ public partial class HotkeyCaptureWindow : Window
                         var handled = HandleCapturedKey(key, modifiers);
                         if (handled)
                         {
-                            // 拦截按键，彻底防止系统处理 Alt+Tab 切屏、Alt+Esc、Alt+F4 或 Windows 快捷键
+                            // 拦截按键，彻底防止系统处理 Alt+Tab 切屏、Win+R 运行、Win+E 资源管理器、Win+D 桌面等系统热键
                             return (IntPtr)1;
                         }
                     }
@@ -454,6 +480,19 @@ public partial class HotkeyCaptureWindow : Window
         return true;
     }
 
+    private void ResetModifierTracking()
+    {
+        _isLWinDown = false;
+        _isRWinDown = false;
+        _isAltDown = false;
+        _isCtrlDown = false;
+        _isShiftDown = false;
+        _pendingModifierKey = null;
+        _lastModifierShortcut = null;
+        _lastModifierTapTimestamp = 0;
+        _capturedChordDuringModifierPress = false;
+    }
+
     private void RetryButton_Click(object sender, RoutedEventArgs e)
     {
         ShortcutText = string.Empty;
@@ -465,10 +504,7 @@ public partial class HotkeyCaptureWindow : Window
         _suppressDisplayNameSync = false;
         DisplayNameText = string.Empty;
         _displayNameManuallyEdited = false;
-        _pendingModifierKey = null;
-        _lastModifierShortcut = null;
-        _lastModifierTapTimestamp = 0;
-        _capturedChordDuringModifierPress = false;
+        ResetModifierTracking();
         Focus();
     }
 
@@ -494,10 +530,7 @@ public partial class HotkeyCaptureWindow : Window
         _displayNameManuallyEdited = false;
         ConfirmButton.IsEnabled = true;
         ErrorText.Visibility = Visibility.Collapsed;
-        _pendingModifierKey = null;
-        _lastModifierShortcut = null;
-        _lastModifierTapTimestamp = 0;
-        _capturedChordDuringModifierPress = false;
+        ResetModifierTracking();
         Focus();
     }
 
