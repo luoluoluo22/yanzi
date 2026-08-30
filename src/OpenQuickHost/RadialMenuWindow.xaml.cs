@@ -191,12 +191,16 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         MouseRightButtonDown += RadialMenuWindow_MouseRightButtonDown;
         Deactivated += (_, _) =>
         {
-            HostAssets.AppendLog($"[PickerLog] RadialMenu Deactivated: isVisible={IsVisible}, isEditLocked={_editModeLocked}, isEditActive={_editInteractionActive}, isPickerMode={_mainWindow.IsRadialPickerMode}, popupOpen={_mainWindow.SearchScopePopup?.IsOpen}.");
+            HostAssets.AppendLog($"[PickerLog] RadialMenu Deactivated: isVisible={IsVisible}, isEditLocked={_editModeLocked}, wasActivatedForEdit={_wasActivatedForEdit}, isOpeningSubDialog={_isOpeningSubDialog}, isEditActive={_editInteractionActive}, isPickerMode={_mainWindow.IsRadialPickerMode}, popupOpen={_mainWindow.SearchScopePopup?.IsOpen}.");
             if (_mainWindow.IsRadialPickerMode || _mainWindow.SearchScopePopup?.IsOpen == true)
             {
                 return;
             }
-            if (IsVisible && !_editModeLocked && !_editInteractionActive)
+            if (_editModeLocked || _wasActivatedForEdit || _isOpeningSubDialog || _editInteractionActive)
+            {
+                return;
+            }
+            if (IsVisible)
             {
                 _selectionTimer.Stop();
                 Hide();
@@ -3734,13 +3738,19 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void RefreshFromSettings(string pageId, int index, bool ensureChildRingVisible)
     {
-
+        if (_editModeLocked)
+        {
+            EnsureActivatedForEdit();
+            LoadRadialMenuPages();
+            BuildItems((AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
+            UpdateEditModeState();
+            ActiveTitle = "编辑已保存";
+            _selectionTimer.Start();
+            return;
+        }
 
         BuildItems((AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
-
-        // 重新载入页面设定，并清空所有子环让其重新在悬浮时构建
         SubRings.Clear();
-
         UpdateEditModeState();
         ActiveTitle = "编辑已保存";
         _selectionTimer.Start();
