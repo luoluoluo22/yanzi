@@ -206,7 +206,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 Hide();
             }
         };
-        SourceInitialized += (_, _) => EnsureNoActivateStyle();
+        SourceInitialized += (_, _) =>
+        {
+            EnsureNoActivateStyle();
+            // 运行期改变显示缩放：WM_DPICHANGED 的建议矩形会移动窗口使轮盘中心漂离锚点，
+            // 延迟一帧按锚点物理校正（窗口生命周期与应用相同，无需退订）
+            var source = (System.Windows.Interop.HwndSource?)PresentationSource.FromVisual(this);
+            source?.AddHook(RadialWindowWndProc);
+        };
         Loaded += (_, _) =>
         {
             EnsureNoActivateStyle();
@@ -805,8 +812,15 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         HostAssets.AppendDebug($"[RadialResidualDebug] ShowAtMouse start: isVisible={IsVisible}, _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, anchor={anchorPoint}.");
 
-        Width = NormalWindowSize;
-        Height = NormalWindowSize;
+        // 1400 DIP 的窗口在高缩放比/低分辨率屏幕上比工作区还高，系统会把底边钳进
+        // 工作区导致窗口实际高度 ≠ 1400（轮盘视觉中心与窗口坐标数学脱节的根因）。
+        // 与其被动被钳，不如主动收缩到工作区，让 GetWindowCenter 自适应实际尺寸。
+        var showWorkArea = ScreenHelper.GetScreenContextAtPoint(
+            anchorPoint.HasValue
+                ? new System.Windows.Point(anchorPoint.Value.X, anchorPoint.Value.Y)
+                : ScreenHelper.GetCursorPhysicalPosition()).DipWorkArea;
+        Width = Math.Min(NormalWindowSize, Math.Max(600, showWorkArea.Width));
+        Height = Math.Min(NormalWindowSize, Math.Max(600, showWorkArea.Height));
         UpdateLayout();
 
         _isExecuting = false;
@@ -938,6 +952,19 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         HostAssets.AppendLog($"Radial menu layout rebuilt: reason={reason}, size=({ActualWidth:0.##},{ActualHeight:0.##}), page={_currentPageId}.");
     }
 
+    private const int WmDpiChanged = 0x02E1;
+
+    private IntPtr RadialWindowWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WmDpiChanged && IsVisible)
+        {
+            // 让 WPF 先完成按建议矩形的尺寸/位置调整与重排，再按锚点拉回中心
+            Dispatcher.BeginInvoke(new Action(() => CenterOnAnchorPhysically("dpi-changed")), DispatcherPriority.Render);
+        }
+
+        return IntPtr.Zero;
+    }
+
     private void PositionAroundCursor()
     {
         var screenCtx = ScreenHelper.GetScreenContextAtPoint(new System.Windows.Point(_centerPixels.X, _centerPixels.Y));
@@ -945,8 +972,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         // -32000（另一个 DPI 上下文）。用目标显示器 DPI 换算的 DIP 在两个上下文缩放比
         // 不一致时会被再次缩放，轮盘中心偏离锚点（被拉向屏幕原点方向）。
         // 因此初始估算用窗口当前 DPI，并在显示后再做物理像素校正（含渲染帧后自愈第二轮）。
+        // 尺寸用 Width/Height DP（刚赋值，Actual 尚未随布局刷新）。
         var windowDpi = GetWindowDpiScale();
-        var size = GetMenuSize();
+        var size = new System.Windows.Size(Width, Height);
         Left = _centerPixels.X / windowDpi - size.Width / 2;
         Top = _centerPixels.Y / windowDpi - size.Height / 2;
         HostAssets.AppendLog($"[RadialMenuLog] Placement intent: anchor=({_centerPixels.X},{_centerPixels.Y}), left={Left:F1}, top={Top:F1}, size=({size.Width:F0}x{size.Height:F0}), windowDpi={windowDpi:F2}.");
@@ -1028,23 +1056,32 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private System.Windows.Size GetMenuSize()
     {
-        if (!_editModeLocked)
-        {
-            return new System.Windows.Size(NormalWindowSize, NormalWindowSize);
-        }
+        // 统一返回窗口实际尺寸：窗口高度可能被工作区钳制（1400 DIP 的轮盘在
+        // 低分辨率/高缩放屏幕上放不下），布局与定位数学必须以实际尺寸为准
         var width = ActualWidth > 1 ? ActualWidth : Width;
         var height = ActualHeight > 1 ? ActualHeight : Height;
         return new System.Windows.Size(width, height);
     }
 
-    private System.Windows.Point GetMenuCenter()
+    /// <summary>
+    /// 窗口坐标系的轮盘中心 = 窗口实际几何中心。
+    /// 轮盘容器（1400x1400）在窗口内双向居中，因此无论窗口被工作区钳制到多高，
+    /// 轮盘视觉中心始终在 (ActualWidth/2, ActualHeight/2)。
+    /// 引导线、命中测试、死区判定等所有"窗口坐标 vs 中心"的数学都必须用这个，
+    /// 否则与轮盘视觉脱节（引导线不从轮盘中心出现的根因）。
+    /// </summary>
+    private System.Windows.Point GetWindowCenter()
     {
-        if (!_editModeLocked)
-        {
-            return new System.Windows.Point(NormalMenuCenter, NormalMenuCenter);
-        }
         var size = GetMenuSize();
         return new System.Windows.Point(size.Width / 2, size.Height / 2);
+    }
+
+    /// <summary>
+    /// 容器坐标系（1400x1400 画布）的轮盘中心，仅供 BuildItems 等容器内布局使用。
+    /// </summary>
+    private System.Windows.Point GetMenuCenter()
+    {
+        return new System.Windows.Point(NormalMenuCenter, NormalMenuCenter);
     }
 
     public void ExecuteSelectedFromHoldRelease()
@@ -1168,7 +1205,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         cursorPoint = GetCursorWindowPoint();
-        var center = GetMenuCenter();
+        var center = GetWindowCenter();
         var dx = cursorPoint.X - center.X;
         var dy = cursorPoint.Y - center.Y;
         var distanceFromCenter = Math.Sqrt(dx * dx + dy * dy);
@@ -1448,7 +1485,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         IsSearchHoverActive = false;
         IsCloseHoverActive = false;
 
-        var center = GetMenuCenter();
+        var center = GetWindowCenter();
 
         // 如果处于编辑模式，计算相对于 SubRings 画布的实际坐标 (加上垂直滚动偏移)
         var contentPoint = _editModeLocked
@@ -2460,7 +2497,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var center = GetMenuCenter();
+        var center = GetWindowCenter();
         var dxMain = clickPoint.X - center.X;
         var dyMain = clickPoint.Y - center.Y;
         var distMain = Math.Sqrt(dxMain * dxMain + dyMain * dyMain);
@@ -2818,7 +2855,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private bool IsPointInCenter(System.Windows.Point point)
     {
-        var center = GetMenuCenter();
+        var center = GetWindowCenter();
         var dx = point.X - center.X;
         var dy = point.Y - center.Y;
         return Math.Sqrt(dx * dx + dy * dy) <= 40;
@@ -4884,7 +4921,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         // 3. 主环
-        var center = GetMenuCenter();
+        var center = GetWindowCenter();
         var dxMain = localPoint.X - center.X;
         var dyMain = localPoint.Y - center.Y;
         var distanceMain = Math.Sqrt(dxMain * dxMain + dyMain * dyMain);
