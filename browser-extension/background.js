@@ -213,8 +213,21 @@ function injectAndStart(tabId, task) {
 }
 
 // 监听来自 content.js 或 popup 的消息
-chrome.runtime.onMessage.addListener((message, sender) => {
-  // 1. 处理来自控制面板的重连请求
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 1. 获取实时活跃状态
+  if (message.action === "get_status") {
+    const isWsOpen = Boolean(ws && ws.readyState === WebSocket.OPEN);
+    if (!isWsOpen) {
+      updateStatus("disconnected");
+      connectWebSocket();
+    } else {
+      updateStatus("connected");
+    }
+    sendResponse({ status: isWsOpen ? "connected" : "disconnected" });
+    return true;
+  }
+
+  // 2. 处理来自控制面板的重连请求
   if (message.action === "reconnect") {
     logEvent("收到来自控制面板的重新连接请求...");
     if (reconnectTimer) {
@@ -226,10 +239,11 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     }
     reconnectDelay = 1000; // 重置延迟
     connectWebSocket();
-    return;
+    sendResponse({ status: "connecting" });
+    return true;
   }
 
-  // 2. 监听来自 content.js 的返回结果
+  // 3. 监听来自 content.js 的返回结果
   if (message.type === "task_result" && sender.tab) {
     const tabId = sender.tab.id;
     logEvent(`任务 [${message.taskId}] 执行完成，提取到数据，正在回传...`);
@@ -251,15 +265,21 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   }
 });
 
-// 定时心跳以保持 Service Worker 存活并维护 WebSocket 活性
-setInterval(() => {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "ping" }));
-  } else if ((!ws || ws.readyState === WebSocket.CLOSED) && !reconnectTimer) {
-    // 兜底重连
-    scheduleReconnect();
+// 使用 chrome.alarms 实现可靠的后台保活与心跳
+chrome.alarms.create("yanziKeepAlive", { periodInMinutes: 0.4 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "yanziKeepAlive") {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({ type: "ping" }));
+      } catch (e) {
+        connectWebSocket();
+      }
+    } else if (!reconnectTimer) {
+      connectWebSocket();
+    }
   }
-}, 20000);
+});
 
 // 初始化连接
 connectWebSocket();

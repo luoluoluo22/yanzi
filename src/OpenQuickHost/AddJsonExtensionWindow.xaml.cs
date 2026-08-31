@@ -77,6 +77,8 @@ public partial class AddJsonExtensionWindow : Window
         _settings = AppSettingsStore.Load();
         _manualMode = true;
 
+        HostAssets.AppendLog($"[EditorTabMemory] Ctor: isEditMode={_isEditMode}, LastExtensionEditorTab='{_settings.LastExtensionEditorTab}'.");
+
         ConfigureMode(_initialJson);
 
         Loaded += (_, _) =>
@@ -99,7 +101,18 @@ public partial class AddJsonExtensionWindow : Window
             TestArgumentBox.Text = _settings.LastTestArgument ?? "示例参数";
             UpdateTestArgumentPlaceholderVisibility();
 
+            _settings = AppSettingsStore.Load();
+            bool prefersAiTab = string.Equals(_settings.LastExtensionEditorTab, "ai", StringComparison.OrdinalIgnoreCase);
+            HostAssets.AppendLog($"[EditorTabMemory] Loaded Start: isEditMode={_isEditMode}, prefersAiTab={prefersAiTab}, LastExtensionEditorTab='{_settings.LastExtensionEditorTab}'.");
+
             if (_isEditMode && ShouldOpenAdvancedEditorForExistingJson(_initialJson))
+            {
+                AdvancedModeTab.IsChecked = true;
+                SimpleModePanel.Visibility = Visibility.Collapsed;
+                AdvancedModePanel.Visibility = Visibility.Visible;
+                _manualMode = true;
+            }
+            else if (prefersAiTab)
             {
                 AdvancedModeTab.IsChecked = true;
                 SimpleModePanel.Visibility = Visibility.Collapsed;
@@ -147,9 +160,26 @@ public partial class AddJsonExtensionWindow : Window
                 AdvancedModeTab.IsChecked = true;
                 SimpleModePanel.Visibility = Visibility.Collapsed;
                 AdvancedModePanel.Visibility = Visibility.Visible;
+                _manualMode = true;
+            }
+            else if (prefersAiTab)
+            {
+                AdvancedModeTab.IsChecked = true;
+                SimpleModePanel.Visibility = Visibility.Collapsed;
+                AdvancedModePanel.Visibility = Visibility.Visible;
+                _manualMode = true;
+            }
+            else
+            {
+                SimpleModeTab.IsChecked = true;
+                SimpleModePanel.Visibility = Visibility.Visible;
+                AdvancedModePanel.Visibility = Visibility.Collapsed;
+                _manualMode = false;
             }
             // 初始化完成，允许同步
             _isInitializing = false;
+
+            HostAssets.AppendLog($"[EditorTabMemory] Loaded End: SimpleTab={SimpleModeTab.IsChecked}, AdvTab={AdvancedModeTab.IsChecked}, SimplePanel={SimpleModePanel.Visibility}, AdvPanel={AdvancedModePanel.Visibility}.");
 
             // 启动浏览器助手连接状态监测定时器，实时感知插件连接状态并自动消隐引导横幅
             StartBrowserExtensionStateWatcher();
@@ -161,6 +191,11 @@ public partial class AddJsonExtensionWindow : Window
         Closed += (s, e) =>
         {
             _browserExtensionCheckTimer?.Stop();
+            var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+            if (agentServer != null)
+            {
+                agentServer.BrowserConnectionChanged -= OnAgentServerBrowserConnectionChanged;
+            }
         };
     }
 
@@ -202,8 +237,12 @@ public partial class AddJsonExtensionWindow : Window
         {
             using var document = JsonDocument.Parse(initialJson);
             var root = document.RootElement;
-            return root.ValueKind == JsonValueKind.Object &&
-                   root.TryGetProperty("app", out _);
+            if (root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("app", out var appProp))
+            {
+                return appProp.ValueKind == JsonValueKind.Object;
+            }
+            return false;
         }
         catch
         {
@@ -368,12 +407,23 @@ public partial class AddJsonExtensionWindow : Window
     {
         UpdateBrowserExtensionBannerVisibility();
 
+        var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+        if (agentServer != null)
+        {
+            agentServer.BrowserConnectionChanged += OnAgentServerBrowserConnectionChanged;
+        }
+
         _browserExtensionCheckTimer = new System.Windows.Threading.DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(1.5)
+            Interval = TimeSpan.FromSeconds(1.0)
         };
         _browserExtensionCheckTimer.Tick += (s, ev) => UpdateBrowserExtensionBannerVisibility();
         _browserExtensionCheckTimer.Start();
+    }
+
+    private void OnAgentServerBrowserConnectionChanged(bool isConnected)
+    {
+        Dispatcher.InvokeAsync(UpdateBrowserExtensionBannerVisibility);
     }
 
     private void UpdateBrowserExtensionBannerVisibility()
@@ -1770,13 +1820,21 @@ public partial class AddJsonExtensionWindow : Window
             _ = JsonSerializer.Deserialize<LocalExtensionManifest>(normalizedJson, CreateJsonOptions())
                 ?? throw new InvalidOperationException("JSON 解析失败。");
 
+            // 记忆用户在保存时所在的 Tab 页面（简单小程序还是 AI 生成）
+            var currentTab = (SimpleModeTab?.IsChecked == true || SimpleModePanel?.Visibility == Visibility.Visible) ? "simple" : "ai";
+            HostAssets.AppendLog($"[EditorTabMemory] SaveButton_Click: SimpleTab={SimpleModeTab?.IsChecked}, AdvTab={AdvancedModeTab?.IsChecked}, SimplePanel={SimpleModePanel?.Visibility}, AdvPanel={AdvancedModePanel?.Visibility} => saving '{currentTab}'.");
+            var settings = AppSettingsStore.Load();
+            settings.LastExtensionEditorTab = currentTab;
+            AppSettingsStore.Save(settings);
+            _settings.LastExtensionEditorTab = currentTab;
+
             if (Owner is MainWindow mainWindow)
             {
                 PersistedCommand = mainWindow.PersistJsonExtensionFromDialog(normalizedJson, _isEditMode);
             }
 
             WasAccepted = true;
-            HostAssets.AppendLog("AddJson save accepted: dialog validation passed.");
+            HostAssets.AppendLog($"[EditorTabMemory] AddJson save accepted: dialog validation passed, lastTab={currentTab}.");
 
             if (IsLoaded)
             {

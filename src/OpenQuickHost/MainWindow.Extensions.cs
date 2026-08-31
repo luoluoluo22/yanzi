@@ -39,6 +39,15 @@ public partial class MainWindow
         ApplyNewExtensionState(command);
         RefreshExtensionHotkeys();
 
+        ExtensionIconLibrary.InvalidateAssociatedIconCache();
+        if (!string.IsNullOrWhiteSpace(command.IconReference))
+        {
+            ExtensionIconLibrary.InvalidateImageCache(command.IconReference, command.ExtensionDirectoryPath);
+        }
+
+        _radialMenu?.LoadRadialMenuPages();
+        _quickPanel?.LoadSlots();
+
         if (!_isReplacingLocalExtensions)
         {
             SyncLocalExtensionsToCloud();

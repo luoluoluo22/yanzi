@@ -259,9 +259,11 @@ public partial class AddJsonExtensionWindow
     {
         var dialog = new HotkeyCaptureWindow(
             "设置小程序快捷键",
-            "窗口激活后，按一次组合键即可完成录制。留空可清除快捷键。",
+            "窗口激活后，按下按键组合或单个按键（支持 Win 键、Ctrl/Alt/Shift 组合键、F1-F12 及单键）即可完成录制。留空可清除快捷键。",
             GlobalShortcutBox.Text ?? string.Empty,
-            allowEmpty: true)
+            allowEmpty: true,
+            allowDoubleTap: false,
+            allowModifierless: true)
         {
             Owner = this
         };
@@ -637,9 +639,12 @@ public partial class AddJsonExtensionWindow
     // ===================== 模式切换 =====================
     private void SimpleModeTab_Checked(object sender, RoutedEventArgs e)
     {
+        HostAssets.AppendLog($"[EditorTabMemory] SimpleModeTab_Checked triggered: _isInitializing={_isInitializing}.");
         if (SimpleModePanel == null || AdvancedModePanel == null) return;
         SimpleModePanel.Visibility = Visibility.Visible;
         AdvancedModePanel.Visibility = Visibility.Collapsed;
+        _manualMode = false;
+        _settings.LastExtensionEditorTab = "simple";
         UpdateAiRightViewMode();
         if (_isInitializing) return;
         // 从 JSON 同步回简单表单
@@ -653,9 +658,12 @@ public partial class AddJsonExtensionWindow
 
     private void AdvancedModeTab_Checked(object sender, RoutedEventArgs e)
     {
+        HostAssets.AppendLog($"[EditorTabMemory] AdvancedModeTab_Checked triggered: _isInitializing={_isInitializing}.");
         if (SimpleModePanel == null || AdvancedModePanel == null) return;
         SimpleModePanel.Visibility = Visibility.Collapsed;
         AdvancedModePanel.Visibility = Visibility.Visible;
+        _manualMode = true;
+        _settings.LastExtensionEditorTab = "ai";
         UpdateBrowserExtensionBannerVisibility();
         UpdateAiRightViewMode();
         if (_isInitializing) return;
@@ -1180,7 +1188,7 @@ public partial class AddJsonExtensionWindow
     {
         var dialog = new HotkeyCaptureWindow(
             "录制模拟按键",
-            "请直接按下要发送给前台窗口的按键组合。Win 键组合暂不支持模拟发送。",
+            "请直接按下要发送给前台窗口的按键组合或单个按键（支持 Win 键、Ctrl/Alt/Shift 组合键、F1-F12 及单个按键）。",
             HotkeySequenceBox.Text,
             allowEmpty: false,
             allowModifierless: true)
@@ -1193,7 +1201,7 @@ public partial class AddJsonExtensionWindow
             return;
         }
 
-        if (!TryConvertShortcutToSendKeys(dialog.ShortcutText, out _, out var error))
+        if (!TryConvertShortcutToSimulationScript(dialog.ShortcutText, out _, out var error))
         {
             ShowError(error);
             return;
@@ -1204,39 +1212,42 @@ public partial class AddJsonExtensionWindow
 
     private void RebuildHotkeyScript()
     {
-        if (!TryConvertShortcutToSendKeys(HotkeySequenceBox.Text, out var sendKeys, out _))
+        if (!TryConvertShortcutToSimulationScript(HotkeySequenceBox.Text, out var script, out _))
         {
-            sendKeys = "^c";
+            script =
+                "param([string]$InputText = \"\", [string]$ContextPath = \"\")\r\n" +
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r\n" +
+                "Add-Type -AssemblyName System.Windows.Forms\r\n" +
+                "[System.Windows.Forms.SendKeys]::SendWait(\"^c\")\r\n" +
+                "Write-Output \"已发送按键。\"";
         }
 
-        var seq = sendKeys.Replace("\"", "`\"");
-        ScriptSourceBox.Text =
-            "param([string]$InputText = \"\", [string]$ContextPath = \"\")\r\n" +
-            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r\n" +
-            "Add-Type -AssemblyName System.Windows.Forms\r\n" +
-            $"[System.Windows.Forms.SendKeys]::SendWait(\"{seq}\")\r\n" +
-            "Write-Output \"已发送按键。\"";
+        ScriptSourceBox.Text = script;
         RuntimeBox.Text = "powershell";
         EntryModeBox.Text = "inline";
     }
 
-    private static bool TryConvertShortcutToSendKeys(string? shortcutText, out string sendKeys, out string error)
+    private static bool TryConvertShortcutToSimulationScript(string? shortcutText, out string generatedScript, out string error)
     {
-        sendKeys = string.Empty;
+        generatedScript = string.Empty;
         error = string.Empty;
 
         var text = (shortcutText ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(text))
         {
-            error = "请先录制一个按键组合。";
+            error = "请先录制一个按键或按键组合。";
             return false;
         }
 
-        if (text.Contains('^') ||
-            text.Contains('%') ||
-            text.StartsWith("+", StringComparison.Ordinal))
+        if (text.Contains('^') || text.Contains('%') || text.StartsWith("+", StringComparison.Ordinal))
         {
-            sendKeys = text;
+            var rawSeq = text.Replace("\"", "`\"");
+            generatedScript =
+                "param([string]$InputText = \"\", [string]$ContextPath = \"\")\r\n" +
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r\n" +
+                "Add-Type -AssemblyName System.Windows.Forms\r\n" +
+                $"[System.Windows.Forms.SendKeys]::SendWait(\"{rawSeq}\")\r\n" +
+                "Write-Output \"已发送按键。\"";
             return true;
         }
 
@@ -1247,110 +1258,180 @@ public partial class AddJsonExtensionWindow
             return false;
         }
 
-        var key = parts[^1];
-        var modifiers = parts.Take(parts.Length - 1).ToArray();
-        var builder = new StringBuilder();
-        foreach (var modifier in modifiers)
+        var modVks = new List<byte>();
+        byte mainVk = 0;
+
+        if (parts.Length == 1)
         {
-            if (modifier.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) ||
-                modifier.Equals("Control", StringComparison.OrdinalIgnoreCase))
+            var singleKey = parts[0];
+            if (!TryResolveVirtualKey(singleKey, out mainVk))
             {
-                builder.Append('^');
-            }
-            else if (modifier.Equals("Alt", StringComparison.OrdinalIgnoreCase))
-            {
-                builder.Append('%');
-            }
-            else if (modifier.Equals("Shift", StringComparison.OrdinalIgnoreCase))
-            {
-                builder.Append('+');
-            }
-            else if (modifier.Equals("Win", StringComparison.OrdinalIgnoreCase) ||
-                     modifier.Equals("Windows", StringComparison.OrdinalIgnoreCase))
-            {
-                error = "SendKeys 不支持可靠模拟 Win 键组合，请改用 Ctrl / Alt / Shift 组合。";
+                error = $"暂不支持的按键：{singleKey}";
                 return false;
             }
-            else
+        }
+        else
+        {
+            var mainKeyStr = parts[^1];
+            var modifierStrs = parts.Take(parts.Length - 1).ToArray();
+
+            foreach (var mod in modifierStrs)
             {
-                error = $"暂不支持的修饰键：{modifier}";
+                if (mod.Equals("Win", StringComparison.OrdinalIgnoreCase) ||
+                    mod.Equals("Windows", StringComparison.OrdinalIgnoreCase) ||
+                    mod.Equals("LWin", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x5B); // VK_LWIN
+                }
+                else if (mod.Equals("RWin", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x5C); // VK_RWIN
+                }
+                else if (mod.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) ||
+                         mod.Equals("Control", StringComparison.OrdinalIgnoreCase) ||
+                         mod.Equals("LCtrl", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x11); // VK_CONTROL
+                }
+                else if (mod.Equals("RCtrl", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0xA3); // VK_RCONTROL
+                }
+                else if (mod.Equals("Alt", StringComparison.OrdinalIgnoreCase) ||
+                         mod.Equals("LAlt", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x12); // VK_MENU
+                }
+                else if (mod.Equals("RAlt", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0xA5); // VK_RMENU
+                }
+                else if (mod.Equals("Shift", StringComparison.OrdinalIgnoreCase) ||
+                         mod.Equals("LShift", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x10); // VK_SHIFT
+                }
+                else if (mod.Equals("RShift", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0xA1); // VK_RSHIFT
+                }
+                else
+                {
+                    error = $"暂不支持的修饰键：{mod}";
+                    return false;
+                }
+            }
+
+            if (!TryResolveVirtualKey(mainKeyStr, out mainVk))
+            {
+                error = $"暂不支持的按键：{mainKeyStr}";
                 return false;
             }
         }
 
-        var sendKey = ConvertKeyNameToSendKeys(key);
-        if (string.IsNullOrWhiteSpace(sendKey))
+        var keybdLines = new List<string>();
+        foreach (var mod in modVks)
         {
-            error = $"暂不支持的按键：{key}";
-            return false;
+            keybdLines.Add($"[YanziWin32.Win32Keybd]::keybd_event(0x{mod:X2}, 0, 0, [UIntPtr]::Zero)");
+        }
+        if (mainVk != 0)
+        {
+            keybdLines.Add($"[YanziWin32.Win32Keybd]::keybd_event(0x{mainVk:X2}, 0, 0, [UIntPtr]::Zero)");
+            keybdLines.Add($"[YanziWin32.Win32Keybd]::keybd_event(0x{mainVk:X2}, 0, 2, [UIntPtr]::Zero)");
+        }
+        for (var i = modVks.Count - 1; i >= 0; i--)
+        {
+            keybdLines.Add($"[YanziWin32.Win32Keybd]::keybd_event(0x{modVks[i]:X2}, 0, 2, [UIntPtr]::Zero)");
         }
 
-        builder.Append(sendKey);
-        sendKeys = builder.ToString();
+        var executionBody = string.Join("\r\n", keybdLines);
+
+        generatedScript =
+            "param([string]$InputText = \"\", [string]$ContextPath = \"\")\r\n" +
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r\n" +
+            "if (-not ([System.Management.Automation.PSTypeName]'YanziWin32.Win32Keybd').Type) {\r\n" +
+            "    $sig = '[DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);'\r\n" +
+            "    Add-Type -MemberDefinition $sig -Name 'Win32Keybd' -Namespace 'YanziWin32'\r\n" +
+            "}\r\n" +
+            executionBody + "\r\n" +
+            "Write-Output \"已发送按键。\"";
+
         return true;
     }
 
-    private static string ConvertKeyNameToSendKeys(string key)
+    private static bool TryResolveVirtualKey(string key, out byte vk)
     {
-        if (key.Length == 1)
+        vk = 0;
+        var k = (key ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(k)) return false;
+
+        if (k.Length == 1)
         {
-            var ch = key[0];
-            return ch switch
-            {
-                '+' or '^' or '%' or '~' or '(' or ')' or '{' or '}' or '[' or ']' => "{" + ch + "}",
-                _ => key.ToLowerInvariant()
-            };
+            var ch = char.ToUpperInvariant(k[0]);
+            if (ch is >= 'A' and <= 'Z') { vk = (byte)ch; return true; }
+            if (ch is >= '0' and <= '9') { vk = (byte)ch; return true; }
         }
 
-        if (key.Length == 2 &&
-            (key[0] == 'D' || key[0] == 'd') &&
-            char.IsDigit(key[1]))
+        if (k.Length == 2 && (k[0] == 'D' || k[0] == 'd') && char.IsDigit(k[1]))
         {
-            return key[1].ToString();
+            vk = (byte)('0' + (k[1] - '0'));
+            return true;
         }
 
-        if (key.StartsWith("NumPad", StringComparison.OrdinalIgnoreCase) &&
-            key.Length == "NumPad0".Length &&
-            char.IsDigit(key[^1]))
+        if (k.StartsWith("NumPad", StringComparison.OrdinalIgnoreCase) &&
+            k.Length == "NumPad0".Length && char.IsDigit(k[^1]))
         {
-            return "{NUMPAD" + key[^1] + "}";
+            vk = (byte)(0x60 + (k[^1] - '0'));
+            return true;
         }
 
-        if (key.Length is >= 2 and <= 3 &&
-            (key[0] == 'F' || key[0] == 'f') &&
-            int.TryParse(key[1..], out var functionKey) &&
-            functionKey is >= 1 and <= 24)
+        if (k.Length is >= 2 and <= 3 &&
+            (k[0] == 'F' || k[0] == 'f') &&
+            int.TryParse(k[1..], out var fn) && fn is >= 1 and <= 24)
         {
-            return "{" + key.ToUpperInvariant() + "}";
+            vk = (byte)(0x70 + (fn - 1));
+            return true;
         }
 
-        return key.ToLowerInvariant() switch
+        vk = k.ToLowerInvariant() switch
         {
-            "enter" or "return" => "{ENTER}",
-            "esc" or "escape" => "{ESC}",
-            "backspace" or "back" => "{BACKSPACE}",
-            "delete" or "del" => "{DELETE}",
-            "insert" or "ins" => "{INSERT}",
-            "tab" => "{TAB}",
-            "space" => " ",
-            "home" => "{HOME}",
-            "end" => "{END}",
-            "pageup" or "prior" => "{PGUP}",
-            "pagedown" or "next" => "{PGDN}",
-            "up" => "{UP}",
-            "down" => "{DOWN}",
-            "left" => "{LEFT}",
-            "right" => "{RIGHT}",
-            "capslock" or "capital" => "{CAPSLOCK}",
-            "apps" => "{APPS}",
-            _ => string.Empty
+            "enter" or "return" => 0x0D,
+            "esc" or "escape" => 0x1B,
+            "backspace" or "back" => 0x08,
+            "delete" or "del" => 0x2E,
+            "insert" or "ins" => 0x2D,
+            "tab" => 0x09,
+            "space" => 0x20,
+            "home" => 0x24,
+            "end" => 0x23,
+            "pageup" or "prior" => 0x21,
+            "pagedown" or "next" => 0x22,
+            "up" => 0x26,
+            "down" => 0x28,
+            "left" => 0x25,
+            "right" => 0x27,
+            "capslock" or "capital" => 0x14,
+            "apps" or "menu" => 0x5D,
+            "printscreen" or "snapshot" => 0x2C,
+            "win" or "windows" or "lwin" => 0x5B,
+            "rwin" => 0x5C,
+            "ctrl" or "control" or "lctrl" => 0x11,
+            "rctrl" => 0xA3,
+            "alt" or "lalt" => 0x12,
+            "ralt" => 0xA5,
+            "shift" or "lshift" => 0x10,
+            "rshift" => 0xA1,
+            _ => 0
         };
+
+        return vk != 0;
     }
 
     private static bool LooksLikeGeneratedSendKeysScript(string? script)
     {
         return !string.IsNullOrWhiteSpace(script) &&
-               script.Contains("System.Windows.Forms.SendKeys", StringComparison.OrdinalIgnoreCase);
+               (script.Contains("System.Windows.Forms.SendKeys", StringComparison.OrdinalIgnoreCase) ||
+                script.Contains("KeystrokeSender", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool LooksLikeGeneratedPasteScript(string? script)

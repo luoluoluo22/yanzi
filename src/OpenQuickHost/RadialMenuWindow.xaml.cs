@@ -719,7 +719,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         ? (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF3B82F6")!
         : DefaultButtonIconBrush;
 
-    private void LoadRadialMenuPages()
+    internal void LoadRadialMenuPages()
     {
         var settings = AppSettingsStore.Load();
         settings.RadialMenu ??= new RadialMenuSettings();
@@ -873,13 +873,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             try
             {
-                Win32Native.GetWindowThreadProcessId(_previousForegroundWindow, out var processId);
-                using var process = System.Diagnostics.Process.GetProcessById((int)processId);
-                var name = process.ProcessName;
-                // 跳过轮盘宿主自身，避免把 OpenQuickHost 识别为目标应用
-                if (!name.Equals("OpenQuickHost", StringComparison.OrdinalIgnoreCase))
+                var resolvedName = WindowSensorHelper.GetWindowProcessName(_previousForegroundWindow);
+                if (!string.IsNullOrWhiteSpace(resolvedName))
                 {
-                    _activeProcessName = name;
+                    _activeProcessName = resolvedName;
                 }
             }
             catch (Exception ex)
@@ -1397,7 +1394,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         var pageName = page?.Name ?? "默认";
-        var appName = string.IsNullOrWhiteSpace(_activeProcessName) ? "全局" : _activeProcessName;
+        var appName = GetProcessDisplayName(_activeProcessName);
         PageDisplaySummary = $"轮盘: {pageName}  |  当前应用: {appName}";
 
         UpdateCenterText();
@@ -3560,13 +3557,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         if (!string.IsNullOrWhiteSpace(_activeProcessName))
         {
+            var friendlyAppName = GetProcessDisplayName(_activeProcessName);
             bool isBound = IsRadialSlotBoundToCurrentApp(target);
             if (isBound)
             {
                 menu.Items.Add(new Separator());
                 var unbindItem = new MenuItem
                 {
-                    Header = $"取消绑定 (当前应用: {_activeProcessName})",
+                    Header = $"取消绑定 (当前应用: {friendlyAppName})",
                     Icon = CreateMenuIcon("link", normalBrush)
                 };
                 unbindItem.Click += (_, _) => UnbindRadialSlotFromCurrentApp(target);
@@ -3577,7 +3575,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 menu.Items.Add(new Separator());
                 var bindItem = new MenuItem 
                 { 
-                    Header = $"绑定到当前应用: {_activeProcessName}",
+                    Header = $"绑定到当前应用: {friendlyAppName}",
                     Icon = CreateMenuIcon("link", normalBrush)
                 };
                 bindItem.Click += (_, _) => BindRadialSlotToCurrentApp(target);
@@ -3798,6 +3796,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             {
                 ActiveTitle = string.IsNullOrWhiteSpace(result.message) ? "已保存扩展修改" : result.message;
                 LoadRadialMenuPages();
+                BuildItems(_lastRadiusPixels);
             }
             else if (!string.IsNullOrWhiteSpace(result.message))
             {
@@ -4242,7 +4241,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         globalItem.Click += (s, e) => AddGlobalPage();
         contextMenu.Items.Add(globalItem);
 
-        var currentAppName = string.IsNullOrWhiteSpace(_activeProcessName) ? "当前应用" : _activeProcessName;
+        var currentAppName = string.IsNullOrWhiteSpace(_activeProcessName) ? "当前应用" : GetProcessDisplayName(_activeProcessName);
         var appItem = new MenuItem { Header = $"新建 {currentAppName} 专属轮盘" };
         appItem.Click += (s, e) => AddAppPage();
         contextMenu.Items.Add(appItem);
@@ -4292,6 +4291,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         settings.RadialMenu.Pages ??= [];
 
         var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
+        var friendlyName = GetProcessDisplayName(_activeProcessName);
         int appCount = settings.RadialMenu.Pages.Count(p => 
             !string.IsNullOrEmpty(p.ContextProcessName) && 
             p.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase)) + 1;
@@ -4299,9 +4299,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         var newPage = new RadialMenuPageSettings
         {
             Id = Guid.NewGuid().ToString("N"),
-            Name = appCount > 1 ? $"{_activeProcessName}专属 {appCount}" : $"{_activeProcessName}",
+            Name = appCount > 1 ? $"{friendlyName}专属 {appCount}" : $"{friendlyName}专属",
             ContextProcessName = normalizedProcess,
-            ContextDisplayName = _activeProcessName,
+            ContextDisplayName = friendlyName,
             Slots = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
             SlotTitles = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList(),
             ChildPageIds = Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount).ToList()
@@ -4926,10 +4926,23 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return null;
     }
 
+    private static string GetProcessDisplayName(string? processName)
+    {
+        if (string.IsNullOrWhiteSpace(processName)) return "全局";
+        if (string.Equals(processName, "desktop", StringComparison.OrdinalIgnoreCase)) return "桌面";
+        if (string.Equals(processName, "explorer", StringComparison.OrdinalIgnoreCase)) return "文件资源管理器";
+        return processName;
+    }
+
     private static ImageSource? GetProcessIcon(string processName)
     {
         try
         {
+            if (string.Equals(processName, "desktop", StringComparison.OrdinalIgnoreCase))
+            {
+                return ExtensionIconLibrary.ResolveImageSource("mdi:monitor-dashboard", null);
+            }
+
             var path = FindExecutablePath(processName);
             if (!string.IsNullOrEmpty(path) && File.Exists(path))
             {

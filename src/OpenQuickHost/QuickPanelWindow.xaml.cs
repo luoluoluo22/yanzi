@@ -243,11 +243,11 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     public string ContextSectionTitle => _foregroundAppContext == null
         ? "应用专属"
-        : $"应用专属 · {_foregroundAppContext.ProcessName}";
+        : $"应用专属 · {(_foregroundAppContext.ProcessName.Equals("desktop", StringComparison.OrdinalIgnoreCase) ? "桌面" : _foregroundAppContext.ProcessName)}";
 
     public string ContextHintText => _foregroundAppContext == null
         ? "你在用什么软件，这里就显示它专属的工具。"
-        : $"你在用什么软件，这里就显示它专属的工具。当前识别：{_foregroundAppContext.ProcessName}。";
+        : $"你在用什么软件，这里就显示它专属的工具。当前识别：{(_foregroundAppContext.ProcessName.Equals("desktop", StringComparison.OrdinalIgnoreCase) ? "桌面" : _foregroundAppContext.ProcessName)}。";
 
     private ImageSource? _contextProcessIcon;
     public ImageSource? ContextProcessIcon
@@ -500,7 +500,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private int GetActiveFolderDepth() => (_activeFolderReference?.ContainerPath.Count ?? 0) + (_activeFolderReference == null ? 0 : 1);
 
-    private void LoadSlots()
+    internal void LoadSlots()
     {
         _settings = AppSettingsStore.Load();
         LoadGroups();
@@ -4632,6 +4632,11 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return null;
         }
 
+        if (WindowSensorHelper.IsDesktopOrTaskbarWindow(hwnd))
+        {
+            return new ForegroundAppContext("desktop", "桌面");
+        }
+
         var titleBuilder = new StringBuilder(256);
         _ = NativeMethods.GetWindowText(hwnd, titleBuilder, titleBuilder.Capacity);
         _ = NativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
@@ -4666,6 +4671,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (_processIconCache.TryGetValue(processName, out var cached))
         {
             ContextProcessIcon = cached;
+            return;
+        }
+
+        if (string.Equals(processName, "desktop", StringComparison.OrdinalIgnoreCase))
+        {
+            var desktopIcon = ExtensionIconLibrary.ResolveImageSource("mdi:monitor-dashboard", null);
+            _processIconCache[processName] = desktopIcon;
+            ContextProcessIcon = desktopIcon;
             return;
         }
 

@@ -654,6 +654,7 @@ public static class AppSettingsStore
             .ToList();
         settings.WindowBindings = NormalizeWindowBindings(settings.WindowBindings);
         settings.LastTestArgument = string.IsNullOrWhiteSpace(settings.LastTestArgument) ? "示例参数" : settings.LastTestArgument.Trim();
+        settings.LastExtensionEditorTab = string.Equals(settings.LastExtensionEditorTab, "ai", StringComparison.OrdinalIgnoreCase) ? "ai" : "simple";
 
         settings.AutoBackupFrequency = string.IsNullOrWhiteSpace(settings.AutoBackupFrequency)
             ? "Weekly"
@@ -1115,6 +1116,8 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
     public double? SettingsWindowHeight { get; set; }
 
     public string LastTestArgument { get; set; } = "示例参数";
+
+    public string LastExtensionEditorTab { get; set; } = "simple";
 
     public string MobileExtensionsJson { get; set; } = "[]";
 

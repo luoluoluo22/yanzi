@@ -129,6 +129,7 @@ internal static class SyncCoverageCatalog
         yield return Device(nameof(AppSettings.SettingsWindowWidth), "本机窗口几何信息。");
         yield return Device(nameof(AppSettings.SettingsWindowHeight), "本机窗口几何信息。");
         yield return Device(nameof(AppSettings.LastTestArgument), "本机调试输入历史。");
+        yield return Device(nameof(AppSettings.LastExtensionEditorTab), "小程序编辑器上次偏好 Tab。");
         yield return Device(nameof(AppSettings.MobileExtensionsJson), "本机移动端代理缓存。");
 
         // 密钥或设备身份只允许留在本机。

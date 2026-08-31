@@ -9,6 +9,17 @@ document.addEventListener("DOMContentLoaded", () => {
   chrome.storage.local.get(["connectionStatus", "logs"], (result) => {
     updateStatusUI(result.connectionStatus || "disconnected");
     renderLogs(result.logs || []);
+
+    // 立即向 background.js 发送实时状态探测，唤醒并校验活跃连接
+    chrome.runtime.sendMessage({ action: "get_status" }, (response) => {
+      if (chrome.runtime.lastError) {
+        updateStatusUI("disconnected");
+        return;
+      }
+      if (response && response.status) {
+        updateStatusUI(response.status);
+      }
+    });
   });
 
   // 2. 监听本地存储的数据变动，实现免刷新实时同步

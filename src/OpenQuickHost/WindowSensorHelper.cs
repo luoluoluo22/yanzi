@@ -72,6 +72,36 @@ public static class WindowSensorHelper
     }
 
     /// <summary>
+    /// 判断是否是 Windows 桌面或任务栏
+    /// </summary>
+    public static bool IsDesktopOrTaskbarWindow(IntPtr hWnd)
+    {
+        return IsDesktopWindow(hWnd) || IsTaskbarWindow(hWnd);
+    }
+
+    /// <summary>
+    /// 获取指定窗口的规范化应用标识（桌面统一返回 "desktop"，普通窗口返回其进程名）
+    /// </summary>
+    public static string GetWindowProcessName(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return string.Empty;
+        if (IsDesktopOrTaskbarWindow(hWnd)) return "desktop";
+
+        try
+        {
+            GetWindowThreadProcessId(hWnd, out var pid);
+            if (pid == 0) return string.Empty;
+            using var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+            var name = proc.ProcessName;
+            return name.Equals("OpenQuickHost", StringComparison.OrdinalIgnoreCase) ? string.Empty : name;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
     /// 判断物理点是否处于某个屏幕的边缘或角落（默认 5 像素热区）
     /// </summary>
     public static ScreenEdgePosition GetScreenEdge(System.Drawing.Point pt, int edgeThreshold = 5)

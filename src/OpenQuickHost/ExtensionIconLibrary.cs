@@ -54,6 +54,8 @@ internal static class ExtensionIconLibrary
         ["paste"] = "M19,20H5V4H7V2H17V6H19M19,8H5C3.89,8 3,8.89 3,10V20A2,2 0 0,0 5,22H19A2,2 0 0,0 21,20V10C21,8.89 20.11,8 19,8Z",
         ["skill-export"] = "M12,3 L20,7 V17 L12,21 L4,17 V7 Z M12,3 V21 M4,7 L12,11 L20,7",
         ["trash"] = "M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z",
+        ["desktop"] = "M21,16H3V4H21V16M21,2H3C1.89,2 1,2.89 1,4V16A2,2 0 0,0 3,18H10V20H8V22H16V20H14V18H21A2,2 0 0,0 23,16V4C23,2.89 22.1,2 21,2Z",
+        ["monitor-dashboard"] = "M21,16H3V4H21V16M21,2H3C1.89,2 1,2.89 1,4V16A2,2 0 0,0 3,18H10V20H8V22H16V20H14V18H21A2,2 0 0,0 23,16V4C23,2.89 22.1,2 21,2Z",
         ["edit"] = "M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z",
         ["store"] = "M12,18H6V14H12M21,14V12L20,7H4L3,12V14H4V20H14V14H18V20H20V14M20,4H4V6H20V4Z",
         ["stop"] = "M6,6H18V18H6V6Z",
@@ -648,6 +650,18 @@ internal static class ExtensionIconLibrary
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ImageSource?> AssociatedIconCache =
         new(StringComparer.OrdinalIgnoreCase);
+
+    public static void InvalidateAssociatedIconCache(string? localPath = null)
+    {
+        if (string.IsNullOrWhiteSpace(localPath))
+        {
+            AssociatedIconCache.Clear();
+        }
+        else
+        {
+            AssociatedIconCache.TryRemove(localPath, out _);
+        }
+    }
 
     public static ImageSource? TryExtractAssociatedIcon(string localPath)
     {
