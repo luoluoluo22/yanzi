@@ -3461,6 +3461,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void RecordCommandUsage(CommandItem command)
     {
         _searchUsageMemory.Record(command.ExtensionId);
+        command.UsageCount = _searchUsageMemory.GetUsageCount(command.ExtensionId);
         SearchUsageMemory.Save(_searchUsageMemory);
     }
 
@@ -4469,6 +4470,7 @@ public sealed class CommandItem : INotifyPropertyChanged
         ResultKind = resultKind;
         ResultProviderTitle = resultProviderTitle;
         IsPublishedInStore = isPublishedInStore;
+        UsageCount = SearchUsageMemory.Load().GetUsageCount(ExtensionId);
     }
 
     public string Glyph { get; }

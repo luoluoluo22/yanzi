@@ -5163,7 +5163,9 @@ public class SlotViewModel : INotifyPropertyChanged
     }
 
     // Gaming Equipment Stat Card Properties
-    public int UsageCount => _command?.UsageCount ?? 0;
+    public int UsageCount => _command != null
+        ? (_command.UsageCount > 0 ? _command.UsageCount : SearchUsageMemory.Load().GetUsageCount(_command.ExtensionId))
+        : 0;
 
     public string RarityText
     {
@@ -5209,8 +5211,8 @@ public class SlotViewModel : INotifyPropertyChanged
         get
         {
             if (IsFolder) return "📁 集合目录";
-            if (IsContextual) return "🎯 应用专属扩展";
-            if (_command?.Source == CommandSource.LocalExtension) return "⚡ C# 脚本扩展";
+            if (IsContextual) return $"🎯 应用专属{BrandTerms.Current.MiniApp}";
+            if (_command?.Source == CommandSource.LocalExtension) return $"⚡ C# 脚本{BrandTerms.Current.MiniApp}";
             if (_command?.Source == CommandSource.Local) return "🛠️ 系统内置工具";
             return "⚡ 快捷实用指令";
         }
@@ -5226,9 +5228,9 @@ public class SlotViewModel : INotifyPropertyChanged
     {
         get
         {
-            if (IsFolder) return $"包含 {FolderExtensionIds.Count} 个常用扩展收纳槽位。";
+            if (IsFolder) return $"包含 {FolderExtensionIds.Count} 个常用{BrandTerms.Current.MiniApp}收纳槽位。";
             if (!string.IsNullOrWhiteSpace(_command?.Description)) return _command.Description;
-            return "收纳精选快捷扩展动作，随时随地一键高效击发。";
+            return $"收纳精选快捷{BrandTerms.Current.MiniApp}动作，随时随地一键高效击发。";
         }
     }
 

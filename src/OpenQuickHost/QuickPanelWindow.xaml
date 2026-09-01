@@ -136,6 +136,8 @@
                                                FontWeight="Bold"
                                                VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis"/>
+                                    <!-- 暂时注释稀有度等级徽标 (普通级/传说级/史诗级等) -->
+                                    <!--
                                     <Border Grid.Column="1"
                                             Background="{Binding RarityBadgeBackground}"
                                             BorderBrush="{Binding RarityBrush}"
@@ -148,6 +150,7 @@
                                                    FontSize="10"
                                                    FontWeight="Bold"/>
                                     </Border>
+                                    -->
                                 </Grid>
 
                                 <!-- 第二行：工具描述 (紧随标题下方) -->

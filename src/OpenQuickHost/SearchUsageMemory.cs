@@ -119,6 +119,16 @@ public sealed class SearchUsageMemory
         entry.LastUsedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     }
 
+    public int GetUsageCount(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return 0;
+        }
+
+        return Items.TryGetValue(key, out var entry) ? entry.Count : 0;
+    }
+
     public int Score(string key)
     {
         if (!Items.TryGetValue(key, out var entry))
