@@ -265,22 +265,21 @@ public sealed class LocalAgentApiServer : IDisposable
                         ConnectedBrowserName = browserName;
                         
                         var oldSocket = Interlocked.Exchange(ref _activeBrowserSocket, webSocket);
-                        if (oldSocket != null)
+                        if (oldSocket != null && oldSocket != webSocket)
                         {
                             try { await oldSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "New connection established", CancellationToken.None); } catch {}
                             oldSocket.Dispose();
                         }
 
                         BrowserConnectionChanged?.Invoke(true);
-                        HostAssets.AppendLog("Local Agent API: Browser extension connected via WebSocket.");
+                        HostAssets.AppendLog($"Local Agent API: Browser extension connected via WebSocket ({browserName}).");
 
-                        _ = Task.Run(() => HandleBrowserWebSocketLoopAsync(webSocket), _cts.Token);
+                        await HandleBrowserWebSocketLoopAsync(webSocket);
                     }
                     catch (Exception ex)
                     {
                         HostAssets.AppendLog($"Local Agent API WebSocket accept error: {ex.Message}");
-                        response.StatusCode = 500;
-                        response.Close();
+                        try { response.StatusCode = 500; response.Close(); } catch {}
                     }
                 }
                 else
@@ -2669,14 +2668,23 @@ public sealed class LocalAgentApiServer : IDisposable
                     {
                         using var jsonDoc = JsonDocument.Parse(rawJson);
                         var json = jsonDoc.RootElement;
-                        if (json.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "task_response")
+                        if (json.TryGetProperty("type", out var typeProp))
                         {
-                            if (json.TryGetProperty("taskId", out var taskIdProp))
+                            var msgType = typeProp.GetString();
+                            if (msgType == "ping")
                             {
-                                var taskId = taskIdProp.GetString();
-                                if (!string.IsNullOrEmpty(taskId) && _pendingBrowserTasks.TryRemove(taskId, out var tcs))
+                                var pongBytes = Encoding.UTF8.GetBytes("{\"type\":\"pong\"}");
+                                await webSocket.SendAsync(new ArraySegment<byte>(pongBytes), WebSocketMessageType.Text, true, _cts.Token);
+                            }
+                            else if (msgType == "task_response")
+                            {
+                                if (json.TryGetProperty("taskId", out var taskIdProp))
                                 {
-                                    tcs.SetResult(json.Clone());
+                                    var taskId = taskIdProp.GetString();
+                                    if (!string.IsNullOrEmpty(taskId) && _pendingBrowserTasks.TryRemove(taskId, out var tcs))
+                                    {
+                                        tcs.SetResult(json.Clone());
+                                    }
                                 }
                             }
                         }
@@ -2701,7 +2709,10 @@ public sealed class LocalAgentApiServer : IDisposable
             }
             try
             {
-                await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
+                if (webSocket.State == WebSocketState.Open || webSocket.State == WebSocketState.CloseReceived)
+                {
+                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
+                }
             }
             catch { /* ignore */ }
             webSocket.Dispose();

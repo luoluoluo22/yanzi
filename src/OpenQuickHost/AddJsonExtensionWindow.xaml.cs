@@ -662,8 +662,22 @@ public partial class AddJsonExtensionWindow : Window
                 ManualAiFixTestFailureButton.IsEnabled = true;
                 ManualAiFixTestFailureButton.Content = "⚡ DeepSeek 自动修复";
                 ManualTestSummaryText.Foreground = RedBrush;
-                ManualTestSummaryText.Text = $"DeepSeek 自动修复失败: {error ?? "未知错误"}";
+                var errMsg = $"DeepSeek 自动修复失败: {error ?? "未知错误"}";
+                ManualTestSummaryText.Text = errMsg;
                 ShowError($"AI 自动修复失败：{error}");
+                if (_currentAiSession != null)
+                {
+                    _currentAiSession.Messages.Add(new ExtAiChatMessage
+                    {
+                        Role = "error",
+                        ErrorTitle = "自动修复未完成",
+                        Content = errMsg,
+                        CanAutoFix = false,
+                        Timestamp = DateTime.Now
+                    });
+                    _currentAiSession.LastUpdatedAt = DateTime.Now;
+                    ScrollAiChatToEnd();
+                }
                 return;
             }
 
@@ -1489,7 +1503,21 @@ public partial class AddJsonExtensionWindow : Window
             var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
             if (agentServer == null || !agentServer.IsBrowserConnected)
             {
-                ShowError("燕子浏览器助手未连接。请先打开 Chrome 或 Edge 浏览器并确认插件已开启。");
+                var errMsg = "燕子浏览器助手未连接。请先打开 Chrome 或 Edge 浏览器，并确认已在“燕子浏览器助手”扩展中点击【重新连接服务】。";
+                ShowError(errMsg);
+                if (_currentAiSession != null)
+                {
+                    _currentAiSession.Messages.Add(new ExtAiChatMessage
+                    {
+                        Role = "error",
+                        ErrorTitle = "浏览器助手未连接",
+                        Content = errMsg,
+                        CanAutoFix = false,
+                        Timestamp = DateTime.Now
+                    });
+                    _currentAiSession.LastUpdatedAt = DateTime.Now;
+                    ScrollAiChatToEnd();
+                }
                 return;
             }
 
@@ -1502,7 +1530,21 @@ public partial class AddJsonExtensionWindow : Window
             if (!success || string.IsNullOrWhiteSpace(jsonResult))
             {
                 SetAiAutoGeneratingState(false, null);
-                ShowError($"AI 生成失败：{error ?? "未知错误"}");
+                var errMsg = $"AI 生成未完成：{error ?? "未能在 DeepSeek 页面中提取到合法的 JSON 小程序定义，请检查浏览器网页端是否处于登录并就绪状态。"}";
+                ShowError(errMsg);
+                if (_currentAiSession != null)
+                {
+                    _currentAiSession.Messages.Add(new ExtAiChatMessage
+                    {
+                        Role = "error",
+                        ErrorTitle = "AI 生成失败",
+                        Content = errMsg,
+                        CanAutoFix = false,
+                        Timestamp = DateTime.Now
+                    });
+                    _currentAiSession.LastUpdatedAt = DateTime.Now;
+                    ScrollAiChatToEnd();
+                }
                 return;
             }
 
@@ -1540,7 +1582,21 @@ public partial class AddJsonExtensionWindow : Window
         {
             SetAiAutoGeneratingState(false, null);
             HostAssets.AppendLog($"DeepSeek auto generate failed: {ex}");
-            ShowError($"自动生成异常：{ex.Message}");
+            var errMsg = $"自动生成异常：{ex.Message}";
+            ShowError(errMsg);
+            if (_currentAiSession != null)
+            {
+                _currentAiSession.Messages.Add(new ExtAiChatMessage
+                {
+                    Role = "error",
+                    ErrorTitle = "执行异常",
+                    Content = errMsg,
+                    CanAutoFix = false,
+                    Timestamp = DateTime.Now
+                });
+                _currentAiSession.LastUpdatedAt = DateTime.Now;
+                ScrollAiChatToEnd();
+            }
         }
     }
 
@@ -5240,6 +5296,9 @@ public sealed class ExtAiChatMessage : System.ComponentModel.INotifyPropertyChan
     public bool IsUser => Role == "user";
     public bool IsAssistant => Role == "assistant";
     public bool IsError => Role == "error";
+    public bool CanAutoFix { get; set; } = false;
+    public string ErrorTitle { get; set; } = "异常提示";
+    public Visibility AutoFixVisibility => (IsError && CanAutoFix) ? Visibility.Visible : Visibility.Collapsed;
     public bool HasVersionCard => IsAssistant && !string.IsNullOrWhiteSpace(ExtractedJson);
     public Visibility UserVisibility => IsUser ? Visibility.Visible : Visibility.Collapsed;
     public Visibility AssistantVisibility => IsAssistant ? Visibility.Visible : Visibility.Collapsed;

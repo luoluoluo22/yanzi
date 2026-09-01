@@ -643,6 +643,7 @@ public partial class App : WpfApplication
 
     private void StartLocalAgentApi(MainWindow window, AppSettings settings)
     {
+        HostAssets.AppendLog($"[App] StartLocalAgentApi invoked: EnableAgentApi={settings.EnableAgentApi}, Port={settings.AgentApiPort}, EnableLanSync={settings.EnableLanSync}");
         if (!settings.EnableAgentApi)
         {
             return;
@@ -783,6 +784,7 @@ public partial class App : WpfApplication
                     window.Dispatcher.Invoke(() => window.NotifyQuickPanelSettingsChanged(reason, refreshYanmOverlay));
                 });
             _agentApiServer.Start();
+            HostAssets.AppendLog($"[App] StartLocalAgentApi started successfully at {prefix}");
 
             if (settings.EnableLanSync)
             {
@@ -792,7 +794,7 @@ public partial class App : WpfApplication
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Local Agent API failed to start: {ex.Message}");
+            HostAssets.AppendLog($"[App] Local Agent API failed to start: {ex}");
         }
     }
 

@@ -1202,16 +1202,16 @@
                                                     <TextBlock Text="{Binding TimeText}" Visibility="{Binding TimestampVisibility}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="4,3,0,0" />
                                                 </StackPanel>
 
-                                                <!-- 错误自愈消息 -->
+                                                <!-- 错误与异常提示消息 -->
                                                 <StackPanel HorizontalAlignment="Left" MaxWidth="440" Visibility="{Binding ErrorVisibility}">
-                                                    <Border Background="#1AF87171" BorderBrush="#33F87171" BorderThickness="1" CornerRadius="12" Padding="10,8">
+                                                    <Border Background="#1AF87171" BorderBrush="#33F87171" BorderThickness="1" CornerRadius="12" Padding="12,10">
                                                         <StackPanel>
                                                             <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="⚠️" Margin="0,0,4,0" VerticalAlignment="Center" />
-                                                                <TextBlock Text="试运行报错" Foreground="{DynamicResource RedBrush}" FontSize="11.5" FontWeight="Bold" VerticalAlignment="Center" />
+                                                                <TextBlock Text="⚠️" Margin="0,0,5,0" VerticalAlignment="Center" />
+                                                                <TextBlock Text="{Binding ErrorTitle}" Foreground="{DynamicResource RedBrush}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" />
                                                             </StackPanel>
-                                                            <TextBlock Text="{Binding Content}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,4,0,8" />
-                                                            <Button Content="⚡ 发送给 DeepSeek 自动修复" Style="{DynamicResource PrimaryButtonStyle}" Height="28" Padding="10,0" FontSize="11" Click="ManualAiFixTestFailureButton_Click" />
+                                                            <TextBlock Text="{Binding Content}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,6,0,0" LineHeight="18" />
+                                                            <Button Content="⚡ 发送给 DeepSeek 自动修复" Visibility="{Binding AutoFixVisibility}" Margin="0,8,0,0" Style="{DynamicResource PrimaryButtonStyle}" Height="28" Padding="10,0" FontSize="11" Click="ManualAiFixTestFailureButton_Click" />
                                                         </StackPanel>
                                                     </Border>
                                                     <TextBlock Text="{Binding TimeText}" Visibility="{Binding TimestampVisibility}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="4,3,0,0" />
