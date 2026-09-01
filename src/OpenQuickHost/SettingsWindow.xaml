@@ -4482,19 +4482,59 @@
                                             </Border>
                                         </StackPanel>
 
-                                        <!-- Search Box -->
+                                        <!-- Search Box & Batch Operation Toolbar -->
                                         <Grid>
                                             <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBox Text="{Binding ExtensionSearchText, UpdateSourceTrigger=PropertyChanged}"
+
+                                            <!-- 批量管理按钮 (普通模式) -->
+                                            <Button Grid.Column="0"
+                                                    Content="批量管理"
+                                                    Style="{StaticResource SecondaryBtn}"
+                                                    Height="34"
+                                                    Padding="12,0"
+                                                    Margin="0,0,10,0"
+                                                    Click="ToggleExtensionBatchModeButton_Click"
+                                                    Visibility="{Binding IsExtensionBatchMode, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+
+                                            <!-- 批量管理工具栏 (批量模式) -->
+                                            <StackPanel Grid.Column="0"
+                                                        Orientation="Horizontal"
+                                                        Margin="0,0,10,0"
+                                                        Visibility="{Binding IsExtensionBatchMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <CheckBox Content="全选"
+                                                          IsChecked="{Binding IsAllExtensionBatchSelected, Mode=TwoWay}"
+                                                          Foreground="{DynamicResource BrushTextMain}"
+                                                          VerticalAlignment="Center"
+                                                          Margin="0,0,12,0"
+                                                          Click="ExtensionBatchSelectAll_Click" />
+                                                <Button Content="{Binding ExtensionBatchDeleteButtonText}"
+                                                        Style="{StaticResource SecondaryBtn}"
+                                                        Foreground="#FFEF4444"
+                                                        Height="34"
+                                                        Padding="12,0"
+                                                        Margin="0,0,8,0"
+                                                        IsEnabled="{Binding HasExtensionBatchSelected}"
+                                                        Click="BatchDeleteExtensionsButton_Click" />
+                                                <Button Content="退出批量"
+                                                        Style="{StaticResource SecondaryBtn}"
+                                                        Height="34"
+                                                        Padding="12,0"
+                                                        Margin="0,0,8,0"
+                                                        Click="ExitExtensionBatchModeButton_Click" />
+                                            </StackPanel>
+
+                                            <TextBox Grid.Column="1"
+                                                     Text="{Binding ExtensionSearchText, UpdateSourceTrigger=PropertyChanged}"
                                                      Height="34"
                                                      Padding="12,8"
                                                      VerticalContentAlignment="Center"
                                                      ToolTip="按名称、ID、分类搜索小程序"
                                                      IsEnabled="{Binding CanRefreshExtensions}" />
-                                            <TextBlock Grid.Column="1"
+                                            <TextBlock Grid.Column="2"
                                                        Text="{Binding ExtensionSearchSummary}"
                                                        Foreground="{DynamicResource BrushTextSec}"
                                                        FontSize="{DynamicResource FontSizeSmallPlus}"
@@ -4570,6 +4610,10 @@
                                                                     <Setter Property="BorderBrush" Value="#FF3B82F6" />
                                                                     <Setter Property="Background" Value="#FF1A1F2E" />
                                                                 </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsBatchChecked}" Value="True">
+                                                                    <Setter Property="BorderBrush" Value="#FF3B82F6" />
+                                                                    <Setter Property="Background" Value="#1A3B82F6" />
+                                                                </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
                                                     </Border.Style>
@@ -4585,12 +4629,21 @@
                                                         <Grid Grid.Row="0" Margin="0,0,0,12">
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="Auto" />
                                                                 <ColumnDefinition Width="*" />
                                                                 <ColumnDefinition Width="Auto" />
                                                             </Grid.ColumnDefinitions>
+
+                                                            <!-- 批量勾选框 (仅批量模式可见) -->
+                                                            <CheckBox Grid.Column="0"
+                                                                      IsChecked="{Binding IsBatchChecked, Mode=TwoWay}"
+                                                                      VerticalAlignment="Center"
+                                                                      Margin="0,0,10,0"
+                                                                      Visibility="{Binding DataContext.IsExtensionBatchMode, RelativeSource={RelativeSource AncestorType=ScrollViewer}, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                                      Click="ExtensionBatchItemCheck_Click" />
                                                             
                                                             <!-- Icon -->
-                                                            <Border Width="40" Height="40" Background="{Binding AccentBrush}" CornerRadius="10" VerticalAlignment="Top" ClipToBounds="True">
+                                                            <Border Grid.Column="1" Width="40" Height="40" Background="{Binding AccentBrush}" CornerRadius="10" VerticalAlignment="Top" ClipToBounds="True">
                                                                 <Grid>
                                                                     <Image Source="{Binding IconSource}"
                                                                            Margin="4"
@@ -4613,7 +4666,7 @@
                                                             </Border>
 
                                                             <!-- Title -->
-                                                            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                            <StackPanel Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center">
                                                                 <TextBlock Text="{Binding Title}" 
                                                                            Foreground="{DynamicResource BrushTextMain}" 
                                                                            FontSize="{DynamicResource FontSizeNormalPlus}" 
@@ -4621,11 +4674,12 @@
                                                                            TextTrimming="CharacterEllipsis"/>
                                                             </StackPanel>
 
-                                                            <!-- Toggle Switch -->
-                                                            <CheckBox Grid.Column="2"
+                                                            <!-- Toggle Switch (非批量模式显示) -->
+                                                            <CheckBox Grid.Column="3"
                                                                       Style="{StaticResource RaycastSwitchStyle}"
                                                                       IsChecked="{Binding IsEnabled, Mode=OneWay}"
                                                                       VerticalAlignment="Top"
+                                                                      Visibility="{Binding DataContext.IsExtensionBatchMode, RelativeSource={RelativeSource AncestorType=ScrollViewer}, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
                                                                       Click="ExtensionEnabledSwitch_Click"/>
                                                         </Grid>
 

@@ -184,12 +184,16 @@ public partial class AddJsonExtensionWindow : Window
             // 启动浏览器助手连接状态监测定时器，实时感知插件连接状态并自动消隐引导横幅
             StartBrowserExtensionStateWatcher();
 
+            // 监听远程图标/Favicon 下载完成事件，实时自动刷新右上角图标预览
+            ExtensionIconLibrary.RemoteIconDownloaded += OnRemoteIconDownloaded;
+
             // 异步初始化高级编辑器与内联脚本编辑器，支持 4 秒超时无缝降级
             _ = InitializeWebViewEditorsAsync();
         };
 
         Closed += (s, e) =>
         {
+            ExtensionIconLibrary.RemoteIconDownloaded -= OnRemoteIconDownloaded;
             _browserExtensionCheckTimer?.Stop();
             var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
             if (agentServer != null)
@@ -503,6 +507,15 @@ public partial class AddJsonExtensionWindow : Window
         {
             BrowserExtensionGuideBanner.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private void OnRemoteIconDownloaded(string url, ImageSource? image)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            SafeRefreshIconPreview();
+            UpdatePreview();
+        });
     }
 
     private void QuickInstallBrowserExtension_Click(object sender, RoutedEventArgs e)

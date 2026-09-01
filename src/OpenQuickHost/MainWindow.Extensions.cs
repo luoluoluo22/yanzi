@@ -2470,6 +2470,36 @@ public partial class MainWindow
         }
     }
 
+    public Task<(bool ok, string message)> DeleteExtensionFromSettingsSilentlyAsync(string extensionId)
+    {
+        try
+        {
+            if (!_localExtensionIndex.TryGetValue(extensionId, out var deletable))
+            {
+                return Task.FromResult((false, "没有找到对应小程序。"));
+            }
+
+            WebDavSyncService.MarkExtensionDeletedLocally(deletable.ExtensionId, deletable.DeclaredVersion);
+            ExtensionRecycleBinService.MoveToRecycleBin(deletable.ExtensionId, deletable.ExtensionDirectoryPath);
+            RemoveExtensionFromQuickPanelSettings(deletable.ExtensionId);
+            RemoveLocalExtensionCommand(deletable.ExtensionId);
+            QueuePrivateExtensionRemovalFromAccount(deletable.ExtensionId);
+            return Task.FromResult((true, $"已将{BrandTerms.Current.MiniApp}移入回收站：{deletable.Title}"));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult((false, $"删除失败：{FormatExceptionMessage(ex)}"));
+        }
+    }
+
+    public void NotifyExtensionsBatchDeleted()
+    {
+        ApplyFilter(SearchBox.Text);
+        SelectedCommand = FilteredCommands.FirstOrDefault();
+        CommandList.SelectedItem = SelectedCommand;
+        QueueBackgroundWebDavSync("extension-batch-delete-settings");
+    }
+
     public Task<(bool ok, string message)> DeleteExtensionFromQuickPanelAsync(string extensionId, Window? owner = null)
     {
         return DeleteExtensionFromSettingsAsync(extensionId, owner);

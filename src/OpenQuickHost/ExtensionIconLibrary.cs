@@ -431,19 +431,182 @@ internal static class ExtensionIconLibrary
                extension.Equals(".img", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static BitmapImage LoadBitmapImage(string resolvedPath)
+    private static ImageSource? LoadBitmapImage(string resolvedPath)
     {
-        var bitmap = new BitmapImage();
-        bitmap.BeginInit();
-        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-        bitmap.UriSource = new Uri(resolvedPath, UriKind.Absolute);
-        bitmap.EndInit();
-        if (bitmap.CanFreeze)
+        try
         {
-            bitmap.Freeze();
+            var localPath = resolvedPath.StartsWith("file://", StringComparison.OrdinalIgnoreCase)
+                ? new Uri(resolvedPath, UriKind.Absolute).LocalPath
+                : (File.Exists(resolvedPath) ? resolvedPath : null);
+
+            if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
+            {
+                var bytes = File.ReadAllBytes(localPath);
+                if (bytes.Length == 0) return null;
+
+                // 1. 如果是 ICO 格式（魔数 00-00-01-00）
+                if (bytes.Length >= 4 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 1 && bytes[3] == 0)
+                {
+                    // 尝试在 ICO 容器中寻找内嵌的高清 PNG 帧（现代 Favicon / Vista+ ICO）
+                    var pngFrame = TryExtractBestPngFrameFromIco(bytes);
+                    if (pngFrame != null)
+                    {
+                        return pngFrame;
+                    }
+
+                    // 否则使用 System.Drawing.Icon 解码标准 ICO
+                    try
+                    {
+                        using var ms = new MemoryStream(bytes);
+                        using var icon = new System.Drawing.Icon(ms);
+                        using var bmp = icon.ToBitmap();
+                        var hBmp = bmp.GetHbitmap();
+                        try
+                        {
+                            var source = Imaging.CreateBitmapSourceFromHBitmap(
+                                hBmp,
+                                IntPtr.Zero,
+                                Int32Rect.Empty,
+                                BitmapSizeOptions.FromEmptyOptions());
+                            if (source.CanFreeze) source.Freeze();
+                            return source;
+                        }
+                        finally
+                        {
+                            DeleteObject(hBmp);
+                        }
+                    }
+                    catch
+                    {
+                        // 降级走后续通用解码
+                    }
+                }
+
+                // 2. 通用图片解码 (PNG, JPG, BMP, GIF, WebP, etc.)
+                try
+                {
+                    using var ms = new MemoryStream(bytes);
+                    var decoder = BitmapDecoder.Create(
+                        ms,
+                        BitmapCreateOptions.PreservePixelFormat,
+                        BitmapCacheOption.OnLoad);
+                    if (decoder.Frames.Count > 0)
+                    {
+                        var frame = decoder.Frames.OrderByDescending(f => f.PixelWidth).First();
+                        if (frame.CanFreeze) frame.Freeze();
+                        return frame;
+                    }
+                }
+                catch
+                {
+                    // 降级使用 System.Drawing.Image (支持古老/特殊编码图片)
+                    try
+                    {
+                        using var ms = new MemoryStream(bytes);
+                        using var drawingImg = System.Drawing.Image.FromStream(ms);
+                        using var bmp = new System.Drawing.Bitmap(drawingImg);
+                        var hBmp = bmp.GetHbitmap();
+                        try
+                        {
+                            var source = Imaging.CreateBitmapSourceFromHBitmap(
+                                hBmp,
+                                IntPtr.Zero,
+                                Int32Rect.Empty,
+                                BitmapSizeOptions.FromEmptyOptions());
+                            if (source.CanFreeze) source.Freeze();
+                            return source;
+                        }
+                        finally
+                        {
+                            DeleteObject(hBmp);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"[IconLog] GDI+ fallback failed for '{localPath}': {ex.Message}");
+                    }
+                }
+            }
+
+            // 3. 网络或内置 pack:// URI 直接尝试原生加载
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(resolvedPath, UriKind.Absolute);
+            bitmap.EndInit();
+            if (bitmap.CanFreeze)
+            {
+                bitmap.Freeze();
+            }
+
+            return bitmap;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[IconLog] LoadBitmapImage failed for '{resolvedPath}': {ex.Message}");
+            return null;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr hObject);
+
+    private static BitmapSource? TryExtractBestPngFrameFromIco(byte[] icoBytes)
+    {
+        try
+        {
+            if (icoBytes.Length < 6) return null;
+            int count = BitConverter.ToUInt16(icoBytes, 4);
+            if (count <= 0) return null;
+
+            int bestWidth = 0;
+            byte[]? bestPngBytes = null;
+
+            for (int i = 0; i < count; i++)
+            {
+                int entryOffset = 6 + i * 16;
+                if (entryOffset + 16 > icoBytes.Length) break;
+
+                int width = icoBytes[entryOffset] == 0 ? 256 : icoBytes[entryOffset];
+                int size = BitConverter.ToInt32(icoBytes, entryOffset + 8);
+                int imageOffset = BitConverter.ToInt32(icoBytes, entryOffset + 12);
+
+                if (imageOffset >= 0 && size > 8 && imageOffset + size <= icoBytes.Length)
+                {
+                    // PNG 魔数: 89 50 4E 47 0D 0A 1A 0A
+                    if (icoBytes[imageOffset] == 0x89 &&
+                        icoBytes[imageOffset + 1] == 0x50 &&
+                        icoBytes[imageOffset + 2] == 0x4E &&
+                        icoBytes[imageOffset + 3] == 0x47)
+                    {
+                        if (width >= bestWidth)
+                        {
+                            bestWidth = width;
+                            bestPngBytes = new byte[size];
+                            Array.Copy(icoBytes, imageOffset, bestPngBytes, 0, size);
+                        }
+                    }
+                }
+            }
+
+            if (bestPngBytes != null)
+            {
+                using var ms = new MemoryStream(bestPngBytes);
+                var decoder = new PngBitmapDecoder(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                if (decoder.Frames.Count > 0)
+                {
+                    var frame = decoder.Frames[0];
+                    if (frame.CanFreeze) frame.Freeze();
+                    return frame;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[IconLog] TryExtractBestPngFrameFromIco error: {ex.Message}");
         }
 
-        return bitmap;
+        return null;
     }
 
     public static bool IsBuiltInReference(string? iconReference) => TryResolveVectorKey(iconReference, out _);

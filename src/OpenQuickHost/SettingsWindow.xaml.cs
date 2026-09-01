@@ -228,6 +228,51 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public ObservableCollection<SettingsExtensionItem> ExtensionItems { get; }
 
+    private bool _isExtensionBatchMode;
+    public bool IsExtensionBatchMode
+    {
+        get => _isExtensionBatchMode;
+        set
+        {
+            if (_isExtensionBatchMode == value) return;
+            _isExtensionBatchMode = value;
+            OnPropertyChanged();
+            NotifyBatchSelectionChanged();
+        }
+    }
+
+    public bool HasExtensionBatchSelected => ExtensionItems.Any(x => x.IsBatchChecked);
+
+    public string ExtensionBatchDeleteButtonText => $"批量删除 ({ExtensionItems.Count(x => x.IsBatchChecked)})";
+
+    public bool? IsAllExtensionBatchSelected
+    {
+        get
+        {
+            if (ExtensionItems.Count == 0) return false;
+            var checkedCount = ExtensionItems.Count(x => x.IsBatchChecked);
+            if (checkedCount == 0) return false;
+            if (checkedCount == ExtensionItems.Count) return true;
+            return null;
+        }
+        set
+        {
+            var selectAll = value == true;
+            foreach (var item in ExtensionItems)
+            {
+                item.IsBatchChecked = selectAll;
+            }
+            NotifyBatchSelectionChanged();
+        }
+    }
+
+    public void NotifyBatchSelectionChanged()
+    {
+        OnPropertyChanged(nameof(IsAllExtensionBatchSelected));
+        OnPropertyChanged(nameof(HasExtensionBatchSelected));
+        OnPropertyChanged(nameof(ExtensionBatchDeleteButtonText));
+    }
+
     public ObservableCollection<SettingsRecycleBinItem> RecycleBinItems { get; }
 
     public ObservableCollection<PersonalSyncCommitItem> PersonalSyncCommitItems { get; }
@@ -5709,6 +5754,92 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void ToggleExtensionBatchModeButton_Click(object sender, RoutedEventArgs e)
+    {
+        IsExtensionBatchMode = true;
+        foreach (var item in ExtensionItems)
+        {
+            item.IsBatchChecked = false;
+        }
+        NotifyBatchSelectionChanged();
+    }
+
+    private void ExitExtensionBatchModeButton_Click(object sender, RoutedEventArgs e)
+    {
+        IsExtensionBatchMode = false;
+        foreach (var item in ExtensionItems)
+        {
+            item.IsBatchChecked = false;
+        }
+        NotifyBatchSelectionChanged();
+    }
+
+    private void ExtensionBatchSelectAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.CheckBox cb)
+        {
+            var selectAll = cb.IsChecked == true;
+            foreach (var item in ExtensionItems)
+            {
+                item.IsBatchChecked = selectAll;
+            }
+            NotifyBatchSelectionChanged();
+        }
+    }
+
+    private void ExtensionBatchItemCheck_Click(object sender, RoutedEventArgs e)
+    {
+        NotifyBatchSelectionChanged();
+    }
+
+    private async void BatchDeleteExtensionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var selectedItems = ExtensionItems.Where(x => x.IsBatchChecked).ToList();
+        if (selectedItems.Count == 0) return;
+
+        var confirm = System.Windows.MessageBox.Show(
+            this,
+            $"确认将选中的 {selectedItems.Count} 个小程序移入回收站吗？",
+            "批量删除小程序",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        int successCount = 0;
+        foreach (var item in selectedItems)
+        {
+            var result = await _mainWindow.DeleteExtensionFromSettingsSilentlyAsync(item.ExtensionId);
+            if (result.ok)
+            {
+                successCount++;
+                ExtensionItems.Remove(item);
+            }
+        }
+
+        _mainWindow.NotifyExtensionsBatchDeleted();
+        _settings = _mainWindow.GetCurrentAppSettings();
+        RefreshExtensionCacheFromMainWindow();
+        RefreshExtensionSummary();
+        OnPropertyChanged(nameof(ExtensionSearchSummary));
+        RefreshShortcutItems();
+        await RefreshExtensionsFromDiskAsync();
+
+        NotifyBatchSelectionChanged();
+        if (ExtensionItems.Count(x => x.IsBatchChecked) == 0)
+        {
+            IsExtensionBatchMode = false;
+        }
+
+        SyncStatusText = $"已批量移入回收站 {successCount} 个小程序。";
+        if (System.Windows.Application.Current is App app)
+        {
+            app.ShowDesktopNotification("批量删除完成", $"已成功将 {successCount} 个小程序移入回收站。");
+        }
+    }
+
     private void ExtensionCard_Click(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is DependencyObject source &&
@@ -5719,6 +5850,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         if (sender is not FrameworkElement { DataContext: SettingsExtensionItem item })
         {
+            return;
+        }
+
+        if (IsExtensionBatchMode)
+        {
+            item.IsBatchChecked = !item.IsBatchChecked;
+            NotifyBatchSelectionChanged();
             return;
         }
 
@@ -7263,6 +7401,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         OnPropertyChanged(nameof(ExtensionSearchSummary));
+        NotifyBatchSelectionChanged();
     }
 
     private void RefreshMouseGestureManagement()
@@ -12800,6 +12939,23 @@ public sealed class SettingsExtensionItem : INotifyPropertyChanged
     public string PublishedStateLabel => IsPublishedInStore ? "已发布到商店" : "仅本地";
 
     public string DescriptionOrFallback => string.IsNullOrWhiteSpace(Description) ? "这个小程序没有提供额外说明。" : Description;
+
+    private bool _isBatchChecked;
+
+    public bool IsBatchChecked
+    {
+        get => _isBatchChecked;
+        set
+        {
+            if (_isBatchChecked == value)
+            {
+                return;
+            }
+
+            _isBatchChecked = value;
+            OnPropertyChanged();
+        }
+    }
 
     public bool IsSelected
     {

@@ -857,7 +857,39 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         OpenTargetBox.Text = OpenTargetSimpleBox.Text;
+
+        // 智能自动推导网站 Favicon 图标或程序真实图标
+        var text = OpenTargetSimpleBox.Text?.Trim() ?? string.Empty;
+        if (text.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || text.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var uri = new Uri(text);
+                if (!string.IsNullOrEmpty(uri.Host) && uri.Host.Contains('.'))
+                {
+                    var favIcon = $"{uri.Scheme}://{uri.Host}/favicon.ico";
+                    var currentIcon = IconBox.Text?.Trim() ?? string.Empty;
+                    if (string.IsNullOrEmpty(currentIcon) ||
+                        currentIcon.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) ||
+                        currentIcon.Contains("/favicon.ico", StringComparison.OrdinalIgnoreCase))
+                    {
+                        IconBox.Text = favIcon;
+                    }
+                }
+            }
+            catch { /* 忽略不合法 URI 输入过程 */ }
+        }
+        else if (System.IO.File.Exists(text) && text.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            var currentIcon = IconBox.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(currentIcon) || currentIcon.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase))
+            {
+                IconBox.Text = text;
+            }
+        }
+
         TryRefreshJsonFromHiddenForm();
+        UpdatePreview();
     }
 
     private void OpenTargetBrowse_Click(object sender, RoutedEventArgs e)
