@@ -1,12 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <Version>0.3.23</Version>
-    <FileVersion>0.3.23.0</FileVersion>
-    <AssemblyVersion>0.3.23.0</AssemblyVersion>
-    <InformationalVersion>0.3.23</InformationalVersion>
+    <Version>0.3.24</Version>
+    <FileVersion>0.3.24.0</FileVersion>
+    <AssemblyVersion>0.3.24.0</AssemblyVersion>
+    <InformationalVersion>0.3.24</InformationalVersion>
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);1701;1603</NoWarn>
     <ImplicitUsings>enable</ImplicitUsings>
