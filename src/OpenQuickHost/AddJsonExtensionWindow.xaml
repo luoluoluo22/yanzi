@@ -1060,7 +1060,7 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <!-- 对话区顶部：标题 + 复制提示词按钮 -->
+                            <!-- 对话区顶部：标题 + 连接状态指示灯 + 复制提示词按钮 -->
                             <Border Grid.Row="0" Padding="14,8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Background="{DynamicResource BrushSecondaryBtnBG}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -1071,6 +1071,16 @@
                                         <TextBlock Text="💬" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" />
                                         <TextBlock x:Name="ActiveSessionTitleText" Text="AI 对话区" Margin="8,0,0,0"
                                                    Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        
+                                        <!-- 浏览器助手连接状态指示胶囊 -->
+                                        <Border x:Name="BrowserConnectionStatusBadge" Margin="12,0,0,0" Padding="8,3" CornerRadius="12"
+                                                Background="#1AF87171" BorderBrush="#33F87171" BorderThickness="1" VerticalAlignment="Center"
+                                                Cursor="Hand" ToolTip="燕子浏览器助手实时连接状态 (点击可查看说明)" MouseLeftButtonDown="BrowserConnectionStatusBadge_MouseLeftButtonDown">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Ellipse x:Name="BrowserStatusDot" Width="7" Height="7" Fill="{DynamicResource RedBrush}" VerticalAlignment="Center" Margin="0,0,5,0" />
+                                                <TextBlock x:Name="BrowserStatusText" Text="浏览器助手未连接" Foreground="{DynamicResource RedBrush}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
                                     </StackPanel>
 
                                     <!-- 复制提示词按钮（右上角） -->

@@ -1,9 +1,10 @@
 let ws = null;
+let currentWsSeq = 0;
 let reconnectDelay = 1000;
 const maxReconnectDelay = 30000;
 let isConnected = false;
 let reconnectTimer = null;
-const LOG_BATCH_INTERVAL_MS = 5000;
+const LOG_BATCH_INTERVAL_MS = 3000;
 let pendingLogs = [];
 let logFlushTimer = null;
 
@@ -39,8 +40,8 @@ function flushLogs() {
   });
 }
 
-// 连接本地 WebSocket 服务
-function connectWebSocket() {
+// 连接本地 WebSocket 服务 (带严格的单实例自增序号锁，杜绝重连级联死循环)
+function connectWebSocket(reason = "auto") {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return;
   }
@@ -50,57 +51,79 @@ function connectWebSocket() {
     reconnectTimer = null;
   }
 
-  logEvent("尝试连接到燕子启动器本地服务...");
+  const thisSeq = ++currentWsSeq;
+  logEvent(`尝试连接到燕子桌面端本地服务 (Seq #${thisSeq}, 原因: ${reason})...`);
   
-  ws = new WebSocket("ws://127.0.0.1:53919/v1/browser/ws");
-  
-  ws.onopen = () => {
-    updateStatus("connected");
-    reconnectDelay = 1000; // 重连成功，重置延迟
-    reconnectTimer = null;
+  try {
+    const socket = new WebSocket("ws://127.0.0.1:53919/v1/browser/ws");
+    ws = socket;
     
-    // 发送握手注册消息
-    ws.send(JSON.stringify({
-      type: "register",
-      client: "yanzi-extension"
-    }));
-  };
-  
-  ws.onmessage = (event) => {
-    try {
-      const message = JSON.parse(event.data);
-      logEvent(`收到来自燕子的指令: ${message.action || message.type}`);
-      
-      if (message.type === "task_request") {
-        handleTask(message);
+    socket.onopen = () => {
+      if (thisSeq !== currentWsSeq || socket !== ws) {
+        try { socket.close(); } catch(e){}
+        return;
       }
-    } catch (err) {
-      logEvent(`解析消息失败: ${err.message}`);
-    }
-  };
-  
-  ws.onclose = () => {
-    updateStatus("disconnected");
-    ws = null;
-    scheduleReconnect();
-  };
-  
-  ws.onerror = (err) => {
-    console.error("WebSocket 错误:", err);
-    // ws.close() 会被自动调用，触发 onclose 逻辑
-  };
+      updateStatus("connected");
+      reconnectDelay = 1000; // 重连成功，重置延迟
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      
+      // 发送握手注册消息
+      socket.send(JSON.stringify({
+        type: "register",
+        client: "yanzi-extension"
+      }));
+    };
+    
+    socket.onmessage = (event) => {
+      if (thisSeq !== currentWsSeq) return;
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === "pong") {
+          return;
+        }
+        logEvent(`收到来自燕子的指令: ${message.action || message.type}`);
+        
+        if (message.type === "task_request") {
+          handleTask(message);
+        }
+      } catch (err) {
+        logEvent(`解析消息失败: ${err.message}`);
+      }
+    };
+    
+    socket.onclose = (event) => {
+      if (thisSeq !== currentWsSeq) {
+        // 过期的旧 socket 关闭，静默丢弃，绝不触发级联重连
+        return;
+      }
+      ws = null;
+      updateStatus("disconnected");
+      scheduleReconnect(`socket_closed_code_${event.code}`);
+    };
+    
+    socket.onerror = (err) => {
+      if (thisSeq !== currentWsSeq) return;
+      console.warn("WebSocket 报错:", err);
+    };
+  } catch (err) {
+    logEvent(`创建 WebSocket 异常: ${err.message}`);
+    scheduleReconnect("create_exception");
+  }
 }
 
 // 自动重连逻辑 (指数退避)
-function scheduleReconnect() {
+function scheduleReconnect(reason = "unknown") {
   if (reconnectTimer) {
     return;
   }
 
-  logEvent(`连接断开，将在 ${reconnectDelay / 1000} 秒后尝试重新连接...`);
+  logEvent(`连接已断开 (${reason})，将在 ${reconnectDelay / 1000} 秒后尝试重新连接...`);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    connectWebSocket();
+    connectWebSocket("reconnect_timer");
     reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
   }, reconnectDelay);
 }
@@ -217,13 +240,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 1. 获取实时活跃状态
   if (message.action === "get_status") {
     const isWsOpen = Boolean(ws && ws.readyState === WebSocket.OPEN);
-    if (!isWsOpen) {
-      updateStatus("disconnected");
-      connectWebSocket();
-    } else {
-      updateStatus("connected");
-    }
     sendResponse({ status: isWsOpen ? "connected" : "disconnected" });
+    if (!isWsOpen && (!ws || ws.readyState === WebSocket.CLOSED)) {
+      connectWebSocket("popup_check");
+    }
     return true;
   }
 
@@ -234,11 +254,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
-    if (ws) {
-      try { ws.close(); } catch(e){}
+    const oldWs = ws;
+    ws = null;
+    currentWsSeq++; // 提升 seq，确保 oldWs 触发的 onclose 被直接丢弃
+    if (oldWs) {
+      try { oldWs.close(); } catch(e){}
     }
     reconnectDelay = 1000; // 重置延迟
-    connectWebSocket();
+    connectWebSocket("user_reconnect_btn");
     sendResponse({ status: "connecting" });
     return true;
   }

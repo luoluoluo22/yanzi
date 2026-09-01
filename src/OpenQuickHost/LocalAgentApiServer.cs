@@ -13,6 +13,7 @@ namespace OpenQuickHost;
 public sealed class LocalAgentApiServer : IDisposable
 {
     private WebSocket? _activeBrowserSocket;
+    private static int _nextWsId;
     public event Action<bool>? BrowserConnectionChanged;
     public bool IsBrowserConnected => _activeBrowserSocket != null && _activeBrowserSocket.State == WebSocketState.Open;
     public string ConnectedBrowserName { get; private set; } = "";
@@ -239,6 +240,7 @@ public sealed class LocalAgentApiServer : IDisposable
 
                 if (context.Request.IsWebSocketRequest)
                 {
+                    var socketId = Interlocked.Increment(ref _nextWsId);
                     try
                     {
                         var wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
@@ -267,18 +269,19 @@ public sealed class LocalAgentApiServer : IDisposable
                         var oldSocket = Interlocked.Exchange(ref _activeBrowserSocket, webSocket);
                         if (oldSocket != null && oldSocket != webSocket)
                         {
+                            HostAssets.AppendLog($"[BrowserWS #{socketId}] Replaced existing WebSocket session.");
                             try { await oldSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "New connection established", CancellationToken.None); } catch {}
                             oldSocket.Dispose();
                         }
 
                         BrowserConnectionChanged?.Invoke(true);
-                        HostAssets.AppendLog($"Local Agent API: Browser extension connected via WebSocket ({browserName}).");
+                        HostAssets.AppendLog($"[BrowserWS #{socketId}] Connected from {browserName}.");
 
-                        await HandleBrowserWebSocketLoopAsync(webSocket);
+                        await HandleBrowserWebSocketLoopAsync(webSocket, socketId, browserName);
                     }
                     catch (Exception ex)
                     {
-                        HostAssets.AppendLog($"Local Agent API WebSocket accept error: {ex.Message}");
+                        HostAssets.AppendLog($"[BrowserWS #{socketId}] Accept error: {ex.Message}");
                         try { response.StatusCode = 500; response.Close(); } catch {}
                     }
                 }
@@ -2635,7 +2638,7 @@ public sealed class LocalAgentApiServer : IDisposable
         return html.Replace("__YANZI_TOKEN__", _token ?? string.Empty);
     }
 
-    private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket)
+    private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket, int socketId, string browserName)
     {
         var buffer = new byte[1024 * 64];
         try
@@ -2645,6 +2648,7 @@ public sealed class LocalAgentApiServer : IDisposable
                 var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
+                    HostAssets.AppendLog($"[BrowserWS #{socketId}] Client requested Close ({result.CloseStatus}: {result.CloseStatusDescription}).");
                     break;
                 }
 
@@ -2676,11 +2680,16 @@ public sealed class LocalAgentApiServer : IDisposable
                                 var pongBytes = Encoding.UTF8.GetBytes("{\"type\":\"pong\"}");
                                 await webSocket.SendAsync(new ArraySegment<byte>(pongBytes), WebSocketMessageType.Text, true, _cts.Token);
                             }
+                            else if (msgType == "register")
+                            {
+                                HostAssets.AppendLog($"[BrowserWS #{socketId}] Registered successfully from {browserName}.");
+                            }
                             else if (msgType == "task_response")
                             {
                                 if (json.TryGetProperty("taskId", out var taskIdProp))
                                 {
                                     var taskId = taskIdProp.GetString();
+                                    HostAssets.AppendLog($"[BrowserWS #{socketId}] Received task response: taskId={taskId}");
                                     if (!string.IsNullOrEmpty(taskId) && _pendingBrowserTasks.TryRemove(taskId, out var tcs))
                                     {
                                         tcs.SetResult(json.Clone());
@@ -2691,14 +2700,14 @@ public sealed class LocalAgentApiServer : IDisposable
                     }
                     catch (Exception ex)
                     {
-                        HostAssets.AppendLog($"Local Agent API error processing WS message: {ex.Message}");
+                        HostAssets.AppendLog($"[BrowserWS #{socketId}] Error parsing message: {ex.Message}");
                     }
                 }
             }
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Local Agent API Browser WebSocket disconnected: {ex.Message}");
+            HostAssets.AppendLog($"[BrowserWS #{socketId}] Disconnected with exception: {ex.Message}");
         }
         finally
         {
@@ -2716,7 +2725,7 @@ public sealed class LocalAgentApiServer : IDisposable
             }
             catch { /* ignore */ }
             webSocket.Dispose();
-            HostAssets.AppendLog("Local Agent API: Browser extension disconnected.");
+            HostAssets.AppendLog($"[BrowserWS #{socketId}] Connection session ended.");
         }
     }
 }
