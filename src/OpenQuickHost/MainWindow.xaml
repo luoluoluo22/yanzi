@@ -557,6 +557,8 @@
                                         FontSize="{DynamicResource FontSizeSmallPlus}"
                                         FontWeight="SemiBold"
                                         BorderThickness="1"
+                                        Focusable="False"
+                                        FocusVisualStyle="{x:Null}"
                                         Cursor="Hand">
                                     <Button.ContextMenu>
                                         <ContextMenu>
@@ -571,8 +573,10 @@
                                     </Button.ContextMenu>
                                     <Button.Style>
                                         <Style TargetType="Button">
+                                            <Setter Property="Focusable" Value="False" />
+                                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                                             <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}" />
-                                            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                            <Setter Property="BorderBrush" Value="Transparent" />
                                             <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                             <Setter Property="Template">
                                                 <Setter.Value>
@@ -623,11 +627,15 @@
                             FontSize="{DynamicResource FontSizeSmallPlus}"
                             FontWeight="SemiBold"
                             BorderThickness="1"
+                            Focusable="False"
+                            FocusVisualStyle="{x:Null}"
                             Cursor="Hand">
                         <Button.Style>
                             <Style TargetType="Button">
+                                <Setter Property="Focusable" Value="False" />
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                                 <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}" />
-                                <Setter Property="BorderBrush" Value="{DynamicResource BrushBorderStrong}" />
+                                <Setter Property="BorderBrush" Value="Transparent" />
                                 <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
                                 <Setter Property="Template">
                                     <Setter.Value>
@@ -859,7 +867,7 @@
                                       Header="{local:Term Backpack, Prefix='添加到'}"
                                       Click="AddToQuickPanelMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry backpack}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+            <Path Data="{local:IconGeometry backpack}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="CreateDesktopShortcutMenuItem"
@@ -872,11 +880,13 @@
                         </ContextMenu>
                     </ListBox.ContextMenu>
 
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
+                    <ListBox.Resources>
+                        <!-- 1. 列表视图项样式 -->
+                        <Style x:Key="CommandListItemContainerStyle" TargetType="ListBoxItem">
                             <Setter Property="Margin" Value="4,2,4,2" />
                             <Setter Property="Padding" Value="0" />
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                             <EventSetter Event="PreviewMouseLeftButtonDown" Handler="CommandListItem_PreviewMouseLeftButtonDown" />
                             <EventSetter Event="MouseMove" Handler="CommandListItem_MouseMove" />
                             <Setter Property="Template">
@@ -900,10 +910,42 @@
                                 </Setter.Value>
                             </Setter>
                         </Style>
-                    </ListBox.ItemContainerStyle>
 
-                    <ListBox.ItemTemplate>
-                        <DataTemplate DataType="{x:Type local:CommandItem}">
+                        <!-- 2. 网格视图项样式 -->
+                        <Style x:Key="CommandGridItemContainerStyle" TargetType="ListBoxItem">
+                            <Setter Property="Margin" Value="4" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Width" Value="84" />
+                            <Setter Property="Height" Value="92" />
+                            <Setter Property="HorizontalContentAlignment" Value="Center" />
+                            <Setter Property="VerticalContentAlignment" Value="Center" />
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="CommandListItem_PreviewMouseLeftButtonDown" />
+                            <EventSetter Event="MouseMove" Handler="CommandListItem_MouseMove" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="Root"
+                                                Padding="4,6"
+                                                CornerRadius="8"
+                                                Background="Transparent">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+
+                        <!-- 3. 列表视图模板 -->
+                        <DataTemplate x:Key="CommandListItemTemplate" DataType="{x:Type local:CommandItem}">
                             <Grid>
                                 <Grid.Style>
                                     <Style TargetType="Grid">
@@ -922,7 +964,7 @@
                                         <Style TargetType="Grid">
                                             <Setter Property="Visibility" Value="Visible" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Source}" Value="Cloud">
+                                                <DataTrigger Binding="{Binding Source}" Value="{x:Static local:CommandSource.Cloud}">
                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -936,8 +978,8 @@
 
                                     <!-- Icon Area -->
                                     <Grid VerticalAlignment="Center" Margin="0,0,12,0">
-                                        <Border Width="32"
-                                                Height="32"
+                                        <Border Width="36"
+                                                Height="36"
                                                 CornerRadius="8"
                                                 ClipToBounds="True">
                                             <Border.Style>
@@ -956,7 +998,7 @@
                                                        RenderOptions.BitmapScalingMode="HighQuality"
                                                        SnapsToDevicePixels="True"
                                                        Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                <Viewbox Margin="6"
+                                                <Viewbox Margin="7"
                                                          Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <Path Width="24"
                                                           Height="24"
@@ -965,12 +1007,13 @@
                                                           Stretch="Uniform" />
                                                 </Viewbox>
                                                 <TextBlock Text="{Binding DisplayGlyph}"
-                                                       FontSize="{DynamicResource FontSizeNormalPlus}"
-                                                       Foreground="{DynamicResource BrushTextMain}"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       FontWeight="Bold"
-                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                           FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                           Foreground="{DynamicResource BrushTextMain}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontWeight="Bold"
+                                                           Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <!-- 新建/未读小程序红点 -->
                                                 <Border Width="9"
                                                         Height="9"
                                                         CornerRadius="4.5"
@@ -981,6 +1024,7 @@
                                                         VerticalAlignment="Top"
                                                         Margin="0,1,1,0"
                                                         Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <!-- C# 首次预编译动画 -->
                                                 <Border Background="{DynamicResource BrushDialogBG}"
                                                         Visibility="{Binding IsCSharpPrebuilding, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                 <Path Width="14"
@@ -1013,7 +1057,7 @@
                                                 </Path>
                                             </Grid>
                                         </Border>
-                                        <!-- Running indicator (Green Dot) -->
+                                        <!-- 运行状态绿点 -->
                                         <Border Width="9"
                                                 Height="9"
                                                 CornerRadius="4.5"
@@ -1028,32 +1072,17 @@
                                     </Grid>
 
                                     <!-- Text Area -->
-                                    <Grid Grid.Column="1" VerticalAlignment="Center">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <TextBlock Text="{Binding Title}"
-                                                   Grid.Row="0"
-                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
-                                                   FontWeight="Medium"
-                                                   Foreground="{DynamicResource BrushTextMain}"
-                                                   TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding EffectiveSubtitle}"
-                                                   Grid.Row="1"
-                                                   Margin="0,2,0,0"
-                                                   Foreground="{DynamicResource BrushTextSec}"
-                                                   FontSize="{DynamicResource FontSizeSmall}"
-                                                   TextTrimming="CharacterEllipsis" />
-                                    </Grid>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding EffectiveSubtitle}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
 
-                                     <!-- Action Label -->
-                                     <StackPanel Grid.Column="2"
-                                                 Orientation="Horizontal"
-                                                 VerticalAlignment="Center"
-                                                 Margin="8,0,5,0">
-
-                                           <!-- 快捷键徽标 (如果该项配置了快捷键) -->
+                                    <!-- Right Tags / Actions -->
+                                    <StackPanel Grid.Column="2"
+                                                Orientation="Horizontal"
+                                                VerticalAlignment="Center"
+                                                Margin="8,0,5,0">
+                                        <!-- 快捷键徽标 (如果该项配置了快捷键) -->
                                         <Border Background="{DynamicResource BrushBG}"
                                                 BorderBrush="{DynamicResource BrushBorderStrong}"
                                                 BorderThickness="1"
@@ -1067,7 +1096,7 @@
                                                        FontWeight="SemiBold" />
                                         </Border>
 
-                                        <!-- 普通分类标签 (扩展/应用/文件等) -->
+                                        <!-- 普通分类标签 (小程序/应用/文件等) -->
                                         <TextBlock Text="{Binding DisplayTypeLabel}" 
                                                    Foreground="{DynamicResource BrushTextSec}" 
                                                    FontSize="{DynamicResource FontSizeSmallPlus}" 
@@ -1082,7 +1111,7 @@
                                         <Style TargetType="Grid">
                                             <Setter Property="Visibility" Value="Collapsed" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Source}" Value="Cloud">
+                                                <DataTrigger Binding="{Binding Source}" Value="{x:Static local:CommandSource.Cloud}">
                                                     <Setter Property="Visibility" Value="Visible" />
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -1095,103 +1124,49 @@
                                     </Grid.ColumnDefinitions>
 
                                     <!-- Icon Area -->
-                                    <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
-                                        <Border Width="32"
-                                                Height="32"
-                                                CornerRadius="8"
-                                                ClipToBounds="True">
-                                            <Border.Style>
-                                                <Style TargetType="Border">
-                                                    <Setter Property="Background" Value="{Binding AccentBrush}" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
-                                                            <Setter Property="Background" Value="Transparent" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Border.Style>
+                                    <Grid VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <Border Width="36" Height="36" CornerRadius="8" ClipToBounds="True" Background="{Binding AccentBrush}">
                                             <Grid>
-                                                <Image Source="{Binding IconSource}"
-                                                       Stretch="UniformToFill"
-                                                       RenderOptions.BitmapScalingMode="HighQuality"
-                                                       SnapsToDevicePixels="True"
-                                                       Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                                <Viewbox Margin="6"
-                                                         Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <Path Width="24"
-                                                          Height="24"
-                                                          Data="{Binding VectorIcon}"
-                                                          Fill="{Binding VectorIconBrush, FallbackValue=White}"
-                                                          Stretch="Uniform" />
+                                                <Image Source="{Binding IconSource}" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <Viewbox Margin="7" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <Path Width="24" Height="24" Data="{Binding VectorIcon}" Fill="{Binding VectorIconBrush, FallbackValue=White}" Stretch="Uniform" />
                                                 </Viewbox>
-                                                <TextBlock Text="{Binding DisplayGlyph}"
-                                                       FontSize="{DynamicResource FontSizeNormalPlus}"
-                                                       Foreground="{DynamicResource BrushTextMain}"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       FontWeight="Bold"
-                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                <TextBlock Text="{Binding DisplayGlyph}" FontSize="{DynamicResource FontSizeNormalPlus}" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                             </Grid>
                                         </Border>
                                     </Grid>
 
                                     <!-- Text Area -->
-                                    <Grid Grid.Column="1" VerticalAlignment="Center">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <TextBlock Text="{Binding Title}"
-                                                   Grid.Row="0"
-                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
-                                                   FontWeight="Medium"
-                                                   Foreground="{DynamicResource BrushTextMain}"
-                                                   TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding EffectiveSubtitle}"
-                                                   Grid.Row="1"
-                                                   Margin="0,2,0,0"
-                                                   Foreground="{DynamicResource BrushTextSec}"
-                                                   FontSize="{DynamicResource FontSizeSmall}"
-                                                   TextTrimming="CharacterEllipsis" />
-                                    </Grid>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <Border Background="#153B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="4" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Category}" Foreground="#60A5FA" FontSize="10" FontWeight="SemiBold"/>
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding EffectiveSubtitle}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
 
-                                    <!-- Action & Stats Area -->
-                                    <StackPanel Grid.Column="2" 
-                                                Orientation="Vertical" 
-                                                VerticalAlignment="Center" 
-                                                HorizontalAlignment="Right" 
-                                                Margin="8,0,5,0">
-                                        <!-- Stats (下载量 & 评分) -->
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,4">
-                                            <!-- 下载量 -->
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,10,0" VerticalAlignment="Center">
-                                                <TextBlock Text="⤓ " Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
-                                                <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" />
-                                            </StackPanel>
-                                            <!-- 评分 -->
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Text="★ " Foreground="#FFFFB000" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
-                                                <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" />
-                                            </StackPanel>
+                                    <!-- Actions Area -->
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0" Opacity="0.7">
+                                            <TextBlock Text="★ " Foreground="#FBBF24" FontSize="11" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            
+                                            <TextBlock Text="⬇ " Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center" />
                                         </StackPanel>
 
-                                        <!-- Buttons -->
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <!-- 试运行：始终显示，是否可用由 HasArchive 决定 -->
-                                            <Button Content="试运行"
-                                                    Click="StoreDryRunButton_Click"
-                                                    Tag="{Binding}"
-                                                    IsEnabled="{Binding HasArchive}"
-                                                    Height="22"
-                                                    Padding="8,0"
-                                                    Margin="0,0,6,0"
-                                                    FontSize="11"
-                                                    Background="#20FFFFFF"
-                                                    Foreground="{DynamicResource BrushTextMain}"
-                                                    BorderBrush="#30FFFFFF"
-                                                    BorderThickness="1"
-                                                    Cursor="Hand"
-                                                    Focusable="False">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Content="详情" Click="StoreDetailButton_Click" Tag="{Binding}" Height="22" Padding="8,0" Margin="0,0,6,0" FontSize="11" Background="Transparent" Foreground="{DynamicResource BrushTextSec}" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
+                                                <Button.Resources>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="CornerRadius" Value="4"/>
+                                                    </Style>
+                                                </Button.Resources>
+                                            </Button>
+
+                                            <Button Content="试运行" Click="StoreDryRunButton_Click" Tag="{Binding}" IsEnabled="{Binding HasArchive}" Height="22" Padding="8,0" Margin="0,0,6,0" FontSize="11" Background="#20FFFFFF" Foreground="{DynamicResource BrushTextMain}" BorderBrush="#30FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
                                                 <Button.Resources>
                                                     <Style TargetType="Border">
                                                         <Setter Property="CornerRadius" Value="4"/>
@@ -1200,21 +1175,9 @@
                                             </Button>
 
                                             <Grid>
-                                                <!-- 未安装时显示：安装按钮 -->
-                                                <Button Content="安装"
-                                                        Click="StoreInstallButton_Click"
-                                                        Tag="{Binding}"
-                                                        IsEnabled="{Binding HasArchive}"
-                                                        Height="22"
-                                                        Padding="10,0"
-                                                        FontSize="11"
-                                                        Background="{DynamicResource BrushAccent}"
-                                                        Foreground="White"
-                                                        BorderThickness="0"
-                                                        Cursor="Hand"
-                                                        Focusable="False">
+                                                <Button Content="安装" Click="StoreInstallButton_Click" Tag="{Binding}" IsEnabled="{Binding HasArchive}" Height="22" Padding="10,0" FontSize="11" FontWeight="SemiBold" Background="{DynamicResource BrushAccent}" Foreground="White" BorderThickness="0" Cursor="Hand" Focusable="False">
                                                     <Button.Style>
-                                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                        <Style TargetType="Button">
                                                             <Setter Property="Visibility" Value="Visible" />
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding IsInstalled}" Value="True">
@@ -1230,18 +1193,7 @@
                                                     </Button.Resources>
                                                 </Button>
 
-                                                <!-- 已安装时显示：已安装标签 -->
-                                                <Border Background="#12FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="4" Padding="8,3">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
-                                                                    <Setter Property="Visibility" Value="Visible" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
+                                                <Border Background="#12FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="4" Padding="8,3" Visibility="{Binding IsInstalled, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <TextBlock Text="已安装" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" FontWeight="SemiBold"/>
                                                 </Border>
                                             </Grid>
@@ -1250,12 +1202,123 @@
                                 </Grid>
                             </Grid>
                         </DataTemplate>
-                    </ListBox.ItemTemplate>
+
+                        <!-- 4. 网格视图模板 -->
+                        <DataTemplate x:Key="CommandGridItemTemplate" DataType="{x:Type local:CommandItem}">
+                            <Grid Width="76" HorizontalAlignment="Center" ToolTip="{Binding DisplaySubtitle}">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Opacity" Value="1" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
+                                                <Setter Property="Opacity" Value="0.58" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <!-- 上方图标区域 -->
+                                <Grid Grid.Row="0" HorizontalAlignment="Center" Margin="0,4,0,6">
+                                    <Border Width="40"
+                                            Height="40"
+                                            CornerRadius="10"
+                                            ClipToBounds="True">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{Binding AccentBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Image Source="{Binding IconSource}"
+                                                   Stretch="UniformToFill"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                   SnapsToDevicePixels="True"
+                                                   Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Viewbox Margin="7"
+                                                     Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Path Width="24"
+                                                      Height="24"
+                                                      Data="{Binding VectorIcon}"
+                                                      Fill="{Binding VectorIconBrush, FallbackValue=White}"
+                                                      Stretch="Uniform" />
+                                            </Viewbox>
+                                            <TextBlock Text="{Binding DisplayGlyph}"
+                                                       FontSize="16"
+                                                       Foreground="{DynamicResource BrushTextMain}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       FontWeight="Bold"
+                                                       Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Border Width="8"
+                                                    Height="8"
+                                                    CornerRadius="4"
+                                                    Background="#FFFF5A7A"
+                                                    BorderBrush="#CCFFFFFF"
+                                                    BorderThickness="1"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    Margin="0,1,1,0"
+                                                    Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+
+                                <!-- 下方名称（单行，省略截断，居中） -->
+                                <TextBlock Grid.Row="1"
+                                           Text="{Binding Title}"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
+                                           FontWeight="Medium"
+                                           HorizontalAlignment="Center"
+                                           TextAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="76"
+                                           Margin="0,0,0,2" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.Resources>
+
+                    <ListBox.Style>
+                        <Style TargetType="ListBox">
+                            <!-- 默认：列表视图 -->
+                            <Setter Property="ItemsPanel">
+                                <Setter.Value>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel Orientation="Vertical" />
+                                    </ItemsPanelTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Setter Property="ItemContainerStyle" Value="{StaticResource CommandListItemContainerStyle}" />
+                            <Setter Property="ItemTemplate" Value="{StaticResource CommandListItemTemplate}" />
+                            <Style.Triggers>
+                                <!-- 网格视图模式 -->
+                                <DataTrigger Binding="{Binding IsGridViewMode}" Value="True">
+                                    <Setter Property="ItemsPanel">
+                                        <Setter.Value>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal" Margin="4,0,0,0" />
+                                            </ItemsPanelTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Setter Property="ItemContainerStyle" Value="{StaticResource CommandGridItemContainerStyle}" />
+                                    <Setter Property="ItemTemplate" Value="{StaticResource CommandGridItemTemplate}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.Style>
                 </ListBox>
 
                 <!-- 文件搜索中 Loading 动画与文案 -->
                 <Grid Grid.Row="1"
-                      Panel.ZIndex="5"
                       Visibility="{Binding IsFileSearching, Converter={StaticResource BooleanToVisibilityConverter}}"
                       Background="Transparent"
                       IsHitTestVisible="False">
@@ -1289,6 +1352,28 @@
                                      BorderThickness="0"
                                      HorizontalAlignment="Center" />
                         <TextBlock Text="正在加载小程序商店..."
+                                   Foreground="{DynamicResource BrushTextSec}"
+                                   FontSize="{DynamicResource FontSizeNormal}"
+                                   Margin="0,12,0,0"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- 5. 视图模式切换加载动画 Overlay -->
+                <Grid x:Name="ViewModeSwitchLoadingOverlay"
+                      Panel.ZIndex="16"
+                      Visibility="Collapsed"
+                      Background="#D518181A">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="160"
+                                     Height="6"
+                                     Foreground="#FF3B82F6"
+                                     Background="#33FFFFFF"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Center" />
+                        <TextBlock x:Name="ViewModeSwitchLoadingText"
+                                   Text="正在切换视图..."
                                    Foreground="{DynamicResource BrushTextSec}"
                                    FontSize="{DynamicResource FontSizeNormal}"
                                    Margin="0,12,0,0"
@@ -2349,12 +2434,44 @@ Visibility="{Binding AiChatVisibility}">
                                 Click="RadialPickerConfirmButton_Click"
                                 Visibility="{Binding RadialPickerBarVisibility, FallbackValue=Collapsed}"/>
 
+                        <!-- 视图模式切换按钮（列表/网格） -->
+                        <Button x:Name="ViewModeSwitchButton"
+                                Width="28"
+                                Height="28"
+                                Padding="0"
+                                Margin="4,0,0,0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                ToolTip="{Binding ViewModeTooltip}"
+                                Click="ViewModeSwitchButton_Click"
+                                Visibility="{Binding NormalFooterMenuVisibility}"
+                                Focusable="False"
+                                FocusVisualStyle="{x:Null}"
+                                Style="{DynamicResource GhostButtonStyle}">
+                            <Border Width="22"
+                                    Height="22"
+                                    CornerRadius="5"
+                                    BorderBrush="{DynamicResource BrushBorder}"
+                                    BorderThickness="1"
+                                    Background="Transparent"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                <Path Data="{Binding ViewModeIconGeometry}"
+                                      Fill="{DynamicResource BrushTextSec}"
+                                      Stretch="Uniform"
+                                      Width="12"
+                                      Height="12"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                            </Border>
+                        </Button>
+
                         <!-- 盲操指南快捷开关按钮 (?) -->
                         <Button x:Name="FooterBlindGuideHelpButton"
                                 Width="28"
                                 Height="28"
                                 Padding="0"
-                                Margin="8,0,0,0"
+                                Margin="4,0,0,0"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 ToolTip="盲操指南 (点击开启/隐藏快捷键伴随窗)"

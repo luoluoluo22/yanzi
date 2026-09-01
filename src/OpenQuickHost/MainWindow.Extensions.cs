@@ -83,8 +83,8 @@ public partial class MainWindow
         SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase));
         CommandList.SelectedItem = SelectedCommand;
         LastRunMessage = isEditMode
-            ? $"已更新本地 JSON 扩展：{command.Title}"
-            : $"已添加本地 JSON 小程序：{command.Title}";
+            ? $"已更新本地 JSON {BrandTerms.Current.MiniApp}：{command.Title}"
+            : $"已添加本地 JSON {BrandTerms.Current.MiniApp}：{command.Title}";
         HostAssets.AppendLog($"PersistJsonExtensionFromDialog: success, extensionId={command.ExtensionId}.");
         return command;
     }
@@ -2286,9 +2286,9 @@ public partial class MainWindow
             }
 
             ReplaceEditedExtensionReferences(extensionId, updated.ExtensionId);
-            LastRunMessage = $"已更新本地 JSON 扩展：{updated.Title}";
+            LastRunMessage = $"已更新本地 JSON {BrandTerms.Current.MiniApp}：{updated.Title}";
             QueueBackgroundWebDavSync("extension-edit-settings");
-            return Task.FromResult((true, $"已更新小程序：{updated.Title}"));
+            return Task.FromResult((true, $"已更新{BrandTerms.Current.MiniApp}：{updated.Title}"));
         }
         catch (Exception ex)
         {
@@ -2458,11 +2458,11 @@ public partial class MainWindow
             SelectedCommand = FilteredCommands.FirstOrDefault();
             CommandList.SelectedItem = SelectedCommand;
 
-            LastRunMessage = $"已将扩展移入回收站：{deletable.Title}";
-            SyncStatus = $"已将扩展移入回收站：{deletable.Title}";
+            LastRunMessage = $"已将{BrandTerms.Current.MiniApp}移入回收站：{deletable.Title}";
+            SyncStatus = $"已将{BrandTerms.Current.MiniApp}移入回收站：{deletable.Title}";
             QueuePrivateExtensionRemovalFromAccount(deletable.ExtensionId);
             QueueBackgroundWebDavSync("extension-delete-settings");
-            return Task.FromResult((true, $"已将扩展移入回收站：{deletable.Title}"));
+            return Task.FromResult((true, $"已将{BrandTerms.Current.MiniApp}移入回收站：{deletable.Title}"));
         }
         catch (Exception ex)
         {
@@ -2584,7 +2584,7 @@ public partial class MainWindow
                 .FirstOrDefault(item => item.ExtensionId.Equals(restored.ExtensionId, StringComparison.OrdinalIgnoreCase));
             if (command == null)
             {
-                throw new InvalidOperationException("恢复后的扩展清单无效。");
+                throw new InvalidOperationException($"恢复后的{BrandTerms.Current.MiniApp}清单无效。");
             }
 
             WebDavSyncService.MarkExtensionRestoredLocally(command.ExtensionId, command.DeclaredVersion);
@@ -2593,11 +2593,11 @@ public partial class MainWindow
             SelectedCommand = _allCommands.FirstOrDefault(item =>
                 item.ExtensionId.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase));
             CommandList.SelectedItem = SelectedCommand;
-            LastRunMessage = $"已从回收站恢复扩展：{command.Title}";
-            SyncStatus = $"已恢复扩展：{command.Title}";
+            LastRunMessage = $"已从回收站恢复{BrandTerms.Current.MiniApp}：{command.Title}";
+            SyncStatus = $"已恢复{BrandTerms.Current.MiniApp}：{command.Title}";
             QueuePrivateExtensionUpsertToAccount(command.ExtensionId);
             QueueBackgroundWebDavSync("extension-restore-settings");
-            return Task.FromResult((true, $"已恢复扩展：{command.Title}"));
+            return Task.FromResult((true, $"已恢复{BrandTerms.Current.MiniApp}：{command.Title}"));
         }
         catch (Exception ex)
         {
@@ -2841,18 +2841,18 @@ public partial class MainWindow
             : _lastActionableCommand;
         if (sourceCommand == null)
         {
-            SyncStatus = "没有可重命名的扩展。";
+            SyncStatus = $"没有可重命名的{BrandTerms.Current.MiniApp}。";
             return Task.CompletedTask;
         }
 
         var extension = ResolveRunnableCommand(sourceCommand);
         if (extension.Source != CommandSource.LocalExtension)
         {
-            SyncStatus = "当前选中项不是本地小程序，不能直接重命名。";
+            SyncStatus = $"当前选中项不是本地{BrandTerms.Current.MiniApp}，不能直接重命名。";
             return Task.CompletedTask;
         }
 
-        var dialog = new SimpleTextInputWindow("重命名扩展", "输入新的小程序名称。", extension.Title)
+        var dialog = new SimpleTextInputWindow($"重命名{BrandTerms.Current.MiniApp}", $"输入新的{BrandTerms.Current.MiniApp}名称。", extension.Title)
         {
             Owner = this
         };
@@ -2868,7 +2868,7 @@ public partial class MainWindow
             ApplyFilter(SearchBox.Text);
             SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(renamed.ExtensionId, StringComparison.OrdinalIgnoreCase));
             CommandList.SelectedItem = SelectedCommand;
-            LastRunMessage = $"已重命名扩展：{renamed.Title}";
+            LastRunMessage = $"已重命名{BrandTerms.Current.MiniApp}：{renamed.Title}";
             QueueBackgroundWebDavSync("extension-rename");
         }
         catch (Exception ex)

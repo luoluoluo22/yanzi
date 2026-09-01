@@ -12738,6 +12738,15 @@ public sealed class SettingsExtensionItem : INotifyPropertyChanged
 
     public Visibility ShortcutBadgeVisibility => HasShortcut ? Visibility.Visible : Visibility.Collapsed;
 
+    public Visibility CategoryBadgeVisibility =>
+        !string.IsNullOrWhiteSpace(Category) &&
+        !string.Equals(Category, "扩展", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(Category, "小程序", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(Category, "插件", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(Category, "extension", StringComparison.OrdinalIgnoreCase)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
     public string ShortcutDetailLabel => HasShortcut ? Shortcut : "未设置";
 
     public string StartupMode

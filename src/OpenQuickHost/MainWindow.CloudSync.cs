@@ -6503,6 +6503,15 @@ public partial class MainWindow
         StoreExtensionDetailOverlay.DataContext = null;
     }
 
+    private void StoreDetailButton_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is FrameworkElement fe && fe.Tag is CommandItem item)
+        {
+            ShowStoreExtensionDetail(item);
+        }
+    }
+
     private async void StoreDryRunButton_Click(object sender, RoutedEventArgs e)
     {
         e.Handled = true;

@@ -61,7 +61,9 @@ internal static class ExtensionIconLibrary
         ["stop"] = "M6,6H18V18H6V6Z",
         ["backpack"] = "M19 18V10C19 6.13 15.87 3 12 3C8.13 3 5 6.13 5 10V18C5 19.1 5.9 20 7 20H17C18.1 20 19 19.1 19 18M12 5C14.76 5 17 7.24 17 10V11H7V10C7 7.24 9.24 5 12 5M7 13H17V18H7V13M9 8H15V9.5H9V8Z",
         ["trophy"] = "M18 2H6V4H4C2.9 4 2 4.9 2 6V8C2 10.2 3.8 12 6 12H7.1C7.8 13.8 9.3 15.1 11 15.7V18H8V20H16V18H13V15.7C14.7 15.1 16.2 13.8 16.9 12H18C20.2 12 22 10.2 22 8V6C22 4.9 21.1 4 20 4H18V2M4 6H6V10C4.9 10 4 9.1 4 8V6M20 8C20 9.1 19.1 10 18 10V6H20V8Z",
-        ["broom"] = "M19.36,2.72L20.78,4.14L15.06,9.85C16.13,11.39 16.28,13.47 15.38,15.17L12.06,11.85L10.65,13.26L13.97,16.58C12.27,17.48 10.19,17.33 8.65,16.26L2.94,21.97L1.5,20.55L7.24,14.83C6.17,13.29 6.02,11.21 6.92,9.51L10.24,12.83L11.65,11.42L8.33,8.1C10.03,7.2 12.11,7.35 13.65,8.42L19.36,2.72Z"
+        ["broom"] = "M19.36,2.72L20.78,4.14L15.06,9.85C16.13,11.39 16.28,13.47 15.38,15.17L12.06,11.85L10.65,13.26L13.97,16.58C12.27,17.48 10.19,17.33 8.65,16.26L2.94,21.97L1.5,20.55L7.24,14.83C6.17,13.29 6.02,11.21 6.92,9.51L10.24,12.83L11.65,11.42L8.33,8.1C10.03,7.2 12.11,7.35 13.65,8.42L19.36,2.72Z",
+        ["view-grid"] = "M3,3H10V10H3V3M14,3H21V10H14V3M3,14H10V21H3V14M14,14H21V21H14V14Z",
+        ["view-list"] = "M4,4.5A1.5,1.5 0 0,1 5.5,6A1.5,1.5 0 0,1 4,7.5A1.5,1.5 0 0,1 2.5,6A1.5,1.5 0 0,1 4,4.5M8,5H21V7H8V5M4,10.5A1.5,1.5 0 0,1 5.5,12A1.5,1.5 0 0,1 4,13.5A1.5,1.5 0 0,1 2.5,12A1.5,1.5 0 0,1 4,10.5M8,11H21V13H8V11M4,16.5A1.5,1.5 0 0,1 5.5,18A1.5,1.5 0 0,1 4,19.5A1.5,1.5 0 0,1 2.5,18A1.5,1.5 0 0,1 4,16.5M8,17H21V19H8V17Z"
     };
 
     private static readonly IReadOnlyDictionary<string, string> SvgAssetIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -804,7 +806,9 @@ internal static class ExtensionIconLibrary
         var separatorIndex = trimmed.IndexOf(':');
         if (separatorIndex <= 0 || separatorIndex >= trimmed.Length - 1)
         {
-            return false;
+            library = "mdi";
+            name = trimmed.ToLowerInvariant();
+            return true;
         }
 
         library = trimmed[..separatorIndex].Trim();

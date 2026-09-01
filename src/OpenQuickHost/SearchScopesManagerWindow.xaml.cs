@@ -29,13 +29,13 @@ namespace OpenQuickHost
                     displayLabel = config.Key switch
                     {
                         "all" => "全部",
-                        "extension" => "扩展",
+                        "extension" => BrandTerms.Current.MiniApp,
                         "application" => "应用",
                         "file" => "文件",
                         "system" => "系统",
-                        "yanyu" => "燕语",
+                        "yanyu" => BrandTerms.Current.YanVoice,
                         "ai" => "AI对话",
-                        "store" => "扩展商店",
+                        "store" => $"{BrandTerms.Current.MiniApp}商店",
                         _ => config.Label
                     };
                 }

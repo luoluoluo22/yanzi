@@ -655,6 +655,7 @@ public static class AppSettingsStore
         settings.WindowBindings = NormalizeWindowBindings(settings.WindowBindings);
         settings.LastTestArgument = string.IsNullOrWhiteSpace(settings.LastTestArgument) ? "示例参数" : settings.LastTestArgument.Trim();
         settings.LastExtensionEditorTab = string.Equals(settings.LastExtensionEditorTab, "ai", StringComparison.OrdinalIgnoreCase) ? "ai" : "simple";
+        settings.LauncherResultViewMode = string.Equals(settings.LauncherResultViewMode, "Grid", StringComparison.OrdinalIgnoreCase) ? "Grid" : "List";
 
         settings.AutoBackupFrequency = string.IsNullOrWhiteSpace(settings.AutoBackupFrequency)
             ? "Weekly"
@@ -666,13 +667,13 @@ public static class AppSettingsStore
         var defaultList = new List<(string Key, string Label)>
         {
             ("all", "全部"),
-            ("extension", "扩展"),
+            ("extension", BrandTerms.DefaultMiniApp),
             ("application", "应用"),
             ("file", "文件"),
             ("system", "系统"),
-            ("yanyu", "燕语"),
+            ("yanyu", BrandTerms.DefaultYanVoice),
             ("ai", "AI对话"),
-            ("store", "扩展商店")
+            ("store", $"{BrandTerms.DefaultMiniApp}商店")
         };
 
         foreach (var def in defaultList)
@@ -680,6 +681,21 @@ public static class AppSettingsStore
             if (!settings.SearchScopeConfigs.Any(c => string.Equals(c.Key, def.Key, StringComparison.OrdinalIgnoreCase)))
             {
                 settings.SearchScopeConfigs.Add(new SearchScopeConfigItem { Key = def.Key, Label = def.Label, IsVisible = true, IsPinned = false });
+            }
+        }
+
+        // 自动升级旧配置中的历史名词
+        foreach (var cfg in settings.SearchScopeConfigs)
+        {
+            if (string.Equals(cfg.Key, "extension", StringComparison.OrdinalIgnoreCase) &&
+                (string.Equals(cfg.Label, "扩展", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(cfg.Label)))
+            {
+                cfg.Label = BrandTerms.Current.MiniApp;
+            }
+            else if (string.Equals(cfg.Key, "store", StringComparison.OrdinalIgnoreCase) &&
+                     (string.Equals(cfg.Label, "扩展商店", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(cfg.Label)))
+            {
+                cfg.Label = $"{BrandTerms.Current.MiniApp}商店";
             }
         }
 
@@ -1046,6 +1062,8 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
     public int AgentApiPort { get; set; } = 53919;
 
     public string AgentApiToken { get; set; } = "yanzi-local-dev-token";
+
+    public string LauncherResultViewMode { get; set; } = "List";
 
     public string WanPushUuid { get; set; } = System.Guid.NewGuid().ToString("N");
 

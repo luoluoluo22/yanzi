@@ -373,9 +373,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         FilteredCommands = new BulkObservableCollection<CommandItem>(_allCommands);
+        _isGridViewMode = string.Equals(AppSettingsStore.Load().LauncherResultViewMode, "Grid", StringComparison.OrdinalIgnoreCase);
         _attachedFiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(AttachedFilesVisibility));
         SearchScopes = new ObservableCollection<SearchScopeTab>(BuildSearchScopes());
-        _selectedSearchScope = SearchScopes.First();
+        var defaultScope = SearchScopes.FirstOrDefault();
+        if (defaultScope != null)
+        {
+            defaultScope.IsSelected = true;
+            _selectedSearchScope = defaultScope;
+        }
         SelectedCommand = FilteredCommands.FirstOrDefault();
         DataContext = this;
         ExtensionIconLibrary.RemoteIconDownloaded += (url, image) =>
@@ -576,6 +582,80 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private bool _isGridViewMode;
+
+    public bool IsGridViewMode
+    {
+        get => _isGridViewMode;
+        set
+        {
+            if (_isGridViewMode != value)
+            {
+                _isGridViewMode = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ViewModeIconGeometry));
+                OnPropertyChanged(nameof(ViewModeTooltip));
+            }
+        }
+    }
+
+    public Geometry ViewModeIconGeometry => IsGridViewMode
+        ? ExtensionIconLibrary.ResolveVectorIcon("mdi:view-list")!
+        : ExtensionIconLibrary.ResolveVectorIcon("mdi:view-grid")!;
+
+    public string ViewModeTooltip => IsGridViewMode ? "切换为列表视图" : "切换为网格视图";
+
+    private async void ViewModeSwitchButton_Click(object sender, RoutedEventArgs e)
+    {
+        var targetGrid = !IsGridViewMode;
+        if (ViewModeSwitchLoadingText != null && ViewModeSwitchLoadingOverlay != null)
+        {
+            ViewModeSwitchLoadingText.Text = targetGrid ? "正在切换为网格视图..." : "正在切换为列表视图...";
+            ViewModeSwitchLoadingOverlay.Visibility = Visibility.Visible;
+        }
+
+        // 让 UI 线程先呈现加载动画
+        await Task.Delay(16);
+
+        IsGridViewMode = targetGrid;
+
+        // 后台异步保存配置，不阻塞主线程
+        Task.Run(() =>
+        {
+            try
+            {
+                var settings = AppSettingsStore.Load();
+                settings.LauncherResultViewMode = targetGrid ? "Grid" : "List";
+                AppSettingsStore.Save(settings);
+            }
+            catch
+            {
+                // ignore
+            }
+        });
+
+        // 等待排版渲染完成再平滑隐藏
+        await Dispatcher.InvokeAsync(() =>
+        {
+            if (SelectedCommand != null)
+            {
+                CommandList.ScrollIntoView(SelectedCommand);
+            }
+            if (ViewModeSwitchLoadingOverlay != null)
+            {
+                ViewModeSwitchLoadingOverlay.Visibility = Visibility.Collapsed;
+            }
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    private int GetGridColumnCount()
+    {
+        var width = CommandList.ActualWidth;
+        if (width <= 0) width = 580;
+        var cols = (int)Math.Floor(width / 88.0);
+        return Math.Max(1, cols);
+    }
+
     private IEnumerable<SearchScopeTab> BuildSearchScopes()
     {
         var settings = AppSettingsStore.Load();
@@ -597,7 +677,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         yield return new SearchScopeTab(SearchScopeAll, "全部", "所有结果");
                         break;
                     case SearchScopeExtension:
-                        yield return new SearchScopeTab(SearchScopeExtension, "扩展", "所有扩展");
+                        yield return new SearchScopeTab(SearchScopeExtension, BrandTerms.Current.MiniApp, $"所有{BrandTerms.Current.MiniApp}");
                         break;
                     case SearchScopeApplication:
                         yield return new SearchScopeTab(SearchScopeApplication, "应用", "已安装应用");
@@ -609,13 +689,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         yield return new SearchScopeTab(SearchScopeSystem, "系统", "Windows 系统与设置");
                         break;
                     case SearchScopeYanyu:
-                        yield return new SearchScopeTab(SearchScopeYanyu, "燕语", "文本指令与扩展触发词");
+                        yield return new SearchScopeTab(SearchScopeYanyu, BrandTerms.Current.YanVoice, $"文本指令与{BrandTerms.Current.MiniApp}触发词");
                         break;
                     case SearchScopeAi:
                         yield return new SearchScopeTab(SearchScopeAi, "AI对话", "切换到 AI 对话模式");
                         break;
                     case SearchScopeStore:
-                        yield return new SearchScopeTab(SearchScopeStore, "小程序商店", "浏览与安装云端扩展");
+                        yield return new SearchScopeTab(SearchScopeStore, $"{BrandTerms.Current.MiniApp}商店", $"浏览与安装云端{BrandTerms.Current.MiniApp}");
                         break;
                 }
             }
@@ -625,7 +705,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var pinnedCommand = allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, commandId, StringComparison.OrdinalIgnoreCase));
                 if (pinnedCommand != null)
                 {
-                    yield return SearchScopeTab.CreatePinnedCommand(pinnedCommand.ExtensionId, pinnedCommand.Title, $"固定扩展：{pinnedCommand.Title}");
+                    yield return SearchScopeTab.CreatePinnedCommand(pinnedCommand.ExtensionId, pinnedCommand.Title, $"固定{BrandTerms.Current.MiniApp}：{pinnedCommand.Title}");
                 }
             }
         }
@@ -1108,7 +1188,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string SyncSummaryText =>
         _cloudSyncClient == null
             ? "云同步未配置"
-            : $"用户 {_cloudSyncClient.CurrentUserLabel} · {_allCommands.Count(x => x.Source == CommandSource.Cloud)} 个云扩展";
+            : $"用户 {_cloudSyncClient.CurrentUserLabel} · {_allCommands.Count(x => x.Source == CommandSource.Cloud)} 个云端{BrandTerms.Current.MiniApp}";
 
     public string SyncBaseUrl => _syncOptions.BaseUrl;
 
@@ -1292,13 +1372,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (e.Key == Key.Down)
         {
-            MoveSelection(1);
+            var delta = IsGridViewMode ? GetGridColumnCount() : 1;
+            MoveSelection(delta);
             FocusCommandList();
             e.Handled = true;
         }
         else if (e.Key == Key.Up)
         {
-            MoveSelection(-1);
+            var delta = IsGridViewMode ? -GetGridColumnCount() : -1;
+            MoveSelection(delta);
             e.Handled = true;
         }
         else if (e.Key == Key.Enter)
@@ -1416,8 +1498,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CommandList.SelectedItem = latestCommand;
         CommandList.ScrollIntoView(latestCommand);
         LastRunMessage = createdCommands.Count == 1
-            ? $"已创建小程序：{latestCommand.Title}"
-            : $"已创建 {createdCommands.Count} 个扩展。";
+            ? $"已创建{BrandTerms.Current.MiniApp}：{latestCommand.Title}"
+            : $"已创建 {createdCommands.Count} 个{BrandTerms.Current.MiniApp}。";
     }
 
     private Task AddAttachedFilesAsync(IEnumerable<string> filePaths)
@@ -1674,20 +1756,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (e.Key == Key.Down)
         {
-            MoveSelection(1);
+            var delta = IsGridViewMode ? GetGridColumnCount() : 1;
+            MoveSelection(delta);
             e.Handled = true;
             return;
         }
 
         if (e.Key == Key.Up)
         {
-            MoveSelection(-1);
+            var delta = IsGridViewMode ? -GetGridColumnCount() : -1;
+            MoveSelection(delta);
             e.Handled = true;
             return;
         }
 
         if (e.Key == Key.Right)
         {
+            if (IsGridViewMode)
+            {
+                MoveSelection(1);
+                e.Handled = true;
+                return;
+            }
+
             OpenCommandActionsMenu(CommandActionsMenuOrigin.ResultsList);
             e.Handled = true;
             return;
@@ -1695,6 +1786,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (e.Key == Key.Left)
         {
+            if (IsGridViewMode)
+            {
+                MoveSelection(-1);
+                e.Handled = true;
+                return;
+            }
+
             SearchBox.Focus();
             SearchBox.CaretIndex = SearchBox.Text.Length;
             e.Handled = true;
@@ -1843,7 +1941,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HostAssets.AppendLog($"MainWindow TerminateExtensionMenuItem_Click: runningInstances count={runningInstances.Count}");
         if (runningInstances.Count == 0)
         {
-            System.Windows.MessageBox.Show(this, "该扩展当前没有在运行。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            System.Windows.MessageBox.Show(this, $"该{BrandTerms.Current.MiniApp}当前没有在运行。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
             return;
         }
 
@@ -2880,7 +2978,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (AppExtensionWindow.TryActivateExisting(runnable))
             {
                 HostAssets.AppendRecent(runnable.Title);
-                LastRunMessage = $"已激活应用扩展：{runnable.Title}";
+                LastRunMessage = $"已激活应用{BrandTerms.Current.MiniApp}：{runnable.Title}";
                 return;
             }
 
@@ -2910,7 +3008,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             window.Show();
             HostAssets.AppendRecent(runnable.Title);
-            LastRunMessage = $"已打开应用扩展：{runnable.Title}";
+            LastRunMessage = $"已打开应用{BrandTerms.Current.MiniApp}：{runnable.Title}";
             return;
         }
 
@@ -3013,7 +3111,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (runnable.Source == CommandSource.Cloud)
         {
             HostAssets.AppendLog($"Triggering download for cloud extension: {runnable.Title}");
-            LastRunMessage = $"正在安装扩展：{runnable.Title} ...";
+            LastRunMessage = $"正在安装{BrandTerms.Current.MiniApp}：{runnable.Title} ...";
             _ = InstallStoreExtensionAsync(runnable.ExtensionId).ContinueWith(t => 
             {
                 if (t.IsCompletedSuccessfully)
@@ -3246,7 +3344,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public void ClearQuickPanelClipboard()
     {
         _quickPanelClipboard = null;
-        LastRunMessage = "已清空扩展剪贴板。";
+        LastRunMessage = $"已清空{BrandTerms.Current.MiniApp}剪贴板。";
     }
 
     public void SetQuickPanelClipboard(CommandItem command, bool isCut, QuickPanelSlotReference? sourceSlot)
@@ -4325,7 +4423,9 @@ public sealed class CommandItem : INotifyPropertyChanged
         Glyph = glyph;
         Title = title;
         Subtitle = subtitle;
-        Category = category;
+        Category = string.Equals(category, "扩展", StringComparison.OrdinalIgnoreCase)
+            ? BrandTerms.Current.MiniApp
+            : (string.IsNullOrWhiteSpace(category) ? BrandTerms.Current.MiniApp : category);
         OpenTarget = openTarget;
         Keywords = keywords.ToArray();
         AccentBrush = AccentBrushCache.Get(accentHex);
@@ -4428,7 +4528,7 @@ public sealed class CommandItem : INotifyPropertyChanged
     public string DisplaySubtitle => string.IsNullOrWhiteSpace(_queryPreviewSubtitle) ? Subtitle : _queryPreviewSubtitle;
 
     public string EffectiveSubtitle => IsCSharpPrebuilding
-        ? "正在编译扩展，首次运行完成后会更快"
+        ? $"正在编译{BrandTerms.Current.MiniApp}，首次运行完成后会更快"
         : DisplaySubtitle;
 
     public string Category { get; }
@@ -4563,6 +4663,8 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public bool IsInstalled => InstalledForUser;
 
+    public bool IsCloud => Source == CommandSource.Cloud;
+
     public string InstallCountLabel => InstallCount >= 1000000 
         ? $"{(double)InstallCount / 1000000:F1}M" 
         : (InstallCount >= 1000 
@@ -4598,10 +4700,10 @@ public sealed class CommandItem : INotifyPropertyChanged
         : Source == CommandSource.WebSearch
             ? "网页"
         : Category.Contains("燕语", StringComparison.OrdinalIgnoreCase)
-            ? "燕语"
+            ? BrandTerms.Current.YanVoice
         : Category.Contains("系统", StringComparison.OrdinalIgnoreCase)
             ? "系统"
-            : "扩展";
+            : BrandTerms.Current.MiniApp;
 
     public bool HasDisplayTypeLabel => !string.IsNullOrWhiteSpace(DisplayTypeLabel);
 
@@ -4617,13 +4719,13 @@ public sealed class CommandItem : INotifyPropertyChanged
     private string SourceLabel => Source switch
     {
         CommandSource.Cloud => "云端",
-        CommandSource.LocalExtension => "本地小程序",
+        CommandSource.LocalExtension => $"本地{BrandTerms.Current.MiniApp}",
         CommandSource.WebSearch => "网页搜索",
         CommandSource.Application => "应用",
         CommandSource.File => !string.IsNullOrWhiteSpace(ResultProviderTitle) ? ResultProviderTitle! : "文件结果",
         _ => "本地"
     };
-    private string ArchiveSummary => HasArchive ? "已包含扩展包。" : "当前还没有小程序包。";
+    private string ArchiveSummary => HasArchive ? $"已包含{BrandTerms.Current.MiniApp}包。" : $"当前还没有{BrandTerms.Current.MiniApp}包。";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

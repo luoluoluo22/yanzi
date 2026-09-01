@@ -4648,7 +4648,7 @@
                                                                     <TextBlock Text="{Binding ScheduleDetailLabel}" Foreground="#FF60A5FA" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold"/>
                                                                 </StackPanel>
                                                             </Border>
-                                                            <Border Background="#1AFBBF24" BorderBrush="#FFFBBF24" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,0,6">
+                                                            <Border Background="#1AFBBF24" BorderBrush="#FFFBBF24" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,0,6" Visibility="{Binding CategoryBadgeVisibility}">
                                                                 <TextBlock Text="{Binding Category}" Foreground="#FFFBBF24" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold"/>
                                                             </Border>
                                                         </WrapPanel>
@@ -4824,7 +4824,7 @@
                                                     <Border Background="#1A3B82F6" BorderBrush="#FF3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,6,0" Visibility="{Binding ShortcutBadgeVisibility}">
                                                         <TextBlock Text="{Binding ShortcutLabel}" Foreground="#FF3B82F6" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold"/>
                                                     </Border>
-                                                    <Border Background="#1AFBBF24" BorderBrush="#FFFBBF24" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                                                    <Border Background="#1AFBBF24" BorderBrush="#FFFBBF24" BorderThickness="1" CornerRadius="4" Padding="6,2" Visibility="{Binding CategoryBadgeVisibility}">
                                                         <TextBlock Text="{Binding Category}" Foreground="#FFFBBF24" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold"/>
                                                     </Border>
                                                 </StackPanel>

@@ -224,9 +224,9 @@ public static class LocalExtensionCatalog
             Id = "sample-notes",
             Name = "快速便签",
             Version = "0.1.0",
-            Category = "扩展",
-            Description = "示例扩展：打开桌面扩展目录里的便签说明文件。",
-            Keywords = ["note", "memo", "sample", "extension"],
+            Category = "小程序",
+            Description = "示例小程序：打开桌面小程序目录里的便签说明文件。",
+            Keywords = ["note", "memo", "sample", "miniapp"],
             OpenTarget = Path.Combine(extensionDirectory, "README.txt"),
             GlobalShortcut = "Ctrl+Alt+N",
             Icon = "mdi:note"
@@ -240,7 +240,7 @@ public static class LocalExtensionCatalog
             });
         File.WriteAllText(
             Path.Combine(extensionDirectory, "README.txt"),
-            "这是一个本地示例扩展。把 manifest.json 改掉后，宿主会在下次启动时重新扫描并自动尝试云同步。");
+            "这是一个本地示例小程序。把 manifest.json 改掉后，宿主会在下次启动时重新扫描并自动尝试云同步。");
     }
 
     private static void EnsureSampleTranslateExtension()
@@ -253,8 +253,8 @@ public static class LocalExtensionCatalog
             Id = "sample-translate",
             Name = "双栏翻译",
             Version = "0.1.0",
-            Category = "扩展",
-            Description = "示例脚本扩展：在当前窗口中打开双栏翻译工作区。",
+            Category = "小程序",
+            Description = "示例小程序：在当前窗口中打开双栏翻译工作区。",
             Keywords = ["translate", "translator", "翻译", "双栏", "script"],
             GlobalShortcut = "Ctrl+Alt+T",
             Runtime = "powershell",
@@ -857,7 +857,7 @@ public static class YanziAction
             Id = "open-desktop-template",
             Name = "打开桌面",
             Version = "0.1.0",
-            Category = "扩展",
+            Category = "快捷方式",
             Description = "示例：打开当前用户桌面目录。",
             Keywords = ["桌面", "desktop", "打开"],
             OpenTarget = "shell:Desktop",
