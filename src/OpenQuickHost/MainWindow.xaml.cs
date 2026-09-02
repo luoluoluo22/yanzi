@@ -363,6 +363,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _allCommands = CreateSeedCommands();
         _allCommands.AddRange(LocalExtensionCatalog.LoadCommands());
+        _allCommands.AddRange(CreateInstalledApplicationCommands());
         _localExtensionIndex = _allCommands
             .Where(x => x.Source == CommandSource.LocalExtension)
             .GroupBy(x => x.ExtensionId, StringComparer.OrdinalIgnoreCase)
@@ -1689,12 +1690,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _commandListDragSource = null;
 
         var runnable = ResolveRunnableCommand(sourceCommand);
-        if (runnable.IsFileSystemResult)
+        var payload = new System.Windows.DataObject(typeof(CommandItem), runnable);
+        if (!string.IsNullOrWhiteSpace(runnable.OpenTarget) && (File.Exists(runnable.OpenTarget) || Directory.Exists(runnable.OpenTarget)))
         {
-            return;
+            var stringDrop = new System.Collections.Specialized.StringCollection { runnable.OpenTarget };
+            payload.SetFileDropList(stringDrop);
         }
 
-        var payload = new System.Windows.DataObject(typeof(CommandItem), runnable);
         WindowBindingDropOverlayWindow? bindingOverlay = null;
         if ((runnable.Source is CommandSource.LocalExtension or CommandSource.Cloud) &&
             (_quickPanel?.IsEditMode != true) &&
@@ -3311,9 +3313,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     return;
                 }
+                _allCommands.RemoveAll(x => x.Source == CommandSource.Application);
                 _allCommands.AddRange(commands);
                 OnPropertyChanged(nameof(VisibleCountText));
                 OnPropertyChanged(nameof(FooterHint));
+                _quickPanel?.LoadSlots();
             }, DispatcherPriority.Background);
         });
     }

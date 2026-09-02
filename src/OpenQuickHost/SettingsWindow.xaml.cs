@@ -81,6 +81,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private RadialMenuSlotEditorItem? _selectedRadialMenuSlot;
     private readonly Dictionary<string, WpfComboBox> _mouseTriggerTargetCombos = new(StringComparer.Ordinal);
     private bool _isUpdatingMouseTriggerTargetCombos;
+    private bool _isLoadingSettings = true;
     private bool _showPersonalSyncAdvancedOptions;
     private readonly List<SettingsSearchItem> _dynamicSettingsSearchItems = [];
     private readonly Dictionary<TextBlock, string> _searchHighlightSnapshots = new();
@@ -3093,6 +3094,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             app.AgentApiServer.BrowserConnectionChanged += AgentApiServer_BrowserConnectionChanged;
             LocalAgentApiServer.MobileDeviceConnected += LocalAgentApiServer_MobileDeviceConnected;
         }
+
+        _isLoadingSettings = false;
     }
 
     private void LocalAgentApiServer_MobileDeviceConnected(string deviceName)
@@ -3930,38 +3933,49 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void InitializeMouseTriggerTargetDropdowns()
     {
-        var gestures = GetMouseTriggerGestureNames();
-        foreach (var gesture in gestures)
+        _isUpdatingMouseTriggerTargetCombos = true;
+        try
         {
-            if (_mouseTriggerTargetCombos.ContainsKey(gesture))
+            var gestures = GetMouseTriggerGestureNames();
+            foreach (var gesture in gestures)
             {
-                continue;
+                if (_mouseTriggerTargetCombos.ContainsKey(gesture))
+                {
+                    continue;
+                }
+
+                if (FindName($"{gesture}_None") is not System.Windows.Controls.Button noneButton ||
+                    noneButton.Parent is not Grid grid)
+                {
+                    continue;
+                }
+
+                grid.Children.Clear();
+                grid.ColumnDefinitions.Clear();
+                grid.RowDefinitions.Clear();
+
+                var currentTarget = GetGestureTarget(gesture);
+
+                var combo = new WpfComboBox
+                {
+                    Tag = gesture,
+                    Height = 28,
+                    MinWidth = 120,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+                    ItemsSource = GetMouseTriggerTargetOptions(gesture),
+                    DisplayMemberPath = nameof(MouseTriggerOption.Label),
+                    SelectedValuePath = nameof(MouseTriggerOption.Value),
+                    SelectedValue = currentTarget,
+                    Style = TryFindResource("GlobalComboBoxStyle") as Style
+                };
+                combo.SelectionChanged += MouseTriggerTargetCombo_SelectionChanged;
+                grid.Children.Add(combo);
+                _mouseTriggerTargetCombos[gesture] = combo;
             }
-
-            if (FindName($"{gesture}_None") is not System.Windows.Controls.Button noneButton ||
-                noneButton.Parent is not Grid grid)
-            {
-                continue;
-            }
-
-            grid.Children.Clear();
-            grid.ColumnDefinitions.Clear();
-            grid.RowDefinitions.Clear();
-
-            var combo = new WpfComboBox
-            {
-                Tag = gesture,
-                Height = 28,
-                MinWidth = 120,
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
-                ItemsSource = GetMouseTriggerTargetOptions(gesture),
-                DisplayMemberPath = nameof(MouseTriggerOption.Label),
-                SelectedValuePath = nameof(MouseTriggerOption.Value),
-                Style = TryFindResource("GlobalComboBoxStyle") as Style
-            };
-            combo.SelectionChanged += MouseTriggerTargetCombo_SelectionChanged;
-            grid.Children.Add(combo);
-            _mouseTriggerTargetCombos[gesture] = combo;
+        }
+        finally
+        {
+            _isUpdatingMouseTriggerTargetCombos = false;
         }
     }
 
@@ -9211,6 +9225,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SaveQuickPanelTriggerSettings()
     {
+        if (_isLoadingSettings)
+        {
+            return;
+        }
+
         SaveRadialMenuSlots();
         _settings.RadialMenu ??= new RadialMenuSettings();
         _settings.Yanm ??= new YanmSettings();
@@ -9454,6 +9473,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void YanmActivationKey_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_isLoadingSettings)
+        {
+            return;
+        }
+
         SaveYanmSettings(requireCustomShortcut: false);
         if (string.Equals(_settings.Yanm?.ActivationKey, YanmActivationKeys.Custom, StringComparison.OrdinalIgnoreCase) &&
             string.IsNullOrWhiteSpace(_settings.Yanm?.CustomShortcut))
@@ -9465,6 +9489,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SaveYanmSettings(bool requireCustomShortcut = true)
     {
+        if (_isLoadingSettings)
+        {
+            return;
+        }
+
         _settings.Yanm ??= new YanmSettings();
         _settings.Yanm.ActivationKey = YanmActivationKeys.Normalize(_settings.Yanm.ActivationKey);
         _settings.Yanm.MouseTriggerMode = MouseTriggerModes.Normalize(_settings.Yanm.MouseTriggerMode);

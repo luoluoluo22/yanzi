@@ -225,4 +225,24 @@ public static class Win32Native
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    public const uint WM_DROPFILES = 0x0233;
+    public const uint WM_COPYDATA = 0x004A;
+    public const uint WM_COPYGLOBALDATA = 0x0049;
+    public const uint MSGFLT_ALLOW = 1;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool ChangeWindowMessageFilterEx(IntPtr hWnd, uint message, uint action, IntPtr pChangeFilterStruct);
+
+    public static void AllowDragDropMessagesForElevatedProcess(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        try
+        {
+            ChangeWindowMessageFilterEx(hwnd, WM_DROPFILES, MSGFLT_ALLOW, IntPtr.Zero);
+            ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, IntPtr.Zero);
+            ChangeWindowMessageFilterEx(hwnd, WM_COPYGLOBALDATA, MSGFLT_ALLOW, IntPtr.Zero);
+        }
+        catch { }
+    }
 }

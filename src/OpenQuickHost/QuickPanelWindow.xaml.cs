@@ -72,7 +72,6 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private bool _isShowingGlobalFavorites;
     private string? _lastLoadedContextGroupId;
     private string? _lastLoadedGlobalGroupId;
-    private bool _needsReload = true;
     private bool _isShowingContextFavorites;
     private DateTime _suppressAutoHideUntilUtc = DateTime.MinValue;
     private DateTime _lastContextMenuClosedAt = DateTime.MinValue;
@@ -100,6 +99,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     public void EnsureNoActivateStyle()
     {
         this.ApplyNoActivateToolWindowStyle();
+        try
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            Win32Native.AllowDragDropMessagesForElevatedProcess(handle);
+        }
+        catch { }
     }
 
     public void EnsureActivatedForInput()
@@ -562,7 +567,6 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         var currentGlobalGroup = GetSelectedGlobalGroupSettings();
         _lastLoadedContextGroupId = currentContextGroup?.Id;
         _lastLoadedGlobalGroupId = currentGlobalGroup?.Id;
-        _needsReload = false;
     }
 
     public void AddGlobalRow()
@@ -2053,6 +2057,59 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private static QuickPanelDragGhostWindow? _activeDragGhostWindow;
 
+    private static bool IsFileDropData(System.Windows.DragEventArgs e)
+    {
+        return e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop) ||
+               e.Data.GetDataPresent("FileName") ||
+               e.Data.GetDataPresent("FileNameW") ||
+               e.Data.GetDataPresent("Shell IDList Array");
+    }
+
+    private void Window_DragEnter(object sender, System.Windows.DragEventArgs e)
+    {
+        if (IsFileDropData(e))
+        {
+            e.Effects = System.Windows.DragDropEffects.Copy;
+            e.Handled = true;
+        }
+    }
+
+    private void Window_DragOver(object sender, System.Windows.DragEventArgs e)
+    {
+        if (IsFileDropData(e))
+        {
+            e.Effects = System.Windows.DragDropEffects.Copy;
+            e.Handled = true;
+        }
+    }
+
+    private void Window_Drop(object sender, System.Windows.DragEventArgs e)
+    {
+        if (TryGetDroppedFilePaths(e, out var filePaths))
+        {
+            var targetSlot = (IsFolderExpanded ? ActiveFolderSlots : null)?.FirstOrDefault(s => s.IsEmpty)
+                          ?? GlobalSlots?.FirstOrDefault(s => s.IsEmpty)
+                          ?? ContextSlots?.FirstOrDefault(s => s.IsEmpty);
+
+            if (targetSlot != null)
+            {
+                AddDroppedPathsToSlot(targetSlot, filePaths);
+            }
+            ClearReleaseTarget();
+            e.Handled = true;
+        }
+    }
+
+    private void Window_DragLeave(object sender, System.Windows.DragEventArgs e)
+    {
+        ClearReleaseTarget();
+    }
+
+    private void SlotButton_DragEnter(object sender, System.Windows.DragEventArgs e)
+    {
+        SlotButton_DragOver(sender, e);
+    }
+
     private void SlotButton_DragOver(object sender, System.Windows.DragEventArgs e)
     {
         try
@@ -2196,7 +2253,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             else
             {
                 _suspendReleaseTargetPollingUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(350);
-                target.IsReleaseTarget = true;
+                SetReleaseTarget(target, command);
                 e.Effects = System.Windows.DragDropEffects.Copy;
             }
 
@@ -2205,9 +2262,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (TryGetDroppedFilePaths(e, out _))
+        if (IsFileDropData(e))
         {
-            if (target.Item != null)
+            if (target.IsOccupied)
             {
                 e.Effects = System.Windows.DragDropEffects.None;
             }
@@ -2234,6 +2291,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (sender is FrameworkElement { Tag: SlotViewModel target })
         {
             target.ClearInsertIndicators();
+            if (ReferenceEquals(_hoveredSlot, target))
+            {
+                ClearReleaseTarget();
+            }
+            else
+            {
+                target.IsReleaseTarget = false;
+                target.DropPreviewCommand = null;
+            }
         }
         StopFolderHoverTimer();
     }
@@ -2303,13 +2369,20 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (e.Data.GetDataPresent(typeof(CommandItem)) && !e.Data.GetDataPresent(typeof(SlotViewModel)))
         {
             var command = e.Data.GetData(typeof(CommandItem)) as CommandItem;
-            if (command != null && target.IsFolder)
+            if (command != null)
             {
-                AddCommandToFolder(target, command);
-            }
-            else if (command != null)
-            {
-                AddCommandToSlot(target, command);
+                if (command.IsFileSystemResult && !string.IsNullOrWhiteSpace(command.OpenTarget))
+                {
+                    AddDroppedPathsToSlot(target, [command.OpenTarget]);
+                }
+                else if (target.IsFolder)
+                {
+                    AddCommandToFolder(target, command);
+                }
+                else
+                {
+                    AddCommandToSlot(target, command);
+                }
             }
 
             StopFolderHoverTimer();
@@ -2320,7 +2393,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         if (TryGetDroppedFilePaths(e, out var filePaths))
         {
-            if (target.Item == null)
+            if (target.IsEmpty)
             {
                 AddDroppedPathsToSlot(target, filePaths);
             }
@@ -2339,45 +2412,151 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private static bool TryGetDroppedFilePaths(System.Windows.DragEventArgs e, out string[] filePaths)
     {
         filePaths = [];
-        if (!e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop))
+        try
         {
+            var paths = new List<string>();
+
+            if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop))
+            {
+                var raw = e.Data.GetData(System.Windows.DataFormats.FileDrop);
+                if (raw is string[] strArray)
+                {
+                    paths.AddRange(strArray);
+                }
+                else if (raw is IEnumerable<string> strSeq)
+                {
+                    paths.AddRange(strSeq);
+                }
+                else if (raw is string singleStr && !string.IsNullOrWhiteSpace(singleStr))
+                {
+                    paths.Add(singleStr);
+                }
+            }
+
+            if (paths.Count == 0 && e.Data.GetDataPresent("FileNameW"))
+            {
+                var raw = e.Data.GetData("FileNameW");
+                if (raw is string[] strArray)
+                {
+                    paths.AddRange(strArray);
+                }
+                else if (raw is string singleStr && !string.IsNullOrWhiteSpace(singleStr))
+                {
+                    paths.Add(singleStr);
+                }
+            }
+
+            if (paths.Count == 0 && e.Data.GetDataPresent("FileName"))
+            {
+                var raw = e.Data.GetData("FileName");
+                if (raw is string[] strArray)
+                {
+                    paths.AddRange(strArray);
+                }
+                else if (raw is string singleStr && !string.IsNullOrWhiteSpace(singleStr))
+                {
+                    paths.Add(singleStr);
+                }
+            }
+
+            filePaths = paths
+                .Select(static p => (p ?? string.Empty).Trim().Trim('\"'))
+                .Where(static path => !string.IsNullOrWhiteSpace(path) && (File.Exists(path) || Directory.Exists(path)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            return filePaths.Length > 0;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[QuickPanel] TryGetDroppedFilePaths error: {ex.Message}");
             return false;
         }
-
-        if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is not string[] droppedPaths || droppedPaths.Length == 0)
-        {
-            return false;
-        }
-
-        filePaths = droppedPaths
-            .Where(path => !string.IsNullOrWhiteSpace(path) && (File.Exists(path) || Directory.Exists(path)))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        return filePaths.Length > 0;
     }
 
     private void AddDroppedPathsToSlot(SlotViewModel target, IEnumerable<string> filePaths)
     {
-        var firstPath = filePaths.FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(firstPath))
+        var paths = filePaths.Where(static p => !string.IsNullOrWhiteSpace(p)).ToList();
+        if (paths.Count == 0)
         {
             return;
         }
 
         try
         {
-            var newCommand = _mainWindow.CreateQuickOpenExtensionFromPath(firstPath);
-            _mainWindow.MarkExtensionAsNewFromQuickPanel(newCommand);
-            target.SetCommand(newCommand, false, target.IsContextual);
-            SaveSlots(target.IsContextual);
-            LoadSlots();
-            BringToFront();
-            QuestService.OnFileDroppedToBackpack();
-            _mainWindow.LastRunMessage = $"已拖拽创建小程序并放入槽位：{newCommand.Title}";
+            bool isFolder = target.IsFolder;
+            bool isContextual = target.IsContextual;
+            int targetIndex = target.Index;
+
+            // 1. 先创建所有拖入的小程序
+            var createdCommands = new List<CommandItem>();
+            foreach (var path in paths)
+            {
+                var newCommand = _mainWindow.CreateQuickOpenExtensionFromPath(path);
+                _mainWindow.MarkExtensionAsNewFromQuickPanel(newCommand);
+                createdCommands.Add(newCommand);
+                HostAssets.AppendLog($"[QuickPanel] Created extension '{newCommand.ExtensionId}' for dropped file '{path}'.");
+            }
+
+            if (createdCommands.Count == 0)
+            {
+                return;
+            }
+
+            // 2. 如果目标本身就是文件夹，直接添加进文件夹
+            if (isFolder)
+            {
+                foreach (var cmd in createdCommands)
+                {
+                    AddCommandToFolder(target, cmd);
+                }
+                BringToFront();
+                QuestService.OnFileDroppedToBackpack();
+                _mainWindow.LastRunMessage = createdCommands.Count == 1
+                    ? $"已拖拽创建小程序并放入文件夹：{createdCommands[0].Title}"
+                    : $"已拖拽创建 {createdCommands.Count} 个小程序并放入文件夹。";
+                return;
+            }
+
+            // 3. 获取最新加载的槽位集合（因为 CreateQuickOpenExtensionFromPath 内部会触发 LoadSlots）
+            var slots = isContextual ? ContextSlots : GlobalSlots;
+            int addedCount = 0;
+
+            if (slots != null && slots.Count > 0)
+            {
+                int currentSlotIndex = targetIndex;
+                foreach (var cmd in createdCommands)
+                {
+                    var targetSlot = slots.Skip(currentSlotIndex).FirstOrDefault(static s => s.IsEmpty)
+                                  ?? slots.FirstOrDefault(static s => s.IsEmpty);
+
+                    if (targetSlot == null)
+                    {
+                        break;
+                    }
+
+                    targetSlot.SetCommand(cmd, false, isContextual);
+                    currentSlotIndex = targetSlot.Index + 1;
+                    addedCount++;
+                }
+
+                if (addedCount > 0)
+                {
+                    SaveSlots(isContextual);
+                    LoadSlots();
+                    BringToFront();
+                    QuestService.OnFileDroppedToBackpack();
+                    _mainWindow.LastRunMessage = addedCount == 1
+                        ? $"已拖拽创建小程序并放入槽位：{createdCommands[0].Title}"
+                        : $"已拖拽创建 {addedCount} 个小程序并放入槽位。";
+                    HostAssets.AppendLog($"[QuickPanel] Successfully placed {addedCount} extension(s) into slots.");
+                }
+            }
         }
         catch (Exception ex)
         {
-            _mainWindow.SyncStatus = $"拖拽创建小程序失败：{Path.GetFileName(firstPath)}，{ex.Message}";
+            _mainWindow.SyncStatus = $"拖拽创建小程序失败：{Path.GetFileName(paths[0])}，{ex.Message}";
+            HostAssets.AppendLog($"[QuickPanel] AddDroppedPathsToSlot failed: {ex}");
         }
     }
 
@@ -3397,14 +3576,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
             HubSearchBox.Text = string.Empty; // Reset search on show
             _hoveredSlot = null;
-            var currentContextGroup = GetSelectedContextGroupSettings();
-            var currentGlobalGroup = GetSelectedGlobalGroupSettings();
-            if (_needsReload || 
-                currentContextGroup?.Id != _lastLoadedContextGroupId || 
-                currentGlobalGroup?.Id != _lastLoadedGlobalGroupId)
-            {
-                LoadSlots(); // Refresh only when context changes or reload is requested
-            }
+            LoadSlots(); // Always ensure slots reflect the latest command catalog and group settings on show
             var occupiedGlobal = GlobalSlots.Count(slot => slot.IsOccupied);
             var occupiedContext = ContextSlots.Count(slot => slot.IsOccupied);
             HostAssets.AppendLog($"Quick panel showing at ({Left:0},{Top:0}), cursorPixels=({cursorPixels.X:0},{cursorPixels.Y:0}), cursorDips=({cursorDips.X:0},{cursorDips.Y:0}), cursorLocalX={cursorDips.X - Left:0}, topConstrained={topConstrained}, screenDips=({screenBounds.Left:0},{screenBounds.Top:0},{screenBounds.Right:0},{screenBounds.Bottom:0}), occupiedGlobal={occupiedGlobal}, occupiedContext={occupiedContext}, totalGlobal={GlobalSlots.Count}, totalContext={ContextSlots.Count}, previousFocus={DescribeWindow(_previousFocusWindow)}.");
@@ -3488,7 +3660,6 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     public void ReloadSlots()
     {
-        _needsReload = true;
         LoadSlots();
     }
 
@@ -4944,6 +5115,8 @@ public class SlotViewModel : INotifyPropertyChanged
     {
         IsInsertTargetLeft = false;
         IsInsertTargetRight = false;
+        IsReleaseTarget = false;
+        DropPreviewCommand = null;
     }
 
     public CommandItem? Command => _command;
