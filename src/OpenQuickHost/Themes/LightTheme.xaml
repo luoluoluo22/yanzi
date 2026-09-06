@@ -58,4 +58,5 @@
     <SolidColorBrush x:Key="BrushRadialFallbackSector" Color="#FFE2E8F0"/>
     <SolidColorBrush x:Key="BrushRadialChildAccentSector" Color="#FF2563EB"/>
     <SolidColorBrush x:Key="BrushRadialSlotBorder" Color="#28000000"/>
+    <SolidColorBrush x:Key="BrushRadialTextActive" Color="#FF0F172A"/>
 </ResourceDictionary>

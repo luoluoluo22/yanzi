@@ -60,23 +60,6 @@
               Visibility="{Binding IsOuterWheelVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
             <!-- 开放式最外圈：无封闭圆弧边框，向外开放渐变 -->
 
-            <ItemsControl ItemsSource="{Binding OuterItems}"
-                          IsHitTestVisible="False">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <Canvas Width="1400" Height="1400"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Path Data="{Binding SectorGeometry}"
-                              Fill="{Binding SectorBrush}"
-                              Opacity="{Binding SectorOpacity}"
-                              Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
             <ItemsControl ItemsSource="{Binding OuterSeparators}"
                           IsHitTestVisible="False">
                 <ItemsControl.ItemsPanel>
@@ -86,38 +69,49 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{Binding StrokeBrush}" StrokeThickness="1"/>
+                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{Binding StrokeBrush}" StrokeThickness="0.6"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <ItemsControl ItemsSource="{Binding OuterItems}"
+                          IsHitTestVisible="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <Canvas Width="1400" Height="1400"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemContainerStyle>
+                    <Style TargetType="ContentPresenter">
+                        <Setter Property="Panel.ZIndex" Value="{Binding ZIndex}"/>
+                    </Style>
+                </ItemsControl.ItemContainerStyle>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Path Data="{Binding SectorGeometry}"
+                              Fill="{Binding SectorBrush}"
+                              Stroke="{Binding SectorStrokeBrush}"
+                              StrokeThickness="{Binding SectorStrokeThickness}"
+                              StrokeLineJoin="Round"
+                              Effect="{Binding SectorEffect}"
+                              Opacity="{Binding SectorOpacity}"
+                              Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </Grid>
 
-        <!-- 第 2 层：中间层 16 槽位底板与扇区 (半径 100~165) -->
+
+        <!-- 轮盘背景大圆盘 (半径 165) 与 0.6px 细线边框 -->
         <Ellipse Width="330"
                  Height="330"
                  Fill="{DynamicResource BrushRadialOuterBG}"
                  Stroke="{DynamicResource BrushRadialBorder}"
-                 StrokeThickness="1"
+                 StrokeThickness="0.6"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
 
-        <ItemsControl ItemsSource="{Binding MiddleItems}"
-                      IsHitTestVisible="False">
-            <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <Canvas/>
-                </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Path Data="{Binding SectorGeometry}"
-                          Fill="{Binding SectorBrush}"
-                          Opacity="{Binding SectorOpacity}"
-                          Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
+        <!-- 中间层 16 槽位放射分割线 (半径 100~165) -->
         <ItemsControl ItemsSource="{Binding MiddleSeparators}"
                       IsHitTestVisible="False">
             <ItemsControl.ItemsPanel>
@@ -127,44 +121,21 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorder}" StrokeThickness="1"/>
+                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorder}" StrokeThickness="0.6"/>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <!-- 第 1 层：内圈 8 槽位纯色底板与扇区 (半径 36~100) -->
-        <Ellipse Width="200"
-                 Height="200"
-                 Fill="{DynamicResource BrushRadialInnerBG}"
-                 HorizontalAlignment="Center"
-                 VerticalAlignment="Center"/>
-
-        <ItemsControl ItemsSource="{Binding Items}"
-                      IsHitTestVisible="False">
-            <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <Canvas/>
-                </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Path Data="{Binding SectorGeometry}"
-                          Fill="{Binding SectorBrush}"
-                          Opacity="{Binding SectorOpacity}"
-                          Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <!-- Ring line around inner circle - must be after the filled ellipse -->
+        <!-- 内圈与中圈分界圆线 (半径 100) -->
         <Ellipse Width="200"
                  Height="200"
                  Fill="Transparent"
-                 Stroke="{DynamicResource BrushRadialBorderActive}"
-                 StrokeThickness="1.5"
+                 Stroke="{DynamicResource BrushRadialBorder}"
+                 StrokeThickness="0.6"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
 
+        <!-- 内圈 8 槽位主放射分割线 (半径 36~100) -->
         <ItemsControl ItemsSource="{Binding MainSeparators}"
                       IsHitTestVisible="False">
             <ItemsControl.ItemsPanel>
@@ -174,15 +145,70 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
+                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="0.6"/>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
+        <!-- 第 2 层：中间层 16 槽位扇区与战术发光高亮 (半径 100~165) -->
+        <ItemsControl ItemsSource="{Binding MiddleItems}"
+                      IsHitTestVisible="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerStyle>
+                <Style TargetType="ContentPresenter">
+                    <Setter Property="Panel.ZIndex" Value="{Binding ZIndex}"/>
+                </Style>
+            </ItemsControl.ItemContainerStyle>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Path Data="{Binding SectorGeometry}"
+                          Fill="{Binding SectorBrush}"
+                          Stroke="{Binding SectorStrokeBrush}"
+                          StrokeThickness="{Binding SectorStrokeThickness}"
+                          StrokeLineJoin="Round"
+                          Effect="{Binding SectorEffect}"
+                          Opacity="{Binding SectorOpacity}"
+                          Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 第 1 层：内圈 8 槽位扇区与战术发光高亮 (半径 36~100) -->
+        <ItemsControl ItemsSource="{Binding Items}"
+                      IsHitTestVisible="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerStyle>
+                <Style TargetType="ContentPresenter">
+                    <Setter Property="Panel.ZIndex" Value="{Binding ZIndex}"/>
+                </Style>
+            </ItemsControl.ItemContainerStyle>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Path Data="{Binding SectorGeometry}"
+                          Fill="{Binding SectorBrush}"
+                          Stroke="{Binding SectorStrokeBrush}"
+                          StrokeThickness="{Binding SectorStrokeThickness}"
+                          StrokeLineJoin="Round"
+                          Effect="{Binding SectorEffect}"
+                          Opacity="{Binding SectorOpacity}"
+                          Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 中心死区圆形 (半径 36，直径 72) -->
         <Ellipse Width="72"
                  Height="72"
-                 Stroke="{DynamicResource BrushRadialBorderActive}"
-                 StrokeThickness="1"
+                 Stroke="{DynamicResource BrushRadialBorder}"
+                 StrokeThickness="0.6"
                  Fill="{DynamicResource BrushRadialCenterBG}"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center" />
@@ -355,7 +381,7 @@
                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
-                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
+                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushRadialTextActive|BrushRadialText'}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            Width="50"
                                            TextAlignment="Center"
@@ -443,7 +469,7 @@
                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
-                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
+                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushRadialTextActive|BrushRadialText'}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            Width="50"
                                            TextAlignment="Center"
@@ -548,7 +574,7 @@
                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
-                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
+                                           Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushRadialTextActive|BrushRadialText'}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            Width="50"
                                            TextAlignment="Center"
@@ -568,8 +594,8 @@
                      Canvas.Left="{Binding ChildRingEllipseX}"
                      Canvas.Top="{Binding ChildRingEllipseY}"
                      Fill="{DynamicResource BrushRadialInnerBG}"
-                     Stroke="{DynamicResource BrushRadialBorderActive}"
-                     StrokeThickness="1"/>
+                     Stroke="{DynamicResource BrushRadialBorder}"
+                     StrokeThickness="0.6"/>
             <ItemsControl ItemsSource="{Binding ChildItems}"
                           IsHitTestVisible="False">
                 <ItemsControl.ItemsPanel>
@@ -594,7 +620,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
+                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="0.6"/>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -603,8 +629,8 @@
                      Canvas.Left="{Binding ChildRingCenterEllipseX}"
                      Canvas.Top="{Binding ChildRingCenterEllipseY}"
                      Fill="{DynamicResource BrushRadialCenterBG}"
-                     Stroke="{DynamicResource BrushRadialBorderActive}"
-                     StrokeThickness="1"/>
+                     Stroke="{DynamicResource BrushRadialBorder}"
+                     StrokeThickness="0.6"/>
             <TextBlock Text="{Binding ChildRingTitle}"
                        Canvas.Left="{Binding ChildRingTitleX}"
                        Canvas.Top="{Binding ChildRingTitleY}"
@@ -740,8 +766,8 @@
                      Canvas.Left="{Binding GrandChildRingEllipseX}"
                      Canvas.Top="{Binding GrandChildRingEllipseY}"
                      Fill="{DynamicResource BrushRadialInnerBG}"
-                     Stroke="{DynamicResource BrushRadialBorderActive}"
-                     StrokeThickness="1"/>
+                     Stroke="{DynamicResource BrushRadialBorder}"
+                     StrokeThickness="0.6"/>
             <ItemsControl ItemsSource="{Binding GrandChildItems}"
                           IsHitTestVisible="False">
                 <ItemsControl.ItemsPanel>
@@ -766,7 +792,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
+                        <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="0.6"/>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -775,8 +801,8 @@
                      Canvas.Left="{Binding GrandChildRingCenterEllipseX}"
                      Canvas.Top="{Binding GrandChildRingCenterEllipseY}"
                      Fill="{DynamicResource BrushRadialCenterBG}"
-                     Stroke="{DynamicResource BrushRadialBorderActive}"
-                     StrokeThickness="1"/>
+                     Stroke="{DynamicResource BrushRadialBorder}"
+                     StrokeThickness="0.6"/>
             <TextBlock Text="{Binding GrandChildRingTitle}"
                        Canvas.Left="{Binding GrandChildRingTitleX}"
                        Canvas.Top="{Binding GrandChildRingTitleY}"
@@ -1240,7 +1266,7 @@
                                  Canvas.Top="{Binding OuterEllipseY}"
                                  Fill="{DynamicResource BrushRadialOuterBG}"
                                  Stroke="{DynamicResource BrushRadialBorder}"
-                                 StrokeThickness="1"
+                                 StrokeThickness="0.6"
                                  Visibility="{Binding IsStandaloneRadial, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
                         <!-- 1.1 独立双层轮盘激活高亮蓝边 (仅当 IsStandaloneRadial 为 True 且 IsActive 为 True 时显示) -->
@@ -1288,7 +1314,7 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorder}" StrokeThickness="1"/>
+                                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorder}" StrokeThickness="0.6"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -1299,8 +1325,8 @@
                                  Canvas.Left="{Binding EllipseX}"
                                  Canvas.Top="{Binding EllipseY}"
                                  Fill="{DynamicResource BrushRadialInnerBG}"
-                                 Stroke="{DynamicResource BrushRadialBorderActive}"
-                                 StrokeThickness="1"/>
+                                 Stroke="{DynamicResource BrushRadialBorder}"
+                                 StrokeThickness="0.6"/>
 
                         <!-- 4.1 子环激活高亮蓝边 (仅当非独立大轮盘且激活时显示，独立轮盘不显示内圈蓝边) -->
                         <Ellipse Width="202"
@@ -1345,7 +1371,7 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="1"/>
+                                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorderSec}" StrokeThickness="0.6"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -1356,8 +1382,8 @@
                                  Canvas.Left="{Binding CenterEllipseX}"
                                  Canvas.Top="{Binding CenterEllipseY}"
                                  Fill="{DynamicResource BrushRadialCenterBG}"
-                                 Stroke="{DynamicResource BrushRadialBorderActive}"
-                                 StrokeThickness="1"
+                                 Stroke="{DynamicResource BrushRadialBorder}"
+                                 StrokeThickness="0.6"
                                  Cursor="Hand"
                                  MouseLeftButtonDown="RadialSubRingCenter_MouseLeftButtonDown"/>
 
@@ -1513,7 +1539,7 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorder}" StrokeThickness="1"/>
+                                    <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}" Stroke="{DynamicResource BrushRadialBorder}" StrokeThickness="0.6"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

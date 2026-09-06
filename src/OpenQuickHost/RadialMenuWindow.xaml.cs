@@ -5765,6 +5765,26 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
     private static readonly System.Windows.Media.Brush FilledSlotFallbackSectorBrush =
         (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#FF334155")!;
 
+    private static readonly System.Windows.Media.Brush ActiveStrokeBrush;
+    private static readonly System.Windows.Media.Brush IdleOccupiedStrokeBrush;
+    private static readonly System.Windows.Media.Brush IdleOccupiedFillBrush;
+
+    static RadialMenuItemViewModel()
+    {
+        // 边框线不发光：激活时不绘制高亮发光描边
+        ActiveStrokeBrush = System.Windows.Media.Brushes.Transparent;
+
+        // 待机槽位微弱深蓝边框（0.6px 低透明不发光）
+        var idleStroke = new SolidColorBrush(System.Windows.Media.Color.FromArgb(35, 96, 165, 250)); // #60A5FA 低透明暗蓝细线
+        idleStroke.Freeze();
+        IdleOccupiedStrokeBrush = idleStroke;
+
+        // 待机槽位淡邃暗蓝底色微光
+        var idleFill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(30, 15, 30, 65));
+        idleFill.Freeze();
+        IdleOccupiedFillBrush = idleFill;
+    }
+
     public RadialMenuItemViewModel(
         string ownerPageId,
         int index,
@@ -5851,52 +5871,49 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 
     public System.Windows.Media.Brush AccentBrush => Command?.AccentBrush ?? (HasChildPage ? GetThemeBrush("BrushRadialChildAccentSector", ChildPageAccentBrush) : System.Windows.Media.Brushes.Transparent);
 
-    public System.Windows.Media.Brush SectorBrush
+    private System.Windows.Media.Brush? _activeSectorBrush;
+    private System.Windows.Media.Brush? _activeOuterSectorBrush;
+
+    private System.Windows.Media.Brush GetActiveGlowSectorBrush()
     {
-        get
-        {
-            if (Ring == RadialMenuRing.Outer)
-            {
-                return CreateOuterGradientSectorBrush();
-            }
+        if (_activeSectorBrush != null) return _activeSectorBrush;
 
-            if (IsEmpty)
-            {
-                // 空槽位悬浮或选中时显示高亮背景色
-                return (IsHovered || IsSelected)
-                    ? GetThemeBrush("BrushRadialEmptyHoverSector", ChildPageAccentBrush)
-                    : GetThemeBrush("BrushRadialEmptySector", EmptySlotSectorBrush);
-            }
-
-            return (IsHovered || IsSelected)
-                ? GetThemeBrush("BrushRadialChildAccentSector", ChildPageAccentBrush)
-                : GetThemeBrush("BrushRadialEmptySector", EmptySlotSectorBrush);
-        }
-    }
-
-    private System.Windows.Media.Brush CreateOuterGradientSectorBrush()
-    {
         var rad = AngleDegrees * Math.PI / 180.0;
         var dx = Math.Cos(rad);
         var dy = Math.Sin(rad);
 
-        // 使用 RelativeToBoundingBox 模式：起点在内侧弧（靠近轮盘中心），终点在外侧弧（远离中心）
         var startPoint = new System.Windows.Point(0.5 - 0.5 * dx, 0.5 - 0.5 * dy);
         var endPoint = new System.Windows.Point(0.5 + 0.5 * dx, 0.5 + 0.5 * dy);
 
-        System.Windows.Media.Color baseColor;
-        if (IsSelected)
+        // 纯内发光科技蓝色渐变（边框不发光，仅扇面内部充盈自发光）
+        var brush = new LinearGradientBrush
         {
-            baseColor = System.Windows.Media.Color.FromRgb(96, 165, 250); // #60A5FA 浅天蓝科技高亮
-        }
-        else if (IsHovered)
-        {
-            baseColor = System.Windows.Media.Color.FromRgb(147, 197, 253); // #93C5FD 柔和浅蓝高亮
-        }
-        else
-        {
-            baseColor = System.Windows.Media.Color.FromRgb(148, 163, 184); // #94A3B8 默认淡灰
-        }
+            MappingMode = BrushMappingMode.RelativeToBoundingBox,
+            StartPoint = startPoint,
+            EndPoint = endPoint,
+            GradientStops =
+            [
+                new GradientStop(System.Windows.Media.Color.FromArgb(40, 15, 23, 42), 0.0),   // 内圆暗蓝底蕴 #0F172A
+                new GradientStop(System.Windows.Media.Color.FromArgb(95, 30, 64, 175), 0.48), // 中层深邃湛蓝 #1E40AF
+                new GradientStop(System.Windows.Media.Color.FromArgb(160, 37, 99, 235), 0.82),// 蔚蓝能量层 #2563EB
+                new GradientStop(System.Windows.Media.Color.FromArgb(215, 56, 189, 248), 1.0) // 外弧通透电光天蓝内发光 #38BDF8
+            ]
+        };
+        brush.Freeze();
+        _activeSectorBrush = brush;
+        return _activeSectorBrush;
+    }
+
+    private System.Windows.Media.Brush GetActiveOuterGlowSectorBrush()
+    {
+        if (_activeOuterSectorBrush != null) return _activeOuterSectorBrush;
+
+        var rad = AngleDegrees * Math.PI / 180.0;
+        var dx = Math.Cos(rad);
+        var dy = Math.Sin(rad);
+
+        var startPoint = new System.Windows.Point(0.5 - 0.5 * dx, 0.5 - 0.5 * dy);
+        var endPoint = new System.Windows.Point(0.5 + 0.5 * dx, 0.5 + 0.5 * dy);
 
         var brush = new LinearGradientBrush
         {
@@ -5905,15 +5922,70 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
             EndPoint = endPoint,
             GradientStops =
             [
-                new GradientStop(System.Windows.Media.Color.FromArgb((byte)(IsSelected ? 180 : (IsHovered ? 120 : 50)), baseColor.R, baseColor.G, baseColor.B), 0.0),
-                new GradientStop(System.Windows.Media.Color.FromArgb((byte)(IsSelected ? 100 : (IsHovered ? 60 : 25)), baseColor.R, baseColor.G, baseColor.B), 0.40),
-                new GradientStop(System.Windows.Media.Color.FromArgb((byte)(IsSelected ? 35 : (IsHovered ? 15 : 8)), baseColor.R, baseColor.G, baseColor.B), 0.75),
-                new GradientStop(System.Windows.Media.Color.FromArgb(0, baseColor.R, baseColor.G, baseColor.B), 1.0)
+                new GradientStop(System.Windows.Media.Color.FromArgb(215, 56, 189, 248), 0.0), // 内弧电光天蓝内发光
+                new GradientStop(System.Windows.Media.Color.FromArgb(150, 37, 99, 235), 0.35), // 电光蓝
+                new GradientStop(System.Windows.Media.Color.FromArgb(60, 30, 64, 175), 0.70),  // 深湛蓝
+                new GradientStop(System.Windows.Media.Color.FromArgb(0, 56, 189, 248), 1.0)    // 外弧向外渐隐透明
             ]
         };
         brush.Freeze();
-        return brush;
+        _activeOuterSectorBrush = brush;
+        return _activeOuterSectorBrush;
     }
+
+    public System.Windows.Media.Brush SectorBrush
+    {
+        get
+        {
+            if (Ring == RadialMenuRing.Outer)
+            {
+                if (IsSelected || IsHovered)
+                {
+                    return GetActiveOuterGlowSectorBrush();
+                }
+                return IsNotEmpty ? IdleOccupiedFillBrush : System.Windows.Media.Brushes.Transparent;
+            }
+
+            if (IsSelected || IsHovered)
+            {
+                return GetActiveGlowSectorBrush();
+            }
+
+            if (IsNotEmpty)
+            {
+                return IdleOccupiedFillBrush;
+            }
+
+            return System.Windows.Media.Brushes.Transparent;
+        }
+    }
+
+    public System.Windows.Media.Brush SectorStrokeBrush
+    {
+        get
+        {
+            if (IsSelected || IsHovered)
+            {
+                return ActiveStrokeBrush;
+            }
+
+            if (IsNotEmpty)
+            {
+                return IdleOccupiedStrokeBrush;
+            }
+
+            return System.Windows.Media.Brushes.Transparent;
+        }
+    }
+
+    public double SectorStrokeThickness =>
+        (IsSelected || IsHovered) ? 0.0 : (IsNotEmpty ? 0.6 : 0.0);
+
+    public System.Windows.Media.Effects.Effect? SectorEffect => null;
+
+    public int ZIndex => (IsSelected || IsHovered) ? 10 : 1;
+
+    public double SectorOpacity => 1.0;
 
     private bool _isEditMode;
     public bool IsEditMode
@@ -5928,12 +6000,12 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(SectorOpacity));
             OnPropertyChanged(nameof(IsSectorVisible));
             OnPropertyChanged(nameof(SectorBrush));
+            OnPropertyChanged(nameof(SectorStrokeBrush));
+            OnPropertyChanged(nameof(SectorStrokeThickness));
+            OnPropertyChanged(nameof(SectorEffect));
+            OnPropertyChanged(nameof(ZIndex));
         }
     }
-
-    public double SectorOpacity => Ring == RadialMenuRing.Outer
-        ? ((IsSelected || IsHovered) ? 1.0 : (IsEmpty ? 0.0 : 0.6))
-        : (IsSelected ? 0.58 : (IsHovered ? 0.44 : 0.0));
 
     public bool IsSectorVisible => SectorGeometry != null &&
         (Ring == RadialMenuRing.Outer
@@ -5964,6 +6036,10 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(SectorOpacity));
             OnPropertyChanged(nameof(IsSectorVisible));
             OnPropertyChanged(nameof(SectorBrush));
+            OnPropertyChanged(nameof(SectorStrokeBrush));
+            OnPropertyChanged(nameof(SectorStrokeThickness));
+            OnPropertyChanged(nameof(SectorEffect));
+            OnPropertyChanged(nameof(ZIndex));
         }
     }
 
@@ -5984,6 +6060,10 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(SectorOpacity));
             OnPropertyChanged(nameof(IsSectorVisible));
             OnPropertyChanged(nameof(SectorBrush));
+            OnPropertyChanged(nameof(SectorStrokeBrush));
+            OnPropertyChanged(nameof(SectorStrokeThickness));
+            OnPropertyChanged(nameof(SectorEffect));
+            OnPropertyChanged(nameof(ZIndex));
         }
     }
 
