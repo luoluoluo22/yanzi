@@ -2,81 +2,134 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="选择进程"
-        Width="420"
-        MinHeight="280"
-        SizeToContent="Height"
-        WindowStartupLocation="CenterOwner"
+        Width="640"
+        MinWidth="500"
+        Height="520"
+        MinHeight="380"
+        ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="CenterScreen"
         Style="{StaticResource DialogWindow}">
     <Border Margin="1"
             CornerRadius="0"
             Background="#F2161616"
             BorderBrush="#22FFFFFF"
             BorderThickness="1">
-        <Grid Margin="25">
+        <Grid Margin="24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             
-            <TextBlock x:Name="DescriptionText"
-                       Grid.Row="0"
-                       Margin="0,0,0,10"
-                       Style="{StaticResource DescriptionText}" />
-                       
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                <StackPanel>
-                    <ItemsControl x:Name="BlacklistItemsControl" Margin="0,0,0,10">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="#33FFFFFF" CornerRadius="4" Margin="0,0,8,8" Padding="8,4">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding ProcessName}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="White" />
-                                        <Button Content="✕" Width="16" Height="16" Click="RemoveBlacklistItem_Click" Padding="0" Foreground="#FFAAAAAA" FontSize="10" Background="Transparent" BorderThickness="0" Cursor="Hand" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+            <!-- 顶部说明与全屏禁用开关 -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                <TextBlock x:Name="DescriptionText"
+                           Margin="0,0,0,10"
+                           Style="{StaticResource DescriptionText}" />
 
-                    <Grid VerticalAlignment="Top">
-                        <ComboBox x:Name="ProcessComboBox"
-                                  Height="40"
-                                  IsEditable="True"
-                                  IsTextSearchEnabled="True"
-                                  StaysOpenOnEdit="True"
-                                  TextSearch.TextPath="ProcessName"
-                                  DisplayMemberPath="" 
-                                  TextBoxBase.TextChanged="ProcessComboBox_TextChanged"
-                                  SelectionChanged="ProcessComboBox_SelectionChanged">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding ProcessName}" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        
-                        <TextBlock x:Name="PlaceholderTextBlock"
-                                   Text="下拉选择"
-                                   Foreground="#7FFFFFFF"
-                                   IsHitTestVisible="False"
-                                   VerticalAlignment="Center"
-                                   Margin="12,0,0,0"
-                                   Visibility="Visible"/>
+                <Border x:Name="FullscreenSwitchPanel"
+                        Background="#18FFFFFF"
+                        BorderBrush="#25FFFFFF"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="14,10"
+                        Visibility="Collapsed">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="全屏应用自动禁用"
+                                       Foreground="White"
+                                       FontWeight="SemiBold"
+                                       FontSize="13" />
+                            <TextBlock Text="检测到前台为全屏应用（如独占全屏/全屏无边框游戏）时，自动视为黑名单并暂停快捷呼出"
+                                       Foreground="#9EFFFFFF"
+                                       FontSize="11"
+                                       Margin="0,3,0,0"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                        <CheckBox x:Name="DisableInFullscreenCheckBox"
+                                  Grid.Column="1"
+                                  Style="{StaticResource RaycastSwitchStyle}"
+                                  VerticalAlignment="Center"
+                                  Cursor="Hand" />
                     </Grid>
-                </StackPanel>
+                </Border>
+            </StackPanel>
+                       
+            <!-- 中间黑名单标签展示区（支持纵向滚动） -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,14">
+                <ItemsControl x:Name="BlacklistItemsControl">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#2EFFFFFF" CornerRadius="4" Margin="0,0,8,8" Padding="8,4">
+                                <StackPanel Orientation="Horizontal">
+                                    <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding ProcessName}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="White" />
+                                    <Button Content="✕" Width="16" Height="16" Click="RemoveBlacklistItem_Click" Padding="0" Foreground="#FFAAAAAA" FontSize="10" Background="Transparent" BorderThickness="0" Cursor="Hand" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </ScrollViewer>
 
-            <Grid Grid.Row="2" Margin="0,15,0,0">
+            <!-- 底部输入与定位操作栏 -->
+            <Grid Grid.Row="2" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid Grid.Column="0">
+                    <ComboBox x:Name="ProcessComboBox"
+                              Height="40"
+                              IsEditable="True"
+                              IsTextSearchEnabled="True"
+                              StaysOpenOnEdit="True"
+                              TextSearch.TextPath="ProcessName"
+                              DisplayMemberPath="" 
+                              TextBoxBase.TextChanged="ProcessComboBox_TextChanged"
+                              SelectionChanged="ProcessComboBox_SelectionChanged">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding ProcessName}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    
+                    <TextBlock x:Name="PlaceholderTextBlock"
+                               Text="选择运行中的进程"
+                               Foreground="#7FFFFFFF"
+                               IsHitTestVisible="False"
+                               VerticalAlignment="Center"
+                               Margin="12,0,0,0"
+                               Visibility="Visible"/>
+                </Grid>
+
+                <Button x:Name="PickWindowButton"
+                        Grid.Column="1"
+                        Margin="10,0,0,0"
+                        Height="40"
+                        Padding="14,0"
+                        Content="🎯 窗口定位"
+                        ToolTip="点击后，在屏幕上直接点击目标应用或游戏窗口，即可自动将其加入黑名单 (按 ESC 取消)"
+                        Style="{StaticResource SecondaryBtn}"
+                        Click="PickWindowButton_Click" />
+            </Grid>
+
+            <!-- 底部确认/取消按钮 -->
+            <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />

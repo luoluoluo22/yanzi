@@ -204,5 +204,45 @@ namespace OpenQuickHost
 
             return true;
         }
+
+        /// <summary>
+        /// 检测当前前台激活的窗口是否处于全屏状态（如独占全屏游戏、全屏无边框应用、放映模式等）
+        /// </summary>
+        public static bool IsForegroundWindowFullScreen()
+        {
+            try
+            {
+                var hWnd = Win32Native.GetForegroundWindow();
+                if (hWnd == IntPtr.Zero) return false;
+
+                var sb = new StringBuilder(256);
+                _ = Win32Native.GetClassName(hWnd, sb, sb.Capacity);
+                var className = sb.ToString();
+
+                // 排除桌面与系统任务栏
+                if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd")
+                {
+                    return false;
+                }
+
+                if (!Win32Native.GetWindowRect(hWnd, out var windowRect)) return false;
+
+                var hMonitor = Win32Native.MonitorFromWindow(hWnd, Win32Native.MonitorDefaultToNearest);
+                if (hMonitor == IntPtr.Zero) return false;
+
+                var mi = new Win32Native.MONITORINFO { cbSize = Marshal.SizeOf<Win32Native.MONITORINFO>() };
+                if (!Win32Native.GetMonitorInfo(hMonitor, ref mi)) return false;
+
+                // 判断窗口是否占满当前显示器屏幕 (覆盖或超出屏幕)
+                return windowRect.Left <= mi.rcMonitor.Left &&
+                       windowRect.Top <= mi.rcMonitor.Top &&
+                       windowRect.Right >= mi.rcMonitor.Right &&
+                       windowRect.Bottom >= mi.rcMonitor.Bottom;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

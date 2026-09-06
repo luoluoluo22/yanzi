@@ -9297,12 +9297,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void PickGlobalServiceBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
     {
-        OpenProcessPickerForList("全局服务黑名单", _settings.GlobalServiceBlacklistedProcesses ?? new(), list =>
+        var picker = new ProcessPickerWindow("全局服务黑名单", "请选择要加入 全局服务黑名单 的进程：", string.Empty, _settings.GlobalServiceBlacklistedProcesses ?? new(), showFullscreenSwitch: true, disableInFullscreen: _settings.DisableInFullScreen);
+        if (picker.ShowDialog() == true)
         {
-            _settings.GlobalServiceBlacklistedProcesses = list;
+            _settings.DisableInFullScreen = picker.DisableInFullscreen;
+            foreach (var b in picker.Blacklist)
+            {
+                if (!string.IsNullOrWhiteSpace(b.ExecutablePath))
+                {
+                    _settings.ProcessExecutablePaths[b.ProcessName] = b.ExecutablePath;
+                }
+            }
+            _settings.GlobalServiceBlacklistedProcesses = picker.Blacklist.Select(b => b.ProcessName).ToList();
             OnPropertyChanged(nameof(GlobalServiceBlacklistedProcessesText));
             SaveQuickPanelTriggerSettings();
-        });
+        }
     }
 
     private void PickRadialBlacklistProcessButton_Click(object sender, RoutedEventArgs e)

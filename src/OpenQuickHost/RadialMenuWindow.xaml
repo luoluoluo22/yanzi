@@ -58,7 +58,7 @@
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Visibility="{Binding IsOuterWheelVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <!-- 开放式最外圈：无封闭圆弧边框，向外开放 -->
+            <!-- 开放式最外圈：无封闭圆弧边框，向外开放渐变 -->
 
             <ItemsControl ItemsSource="{Binding OuterItems}"
                           IsHitTestVisible="False">
@@ -130,7 +130,13 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <!-- 第 1 层：内圈 8 方向扇区与分隔线 (半径 36~100) -->
+        <!-- 第 1 层：内圈 8 槽位纯色底板与扇区 (半径 36~100) -->
+        <Ellipse Width="200"
+                 Height="200"
+                 Fill="{DynamicResource BrushRadialInnerBG}"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"/>
+
         <ItemsControl ItemsSource="{Binding Items}"
                       IsHitTestVisible="False">
             <ItemsControl.ItemsPanel>

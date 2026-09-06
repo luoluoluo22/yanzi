@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -60,6 +61,9 @@ public partial class App : WpfApplication
     private WinEventDelegate? _winEventDelegate;
     private bool _isAppFullyInitialized;
     private string _lastTrayForegroundProcess = string.Empty;
+    private string _lastUserActiveProcess = string.Empty;
+    private string? _lastUserActiveProcessPath;
+    private ImageSource? _lastUserActiveProcessIcon;
 
     protected override void OnStartup(WpfStartupEventArgs e)
     {
@@ -835,7 +839,8 @@ public partial class App : WpfApplication
         {
             if (e.Button == Forms.MouseButtons.Right)
             {
-                _lastTrayForegroundProcess = YarnSelectService.GetForegroundProcessName();
+                UpdateLastUserActiveProcess(Win32Native.GetForegroundWindow());
+                _lastTrayForegroundProcess = !string.IsNullOrWhiteSpace(_lastUserActiveProcess) ? _lastUserActiveProcess : YarnSelectService.GetForegroundProcessName();
                 if (WpfApplication.Current.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu menu)
                 {
                     UpdateTrayMenuState(menu);
@@ -886,10 +891,11 @@ public partial class App : WpfApplication
         var settings = AppSettingsStore.Load();
         var initialList = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
         
-        var defaultProcess = _lastTrayForegroundProcess;
-        var inputWindow = new ProcessPickerWindow("全局黑名单", "请选择要加入全局服务黑名单的进程：", defaultProcess, initialList);
+        var defaultProcess = !string.IsNullOrWhiteSpace(_lastUserActiveProcess) ? _lastUserActiveProcess : _lastTrayForegroundProcess;
+        var inputWindow = new ProcessPickerWindow("全局黑名单", "请选择要加入全局服务黑名单的进程：", defaultProcess, initialList, showFullscreenSwitch: true, disableInFullscreen: settings.DisableInFullScreen);
         if (inputWindow.ShowDialog() == true)
         {
+            settings.DisableInFullScreen = inputWindow.DisableInFullscreen;
             settings.GlobalServiceBlacklistedProcesses = inputWindow.Blacklist.Select(b => b.ProcessName).ToList();
             foreach (var b in inputWindow.Blacklist)
             {
@@ -908,6 +914,56 @@ public partial class App : WpfApplication
             CheckForegroundBlacklist();
 
             ShowDesktopNotification("全局黑名单", $"全局服务黑名单已更新。");
+        }
+    }
+
+    private void TrayAddCurrentToBlacklist_Click(object sender, RoutedEventArgs e)
+    {
+        var proc = !string.IsNullOrWhiteSpace(_lastUserActiveProcess) ? _lastUserActiveProcess : _lastTrayForegroundProcess;
+        if (string.IsNullOrWhiteSpace(proc) || string.Equals(proc, "desktop", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var settings = AppSettingsStore.Load();
+        settings.GlobalServiceBlacklistedProcesses ??= new List<string>();
+        if (!settings.GlobalServiceBlacklistedProcesses.Any(p => ProcessHelper.ProcessNameMatches(proc, p)))
+        {
+            settings.GlobalServiceBlacklistedProcesses.Add(proc);
+
+            var path = _lastUserActiveProcessPath;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                try
+                {
+                    var procs = Process.GetProcessesByName(proc);
+                    if (procs.Length > 0)
+                    {
+                        path = ProcessHelper.GetProcessExecutablePath(procs[0]);
+                    }
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                settings.ProcessExecutablePaths[proc] = path;
+            }
+
+            AppSettingsStore.Save(settings);
+
+            if (MainWindow is MainWindow mainWindow)
+            {
+                mainWindow.RefreshAppSettings();
+            }
+
+            CheckForegroundBlacklist();
+
+            ShowDesktopNotification("全局黑名单", $"已成功将「{proc}」添加到全局服务黑名单。");
+        }
+        else
+        {
+            ShowDesktopNotification("全局黑名单", $"「{proc}」已在全局黑名单中。");
         }
     }
 
@@ -1068,6 +1124,10 @@ public partial class App : WpfApplication
             var blacklist = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
 
             bool isInBlacklist = blacklist.Any(p => ProcessHelper.ProcessNameMatches(currentProcess, p));
+            if (!isInBlacklist && settings.DisableInFullScreen && ProcessHelper.IsForegroundWindowFullScreen())
+            {
+                isInBlacklist = true;
+            }
 
             if (isInBlacklist && !_isAutoPausedByBlacklist)
             {
@@ -1086,9 +1146,80 @@ public partial class App : WpfApplication
         }
     }
 
+    private void UpdateLastUserActiveProcess(IntPtr hwnd)
+    {
+        try
+        {
+            if (hwnd == IntPtr.Zero) return;
+
+            var sb = new System.Text.StringBuilder(256);
+            if (Win32Native.GetClassName(hwnd, sb, sb.Capacity) > 0)
+            {
+                var className = sb.ToString();
+                if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "Windows.UI.Core.CoreWindow")
+                {
+                    return;
+                }
+            }
+
+            _ = Win32Native.GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == 0 || pid == Environment.ProcessId)
+            {
+                return;
+            }
+
+            var procName = ProcessHelper.GetProcessNameByPid(pid);
+            if (string.IsNullOrWhiteSpace(procName)) return;
+
+            if (string.Equals(procName, "explorer", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(procName, "SearchHost", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(procName, "StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(procName, "ShellExperienceHost", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(procName, "TextInputHost", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(procName, "desktop", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _lastUserActiveProcess = procName;
+
+            string? exePath = null;
+            try
+            {
+                var proc = Process.GetProcessById((int)pid);
+                exePath = ProcessHelper.GetProcessExecutablePath(proc);
+            }
+            catch { }
+
+            _lastUserActiveProcessPath = exePath;
+
+            ImageSource? icon = null;
+            if (!string.IsNullOrWhiteSpace(exePath) && System.IO.File.Exists(exePath))
+            {
+                try
+                {
+                    icon = NativeFileIconService.GetIcon(exePath, false);
+                }
+                catch { }
+            }
+
+            if (icon == null)
+            {
+                icon = FallbackIconResolver.GetFallbackIcon(procName);
+            }
+
+            _lastUserActiveProcessIcon = icon;
+        }
+        catch
+        {
+            // Ignore
+        }
+    }
+
     private void StartForegroundMonitorTimer()
     {
         // 1. 启动时立即检测一次当前前台进程
+        UpdateLastUserActiveProcess(Win32Native.GetForegroundWindow());
         CheckForegroundBlacklist();
 
         // 2. 注册 Windows 系统级 EVENT_SYSTEM_FOREGROUND 事件钩子（实现真正的事件驱动，0ms 延迟，0 CPU 轮询损耗）
@@ -1096,7 +1227,11 @@ public partial class App : WpfApplication
         {
             if (eventType == EVENT_SYSTEM_FOREGROUND)
             {
-                Dispatcher.BeginInvoke(new Action(CheckForegroundBlacklist));
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    UpdateLastUserActiveProcess(hwnd);
+                    CheckForegroundBlacklist();
+                }));
             }
         };
 
@@ -1133,6 +1268,43 @@ public partial class App : WpfApplication
             else if (Equals(item.Tag, "running-extensions"))
             {
                 item.Header = $"正在运行的小程序 ({RunningExtensionRegistry.GetRunningCount()})";
+            }
+            else if (Equals(item.Tag, "add-current-to-blacklist"))
+            {
+                var proc = _lastUserActiveProcess;
+                bool isInvalid = string.IsNullOrWhiteSpace(proc) || string.Equals(proc, "desktop", StringComparison.OrdinalIgnoreCase);
+
+                var settings = AppSettingsStore.Load();
+                var blacklist = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
+                bool alreadyInList = !isInvalid && blacklist.Any(p => ProcessHelper.ProcessNameMatches(proc, p));
+
+                // 动态更新对应进程的真实图标
+                if (!isInvalid && _lastUserActiveProcessIcon != null)
+                {
+                    item.Icon = new System.Windows.Controls.Image
+                    {
+                        Source = _lastUserActiveProcessIcon,
+                        Width = 16,
+                        Height = 16,
+                        Stretch = System.Windows.Media.Stretch.Uniform
+                    };
+                }
+
+                if (isInvalid)
+                {
+                    item.Header = "添加当前应用到黑名单";
+                    item.IsEnabled = false;
+                }
+                else if (alreadyInList)
+                {
+                    item.Header = $"已在黑名单: {proc}";
+                    item.IsEnabled = false;
+                }
+                else
+                {
+                    item.Header = $"添加「{proc}」到黑名单";
+                    item.IsEnabled = true;
+                }
             }
         }
     }

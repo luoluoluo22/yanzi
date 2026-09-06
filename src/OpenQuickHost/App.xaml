@@ -403,9 +403,17 @@
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator />
-                <MenuItem Header="添加到全局黑名单" Click="TrayAddGlobalBlacklist_Click">
+                <MenuItem Header="黑名单" Click="TrayAddGlobalBlacklist_Click">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry block-helper}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem x:Name="TrayAddCurrentToBlacklistMenuItem"
+                          Tag="add-current-to-blacklist"
+                          Header="添加当前应用到黑名单"
+                          Click="TrayAddCurrentToBlacklist_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry block-helper}" Fill="#EF4444" Stretch="Uniform" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator />

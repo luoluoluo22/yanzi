@@ -226,6 +226,9 @@ public static class Win32Native
     [DllImport("user32.dll")]
     public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
 
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);

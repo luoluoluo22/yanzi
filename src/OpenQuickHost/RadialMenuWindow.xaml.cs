@@ -20,8 +20,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 {
     public const double NormalWindowSize = 1400.0;
     public const double NormalMenuCenter = 700.0;
-    public const double CompactWindowSize = 1000.0;
-    public const double CompactMenuCenter = 500.0;
+    public const double CompactWindowSize = NormalWindowSize;
+    public const double CompactMenuCenter = NormalMenuCenter;
 
     private readonly MainWindow _mainWindow;
     private readonly DispatcherTimer _selectionTimer;
@@ -822,9 +822,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             helper.EnsureHandle();
             EnsureNoActivateStyle();
             ApplyVisualContentRootMode();
-            // 预热也只开紧凑尺寸，进一步压低首次呼出的合成表面成本
-            if (Math.Abs(Width - CompactWindowSize) > 0.5) Width = CompactWindowSize;
-            if (Math.Abs(Height - CompactWindowSize) > 0.5) Height = CompactWindowSize;
+            // 预热直接使用完整设计尺寸（1400x1400），避免展开多级子环时动态调整窗口大小引发闪烁
+            if (Math.Abs(Width - NormalWindowSize) > 0.5) Width = NormalWindowSize;
+            if (Math.Abs(Height - NormalWindowSize) > 0.5) Height = NormalWindowSize;
 
             // 预先解析当前前台应用并构建对应页面（与 ShowAtMouse 同套解析逻辑），
             // 让首次真实呼出大概率命中"已构建页面"，避免呼出瞬间全量重建
@@ -912,9 +912,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 : ScreenHelper.GetCursorPhysicalPosition());
         var showWorkArea = screenCtx.DipWorkArea;
         _lastShownWorkAreaSize = new System.Windows.Size(showWorkArea.Width, showWorkArea.Height);
-        // 呼出初始用小窗（只覆盖主轮盘），子环展开时再按需放大（见 UpdateWindowToFitContent）
-        var targetWidth = Math.Min(CompactWindowSize, Math.Max(600, showWorkArea.Width));
-        var targetHeight = Math.Min(CompactWindowSize, Math.Max(600, showWorkArea.Height));
+        // 呼出时固定使用完整设计尺寸（1400x1400），使窗口在展开任意层级子环时物理尺寸与位置均绝对恒定，
+        // 彻底杜绝在交互过程中动态调整 Win32 窗口大小与位置引发的 DWM 跨帧闪烁与左侧跳动。
+        var targetWidth = Math.Min(NormalWindowSize, Math.Max(600, showWorkArea.Width));
+        var targetHeight = Math.Min(NormalWindowSize, Math.Max(600, showWorkArea.Height));
         if (Math.Abs(Width - targetWidth) > 0.5) Width = targetWidth;
         if (Math.Abs(Height - targetHeight) > 0.5) Height = targetHeight;
         // 彻底移除 UpdateLayout()，杜绝主线程全量同步排版阻塞
@@ -1096,7 +1097,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                             }
                             else
                             {
-                                Height = Math.Min(CompactWindowSize, Math.Max(600, workAreaHeightDip));
+                                Height = Math.Min(NormalWindowSize, Math.Max(600, workAreaHeightDip));
                             }
                             CenterOnPhysically(_centerPixels.X, _centerPixels.Y, "dpi-changed");
                             if (!_editModeLocked)
@@ -1336,6 +1337,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        // 常态下窗口已固定为 NormalWindowSize（1400x1400），完全容纳所有子环展开，无需动态 resize
+        if (Math.Abs(Width - NormalWindowSize) <= 0.5 && Math.Abs(Height - NormalWindowSize) <= 0.5)
+        {
+            return;
+        }
+
         _fitContentScheduled = true;
         _ = Dispatcher.BeginInvoke(new Action(() =>
         {
@@ -1370,6 +1377,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private void UpdateWindowToFitContent()
     {
         if (_editModeLocked || !IsContentVisible)
+        {
+            return;
+        }
+
+        // 常态下窗口已固定为 NormalWindowSize（1400x1400），无需动态 resize
+        if (Math.Abs(Width - NormalWindowSize) <= 0.5 && Math.Abs(Height - NormalWindowSize) <= 0.5)
         {
             return;
         }
@@ -5254,10 +5267,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var handle = helper.Handle;
             if (handle != IntPtr.Zero)
             {
-                // 紧凑尺寸 + 屏外坐标，一次 SetWindowPos 完成（保持复用时窗口状态确定）
+                // 完整尺寸 + 屏外坐标，一次 SetWindowPos 完成（保持复用时窗口状态确定）
                 var windowDpi = GetWindowDpiScale();
-                var wPhys = (int)Math.Round(CompactWindowSize * windowDpi);
-                var hPhys = (int)Math.Round(CompactWindowSize * windowDpi);
+                var wPhys = (int)Math.Round(NormalWindowSize * windowDpi);
+                var hPhys = (int)Math.Round(NormalWindowSize * windowDpi);
                 var offscreen = (int)OverlayWindowManager.OffScreenCoordinate;
                 Win32Native.SetWindowPos(
                     handle,
@@ -5267,8 +5280,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                     wPhys,
                     hPhys,
                     Win32Native.SWP_NOZORDER | Win32Native.SWP_NOACTIVATE);
-                Width = CompactWindowSize;
-                Height = CompactWindowSize;
+                Width = NormalWindowSize;
+                Height = NormalWindowSize;
             }
             else
             {
@@ -5668,11 +5681,17 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
                 return CreateOuterGradientSectorBrush();
             }
 
-            return IsEmpty
-                ? GetThemeBrush("BrushRadialEmptySector", EmptySlotSectorBrush)
-                : (IsHovered || IsSelected)
-                    ? GetThemeBrush("BrushRadialChildAccentSector", ChildPageAccentBrush)
+            if (IsEmpty)
+            {
+                // 空槽位悬浮或选中时显示高亮背景色
+                return (IsHovered || IsSelected)
+                    ? GetThemeBrush("BrushRadialEmptyHoverSector", ChildPageAccentBrush)
                     : GetThemeBrush("BrushRadialEmptySector", EmptySlotSectorBrush);
+            }
+
+            return (IsHovered || IsSelected)
+                ? GetThemeBrush("BrushRadialChildAccentSector", ChildPageAccentBrush)
+                : GetThemeBrush("BrushRadialEmptySector", EmptySlotSectorBrush);
         }
     }
 
@@ -5689,11 +5708,11 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
         System.Windows.Media.Color baseColor;
         if (IsSelected)
         {
-            baseColor = System.Windows.Media.Color.FromRgb(226, 232, 240); // #E2E8F0 高亮浅灰
+            baseColor = System.Windows.Media.Color.FromRgb(96, 165, 250); // #60A5FA 浅天蓝科技高亮
         }
         else if (IsHovered)
         {
-            baseColor = System.Windows.Media.Color.FromRgb(203, 213, 225); // #CBD5E1 悬浮浅灰
+            baseColor = System.Windows.Media.Color.FromRgb(147, 197, 253); // #93C5FD 柔和浅蓝高亮
         }
         else
         {
@@ -5734,10 +5753,13 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
     }
 
     public double SectorOpacity => Ring == RadialMenuRing.Outer
-        ? (IsEmpty ? 0.0 : 1.0)
-        : (IsEmpty ? 0.0 : (IsSelected ? 0.58 : IsHovered ? 0.44 : 0.0));
+        ? ((IsSelected || IsHovered) ? 1.0 : (IsEmpty ? 0.0 : 0.6))
+        : (IsSelected ? 0.58 : (IsHovered ? 0.44 : 0.0));
 
-    public bool IsSectorVisible => SectorGeometry != null && !IsEmpty && (Ring == RadialMenuRing.Outer ? (IsSelected || IsHovered) : true);
+    public bool IsSectorVisible => SectorGeometry != null &&
+        (Ring == RadialMenuRing.Outer
+            ? (IsSelected || IsHovered || (IsNotEmpty && IsEditMode))
+            : (IsNotEmpty || IsSelected || IsHovered || IsEditMode));
 
     public double Scale => 1.0;
 

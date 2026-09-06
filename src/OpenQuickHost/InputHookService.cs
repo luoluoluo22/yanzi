@@ -76,6 +76,7 @@ public class InputHookService
     private static RadialMenuSettings _radialSettings = new();
     private static YanmSettings _yanmSettings = new();
     private static List<string> _globalServiceBlacklistedProcesses = [];
+    private static bool _disableInFullScreen;
     private static bool _windowSnapAssistEnabled;
     private static string _windowSnapAssistMouseTriggerMode = MouseTriggerModes.None;
     private static bool _isEnabled;
@@ -392,6 +393,7 @@ public class InputHookService
         _radialSettings = appSettings.RadialMenu ?? new RadialMenuSettings();
         _yanmSettings = appSettings.Yanm ?? new YanmSettings();
         _globalServiceBlacklistedProcesses = appSettings.GlobalServiceBlacklistedProcesses ?? [];
+        _disableInFullScreen = appSettings.DisableInFullScreen;
         _windowSnapAssistEnabled = appSettings.EnableWindowSnapAssist;
         _windowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(appSettings.WindowSnapAssistMouseTriggerMode);
         ResetTransientMouseState();
@@ -1558,6 +1560,16 @@ public class InputHookService
                 if (logBlocked)
                 {
                     HostAssets.AppendLog($"Input hook: {target} trigger blocked by global service blacklist, process={processName}.");
+                }
+
+                return false;
+            }
+
+            if (_disableInFullScreen && ProcessHelper.IsForegroundWindowFullScreen())
+            {
+                if (logBlocked)
+                {
+                    HostAssets.AppendLog($"Input hook: {target} trigger blocked by fullscreen application, process={processName}.");
                 }
 
                 return false;

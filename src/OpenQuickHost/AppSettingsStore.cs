@@ -1141,6 +1141,8 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
 
     public List<string> GlobalServiceBlacklistedProcesses { get; set; } = [];
 
+    public bool DisableInFullScreen { get; set; } = false;
+
     public System.Collections.Generic.Dictionary<string, string> ProcessExecutablePaths { get; set; } = new();
 }
 

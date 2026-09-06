@@ -40,21 +40,22 @@
     <SolidColorBrush x:Key="BrushMenuItemGestureText" Color="#80FFFFFF"/>
     <SolidColorBrush x:Key="BrushMenuItemDisabledText" Color="#40FFFFFF"/>
 
-    <!-- Radial Menu (燕环) Colors -->
-    <SolidColorBrush x:Key="BrushRadialOuterBG" Color="#AA101010"/>
-    <SolidColorBrush x:Key="BrushRadialInnerBG" Color="#CC101010"/>
-    <SolidColorBrush x:Key="BrushRadialCenterBG" Color="#F2161616"/>
-    <SolidColorBrush x:Key="BrushRadialBorder" Color="#22FFFFFF"/>
-    <SolidColorBrush x:Key="BrushRadialBorderActive" Color="#33FFFFFF"/>
-    <SolidColorBrush x:Key="BrushRadialBorderSec" Color="#2DFFFFFF"/>
+    <!-- Radial Menu (燕环) Colors - 纯色不透明统一底色 -->
+    <SolidColorBrush x:Key="BrushRadialOuterBG" Color="#FF1E1E1E"/>
+    <SolidColorBrush x:Key="BrushRadialInnerBG" Color="#FF1E1E1E"/>
+    <SolidColorBrush x:Key="BrushRadialCenterBG" Color="#FF1E1E1E"/>
+    <SolidColorBrush x:Key="BrushRadialBorder" Color="#33FFFFFF"/>
+    <SolidColorBrush x:Key="BrushRadialBorderActive" Color="#4DFFFFFF"/>
+    <SolidColorBrush x:Key="BrushRadialBorderSec" Color="#3DFFFFFF"/>
     <SolidColorBrush x:Key="BrushRadialText" Color="White"/>
-    <SolidColorBrush x:Key="BrushRadialTextMuted" Color="#80FFFFFF"/>
+    <SolidColorBrush x:Key="BrushRadialTextMuted" Color="#A0FFFFFF"/>
     <SolidColorBrush x:Key="BrushRadialIcon" Color="White"/>
-    <SolidColorBrush x:Key="BrushRadialButtonBG" Color="#E6101010"/>
-    <SolidColorBrush x:Key="BrushRadialSlotHover" Color="#16FFFFFF"/>
-    <SolidColorBrush x:Key="BrushRadialSlotHoverBorder" Color="#40FFFFFF"/>
-    <SolidColorBrush x:Key="BrushRadialEmptySector" Color="#FF64748B"/>
-    <SolidColorBrush x:Key="BrushRadialFallbackSector" Color="#FF334155"/>
+    <SolidColorBrush x:Key="BrushRadialButtonBG" Color="#FF1C1C1C"/>
+    <SolidColorBrush x:Key="BrushRadialSlotHover" Color="#33FFFFFF"/>
+    <SolidColorBrush x:Key="BrushRadialSlotHoverBorder" Color="#60FFFFFF"/>
+    <SolidColorBrush x:Key="BrushRadialEmptySector" Color="#FF262626"/>
+    <SolidColorBrush x:Key="BrushRadialEmptyHoverSector" Color="#FF3B82F6"/>
+    <SolidColorBrush x:Key="BrushRadialFallbackSector" Color="#FF1E293B"/>
     <SolidColorBrush x:Key="BrushRadialChildAccentSector" Color="#FF3B82F6"/>
-    <SolidColorBrush x:Key="BrushRadialSlotBorder" Color="#1FFFFFFF"/>
+    <SolidColorBrush x:Key="BrushRadialSlotBorder" Color="#2EFFFFFF"/>
 </ResourceDictionary>
