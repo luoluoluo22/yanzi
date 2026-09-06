@@ -77,7 +77,8 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <ItemsControl ItemsSource="{Binding OuterSeparators}">
+            <ItemsControl ItemsSource="{Binding OuterSeparators}"
+                          IsHitTestVisible="False">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <Canvas Width="1400" Height="1400"/>
@@ -117,7 +118,8 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <ItemsControl ItemsSource="{Binding MiddleSeparators}">
+        <ItemsControl ItemsSource="{Binding MiddleSeparators}"
+                      IsHitTestVisible="False">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <Canvas/>
@@ -163,7 +165,8 @@
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
 
-        <ItemsControl ItemsSource="{Binding MainSeparators}">
+        <ItemsControl ItemsSource="{Binding MainSeparators}"
+                      IsHitTestVisible="False">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <Canvas/>
@@ -227,7 +230,8 @@
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
                    TextAlignment="Center"
-                   TextTrimming="CharacterEllipsis">
+                   TextTrimming="CharacterEllipsis"
+                   IsHitTestVisible="False">
             <TextBlock.RenderTransform>
                 <TranslateTransform Y="314"/>
             </TextBlock.RenderTransform>
@@ -235,7 +239,8 @@
  
         <ItemsControl ItemsSource="{Binding PaginationDots}"
                       HorizontalAlignment="Center"
-                      VerticalAlignment="Center">
+                      VerticalAlignment="Center"
+                      IsHitTestVisible="False">
             <ItemsControl.RenderTransform>
                 <TranslateTransform Y="295"/>
             </ItemsControl.RenderTransform>
@@ -268,7 +273,8 @@
                    Width="350"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
-                   TextAlignment="Center">
+                   TextAlignment="Center"
+                   IsHitTestVisible="False">
             <TextBlock.RenderTransform>
                 <TranslateTransform Y="336"/>
             </TextBlock.RenderTransform>
@@ -1273,6 +1279,7 @@
 
                         <!-- 3. 独立双层轮盘外圈分隔线 -->
                         <ItemsControl ItemsSource="{Binding OuterSeparators}"
+                                      IsHitTestVisible="False"
                                       Visibility="{Binding IsStandaloneRadial, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -1329,7 +1336,8 @@
                         </ItemsControl>
 
                         <!-- 6. 内圈分隔线 -->
-                        <ItemsControl ItemsSource="{Binding Separators}">
+                        <ItemsControl ItemsSource="{Binding Separators}"
+                                      IsHitTestVisible="False">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <Canvas/>
@@ -1496,6 +1504,7 @@
 
                         <!-- 9.2 独立双层轮盘最外层分隔线 -->
                         <ItemsControl ItemsSource="{Binding MostOuterSeparators}"
+                                      IsHitTestVisible="False"
                                       Visibility="{Binding IsStandaloneRadial, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
