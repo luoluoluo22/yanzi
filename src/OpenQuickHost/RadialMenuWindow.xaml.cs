@@ -739,9 +739,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     internal void LoadRadialMenuPages()
     {
         // 复用停靠实例后，外部（扩展/页面/设置变更）调本方法刷新数据。
-        // 置空上次进程名与目标页缓存，强制下次 ShowAtMouse 走"页面重建"分支，
-        // 避免停靠实例在配置变化后仍弹出旧视觉树。
-        _activeProcessName = null;
+        // 重置当前页面 ID，强制下次 ShowAtMouse 重新计算 targetPageId 并走重建分支。
+        // 注意：绝不能在此清空 _activeProcessName，因为 ShowAtMouse 和 PrewarmDeep 是先解析出当前进程名，
+        // 再调用 LoadRadialMenuPages 依此过滤应用专属页面！清空会导致应用专属轮盘彻底失效。
+        _currentPageId = string.Empty;
         _pages.Clear();
         SubRings.Clear();
         IsEditHoverActive = false;
@@ -884,14 +885,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            var hwnd = Win32Native.GetForegroundWindow();
-            if (hwnd == IntPtr.Zero)
-            {
-                return null;
-            }
-
-            var name = WindowSensorHelper.GetWindowProcessName(hwnd);
-            return string.IsNullOrWhiteSpace(name) ? null : name;
+            var (_, processName) = WindowSensorHelper.ResolveActiveTargetWindowAndProcess();
+            return string.IsNullOrWhiteSpace(processName) ? null : processName;
         }
         catch
         {
@@ -944,68 +939,20 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         _lastRadiusPixels = settings.RadiusPixels;
         _cachedDeadZonePixels = Math.Max(36, settings.DeadZonePixels);
 
-        // 恢复原始可靠语义：优先取"光标所在的顶级窗口"（用户在哪个窗口上呼出，
-        // 就用哪个窗口的专属轮盘，更符合直觉），前台窗口仅作兜底。
-        // 停靠复用后这里必须每次都重新解析，不能依赖上次的缓存值。
         var helperHwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-        var mainHwnd = new System.Windows.Interop.WindowInteropHelper(_mainWindow).Handle;
 
-        _previousForegroundWindow = IntPtr.Zero;
-        if (Win32Native.GetCursorPos(out var cursorPt))
-        {
-            var hwndUnderMouse = Win32Native.WindowFromPoint(cursorPt);
-            if (hwndUnderMouse != IntPtr.Zero &&
-                hwndUnderMouse != helperHwnd &&
-                hwndUnderMouse != mainHwnd)
-            {
-                _previousForegroundWindow = Win32Native.GetAncestor(hwndUnderMouse, Win32Native.GA_ROOT);
-            }
-        }
+        // 对齐背包（QuickPanel）100% 可靠前台应用感知体系：
+        // 优先探测光标悬浮顶层窗口，若光标下为 Electron/Chromium 渲染子控件、临时句柄或无效句柄，
+        // 坚决无条件回退到系统真实前台活动窗口（GetForegroundWindow），彻底排除燕子进程自身所有浮窗干扰。
+        var (targetHwnd, currentProcessName) = WindowSensorHelper.ResolveActiveTargetWindowAndProcess(
+            excludeHwnd: helperHwnd,
+            cursorPoint: anchorPoint);
 
-        // 光标下无有效窗口（桌面/任务栏/自身）时，用系统前台窗口兜底
-        if (_previousForegroundWindow == IntPtr.Zero ||
-            _previousForegroundWindow == helperHwnd ||
-            _previousForegroundWindow == mainHwnd)
-        {
-            _previousForegroundWindow = Win32Native.GetForegroundWindow();
-            if (_previousForegroundWindow == helperHwnd || _previousForegroundWindow == mainHwnd)
-            {
-                // 前台是自身/主窗口，退回光标下窗口（排除自身后的）
-                if (Win32Native.GetCursorPos(out var pt2))
-                {
-                    var under = Win32Native.WindowFromPoint(pt2);
-                    if (under != IntPtr.Zero)
-                    {
-                        _previousForegroundWindow = Win32Native.GetAncestor(under, Win32Native.GA_ROOT);
-                    }
-                }
-            }
-        }
-
-        string? currentProcessName = null;
-        if (_previousForegroundWindow != IntPtr.Zero)
-        {
-            try
-            {
-                var resolvedName = WindowSensorHelper.GetWindowProcessName(_previousForegroundWindow);
-                if (!string.IsNullOrWhiteSpace(resolvedName))
-                {
-                    currentProcessName = resolvedName;
-                }
-            }
-            catch (Exception ex)
-            {
-                HostAssets.AppendLog($"RadialMenu: Failed to get process name: {ex.Message}");
-            }
-        }
-
-        // 每次呼出都重新解析前台/光标下进程并按进程过滤页面。
-        // 停靠复用后实例跨呼出存活，绝不能依赖上次的缓存判定——
-        // 否则换应用呼出时 _activeProcessName 仍是旧值，专属轮盘不会切换。
-        _activeProcessName = currentProcessName;
+        _previousForegroundWindow = targetHwnd;
+        _activeProcessName = string.IsNullOrWhiteSpace(currentProcessName) ? null : currentProcessName;
         LoadRadialMenuPages();
 
-        HostAssets.AppendLog($"[RadialProcessDebug] cursorWnd=0x{_previousForegroundWindow.ToInt64():X}, process={_activeProcessName ?? "(null)"}, pages={_pages.Count}, topLevel={_topLevelPages.Count}, currentPage={_currentPageId}, selectedPage={settings.SelectedPageId ?? "(null)"}.");
+        HostAssets.AppendLog($"[RadialProcessDebug] targetWnd=0x{_previousForegroundWindow.ToInt64():X}, process={_activeProcessName ?? "(null)"}, pages={_pages.Count}, topLevel={_topLevelPages.Count}, currentPage={_currentPageId}, selectedPage={settings.SelectedPageId ?? "(null)"}.");
 
         // 精确匹配当前活动进程的专属页面（LoadRadialMenuPages 已按进程过滤，firstAppPage 一定是当前进程的）
         var firstAppPage = _pages.FirstOrDefault(page => !string.IsNullOrEmpty(page.ContextProcessName));
@@ -5482,29 +5429,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         var helperHwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-        var mainHwnd = new System.Windows.Interop.WindowInteropHelper(_mainWindow).Handle;
-
-        IntPtr targetHwnd = IntPtr.Zero;
-        if (Win32Native.GetCursorPos(out var pt))
-        {
-            var under = Win32Native.WindowFromPoint(pt);
-            if (under != IntPtr.Zero && under != helperHwnd && under != mainHwnd)
-            {
-                targetHwnd = Win32Native.GetAncestor(under, Win32Native.GA_ROOT);
-            }
-        }
-
-        if (targetHwnd == IntPtr.Zero || targetHwnd == helperHwnd || targetHwnd == mainHwnd)
-        {
-            targetHwnd = Win32Native.GetForegroundWindow();
-        }
-
-        if (targetHwnd == IntPtr.Zero || targetHwnd == helperHwnd || targetHwnd == mainHwnd)
-        {
-            return string.Empty;
-        }
-
-        var name = WindowSensorHelper.GetWindowProcessName(targetHwnd);
+        var (targetHwnd, name) = WindowSensorHelper.ResolveActiveTargetWindowAndProcess(excludeHwnd: helperHwnd);
         HostAssets.AppendLog($"[RadialMenuLog] AddAppPage resolved process on the fly: hwnd=0x{targetHwnd.ToInt64():X}, process={name ?? "(null)"}.");
         return name;
     }

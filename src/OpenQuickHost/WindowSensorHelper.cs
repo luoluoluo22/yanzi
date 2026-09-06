@@ -79,34 +79,148 @@ public static class WindowSensorHelper
         return IsDesktopWindow(hWnd) || IsTaskbarWindow(hWnd);
     }
 
+    private static readonly uint CurrentPid = (uint)Environment.ProcessId;
+
     /// <summary>
-    /// 获取指定窗口的规范化应用标识（桌面统一返回 "desktop"，普通窗口返回其进程名）
+    /// 判断指定窗口是否属于当前燕子程序自身的所有实例和辅助浮窗
+    /// </summary>
+    public static bool IsCurrentProcessWindow(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return false;
+        GetWindowThreadProcessId(hWnd, out var pid);
+        return pid != 0 && pid == CurrentPid;
+    }
+
+    /// <summary>
+    /// 获取指定窗口的规范化应用标识（桌面统一返回 "desktop"，普通窗口返回其进程名，属于宿主自身返回空字符串）
     /// </summary>
     public static string GetWindowProcessName(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return string.Empty;
+        if (!Win32Native.IsWindow(hWnd)) return string.Empty;
         if (IsDesktopOrTaskbarWindow(hWnd)) return "desktop";
 
         try
         {
             GetWindowThreadProcessId(hWnd, out var pid);
-            if (pid == 0) return string.Empty;
+            if (pid == 0 || pid == CurrentPid) return string.Empty;
 
             // 优先走 Limited Information 句柄路径：对高权限/受保护窗口更稳，
             // 也能复用已有 pid 名称缓存，避免 Process.GetProcessById 的 AccessDenied。
             var name = ProcessHelper.GetProcessNameByPid(pid);
             if (string.IsNullOrWhiteSpace(name))
             {
-                using var proc = System.Diagnostics.Process.GetProcessById((int)pid);
-                name = proc.ProcessName;
+                try
+                {
+                    using var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+                    name = proc.ProcessName;
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"[WindowSensorHelper] GetProcessById failed for pid={pid}: {ex.Message}");
+                }
             }
 
-            return name.Equals("OpenQuickHost", StringComparison.OrdinalIgnoreCase) ? string.Empty : name;
+            if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+
+            // 严格过滤自身（兼容历史名称与当前名称）
+            if (string.Equals(name, "OpenQuickHost", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "Yanzi", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            return name;
         }
-        catch
+        catch (Exception ex)
         {
+            HostAssets.AppendLog($"[WindowSensorHelper] GetWindowProcessName error: {ex.Message}");
             return string.Empty;
         }
+    }
+
+    /// <summary>
+    /// 呼出时智能解析目标窗口与所属进程（借鉴背包 100% 可靠前台检测机制，支持光标窗口与前台窗口双向容错回退）
+    /// </summary>
+    public static (IntPtr TargetHwnd, string ProcessName) ResolveActiveTargetWindowAndProcess(
+        IntPtr excludeHwnd = default,
+        System.Drawing.Point? cursorPoint = null)
+    {
+        // 1. 获取系统真实的前台活动窗口（背包采用的核心基准）
+        var fgHwnd = Win32Native.GetForegroundWindow();
+        if (fgHwnd != IntPtr.Zero && (fgHwnd == excludeHwnd || IsCurrentProcessWindow(fgHwnd)))
+        {
+            fgHwnd = IntPtr.Zero;
+        }
+
+        // 2. 探测光标所在位置的顶级根窗口
+        IntPtr cursorRootHwnd = IntPtr.Zero;
+        try
+        {
+            Win32Native.POINT pt;
+            if (cursorPoint.HasValue)
+            {
+                pt = new Win32Native.POINT(cursorPoint.Value.X, cursorPoint.Value.Y);
+            }
+            else if (!Win32Native.GetCursorPos(out pt))
+            {
+                pt = default;
+            }
+
+            if (pt.X != 0 || pt.Y != 0)
+            {
+                var under = Win32Native.WindowFromPoint(pt);
+                if (under != IntPtr.Zero && under != excludeHwnd && !IsCurrentProcessWindow(under))
+                {
+                    cursorRootHwnd = Win32Native.GetAncestor(under, Win32Native.GA_ROOT);
+                    if (cursorRootHwnd == excludeHwnd || IsCurrentProcessWindow(cursorRootHwnd))
+                    {
+                        cursorRootHwnd = IntPtr.Zero;
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // 3. 优先探测光标所在窗口（用户光标悬停在哪，直觉上倾向于使用该窗口的专属轮盘）
+        if (cursorRootHwnd != IntPtr.Zero && Win32Native.IsWindow(cursorRootHwnd))
+        {
+            var cursorProc = GetWindowProcessName(cursorRootHwnd);
+            if (!string.IsNullOrWhiteSpace(cursorProc))
+            {
+                HostAssets.AppendLog($"[WindowSensorHelper] ResolveActiveTarget: chosen cursorRoot=0x{cursorRootHwnd.ToInt64():X}({cursorProc}), fg=0x{fgHwnd.ToInt64():X}.");
+                return (cursorRootHwnd, cursorProc);
+            }
+        }
+
+        // 4. 关键兜底回退：当光标下为特殊子控件（如 Electron/Chromium 渲染窗口）、无效句柄或解析不出进程时，
+        //    坚决无条件回退到系统真实前台活动窗口（对齐背包做法，解决无法识别当前应用的根本问题）
+        if (fgHwnd != IntPtr.Zero && Win32Native.IsWindow(fgHwnd))
+        {
+            var fgProc = GetWindowProcessName(fgHwnd);
+            if (!string.IsNullOrWhiteSpace(fgProc))
+            {
+                HostAssets.AppendLog($"[WindowSensorHelper] ResolveActiveTarget: chosen fg=0x{fgHwnd.ToInt64():X}({fgProc}), cursorRoot=0x{cursorRootHwnd.ToInt64():X}.");
+                return (fgHwnd, fgProc);
+            }
+        }
+
+        // 5. 桌面与任务栏兜底判断
+        if (cursorRootHwnd != IntPtr.Zero && IsDesktopOrTaskbarWindow(cursorRootHwnd))
+        {
+            HostAssets.AppendLog($"[WindowSensorHelper] ResolveActiveTarget: chosen desktop via cursorRoot=0x{cursorRootHwnd.ToInt64():X}.");
+            return (cursorRootHwnd, "desktop");
+        }
+        if (fgHwnd != IntPtr.Zero && IsDesktopOrTaskbarWindow(fgHwnd))
+        {
+            HostAssets.AppendLog($"[WindowSensorHelper] ResolveActiveTarget: chosen desktop via fg=0x{fgHwnd.ToInt64():X}.");
+            return (fgHwnd, "desktop");
+        }
+
+        // 6. 最终降级：无有效目标
+        var fallbackHwnd = fgHwnd != IntPtr.Zero ? fgHwnd : cursorRootHwnd;
+        HostAssets.AppendLog($"[WindowSensorHelper] ResolveActiveTarget: fallback to 0x{fallbackHwnd.ToInt64():X}, process=(none).");
+        return (fallbackHwnd, string.Empty);
     }
 
     /// <summary>

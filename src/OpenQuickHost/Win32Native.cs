@@ -119,6 +119,10 @@ public static class Win32Native
     [DllImport("user32.dll")]
     public static extern IntPtr WindowFromPoint(POINT point);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsWindow(IntPtr hWnd);
+
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
 
